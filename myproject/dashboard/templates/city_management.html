@@ -1,0 +1,760 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}City Management - Valley/Out Valley Setup{% endblock %}
+
+{% block extra_css %}
+<style>
+    .city-badge.valley {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    .city-badge.out-valley {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    .city-card {
+        border-left: 4px solid transparent;
+        transition: all 0.3s ease;
+    }
+    .city-card.valley-city {
+        border-left-color: #10b981;
+        background: rgba(16, 185, 129, 0.05);
+    }
+    .city-card.out-valley-city {
+        border-left-color: #f59e0b;
+        background: rgba(245, 158, 11, 0.05);
+    }
+    .city-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .status-dot.active {
+        background-color: #10b981;
+    }
+    .status-dot.inactive {
+        background-color: #ef4444;
+    }
+    
+    /* Bulk Add Styles */
+    .bulk-add-textarea {
+        font-family: monospace;
+        font-size: 14px;
+        min-height: 120px;
+        resize: vertical;
+    }
+    .bulk-city-preview {
+        max-height: 200px;
+        overflow-y: auto;
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 10px;
+        margin-top: 10px;
+    }
+    .bulk-city-item {
+        display: inline-block;
+        background: white;
+        padding: 4px 10px;
+        margin: 3px;
+        border-radius: 20px;
+        border: 1px solid #dee2e6;
+        font-size: 13px;
+    }
+    .bulk-city-item.valley {
+        border-color: #10b981;
+        background: rgba(16, 185, 129, 0.1);
+    }
+    .bulk-city-item.out-valley {
+        border-color: #f59e0b;
+        background: rgba(245, 158, 11, 0.1);
+    }
+    .bulk-progress-container {
+        margin-top: 15px;
+    }
+    .bulk-progress-bar {
+        height: 10px;
+        border-radius: 5px;
+        background: #e9ecef;
+        overflow: hidden;
+    }
+    .bulk-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+        transition: width 0.3s ease;
+    }
+    .bulk-stats {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2><i class="fas fa-city"></i> City Management</h2>
+                <a href="{% url 'dashboard' %}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+            <p class="text-muted">Setup cities and classify them as Valley or Out Valley for automatic IN/OUT detection</p>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-white-50">Total Cities</h6>
+                            <h3 class="mb-0">{{ total_cities }}</h3>
+                        </div>
+                        <div class="bg-white-20 p-3 rounded-circle">
+                            <i class="fas fa-city fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-white-50">Valley Cities</h6>
+                            <h3 class="mb-0">{{ valley_cities }}</h3>
+                        </div>
+                        <div class="bg-white-20 p-3 rounded-circle">
+                            <i class="fas fa-mountain fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-white-50">Out Valley Cities</h6>
+                            <h3 class="mb-0">{{ out_valley_cities }}</h3>
+                        </div>
+                        <div class="bg-white-20 p-3 rounded-circle">
+                            <i class="fas fa-truck fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add City Forms in Tabs -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0"><i class="fas fa-plus-circle"></i> Add Cities</h5>
+        </div>
+        <div class="card-body">
+            <!-- Tab Navigation -->
+            <ul class="nav nav-tabs mb-3" id="addCityTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button" role="tab">
+                        <i class="fas fa-plus"></i> Single City
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="bulk-tab" data-bs-toggle="tab" data-bs-target="#bulk" type="button" role="tab">
+                        <i class="fas fa-layer-group"></i> Bulk Add
+                    </button>
+                </li>
+            </ul>
+            
+            <!-- Tab Content -->
+            <div class="tab-content" id="addCityTabContent">
+                <!-- Single City Tab -->
+                <div class="tab-pane fade show active" id="single" role="tabpanel">
+                    <form method="post" id="addCityForm">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">City Name</label>
+                                <input type="text" name="city_name" class="form-control" placeholder="e.g., Kathmandu, Pokhara" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Valley Status</label>
+                                <select name="valley_status" class="form-select" required>
+                                    {% for value, label in valley_status_choices %}
+                                    <option value="{{ value }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="submit" name="add_city" class="btn btn-success w-100">
+                                    <i class="fas fa-save"></i> Add City
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Bulk Add Tab -->
+                <div class="tab-pane fade" id="bulk" role="tabpanel">
+                    <form id="bulkCityForm">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-12">
+                                <label class="form-label">
+                                    <i class="fas fa-info-circle text-info"></i> 
+                                    Enter multiple city names separated by commas
+                                </label>
+                                <textarea id="bulkCityNames" class="form-control bulk-add-textarea" 
+                                          placeholder="Example: Kathmandu, Lalitpur, Bhaktapur, Pokhara, Biratnagar, Birgunj&#10;Each city will be added individually."></textarea>
+                                <small class="form-text text-muted">
+                                    Type one city per line or separate with commas. Duplicates will be skipped.
+                                </small>
+                                
+                                <div class="mt-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <label class="form-label mb-0">Valley Status for all cities:</label>
+                                        <span class="badge bg-info" id="bulkCountBadge">0 cities detected</span>
+                                    </div>
+                                    <div class="btn-group w-100" role="group">
+                                        <input type="radio" class="btn-check" name="bulk_valley_status" id="bulkValley" value="valley" autocomplete="off" checked>
+                                        <label class="btn btn-outline-success" for="bulkValley">
+                                            <i class="fas fa-mountain"></i> Valley Cities
+                                        </label>
+                                        
+                                        <input type="radio" class="btn-check" name="bulk_valley_status" id="bulkOutValley" value="out_valley" autocomplete="off">
+                                        <label class="btn btn-outline-warning" for="bulkOutValley">
+                                            <i class="fas fa-truck"></i> Out Valley Cities
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Preview Section -->
+                            <div class="col-md-12">
+                                <div id="bulkCityPreview" class="bulk-city-preview" style="display: none;">
+                                    <h6 class="mb-2">Preview:</h6>
+                                    <div id="bulkCitiesList"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-12">
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-3">
+                                    <button type="button" class="btn btn-secondary" onclick="clearBulkForm()">
+                                        <i class="fas fa-eraser"></i> Clear
+                                    </button>
+                                    <button type="button" class="btn btn-primary" onclick="processBulkCities()" id="bulkAddBtn">
+                                        <i class="fas fa-upload"></i> Add All Cities
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                    
+                    <!-- Progress Bar -->
+                    <div class="bulk-progress-container" id="bulkProgressContainer" style="display: none;">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small">Processing cities...</span>
+                            <span class="small" id="bulkProgressText">0/0</span>
+                        </div>
+                        <div class="bulk-progress-bar">
+                            <div class="bulk-progress-fill" id="bulkProgressFill" style="width: 0%"></div>
+                        </div>
+                        <div class="bulk-stats">
+                            <span>Added: <span id="bulkAddedCount">0</span></span>
+                            <span>Skipped: <span id="bulkSkippedCount">0</span></span>
+                            <span>Failed: <span id="bulkFailedCount">0</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cities List -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Cities List</h5>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-light" onclick="selectAllCities()">
+                    <i class="fas fa-check-square"></i> Select All
+                </button>
+                <button type="button" class="btn btn-sm btn-light" onclick="deselectAllCities()">
+                    <i class="fas fa-times-circle"></i> Deselect All
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <form method="post" id="citiesForm">
+                {% csrf_token %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th width="50">
+                                    <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllCities()">
+                                </th>
+                                <th width="60">#</th>
+                                <th>City Name</th>
+                                <th width="150">Valley Status</th>
+                                <th width="100">Active</th>
+                                <th width="120">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for city in cities %}
+                            <tr class="city-card {% if city.valley_status == 'valley' %}valley-city{% else %}out-valley-city{% endif %}">
+                                <td>
+                                    <input type="checkbox" name="city_ids" value="{{ city.id }}" class="city-checkbox">
+                                </td>
+                                <td>{{ forloop.counter }}</td>
+                                <td>
+                                    <strong>{{ city.name }}</strong>
+                                </td>
+                                <td>
+                                    <span class="city-badge badge {% if city.valley_status == 'valley' %}valley{% else %}out-valley{% endif %}">
+                                        <i class="fas {% if city.valley_status == 'valley' %}fa-mountain{% else %}fa-truck{% endif %}"></i>
+                                        {{ city.get_valley_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if city.is_active %}
+                                    <span class="status-dot active"></span> Active
+                                    {% else %}
+                                    <span class="status-dot inactive"></span> Inactive
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{% url 'city_edit' city.id %}" class="btn btn-sm btn-warning">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <a href="{% url 'city_delete' city.id %}" class="btn btn-sm btn-danger">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4">
+                                    <i class="fas fa-city fa-3x text-muted mb-3"></i>
+                                    <p class="mb-0">No cities added yet. Add your first city above.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Bulk Actions -->
+                {% if cities %}
+                <div class="card-footer bg-light">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-md-4">
+                            <small class="text-muted">
+                                <span id="selectedCount">0</span> city(s) selected
+                            </small>
+                        </div>
+                        <div class="col-md-5">
+                            <select name="bulk_action" class="form-select form-select-sm">
+                                <option value="">-- Bulk Actions --</option>
+                                <option value="valley">Mark as Valley</option>
+                                <option value="out_valley">Mark as Out Valley</option>
+                                <option value="activate">Activate</option>
+                                <option value="deactivate">Deactivate</option>
+                                <option value="delete">Delete Selected</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-sm btn-primary w-100">
+                                <i class="fas fa-play"></i> Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- Quick Setup Section -->
+    <div class="card shadow-sm mt-4">
+        <div class="card-header bg-gradient-primary text-white">
+            <h5 class="mb-0"><i class="fas fa-bolt"></i> Quick Setup - Common Cities</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3">Quickly add common Nepali cities with their valley status:</p>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <h6 class="text-success"><i class="fas fa-mountain"></i> Valley Cities (Inside Kathmandu Valley)</h6>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-success quick-add-city" data-city="Kathmandu" data-status="valley">
+                            <i class="fas fa-plus"></i> Kathmandu
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success quick-add-city" data-city="Lalitpur" data-status="valley">
+                            <i class="fas fa-plus"></i> Lalitpur
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success quick-add-city" data-city="Bhaktapur" data-status="valley">
+                            <i class="fas fa-plus"></i> Bhaktapur
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success quick-add-city" data-city="Kirtipur" data-status="valley">
+                            <i class="fas fa-plus"></i> Kirtipur
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success quick-add-city" data-city="Thimi" data-status="valley">
+                            <i class="fas fa-plus"></i> Thimi
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success quick-add-city" data-city="Tokha" data-status="valley">
+                            <i class="fas fa-plus"></i> Tokha
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success quick-add-city" data-city="Budhanilkantha" data-status="valley">
+                            <i class="fas fa-plus"></i> Budhanilkantha
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success quick-add-city" data-city="Gokarneshwor" data-status="valley">
+                            <i class="fas fa-plus"></i> Gokarneshwor
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-warning"><i class="fas fa-truck"></i> Out Valley Cities (Outside Kathmandu Valley)</h6>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Pokhara" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Pokhara
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Biratnagar" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Biratnagar
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Birgunj" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Birgunj
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Dharan" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Dharan
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Hetauda" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Hetauda
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Butwal" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Butwal
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Nepalgunj" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Nepalgunj
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Dhankuta" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Dhankuta
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Janakpur" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Janakpur
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning quick-add-city" data-city="Dhangadhi" data-status="out_valley">
+                            <i class="fas fa-plus"></i> Dhangadhi
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// City selection functions
+function toggleAllCities() {
+    const selectAll = document.getElementById('selectAllCheckbox');
+    const checkboxes = document.querySelectorAll('.city-checkbox');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateSelectedCount();
+}
+
+function selectAllCities() {
+    const checkboxes = document.querySelectorAll('.city-checkbox');
+    checkboxes.forEach(cb => cb.checked = true);
+    document.getElementById('selectAllCheckbox').checked = true;
+    updateSelectedCount();
+}
+
+function deselectAllCities() {
+    const checkboxes = document.querySelectorAll('.city-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+    document.getElementById('selectAllCheckbox').checked = false;
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const selected = document.querySelectorAll('.city-checkbox:checked').length;
+    document.getElementById('selectedCount').textContent = selected;
+}
+
+// Quick add city via AJAX
+document.querySelectorAll('.quick-add-city').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const cityName = this.dataset.city;
+        const valleyStatus = this.dataset.status;
+        
+        fetch('{% url "city_quick_add" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({
+                city_name: cityName,
+                valley_status: valleyStatus
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('success', data.message);
+                // Reload page after 1.5 seconds
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            } else {
+                showNotification('error', data.message);
+            }
+        })
+        .catch(error => {
+            showNotification('error', 'Error adding city: ' + error);
+        });
+    });
+});
+
+// Update selected count when checkboxes change
+document.querySelectorAll('.city-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateSelectedCount);
+});
+
+// Form confirmation for bulk actions
+document.getElementById('citiesForm').addEventListener('submit', function(e) {
+    const action = this.querySelector('[name="bulk_action"]').value;
+    const selectedCount = document.querySelectorAll('.city-checkbox:checked').length;
+    
+    if (!action) {
+        e.preventDefault();
+        showNotification('warning', 'Please select a bulk action');
+        return;
+    }
+    
+    if (selectedCount === 0) {
+        e.preventDefault();
+        showNotification('warning', 'Please select at least one city');
+        return;
+    }
+    
+    if (action === 'delete') {
+        if (!confirm(`Are you sure you want to delete ${selectedCount} city(s)? This action cannot be undone.`)) {
+            e.preventDefault();
+            return;
+        }
+    }
+});
+
+// Notification function
+function showNotification(type, message) {
+    const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-danger' : 'alert-warning';
+    const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-exclamation-triangle';
+    
+    const notification = document.createElement('div');
+    notification.className = `alert ${alertClass} alert-dismissible fade show`;
+    notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        z-index: 9999;
+        min-width: 300px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        animation: slideInRight 0.3s ease-out;
+    `;
+    notification.innerHTML = `
+        <strong><i class="fas ${icon}"></i> ${type.toUpperCase()}</strong><br>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+
+// ============ BULK CITY ADD FUNCTIONS ============
+
+// Parse city names from textarea
+function parseCityNames() {
+    const textarea = document.getElementById('bulkCityNames');
+    const text = textarea.value.trim();
+    
+    if (!text) {
+        return [];
+    }
+    
+    // Split by commas or new lines, trim each item, remove empty strings
+    let cities = text.split(/[,\n]/)
+        .map(city => city.trim())
+        .filter(city => city.length > 0)
+        .filter(city => city.toLowerCase() !== 'city'); // Remove accidental "city" entries
+    
+    // Remove duplicates while preserving order
+    cities = [...new Set(cities)];
+    
+    return cities;
+}
+
+// Update preview when textarea changes
+document.getElementById('bulkCityNames').addEventListener('input', function() {
+    const cities = parseCityNames();
+    const previewDiv = document.getElementById('bulkCityPreview');
+    const citiesListDiv = document.getElementById('bulkCitiesList');
+    const countBadge = document.getElementById('bulkCountBadge');
+    
+    if (cities.length === 0) {
+        previewDiv.style.display = 'none';
+        countBadge.textContent = '0 cities detected';
+        return;
+    }
+    
+    // Update count badge
+    countBadge.textContent = `${cities.length} city${cities.length > 1 ? 's' : ''} detected`;
+    
+    // Get selected valley status
+    const valleyStatus = document.querySelector('input[name="bulk_valley_status"]:checked').value;
+    const statusClass = valleyStatus === 'valley' ? 'valley' : 'out-valley';
+    const statusIcon = valleyStatus === 'valley' ? '🏔️' : '🚚';
+    
+    // Update preview
+    citiesListDiv.innerHTML = '';
+    cities.forEach(city => {
+        const cityDiv = document.createElement('div');
+        cityDiv.className = `bulk-city-item ${statusClass}`;
+        cityDiv.innerHTML = `${statusIcon} ${city}`;
+        citiesListDiv.appendChild(cityDiv);
+    });
+    
+    previewDiv.style.display = 'block';
+});
+
+// Update preview when valley status changes
+document.querySelectorAll('input[name="bulk_valley_status"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        document.getElementById('bulkCityNames').dispatchEvent(new Event('input'));
+    });
+});
+
+// Clear bulk form
+function clearBulkForm() {
+    document.getElementById('bulkCityNames').value = '';
+    document.getElementById('bulkCityPreview').style.display = 'none';
+    document.getElementById('bulkCountBadge').textContent = '0 cities detected';
+    document.getElementById('bulkProgressContainer').style.display = 'none';
+}
+
+// Process bulk cities via AJAX
+async function processBulkCities() {
+    const cities = parseCityNames();
+    
+    if (cities.length === 0) {
+        showNotification('warning', 'Please enter city names to add.');
+        return;
+    }
+    
+    const valleyStatus = document.querySelector('input[name="bulk_valley_status"]:checked').value;
+    const bulkAddBtn = document.getElementById('bulkAddBtn');
+    const progressContainer = document.getElementById('bulkProgressContainer');
+    
+    // Disable button and show progress
+    bulkAddBtn.disabled = true;
+    bulkAddBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    progressContainer.style.display = 'block';
+    
+    // Reset counters
+    let added = 0;
+    let skipped = 0;
+    let failed = 0;
+    let total = cities.length;
+    
+    // Update progress display
+    function updateProgress() {
+        const processed = added + skipped + failed;
+        const progressPercent = (processed / total) * 100;
+        
+        document.getElementById('bulkProgressFill').style.width = `${progressPercent}%`;
+        document.getElementById('bulkProgressText').textContent = `${processed}/${total}`;
+        document.getElementById('bulkAddedCount').textContent = added;
+        document.getElementById('bulkSkippedCount').textContent = skipped;
+        document.getElementById('bulkFailedCount').textContent = failed;
+    }
+    
+    // Process cities one by one
+    for (let i = 0; i < cities.length; i++) {
+        const cityName = cities[i];
+        
+        try {
+            const response = await fetch('{% url "city_bulk_add" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    city_name: cityName,
+                    valley_status: valleyStatus,
+                    is_bulk: true
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                added++;
+            } else if (data.message && data.message.toLowerCase().includes('already exists')) {
+                skipped++;
+            } else {
+                failed++;
+            }
+        } catch (error) {
+            console.error('Error adding city:', cityName, error);
+            failed++;
+        }
+        
+        // Update progress after each city
+        updateProgress();
+        
+        // Small delay to prevent overwhelming the server
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    // Re-enable button and show completion message
+    bulkAddBtn.disabled = false;
+    bulkAddBtn.innerHTML = '<i class="fas fa-upload"></i> Add All Cities';
+    
+    // Show completion notification
+    let message = `Bulk add completed! `;
+    if (added > 0) message += `Added: ${added} city${added > 1 ? 's' : ''}. `;
+    if (skipped > 0) message += `Skipped (duplicates): ${skipped}. `;
+    if (failed > 0) message += `Failed: ${failed}.`;
+    
+    showNotification('success', message);
+    
+    // Reload page after 3 seconds to show new cities
+    setTimeout(() => {
+        location.reload();
+    }, 3000);
+}
+
+// Initialize selected count
+updateSelectedCount();
+</script>
+{% endblock %}

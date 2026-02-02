@@ -1,0 +1,1272 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Order {{ order.order_number }} - Details{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <a href="{% url 'orders_list' %}" class="btn btn-secondary mb-3">
+            <i class="fas fa-arrow-left"></i> Back to Orders
+        </a>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h2><i class="fas fa-file-invoice"></i> Order {{ order.order_number }}</h2>
+                <p class="text-muted mb-0">
+                    <i class="fas fa-calendar"></i> Placed on {{ order.created_at|date:"F d, Y at h:i A" }}
+                </p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'order_edit' order.id %}" class="btn btn-warning">
+                    <i class="fas fa-edit"></i> Edit Order
+                </a>
+                <a href="{% url 'order_invoice' order.id %}" class="btn btn-primary" target="_blank">
+                    <i class="fas fa-print"></i> Print Invoice
+                </a>
+                <!-- ✅ UPDATED: Move to Trash Button -->
+                <button type="button" class="btn btn-danger" 
+                        onclick="moveOrderToTrash({{ order.id }}, '{{ order.order_number|escapejs }}')">
+                    <i class="fas fa-trash-alt"></i> Move to Trash
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ ORDER STATUS CARDS - PLAIN TEXT VERSION -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="status-card">
+            <div class="status-icon bg-primary">
+                <i class="fas fa-shopping-cart"></i>
+            </div>
+            <div class="status-info">
+                <h6>ORDER STATUS</h6>
+                <p class="status-value">{{ order.order_status|default:"pending"|upper }}</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="status-card">
+            <div class="status-icon bg-success">
+                <i class="fas fa-credit-card"></i>
+            </div>
+            <div class="status-info">
+                <h6>PAYMENT STATUS</h6>
+                <p class="status-value">{{ order.payment_status|default:"pending"|upper }}</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="status-card">
+            <div class="status-icon bg-info">
+                <i class="fas fa-wallet"></i>
+            </div>
+            <div class="status-info">
+                <h6>PAYMENT METHOD</h6>
+                <p class="status-value">{{ order.payment_method|default:"cod"|upper }}</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="status-card">
+            <div class="status-icon bg-warning">
+                <i class="fas fa-money-bill-wave"></i>
+            </div>
+            <div class="status-info">
+                <h6>TOTAL AMOUNT</h6>
+                <h4 class="mb-0 text-success">रू {{ order.total_amount|floatformat:2 }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ PARTIAL PAYMENT ALERT -->
+{% if order.is_partial_payment %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-warning border-0 shadow-sm partial-payment-alert">
+            <div class="d-flex align-items-center">
+                <div class="partial-icon">
+                    <i class="fas fa-coins"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <h5 class="alert-heading mb-2">
+                        <i class="fas fa-exclamation-triangle"></i> Partial Payment Order
+                    </h5>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="payment-stat">
+                                <small class="text-muted d-block">Amount Paid</small>
+                                <strong class="text-success fs-5">
+                                    <i class="fas fa-check-circle"></i> रू {{ order.partial_amount_paid|floatformat:2 }}
+                                </strong>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="payment-stat">
+                                <small class="text-muted d-block">Remaining Amount</small>
+                                <strong class="text-danger fs-5">
+                                    <i class="fas fa-hourglass-half"></i> रू {{ order.remaining_amount|floatformat:2 }}
+                                </strong>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="payment-stat">
+                                <small class="text-muted d-block">Payment Progress</small>
+                                <div class="progress mt-2" style="height: 25px;">
+                                    {% widthratio order.partial_amount_paid order.total_amount 100 as percentage %}
+                                    <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" 
+                                         role="progressbar" 
+                                         style="width: {{ percentage }}%"
+                                         aria-valuenow="{{ percentage }}" 
+                                         aria-valuemin="0" 
+                                         aria-valuemax="100">
+                                        {{ percentage }}%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="my-3">
+                    <p class="mb-0">
+                        <i class="fas fa-info-circle"></i> 
+                        <strong>Note:</strong> This is a partial payment order. Customer has paid <strong>रू {{ order.partial_amount_paid|floatformat:2 }}</strong> 
+                        and still owes <strong class="text-danger">रू {{ order.remaining_amount|floatformat:2 }}</strong>.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- Left Column -->
+    <div class="col-lg-8">
+        <!-- Order Items -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-gradient-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-box"></i> Order Items</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th width="8%">Image</th>
+                                <th width="25%">Product Details</th>
+                                <th width="20%">Variant</th>
+                                <th width="13%">Price</th>
+                                <th width="10%">Qty</th>
+                                <th width="14%">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in order_items %}
+                            <tr>
+                                <td>
+                                    {% if item.product and item.product.image %}
+                                    <img src="{{ item.product.image.url }}" 
+                                         style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                    {% else %}
+                                    <div style="width: 50px; height: 50px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-image text-muted"></i>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="product-details-cell">
+                                        <strong class="product-name-text">{{ item.product_name }}</strong>
+                                        
+                                        {% if item.product_sku %}
+                                        <div class="mt-1">
+                                            <span class="badge bg-secondary" style="font-size: 0.72rem;">
+                                                <i class="fas fa-barcode"></i> {{ item.product_sku }}
+                                            </span>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if item.variation_name %}
+                                        <span class="variant-badge-column">
+                                            <i class="fas fa-tags"></i> 
+                                            {{ item.variation_name }}
+                                        </span>
+                                    {% elif item.product_variation %}
+                                        <span class="variant-badge-column">
+                                            <i class="fas fa-tags"></i> 
+                                            {{ item.product_variation.sku }}
+                                        </span>
+                                    {% else %}
+                                        <span class="simple-product-label">
+                                            <i class="fas fa-box-open"></i> Simple
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="price-text">रू {{ item.price|floatformat:2 }}</span>
+                                </td>
+                                <td>
+                                    <span class="quantity-badge">{{ item.quantity }}</span>
+                                </td>
+                                <td>
+                                    <strong class="subtotal-text">रू {{ item.total|floatformat:2 }}</strong>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <td colspan="5" class="text-end"><strong>Subtotal:</strong></td>
+                                <td><strong>रू {{ subtotal|floatformat:2 }}</strong></td>
+                            </tr>
+                            {% if order.discount_amount > 0 %}
+                            <tr>
+                                <td colspan="5" class="text-end">
+                                    <i class="fas fa-tag text-danger"></i> Discount:
+                                </td>
+                                <td class="text-danger">- रू {{ order.discount_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if order.shipping_charge > 0 %}
+                            <tr>
+                                <td colspan="5" class="text-end">
+                                    <i class="fas fa-truck text-info"></i> Shipping:
+                                </td>
+                                <td>रू {{ order.shipping_charge|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if tax_amount > 0 %}
+                            <tr>
+                                <td colspan="5" class="text-end">
+                                    <i class="fas fa-receipt text-warning"></i> Tax ({{ order.tax_percent }}%):
+                                </td>
+                                <td>रू {{ tax_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr class="table-success">
+                                <td colspan="5" class="text-end"><strong><i class="fas fa-money-bill-wave"></i> Total:</strong></td>
+                                <td><strong class="text-success fs-5">रू {{ order.total_amount|floatformat:2 }}</strong></td>
+                            </tr>
+                            
+                            {% if order.is_partial_payment %}
+                            <tr class="table-info">
+                                <td colspan="5" class="text-end">
+                                    <i class="fas fa-check-circle text-success"></i> <strong>Amount Paid:</strong>
+                                </td>
+                                <td><strong class="text-success">रू {{ order.partial_amount_paid|floatformat:2 }}</strong></td>
+                            </tr>
+                            <tr class="table-warning">
+                                <td colspan="5" class="text-end">
+                                    <i class="fas fa-hourglass-half text-danger"></i> <strong>Remaining Amount:</strong>
+                                </td>
+                                <td><strong class="text-danger">रू {{ order.remaining_amount|floatformat:2 }}</strong></td>
+                            </tr>
+                            {% endif %}
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Update Order Status -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-edit"></i> Update Order Status</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_status">
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Order Status</label>
+                            <select name="order_status" class="form-select form-select-lg">
+                                <option value="pending" {% if order.order_status == 'pending' %}selected{% endif %}>Pending</option>
+                                <option value="processing" {% if order.order_status == 'processing' %}selected{% endif %}>Processing</option>
+                                <option value="confirmed" {% if order.order_status == 'confirmed' %}selected{% endif %}>Confirmed</option>
+                                <option value="packed" {% if order.order_status == 'packed' %}selected{% endif %}>Packed</option>
+                                <option value="shipped" {% if order.order_status == 'shipped' %}selected{% endif %}>Shipped</option>
+                                <option value="delivered" {% if order.order_status == 'delivered' %}selected{% endif %}>Delivered</option>
+                                <option value="cancelled" {% if order.order_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                                <option value="returned" {% if order.order_status == 'returned' %}selected{% endif %}>Returned</option>
+                                <option value="dispatched" {% if order.order_status == 'dispatched' %}selected{% endif %}>Dispatched</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Payment Status</label>
+                            <select name="payment_status" class="form-select form-select-lg">
+                                <option value="pending" {% if order.payment_status == 'pending' %}selected{% endif %}>Pending</option>
+                                <option value="paid" {% if order.payment_status == 'paid' %}selected{% endif %}>Paid</option>
+                                <option value="partial" {% if order.payment_status == 'partial' %}selected{% endif %}>Partial</option>
+                                <option value="failed" {% if order.payment_status == 'failed' %}selected{% endif %}>Failed</option>
+                                <option value="refunded" {% if order.payment_status == 'refunded' %}selected{% endif %}>Refunded</option>
+                                <option value="cod" {% if order.payment_status == 'cod' %}selected{% endif %}>COD</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Tracking Number</label>
+                            <input type="text" name="tracking_number" class="form-control form-control-lg" 
+                                   value="{{ order.tracking_number|default:'' }}" placeholder="Enter tracking number">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Admin Notes</label>
+                            <textarea name="admin_notes" class="form-control" rows="3" 
+                                      placeholder="Internal notes...">{{ order.admin_notes|default:'' }}</textarea>
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-success btn-lg w-100">
+                                <i class="fas fa-save"></i> Update Order
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="col-lg-4">
+        <!-- ✅ PARTIAL PAYMENT CARD -->
+        {% if order.is_partial_payment %}
+        <div class="card shadow-sm mb-3 partial-payment-card">
+            <div class="card-header bg-gradient-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="fas fa-coins"></i> Partial Payment Details
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="partial-payment-item">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted">
+                            <i class="fas fa-money-bill-wave"></i> Total Amount
+                        </span>
+                        <strong class="fs-5">रू {{ order.total_amount|floatformat:2 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-success">
+                            <i class="fas fa-check-circle"></i> Amount Paid
+                        </span>
+                        <strong class="fs-5 text-success">रू {{ order.partial_amount_paid|floatformat:2 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-danger">
+                            <i class="fas fa-hourglass-half"></i> Remaining
+                        </span>
+                        <strong class="fs-5 text-danger">रू {{ order.remaining_amount|floatformat:2 }}</strong>
+                    </div>
+                    
+                    <div class="progress" style="height: 20px;">
+                        {% widthratio order.partial_amount_paid order.total_amount 100 as percentage %}
+                        <div class="progress-bar bg-success progress-bar-striped" 
+                             role="progressbar" 
+                             style="width: {{ percentage }}%"
+                             aria-valuenow="{{ percentage }}" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100">
+                            {{ percentage }}% Paid
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Customer Information -->
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-gradient-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-user"></i> Customer Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="customer-info-item">
+                    <i class="fas fa-user-circle text-primary"></i>
+                    <div>
+                        <small class="text-muted">Name</small>
+                        <p class="mb-0"><strong>{{ order.customer_name }}</strong></p>
+                    </div>
+                </div>
+                <div class="customer-info-item">
+                    <i class="fas fa-envelope text-info"></i>
+                    <div>
+                        <small class="text-muted">Email</small>
+                        <p class="mb-0">{{ order.customer_email|default:"N/A" }}</p>
+                    </div>
+                </div>
+                <div class="customer-info-item border-0">
+                    <i class="fas fa-phone text-success"></i>
+                    <div>
+                        <small class="text-muted">Phone</small>
+                        <p class="mb-0">{{ order.customer_phone }}</p>
+                    </div>
+                </div>
+                {% if order.customer %}
+                <hr>
+                <a href="{% url 'customer_detail' order.customer.id %}" class="btn btn-sm btn-outline-primary w-100">
+                    <i class="fas fa-eye"></i> View Customer Profile
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- ✅ IN/OUT Information Card -->
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-gradient-dark text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-arrow-right-arrow-left"></i> IN/OUT Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="in-out-info">
+                    <div class="in-out-status d-flex align-items-center justify-content-between mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="in-out-icon {% if order.in_out == 'in' %}in-icon{% else %}out-icon{% endif %} me-3">
+                                <i class="fas {% if order.in_out == 'in' %}fa-arrow-down-to-line{% else %}fa-arrow-up-from-line{% endif %}"></i>
+                            </div>
+                            <div>
+                                <small class="text-muted d-block">Order Type</small>
+                                <h4 class="mb-0 {% if order.in_out == 'in' %}text-success{% else %}text-danger{% endif %}">
+                                    {{ order.in_out|upper }}
+                                </h4>
+                            </div>
+                        </div>
+                        <div class="in-out-badge {% if order.in_out == 'in' %}in-badge{% else %}out-badge{% endif %}">
+                            {% if order.in_out == 'in' %}
+                                <i class="fas fa-sign-in-alt"></i> VALLEY
+                            {% else %}
+                                <i class="fas fa-sign-out-alt"></i> OUT VALLEY
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="in-out-details">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="detail-box">
+                                    <small class="text-muted d-block">
+                                        <i class="fas fa-building"></i> Branch/City
+                                    </small>
+                                    <strong>{{ order.branch_city|default:"Not specified" }}</strong>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="detail-box">
+                                    <small class="text-muted d-block">
+                                        <i class="fas fa-map-marker-alt"></i> Shipping To
+                                    </small>
+                                    <strong>{{ order.shipping_address|truncatechars:20 }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <div class="in-out-description">
+                                <small class="text-muted d-block mb-1">Description</small>
+                                <p class="mb-0 small">
+                                    {% if order.in_out == 'in' %}
+                                        <i class="fas fa-info-circle text-success"></i>
+                                        This is an IN order - Products are coming into inventory from customer/supplier.
+                                    {% else %}
+                                        <i class="fas fa-info-circle text-danger"></i>
+                                        This is an OUT order - Products are going out to customer.
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Shipping Information -->
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-shipping-fast"></i> Shipping Address</h5>
+            </div>
+            <div class="card-body">
+                <div class="shipping-details">
+                    <div class="detail-row">
+                        <i class="fas fa-user-circle text-success"></i>
+                        <div class="flex-grow-1">
+                            <small class="text-muted">Customer Name</small>
+                            <p class="mb-0"><strong>{{ order.customer_name }}</strong></p>
+                        </div>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <i class="fas fa-map-marker-alt text-danger"></i>
+                        <div class="flex-grow-1">
+                            <small class="text-muted">Street Address</small>
+                            <p class="mb-0">{{ order.shipping_address }}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <i class="fas fa-city text-primary"></i>
+                        <div class="flex-grow-1">
+                            <small class="text-muted">Branch/City</small>
+                            <p class="mb-0"><strong>{{ order.branch_city }}</strong></p>
+                        </div>
+                    </div>
+                    
+                    {% if order.landmark %}
+                    <div class="detail-row">
+                        <i class="fas fa-landmark text-warning"></i>
+                        <div class="flex-grow-1">
+                            <small class="text-muted">Landmark</small>
+                            <p class="mb-0">{{ order.landmark }}</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if order.tracking_number %}
+                <hr class="my-3">
+                <div class="tracking-alert">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="tracking-icon">
+                            <i class="fas fa-truck"></i>
+                        </div>
+                        <div>
+                            <strong class="d-block mb-1">Tracking Number</strong>
+                            <code class="tracking-code">{{ order.tracking_number }}</code>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Customer Order Note -->
+        {% if order.notes %}
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="fas fa-sticky-note"></i> Customer Note</h5>
+            </div>
+            <div class="card-body">
+                <div class="note-content">
+                    <i class="fas fa-quote-left text-warning me-2"></i>
+                    <span class="note-text">{{ order.notes }}</span>
+                    <i class="fas fa-quote-right text-warning ms-2"></i>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Admin Notes Display -->
+        {% if order.admin_notes %}
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0"><i class="fas fa-user-shield"></i> Admin Notes</h5>
+            </div>
+            <div class="card-body">
+                <div class="admin-note-content">
+                    <i class="fas fa-info-circle text-info me-2"></i>
+                    <span>{{ order.admin_notes }}</span>
+                </div>
+                <hr>
+                <small class="text-muted">
+                    <i class="fas fa-user-cog"></i> Internal note - Not visible to customer
+                </small>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Activity Timeline -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="fas fa-history"></i> Order Activity Log</h5>
+            </div>
+            <div class="card-body">
+                <div class="timeline">
+                    {% for log in activity_logs %}
+                    <div class="timeline-item">
+                        <div class="timeline-marker 
+                            {% if log.action_type == 'created' %}bg-success
+                            {% elif log.action_type == 'status_changed' %}bg-primary
+                            {% elif log.action_type == 'payment_changed' %}bg-info
+                            {% elif log.action_type == 'tracking_added' or log.action_type == 'tracking_updated' %}bg-warning
+                            {% elif log.action_type == 'notes_added' or log.action_type == 'notes_updated' %}bg-dark
+                            {% elif log.action_type == 'deleted' %}bg-danger
+                            {% elif log.action_type == 'restored' %}bg-success
+                            {% else %}bg-secondary{% endif %}">
+                        </div>
+                        <div class="timeline-content">
+                            <small class="text-muted">
+                                <i class="fas fa-calendar-alt"></i> 
+                                {{ log.created_at|date:"M d, Y" }} at {{ log.created_at|date:"h:i A" }}
+                            </small>
+                            <p class="mb-0">
+                                <strong>
+                                    {% if log.action_type == 'created' %}
+                                        <i class="fas fa-plus-circle text-success"></i> {{ log.get_action_type_display }}
+                                    {% elif log.action_type == 'status_changed' %}
+                                        <i class="fas fa-sync-alt text-primary"></i> {{ log.get_action_type_display }}
+                                    {% elif log.action_type == 'payment_changed' %}
+                                        <i class="fas fa-credit-card text-info"></i> {{ log.get_action_type_display }}
+                                    {% elif log.action_type == 'tracking_added' %}
+                                        <i class="fas fa-truck text-warning"></i> {{ log.get_action_type_display }}
+                                    {% elif log.action_type == 'tracking_updated' %}
+                                        <i class="fas fa-edit text-warning"></i> {{ log.get_action_type_display }}
+                                    {% elif log.action_type == 'notes_added' or log.action_type == 'notes_updated' %}
+                                        <i class="fas fa-sticky-note text-dark"></i> {{ log.get_action_type_display }}
+                                    {% elif log.action_type == 'deleted' %}
+                                        <i class="fas fa-trash-alt text-danger"></i> {{ log.get_action_type_display }}
+                                    {% elif log.action_type == 'restored' %}
+                                        <i class="fas fa-undo text-success"></i> {{ log.get_action_type_display }}
+                                    {% else %}
+                                        <i class="fas fa-edit"></i> {{ log.get_action_type_display }}
+                                    {% endif %}
+                                </strong>
+                            </p>
+                            <small class="activity-detail">
+                                {{ log.description }}
+                                {% if log.user %}
+                                    <br><span class="text-muted">by <strong>{{ log.user.get_full_name|default:log.user.username }}</strong></span>
+                                {% endif %}
+                            </small>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-inbox fa-3x mb-3 opacity-50"></i>
+                        <p class="mb-0">No activity logs yet</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    /* ✅ IN/OUT SECTION STYLES */
+    .bg-gradient-dark {
+        background: linear-gradient(135deg, #343a40 0%, #212529 100%);
+    }
+    
+    .in-out-info {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #e9ecef;
+    }
+    
+    .in-out-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        color: white;
+    }
+    
+    .in-out-icon.in-icon {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        animation: pulseIn 2s infinite;
+    }
+    
+    .in-out-icon.out-icon {
+        background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+        animation: pulseOut 2s infinite;
+    }
+    
+    @keyframes pulseIn {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+        50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+    }
+    
+    @keyframes pulseOut {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+        50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+    }
+    
+    .in-out-badge {
+        padding: 8px 16px;
+        border-radius: 30px;
+        font-weight: 700;
+        font-size: 1rem;
+        letter-spacing: 1px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .in-out-badge.in-badge {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+    }
+    
+    .in-out-badge.out-badge {
+        background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+        color: white;
+    }
+    
+    .detail-box {
+        background: white;
+        padding: 12px;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        border-left: 4px solid #6c757d;
+        transition: all 0.3s ease;
+    }
+    
+    .detail-box:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .in-out-description {
+        background: white;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+    
+    /* ✅ STATUS CARDS - PLAIN TEXT STYLING (NO BADGES) */
+    .status-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
+        height: 100%;
+    }
+    
+    .status-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .status-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        color: white;
+        flex-shrink: 0;
+    }
+    
+    .status-info {
+        flex-grow: 1;
+    }
+    
+    .status-info h6 {
+        margin: 0 0 8px 0;
+        font-size: 0.7rem;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-weight: 700;
+    }
+    
+    /* ✅ THIS IS THE KEY - PLAIN TEXT STYLE */
+    .status-info .status-value {
+        margin: 0;
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #2c3e50;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        line-height: 1.2;
+    }
+    
+    .status-info p {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    
+    .status-info h4 {
+        font-size: 1.8rem;
+        font-weight: 800;
+    }
+    
+    /* ✅ PARTIAL PAYMENT ALERT STYLES */
+    .partial-payment-alert {
+        background: linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%);
+        border-left: 5px solid #ffc107;
+        border-radius: 12px;
+        animation: slideDown 0.5s ease-out;
+    }
+    
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .partial-icon {
+        width: 70px;
+        height: 70px;
+        background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        color: white;
+        margin-right: 20px;
+        animation: pulse 2s ease-in-out infinite;
+        flex-shrink: 0;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+    }
+    
+    .payment-stat {
+        padding: 15px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+    }
+    
+    .payment-stat:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .partial-payment-card {
+        border: 2px solid #ffc107;
+        animation: slideInRight 0.5s ease-out;
+    }
+    
+    @keyframes slideInRight {
+        from { opacity: 0; transform: translateX(20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+    }
+    
+    .partial-payment-item {
+        background: #fff9e6;
+        padding: 15px;
+        border-radius: 8px;
+    }
+
+    .product-details-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .product-name-text {
+        font-size: 0.95rem;
+        color: #2c3e50;
+        font-weight: 600;
+        line-height: 1.4;
+    }
+
+    .variant-badge-column {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 7px 12px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+        white-space: normal;
+        word-break: break-word;
+        line-height: 1.3;
+    }
+
+    .variant-badge-column i {
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+
+    .simple-product-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        color: #6c757d;
+        font-style: italic;
+        padding: 5px 10px;
+        background: #f8f9fa;
+        border-radius: 4px;
+    }
+
+    .price-text {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #2ecc71;
+    }
+
+    .quantity-badge {
+        display: inline-block;
+        background: #6c757d;
+        color: white;
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-weight: 700;
+        font-size: 0.85rem;
+        min-width: 35px;
+        text-align: center;
+    }
+
+    .subtotal-text {
+        font-size: 1rem;
+        color: #27ae60;
+        font-weight: 700;
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: #f8f9fa;
+        transition: all 0.2s ease;
+    }
+    
+    .customer-info-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 15px;
+        padding: 15px 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+    
+    .customer-info-item i {
+        font-size: 1.3rem;
+        width: 25px;
+        text-align: center;
+        margin-top: 5px;
+    }
+    
+    .customer-info-item small {
+        display: block;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 3px;
+    }
+    
+    .timeline {
+        position: relative;
+        padding-left: 30px;
+        max-height: 500px;
+        overflow-y: auto;
+        padding-right: 10px;
+    }
+
+    .timeline::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .timeline::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+
+    .timeline::-webkit-scrollbar-thumb {
+        background: #667eea;
+        border-radius: 10px;
+    }
+
+    .timeline::-webkit-scrollbar-thumb:hover {
+        background: #764ba2;
+    }
+    
+    .timeline::before {
+        content: '';
+        position: absolute;
+        left: 8px;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .timeline-item {
+        position: relative;
+        margin-bottom: 25px;
+        padding-bottom: 5px;
+    }
+    
+    .timeline-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .timeline-marker {
+        position: absolute;
+        left: -26px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 0 0 2px currentColor, 0 2px 8px rgba(0,0,0,0.2);
+        z-index: 1;
+    }
+    
+    .timeline-content {
+        padding-left: 15px;
+        background: #f8f9fa;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border-left: 3px solid #667eea;
+        transition: all 0.2s ease;
+    }
+
+    .timeline-content:hover {
+        background: #e9ecef;
+        transform: translateX(3px);
+    }
+    
+    .timeline-content small {
+        display: block;
+        margin-bottom: 5px;
+        color: #6c757d;
+        font-size: 0.75rem;
+    }
+
+    .timeline-content p {
+        margin: 5px 0;
+        font-size: 0.95rem;
+    }
+
+    .activity-detail {
+        display: block;
+        margin-top: 5px;
+        color: #495057;
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+
+    .shipping-details {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .detail-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 15px;
+        padding: 14px 0;
+        border-bottom: 1px solid #e9ecef;
+        transition: all 0.2s ease;
+    }
+
+    .detail-row:hover {
+        background: #f8f9fa;
+        margin: 0 -15px;
+        padding: 14px 15px;
+        border-radius: 8px;
+    }
+
+    .detail-row:last-child {
+        border-bottom: none;
+    }
+
+    .detail-row i {
+        font-size: 1.3rem;
+        width: 28px;
+        text-align: center;
+        margin-top: 8px;
+        flex-shrink: 0;
+    }
+
+    .detail-row small {
+        display: block;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+        font-weight: 600;
+        color: #6c757d;
+    }
+
+    .detail-row p {
+        font-size: 0.95rem;
+        color: #2c3e50;
+        line-height: 1.5;
+    }
+
+    .tracking-alert {
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        border: 2px solid #64b5f6;
+        border-radius: 12px;
+        padding: 16px;
+    }
+
+    .tracking-icon {
+        width: 50px;
+        height: 50px;
+        background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.5rem;
+        flex-shrink: 0;
+    }
+
+    .tracking-code {
+        background: white;
+        padding: 8px 16px;
+        border-radius: 8px;
+        color: #1976d2;
+        font-weight: 700;
+        font-size: 1rem;
+        border: 2px dashed #64b5f6;
+        display: inline-block;
+        letter-spacing: 1px;
+    }
+
+    .note-content {
+        background: #fff9e6;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #ffc107;
+    }
+
+    .note-text {
+        font-style: italic;
+        color: #856404;
+        font-size: 0.95rem;
+    }
+
+    .admin-note-content {
+        background: #e7f3ff;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #0d6efd;
+        font-size: 0.95rem;
+        color: #084298;
+        line-height: 1.6;
+    }
+
+    @media (max-width: 768px) {
+        .variant-badge-column {
+            font-size: 0.72rem;
+            padding: 5px 8px;
+        }
+        
+        .product-name-text {
+            font-size: 0.85rem;
+        }
+        
+        .price-text,
+        .subtotal-text {
+            font-size: 0.85rem;
+        }
+
+        .timeline {
+            max-height: 400px;
+        }
+        
+        .partial-payment-alert {
+            padding: 15px;
+        }
+        
+        .partial-icon {
+            width: 50px;
+            height: 50px;
+            font-size: 1.5rem;
+        }
+        
+        .status-card {
+            padding: 15px;
+        }
+        
+        .status-icon {
+            width: 50px;
+            height: 50px;
+            font-size: 1.5rem;
+        }
+        
+        .status-info .status-value {
+            font-size: 0.95rem;
+        }
+        
+        .in-out-icon {
+            width: 50px;
+            height: 50px;
+            font-size: 1.5rem;
+        }
+        
+        .in-out-badge {
+            font-size: 0.85rem;
+            padding: 6px 12px;
+        }
+    }
+</style>
+
+<!-- ✅ MOVE TO TRASH SCRIPT -->
+<script>
+function moveOrderToTrash(orderId, orderNumber) {
+    if (confirm('Move order "' + orderNumber + '" to trash?')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/orders/' + orderId + '/move-to-trash/';
+        
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = csrfToken;
+        
+        form.appendChild(csrfInput);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// JavaScript for status update and interactive features
+document.addEventListener('DOMContentLoaded', function() {
+    // Add fade-in animation to cards
+    const cards = document.querySelectorAll('.card');
+    cards.forEach((card, index) => {
+        card.style.opacity = '0';
+        card.style.transform = 'translateY(20px)';
+        card.style.transition = `opacity 0.5s ease ${index * 0.1}s, transform 0.5s ease ${index * 0.1}s`;
+        
+        setTimeout(() => {
+            card.style.opacity = '1';
+            card.style.transform = 'translateY(0)';
+        }, 100);
+    });
+    
+    // Add animation to partial payment alert if exists
+    const partialAlert = document.querySelector('.partial-payment-alert');
+    if (partialAlert) {
+        setTimeout(() => {
+            partialAlert.classList.add('animated', 'pulse');
+        }, 500);
+    }
+    
+    // Auto-refresh status values on form submit
+    const statusForm = document.querySelector('form');
+    if (statusForm) {
+        statusForm.addEventListener('submit', function() {
+            const submitBtn = this.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+                submitBtn.disabled = true;
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

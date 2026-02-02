@@ -1,0 +1,830 @@
+{% extends 'base.html' %}
+{% block title %}Dispatch Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <h4 class="mb-0"><i class="fas fa-shipping-fast"></i> Dispatch Management</h4>
+                        </div>
+                        <div class="col-md-6 text-end">
+                            <!-- ✅ VIEW BUTTONS -->
+                            <a href="{% url 'dispatch_list' %}" class="btn btn-light btn-sm me-2">
+                                <i class="fas fa-list"></i> View All Dispatches
+                            </a>
+                            <a href="{% url 'dispatch_trash' %}" class="btn btn-outline-light btn-sm me-2">
+                                <i class="fas fa-trash"></i> Trash
+                            </a>
+                            <!-- ✅ ACTION BUTTONS -->
+                            <button type="button" class="btn btn-warning btn-sm" id="removeDuplicatesBtn">
+                                <i class="fas fa-eraser"></i> Remove Duplicates
+                            </button>
+                            <button type="button" class="btn btn-danger btn-sm ms-2" id="clearAllBtn">
+                                <i class="fas fa-trash"></i> Clear All
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Unique Count Display -->
+                    <div class="alert alert-info mb-4">
+                        <h5 class="mb-0 text-center">
+                            <i class="fas fa-barcode"></i>
+                            Total Unique Scanned Orders:
+                            <strong class="text-primary" style="font-size: 2rem;" id="uniqueCountDisplay">0</strong>
+                        </h5>
+                    </div>
+
+                    <form method="POST" id="dispatchForm">
+                        {% csrf_token %}
+
+                        <!-- Order IDs Input -->
+                        <div class="mb-4">
+                            <label for="orderIdsInput" class="form-label fw-bold">
+                                Scan Order IDs (barcode scanner will type and add comma)
+                            </label>
+                            <input type="text" class="form-control" id="orderIdsInput" placeholder="Scan barcode here..." autocomplete="off" autofocus />
+                            <div id="orderIdsDisplay" class="form-control-display mt-3"></div>
+                            <textarea class="form-control d-none" id="orderIds" name="order_ids" required></textarea>
+                            <small class="text-muted">
+                                <span class="text-success">✓ Green = Unique Order</span> |
+                                <span class="text-danger">✗ Red & Underlined = All Duplicates</span> |
+                                <span class="text-info">Click × to remove</span>
+                            </small>
+                        </div>
+
+                        <!-- Set Status and Logistics -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label for="setStatus" class="form-label fw-bold">Set Status To</label>
+                                <select class="form-select" id="setStatus" name="set_status" required>
+                                    <option value="">-- Select Status --</option>
+                                    <option value="pending">Pending payment</option>
+                                    <option value="processing">Processing</option>
+                                    <option value="confirmed">Confirmed</option>
+                                    <option value="packed">Packed</option>
+                                    <option value="shipped">Shipped</option>
+                                    <option value="delivered">Delivered</option>
+                                    <option value="cancelled">Cancelled</option>
+                                    <option value="dispatched" selected>Dispatched</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="logistics" class="form-label fw-bold">Logistics</label>
+                                <select class="form-select" id="logistics" name="logistics" required>
+                                    <option value="">-- Select Logistics --</option>
+                                    <option value="ncm">NCM</option>
+                                    <option value="sundarijal">Sundarijal</option>
+                                    <option value="express">Express</option>
+                                    <option value="local">Local Delivery</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg px-5" id="submitBtn">
+                                <i class="fas fa-paper-plane"></i> Create Dispatch Batch
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .card-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        padding: 1rem 1.5rem;
+    }
+
+    #orderIdsInput {
+        font-family: 'Courier New', monospace;
+        font-size: 1.2rem;
+        border: 3px solid #667eea;
+        border-radius: 8px;
+        padding: 12px;
+        background: #f0f9ff;
+        transition: all 0.3s ease;
+    }
+
+    #orderIdsInput:focus {
+        border-color: #764ba2;
+        box-shadow: 0 0 0 0.3rem rgba(102, 126, 234, 0.25);
+        background: white;
+    }
+
+    .form-control-display {
+        font-family: 'Courier New', monospace;
+        font-size: 1.1rem;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        padding: 12px;
+        min-height: 150px;
+        background: white;
+        line-height: 2.5;
+    }
+
+    .order-id-chip {
+        display: inline-block;
+        padding: 8px 35px 8px 12px;
+        margin: 4px;
+        border-radius: 6px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        position: relative;
+        cursor: default;
+    }
+
+    .order-id-chip.valid {
+        background: #d1fae5;
+        color: #065f46;
+        border: 2px solid #10b981;
+    }
+
+    .order-id-chip.duplicate {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 2px solid #ef4444;
+        text-decoration: underline;
+        text-decoration-thickness: 3px;
+        text-decoration-color: #dc2626;
+        animation: pulse-red 0.5s ease;
+    }
+
+    .order-id-chip .delete-btn {
+        position: absolute;
+        top: 50%;
+        right: 5px;
+        transform: translateY(-50%);
+        background: rgba(0, 0, 0, 0.2);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 22px;
+        height: 22px;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        font-weight: bold;
+    }
+
+    .order-id-chip .delete-btn:hover {
+        background: rgba(0, 0, 0, 0.5);
+        transform: translateY(-50%) scale(1.2);
+    }
+
+    .order-id-chip.valid .delete-btn {
+        background: #059669;
+    }
+
+    .order-id-chip.valid .delete-btn:hover {
+        background: #047857;
+    }
+
+    .order-id-chip.duplicate .delete-btn {
+        background: #dc2626;
+    }
+
+    .order-id-chip.duplicate .delete-btn:hover {
+        background: #b91c1c;
+    }
+
+    @keyframes pulse-red {
+        0%, 100% {
+            transform: scale(1);
+        }
+        50% {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+        }
+    }
+
+    .form-select:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    /* Header Buttons */
+    .card-header .btn-warning,
+    .card-header .btn-danger {
+        transition: all 0.3s ease;
+        font-weight: 700;
+    }
+
+    .btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        border: none;
+        color: white;
+        font-weight: 700;
+    }
+
+    .btn-warning:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(245, 158, 11, 0.6);
+        color: white;
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    }
+
+    .btn-warning:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        transform: none;
+        filter: grayscale(40%);
+    }
+
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        border: none;
+        font-weight: 700;
+        color: white;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.6);
+        background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+    }
+
+    .btn-danger:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        transform: none;
+        filter: grayscale(40%);
+    }
+
+    .alert-info {
+        background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%);
+        border: 2px solid #60a5fa;
+        border-radius: 10px;
+    }
+
+    .badge {
+        font-size: 0.9rem;
+        padding: 0.5rem 0.8rem;
+    }
+
+    @keyframes slideInRight {
+        from { opacity: 0; transform: translateX(100px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes slideInUp {
+        from { opacity: 0; transform: translateY(50px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideOutDown {
+        from { opacity: 1; transform: translateY(0); }
+        to { opacity: 0; transform: translateY(50px); }
+    }
+</style>
+
+<script>
+    // ============================================================
+    // ✅ DISPATCH MANAGEMENT - COMPLETE WORKING VERSION
+    // ============================================================
+    
+    let audioContext;
+    let scannedOrdersList = [];
+    let scannedOrdersSet = new Set();
+
+    function initAudio() {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    // 🔥 ERROR BEEP - Multi-tone alarm for duplicates
+    function playErrorBeep() {
+        initAudio();
+
+        const osc1 = audioContext.createOscillator();
+        const gain1 = audioContext.createGain();
+        osc1.connect(gain1);
+        gain1.connect(audioContext.destination);
+        osc1.frequency.value = 1000;
+        osc1.type = 'square';
+        gain1.gain.setValueAtTime(0.4, audioContext.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        osc1.start(audioContext.currentTime);
+        osc1.stop(audioContext.currentTime + 0.1);
+
+        const osc2 = audioContext.createOscillator();
+        const gain2 = audioContext.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioContext.destination);
+        osc2.frequency.value = 800;
+        osc2.type = 'square';
+        gain2.gain.setValueAtTime(0.4, audioContext.currentTime + 0.12);
+        gain2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.22);
+        osc2.start(audioContext.currentTime + 0.12);
+        osc2.stop(audioContext.currentTime + 0.22);
+
+        const osc3 = audioContext.createOscillator();
+        const gain3 = audioContext.createGain();
+        osc3.connect(gain3);
+        gain3.connect(audioContext.destination);
+        osc3.frequency.value = 600;
+        osc3.type = 'square';
+        gain3.gain.setValueAtTime(0.4, audioContext.currentTime + 0.24);
+        gain3.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.34);
+        osc3.start(audioContext.currentTime + 0.24);
+        osc3.stop(audioContext.currentTime + 0.34);
+    }
+
+    // ✅ SUCCESS BEEP - Pleasant ding for new orders
+    function playSuccessBeep() {
+        initAudio();
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.value = 1500;
+        oscillator.type = 'sine';
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.15);
+    }
+
+    // ✅ UPDATE BUTTON STATE
+    function updateButtons() {
+        const removeDuplicatesBtn = document.getElementById('removeDuplicatesBtn');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+
+        if (!removeDuplicatesBtn || !clearAllBtn) return;
+
+        const frequency = {};
+        scannedOrdersList.forEach(id => {
+            frequency[id] = (frequency[id] || 0) + 1;
+        });
+
+        let hasDuplicates = Object.values(frequency).some(count => count > 1);
+
+        removeDuplicatesBtn.disabled = !hasDuplicates;
+        clearAllBtn.disabled = scannedOrdersList.length === 0;
+    }
+
+    // ✅ DELETE SINGLE ORDER
+    function deleteOrder(index) {
+        scannedOrdersList.splice(index, 1);
+        scannedOrdersSet = new Set(scannedOrdersList);
+        renderOrderIds();
+        const inputField = document.getElementById('orderIdsInput');
+        if (inputField) inputField.focus();
+    }
+
+    // ✅ Render order IDs with safety checks
+    function renderOrderIds() {
+        const display = document.getElementById('orderIdsDisplay');
+        const hiddenField = document.getElementById('orderIds');
+        const uniqueCountEl = document.getElementById('uniqueCountDisplay');
+
+        if (!display || !hiddenField) {
+            console.error('Required elements not found');
+            return;
+        }
+
+        if (scannedOrdersList.length === 0) {
+            display.innerHTML = '<span class="text-muted">Start scanning order IDs...</span>';
+            hiddenField.value = '';
+            if (uniqueCountEl) uniqueCountEl.textContent = '0';
+            updateButtons();
+            return;
+        }
+
+        const frequency = {};
+        scannedOrdersList.forEach(id => {
+            frequency[id] = (frequency[id] || 0) + 1;
+        });
+
+        const duplicateIds = new Set();
+        Object.keys(frequency).forEach(id => {
+            if (frequency[id] > 1) {
+                duplicateIds.add(id);
+            }
+        });
+
+        let html = '';
+        const uniqueSet = new Set();
+
+        scannedOrdersList.forEach((id, index) => {
+            const chipClass = duplicateIds.has(id) ? 'duplicate' : 'valid';
+            html += `
+                <span class="order-id-chip ${chipClass}">
+                    ${id}
+                    <button type="button" class="delete-btn" onclick="deleteOrder(${index})">×</button>
+                </span>
+            `;
+            uniqueSet.add(id);
+        });
+
+        display.innerHTML = html;
+        hiddenField.value = scannedOrdersList.join(',');
+        if (uniqueCountEl) uniqueCountEl.textContent = uniqueSet.size;
+        updateButtons();
+    }
+
+    // ✅ Process scanned barcode
+    function processBarcode(orderId) {
+        orderId = orderId.trim();
+        if (!orderId) return;
+
+        if (scannedOrdersSet.has(orderId)) {
+            playErrorBeep();
+        } else {
+            playSuccessBeep();
+            scannedOrdersSet.add(orderId);
+        }
+
+        scannedOrdersList.push(orderId);
+        renderOrderIds();
+    }
+
+    // ✅ Handle barcode scanner input
+    const inputField = document.getElementById('orderIdsInput');
+
+    if (inputField) {
+        inputField.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const orderId = this.value.trim();
+                this.value = '';
+                if (orderId) {
+                    processBarcode(orderId);
+                }
+            }
+        });
+
+        // Handle paste
+        inputField.addEventListener('paste', function (e) {
+            e.preventDefault();
+            const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+            const orderId = pastedText.trim();
+            if (orderId) {
+                processBarcode(orderId);
+            }
+            this.value = '';
+        });
+    }
+
+    // ✅ REMOVE DUPLICATES BUTTON
+    const removeDuplicatesBtn = document.getElementById('removeDuplicatesBtn');
+    if (removeDuplicatesBtn) {
+        removeDuplicatesBtn.addEventListener('click', function () {
+            if (this.disabled) return;
+
+            const seen = new Set();
+            const uniqueList = [];
+
+            scannedOrdersList.forEach(id => {
+                if (!seen.has(id)) {
+                    seen.add(id);
+                    uniqueList.push(id);
+                }
+            });
+
+            const removedCount = scannedOrdersList.length - uniqueList.length;
+
+            scannedOrdersList = uniqueList;
+            scannedOrdersSet = seen;
+            renderOrderIds();
+
+            if (removedCount > 0) {
+                showToast(`✅ Removed ${removedCount} duplicate(s)!`, 'success');
+                playSuccessBeep();
+            }
+        });
+    }
+
+    // ✅ CLEAR ALL BUTTON
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    if (clearAllBtn) {
+        clearAllBtn.addEventListener('click', function () {
+            if (this.disabled) return;
+
+            if (confirm('Are you sure you want to clear all scanned orders?')) {
+                scannedOrdersList = [];
+                scannedOrdersSet = new Set();
+                renderOrderIds();
+                if (inputField) inputField.focus();
+                showToast('🗑️ All orders cleared!', 'info');
+            }
+        });
+    }
+
+    // ✅ TOAST NOTIFICATION
+    function showToast(message, type = 'success') {
+        const bgColors = {
+            success: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            error: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+            info: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+        };
+
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed; bottom: 30px; right: 30px;
+            background: ${bgColors[type]}; color: white; padding: 15px 25px;
+            border-radius: 10px; font-weight: 600;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2); z-index: 9999;
+            animation: slideInUp 0.3s ease-out;
+        `;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.animation = 'slideOutDown 0.3s ease-out';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // Initialize
+    renderOrderIds();
+    if (inputField) inputField.focus();
+
+    // Form validation
+    const dispatchForm = document.getElementById('dispatchForm');
+    if (dispatchForm) {
+        dispatchForm.addEventListener('submit', function (e) {
+            const orderIds = document.getElementById('orderIds').value.trim();
+            const status = document.getElementById('setStatus').value;
+            const logistics = document.getElementById('logistics').value;
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (!orderIds) {
+                e.preventDefault();
+                showToast('⚠️ Please scan at least one order ID', 'error');
+                return;
+            }
+
+            if (!status) {
+                e.preventDefault();
+                showToast('⚠️ Please select a status', 'error');
+                return;
+            }
+
+            if (!logistics) {
+                e.preventDefault();
+                showToast('⚠️ Please select a logistics provider', 'error');
+                return;
+            }
+
+            const frequency = {};
+            scannedOrdersList.forEach(id => {
+                frequency[id] = (frequency[id] || 0) + 1;
+            });
+
+            let hasDuplicate = Object.values(frequency).some(count => count > 1);
+
+            if (hasDuplicate) {
+                e.preventDefault();
+                playErrorBeep();
+                showToast('⚠️ Duplicate order IDs detected! Click "Remove Duplicates" button.', 'error');
+                return;
+            }
+
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating Dispatch...';
+        });
+    }
+
+    // Initialize audio
+    document.addEventListener('click', initAudio, { once: true });
+
+    // Make deleteOrder globally accessible
+    window.deleteOrder = deleteOrder;
+
+// ============================================================
+// ✅ AUTO-SAVE AND RESTORE (24 HOUR EXPIRY)
+// ============================================================
+(function() {
+    'use strict';
+    
+    const STORAGE_KEY = 'dispatch_form_draft';
+    const EXPIRY_HOURS = 24;
+    
+    // Save dispatch form data
+    function saveFormDraft() {
+        try {
+            const formData = {
+                scannedOrdersList: scannedOrdersList,
+                setStatus: document.getElementById('setStatus')?.value || '',
+                logistics: document.getElementById('logistics')?.value || '',
+                savedAt: new Date().getTime()
+            };
+            
+            if (scannedOrdersList.length > 0 || formData.setStatus || formData.logistics) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
+                console.log('✅ Auto-saved:', new Date().toLocaleTimeString(), 'Items:', scannedOrdersList.length);
+            }
+        } catch (e) {
+            console.error('Error saving draft:', e);
+        }
+    }
+    
+    // Restore saved form data
+    function restoreFormDraft() {
+        try {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            
+            if (!savedData) {
+                console.log('ℹ️ No saved data found');
+                return false;
+            }
+            
+            const draft = JSON.parse(savedData);
+            const savedAt = draft.savedAt;
+            const now = new Date().getTime();
+            const hoursSinceCreated = (now - savedAt) / (1000 * 60 * 60);
+            
+            // Check if expired (24 hours)
+            if (hoursSinceCreated > EXPIRY_HOURS) {
+                console.log('⏰ Draft expired, clearing...');
+                localStorage.removeItem(STORAGE_KEY);
+                showExpiredNotification();
+                return false;
+            }
+            
+            // ✅ RESTORE SCANNED ORDERS
+            if (draft.scannedOrdersList && draft.scannedOrdersList.length > 0) {
+                scannedOrdersList = draft.scannedOrdersList;
+                scannedOrdersSet = new Set(scannedOrdersList);
+                console.log('✅ Restored', scannedOrdersList.length, 'orders');
+                renderOrderIds();
+            }
+            
+            // ✅ RESTORE FORM FIELDS
+            if (draft.setStatus) {
+                const statusSelect = document.getElementById('setStatus');
+                if (statusSelect) statusSelect.value = draft.setStatus;
+            }
+            
+            if (draft.logistics) {
+                const logisticsSelect = document.getElementById('logistics');
+                if (logisticsSelect) logisticsSelect.value = draft.logistics;
+            }
+            
+            console.log('✅ Draft restored successfully');
+            showRestoreNotification(hoursSinceCreated);
+            return true;
+            
+        } catch (e) {
+            console.error('Error restoring draft:', e);
+            localStorage.removeItem(STORAGE_KEY);
+            return false;
+        }
+    }
+    
+    // Clear draft
+    function clearDraft() {
+        localStorage.removeItem(STORAGE_KEY);
+        console.log('🗑️ Draft cleared');
+    }
+    
+    // Show restore notification
+    function showRestoreNotification(hoursSinceCreated) {
+        const minutes = Math.floor((hoursSinceCreated % 1) * 60);
+        const hours = Math.floor(hoursSinceCreated);
+        const timeText = hours > 0 ? `${hours} hour${hours > 1 ? 's' : ''} ago` : `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+        
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-success alert-dismissible fade show';
+        notification.style.cssText = `
+            position: fixed; top: 80px; right: 20px; z-index: 9999; min-width: 350px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15); animation: slideInRight 0.5s ease-out;
+        `;
+        notification.innerHTML = `
+            <strong><i class="fas fa-history"></i> Session Restored!</strong><br>
+            <small>Your scanned orders from ${timeText} have been recovered.</small>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn btn-sm btn-danger ms-2 mt-2" onclick="clearDispatchDraftManually()">
+                <i class="fas fa-trash"></i> Clear & Start Fresh
+            </button>
+        `;
+        
+        document.body.appendChild(notification);
+        setTimeout(() => { notification.remove(); }, 10000);
+    }
+    
+    // Show expired notification
+    function showExpiredNotification() {
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-warning alert-dismissible fade show';
+        notification.style.cssText = `position: fixed; top: 80px; right: 20px; z-index: 9999; min-width: 350px;`;
+        notification.innerHTML = `
+            <strong><i class="fas fa-clock"></i> Session Expired</strong><br>
+            <small>Your previous session was older than 24 hours and has been cleared.</small>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => { notification.remove(); }, 5000);
+    }
+    
+    // Manual clear function
+    window.clearDispatchDraftManually = function() {
+        if (confirm('Are you sure you want to clear the saved session and start fresh?')) {
+            clearDraft();
+            scannedOrdersList = [];
+            scannedOrdersSet = new Set();
+            renderOrderIds();
+            document.getElementById('setStatus').value = 'dispatched';
+            document.getElementById('logistics').value = '';
+            const inputField = document.getElementById('orderIdsInput');
+            if (inputField) inputField.focus();
+        }
+    };
+    
+    // ✅ AUTO-SAVE ON CHANGES (debounced)
+    let saveTimeout;
+    function scheduleSave() {
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(saveFormDraft, 2000);
+    }
+    
+    // ✅ INTERCEPT renderOrderIds to auto-save
+    const originalRenderOrderIds = renderOrderIds;
+    window.renderOrderIds = function() {
+        originalRenderOrderIds();
+        scheduleSave();
+    };
+    
+    // ✅ INTERCEPT deleteOrder to auto-save
+    const originalDeleteOrder = window.deleteOrder;
+    window.deleteOrder = function(index) {
+        originalDeleteOrder(index);
+        scheduleSave();
+    };
+    
+    // Save on form field changes
+    const form = document.getElementById('dispatchForm');
+    if (form) {
+        form.addEventListener('change', scheduleSave);
+        
+        // Clear draft on successful form submission
+        form.addEventListener('submit', function(e) {
+            const orderIds = document.getElementById('orderIds');
+            if (orderIds && orderIds.value.trim()) {
+                setTimeout(() => { 
+                    clearDraft();
+                    console.log('✅ Draft cleared after successful dispatch');
+                }, 1000);
+            }
+        });
+    }
+    
+    // ✅ RESTORE ON PAGE LOAD - MULTIPLE TRIGGERS
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('📂 DOMContentLoaded - Attempting restore...');
+        setTimeout(restoreFormDraft, 100);
+    });
+    
+    window.addEventListener('load', function() {
+        console.log('📂 Window Load - Attempting restore...');
+        setTimeout(restoreFormDraft, 100);
+    });
+    
+    window.addEventListener('pageshow', function(event) {
+        console.log('📂 PageShow - Attempting restore...');
+        setTimeout(restoreFormDraft, 100);
+    });
+    
+    setTimeout(function() {
+        console.log('📂 Immediate - Attempting restore...');
+        restoreFormDraft();
+    }, 100);
+    
+})();
+
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Move to Trash{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'returns_dashboard' %}">Returns</a></li>
+<li class="breadcrumb-item"><a href="{% url 'returns_list' %}">All Returns</a></li>
+<li class="breadcrumb-item active">Move to Trash</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="fas fa-trash"></i> Move Return to Trash</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i> 
+                        <strong>Warning!</strong> This return will be moved to trash.
+                    </div>
+
+                    <h6 class="mb-3">Return Details:</h6>
+                    <div class="bg-light p-3 rounded mb-3">
+                        <p class="mb-2"><strong>RMA Number:</strong> {{ return_request.rma_number }}</p>
+                        <p class="mb-2"><strong>Customer:</strong> {{ return_request.customer_name }}</p>
+                        <p class="mb-2"><strong>Order:</strong> {{ return_request.order.order_number }}</p>
+                        <p class="mb-2"><strong>Amount:</strong> रू {{ return_request.total_amount }}</p>
+                        <p class="mb-0"><strong>Status:</strong> 
+                            <span class="badge bg-{{ return_request.get_status_display_class }}">
+                                {{ return_request.get_return_status_display }}
+                            </span>
+                        </p>
+                    </div>
+
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i> You can restore this return from trash later if needed.
+                    </div>
+                </div>
+                <div class="card-footer bg-white border-top">
+                    <form method="POST" class="d-flex gap-2 justify-content-end">
+                        {% csrf_token %}
+                        <a href="{% url 'return_detail' return_request.id %}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash"></i> Move to Trash
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

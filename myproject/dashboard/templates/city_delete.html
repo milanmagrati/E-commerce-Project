@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Delete City - {{ city.name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-6 mx-auto">
+            <div class="card shadow-sm">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="fas fa-trash"></i> Delete City</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <h5><i class="fas fa-exclamation-triangle"></i> Warning!</h5>
+                        <p>You are about to delete the city: <strong>{{ city.name }}</strong></p>
+                        <p class="mb-0">This action cannot be undone.</p>
+                    </div>
+                    
+                    <div class="city-info mb-4">
+                        <p><strong>City Name:</strong> {{ city.name }}</p>
+                        <p><strong>Valley Status:</strong> {{ city.get_valley_status_display }}</p>
+                        <p><strong>Status:</strong> {% if city.is_active %}Active{% else %}Inactive{% endif %}</p>
+                    </div>
+                    
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'city_management' %}" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-danger">
+                                <i class="fas fa-trash"></i> Confirm Delete
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

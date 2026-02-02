@@ -1,0 +1,2116 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Inventory Dashboard{% endblock %}
+
+{% block content %}
+<div class="inventory-dashboard">
+    <!-- Header -->
+    <div class="dashboard-header mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="header-title">
+                    <i class="fas fa-warehouse pulse-icon"></i> 
+                    Inventory Command Center
+                </h1>
+                <p class="header-subtitle">Real-time stock monitoring & analytics system</p>
+            </div>
+            <div class="header-actions">
+                <a href="{% url 'stock_in_create' %}" class="action-btn btn-stock-in">
+                    <i class="fas fa-box-open"></i> Stock In
+                </a>
+                <button class="action-btn btn-export" onclick="exportReport()">
+                    <i class="fas fa-file-excel"></i> Export Excel
+                </button>
+                <button class="action-btn btn-print" onclick="window.print()">
+                    <i class="fas fa-print"></i> Print
+                </button>
+                <button class="action-btn btn-refresh" onclick="refreshDashboard()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+        <!-- Total Products -->
+        <div class="stat-card gradient-purple">
+            <div class="stat-header">
+                <div class="stat-icon-wrapper">
+                    <i class="fas fa-boxes"></i>
+                </div>
+                <div class="stat-trend positive">
+                    <i class="fas fa-arrow-up"></i> 12%
+                </div>
+            </div>
+            <div class="stat-body">
+                <h3 class="stat-number" data-count="{{ total_products }}">0</h3>
+                <p class="stat-label">Total Products</p>
+                <div class="stat-detail">
+                    <span class="detail-badge success">+{{ total_variations }} variations</span>
+                </div>
+            </div>
+            <div class="stat-sparkline">
+                <canvas id="sparkline1" width="100" height="30"></canvas>
+            </div>
+        </div>
+
+        <!-- In Stock -->
+        <div class="stat-card gradient-green">
+            <div class="stat-header">
+                <div class="stat-icon-wrapper">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <div class="stat-trend positive">
+                    <i class="fas fa-arrow-up"></i> 8%
+                </div>
+            </div>
+            <div class="stat-body">
+                <h3 class="stat-number" data-count="{{ in_stock }}">0</h3>
+                <p class="stat-label">In Stock</p>
+                <div class="stat-detail">
+                    <span class="detail-badge info">{{ variations_in_stock }} variations</span>
+                </div>
+            </div>
+            <div class="stat-sparkline">
+                <canvas id="sparkline2" width="100" height="30"></canvas>
+            </div>
+        </div>
+
+        <!-- Low Stock -->
+        <div class="stat-card gradient-orange" id="lowStockCard">
+            <div class="stat-header">
+                <div class="stat-icon-wrapper">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="stat-trend negative">
+                    <i class="fas fa-arrow-down"></i> Alert
+                </div>
+            </div>
+            <div class="stat-body">
+                <h3 class="stat-number" data-count="{{ low_stock }}">0</h3>
+                <p class="stat-label">Low Stock Alert</p>
+                <div class="stat-detail">
+                    <span class="detail-badge warning">{{ variations_low_stock }} variations</span>
+                </div>
+            </div>
+            <div class="stat-sparkline">
+                <canvas id="sparkline3" width="100" height="30"></canvas>
+            </div>
+            {% if low_stock > 0 %}
+            <div class="alert-indicator">
+                <i class="fas fa-bell"></i>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Out of Stock -->
+        <div class="stat-card gradient-red">
+            <div class="stat-header">
+                <div class="stat-icon-wrapper">
+                    <i class="fas fa-times-circle"></i>
+                </div>
+                <div class="stat-trend critical">
+                    <i class="fas fa-exclamation"></i> Critical
+                </div>
+            </div>
+            <div class="stat-body">
+                <h3 class="stat-number" data-count="{{ out_of_stock }}">0</h3>
+                <p class="stat-label">Out of Stock</p>
+                <div class="stat-detail">
+                    <span class="detail-badge danger">{{ variations_out_of_stock }} variations</span>
+                </div>
+            </div>
+            <div class="stat-sparkline">
+                <canvas id="sparkline4" width="100" height="30"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="charts-row">
+        <!-- Stock Value Card -->
+        <div class="chart-card">
+            <div class="card-header-dark">
+                <h5><i class="fas fa-dollar-sign"></i> Total Stock Value</h5>
+                <div class="header-actions-small">
+                    <button class="btn-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body-dark">
+                <div class="value-display-container">
+                    <div class="value-display">
+                        <span class="currency">Rs</span>
+                        <span class="amount" id="stockValue">{{ total_stock_value|floatformat:0 }}</span>
+                    </div>
+                    <p class="value-subtitle">Current inventory valuation</p>
+                    <div class="value-stats">
+                        <div class="value-stat">
+                            <i class="fas fa-chart-line text-success"></i>
+                            <span>+15% vs last month</span>
+                        </div>
+                        <div class="value-stat">
+                            <i class="fas fa-boxes text-info"></i>
+                            <span>{{ total_products }} SKUs</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Donut Chart -->
+        <div class="chart-card">
+            <div class="card-header-dark">
+                <h5><i class="fas fa-chart-pie"></i> Stock Distribution</h5>
+                <div class="header-actions-small">
+                    <button class="btn-icon active"><i class="fas fa-chart-pie"></i></button>
+                    <button class="btn-icon"><i class="fas fa-chart-bar"></i></button>
+                </div>
+            </div>
+            <div class="card-body-dark">
+                <div class="chart-wrapper">
+                    <canvas id="stockDonutChart"></canvas>
+                    <div class="chart-center-label">
+                        <div class="center-number">{{ total_products }}</div>
+                        <div class="center-text">Products</div>
+                    </div>
+                </div>
+                <div class="chart-legend-custom">
+                    <div class="legend-item-custom">
+                        <span class="legend-dot" style="background: #10b981;"></span>
+                        <span class="legend-label-custom">In Stock</span>
+                        <span class="legend-value-custom">{{ in_stock }}</span>
+                    </div>
+                    <div class="legend-item-custom">
+                        <span class="legend-dot" style="background: #f59e0b;"></span>
+                        <span class="legend-label-custom">Low Stock</span>
+                        <span class="legend-value-custom">{{ low_stock }}</span>
+                    </div>
+                    <div class="legend-item-custom">
+                        <span class="legend-dot" style="background: #ef4444;"></span>
+                        <span class="legend-label-custom">Out of Stock</span>
+                        <span class="legend-value-custom">{{ out_of_stock }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Distribution -->
+        <div class="chart-card">
+            <div class="card-header-dark">
+                <h5><i class="fas fa-layer-group"></i> Category Distribution</h5>
+            </div>
+            <div class="card-body-dark">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stock Movement Graph -->
+    <div class="stock-movement-section">
+        <div class="chart-card chart-card-wide">
+            <div class="card-header-dark">
+                <h5><i class="fas fa-chart-area"></i> Stock Movement</h5>
+                <div class="header-actions-small">
+                    <select class="select-dark" id="dateRangeFilter" onchange="handleDateRangeChange(this.value)">
+                        <option value="7" {% if selected_days == '7' %}selected{% endif %}>Last 7 Days</option>
+                        <option value="30" {% if selected_days == '30' or not selected_days and not start_date %}selected{% endif %}>Last 30 Days</option>
+                        <option value="90" {% if selected_days == '90' %}selected{% endif %}>Last 90 Days</option>
+                        <option value="custom" {% if start_date and end_date %}selected{% endif %}>Custom Range</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card-body-dark">
+                <canvas id="stockMovementChart" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Stock In Transactions -->
+    <div class="stock-in-section">
+        <div class="alert-table-card stock-in-highlight">
+            <div class="card-header-dark alert-success">
+                <h5><i class="fas fa-box-open pulse-icon"></i> Recent Stock In Transactions</h5>
+                <div class="header-right">
+                    <span class="count-badge success">{{ recent_stock_ins|length }}</span>
+                    <a href="{% url 'stock_in_create' %}" class="btn-sm-success">
+                        <i class="fas fa-plus"></i> New
+                    </a>
+                </div>
+            </div>
+            <div class="card-body-dark p-0">
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>REFERENCE</th>
+                                <th>TYPE</th>
+                                <th>SUPPLIER</th>
+                                <th>ITEMS</th>
+                                <th class="text-center">TOTAL QTY</th>
+                                <th>TOTAL COST</th>
+                                <th>DATE</th>
+                                <th class="text-end">ACTION</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stock_in in recent_stock_ins %}
+                            <tr class="table-row-hover">
+                                <td>
+                                    <span class="sku-badge-stockin">{{ stock_in.reference_number }}</span>
+                                </td>
+                                <td>
+                                    <span class="type-badge type-{{ stock_in.stock_in_type }}">
+                                        {{ stock_in.get_stock_in_type_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="supplier-name">{{ stock_in.supplier_name|default:"—" }}</span>
+                                </td>
+                                <td>
+                                    <span class="items-count">
+                                        <i class="fas fa-box"></i> {{ stock_in.items_count }} product(s)
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="stock-badge success">{{ stock_in.total_quantity }}</span>
+                                </td>
+                                <td>
+                                    <strong class="total-cost-text">Rs {{ stock_in.total_cost|floatformat:2 }}</strong>
+                                </td>
+                                <td>
+                                    <div class="date-text">
+                                        <span class="date-main">
+                                            <i class="far fa-calendar-alt"></i> {{ stock_in.created_at|date:"M d, Y" }}
+                                        </span>
+                                        <small class="date-time">{{ stock_in.created_at|date:"H:i" }}</small>
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    <a href="{% url 'stock_in_detail' stock_in.id %}" class="btn-action success">
+                                        <i class="fas fa-eye"></i> View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center py-5">
+                                    <i class="fas fa-box-open fa-3x empty-icon mb-3"></i>
+                                    <p class="empty-text">No stock in transactions yet</p>
+                                    <a href="{% url 'stock_in_create' %}" class="btn-action success mt-3">
+                                        <i class="fas fa-plus"></i> Create First Stock In
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Tables Row -->
+    <div class="tables-row">
+        <!-- Low Stock Alert Table -->
+        <div class="alert-table-card">
+            <div class="card-header-dark alert-warning">
+                <h5><i class="fas fa-exclamation-triangle pulse-icon"></i> Low Stock Alerts</h5>
+                <span class="count-badge warning">{{ low_stock_products|length }}</span>
+            </div>
+            <div class="card-body-dark p-0">
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>SKU</th>
+                                <th class="text-center">Stock</th>
+                                <th class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in low_stock_products %}
+                            <tr class="table-row-hover">
+                                <td>
+                                    <div class="product-cell">
+                                        {% if product.image %}
+                                        <img src="{{ product.image.url }}" alt="{{ product.name }}" class="product-img-dark">
+                                        {% else %}
+                                        <div class="product-img-placeholder">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                        {% endif %}
+                                        <span class="product-name">{{ product.name|truncatewords:4 }}</span>
+                                    </div>
+                                </td>
+                                <td><span class="sku-badge">{{ product.slug|upper }}</span></td>
+                                <td class="text-center">
+                                    <span class="stock-badge warning pulse">{{ product.stock }}</span>
+                                </td>
+                                <td class="text-end">
+                                    <a href="{% url 'stock_in_create' %}" class="btn-action warning">
+                                        <i class="fas fa-plus"></i> Restock
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center py-5">
+                                    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                                    <p class="text-muted">All products sufficiently stocked</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Out of Stock Table -->
+        <div class="alert-table-card">
+            <div class="card-header-dark alert-danger">
+                <h5><i class="fas fa-times-circle pulse-icon"></i> Out of Stock</h5>
+                <span class="count-badge danger">{{ out_of_stock_products|length }}</span>
+            </div>
+            <div class="card-body-dark p-0">
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Category</th>
+                                <th class="text-center">Status</th>
+                                <th class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in out_of_stock_products %}
+                            <tr class="table-row-hover">
+                                <td>
+                                    <div class="product-cell">
+                                        {% if product.image %}
+                                        <img src="{{ product.image.url }}" alt="{{ product.name }}" class="product-img-dark">
+                                        {% else %}
+                                        <div class="product-img-placeholder">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                        {% endif %}
+                                        <span class="product-name">{{ product.name|truncatewords:4 }}</span>
+                                    </div>
+                                </td>
+                                <td><span class="category-text">{{ product.category.name|default:"Uncategorized" }}</span></td>
+                                <td class="text-center">
+                                    <span class="stock-badge danger pulse">OUT</span>
+                                </td>
+                                <td class="text-end">
+                                    <a href="{% url 'stock_in_create' %}" class="btn-action danger">
+                                        <i class="fas fa-box"></i> Restock Now
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center py-5">
+                                    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                                    <p class="text-muted">All products in stock</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Products by Stock Value -->
+    <div class="top-products-section">
+        <div class="chart-card">
+            <div class="card-header-dark">
+                <h5><i class="fas fa-trophy"></i> Top 10 Products by Stock Value</h5>
+            </div>
+            <div class="card-body-dark p-0">
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th width="5%">#</th>
+                                <th width="45%">Product</th>
+                                <th class="text-center">Stock Qty</th>
+                                <th class="text-right">Unit Price</th>
+                                <th class="text-right">Total Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in top_products %}
+                            <tr>
+                                <td class="text-center">
+                                    {% if forloop.counter <= 3 %}
+                                    <span class="rank-badge rank-{{ forloop.counter }}">{{ forloop.counter }}</span>
+                                    {% else %}
+                                    {{ forloop.counter }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="product-cell">
+                                        {% if item.product.image %}
+                                        <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}" class="product-img-dark">
+                                        {% else %}
+                                        <div class="product-img-placeholder">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                        {% endif %}
+                                        <span class="product-name">{{ item.product.name }}</span>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <span class="stock-badge success">{{ item.product.stock }}</span>
+                                </td>
+                                <td class="text-right">
+                                    <strong>Rs {{ item.product.price|floatformat:2 }}</strong>
+                                </td>
+                                <td class="text-right">
+                                    <strong class="total-value-text">Rs {{ item.value|floatformat:2 }}</strong>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-4">
+                                    <p class="text-muted">No products with stock</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Dispatched Orders -->
+    <div class="recent-dispatch-section">
+        <div class="chart-card">
+            <div class="card-header-dark">
+                <h5><i class="fas fa-shipping-fast"></i> Recent Dispatched Orders (Stock Reduced)</h5>
+                <span class="count-badge info">{{ recent_dispatched_orders|length }}</span>
+            </div>
+            <div class="card-body-dark p-0">
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Order #</th>
+                                <th>Customer</th>
+                                <th>Products</th>
+                                <th class="text-center">Items</th>
+                                <th>Dispatch Date</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for order in recent_dispatched_orders %}
+                            <tr>
+                                <td>
+                                    <span class="order-badge">{{ order.order_number }}</span>
+                                </td>
+                                <td>{{ order.customer.name|default:"Walk-in Customer" }}</td>
+                                <td>
+                                    <span class="product-count-badge">
+                                        <i class="fas fa-box"></i> {{ order.items.count }} product(s)
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="qty-badge">{{ order.items.all|length }}</span>
+                                </td>
+                                <td>{{ order.dispatch_date|date:"M d, Y H:i"|default:"—" }}</td>
+                                <td class="text-right">
+                                    <strong>Rs {{ order.total_amount|floatformat:2 }}</strong>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4">
+                                    <p class="text-muted">No dispatched orders yet</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category-wise Stock Distribution -->
+    <div class="category-stock-section">
+        <div class="chart-card">
+            <div class="card-header-dark">
+                <h5><i class="fas fa-sitemap"></i> Category-wise Stock Distribution</h5>
+            </div>
+            <div class="card-body-dark p-0">
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th class="text-center">Products</th>
+                                <th class="text-center">Total Stock</th>
+                                <th class="text-right">Stock Value</th>
+                                <th width="30%">Distribution</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cat in category_stock %}
+                            <tr>
+                                <td>
+                                    <span class="category-name-badge">{{ cat.category }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="product-count-small">{{ cat.products }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <strong>{{ cat.stock }}</strong>
+                                </td>
+                                <td class="text-right">
+                                    <strong class="value-text">Rs {{ cat.value|floatformat:2 }}</strong>
+                                </td>
+                                <td>
+                                    <div class="progress-bar-custom">
+                                        <div class="progress-fill-custom" style="width: {{ cat.percentage }}%;"></div>
+                                        <span class="progress-text-custom">{{ cat.percentage|floatformat:0 }}%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-4">
+                                    <p class="text-muted">No categories found</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ Custom Date Range Modal -->
+<div id="customDateModal" class="date-modal">
+    <div class="date-modal-content">
+        <div class="date-modal-header">
+            <h4><i class="fas fa-calendar-alt"></i> Select Custom Date Range</h4>
+            <button class="date-modal-close" onclick="closeDateModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="date-modal-body">
+            <div class="date-input-group">
+                <label for="startDate">Start Date</label>
+                <input type="date" id="startDate" class="date-input-dark" value="{{ start_date|default:'' }}">
+            </div>
+            <div class="date-input-group">
+                <label for="endDate">End Date</label>
+                <input type="date" id="endDate" class="date-input-dark" value="{{ end_date|default:'' }}">
+            </div>
+        </div>
+        <div class="date-modal-footer">
+            <button class="btn-modal-cancel" onclick="closeDateModal()">Cancel</button>
+            <button class="btn-modal-apply" onclick="applyCustomDateRange()">
+                <i class="fas fa-check"></i> Apply
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Root Variables */
+:root {
+    --dark-bg: #0f172a;
+    --dark-card: #1e293b;
+    --dark-card-hover: #2d3748;
+    --dark-border: #334155;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --accent-purple: #8b5cf6;
+    --accent-green: #10b981;
+    --accent-orange: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-blue: #3b82f6;
+}
+
+.inventory-dashboard {
+    background: var(--dark-bg);
+    min-height: 100vh;
+    padding: 2rem;
+    color: var(--text-primary);
+}
+
+/* Header */
+.dashboard-header {
+    animation: slideDown 0.6s ease;
+}
+
+.header-title {
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.header-subtitle {
+    color: var(--text-secondary);
+    font-size: 1rem;
+    margin: 0.5rem 0 0 0;
+}
+
+.header-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.action-btn {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    color: var(--text-primary);
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+}
+
+.action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+.btn-stock-in:hover { 
+    border-color: var(--accent-green); 
+    color: var(--accent-green); 
+    background: rgba(16, 185, 129, 0.1);
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: var(--dark-card);
+    border-radius: 16px;
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--dark-border);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stat-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.gradient-purple { border-left: 4px solid var(--accent-purple); }
+.gradient-green { border-left: 4px solid var(--accent-green); }
+.gradient-orange { border-left: 4px solid var(--accent-orange); }
+.gradient-red { border-left: 4px solid var(--accent-red); }
+
+.stat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.stat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+}
+
+.stat-trend {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.stat-trend.positive {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--accent-green);
+}
+
+.stat-trend.negative {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--accent-orange);
+}
+
+.stat-trend.critical {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--accent-red);
+}
+
+.stat-body h3 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+}
+
+.stat-detail {
+    margin-top: 0.75rem;
+}
+
+.detail-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.detail-badge.success {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--accent-green);
+}
+
+.detail-badge.info {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--accent-blue);
+}
+
+.detail-badge.warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--accent-orange);
+}
+
+.detail-badge.danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--accent-red);
+}
+
+/* Charts Row */
+.charts-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.chart-card {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.card-header-dark {
+    padding: 1.5rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid var(--dark-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card-header-dark h5 {
+    margin: 0;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.1rem;
+}
+
+.header-actions-small {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--dark-border);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-icon:hover,
+.btn-icon.active {
+    background: var(--accent-purple);
+    color: white;
+    border-color: var(--accent-purple);
+}
+
+.card-body-dark {
+    padding: 1.5rem;
+}
+
+.value-display-container {
+    text-align: center;
+}
+
+.value-display {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.currency {
+    font-size: 1.5rem;
+    color: var(--accent-green);
+    font-weight: 700;
+}
+
+.amount {
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--accent-green);
+}
+
+.value-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+.value-stats {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+}
+
+.value-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.text-success {
+    color: var(--accent-green);
+}
+
+.text-info {
+    color: var(--accent-blue);
+}
+
+.chart-wrapper {
+    position: relative;
+    height: 250px;
+    margin-bottom: 1rem;
+}
+
+.chart-center-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+}
+
+.center-number {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.center-text {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.chart-legend-custom {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.legend-item-custom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+}
+
+.legend-label-custom {
+    flex: 1;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.legend-value-custom {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Stock Movement */
+.stock-movement-section {
+    margin-bottom: 2rem;
+}
+
+.chart-card-wide {
+    grid-column: 1 / -1;
+}
+
+/* ✅ Dark Select Dropdown */
+.select-dark {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    color: var(--text-primary);
+    padding: 0.6rem 2.5rem 0.6rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23f1f5f9' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 12px;
+}
+
+.select-dark:hover {
+    border-color: var(--accent-purple);
+    background-color: var(--dark-card-hover);
+}
+
+.select-dark:focus {
+    outline: none;
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.select-dark option {
+    background: var(--dark-card);
+    color: var(--text-primary);
+    padding: 0.75rem;
+}
+
+/* ✅ Custom Date Modal */
+.date-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+}
+
+.date-modal.active {
+    display: flex;
+    animation: fadeIn 0.3s ease;
+}
+
+.date-modal-content {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    border-radius: 16px;
+    max-width: 500px;
+    width: 90%;
+    animation: slideUp 0.3s ease;
+}
+
+.date-modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--dark-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.date-modal-header h4 {
+    margin: 0;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+}
+
+.date-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+}
+
+.date-modal-close:hover {
+    color: var(--accent-red);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.date-modal-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.date-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.date-input-group label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.date-input-dark {
+    background: var(--dark-bg);
+    border: 1px solid var(--dark-border);
+    color: var(--text-primary);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    transition: all 0.3s;
+}
+
+.date-input-dark:focus {
+    outline: none;
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.date-input-dark::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    cursor: pointer;
+}
+
+.date-modal-footer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--dark-border);
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.btn-modal-cancel,
+.btn-modal-apply {
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: 1px solid;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-modal-cancel {
+    background: transparent;
+    border-color: var(--dark-border);
+    color: var(--text-secondary);
+}
+
+.btn-modal-cancel:hover {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.btn-modal-apply {
+    background: var(--accent-purple);
+    border-color: var(--accent-purple);
+    color: white;
+}
+
+.btn-modal-apply:hover {
+    background: #7c3aed;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+/* Stock In Section */
+.stock-in-section {
+    margin-bottom: 2rem;
+}
+
+.stock-in-highlight {
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.2) !important;
+    border: 2px solid rgba(16, 185, 129, 0.3) !important;
+}
+
+.alert-success {
+    border-bottom: 3px solid var(--accent-green);
+    background: linear-gradient(to right, rgba(16, 185, 129, 0.08), transparent);
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.count-badge {
+    padding: 0.4rem 1rem;
+    border-radius: 20px;
+    font-weight: 800;
+    font-size: 0.85rem;
+}
+
+.count-badge.success { 
+    background: rgba(16, 185, 129, 0.25); 
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.5);
+}
+
+.count-badge.warning { 
+    background: rgba(245, 158, 11, 0.2); 
+    color: var(--accent-orange); 
+}
+
+.count-badge.danger { 
+    background: rgba(239, 68, 68, 0.2); 
+    color: var(--accent-red); 
+}
+
+.count-badge.info {
+    background: rgba(59, 130, 246, 0.2);
+    color: var(--accent-blue);
+}
+
+.btn-sm-success {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--accent-green);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    transition: all 0.3s;
+}
+
+.btn-sm-success:hover {
+    background: rgba(16, 185, 129, 0.3);
+    transform: translateY(-2px);
+}
+
+/* Tables */
+.p-0 {
+    padding: 0 !important;
+}
+
+.table-container-dark {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.table-dark {
+    width: 100%;
+    color: var(--text-primary);
+    border-collapse: collapse;
+}
+
+.table-dark thead {
+    background: rgba(139, 92, 246, 0.08);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.table-dark th {
+    padding: 1.25rem 1rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid rgba(139, 92, 246, 0.2);
+}
+
+.table-dark td {
+    padding: 1.25rem 1rem;
+    border-top: 1px solid rgba(51, 65, 85, 0.5);
+    font-size: 0.95rem;
+    vertical-align: middle;
+}
+
+.table-row-hover {
+    transition: all 0.2s ease;
+}
+
+.table-row-hover:hover {
+    background: rgba(139, 92, 246, 0.08);
+    border-left: 3px solid var(--accent-purple);
+    transform: scale(1.005);
+}
+
+/* Badges */
+.sku-badge-stockin {
+    background: rgba(139, 92, 246, 0.15);
+    padding: 0.35rem 0.85rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-family: 'Courier New', monospace;
+    color: #a78bfa;
+    font-weight: 700;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.type-badge {
+    padding: 0.4rem 0.9rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    display: inline-block;
+    border: 1px solid;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.type-purchase { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-color: rgba(59, 130, 246, 0.5); }
+.type-return { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.5); }
+.type-adjustment { background: rgba(139, 92, 246, 0.2); color: #a78bfa; border-color: rgba(139, 92, 246, 0.5); }
+.type-transfer { background: rgba(16, 185, 129, 0.2); color: #34d399; border-color: rgba(16, 185, 129, 0.5); }
+.type-other { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.5); }
+
+.supplier-name {
+    color: #f1f5f9;
+    font-weight: 600;
+}
+
+.items-count {
+    color: #e2e8f0;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.stock-badge {
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 800;
+    font-size: 1rem;
+}
+
+.stock-badge.success {
+    background: rgba(16, 185, 129, 0.25);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.5);
+}
+
+.stock-badge.warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: var(--accent-orange);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.stock-badge.danger {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--accent-red);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.total-cost-text {
+    color: #34d399 !important;
+    font-weight: 800 !important;
+    font-size: 1.05rem !important;
+}
+
+.date-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.date-main {
+    color: #e2e8f0;
+    font-weight: 700;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.date-time {
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    font-weight: 600;
+    padding-left: 1.5rem;
+}
+
+.btn-action {
+    padding: 0.6rem 1.2rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 700;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+    border: 1px solid;
+}
+
+.btn-action.success {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.5);
+}
+
+.btn-action.success:hover {
+    background: rgba(16, 185, 129, 0.35);
+    border-color: #34d399;
+    transform: translateX(-3px);
+}
+
+.btn-action.warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--accent-orange);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.btn-action.danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--accent-red);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.empty-icon {
+    color: #64748b !important;
+}
+
+.empty-text {
+    color: #cbd5e1 !important;
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.mb-3 {
+    margin-bottom: 1rem;
+}
+
+.mt-3 {
+    margin-top: 1rem;
+}
+
+/* Alert Tables */
+.tables-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.alert-table-card {
+    background: var(--dark-card);
+    border-radius: 16px;
+    border: 1px solid var(--dark-border);
+    overflow: hidden;
+}
+
+.alert-warning {
+    border-bottom-color: var(--accent-orange);
+}
+
+.alert-danger {
+    border-bottom-color: var(--accent-red);
+}
+
+.product-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.product-img-dark {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.product-img-placeholder {
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+.product-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.sku-badge {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-family: 'Courier New', monospace;
+    color: var(--text-secondary);
+}
+
+.category-text {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.text-muted {
+    color: #94a3b8 !important;
+}
+
+.py-5 {
+    padding: 2.5rem 0 !important;
+}
+
+.py-4 {
+    padding: 2rem 0 !important;
+}
+
+/* Top Products */
+.top-products-section,
+.recent-dispatch-section,
+.category-stock-section {
+    margin-bottom: 2rem;
+}
+
+.rank-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+
+.rank-1 {
+    background: linear-gradient(135deg, #ffd700, #ffed4e);
+    color: #000;
+}
+
+.rank-2 {
+    background: linear-gradient(135deg, #c0c0c0, #e8e8e8);
+    color: #000;
+}
+
+.rank-3 {
+    background: linear-gradient(135deg, #cd7f32, #e39850);
+    color: #fff;
+}
+
+.total-value-text {
+    color: var(--accent-green);
+    font-size: 1.1rem;
+}
+
+.order-badge {
+    background: rgba(139, 92, 246, 0.15);
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: 'Courier New', monospace;
+    color: var(--accent-purple);
+    font-weight: 700;
+}
+
+.product-count-badge {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.qty-badge {
+    background: rgba(59, 130, 246, 0.2);
+    color: var(--accent-blue);
+    padding: 0.35rem 0.75rem;
+    border-radius: 12px;
+    font-weight: 700;
+}
+
+.category-name-badge {
+    background: rgba(139, 92, 246, 0.15);
+    padding: 0.35rem 0.85rem;
+    border-radius: 8px;
+    color: var(--accent-purple);
+    font-weight: 600;
+}
+
+.product-count-small {
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.value-text {
+    color: var(--accent-green);
+}
+
+.progress-bar-custom {
+    height: 30px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-fill-custom {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-purple), var(--accent-blue));
+    transition: width 1s ease;
+}
+
+.progress-text-custom {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-end { text-align: right; }
+
+.alert-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent-orange);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: pulse 1.5s infinite;
+}
+
+/* Animations */
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.pulse {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.pulse-icon {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .charts-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 1024px) {
+    .inventory-dashboard {
+        padding: 1.5rem;
+    }
+    
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .inventory-dashboard {
+        padding: 1rem;
+    }
+    
+    .d-flex {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+    }
+    
+    .header-title {
+        font-size: 1.5rem;
+    }
+    
+    .header-subtitle {
+        font-size: 0.85rem;
+    }
+    
+    .header-actions {
+        flex-direction: column;
+        width: 100%;
+        margin-top: 1rem;
+    }
+    
+    .action-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .tables-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .table-dark {
+        font-size: 0.8rem;
+    }
+    
+    .table-dark td,
+    .table-dark th {
+        padding: 0.75rem 0.5rem;
+    }
+    
+    .date-modal-content {
+        max-width: 95%;
+    }
+    
+    .select-dark {
+        font-size: 0.85rem;
+        padding: 0.5rem 2rem 0.5rem 0.75rem;
+    }
+    
+    .card-header-dark {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .header-actions-small {
+        width: 100%;
+        justify-content: flex-end;
+    }
+    
+    .value-stats {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .stat-card {
+        padding: 1rem;
+    }
+    
+    .stat-body h3 {
+        font-size: 2rem;
+    }
+    
+    .amount {
+        font-size: 2rem;
+    }
+    
+    .date-modal-header h4 {
+        font-size: 1rem;
+    }
+    
+    .table-dark th,
+    .table-dark td {
+        padding: 0.5rem 0.25rem;
+        font-size: 0.75rem;
+    }
+    
+    .product-img-dark,
+    .product-img-placeholder {
+        width: 32px;
+        height: 32px;
+    }
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// ✅ Get URL Parameters
+function getURLParameter(name) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(name);
+}
+
+// ✅ Set selected filter on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const days = getURLParameter('days');
+    const startDate = getURLParameter('start_date');
+    const endDate = getURLParameter('end_date');
+    const filterSelect = document.getElementById('dateRangeFilter');
+    
+    if (startDate && endDate) {
+        filterSelect.value = 'custom';
+        document.getElementById('startDate').value = startDate;
+        document.getElementById('endDate').value = endDate;
+    } else if (days) {
+        filterSelect.value = days;
+    }
+    
+    // Animate counters
+    document.querySelectorAll('.stat-number').forEach(el => {
+        animateCounter(el);
+    });
+
+    // Initialize charts
+    initializeCharts();
+});
+
+// Number Counter Animation
+function animateCounter(element) {
+    const target = parseInt(element.getAttribute('data-count')) || 0;
+    if (target === 0) {
+        element.textContent = '0';
+        return;
+    }
+    
+    const duration = 2000;
+    const step = target / (duration / 16);
+    let current = 0;
+    
+    const timer = setInterval(() => {
+        current += step;
+        if (current >= target) {
+            element.textContent = target;
+            clearInterval(timer);
+        } else {
+            element.textContent = Math.floor(current);
+        }
+    }, 16);
+}
+
+// Initialize all charts
+function initializeCharts() {
+    // Stock Donut Chart
+    const donutCtx = document.getElementById('stockDonutChart');
+    if (donutCtx) {
+        new Chart(donutCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['In Stock', 'Low Stock', 'Out of Stock'],
+                datasets: [{
+                    data: [{{ in_stock }}, {{ low_stock }}, {{ out_of_stock }}],
+                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+    }
+
+    // Category Chart
+    const categoryCtx = document.getElementById('categoryChart');
+    if (categoryCtx) {
+        new Chart(categoryCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ category_labels|safe }},
+                datasets: [{
+                    label: 'Stock',
+                    data: {{ category_data|safe }},
+                    backgroundColor: '#8b5cf6',
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#94a3b8'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: '#94a3b8'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+    }
+
+    // Stock Movement Chart
+    const movementCtx = document.getElementById('stockMovementChart');
+    if (movementCtx) {
+        new Chart(movementCtx, {
+            type: 'line',
+            data: {
+                labels: {{ movement_labels|safe }},
+                datasets: [{
+                    label: 'Stock In',
+                    data: {{ stock_in_data|safe }},
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }, {
+                    label: 'Stock Out',
+                    data: {{ stock_out_data|safe }},
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#94a3b8'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: '#94a3b8'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#f1f5f9'
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// ✅ Handle Date Range Change
+function handleDateRangeChange(value) {
+    if (value === 'custom') {
+        document.getElementById('customDateModal').classList.add('active');
+        
+        // Check if we have existing custom dates
+        const existingStart = getURLParameter('start_date');
+        const existingEnd = getURLParameter('end_date');
+        
+        if (existingStart && existingEnd) {
+            document.getElementById('startDate').value = existingStart;
+            document.getElementById('endDate').value = existingEnd;
+        } else {
+            // Set default dates (last 30 days)
+            const today = new Date();
+            const thirtyDaysAgo = new Date(today);
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+            
+            document.getElementById('endDate').valueAsDate = today;
+            document.getElementById('startDate').valueAsDate = thirtyDaysAgo;
+        }
+    } else {
+        // Reload with selected predefined range
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.delete('start_date');
+        currentUrl.searchParams.delete('end_date');
+        currentUrl.searchParams.set('days', value);
+        window.location.href = currentUrl.toString();
+    }
+}
+
+// ✅ Close Date Modal
+function closeDateModal() {
+    document.getElementById('customDateModal').classList.remove('active');
+    
+    // Reset dropdown to current state
+    const days = getURLParameter('days');
+    const startDate = getURLParameter('start_date');
+    const filterSelect = document.getElementById('dateRangeFilter');
+    
+    if (startDate) {
+        filterSelect.value = 'custom';
+    } else if (days) {
+        filterSelect.value = days;
+    } else {
+        filterSelect.value = '30';
+    }
+}
+
+// ✅ Apply Custom Date Range
+function applyCustomDateRange() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    
+    if (!startDate || !endDate) {
+        alert('Please select both start and end dates');
+        return;
+    }
+    
+    if (new Date(startDate) > new Date(endDate)) {
+        alert('Start date must be before end date');
+        return;
+    }
+    
+    // Redirect with custom date range
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.delete('days');
+    currentUrl.searchParams.set('start_date', startDate);
+    currentUrl.searchParams.set('end_date', endDate);
+    window.location.href = currentUrl.toString();
+}
+
+// Close modal on outside click
+document.getElementById('customDateModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeDateModal();
+    }
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const modal = document.getElementById('customDateModal');
+        if (modal && modal.classList.contains('active')) {
+            closeDateModal();
+        }
+    }
+});
+
+function exportReport() {
+    alert('📊 Export feature coming soon!');
+}
+
+function refreshDashboard() {
+    location.reload();
+}
+</script>
+{% endblock %}

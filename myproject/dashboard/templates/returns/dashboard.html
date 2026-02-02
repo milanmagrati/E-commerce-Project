@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Returns Dashboard{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">Returns Dashboard</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="fas fa-undo-alt text-primary"></i> Return Management</h2>
+            <p class="text-muted">Manage product returns and refunds</p>
+        </div>
+        <div>
+            {% if user.is_superuser or user.role == 'administrator' or user.can_create_returns %}
+            <a href="{% url 'return_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Create Return
+            </a>
+            {% endif %}
+            <a href="{% url 'returns_list' %}" class="btn btn-outline-primary">
+                <i class="fas fa-list"></i> All Returns
+            </a>
+            {% if trash_count > 0 %}
+            <a href="{% url 'returns_trash_list' %}" class="btn btn-outline-danger">
+                <i class="fas fa-trash"></i> Trash ({{ trash_count }})
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row g-3 mb-4">
+        <!-- Total Returns -->
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Total Returns</p>
+                            <h3 class="mb-0">{{ total_returns }}</h3>
+                        </div>
+                        <div class="bg-primary bg-opacity-10 rounded p-3">
+                            <i class="fas fa-undo fa-2x text-primary"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending Returns -->
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Pending Review</p>
+                            <h3 class="mb-0 text-warning">{{ pending_returns }}</h3>
+                        </div>
+                        <div class="bg-warning bg-opacity-10 rounded p-3">
+                            <i class="fas fa-clock fa-2x text-warning"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Approved Returns -->
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Approved</p>
+                            <h3 class="mb-0 text-info">{{ approved_returns }}</h3>
+                        </div>
+                        <div class="bg-info bg-opacity-10 rounded p-3">
+                            <i class="fas fa-check-circle fa-2x text-info"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Refunded -->
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Total Refunded</p>
+                            <h3 class="mb-0 text-success">रू {{ total_refund_amount|floatformat:2 }}</h3>
+                        </div>
+                        <div class="bg-success bg-opacity-10 rounded p-3">
+                            <i class="fas fa-money-bill-wave fa-2x text-success"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Breakdown Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-2">
+            <div class="card text-center border-0 shadow-sm">
+                <div class="card-body py-3">
+                    <h4 class="text-primary mb-1">{{ received_returns }}</h4>
+                    <small class="text-muted">Received</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-0 shadow-sm">
+                <div class="card-body py-3">
+                    <h4 class="text-secondary mb-1">{{ inspecting_returns }}</h4>
+                    <small class="text-muted">Inspecting</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-0 shadow-sm">
+                <div class="card-body py-3">
+                    <h4 class="text-success mb-1">{{ refunded_returns }}</h4>
+                    <small class="text-muted">Refunded</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-0 shadow-sm">
+                <div class="card-body py-3">
+                    <h4 class="text-danger mb-1">{{ rejected_returns }}</h4>
+                    <small class="text-muted">Rejected</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title mb-3"><i class="fas fa-chart-pie text-primary"></i> Top Return Reasons</h6>
+                    {% for reason in reason_stats %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small">{{ reason.return_reason|title|truncatewords:2 }}</span>
+                        <span class="badge bg-secondary">{{ reason.count }}</span>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted small mb-0">No data available</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small">Date Range</label>
+                    <select name="date_range" class="form-select" onchange="this.form.submit()">
+                        <option value="all" {% if date_filter == 'all' %}selected{% endif %}>All Time</option>
+                        <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today</option>
+                        <option value="yesterday" {% if date_filter == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                        <option value="last_7_days" {% if date_filter == 'last_7_days' %}selected{% endif %}>Last 7 Days</option>
+                        <option value="last_30_days" {% if date_filter == 'last_30_days' %}selected{% endif %}>Last 30 Days</option>
+                        <option value="this_month" {% if date_filter == 'this_month' %}selected{% endif %}>This Month</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small">Status</label>
+                    <select name="status" class="form-select" onchange="this.form.submit()">
+                        <option value="">All Statuses</option>
+                        <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                        <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+                        <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+                        <option value="received" {% if status_filter == 'received' %}selected{% endif %}>Received</option>
+                        <option value="inspecting" {% if status_filter == 'inspecting' %}selected{% endif %}>Inspecting</option>
+                        <option value="refunded" {% if status_filter == 'refunded' %}selected{% endif %}>Refunded</option>
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <a href="{% url 'returns_dashboard' %}" class="btn btn-outline-secondary w-100">
+                        <i class="fas fa-redo"></i> Reset Filters
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Recent Returns Table -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom">
+            <h5 class="mb-0"><i class="fas fa-list text-primary"></i> Recent Returns</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>RMA Number</th>
+                            <th>Order</th>
+                            <th>Customer</th>
+                            <th>Reason</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for return in returns %}
+                        <tr>
+                            <td>
+                                <strong class="text-primary">{{ return.rma_number }}</strong>
+                            </td>
+                            <td>
+                                <a href="{% url 'order_detail' return.order.id %}" class="text-decoration-none">
+                                    {{ return.order.order_number }}
+                                </a>
+                            </td>
+                            <td>
+                                <div><strong>{{ return.customer_name }}</strong></div>
+                                <small class="text-muted">{{ return.customer_phone }}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark">{{ return.get_return_reason_display }}</span>
+                            </td>
+                            <td><strong>रू {{ return.total_amount }}</strong></td>
+                            <td>
+                                <span class="badge bg-{{ return.get_status_display_class }}">
+                                    {{ return.get_return_status_display }}
+                                </span>
+                            </td>
+                            <td>
+                                <small>{{ return.created_at|date:"M d, Y" }}</small><br>
+                                <small class="text-muted">{{ return.created_at|time:"g:i A" }}</small>
+                            </td>
+                            <td>
+                                <a href="{% url 'return_detail' return.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5">
+                                <i class="fas fa-inbox fa-3x text-muted mb-3 d-block"></i>
+                                <p class="text-muted mb-0">No returns found</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if returns %}
+        <div class="card-footer bg-white border-top">
+            <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">Showing {{ returns|length }} recent returns</small>
+                <a href="{% url 'returns_list' %}" class="btn btn-sm btn-primary">
+                    View All Returns <i class="fas fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

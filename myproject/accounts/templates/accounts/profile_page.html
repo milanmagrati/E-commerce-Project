@@ -1,0 +1,858 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}My Profile{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">My Profile</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Profile Overview Card -->
+        <div class="col-lg-4 mb-4">
+            <div class="card shadow-sm border-0">
+                <div class="card-body text-center">
+                    <!-- Profile Picture -->
+                    <div class="mb-4 position-relative d-inline-block">
+                        {% if user.profile_picture %}
+                        <img src="{{ user.profile_picture.url }}" alt="Profile Picture" 
+                             class="rounded-circle img-thumbnail" 
+                             style="width: 150px; height: 150px; object-fit: cover;">
+                        {% else %}
+                        <div class="rounded-circle bg-gradient-primary text-white d-inline-flex align-items-center justify-content-center" 
+                             style="width: 150px; height: 150px; font-size: 60px; border: 4px solid #667eea;">
+                            {{ user.first_name|first|upper|default:user.username|first|upper }}
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Status Indicator -->
+                        {% if user.is_active %}
+                        <span class="position-absolute bottom-0 end-0 translate-middle p-2 bg-success border border-light rounded-circle" 
+                              style="right: 15px !important;" 
+                              title="Active">
+                            <span class="visually-hidden">Active</span>
+                        </span>
+                        {% endif %}
+                    </div>
+
+                    <!-- User Name -->
+                    <h4 class="mb-1">{{ user.get_full_name|default:user.username }}</h4>
+                    <p class="text-muted mb-1">@{{ user.username }}</p>
+                    <p class="mb-3">
+                        <span class="badge bg-{% if user.is_superuser %}danger{% elif user.role == 'administrator' %}primary{% elif user.role == 'sales' %}success{% elif user.role == 'warehouse' %}warning{% else %}secondary{% endif %} px-3 py-2">
+                            {% if user.is_superuser %}
+                                <i class="fas fa-crown"></i> Super Administrator
+                            {% else %}
+                                {% if user.role == 'administrator' %}
+                                    <i class="fas fa-user-shield"></i>
+                                {% elif user.role == 'sales' %}
+                                    <i class="fas fa-briefcase"></i>
+                                {% elif user.role == 'warehouse' %}
+                                    <i class="fas fa-warehouse"></i>
+                                {% endif %}
+                                {{ user.get_role_display }}
+                            {% endif %}
+                        </span>
+                    </p>
+
+                    <!-- Contact Info -->
+                    <div class="text-start mb-4 bg-light rounded p-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-envelope text-primary me-3" style="width: 20px;"></i>
+                            <small class="text-break">{{ user.email }}</small>
+                        </div>
+                        {% if user.phone %}
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-phone text-primary me-3" style="width: 20px;"></i>
+                            <small>{{ user.phone }}</small>
+                        </div>
+                        {% endif %}
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-calendar text-primary me-3" style="width: 20px;"></i>
+                            <small>Joined {{ user.date_joined|date:"M d, Y" }}</small>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editProfileModal">
+                            <i class="fas fa-edit"></i> Edit Profile
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                            <i class="fas fa-key"></i> Change Password
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Account Status Card -->
+            <div class="card shadow-sm border-0 mt-4">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="fas fa-shield-alt text-primary"></i> Account Status
+                    </h6>
+                    <div class="d-flex justify-content-between mb-3 pb-2 border-bottom">
+                        <span class="text-muted">Status:</span>
+                        <span class="badge bg-{% if user.is_active %}success{% else %}danger{% endif %}">
+                            {% if user.is_active %}
+                                <i class="fas fa-check-circle"></i> Active
+                            {% else %}
+                                <i class="fas fa-times-circle"></i> Inactive
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-3 pb-2 border-bottom">
+                        <span class="text-muted">Last Login:</span>
+                        <small>{{ user.last_login|date:"M d, Y H:i"|default:"Never" }}</small>
+                    </div>
+                    <div class="d-flex justify-content-between mb-3 pb-2 border-bottom">
+                        <span class="text-muted">Account Type:</span>
+                        <small>
+                            {% if user.is_superuser %}
+                                <span class="badge bg-danger">Super Admin</span>
+                            {% elif user.is_staff %}
+                                <span class="badge bg-primary">Staff</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Regular</span>
+                            {% endif %}
+                        </small>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">User ID:</span>
+                        <small class="badge bg-light text-dark">#{{ user.id }}</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Permission Summary Card -->
+            {% if permission_summary %}
+            <div class="card shadow-sm border-0 mt-4">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="fas fa-chart-pie text-primary"></i> Permission Summary
+                    </h6>
+                    <div class="text-center mb-3">
+                        <div class="progress" style="height: 25px;">
+                            {% with pct=permission_summary.percentage|default:0|floatformat:0 %}
+                            <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" 
+                                 data-pct="{{ pct }}" 
+                                 aria-valuenow="{{ pct }}" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100">
+                                {{ pct }}%
+                            </div>
+                            {% endwith %}
+                        </div>
+                        <small class="text-muted mt-2 d-block">
+                            {{ permission_summary.enabled_permissions }} of {{ permission_summary.total_permissions }} permissions enabled
+                        </small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Profile Details & Permissions -->
+        <div class="col-lg-8">
+            <!-- Personal Information Card -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-gradient-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-user-circle"></i> Personal Information
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="info-box p-3 border rounded">
+                                <label class="text-muted small mb-1"><i class="fas fa-user me-2"></i>Username</label>
+                                <p class="mb-0 fw-bold">{{ user.username }}</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="info-box p-3 border rounded">
+                                <label class="text-muted small mb-1"><i class="fas fa-envelope me-2"></i>Email Address</label>
+                                <p class="mb-0 fw-bold text-break">{{ user.email }}</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="info-box p-3 border rounded">
+                                <label class="text-muted small mb-1"><i class="fas fa-id-badge me-2"></i>First Name</label>
+                                <p class="mb-0 fw-bold">{{ user.first_name|default:"Not set" }}</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="info-box p-3 border rounded">
+                                <label class="text-muted small mb-1"><i class="fas fa-id-badge me-2"></i>Last Name</label>
+                                <p class="mb-0 fw-bold">{{ user.last_name|default:"Not set" }}</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="info-box p-3 border rounded">
+                                <label class="text-muted small mb-1"><i class="fas fa-phone me-2"></i>Phone Number</label>
+                                <p class="mb-0 fw-bold">{{ user.phone|default:"Not set" }}</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="info-box p-3 border rounded">
+                                <label class="text-muted small mb-1"><i class="fas fa-user-tag me-2"></i>Role</label>
+                                <p class="mb-0">
+                                    <span class="badge bg-primary">{{ user.get_role_display }}</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Permissions Card -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-gradient-success text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-lock"></i> Your Permissions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if user.is_superuser or user.role == 'administrator' %}
+                    <div class="alert alert-success border-0 shadow-sm">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-crown fa-3x text-warning me-3"></i>
+                            <div>
+                                <h5 class="alert-heading mb-1">Full Access Granted</h5>
+                                <p class="mb-0">You have administrator privileges with access to all features and modules.</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="row g-3">
+                        <!-- Products Permissions -->
+                        <div class="col-md-6 col-lg-4">
+                            <div class="permission-card border rounded p-3 h-100">
+                                <h6 class="mb-3 pb-2 border-bottom">
+                                    <i class="fas fa-box text-success"></i> Products
+                                </h6>
+                                <div class="small">
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_view_products %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>View Products</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_create_products %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Create Products</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_edit_products %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Edit Products</span>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_delete_products %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Delete Products</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Orders Permissions -->
+                        <div class="col-md-6 col-lg-4">
+                            <div class="permission-card border rounded p-3 h-100">
+                                <h6 class="mb-3 pb-2 border-bottom">
+                                    <i class="fas fa-shopping-cart text-primary"></i> Orders
+                                </h6>
+                                <div class="small">
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_view_orders %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>View Orders</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_create_orders %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Create Orders</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_edit_orders %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Edit Orders</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_delete_orders %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Delete Orders</span>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_cancel_orders %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Cancel Orders</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Customers Permissions -->
+                        <div class="col-md-6 col-lg-4">
+                            <div class="permission-card border rounded p-3 h-100">
+                                <h6 class="mb-3 pb-2 border-bottom">
+                                    <i class="fas fa-users text-info"></i> Customers
+                                </h6>
+                                <div class="small">
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_view_customers %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>View Customers</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_create_customers %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Create Customers</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_edit_customers %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Edit Customers</span>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_delete_customers %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Delete Customers</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🆕 Returns Permissions -->
+                        <div class="col-md-6 col-lg-4">
+                            <div class="permission-card border rounded p-3 h-100">
+                                <h6 class="mb-3 pb-2 border-bottom">
+                                    <i class="fas fa-undo-alt text-danger"></i> Returns
+                                </h6>
+                                <div class="small">
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_view_returns %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>View Returns</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_create_returns %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Create Returns</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_edit_returns %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Edit Returns</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_delete_returns %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Delete Returns</span>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_approve_returns %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Approve Returns</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dispatch Permissions -->
+                        <div class="col-md-6 col-lg-4">
+                            <div class="permission-card border rounded p-3 h-100">
+                                <h6 class="mb-3 pb-2 border-bottom">
+                                    <i class="fas fa-truck text-warning"></i> Dispatch
+                                </h6>
+                                <div class="small">
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_view_dispatch %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>View Dispatch</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_manage_dispatch %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Manage Dispatch</span>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_scan_barcodes %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Scan Barcodes</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Inventory & Reports -->
+                        <div class="col-md-6 col-lg-4">
+                            <div class="permission-card border rounded p-3 h-100">
+                                <h6 class="mb-3 pb-2 border-bottom">
+                                    <i class="fas fa-warehouse text-secondary"></i> Inventory & Reports
+                                </h6>
+                                <div class="small">
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_view_inventory %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>View Inventory</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_manage_inventory %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Manage Inventory</span>
+                                    </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_view_reports %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>View Reports</span>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_give_discounts %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Give Discounts {% if user.can_give_discounts %}({{ user.max_discount_percent }}%){% endif %}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Activity Statistics -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-info text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-bar"></i> Activity Overview
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center g-3">
+                        <div class="col-md-4">
+                            <div class="stat-card border rounded p-4 h-100">
+                                <div class="stat-icon bg-primary bg-opacity-10 rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center" 
+                                     style="width: 60px; height: 60px;">
+                                    <i class="fas fa-calendar-check fa-2x text-primary"></i>
+                                </div>
+                                <h3 class="mb-1">{{ days_active }}</h3>
+                                <small class="text-muted">Days Active</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="stat-card border rounded p-4 h-100">
+                                <div class="stat-icon bg-success bg-opacity-10 rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center" 
+                                     style="width: 60px; height: 60px;">
+                                    <i class="fas fa-sign-in-alt fa-2x text-success"></i>
+                                </div>
+                                <h3 class="mb-1">{{ login_count|default:0 }}</h3>
+                                <small class="text-muted">Total Logins</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="stat-card border rounded p-4 h-100">
+                                <div class="stat-icon bg-warning bg-opacity-10 rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center" 
+                                     style="width: 60px; height: 60px;">
+                                    <i class="fas fa-tasks fa-2x text-warning"></i>
+                                </div>
+                                <h3 class="mb-1">{{ tasks_completed|default:0 }}</h3>
+                                <small class="text-muted">Tasks Completed</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Profile Modal -->
+<div class="modal fade" id="editProfileModal" tabindex="-1" aria-labelledby="editProfileModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-gradient-primary text-white">
+                <h5 class="modal-title" id="editProfileModalLabel">
+                    <i class="fas fa-user-edit"></i> Edit Profile
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" enctype="multipart/form-data" action="{% url 'profile_update' %}" id="profileUpdateForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <!-- Profile Picture Preview -->
+                    <div class="text-center mb-4">
+                        <div class="position-relative d-inline-block">
+                            {% if user.profile_picture %}
+                            <img src="{{ user.profile_picture.url }}" 
+                                 alt="Profile" 
+                                 class="rounded-circle" 
+                                 style="width: 120px; height: 120px; object-fit: cover; border: 3px solid #667eea;"
+                                 id="profilePreview">
+                            {% else %}
+                            <div class="rounded-circle bg-gradient-primary text-white d-flex align-items-center justify-content-center mx-auto" 
+                                 style="width: 120px; height: 120px; font-size: 50px; border: 3px solid #667eea;"
+                                 id="profilePreview">
+                                {{ user.first_name|first|upper|default:user.username|first|upper }}
+                            </div>
+                            {% endif %}
+                            
+                            <label for="profilePictureInput" 
+                                   class="btn btn-primary btn-sm rounded-circle position-absolute" 
+                                   style="bottom: 0; right: 0; width: 35px; height: 35px; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;"
+                                   title="Change profile picture">
+                                <i class="fas fa-camera"></i>
+                            </label>
+                        </div>
+                        <input type="file" 
+                               id="profilePictureInput" 
+                               name="profile_picture" 
+                               accept="image/jpeg,image/png,image/jpg,image/webp" 
+                               style="display: none;">
+                        <small class="text-muted d-block mt-2">Max 2MB • JPG, PNG, WebP</small>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="first_name" class="form-label fw-bold">
+                                First Name <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="first_name" 
+                                   name="first_name" 
+                                   value="{{ user.first_name }}" 
+                                   required 
+                                   placeholder="Enter first name">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="last_name" class="form-label fw-bold">
+                                Last Name <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="last_name" 
+                                   name="last_name" 
+                                   value="{{ user.last_name }}" 
+                                   required 
+                                   placeholder="Enter last name">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="email" class="form-label fw-bold">
+                                Email Address <span class="text-danger">*</span>
+                            </label>
+                            <input type="email" 
+                                   class="form-control" 
+                                   id="email" 
+                                   name="email" 
+                                   value="{{ user.email }}" 
+                                   required 
+                                   placeholder="your@email.com">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="phone" class="form-label fw-bold">Phone Number</label>
+                            <input type="tel" 
+                                   class="form-control" 
+                                   id="phone" 
+                                   name="phone" 
+                                   value="{{ user.phone|default:'' }}" 
+                                   placeholder="98XXXXXXXX">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Change Password Modal -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-gradient-warning">
+                <h5 class="modal-title text-dark" id="changePasswordModalLabel">
+                    <i class="fas fa-key"></i> Change Password
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{% url 'change_password' %}" id="changePasswordForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-info border-0">
+                        <i class="fas fa-info-circle"></i> 
+                        <small><strong>Password must:</strong> be 8+ characters, include uppercase, lowercase, numbers, and special characters.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="old_password" class="form-label fw-bold">
+                            Current Password <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="old_password" 
+                                   name="old_password" 
+                                   required 
+                                   placeholder="Enter current password">
+                            <button class="btn btn-outline-secondary" 
+                                    type="button" 
+                                    onclick="togglePasswordVisibility('old_password')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_password1" class="form-label fw-bold">
+                            New Password <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="new_password1" 
+                                   name="new_password1" 
+                                   required 
+                                   placeholder="Enter new password">
+                            <button class="btn btn-outline-secondary" 
+                                    type="button" 
+                                    onclick="togglePasswordVisibility('new_password1')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <div class="password-strength-bar mt-2" style="display: none;">
+                            <div class="strength-bar" id="strengthBar"></div>
+                        </div>
+                        <small id="strengthText" class="d-block mt-1"></small>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_password2" class="form-label fw-bold">
+                            Confirm New Password <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="new_password2" 
+                                   name="new_password2" 
+                                   required 
+                                   placeholder="Confirm new password">
+                            <button class="btn btn-outline-secondary" 
+                                    type="button" 
+                                    onclick="togglePasswordVisibility('new_password2')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <small id="matchText" class="d-block mt-1"></small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-warning text-dark">
+                        <i class="fas fa-check"></i> Change Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.bg-gradient-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+
+.bg-gradient-info {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.bg-gradient-warning {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.card {
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
+}
+
+.img-thumbnail {
+    border: 4px solid #667eea;
+}
+
+.permission-card {
+    transition: all 0.3s ease;
+    background: #ffffff;
+}
+
+.permission-card:hover {
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    transform: translateY(-3px);
+}
+
+.stat-card {
+    transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    transform: translateY(-3px);
+}
+
+.info-box {
+    transition: all 0.2s ease;
+}
+
+.info-box:hover {
+    background-color: #f8f9fa;
+}
+
+/* Password Strength Bar */
+.password-strength-bar {
+    height: 5px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.strength-bar {
+    height: 100%;
+    width: 0%;
+    transition: all 0.3s ease;
+}
+
+.strength-weak {
+    background: #dc3545;
+    width: 25%;
+}
+
+.strength-medium {
+    background: #ffc107;
+    width: 60%;
+}
+
+.strength-strong {
+    background: #28a745;
+    width: 100%;
+}
+</style>
+
+<script>
+// Profile picture preview
+document.getElementById('profilePictureInput')?.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        if (file.size > 2 * 1024 * 1024) {
+            alert('❌ File size must be less than 2MB');
+            this.value = '';
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const preview = document.getElementById('profilePreview');
+            if (preview.tagName === 'IMG') {
+                preview.src = event.target.result;
+            } else {
+                const img = document.createElement('img');
+                img.src = event.target.result;
+                img.className = 'rounded-circle';
+                img.style.cssText = 'width: 120px; height: 120px; object-fit: cover; border: 3px solid #667eea;';
+                preview.parentNode.replaceChild(img, preview);
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+// Toggle password visibility
+function togglePasswordVisibility(fieldId) {
+    const field = document.getElementById(fieldId);
+    const icon = event.currentTarget.querySelector('i');
+    
+    if (field.type === 'password') {
+        field.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+    } else {
+        field.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    }
+}
+
+// Password strength checker
+document.getElementById('new_password1')?.addEventListener('input', function() {
+    const password = this.value;
+    const strengthBar = document.getElementById('strengthBar');
+    const strengthText = document.getElementById('strengthText');
+    const container = document.querySelector('.password-strength-bar');
+    
+    if (password.length === 0) {
+        container.style.display = 'none';
+        strengthText.textContent = '';
+        return;
+    }
+    
+    container.style.display = 'block';
+    
+    let strength = 0;
+    if (password.length >= 8) strength++;
+    if (/[A-Z]/.test(password)) strength++;
+    if (/[a-z]/.test(password)) strength++;
+    if (/[0-9]/.test(password)) strength++;
+    if (/[!@#$%^&*(),.?":{}|<>]/.test(password)) strength++;
+    
+    strengthBar.className = 'strength-bar';
+    if (strength <= 2) {
+        strengthBar.classList.add('strength-weak');
+        strengthText.textContent = 'Weak password';
+        strengthText.style.color = '#dc3545';
+    } else if (strength <= 4) {
+        strengthBar.classList.add('strength-medium');
+        strengthText.textContent = 'Medium strength';
+        strengthText.style.color = '#ffc107';
+    } else {
+        strengthBar.classList.add('strength-strong');
+        strengthText.textContent = 'Strong password ✓';
+        strengthText.style.color = '#28a745';
+    }
+});
+
+// Check password match
+document.getElementById('new_password2')?.addEventListener('input', function() {
+    const password1 = document.getElementById('new_password1').value;
+    const password2 = this.value;
+    const matchText = document.getElementById('matchText');
+    
+    if (password2.length === 0) {
+        matchText.textContent = '';
+        return;
+    }
+    
+    if (password1 === password2) {
+        matchText.textContent = '✓ Passwords match';
+        matchText.style.color = '#28a745';
+    } else {
+        matchText.textContent = '✗ Passwords do not match';
+        matchText.style.color = '#dc3545';
+    }
+});
+
+// Form validation
+document.getElementById('changePasswordForm')?.addEventListener('submit', function(e) {
+    const password1 = document.getElementById('new_password1').value;
+    const password2 = document.getElementById('new_password2').value;
+    
+    if (password1 !== password2) {
+        e.preventDefault();
+        alert('❌ New passwords do not match!');
+        return false;
+    }
+    
+    if (password1.length < 8) {
+        e.preventDefault();
+        alert('❌ Password must be at least 8 characters long!');
+        return false;
+    }
+});
+
+// Set progress bar width from data attribute to avoid template variables in inline CSS
+document.querySelectorAll('.progress-bar[data-pct]').forEach(function(el) {
+    var pct = parseFloat(el.dataset.pct);
+    if (isNaN(pct)) pct = 0;
+    el.style.width = pct + '%';
+});
+</script>
+{% endblock %}

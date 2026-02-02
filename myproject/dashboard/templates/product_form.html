@@ -1,0 +1,1089 @@
+{% extends 'base.html' %}
+{% block title %}{{ action }} Product - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="fas fa-cube"></i> {{ action }} Product</h2>
+            <p class="text-muted mb-0">Fill in the product details below</p>
+        </div>
+        <a href="{% url 'products' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Products
+        </a>
+    </div>
+
+    <!-- Auto-save Indicator -->
+    <div id="autoSaveIndicator" class="alert alert-success alert-dismissible fade show mb-3" style="display: none;">
+        <i class="fas fa-check-circle"></i> <strong>Draft Restored!</strong> Your unsaved work has been recovered.
+        <button type="button" class="btn btn-sm btn-warning ms-2" onclick="clearDraft()">
+            <i class="fas fa-trash"></i> Clear & Start Fresh
+        </button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <!-- Alert Messages -->
+    {% if messages %}
+    <div class="alert-container mb-4">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert" data-message-tag="{{ message.tags }}">
+            <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}exclamation-circle{% else %}info-circle{% endif %}"></i>
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Form Errors -->
+    {% if form.errors or formset.errors %}
+    <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+        <h5 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> Please correct the following errors:</h5>
+        <ul class="mb-0">
+            {% for field in form %}
+                {% for error in field.errors %}
+                <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                {% endfor %}
+            {% endfor %}
+            {% for form in formset %}
+                {% for field in form %}
+                    {% for error in field.errors %}
+                    <li><strong>Variation {{ forloop.parentloop.counter }} - {{ field.label }}:</strong> {{ error }}</li>
+                    {% endfor %}
+                {% endfor %}
+            {% endfor %}
+        </ul>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" id="productForm">
+        {% csrf_token %}
+        
+        <!-- Basic Information -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-info-circle"></i> Basic Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Product Name <span class="text-danger">*</span></label>
+                        {{ form.name }}
+                        {% if form.name.errors %}
+                        <div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label fw-bold">Product Type <span class="text-danger">*</span></label>
+                        {{ form.product_type }}
+                    </div>
+                    <div class="col-md-3 mb-3" id="simpleSkuField">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-barcode text-warning"></i> SKU
+                        </label>
+                        <input type="text" name="product_sku" class="form-control" placeholder="PRD-001" id="productSkuInput" value="{{ product.barcode|default:'' }}">
+                        <small class="text-muted">Product unique code</small>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">URL Slug <span class="text-danger">*</span></label>
+                    {{ form.slug }}
+                    <small class="text-muted">Auto-generated from product name</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Description <span class="text-danger">*</span></label>
+                    {{ form.description }}
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Category <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            {{ form.category }}
+                            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Stock Status <span class="text-danger">*</span></label>
+                        {{ form.stock_status }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pricing & Inventory -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-dollar-sign"></i> Pricing & Inventory</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Selling Price (रू) <span class="text-danger">*</span></label>
+                        {{ form.price }}
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Cost Price (रू) <span class="text-danger">*</span></label>
+                        {{ form.cost_price }}
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Stock Quantity <span class="text-danger">*</span></label>
+                        {{ form.stock }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Product Images -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="fas fa-images"></i> Product Images</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- Main Product Image -->
+                    <div class="col-md-6 mb-4">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-image text-primary"></i> Main Product Image
+                        </label>
+                        {{ form.image }}
+                        {% if product.image %}
+                        <div class="mt-3">
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-thumbnail" style="max-width: 200px; border-radius: 8px;">
+                        </div>
+                        {% endif %}
+
+                        {% if temp_image_url %}
+                        <div class="mt-3">
+                            <div class="small text-muted">Uploaded image (temporary)</div>
+                            <img src="{{ temp_image_url }}" alt="Temporary upload" class="img-thumbnail" style="max-width: 200px; border-radius: 8px;">
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Gallery Images -->
+                    <div class="col-md-6 mb-4">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-images text-info"></i> Product Gallery <span class="badge bg-info">Multiple Images</span>
+                        </label>
+                        <div class="upload-area" id="uploadArea">
+                            <div class="text-center p-4">
+                                <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
+                                <h6>Upload Multiple Images</h6>
+                                <p class="text-muted small mb-3">Drag and drop or click to browse</p>
+                                <input type="file" class="form-control d-none" id="galleryImages" name="gallery_images" multiple accept="image/*">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('galleryImages').click()">
+                                    <i class="fas fa-folder-open"></i> Choose Images
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Image Preview -->
+                <div id="imagePreviewContainer" class="row g-3"></div>
+            </div>
+        </div>
+
+        <!-- Product Variations (Variable Products Only) -->
+        <div class="card shadow-sm mb-4" id="variationsCard" style="display: none;">
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-layer-group"></i> Product Variations</h5>
+                <button type="button" class="btn btn-sm btn-light" id="addVariationBtn">
+                    <i class="fas fa-plus"></i> Add Variation
+                </button>
+            </div>
+            <div class="card-body">
+                {{ formset.management_form }}
+                <div id="variationFormsContainer">
+                    {% for form in formset %}
+                    <div class="variation-form-item card mb-3 {% if form.instance.pk %}existing-variation{% endif %}" data-form-index="{{ forloop.counter0 }}">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0 text-primary">
+                                <i class="fas fa-cube"></i> Variation #<span class="variation-number">{{ forloop.counter }}</span>
+                            </h6>
+                            {% if not form.instance.pk or forloop.counter > 1 %}
+                            <button type="button" class="btn btn-sm btn-danger remove-variation">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                        <div class="card-body">
+                            {{ form.id }}
+                            {% if form.DELETE %}
+                            <div style="display:none;">{{ form.DELETE }}</div>
+                            {% endif %}
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">
+                                        <i class="fas fa-tag text-info"></i> Variation Name <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text" 
+                                           name="variations-{{ forloop.counter0 }}-variation_name" 
+                                           class="form-control variation-name-input" 
+                                           placeholder="e.g., Red, Medium"
+                                           value="{{ form.instance.variation_name|default:'' }}">
+                                    <small class="text-muted">Human-readable name</small>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">
+                                        <i class="fas fa-barcode text-warning"></i> SKU <span class="text-danger">*</span>
+                                    </label>
+                                    {{ form.sku }}
+                                    <small class="text-muted">Unique inventory code</small>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">Price (रू)</label>
+                                    {{ form.price }}
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">Stock</label>
+                                    {{ form.stock }}
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">Status</label>
+                                    {{ form.status }}
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">Image</label>
+                                    {{ form.image }}
+                                </div>
+                            </div>
+
+                            <div class="form-check">
+                                {{ form.is_active }}
+                                <label class="form-check-label">
+                                    <i class="fas fa-check-circle text-success"></i> Active
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="form-check">
+                        {{ form.is_active }}
+                        <label class="form-check-label fw-bold">
+                            Product is Active (Visible to customers)
+                        </label>
+                    </div>
+                    <div>
+                        <a href="{% url 'products' %}" class="btn btn-secondary me-2">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn btn-success btn-lg" id="submitBtn">
+                            <i class="fas fa-save"></i> Save Product
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Add Category Modal -->
+<div class="modal fade" id="addCategoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-folder-plus"></i> Add New Category</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Category Name</label>
+                    <input type="text" class="form-control" id="newCategoryName" placeholder="Enter category name">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Slug</label>
+                    <input type="text" class="form-control" id="newCategorySlug" placeholder="category-slug">
+                    <small class="text-muted">Auto-generated from name</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveCategoryBtn">
+                    <i class="fas fa-save"></i> Save Category
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        border: none;
+        border-radius: 10px;
+    }
+
+    .card-header {
+        border-radius: 10px 10px 0 0 !important;
+        font-weight: 600;
+    }
+
+    .variation-form-item {
+        border: 2px solid #e9ecef;
+        transition: all 0.3s ease;
+    }
+
+    .variation-form-item:hover {
+        border-color: #0d6efd;
+        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.15);
+    }
+
+    .variation-name-input {
+        border: 2px solid #17a2b8;
+        font-weight: 500;
+    }
+
+    .variation-name-input:focus {
+        border-color: #138496;
+        box-shadow: 0 0 0 0.2rem rgba(23, 162, 184, 0.25);
+    }
+
+    .alert {
+        border-radius: 8px;
+    }
+
+    .btn {
+        border-radius: 6px;
+    }
+
+    /* Gallery Upload Area */
+    .upload-area {
+        background: #f8f9fa;
+        border: 3px dashed #dee2e6;
+        border-radius: 12px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    .upload-area:hover {
+        background: #e9ecef;
+        border-color: #0d6efd;
+    }
+
+    .upload-area.dragover {
+        background: #d0e7ff;
+        border-color: #0d6efd;
+        transform: scale(1.02);
+    }
+
+    /* Image Preview Cards */
+    .preview-image-card {
+        position: relative;
+        border: 2px solid #dee2e6;
+        border-radius: 10px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+
+    .preview-image-card:hover {
+        border-color: #0d6efd;
+        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.2);
+    }
+
+    .preview-image-card img {
+        width: 100%;
+        height: 150px;
+        object-fit: cover;
+    }
+
+    .preview-image-card .remove-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: rgba(220, 53, 69, 0.95);
+        border: none;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        transition: all 0.3s ease;
+        padding: 0;
+        font-size: 14px;
+    }
+
+    .preview-image-card .remove-btn:hover {
+        background: rgba(220, 53, 69, 1);
+        transform: scale(1.1);
+    }
+
+    .preview-image-card .image-name {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 5px 10px;
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>
+
+<script>
+(function() {
+    'use strict';
+
+    // ========== BULLETPROOF AUTO-SAVE ==========
+    const DRAFT_KEY = 'product_form_{{ product.id|default:"new" }}';
+    const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+    // Build a path-specific key so create/edit forms on different pages don't collide
+    function getDraftKey() {
+        try {
+            return DRAFT_KEY + '_' + (window.location.pathname || 'page');
+        } catch (e) {
+            return DRAFT_KEY;
+        }
+    }
+
+    console.log('🔑 Draft Key:', getDraftKey());
+
+    // Check for a server-rendered success flash message (do NOT treat our local indicator as a server success)
+    const hasSuccess = document.querySelector('[data-message-tag="success"]') !== null;
+
+    if (hasSuccess) {
+        // SUCCESS! Clear draft (server confirmed save)
+        localStorage.removeItem(getDraftKey());
+        console.log('✅ Server success detected - draft cleared');
+    } else {
+        // Not a server success page - but if a submission happened and the user was navigated away,
+        // clear the draft for the submitted form so the next creation is fresh.
+        try {
+            const submittedRaw = sessionStorage.getItem('product_form_submitted');
+            const navigated = sessionStorage.getItem('product_form_submitted_navigated');
+            if (submittedRaw && navigated) {
+                const submitted = JSON.parse(submittedRaw);
+                try {
+                    const rawDraft = localStorage.getItem(submitted.draftKey);
+                    const draft = rawDraft ? JSON.parse(rawDraft) : null;
+                    const draftTs = draft && draft.timestamp ? draft.timestamp : 0;
+
+                    // If user navigated away after submit and the saved draft is older or equal to
+                    // the submission timestamp, assume server accepted and clear the draft.
+                    if (!rawDraft || draftTs <= submitted.ts) {
+                        console.log('🧹 Clearing draft after confirmed post-submit navigation for', submitted.draftKey);
+                        localStorage.removeItem(submitted.draftKey);
+                        sessionStorage.removeItem('product_form_submitted');
+                        sessionStorage.removeItem('product_form_submitted_navigated');
+                    } else {
+                        // Draft was updated after submit - keep it and just clear the navigated flag
+                        sessionStorage.removeItem('product_form_submitted_navigated');
+                    }
+                } catch (err) {
+                    console.warn('Error while evaluating draft vs submission flag', err);
+                }
+            }
+        } catch (e) { console.warn('Failed to process submission flag', e); }
+
+        // Try to restore draft (also re-run on load to be safe)
+        tryRestoreDraft();
+        window.addEventListener('load', function() { tryRestoreDraft(); setTimeout(tryRestoreDraft, 200); });
+    }
+
+    function _shouldSkipRestore() {
+        try {
+            // Skip restore if user just cleared drafts in this tab
+            if (sessionStorage.getItem('product_form_just_cleared')) {
+                sessionStorage.removeItem('product_form_just_cleared');
+                console.log('🚫 Skipping restore (user requested clear)');
+                return true;
+            }
+
+            // Skip restore if the URL explicitly contains cleared=1
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('cleared') === '1') {
+                console.log('🚫 Skipping restore (cleared=1 in URL)');
+                // Remove the cleared param so subsequent refreshes act normally
+                try {
+                    params.delete('cleared');
+                    const newUrl = window.location.origin + window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                    window.history.replaceState({}, document.title, newUrl);
+                    console.log('🔁 Removed cleared=1 from URL');
+                } catch (e) {
+                    console.warn('Failed to remove cleared param from URL', e);
+                }
+                return true;
+            }
+        } catch (e) {
+            console.warn('Restore skip check failed:', e);
+        }
+        return false;
+    }
+
+    function tryRestoreDraft() {
+        try {
+            if (_shouldSkipRestore()) return;
+
+            const raw = localStorage.getItem(getDraftKey());
+            if (!raw) {
+                console.log('ℹ️ No draft found for', getDraftKey());
+                return;
+            }
+
+            const draft = JSON.parse(raw);
+            const age = Date.now() - draft.timestamp;
+
+            if (age > EXPIRY_MS) {
+                console.log('⏰ Draft expired, removing');
+                localStorage.removeItem(getDraftKey());
+                return;
+            }
+
+            console.log('📦 Restoring draft from', new Date(draft.timestamp).toLocaleString(), 'key=', getDraftKey());
+
+            // If draft contains variations beyond what's on the page, add them first
+            const variationIndexes = Object.keys(draft.values)
+                .map(k => {
+                    const m = k.match(/^variations-(\d+)-/);
+                    return m ? parseInt(m[1], 10) : null;
+                })
+                .filter(v => v !== null);
+
+            const maxIndex = variationIndexes.length ? Math.max(...variationIndexes) : -1;
+            const totalFormsEl = document.querySelector('[name$="-TOTAL_FORMS"]');
+            const currentTotal = totalFormsEl ? parseInt(totalFormsEl.value, 10) : document.querySelectorAll('.variation-form-item').length;
+
+            if (maxIndex >= 0) {
+                const required = maxIndex + 1;
+                const toAdd = required - currentTotal;
+                if (toAdd > 0) {
+                    if (!addVariationBtn) {
+                        // addVariationBtn not yet defined; retry shortly so the button and handlers exist
+                        console.log('⏳ addVariationBtn not ready, retrying restore shortly...');
+                        window._pendingDraft = draft;
+                        window._pendingDraftRetries = (window._pendingDraftRetries || 0) + 1;
+                        if (window._pendingDraftRetries <= 10) {
+                            setTimeout(tryRestoreDraft, 150);
+                        } else {
+                            console.warn('⚠️ Could not add missing variation forms after multiple attempts');
+                        }
+                        return;
+                    }
+
+                    console.log('➕ Adding', toAdd, 'missing variation form(s) to match draft');
+                    for (let i = 0; i < toAdd; i++) addVariationBtn.click();
+                }
+            }
+
+            // Now restore values
+            let restoredCount = 0;
+            let restoredNonEmptyCount = 0;
+            Object.entries(draft.values).forEach(([name, value]) => {
+                const field = document.querySelector(`[name="${name}"]`);
+                if (field) {
+                    if (field.type === 'checkbox') {
+                        field.checked = !!value;
+                        if (value) restoredNonEmptyCount++;
+                    } else {
+                        field.value = value;
+                        if (value !== null && value !== undefined && value !== '') restoredNonEmptyCount++;
+                    }
+                    restoredCount++;
+                }
+            });
+
+            console.log('🔎 Draft has', Object.keys(draft.values || {}).length, 'keys; restored:', restoredCount, 'non-empty:', restoredNonEmptyCount);
+
+            if (restoredNonEmptyCount > 0) {
+                console.log('✅ Restored', restoredCount, 'fields (non-empty:', restoredNonEmptyCount, ')');
+                const indicator = document.getElementById('autoSaveIndicator');
+                if (indicator) {
+                    indicator.style.display = 'block';
+                    let last = '';
+                    try { last = new Date(draft.meta && draft.meta.lastSaved ? draft.meta.lastSaved : draft.timestamp).toLocaleTimeString(); } catch(e) { last = new Date(draft.timestamp).toLocaleTimeString(); }
+                    let lastSpan = indicator.querySelector('.last-saved');
+                    if (!lastSpan) {
+                        lastSpan = document.createElement('div');
+                        lastSpan.className = 'last-saved small text-muted mt-2';
+                        indicator.appendChild(lastSpan);
+                    }
+                    lastSpan.textContent = 'Last saved: ' + last;
+                }
+                if (typeof toggleVariations === 'function') {
+                    setTimeout(toggleVariations, 50);
+                } else {
+                    console.warn('toggleVariations not ready, skipping call');
+                }
+            } else {
+                console.log('⚠️ Draft contained no non-empty values; not showing restored indicator');
+            }
+        } catch (err) {
+            console.error('❌ Restore failed:', err);
+            localStorage.removeItem(getDraftKey());
+        }
+    }
+
+    function saveDraft() {
+        const values = {};
+        let hasData = false;
+
+        document.querySelectorAll('#productForm input, #productForm select, #productForm textarea').forEach(el => {
+            if (!el.name || el.type === 'file' || el.name === 'csrfmiddlewaretoken') return;
+
+            if (el.type === 'checkbox') {
+                values[el.name] = el.checked;
+                if (el.checked) hasData = true;
+            } else {
+                values[el.name] = el.value;
+                if (el.value !== null && el.value !== undefined && el.value !== '') hasData = true;
+            }
+        });
+
+        // Save variation count so we can recreate forms on restore
+        const totalFormsEl = document.querySelector('[name$="-TOTAL_FORMS"]');
+        const variationCount = totalFormsEl ? parseInt(totalFormsEl.value, 10) : document.querySelectorAll('.variation-form-item').length;
+
+        if (hasData) {
+            const draft = {
+                timestamp: Date.now(),
+                values: values,
+                meta: { variation_count: isNaN(variationCount) ? 0 : variationCount, lastSaved: Date.now() }
+            };
+
+            localStorage.setItem(getDraftKey(), JSON.stringify(draft));
+            console.log('💾 Draft saved at', new Date(draft.timestamp).toLocaleTimeString());
+
+            const indicator = document.getElementById('autoSaveIndicator');
+            if (indicator) {
+                indicator.style.display = 'block';
+                const lastSpan = indicator.querySelector('.last-saved');
+                if (lastSpan) lastSpan.textContent = 'Last saved: ' + new Date(draft.timestamp).toLocaleTimeString();
+            }
+        }
+    }
+
+    window.clearDraft = function() {
+        if (!confirm('Clear the saved draft?')) return;
+
+        try {
+            // Remove any product draft keys (robust across naming variations)
+            const removed = [];
+            Object.keys(localStorage).forEach(k => {
+                if (k && k.indexOf('product_form_') === 0) {
+                    localStorage.removeItem(k);
+                    removed.push(k);
+                }
+            });
+
+            // Also remove known session submission flags
+            sessionStorage.removeItem('product_form_submitted');
+            sessionStorage.removeItem('product_form_submitted_navigated');
+
+            // Mark that we just cleared so the restore logic skips re-applying drafts
+            sessionStorage.setItem('product_form_just_cleared', '1');
+
+            // Clear the current form in-place so the UI immediately reflects the action
+            const f = document.getElementById('productForm');
+            if (f) {
+                try { f.reset(); } catch(_) {}
+                // Remove any dynamic variation forms except the first (if present)
+                const variations = document.querySelectorAll('.variation-form-item');
+                variations.forEach((v, i) => { if (i > 0) v.remove(); else {
+                    // clear inputs inside first
+                    v.querySelectorAll('input, select, textarea').forEach(el => {
+                        if (el.type === 'checkbox' || el.type === 'radio') el.checked = false; else el.value = '';
+                    });
+                }});
+
+                // Reset management form total if present
+                const totalForms = document.querySelector('[name$="-TOTAL_FORMS"]');
+                if (totalForms) totalForms.value = 1;
+            }
+
+            if (removed.length) console.log('🗑️ Removed drafts:', removed.join(', '));
+            else console.log('🗑️ No product drafts found to remove');
+        } catch (e) {
+            console.warn('Failed to clear drafts:', e);
+        }
+
+        // Redirect to same path with a cleared marker to avoid browser re-populating fields
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('cleared', '1');
+            window.location.replace(url.toString());
+        } catch (err) {
+            // Fallback
+            location.reload();
+        }
+    };
+
+    // Auto-save with debounce
+    let timer;
+    const productFormEl = document.getElementById('productForm');
+    if (productFormEl) {
+        productFormEl.addEventListener('input', e => {
+            if (e.target.type === 'file') return;
+            clearTimeout(timer);
+            timer = setTimeout(saveDraft, 2000);
+        });
+
+        productFormEl.addEventListener('change', e => {
+            if (e.target.type !== 'file') saveDraft();
+        });
+
+        // Save on blur of any input to capture quick edits before a refresh
+        productFormEl.addEventListener('blur', e => {
+            if (e.target && e.target.name && e.target.type !== 'file') {
+                try { saveDraft(); } catch (err) { console.warn('Draft save failed on blur', err); }
+            }
+        }, true);
+    }
+
+    // When page is restored from bfcache (back/forward cache) or shown, try to restore draft again
+    window.addEventListener('pageshow', function(e) { if (e.persisted) { tryRestoreDraft(); } });
+
+    // On submit, just disable button - DON'T clear draft yet
+    document.getElementById('productForm').addEventListener('submit', () => {
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        console.log('📤 Form submitting...');
+
+        // Mark that a submission was attempted from this page. We'll set a 'navigated' flag
+        // on unload so we can detect a redirect/navigation away vs a failed validation (no nav).
+        try {
+            sessionStorage.setItem('product_form_submitted', JSON.stringify({ draftKey: getDraftKey(), from: window.location.pathname, ts: Date.now() }));
+            // mark local flag so our beforeunload knows to set the navigated marker
+            window._productFormSubmitting = true;
+            console.log('🔖 Submission flag stored for', getDraftKey());
+        } catch (e) { console.warn('Failed to set submission flag', e); }
+    });
+
+    // Save on page unload/visibility change so quick navigations keep the latest changes
+    window.addEventListener('beforeunload', function() { try { saveDraft(); } catch (e) { console.warn('Draft save failed on unload', e); } });
+    document.addEventListener('visibilitychange', function() { if (document.hidden) { try { saveDraft(); } catch (e) { console.warn('Draft save failed on visibilitychange', e); } } });
+
+    // If a form submission triggered a navigation away from this page, set a session flag so
+    // subsequent visits to the Add Product page can clear the draft (only when appropriate).
+    window.addEventListener('beforeunload', function() {
+        try {
+            if (window._productFormSubmitting) {
+                sessionStorage.setItem('product_form_submitted_navigated', '1');
+                console.log('🔔 Submission navigated flag set');
+            }
+        } catch (e) { console.warn('Failed to set submission navigated flag', e); }
+    });
+    // Watch for dynamic changes to the variations container (add/removes from other scripts)
+    const variationContainer = document.getElementById('variationFormsContainer');
+    if (variationContainer && window.MutationObserver) {
+        const obs = new MutationObserver(function(mutations) {
+            let shouldSave = false;
+            for (const m of mutations) {
+                if (m.type === 'childList' && (m.addedNodes.length || m.removedNodes.length)) shouldSave = true;
+                if (m.type === 'attributes') shouldSave = true;
+            }
+            if (shouldSave) {
+                try { saveDraft(); } catch (e) { console.warn('Draft save failed on DOM mutation', e); }
+            }
+        });
+        obs.observe(variationContainer, { childList: true, subtree: true, attributes: true });
+    }
+
+    // ========== REST OF FUNCTIONALITY ==========
+
+    const nameField = document.querySelector('[name="name"]');
+    const slugField = document.querySelector('[name="slug"]');
+    const productSkuInput = document.getElementById('productSkuInput');
+    
+    if (nameField && slugField) {
+        nameField.addEventListener('input', function() {
+            slugField.value = this.value.toLowerCase().trim()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .replace(/\s+/g, '-');
+
+            if (productSkuInput && !productSkuInput.value) {
+                const ts = Date.now().toString().slice(-6);
+                const clean = this.value.toUpperCase()
+                    .replace(/[^A-Z0-9\s]/g, '')
+                    .replace(/\s+/g, '-')
+                    .substring(0, 10);
+                productSkuInput.value = 'PRD-' + clean + '-' + ts;
+            }
+        });
+    }
+
+    const productTypeSelect = document.querySelector('[name="product_type"]');
+    const variationsCard = document.getElementById('variationsCard');
+    const simpleSkuField = document.getElementById('simpleSkuField');
+
+    function toggleVariations() {
+        if (productTypeSelect && variationsCard && simpleSkuField) {
+            if (productTypeSelect.value === 'variable') {
+                variationsCard.style.display = 'block';
+                simpleSkuField.style.display = 'none';
+            } else {
+                variationsCard.style.display = 'none';
+                simpleSkuField.style.display = 'block';
+            }
+        }
+    }
+
+    if (productTypeSelect) {
+        productTypeSelect.addEventListener('change', toggleVariations);
+        // Call toggleVariations on a short delay to avoid initialization race conditions
+        setTimeout(() => { try { toggleVariations(); } catch (e) { console.warn('toggleVariations init failed', e); } }, 50);
+    }
+
+    const uploadArea = document.getElementById('uploadArea');
+    const galleryInput = document.getElementById('galleryImages');
+    const previewContainer = document.getElementById('imagePreviewContainer');
+
+    if (uploadArea && galleryInput && previewContainer) {
+        uploadArea.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.remove('dragover');
+            handleGalleryFiles(e.dataTransfer.files);
+            galleryInput.files = e.dataTransfer.files;
+        });
+
+        uploadArea.addEventListener('click', e => {
+            if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') {
+                galleryInput.click();
+            }
+        });
+
+        galleryInput.addEventListener('change', () => handleGalleryFiles(galleryInput.files));
+    }
+
+    function handleGalleryFiles(files) {
+        previewContainer.innerHTML = '';
+        if (!files.length) return;
+
+        Array.from(files).forEach((file, i) => {
+            if (!file.type.startsWith('image/')) return;
+            if (file.size > 5242880) {
+                alert(`${file.name} too large (max 5MB)`);
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                const col = document.createElement('div');
+                col.className = 'col-md-3';
+                col.innerHTML = `
+                    <div class="preview-image-card">
+                        <img src="${e.target.result}" alt="Gallery ${i+1}">
+                        <button type="button" class="remove-btn" onclick="this.closest('.col-md-3').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                        <div class="image-name">${file.name}</div>
+                    </div>
+                `;
+                previewContainer.appendChild(col);
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    let variationCounter = document.querySelectorAll('.variation-form-item').length;
+    const addVariationBtn = document.getElementById('addVariationBtn');
+
+    // If restore had to wait for the variations button, complete it now
+    if (window._pendingDraft) {
+        console.log('🔁 Completing pending draft restore');
+        tryRestoreDraft();
+    }
+    
+    if (addVariationBtn) {
+        addVariationBtn.addEventListener('click', () => {
+            const container = document.getElementById('variationFormsContainer');
+            const totalForms = document.querySelector('[name$="-TOTAL_FORMS"]');
+            if (!container || !totalForms) return;
+
+            const count = parseInt(totalForms.value);
+            variationCounter++;
+            const ts = Date.now().toString().slice(-6);
+
+            const html = `
+                <div class="variation-form-item card mb-3">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0 text-primary">
+                            <i class="fas fa-cube"></i> Variation #<span class="variation-number">${variationCounter}</span>
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-danger remove-variation">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-tag text-info"></i> Variation Name *
+                                </label>
+                                <input type="text" name="variations-${count}-variation_name" class="form-control variation-name-input" placeholder="e.g., Red, Medium" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-barcode text-warning"></i> SKU *
+                                </label>
+                                <input type="text" name="variations-${count}-sku" class="form-control" placeholder="VAR-${ts}" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Price (रू)</label>
+                                <input type="number" name="variations-${count}-price" class="form-control" step="0.01" value="0">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Stock</label>
+                                <input type="number" name="variations-${count}-stock" class="form-control" value="0">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Status</label>
+                                <select name="variations-${count}-status" class="form-select">
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Image</label>
+                                <input type="file" name="variations-${count}-image" class="form-control" accept="image/*">
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" name="variations-${count}-is_active" class="form-check-input" checked>
+                            <label class="form-check-label">
+                                <i class="fas fa-check-circle text-success"></i> Active
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.insertAdjacentHTML('beforeend', html);
+            totalForms.value = count + 1;
+            // immediately persist draft so the new variation is captured
+            try { saveDraft(); } catch (e) { console.warn('Draft save failed after adding variation', e); }
+        });
+    }
+
+    document.addEventListener('click', e => {
+        if (e.target.closest('.remove-variation')) {
+            const row = e.target.closest('.variation-form-item');
+            if (row && confirm('Remove this variation?')) {
+                const del = row.querySelector('[name$="-DELETE"]');
+                if (del) {
+                    del.checked = true;
+                    row.style.display = 'none';
+                } else {
+                    row.remove();
+                    const total = document.querySelector('[name$="-TOTAL_FORMS"]');
+                    if (total) total.value = parseInt(total.value) - 1;
+                }
+
+                // Persist draft after removal
+                try { saveDraft(); } catch (e) { console.warn('Draft save failed after removing variation', e); }
+            }
+        }
+    });
+
+    document.addEventListener('input', e => {
+        if (e.target.classList.contains('variation-name-input')) {
+            const row = e.target.closest('.variation-form-item');
+            if (row) {
+                const skuInput = row.querySelector('[name*="-sku"]');
+                if (skuInput && !skuInput.value && e.target.value) {
+                    const ts = Date.now().toString().slice(-6);
+                    const clean = e.target.value.toUpperCase()
+                        .replace(/[^A-Z0-9\s,]/g, '')
+                        .replace(/[,\s]+/g, '-')
+                        .substring(0, 15);
+                    skuInput.value = 'VAR-' + clean + '-' + ts;
+                }
+            }
+        }
+    });
+
+    const catName = document.getElementById('newCategoryName');
+    const catSlug = document.getElementById('newCategorySlug');
+    const saveBtn = document.getElementById('saveCategoryBtn');
+
+    if (catName && catSlug) {
+        catName.addEventListener('input', () => {
+            catSlug.value = catName.value.toLowerCase().trim()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .replace(/\s+/g, '-');
+        });
+    }
+
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+            const name = catName.value.trim();
+            const slug = catSlug.value.trim();
+
+            if (!name || !slug) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            fetch('/admin/add-category/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ name, slug })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const sel = document.querySelector('[name="category"]');
+                    const opt = new Option(data.category.name, data.category.id, true, true);
+                    sel.add(opt);
+                    
+                    bootstrap.Modal.getInstance(document.getElementById('addCategoryModal')).hide();
+                    catName.value = '';
+                    catSlug.value = '';
+                    alert('Category added!');
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(e => {
+                console.error(e);
+                alert('Failed to add category');
+            });
+        });
+    }
+})();
+</script>
+
+{% endblock %}

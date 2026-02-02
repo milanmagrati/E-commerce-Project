@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dispatch Details - {{ dispatch.batch_number }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-box-seam"></i> Dispatch Details</h2>
+        <div>
+            <a href="{% url 'dispatch_list' %}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Back to List
+            </a>
+            <form method="post" action="{% url 'dispatch_move_to_trash' dispatch.pk %}" 
+                  style="display:inline;" 
+                  onsubmit="return confirm('Move this dispatch to trash?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger">
+                    <i class="bi bi-trash"></i> Move to Trash
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Dispatch Info Card -->
+        <div class="col-md-4 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Dispatch Information</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless table-sm">
+                        <tr>
+                            <td class="text-muted">Batch Number:</td>
+                            <td><strong>{{ dispatch.batch_number }}</strong></td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Logistics:</td>
+                            <td>
+                                <span class="badge bg-info">
+                                    <i class="bi bi-truck"></i> {{ dispatch.get_logistics_display }}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Status:</td>
+                            <td>
+                                {% if dispatch.status == 'dispatched' %}
+                                    <span class="badge bg-success">{{ dispatch.get_status_display }}</span>
+                                {% elif dispatch.status == 'delivered' %}
+                                    <span class="badge bg-primary">{{ dispatch.get_status_display }}</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">{{ dispatch.get_status_display }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Total Orders:</td>
+                            <td><span class="badge bg-dark">{{ dispatch.total_orders }}</span></td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Created By:</td>
+                            <td>{{ dispatch.created_by.username|default:"N/A" }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Created At:</td>
+                            <td>{{ dispatch.created_at|date:"M d, Y h:i A" }}</td>
+                        </tr>
+                    </table>
+
+                    {% if dispatch.notes %}
+                    <hr>
+                    <h6 class="text-muted">Notes:</h6>
+                    <p class="small">{{ dispatch.notes }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Orders List Card -->
+        <div class="col-md-8 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-list-ul"></i> Orders in This Dispatch</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Scanned Order ID</th>
+                                    <th>Customer</th>
+                                    <th>Status</th>
+                                    <th>Scanned At</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in dispatch.items.all %}
+                                <tr>
+                                    <td>{{ forloop.counter }}</td>
+                                    <td>
+                                        <strong class="text-primary">{{ item.scanned_order_id }}</strong>
+                                    </td>
+                                    <td>
+                                        {% if item.order %}
+                                            {{ item.order.customer_name }}
+                                        {% else %}
+                                            <span class="text-muted">Not Found</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if item.order %}
+                                            <span class="badge bg-success">Linked</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">Not Found</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small>{{ item.scanned_at|date:"M d, h:i A" }}</small>
+                                    </td>
+                                    <td>
+                                        {% if item.order %}
+                                            <a href="{% url 'order_detail' item.order.id %}" 
+                                               class="btn btn-sm btn-outline-primary" 
+                                               target="_blank">
+                                                <i class="bi bi-box-arrow-up-right"></i> View Order
+                                            </a>
+                                        {% else %}
+                                            <span class="text-muted small">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">No orders in this dispatch</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row">
+        <div class="col-md-4 mb-3">
+            <div class="card bg-primary text-white shadow-sm">
+                <div class="card-body">
+                    <h6>Total Orders Scanned</h6>
+                    <h2>{{ dispatch.total_orders }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card bg-success text-white shadow-sm">
+                <div class="card-body">
+                    <h6>Successfully Linked</h6>
+                    <h2>{{ dispatch.get_linked_orders_count }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card bg-danger text-white shadow-sm">
+                <div class="card-body">
+                    <h6>Not Found in System</h6>
+                    <h2>{{ dispatch.get_unlinked_orders_count }}</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

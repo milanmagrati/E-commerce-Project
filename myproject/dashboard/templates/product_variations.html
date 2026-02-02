@@ -1,0 +1,344 @@
+{% extends 'base.html' %}
+{% block title %}{{ product.name }} - Variations{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <a href="{% url 'products' %}" class="btn btn-secondary mb-3">
+            <i class="fas fa-arrow-left"></i> Back to Products
+        </a>
+        <h2>Manage Variations: {{ product.name }}</h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Product Variations</h5>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addVariationModal">
+                    <i class="fas fa-plus"></i> Add Variation
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Image</th>
+                                <th>Variation Name</th>
+                                <th>SKU</th>
+                                <th>Price</th>
+                                <th>Stock</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for variation in variations %}
+                            <tr>
+                                <td>
+                                    {% if variation.image %}
+                                    <img src="{{ variation.image.url }}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 5px;">
+                                    {% else %}
+                                    <div style="width: 50px; height: 50px; background: #f0f0f0; border-radius: 5px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-image text-muted"></i>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <strong>{{ variation.variation_name|default:"N/A" }}</strong>
+                                </td>
+                                <td>
+                                    <code style="font-size: 0.85rem;">{{ variation.sku }}</code>
+                                </td>
+                                <td>
+                                    <strong>रू {{ variation.get_price|floatformat:2 }}</strong>
+                                    {% if not variation.price %}
+                                    <br><small class="text-muted">(Base price)</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if variation.stock <= 0 %}
+                                    <span class="badge bg-danger">{{ variation.stock }}</span>
+                                    {% elif variation.stock <= 10 %}
+                                    <span class="badge bg-warning">{{ variation.stock }}</span>
+                                    {% else %}
+                                    <span class="badge bg-success">{{ variation.stock }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if variation.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{% url 'variation_delete' variation.id %}" 
+                                       class="btn btn-sm btn-danger" 
+                                       onclick="return confirm('Are you sure you want to delete {{ variation.variation_name|default:variation.sku }}?')">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5">
+                                    <i class="fas fa-layer-group fa-3x text-muted mb-3 d-block"></i>
+                                    <p class="text-muted mb-3">No variations yet. Add your first variation!</p>
+                                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addVariationModal">
+                                        <i class="fas fa-plus"></i> Add First Variation
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Product Info</h5>
+            </div>
+            <div class="card-body">
+                {% if product.image %}
+                <img src="{{ product.image.url }}" class="img-fluid rounded mb-3" alt="{{ product.name }}">
+                {% endif %}
+                <p><strong>Name:</strong> {{ product.name }}</p>
+                <p><strong>Type:</strong> <span class="badge bg-success">Variable</span></p>
+                <p><strong>Base Price:</strong> रू {{ product.price|floatformat:2 }}</p>
+                <p><strong>Total Variations:</strong> <span class="badge bg-primary">{{ variations.count }}</span></p>
+                <hr>
+                <p class="mb-1"><strong>Total Stock:</strong></p>
+                <h4 class="text-primary">
+                    {% widthratio variations.count 1 1 as total %}
+                    {{ variations|length }} units
+                </h4>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">Quick Links</h5>
+            </div>
+            <div class="card-body">
+                <a href="{% url 'product_edit' product.id %}" class="btn btn-outline-secondary btn-sm w-100 mb-2">
+                    <i class="fas fa-edit"></i> Edit Product
+                </a>
+                <a href="{% url 'product_detail' product.id %}" class="btn btn-outline-info btn-sm w-100">
+                    <i class="fas fa-eye"></i> View Product Details
+                </a>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-lightbulb"></i> Tips</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success"></i> 
+                        <small>Use descriptive variation names (e.g., "Red, Medium")</small>
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success"></i> 
+                        <small>SKU should be unique identifier</small>
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success"></i> 
+                        <small>Add images to variations</small>
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success"></i> 
+                        <small>Keep stock updated</small>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Variation Modal -->
+<div class="modal fade" id="addVariationModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Variation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="variationForm" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_variation">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> <strong>Tip:</strong> Give your variation a descriptive name (e.g., "Red, Medium") and a unique SKU code.
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Variation Name *</label>
+                        <input type="text" class="form-control" name="variation_name" id="variationNameInput" required 
+                               placeholder="e.g., Red, Medium or Blue XL">
+                        <small class="text-muted">This is the human-readable name for this variation</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">SKU (Stock Keeping Unit) *</label>
+                        <input type="text" class="form-control" name="sku" id="skuInput" required 
+                               placeholder="e.g., {{ product.slug|upper }}-RED-M">
+                        <small class="text-muted">Unique code for inventory tracking</small>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Price (रू)</label>
+                            <input type="number" class="form-control" name="price" step="0.01" 
+                                   placeholder="Leave empty to use base price">
+                            <small class="text-muted">Base price: रू {{ product.price }}</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Stock Quantity *</label>
+                            <input type="number" class="form-control" name="stock" value="0" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Variation Image</label>
+                        <input type="file" class="form-control" name="image" accept="image/*">
+                        <small class="text-muted">Upload an image specific to this variation</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_active" id="isActiveCheck" checked>
+                            <label class="form-check-label" for="isActiveCheck">
+                                Active (available for sale)
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-success" id="skuPreview" style="display: none;">
+                        <strong><i class="fas fa-magic"></i> Auto-Generated SKU:</strong> 
+                        <code id="suggestedSku" style="font-size: 1.1em;"></code>
+                        <button type="button" class="btn btn-sm btn-success ms-2" onclick="useSuggestedSKU()">
+                            <i class="fas fa-check"></i> Use This
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="submitVariation">
+                        <i class="fas fa-save"></i> Save Variation
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const skuInput = document.getElementById('skuInput');
+    const variationNameInput = document.getElementById('variationNameInput');
+    const submitBtn = document.getElementById('submitVariation');
+    const form = document.getElementById('variationForm');
+    const skuPreview = document.getElementById('skuPreview');
+    const suggestedSku = document.getElementById('suggestedSku');
+
+    // Auto-generate SKU based on variation name
+    variationNameInput.addEventListener('input', function() {
+        const varName = this.value.trim();
+        if (varName) {
+            // Generate SKU from variation name
+            const baseSlug = '{{ product.slug|upper }}';
+            const cleanName = varName
+                .toUpperCase()
+                .replace(/[^A-Z0-9\s,]/g, '')
+                .replace(/,/g, '-')
+                .replace(/\s+/g, '-')
+                .replace(/-+/g, '-');
+            
+            const generatedSku = baseSlug + '-' + cleanName;
+            suggestedSku.textContent = generatedSku;
+            skuPreview.style.display = 'block';
+        } else {
+            skuPreview.style.display = 'none';
+        }
+    });
+
+    // Validate form before submit
+    form.addEventListener('submit', function(e) {
+        const skuValue = skuInput.value.trim();
+        const varNameValue = variationNameInput.value.trim();
+        
+        if (!skuValue) {
+            e.preventDefault();
+            alert('❌ SKU is required!');
+            skuInput.focus();
+            return false;
+        }
+
+        if (!varNameValue) {
+            e.preventDefault();
+            alert('❌ Variation Name is required!');
+            variationNameInput.focus();
+            return false;
+        }
+
+        // Disable submit button to prevent double submission
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    });
+
+    // Reset form when modal closes
+    document.getElementById('addVariationModal').addEventListener('hidden.bs.modal', function() {
+        form.reset();
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-save"></i> Save Variation';
+        skuPreview.style.display = 'none';
+    });
+});
+
+// Use suggested SKU
+function useSuggestedSKU() {
+    const suggestedSku = document.getElementById('suggestedSku').textContent;
+    document.getElementById('skuInput').value = suggestedSku;
+    document.getElementById('skuPreview').style.display = 'none';
+}
+</script>
+
+<style>
+    .modal-body {
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    
+    code {
+        background: #f8f9fa;
+        padding: 4px 8px;
+        border-radius: 4px;
+        color: #d63384;
+        font-size: 0.95em;
+        font-weight: 600;
+    }
+
+    .table th {
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        color: #495057;
+        background-color: #f8f9fa;
+    }
+
+    .table td {
+        vertical-align: middle;
+    }
+</style>
+{% endblock %}

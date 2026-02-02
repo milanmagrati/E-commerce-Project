@@ -1,0 +1,559 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dispatch List{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header with Count -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-box-seam"></i> Dispatch List
+            </h2>
+            <p class="text-muted mb-0">
+                <span class="badge bg-primary fs-6">
+                    <i class="bi bi-stack"></i> {{ dispatches.count }} Total Dispatch{{ dispatches.count|pluralize:"es" }}
+                </span>
+                {% if search or logistics_filter or status_filter or date_from or date_to %}
+                <span class="badge bg-info fs-6 ms-2">
+                    <i class="bi bi-funnel"></i> Filtered Results
+                </span>
+                {% endif %}
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'dispatch_management' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> New Dispatch
+            </a>
+            <a href="{% url 'dispatch_trash' %}" class="btn btn-danger">
+                <i class="bi bi-trash"></i> Trash
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stat-card stat-card-primary">
+                <div class="stat-icon">
+                    <i class="bi bi-box-seam"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 class="stat-number">{{ dispatches.count }}</h3>
+                    <p class="stat-label">Total Dispatches</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-success">
+                <div class="stat-icon">
+                    <i class="bi bi-check-circle"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 class="stat-number">{{ dispatches|length }}</h3>
+                    <p class="stat-label">Showing Results</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-info">
+                <div class="stat-icon">
+                    <i class="bi bi-truck"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 class="stat-number">{{ dispatches.count }}</h3>
+                    <p class="stat-label">
+                        {% if logistics_filter %}
+                            {{ logistics_filter|title }}
+                        {% else %}
+                            All Logistics
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-warning">
+                <div class="stat-icon">
+                    <i class="bi bi-clipboard-check"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 class="stat-number" id="selectedCountLarge">0</h3>
+                    <p class="stat-label">Selected</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters Card -->
+    <div class="card mb-3 shadow-sm">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-2">
+                    <label class="form-label small">Search</label>
+                    <input type="text" name="search" class="form-control" 
+                           placeholder="Batch or Order ID" value="{{ search }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Logistics</label>
+                    <select name="logistics" class="form-select">
+                        <option value="">All Logistics</option>
+                        {% for value, label in logistics_choices %}
+                            <option value="{{ value }}" {% if logistics_filter == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="">All Status</option>
+                        {% for value, label in status_choices %}
+                            <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Date From</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Date To</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">&nbsp;</label>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-search"></i> Filter
+                        </button>
+                    </div>
+                </div>
+            </form>
+            {% if search or logistics_filter or status_filter or date_from or date_to %}
+            <div class="mt-2">
+                <a href="{% url 'dispatch_list' %}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i> Clear Filters
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Bulk Actions Card -->
+    <form method="post" action="{% url 'dispatch_bulk_action' %}" id="bulkActionForm">
+        {% csrf_token %}
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-6">
+                        <select name="bulk_action" class="form-select" required>
+                            <option value="">-- Select Bulk Action --</option>
+                            <option value="move_to_trash">Move to Trash</option>
+                            <option value="change_status">Change Status</option>
+                            <option value="export_excel">Export to Excel</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <select name="new_status" class="form-select" id="newStatusSelect" style="display:none;">
+                            <option value="">-- Select New Status --</option>
+                            {% for value, label in status_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-lightning-fill"></i> Apply
+                        </button>
+                    </div>
+                </div>
+                <small class="text-muted mt-2 d-block">
+                    <span id="selectedCount">0</span> dispatch(es) selected
+                </small>
+            </div>
+        </div>
+
+        <!-- Dispatches Table -->
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th width="30">
+                                    <input type="checkbox" class="form-check-input" id="selectAll">
+                                </th>
+                                <th>Batch Number</th>
+                                <th>Logistics</th>
+                                <th>Status</th>
+                                <th>Orders</th>
+                                <th>Created By</th>
+                                <th>Created At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for dispatch in dispatches %}
+                            <tr class="clickable-row" data-href="{% url 'dispatch_detail' dispatch.pk %}">
+                                <td onclick="event.stopPropagation();">
+                                    <input type="checkbox" class="form-check-input dispatch-checkbox" 
+                                           name="dispatch_ids" value="{{ dispatch.id }}">
+                                </td>
+                                <td>
+                                    <strong class="text-primary">{{ dispatch.batch_number }}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">
+                                        {{ dispatch.get_logistics_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if dispatch.status == 'dispatched' %}
+                                        <span class="text-success fw-bold">Dispatched</span>
+                                    {% elif dispatch.status == 'delivered' %}
+                                        <span class="text-primary fw-bold">Delivered</span>
+                                    {% elif dispatch.status == 'cancelled' %}
+                                        <span class="text-danger fw-bold">Cancelled</span>
+                                    {% elif dispatch.status == 'shipped' %}
+                                        <span class="text-info fw-bold">Shipped</span>
+                                    {% elif dispatch.status == 'packed' %}
+                                        <span class="text-secondary fw-bold">Packed</span>
+                                    {% elif dispatch.status == 'confirmed' %}
+                                        <span class="text-dark fw-bold">Confirmed</span>
+                                    {% elif dispatch.status == 'processing' %}
+                                        <span class="text-warning fw-bold">Processing</span>
+                                    {% else %}
+                                        <span class="text-muted fw-bold">{{ dispatch.get_status_display }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-dark">{{ dispatch.total_orders }} orders</span>
+                                </td>
+                                <td>{{ dispatch.created_by.username|default:"N/A" }}</td>
+                                <td>
+                                    <small>{{ dispatch.created_at|date:"M d, Y" }}</small><br>
+                                    <small class="text-muted">{{ dispatch.created_at|date:"h:i A" }}</small>
+                                </td>
+                                <td onclick="event.stopPropagation();">
+                                    <a href="{% url 'dispatch_detail' dispatch.pk %}" 
+                                       class="action-btn view-btn">
+                                        <i class="bi bi-eye"></i> View
+                                    </a>
+                                    <button type="button" 
+                                            class="action-btn delete-btn delete-dispatch-btn"
+                                            data-id="{{ dispatch.id }}"
+                                            data-batch="{{ dispatch.batch_number|escape }}">
+                                        <i class="bi bi-trash"></i> Delete
+                                    </button>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center py-4">
+                                    <i class="bi bi-inbox" style="font-size: 48px; color: #ccc;"></i>
+                                    <p class="text-muted mt-2">No dispatches found</p>
+                                    <a href="{% url 'dispatch_management' %}" class="btn btn-primary btn-sm">
+                                        <i class="bi bi-plus-circle"></i> Create First Dispatch
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Hidden form for individual delete -->
+<form method="post" id="deleteForm" style="display:none;">
+    {% csrf_token %}
+</form>
+
+<style>
+    /* ==================== STATISTICS CARDS ==================== */
+    .stat-card {
+        display: flex;
+        align-items: center;
+        padding: 1.5rem;
+        border-radius: 12px;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        border-left: 4px solid;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .stat-card-primary {
+        border-left-color: #0d6efd;
+        background: linear-gradient(135deg, #fff 0%, #e7f1ff 100%);
+    }
+
+    .stat-card-success {
+        border-left-color: #198754;
+        background: linear-gradient(135deg, #fff 0%, #d1f4e0 100%);
+    }
+
+    .stat-card-info {
+        border-left-color: #0dcaf0;
+        background: linear-gradient(135deg, #fff 0%, #d1f9ff 100%);
+    }
+
+    .stat-card-warning {
+        border-left-color: #ffc107;
+        background: linear-gradient(135deg, #fff 0%, #fff4d1 100%);
+    }
+
+    .stat-icon {
+        font-size: 3rem;
+        margin-right: 1.5rem;
+        opacity: 0.7;
+    }
+
+    .stat-card-primary .stat-icon {
+        color: #0d6efd;
+    }
+
+    .stat-card-success .stat-icon {
+        color: #198754;
+    }
+
+    .stat-card-info .stat-icon {
+        color: #0dcaf0;
+    }
+
+    .stat-card-warning .stat-icon {
+        color: #ffc107;
+    }
+
+    .stat-content {
+        flex: 1;
+    }
+
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin: 0;
+        line-height: 1;
+        color: #2c3e50;
+    }
+
+    .stat-label {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin: 0.5rem 0 0 0;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* ==================== ENHANCED ACTION BUTTONS ==================== */
+    .action-btn {
+        display: inline-block;
+        padding: 6px 12px;
+        margin: 0 3px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-decoration: none;
+        border: none;
+        border-radius: 6px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        background: none;
+    }
+
+    .view-btn {
+        color: #17a2b8;
+        background: rgba(23, 162, 184, 0.1);
+    }
+
+    .view-btn:hover {
+        color: #fff;
+        background: #17a2b8;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(23, 162, 184, 0.3);
+    }
+
+    .delete-btn {
+        color: #dc3545;
+        background: rgba(220, 53, 69, 0.1);
+    }
+
+    .delete-btn:hover {
+        color: #fff;
+        background: #dc3545;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3);
+    }
+
+    /* ==================== CLICKABLE ROW ==================== */
+    .clickable-row {
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .clickable-row:hover {
+        background: rgba(0, 123, 255, 0.05);
+        transform: scale(1.01);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    /* ==================== TABLE ENHANCEMENTS ==================== */
+    .table thead th {
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.5px;
+        color: #495057;
+    }
+
+    /* ==================== CHECKBOX STYLING ==================== */
+    .form-check-input {
+        cursor: pointer;
+        width: 18px;
+        height: 18px;
+    }
+
+    .form-check-input:checked {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+
+    /* ==================== BULK ACTION CARD ==================== */
+    #selectedCount {
+        font-weight: 700;
+        color: #0d6efd;
+        font-size: 1.1rem;
+    }
+
+    /* ==================== RESPONSIVE ==================== */
+    @media (max-width: 768px) {
+        .stat-card {
+            margin-bottom: 1rem;
+        }
+        
+        .stat-icon {
+            font-size: 2rem;
+            margin-right: 1rem;
+        }
+        
+        .stat-number {
+            font-size: 1.8rem;
+        }
+    }
+</style>
+
+<script>
+    // ==================== CLICKABLE ROW FUNCTIONALITY ====================
+    document.addEventListener('DOMContentLoaded', function() {
+        const rows = document.querySelectorAll('.clickable-row');
+        
+        rows.forEach(row => {
+            row.addEventListener('click', function(e) {
+                if (!e.target.closest('input') && !e.target.closest('.action-btn')) {
+                    window.location.href = this.dataset.href;
+                }
+            });
+        });
+    });
+
+    // ==================== SELECT ALL CHECKBOX ====================
+    document.getElementById('selectAll')?.addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.dispatch-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+        updateSelectedCount();
+    });
+
+    // ==================== UPDATE SELECTED COUNT ====================
+    document.querySelectorAll('.dispatch-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedCount);
+    });
+
+    function updateSelectedCount() {
+        const checkedBoxes = document.querySelectorAll('.dispatch-checkbox:checked');
+        const count = checkedBoxes.length;
+        document.getElementById('selectedCount').textContent = count;
+        document.getElementById('selectedCountLarge').textContent = count;
+    }
+
+    // ==================== BULK ACTION FORM VALIDATION ====================
+    document.getElementById('bulkActionForm')?.addEventListener('submit', function(e) {
+        const checkedBoxes = document.querySelectorAll('.dispatch-checkbox:checked');
+        
+        if (checkedBoxes.length === 0) {
+            e.preventDefault();
+            alert('⚠️ Please select at least one dispatch to perform bulk action.');
+            return false;
+        }
+
+        const action = document.querySelector('select[name="bulk_action"]').value;
+        
+        if (!action) {
+            e.preventDefault();
+            alert('⚠️ Please select a bulk action.');
+            return false;
+        }
+
+        if (action === 'change_status') {
+            const newStatus = document.querySelector('select[name="new_status"]').value;
+            if (!newStatus) {
+                e.preventDefault();
+                alert('⚠️ Please select a new status.');
+                return false;
+            }
+        }
+
+        if (action === 'move_to_trash') {
+            if (!confirm(`⚠️ Move ${checkedBoxes.length} dispatch(es) to trash?`)) {
+                e.preventDefault();
+                return false;
+            }
+        }
+
+        return true;
+    });
+
+    // ==================== SHOW/HIDE STATUS SELECT ====================
+    document.querySelector('select[name="bulk_action"]')?.addEventListener('change', function() {
+        const statusSelect = document.getElementById('newStatusSelect');
+        if (this.value === 'change_status') {
+            statusSelect.style.display = 'block';
+            statusSelect.required = true;
+        } else {
+            statusSelect.style.display = 'none';
+            statusSelect.required = false;
+        }
+    });
+
+    // ==================== DELETE SINGLE DISPATCH ====================
+    function deleteDispatch(id, batchNumber) {
+        if (confirm(`⚠️ Move dispatch "${batchNumber}" to trash?`)) {
+            const form = document.getElementById('deleteForm');
+            form.action = `/dispatch/${id}/trash/`;
+            form.submit();
+        }
+    }
+
+    document.querySelectorAll('.delete-dispatch-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            deleteDispatch(this.dataset.id, this.dataset.batch);
+        });
+    });
+
+    // Initialize count on page load
+    updateSelectedCount();
+</script>
+{% endblock %}

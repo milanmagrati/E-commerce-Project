@@ -1,0 +1,453 @@
+{% extends 'base.html' %}
+{% block title %}Customers - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2><i class="fas fa-users"></i> Customers Management</h2>
+            <a href="{% url 'customer_add' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Add New Customer
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card bg-primary-gradient">
+            <div class="stat-icon">
+                <i class="fas fa-users"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ customers_data|length }}</h3>
+                <p>Total Customers</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card bg-success-gradient">
+            <div class="stat-icon">
+                <i class="fas fa-user-check"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ customers_data|length }}</h3>
+                <p>Active Customers</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card bg-info-gradient">
+            <div class="stat-icon">
+                <i class="fas fa-shopping-cart"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ customers_data|length }}</h3>
+                <p>Orders Today</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card bg-warning-gradient">
+            <div class="stat-icon">
+                <i class="fas fa-crown"></i>
+            </div>
+            <div class="stat-content">
+                <h3>0</h3>
+                <p>VIP Customers</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search and Filter -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" name="search" 
+                           placeholder="Search by name, email, or phone..." 
+                           value="{{ search_query }}">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="type" class="form-select">
+                    <option value="">All Customer Types</option>
+                    <option value="retail" {% if customer_type == 'retail' %}selected{% endif %}>Retail</option>
+                    <option value="wholesale" {% if customer_type == 'wholesale' %}selected{% endif %}>Wholesale</option>
+                    <option value="vip" {% if customer_type == 'vip' %}selected{% endif %}>VIP</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i> Filter
+                </button>
+            </div>
+            <div class="col-md-2">
+                <a href="{% url 'customers_list' %}" class="btn btn-secondary w-100">
+                    <i class="fas fa-redo"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk Actions Bar -->
+<div class="card shadow-sm mb-3" id="bulkActionsBar" style="display: none;">
+    <div class="card-body py-2">
+        <form method="post" action="{% url 'customers_bulk_action' %}" id="bulkActionForm" onsubmit="return confirmBulkAction()">
+            {% csrf_token %}
+            <div class="row align-items-center g-2">
+                <div class="col-auto">
+                    <strong><span id="selectedCount">0</span> customer(s) selected</strong>
+                </div>
+                <div class="col-md-3">
+                    <select name="bulk_action" class="form-select form-select-sm" required>
+                        <option value="">-- Select Action --</option>
+                        <option value="activate">✅ Activate</option>
+                        <option value="deactivate">❌ Deactivate</option>
+                        <option value="change_type_retail">👤 Change to Retail</option>
+                        <option value="change_type_wholesale">🏢 Change to Wholesale</option>
+                        <option value="change_type_vip">👑 Change to VIP</option>
+                        <option value="delete">🗑️ Delete</option>
+                        <option value="export">📥 Export Selected</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="fas fa-check"></i> Apply
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearSelection()">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Customers Table -->
+<div class="card shadow-sm">
+    <div class="card-header bg-gradient-primary text-white">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Customer List</h5>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                <label class="form-check-label text-white" for="selectAll">
+                    Select All
+                </label>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="3%">
+                            <input type="checkbox" id="selectAllInTable" onchange="toggleSelectAll()">
+                        </th>
+                        <th width="4%">#</th>
+                        <th width="20%">Customer</th>
+                        <th width="15%">Contact</th>
+                        <th width="18%">Location</th>
+                        <th width="10%">Type</th>
+                        <th width="8%">Orders</th>
+                        <th width="10%">Total Spent</th>
+                        <th width="12%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for data in customers_data %}
+                    <tr class="customer-row">
+                        <td>
+                            <input type="checkbox" class="customer-checkbox" name="customer_ids" 
+                                   value="{{ data.customer.id }}" onchange="updateBulkActions()">
+                        </td>
+                        <td>{{ forloop.counter }}</td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="avatar-circle me-2">
+                                    {{ data.customer.name|slice:":1"|upper }}
+                                </div>
+                                <div>
+                                    <strong>{{ data.customer.name }}</strong><br>
+                                    <small class="text-muted">{{ data.customer.email|default:"No email" }}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <i class="fas fa-phone text-primary"></i> {{ data.customer.phone }}<br>
+                            {% if data.customer.alternate_phone %}
+                            <small class="text-muted">
+                                <i class="fas fa-phone-alt"></i> {{ data.customer.alternate_phone }}
+                            </small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <i class="fas fa-map-marker-alt text-danger"></i> 
+                            {{ data.customer.city }}{% if data.customer.state %}, {{ data.customer.state }}{% endif %}
+                        </td>
+                        <td>
+                            {% if data.customer.customer_type == 'vip' %}
+                            <span class="badge bg-warning"><i class="fas fa-crown"></i> VIP</span>
+                            {% elif data.customer.customer_type == 'wholesale' %}
+                            <span class="badge bg-info"><i class="fas fa-building"></i> Wholesale</span>
+                            {% else %}
+                            <span class="badge bg-secondary"><i class="fas fa-user"></i> Retail</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">{{ data.total_orders }}</span>
+                        </td>
+                        <td>
+                            <strong class="text-success">रू {{ data.total_spent|floatformat:2 }}</strong>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'customer_detail' data.customer.id %}" 
+                                   class="btn btn-info" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{% url 'customer_edit' data.customer.id %}" 
+                                   class="btn btn-warning" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <a href="{% url 'customer_delete' data.customer.id %}" 
+                                   class="btn btn-danger" title="Delete"
+                                   onclick="return confirm('Delete this customer?')">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center py-5">
+                            <i class="fas fa-users fa-3x text-muted mb-3 d-block"></i>
+                            <p class="text-muted">No customers found</p>
+                            <a href="{% url 'customer_add' %}" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Add Your First Customer
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
+    
+    .bg-primary-gradient {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .bg-success-gradient {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .bg-info-gradient {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+    
+    .bg-warning-gradient {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .stat-icon {
+        font-size: 2.5rem;
+        margin-right: 20px;
+        opacity: 0.8;
+    }
+    
+    .stat-content h3 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    
+    .stat-content p {
+        margin: 0;
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    
+    .avatar-circle {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 1.2rem;
+    }
+    
+    .table tbody tr {
+        transition: background-color 0.2s ease;
+    }
+    
+    .table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .customer-row.selected {
+        background-color: #e0f2fe !important;
+    }
+    
+    .customer-checkbox:checked {
+        transform: scale(1.2);
+    }
+    
+    #bulkActionsBar {
+        animation: slideDown 0.3s ease;
+    }
+    
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+</style>
+
+<script>
+// Update bulk actions visibility
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.customer-checkbox:checked');
+    const count = checkboxes.length;
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const countSpan = document.getElementById('selectedCount');
+    
+    countSpan.textContent = count;
+    
+    if (count > 0) {
+        bulkBar.style.display = 'block';
+    } else {
+        bulkBar.style.display = 'none';
+    }
+    
+    // Highlight selected rows
+    document.querySelectorAll('.customer-row').forEach(row => {
+        const checkbox = row.querySelector('.customer-checkbox');
+        if (checkbox && checkbox.checked) {
+            row.classList.add('selected');
+        } else {
+            row.classList.remove('selected');
+        }
+    });
+}
+
+// Toggle select all
+function toggleSelectAll() {
+    const selectAllCheckbox = document.getElementById('selectAll') || document.getElementById('selectAllInTable');
+    const checkboxes = document.querySelectorAll('.customer-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+    
+    // Sync both select all checkboxes
+    document.getElementById('selectAll').checked = selectAllCheckbox.checked;
+    document.getElementById('selectAllInTable').checked = selectAllCheckbox.checked;
+    
+    updateBulkActions();
+}
+
+// Clear selection
+function clearSelection() {
+    document.querySelectorAll('.customer-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    document.getElementById('selectAll').checked = false;
+    document.getElementById('selectAllInTable').checked = false;
+    updateBulkActions();
+}
+
+// Confirm bulk action
+function confirmBulkAction() {
+    const action = document.querySelector('select[name="bulk_action"]').value;
+    const count = document.querySelectorAll('.customer-checkbox:checked').length;
+    
+    if (!action) {
+        alert('Please select an action!');
+        return false;
+    }
+    
+    if (count === 0) {
+        alert('Please select at least one customer!');
+        return false;
+    }
+    
+    let message = '';
+    if (action === 'delete') {
+        message = `Are you sure you want to DELETE ${count} customer(s)? This cannot be undone!`;
+    } else if (action === 'activate') {
+        message = `Activate ${count} customer(s)?`;
+    } else if (action === 'deactivate') {
+        message = `Deactivate ${count} customer(s)?`;
+    } else if (action.startsWith('change_type')) {
+        const type = action.replace('change_type_', '').toUpperCase();
+        message = `Change ${count} customer(s) to ${type} type?`;
+    } else if (action === 'export') {
+        return true; // No confirmation needed for export
+    }
+    
+    return confirm(message);
+}
+
+// Add selected customer IDs to form before submit
+document.getElementById('bulkActionForm').addEventListener('submit', function(e) {
+    const checkboxes = document.querySelectorAll('.customer-checkbox:checked');
+    
+    // Remove old hidden inputs
+    document.querySelectorAll('input[name="customer_ids"]').forEach(input => {
+        if (input.type === 'hidden') {
+            input.remove();
+        }
+    });
+    
+    // Add checked customer IDs as hidden inputs
+    checkboxes.forEach(checkbox => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'customer_ids';
+        input.value = checkbox.value;
+        this.appendChild(input);
+    });
+});
+</script>
+{% endblock %}

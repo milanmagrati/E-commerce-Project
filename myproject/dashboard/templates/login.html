@@ -1,0 +1,488 @@
+{% extends 'base.html' %}
+{% block title %}Sign In - Blanxer Admin{% endblock %}
+
+{% block auth_content %}
+<div class="auth-wrapper">
+    <div class="container">
+        <div class="row min-vh-100 align-items-center justify-content-center">
+            <!-- Left Side - Branding (Hidden on Mobile) -->
+            <div class="col-lg-6 d-none d-lg-block">
+                <div class="brand-section text-white p-5">
+                    <div class="brand-content">
+                        <div class="brand-logo mb-4">
+                            <i class="fas fa-shield-alt fa-4x mb-3 opacity-90"></i>
+                            <h1 class="display-4 fw-bold mb-3">Blanxer Admin</h1>
+                            <p class="lead opacity-75 mb-4">Professional E-commerce Management System</p>
+                        </div>
+                        
+                        <div class="feature-list">
+                            <div class="feature-item d-flex align-items-center mb-3">
+                                <div class="feature-icon me-3">
+                                    <i class="fas fa-check-circle fa-lg"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0">Secure Authentication</h6>
+                                    <small class="opacity-75">Enterprise-grade security</small>
+                                </div>
+                            </div>
+                            <div class="feature-item d-flex align-items-center mb-3">
+                                <div class="feature-icon me-3">
+                                    <i class="fas fa-check-circle fa-lg"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0">Real-time Analytics</h6>
+                                    <small class="opacity-75">Monitor your business 24/7</small>
+                                </div>
+                            </div>
+                            <div class="feature-item d-flex align-items-center">
+                                <div class="feature-icon me-3">
+                                    <i class="fas fa-check-circle fa-lg"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0">Multi-role Access</h6>
+                                    <small class="opacity-75">Customized permissions</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side - Login Form -->
+            <div class="col-lg-6">
+                <div class="auth-form-wrapper">
+                    <div class="auth-form-container">
+                        <!-- Mobile Logo -->
+                        <div class="mobile-brand text-center mb-4 d-lg-none">
+                            <i class="fas fa-shield-alt fa-3x text-primary mb-2"></i>
+                            <h3 class="fw-bold text-dark">Blanxer Admin</h3>
+                        </div>
+
+                        <!-- Form Card -->
+                        <div class="card border-0 shadow-lg">
+                            <div class="card-body p-4 p-md-5">
+                                <!-- Header -->
+                                <div class="text-center mb-4">
+                                    <h3 class="fw-bold text-dark mb-2">Welcome Back</h3>
+                                    <p class="text-muted mb-0">Sign in to access your dashboard</p>
+                                </div>
+
+                                <!-- Messages -->
+                                {% if messages %}
+                                <div class="messages-container mb-4">
+                                    {% for message in messages %}
+                                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show border-0 shadow-sm" role="alert">
+                                        <div class="d-flex align-items-center">
+                                            <i class="fas fa-{% if message.tags == 'error' %}exclamation-circle{% elif message.tags == 'success' %}check-circle{% elif message.tags == 'warning' %}exclamation-triangle{% else %}info-circle{% endif %} me-2"></i>
+                                            <div>{{ message }}</div>
+                                        </div>
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+
+                                <!-- Login Form -->
+                                <form method="POST" id="loginForm">
+                                    {% csrf_token %}
+                                    
+                                    <!-- Username Field -->
+                                    <div class="form-floating mb-3">
+                                        <input type="text" 
+                                               class="form-control form-control-lg" 
+                                               id="username" 
+                                               name="username" 
+                                               placeholder="Username"
+                                               required 
+                                               autofocus>
+                                        <label for="username">
+                                            <i class="fas fa-user me-2 text-primary"></i>Username
+                                        </label>
+                                    </div>
+
+                                    <!-- Password Field -->
+                                    <div class="form-floating mb-3 position-relative">
+                                        <input type="password" 
+                                               class="form-control form-control-lg pe-5" 
+                                               id="password" 
+                                               name="password" 
+                                               placeholder="Password"
+                                               required>
+                                        <label for="password">
+                                            <i class="fas fa-lock me-2 text-primary"></i>Password
+                                        </label>
+                                        <button type="button" 
+                                                class="btn btn-link position-absolute end-0 top-50 translate-middle-y text-muted"
+                                                style="z-index: 10;"
+                                                onclick="togglePassword()">
+                                            <i class="fas fa-eye" id="toggleIcon"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Remember Me & Forgot Password -->
+                                    <div class="d-flex justify-content-between align-items-center mb-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="rememberMe" name="remember_me">
+                                            <label class="form-check-label text-muted" for="rememberMe">
+                                                Remember me
+                                            </label>
+                                        </div>
+                                        <a href="{% url 'password_reset' %}" class="text-decoration-none text-primary fw-500">
+                                            Forgot Password?
+                                        </a>
+                                    </div>
+
+                                    <!-- Submit Button -->
+                                    <div class="d-grid mb-3">
+                                        <button type="submit" class="btn btn-primary btn-lg shadow-sm" id="loginBtn">
+                                            <i class="fas fa-sign-in-alt me-2"></i>
+                                            <span id="btnText">Sign In</span>
+                                            <span id="btnLoader" class="spinner-border spinner-border-sm ms-2 d-none" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Divider -->
+                                    <div class="divider my-4">
+                                        <span class="divider-text">OR</span>
+                                    </div>
+
+                                    <!-- Alternative Options (Optional - Comment out if not needed) -->
+                                    <div class="text-center">
+                                        <p class="text-muted mb-0">
+                                            <small>Need help? <a href="#" class="text-primary text-decoration-none fw-500">Contact Support</a></small>
+                                        </p>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Footer -->
+                        <div class="text-center mt-4">
+                            <small class="text-muted">
+                                <i class="fas fa-shield-alt me-1"></i>
+                                Secured with 256-bit encryption
+                            </small>
+                            <br>
+                            <small class="text-muted mt-2 d-block">
+                                © 2026 Blanxer. All rights reserved.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* ========================================
+   MODERN LOGIN PAGE - 2026 STANDARD
+   ======================================== */
+
+/* Base Wrapper */
+.auth-wrapper {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-wrapper::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    animation: float 20s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    50% { transform: translate(-50px, 50px) rotate(180deg); }
+}
+
+/* Brand Section (Left Side) */
+.brand-section {
+    padding: 3rem;
+}
+
+.brand-content {
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.brand-logo {
+    animation: fadeInUp 0.8s ease-out;
+}
+
+.feature-item {
+    animation: fadeInLeft 0.8s ease-out;
+    animation-fill-mode: both;
+}
+
+.feature-item:nth-child(1) { animation-delay: 0.2s; }
+.feature-item:nth-child(2) { animation-delay: 0.4s; }
+.feature-item:nth-child(3) { animation-delay: 0.6s; }
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Form Wrapper */
+.auth-form-wrapper {
+    padding: 2rem;
+}
+
+.auth-form-container {
+    max-width: 480px;
+    margin: 0 auto;
+}
+
+/* Card Styling */
+.auth-form-container .card {
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.98);
+    animation: fadeIn 0.6s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Form Floating Labels */
+.form-floating > .form-control {
+    height: 60px;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.form-floating > .form-control:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+.form-floating > label {
+    padding: 1.2rem 1rem;
+    color: #6c757d;
+}
+
+/* Password Toggle Button */
+.btn-link {
+    text-decoration: none;
+    padding: 0.5rem;
+}
+
+.btn-link:hover {
+    color: #667eea !important;
+}
+
+/* Primary Button */
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 12px;
+    padding: 14px 28px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-primary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.2);
+    transition: left 0.5s ease;
+}
+
+.btn-primary:hover::before {
+    left: 100%;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+/* Form Check */
+.form-check-input:checked {
+    background-color: #667eea;
+    border-color: #667eea;
+}
+
+/* Divider */
+.divider {
+    position: relative;
+    text-align: center;
+}
+
+.divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #e9ecef;
+}
+
+.divider-text {
+    position: relative;
+    display: inline-block;
+    padding: 0 1rem;
+    background: white;
+    color: #6c757d;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+/* Alert Styling */
+.alert {
+    border-radius: 12px;
+    animation: slideDown 0.4s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 991.98px) {
+    .auth-wrapper {
+        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .auth-form-wrapper {
+        padding: 1rem;
+    }
+    
+    .auth-form-container .card {
+        margin-top: 2rem;
+        margin-bottom: 2rem;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .auth-form-container .card .card-body {
+        padding: 2rem 1.5rem !important;
+    }
+    
+    .form-floating > .form-control {
+        height: 56px;
+    }
+}
+
+/* Focus States for Accessibility */
+.form-control:focus,
+.btn:focus,
+.form-check-input:focus {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+/* Loading State */
+.btn-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+/* Smooth Transitions */
+* {
+    transition: color 0.15s ease-in-out, 
+                background-color 0.15s ease-in-out, 
+                border-color 0.15s ease-in-out;
+}
+</style>
+
+<script>
+// Password Toggle
+function togglePassword() {
+    const passwordField = document.getElementById('password');
+    const toggleIcon = document.getElementById('toggleIcon');
+    
+    if (passwordField.type === 'password') {
+        passwordField.type = 'text';
+        toggleIcon.classList.remove('fa-eye');
+        toggleIcon.classList.add('fa-eye-slash');
+    } else {
+        passwordField.type = 'password';
+        toggleIcon.classList.remove('fa-eye-slash');
+        toggleIcon.classList.add('fa-eye');
+    }
+}
+
+// Form Submit Loading State
+document.getElementById('loginForm').addEventListener('submit', function(e) {
+    const btn = document.getElementById('loginBtn');
+    const btnText = document.getElementById('btnText');
+    const btnLoader = document.getElementById('btnLoader');
+    
+    btn.disabled = true;
+    btnText.textContent = 'Signing In';
+    btnLoader.classList.remove('d-none');
+});
+
+// Auto-dismiss alerts after 5 seconds
+document.addEventListener('DOMContentLoaded', function() {
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(function(alert) {
+        setTimeout(function() {
+            const bsAlert = new bootstrap.Alert(alert);
+            bsAlert.close();
+        }, 5000);
+    });
+});
+
+// Prevent double submission
+let isSubmitting = false;
+document.getElementById('loginForm').addEventListener('submit', function(e) {
+    if (isSubmitting) {
+        e.preventDefault();
+        return false;
+    }
+    isSubmitting = true;
+});
+</script>
+{% endblock %}

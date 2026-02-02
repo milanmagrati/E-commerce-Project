@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dispatch Trash{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-trash"></i> Dispatch Trash</h2>
+        <div>
+            <a href="{% url 'dispatch_list' %}" class="btn btn-primary">
+                <i class="bi bi-arrow-left"></i> Back to Dispatches
+            </a>
+            <form method="post" action="{% url 'empty_dispatch_trash' %}" 
+                  style="display:inline;" 
+                  onsubmit="return confirm('⚠️ Permanently delete ALL trashed dispatches? This cannot be undone!');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger">
+                    <i class="bi bi-trash-fill"></i> Empty Trash
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-3 shadow-sm">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-5">
+                    <input type="text" name="search" class="form-control" 
+                           placeholder="Search batch number or order ID" value="{{ search_query }}">
+                </div>
+                <div class="col-md-4">
+                    <select name="logistics" class="form-select">
+                        <option value="">All Logistics</option>
+                        {% for value, label in logistics_choices %}
+                            <option value="{{ value }}" {% if logistics_filter == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search"></i> Filter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bulk Actions Form -->
+    <form method="post" action="{% url 'dispatch_trash_bulk_action' %}" id="bulkForm">
+        {% csrf_token %}
+        
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-9">
+                        <select name="bulk_action" class="form-select" required>
+                            <option value="">-- Bulk Actions --</option>
+                            <option value="restore">✅ Restore Selected</option>
+                            <option value="permanent_delete">❌ Permanently Delete Selected</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-primary w-100">Apply</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trashed Dispatches Table -->
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th width="30">
+                                    <input type="checkbox" id="selectAll" class="form-check-input">
+                                </th>
+                                <th>Batch Number</th>
+                                <th>Logistics</th>
+                                <th>Orders</th>
+                                <th>Deleted By</th>
+                                <th>Deleted At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for dispatch in trashed_dispatches %}
+                            <tr>
+                                <td>
+                                    <input type="checkbox" name="dispatch_ids" value="{{ dispatch.id }}" 
+                                           class="form-check-input">
+                                </td>
+                                <td>
+                                    <strong class="text-muted">{{ dispatch.batch_number }}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ dispatch.get_logistics_display }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ dispatch.total_orders }}</span>
+                                </td>
+                                <td>{{ dispatch.deleted_by.username|default:"N/A" }}</td>
+                                <td>
+                                    <small>{{ dispatch.deleted_at|date:"M d, Y" }}</small><br>
+                                    <small class="text-muted">{{ dispatch.deleted_at|date:"h:i A" }}</small>
+                                </td>
+                                <td>
+                                    <form method="post" action="{% url 'dispatch_restore' dispatch.pk %}" 
+                                          style="display:inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-success" title="Restore">
+                                            <i class="bi bi-arrow-counterclockwise"></i> Restore
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'dispatch_permanent_delete' dispatch.pk %}" 
+                                          style="display:inline;" 
+                                          onsubmit="return confirm('⚠️ Permanently delete? This cannot be undone!');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Delete Forever">
+                                            <i class="bi bi-trash-fill"></i> Delete
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5">
+                                    <i class="bi bi-check-circle" style="font-size: 48px; color: #28a745;"></i>
+                                    <p class="text-muted mt-2">Trash is empty</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+    // Select all checkbox functionality
+    document.getElementById('selectAll').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('input[name="dispatch_ids"]');
+        checkboxes.forEach(checkbox => checkbox.checked = this.checked);
+    });
+
+    // Bulk form validation
+    document.getElementById('bulkForm').addEventListener('submit', function(e) {
+        const checkedBoxes = document.querySelectorAll('input[name="dispatch_ids"]:checked');
+        if (checkedBoxes.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one dispatch');
+            return false;
+        }
+
+        const action = this.querySelector('select[name="bulk_action"]').value;
+        if (action === 'permanent_delete') {
+            if (!confirm(`⚠️ Permanently delete ${checkedBoxes.length} dispatch(es)? This cannot be undone!`)) {
+                e.preventDefault();
+                return false;
+            }
+        }
+    });
+</script>
+{% endblock %}

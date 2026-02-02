@@ -1,0 +1,827 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Stock In Detail - {{ stock_in.reference_number }}{% endblock %}
+
+{% block content %}
+<div class="stock-in-detail-page">
+    <!-- Header -->
+    <div class="page-header-detail">
+        <div>
+            <h1><i class="fas fa-box-open"></i> Stock In Details</h1>
+            <p class="reference-number">{{ stock_in.reference_number }}</p>
+        </div>
+        <div class="header-actions-detail">
+            <a href="{% url 'inventory_dashboard' %}" class="btn-back-detail">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
+            <button class="btn-print-detail" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+
+    <!-- Stock In Info Card -->
+    <div class="info-card">
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">
+                    <i class="fas fa-tag"></i> Type
+                </div>
+                <div class="info-value">
+                    <span class="type-badge type-{{ stock_in.stock_in_type }}">
+                        {{ stock_in.get_stock_in_type_display }}
+                    </span>
+                </div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">
+                    <i class="fas fa-truck"></i> Supplier
+                </div>
+                <div class="info-value">{{ stock_in.supplier_name|default:"—" }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">
+                    <i class="fas fa-calendar-alt"></i> Date
+                </div>
+                <div class="info-value">{{ stock_in.created_at|date:"M d, Y H:i" }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">
+                    <i class="fas fa-user"></i> Created By
+                </div>
+                <div class="info-value">{{ stock_in.created_by.username }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">
+                    <i class="fas fa-boxes"></i> Total Quantity
+                </div>
+                <div class="info-value highlight-green">{{ stock_in.total_quantity }} units</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">
+                    <i class="fas fa-dollar-sign"></i> Total Cost
+                </div>
+                <div class="info-value highlight-green">Rs {{ safe_total_cost|floatformat:2 }}</div>
+            </div>
+        </div>
+
+        {% if stock_in.notes %}
+        <div class="notes-section">
+            <div class="notes-label">
+                <i class="fas fa-sticky-note"></i> Notes
+            </div>
+            <div class="notes-content">{{ stock_in.notes }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Items Table -->
+    <div class="items-card">
+        <div class="card-header-detail">
+            <h3><i class="fas fa-list"></i> Items ({{ items_data|length }})</h3>
+        </div>
+        
+        <div class="table-wrapper-detail">
+            <table class="detail-table">
+                <thead>
+                    <tr>
+                        <th width="5%">#</th>
+                        <th width="35%">Product</th>
+                        <th width="20%">Variation</th>
+                        <th width="10%" class="text-center">Quantity</th>
+                        <th width="12%" class="text-right">Unit Cost</th>
+                        <th width="12%" class="text-right">Total Cost</th>
+                        <th width="6%" class="text-center">Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for data in items_data %}
+                    <tr>
+                        <td class="text-center">{{ forloop.counter }}</td>
+                        <td>
+                            <div class="product-cell-detail">
+                                {% if data.item.product.image %}
+                                    <img src="{{ data.item.product.image.url }}" 
+                                         alt="{{ data.item.product.name }}" 
+                                         class="product-img-detail"
+                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                    <div class="product-img-placeholder-detail" style="display: none;">
+                                        <i class="fas fa-box"></i>
+                                    </div>
+                                {% else %}
+                                    <div class="product-img-placeholder-detail">
+                                        <i class="fas fa-box"></i>
+                                    </div>
+                                {% endif %}
+                                <div class="product-info-detail">
+                                    <div class="product-name-detail" title="{{ data.item.product.name }}">
+                                        {{ data.item.product.name }}
+                                    </div>
+                                    <div class="product-sku-detail">SKU: {{ data.item.product.slug|upper }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            {% if data.variation_name %}
+                                <span class="variation-badge-detail" title="{{ data.variation_name }}">
+                                    {{ data.variation_name }}
+                                </span>
+                            {% else %}
+                                <span class="simple-badge-detail">Simple Product</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="qty-badge-detail">{{ data.item.quantity }}</span>
+                        </td>
+                        <td class="text-right">
+                            <strong class="cost-text">Rs {{ data.safe_unit_cost|floatformat:2 }}</strong>
+                        </td>
+                        <td class="text-right">
+                            <strong class="total-cost-detail">Rs {{ data.safe_total_cost|floatformat:2 }}</strong>
+                        </td>
+                        <td class="text-center">
+                            {% if data.item.notes %}
+                                <button class="btn-notes-detail" onclick="showNotes('{{ data.item.notes|escapejs }}')">
+                                    <i class="fas fa-sticky-note"></i>
+                                </button>
+                            {% else %}
+                                <span class="no-notes">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5">
+                            <i class="fas fa-inbox fa-3x empty-icon mb-3"></i>
+                            <p class="empty-text">No items found</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="total-row">
+                        <td colspan="3" class="text-right"><strong>TOTAL:</strong></td>
+                        <td class="text-center"><strong class="total-qty">{{ stock_in.total_quantity }}</strong></td>
+                        <td></td>
+                        <td class="text-right"><strong class="grand-total">Rs {{ safe_total_cost|floatformat:2 }}</strong></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Notes Modal -->
+<div id="notesModal" class="modal-notes">
+    <div class="modal-content-notes">
+        <div class="modal-header-notes">
+            <h4><i class="fas fa-sticky-note"></i> Item Notes</h4>
+            <button class="modal-close-notes" onclick="closeNotesModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body-notes">
+            <p id="notesText"></p>
+        </div>
+    </div>
+</div>
+
+<style>
+:root {
+    --dark-bg: #0f172a;
+    --dark-card: #1e293b;
+    --dark-border: #334155;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --accent-purple: #8b5cf6;
+    --accent-green: #10b981;
+    --accent-orange: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-blue: #3b82f6;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.stock-in-detail-page {
+    background: var(--dark-bg);
+    min-height: 100vh;
+    padding: 2rem;
+    color: var(--text-primary);
+}
+
+/* Header */
+.page-header-detail {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    animation: slideDown 0.5s ease;
+}
+
+.page-header-detail h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.reference-number {
+    font-family: 'Courier New', monospace;
+    font-size: 1.1rem;
+    color: var(--accent-purple);
+    margin: 0.5rem 0 0 0;
+    font-weight: 700;
+}
+
+.header-actions-detail {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.btn-back-detail,
+.btn-print-detail {
+    background: var(--dark-card);
+    color: var(--text-primary);
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    border: 1px solid var(--dark-border);
+    text-decoration: none;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s;
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+
+.btn-back-detail:hover {
+    border-color: var(--accent-purple);
+    color: var(--accent-purple);
+    transform: translateY(-2px);
+}
+
+.btn-print-detail:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    transform: translateY(-2px);
+}
+
+/* Info Card */
+.info-card {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    animation: fadeIn 0.6s ease;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.info-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.info-value {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.highlight-green {
+    color: var(--accent-green) !important;
+    font-size: 1.25rem !important;
+    font-weight: 800 !important;
+}
+
+/* Type Badges */
+.type-badge {
+    padding: 0.4rem 0.9rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: inline-block;
+    border: 1px solid;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.type-purchase { 
+    background: rgba(59, 130, 246, 0.2); 
+    color: #60a5fa; 
+    border-color: rgba(59, 130, 246, 0.5); 
+}
+
+.type-return { 
+    background: rgba(245, 158, 11, 0.2); 
+    color: #fbbf24; 
+    border-color: rgba(245, 158, 11, 0.5); 
+}
+
+.type-adjustment { 
+    background: rgba(139, 92, 246, 0.2); 
+    color: #a78bfa; 
+    border-color: rgba(139, 92, 246, 0.5); 
+}
+
+.type-transfer { 
+    background: rgba(16, 185, 129, 0.2); 
+    color: #34d399; 
+    border-color: rgba(16, 185, 129, 0.5); 
+}
+
+.type-other { 
+    background: rgba(148, 163, 184, 0.2); 
+    color: #cbd5e1; 
+    border-color: rgba(148, 163, 184, 0.5); 
+}
+
+/* Notes Section */
+.notes-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--dark-border);
+}
+
+.notes-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.notes-content {
+    background: rgba(255, 255, 255, 0.03);
+    padding: 1rem;
+    border-radius: 8px;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+/* Items Card */
+.items-card {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    border-radius: 16px;
+    overflow: hidden;
+    animation: fadeIn 0.7s ease;
+}
+
+.card-header-detail {
+    padding: 1.5rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid var(--dark-border);
+}
+
+.card-header-detail h3 {
+    margin: 0;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+}
+
+.table-wrapper-detail {
+    overflow-x: auto;
+}
+
+.detail-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.detail-table thead {
+    background: rgba(139, 92, 246, 0.08);
+}
+
+.detail-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 700;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--dark-border);
+}
+
+.detail-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+    color: var(--text-primary);
+}
+
+.detail-table tbody tr {
+    transition: all 0.2s;
+}
+
+.detail-table tbody tr:hover {
+    background: rgba(139, 92, 246, 0.05);
+    transform: scale(1.005);
+}
+
+/* Product Cell */
+.product-cell-detail {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.product-img-detail {
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 8px;
+    flex-shrink: 0;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.product-img-placeholder-detail {
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    font-size: 1.25rem;
+}
+
+.product-info-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.product-name-detail {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    line-height: 1.4;
+    
+    /* Single line ellipsis (works everywhere) */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 250px; /* Adjust as needed */
+}
+
+
+.product-sku-detail {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+}
+
+/* Variation Badge */
+.variation-badge-detail {
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--accent-purple);
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: inline-block;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.simple-badge-detail {
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-secondary);
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.qty-badge-detail {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--accent-green);
+    padding: 0.4rem 0.85rem;
+    border-radius: 8px;
+    font-weight: 800;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    font-size: 1rem;
+}
+
+.cost-text {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.total-cost-detail {
+    color: var(--accent-green);
+    font-size: 1.05rem;
+}
+
+.btn-notes-detail {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--accent-orange);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    padding: 0.4rem 0.65rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 0.9rem;
+}
+
+.btn-notes-detail:hover {
+    background: rgba(245, 158, 11, 0.3);
+    transform: scale(1.15);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+}
+
+.no-notes {
+    color: var(--text-secondary);
+}
+
+/* Total Row */
+.total-row {
+    background: rgba(139, 92, 246, 0.08);
+    font-weight: 800;
+}
+
+.total-row td {
+    padding: 1.25rem 1rem;
+    border-top: 2px solid var(--accent-purple);
+    font-size: 1rem;
+}
+
+.total-qty {
+    color: var(--accent-green);
+    font-size: 1.25rem;
+}
+
+.grand-total {
+    color: var(--accent-green);
+    font-size: 1.5rem;
+}
+
+/* Empty State */
+.empty-icon {
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+.empty-text {
+    color: var(--text-secondary);
+    font-size: 1rem;
+    margin-top: 1rem;
+}
+
+/* Utility Classes */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-muted { color: var(--text-secondary); }
+.py-5 { padding: 2.5rem 0; }
+.mb-3 { margin-bottom: 1rem; }
+
+/* Notes Modal */
+.modal-notes {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-notes.active {
+    display: flex;
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-content-notes {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    border-radius: 16px;
+    max-width: 500px;
+    width: 90%;
+    animation: slideUp 0.3s ease;
+}
+
+.modal-header-notes {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--dark-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header-notes h4 {
+    margin: 0;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+}
+
+.modal-close-notes {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+}
+
+.modal-close-notes:hover {
+    color: var(--accent-red);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.modal-body-notes {
+    padding: 1.5rem;
+}
+
+.modal-body-notes p {
+    color: var(--text-primary);
+    line-height: 1.6;
+    margin: 0;
+    font-size: 1rem;
+}
+
+/* Animations */
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Print Styles */
+@media print {
+    .btn-back-detail,
+    .btn-print-detail,
+    .btn-notes-detail {
+        display: none;
+    }
+    
+    .stock-in-detail-page {
+        background: white;
+        color: black;
+    }
+    
+    .info-card,
+    .items-card {
+        border: 1px solid #ddd;
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .stock-in-detail-page {
+        padding: 1rem;
+    }
+    
+    .page-header-detail {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .header-actions-detail {
+        width: 100%;
+    }
+    
+    .btn-back-detail,
+    .btn-print-detail {
+        flex: 1;
+        justify-content: center;
+    }
+    
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .detail-table {
+        font-size: 0.85rem;
+    }
+    
+    .detail-table th,
+    .detail-table td {
+        padding: 0.75rem 0.5rem;
+    }
+    
+    .product-name-detail {
+        font-size: 0.85rem;
+    }
+    
+    .product-img-detail,
+    .product-img-placeholder-detail {
+        width: 40px;
+        height: 40px;
+    }
+}
+</style>
+
+<script>
+function showNotes(notes) {
+    document.getElementById('notesText').textContent = notes;
+    document.getElementById('notesModal').classList.add('active');
+}
+
+function closeNotesModal() {
+    document.getElementById('notesModal').classList.remove('active');
+}
+
+// Close modal on outside click
+document.getElementById('notesModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeNotesModal();
+    }
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeNotesModal();
+    }
+});
+
+// Prevent default drag on images
+document.querySelectorAll('.product-img-detail').forEach(img => {
+    img.addEventListener('dragstart', (e) => e.preventDefault());
+});
+</script>
+{% endblock %}

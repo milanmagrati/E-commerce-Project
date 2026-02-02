@@ -1,0 +1,582 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Products - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    {% if clear_product_draft %}
+    <script>
+        (function(){
+            try {
+                console.log('🧹 Clearing product drafts as requested by server-side flag');
+                Object.keys(localStorage).forEach(function(k){ if (k && k.indexOf('product_form_') === 0) { localStorage.removeItem(k); console.log('Removed draft:', k); } });
+            } catch(e) { console.warn('Failed clearing drafts:', e); }
+        })();
+    </script>
+    {% endif %}
+    <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h2><i class="fas fa-box"></i> Products Management</h2>
+        <div class="d-flex gap-2">
+            <a href="{% url 'products_trash' %}" class="btn btn-danger btn-lg">
+                <i class="fas fa-trash-alt"></i> Trash
+                {% if trash_count > 0 %}
+                <span class="badge bg-light text-danger">{{ trash_count }}</span>
+                {% endif %}
+            </a>
+            <a href="{% url 'product_add' %}" class="btn btn-primary btn-lg">
+                <i class="fas fa-plus"></i> Add New Product
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card bg-primary-gradient">
+            <div class="stat-icon">
+                <i class="fas fa-boxes"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ products.count }}</h3>
+                <p>Total Products</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card bg-success-gradient">
+            <div class="stat-icon">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ active_count }}</h3>
+                <p>Active Products</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card bg-warning-gradient">
+            <div class="stat-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ low_stock_count }}</h3>
+                <p>Low Stock</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card bg-danger-gradient">
+            <div class="stat-icon">
+                <i class="fas fa-times-circle"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ out_of_stock_count }}</h3>
+                <p>Out of Stock</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search and Filter -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3" id="filterForm">
+            <div class="col-lg-3 col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" name="search" 
+                           placeholder="Search products..." 
+                           value="{{ search_query }}">
+                </div>
+            </div>
+            
+            <!-- Date Range Filter -->
+            <div class="col-lg-2 col-md-3">
+                <select name="date_range" class="form-select" id="dateRangeSelect" onchange="toggleCustomDate()">
+                    <option value="">All Time</option>
+                    <option value="today" {% if date_filter == "today" %}selected{% endif %}>Today</option>
+                    <option value="yesterday" {% if date_filter == "yesterday" %}selected{% endif %}>Yesterday</option>
+                    <option value="last_7_days" {% if date_filter == "last_7_days" %}selected{% endif %}>Last 7 Days</option>
+                    <option value="last_30_days" {% if date_filter == "last_30_days" %}selected{% endif %}>Last 30 Days</option>
+                    <option value="this_month" {% if date_filter == "this_month" %}selected{% endif %}>This Month</option>
+                    <option value="last_month" {% if date_filter == "last_month" %}selected{% endif %}>Last Month</option>
+                    <option value="this_year" {% if date_filter == "this_year" %}selected{% endif %}>This Year</option>
+                    <option value="custom" {% if date_filter == "custom" %}selected{% endif %}>Custom Range</option>
+                </select>
+            </div>
+            
+            <!-- Custom Date Range (Hidden by default) -->
+            <div class="col-lg-2 col-md-3" id="customDateStart" style="display: {% if date_filter == 'custom' %}block{% else %}none{% endif %};">
+                <input type="date" class="form-control" name="start_date" 
+                       placeholder="Start Date" value="{{ start_date }}">
+            </div>
+            <div class="col-lg-2 col-md-3" id="customDateEnd" style="display: {% if date_filter == 'custom' %}block{% else %}none{% endif %};">
+                <input type="date" class="form-control" name="end_date" 
+                       placeholder="End Date" value="{{ end_date }}">
+            </div>
+            
+            <div class="col-lg-2 col-md-3">
+                <select class="form-select" name="category">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}
+                    <option value="{{ category.slug }}" {% if category_filter == category.slug %}selected{% endif %}>
+                        {{ category.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-lg-2 col-md-3">
+                <select class="form-select" name="status">
+                    <option value="">All Status</option>
+                    <option value="active" {% if status_filter == "active" %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if status_filter == "inactive" %}selected{% endif %}>Inactive</option>
+                </select>
+            </div>
+            
+            <div class="col-lg-2 col-md-3">
+                <select class="form-select" name="stock">
+                    <option value="">All Stock</option>
+                    <option value="in_stock" {% if stock_filter == "in_stock" %}selected{% endif %}>In Stock</option>
+                    <option value="low_stock" {% if stock_filter == "low_stock" %}selected{% endif %}>Low Stock (≤10)</option>
+                    <option value="out_of_stock" {% if stock_filter == "out_of_stock" %}selected{% endif %}>Out of Stock</option>
+                </select>
+            </div>
+            
+            <div class="col-lg-1 col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i>
+                </button>
+            </div>
+            <div class="col-lg-1 col-md-2">
+                <a href="{% url 'products' %}" class="btn btn-secondary w-100">
+                    <i class="fas fa-redo"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk Actions Bar -->
+<div id="bulkActionsBar" class="card shadow-sm mb-3" style="display: none;">
+    <div class="card-body py-2">
+        <form method="post" action="{% url 'products_bulk_action' %}" id="bulkActionForm" onsubmit="return confirmBulkAction()">
+            {% csrf_token %}
+            <div class="row align-items-center g-2">
+                <div class="col-md-3">
+                    <span id="selectedCount" class="fw-bold text-primary">0 products selected</span>
+                </div>
+                <div class="col-md-3">
+                    <select name="bulk_action" class="form-select form-select-sm" id="bulkActionSelect" onchange="togglePercentageInput()" required>
+                        <option value="">Select Action</option>
+                        <option value="delete">Move to Trash</option>
+                        <option value="activate">Activate Selected</option>
+                        <option value="deactivate">Deactivate Selected</option>
+                        <option value="increase_price">Increase Price by %</option>
+                        <option value="decrease_price">Decrease Price by %</option>
+                    </select>
+                </div>
+                <div class="col-md-2" id="percentageInput" style="display: none;">
+                    <input type="number" name="percentage" class="form-control form-control-sm" 
+                           placeholder="Enter %" min="1" max="100" step="0.01">
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-sm btn-danger me-2">
+                        <i class="fas fa-check"></i> Apply Action
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="clearSelection()">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Products Table -->
+<div class="card shadow-sm">
+    <div class="card-header bg-gradient-primary text-white">
+        <div class="d-flex justify-content-between align-items-center flex-wrap">
+            <h5 class="mb-0">
+                <i class="fas fa-list"></i> Product List ({{ products.count }} products)
+                {% if date_filter %}
+                    <span class="badge bg-light text-dark ms-2">
+                        {% if date_filter == "today" %}Today
+                        {% elif date_filter == "yesterday" %}Yesterday
+                        {% elif date_filter == "last_7_days" %}Last 7 Days
+                        {% elif date_filter == "last_30_days" %}Last 30 Days
+                        {% elif date_filter == "this_month" %}This Month
+                        {% elif date_filter == "last_month" %}Last Month
+                        {% elif date_filter == "this_year" %}This Year
+                        {% elif date_filter == "custom" %}Custom Range
+                        {% endif %}
+                    </span>
+                {% endif %}
+            </h5>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 product-table">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 3%;">
+                            <input type="checkbox" id="selectAll" class="form-check-input" onclick="toggleSelectAll(this)">
+                        </th>
+                        <th style="width: 8%;">Image</th>
+                        <th style="width: 22%;">Name</th>
+                        <th style="width: 12%;">Category</th>
+                        <th style="width: 10%;">Price</th>
+                        <th style="width: 8%;">Stock</th>
+                        <th style="width: 8%;">Status</th>
+                        <th style="width: 12%;">Created</th>
+                        <th style="width: 17%;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in products %}
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="form-check-input product-checkbox" 
+                                   name="product_ids" value="{{ product.id }}" 
+                                   onchange="updateBulkActions()">
+                        </td>
+                        <td>
+                            {% if product.image %}
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}" 
+                                 class="product-img">
+                            {% else %}
+                            <div class="product-img-placeholder">
+                                <i class="fas fa-image text-muted"></i>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong>{{ product.name }}</strong><br>
+                            <small class="text-muted">SKU: {{ product.slug }}</small>
+                        </td>
+                        <td>
+                            {% if product.category %}
+                                <span class="badge bg-secondary">{{ product.category.name }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark">Uncategorized</span>
+                            {% endif %}
+                        </td>
+                        <td><strong class="text-success">रू {{ product.price|floatformat:2 }}</strong></td>
+                        <td>
+                            {% if product.stock == 0 %}
+                                <span class="badge bg-danger">Out</span>
+                            {% elif product.stock <= 10 %}
+                                <span class="badge bg-warning text-dark">{{ product.stock }}</span>
+                            {% else %}
+                                <span class="badge bg-success">{{ product.stock }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if product.is_active %}
+                            <span class="badge bg-success">
+                                <i class="fas fa-check-circle"></i> Active
+                            </span>
+                            {% else %}
+                            <span class="badge bg-secondary">
+                                <i class="fas fa-times-circle"></i> Inactive
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="text-muted small">{{ product.created_at|date:"M d, Y" }}</span><br>
+                            <small class="text-muted">{{ product.created_at|date:"h:i A" }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <a href="{% url 'product_detail' product.id %}" class="btn btn-info" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{% url 'product_edit' product.id %}" class="btn btn-warning" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <!-- ✅ UPDATED: Move to Trash Button -->
+                                <button type="button" class="btn btn-danger" title="Move to Trash"
+                                        onclick="moveToTrash({{ product.id }}, '{{ product.name|escapejs }}')">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center py-5">
+                            <i class="fas fa-box-open fa-3x text-muted mb-3 d-block"></i>
+                            <p class="text-muted mb-3">No products found</p>
+                            <a href="{% url 'product_add' %}" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Add Your First Product
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden forms for trash actions -->
+<div id="trashForms"></div>
+
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .bg-primary-gradient {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    .bg-success-gradient {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+
+    .bg-warning-gradient {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+
+    .bg-danger-gradient {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+
+    .stat-icon {
+        font-size: 2.5rem;
+        margin-right: 20px;
+        opacity: 0.8;
+    }
+
+    .stat-content h3 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: bold;
+    }
+
+    .stat-content p {
+        margin: 0;
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+
+    .product-img {
+        width: 60px;
+        height: 60px;
+        object-fit: cover;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+
+    .product-img:hover {
+        transform: scale(1.1);
+    }
+
+    .product-img-placeholder {
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+    }
+
+    .product-table tbody tr {
+        transition: background-color 0.2s ease;
+    }
+
+    .product-table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    .btn-group-sm .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    #bulkActionsBar {
+        background: linear-gradient(135deg, #fff5f5 0%, #ffe5e5 100%);
+        border-left: 4px solid #ef4444;
+        animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .stat-card {
+            margin-bottom: 1rem;
+        }
+        
+        .product-img {
+            width: 50px;
+            height: 50px;
+        }
+    }
+</style>
+
+<script>
+// Toggle Custom Date Inputs
+function toggleCustomDate() {
+    const select = document.getElementById('dateRangeSelect');
+    const startDiv = document.getElementById('customDateStart');
+    const endDiv = document.getElementById('customDateEnd');
+    
+    if (select.value === 'custom') {
+        startDiv.style.display = 'block';
+        endDiv.style.display = 'block';
+    } else {
+        startDiv.style.display = 'none';
+        endDiv.style.display = 'none';
+    }
+}
+
+// Toggle Select All Checkboxes
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.product-checkbox');
+    checkboxes.forEach(function(cb) {
+        cb.checked = checkbox.checked;
+    });
+    updateBulkActions();
+}
+
+// Update Bulk Actions Bar
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.product-checkbox:checked');
+    const count = checkboxes.length;
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const selectedCount = document.getElementById('selectedCount');
+    
+    if (count > 0) {
+        bulkBar.style.display = 'block';
+        selectedCount.textContent = count + ' product' + (count > 1 ? 's' : '') + ' selected';
+        
+        const form = document.getElementById('bulkActionForm');
+        const existingInputs = form.querySelectorAll('input[name="product_ids"]');
+        existingInputs.forEach(function(input) {
+            input.remove();
+        });
+        
+        checkboxes.forEach(function(cb) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'product_ids';
+            input.value = cb.value;
+            form.appendChild(input);
+        });
+    } else {
+        bulkBar.style.display = 'none';
+        document.getElementById('selectAll').checked = false;
+    }
+}
+
+// Show/Hide percentage input
+function togglePercentageInput() {
+    const select = document.getElementById('bulkActionSelect');
+    const percentageDiv = document.getElementById('percentageInput');
+    
+    if (select.value === 'increase_price' || select.value === 'decrease_price') {
+        percentageDiv.style.display = 'block';
+    } else {
+        percentageDiv.style.display = 'none';
+    }
+}
+
+// Clear Selection
+function clearSelection() {
+    document.querySelectorAll('.product-checkbox').forEach(function(cb) {
+        cb.checked = false;
+    });
+    document.getElementById('selectAll').checked = false;
+    updateBulkActions();
+}
+
+// Confirm Bulk Action
+function confirmBulkAction() {
+    const action = document.querySelector('[name="bulk_action"]').value;
+    const count = document.querySelectorAll('.product-checkbox:checked').length;
+    
+    if (!action) {
+        alert('Please select an action!');
+        return false;
+    }
+    
+    if (action === 'increase_price' || action === 'decrease_price') {
+        const percentage = document.querySelector('[name="percentage"]').value;
+        if (!percentage || percentage <= 0) {
+            alert('Please enter a valid percentage!');
+            return false;
+        }
+    }
+    
+    let message = '';
+    if (action === 'delete') {
+        message = 'Are you sure you want to move ' + count + ' product(s) to trash?';
+    } else if (action === 'activate') {
+        message = 'Activate ' + count + ' product(s)?';
+    } else if (action === 'deactivate') {
+        message = 'Deactivate ' + count + ' product(s)?';
+    } else if (action === 'increase_price') {
+        const percentage = document.querySelector('[name="percentage"]').value;
+        message = 'Increase price of ' + count + ' product(s) by ' + percentage + '%?';
+    } else if (action === 'decrease_price') {
+        const percentage = document.querySelector('[name="percentage"]').value;
+        message = 'Decrease price of ' + count + ' product(s) by ' + percentage + '%?';
+    }
+    
+    return confirm(message);
+}
+
+// ✅ NEW: Move single product to trash
+function moveToTrash(productId, productName) {
+    if (confirm('Move "' + productName + '" to trash?')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/products/' + productId + '/move-to-trash/';
+        
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Empty Trash{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'returns_dashboard' %}">Returns</a></li>
+<li class="breadcrumb-item"><a href="{% url 'returns_trash_list' %}">Trash</a></li>
+<li class="breadcrumb-item active">Empty Trash</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-7">
+            <div class="card border-0 shadow-lg border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Empty Trash - Permanent Action</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-danger mb-4">
+                        <h5 class="alert-heading"><i class="fas fa-skull-crossbones"></i> DANGER ZONE</h5>
+                        <hr>
+                        <p class="mb-0">
+                            <strong>This action will PERMANENTLY delete {{ trashed_count }} return(s) from the database!</strong><br>
+                            All data including return items, activity logs, and images will be lost forever.
+                        </p>
+                    </div>
+
+                    <div class="bg-light p-4 rounded mb-4">
+                        <h6 class="mb-3"><i class="fas fa-info-circle text-danger"></i> What will be deleted:</h6>
+                        <ul class="mb-0">
+                            <li>{{ trashed_count }} return request(s)</li>
+                            <li>All associated return items</li>
+                            <li>Complete activity history</li>
+                            <li>Quality inspection records</li>
+                            <li>Customer notes and admin notes</li>
+                        </ul>
+                    </div>
+
+                    <div class="card bg-warning bg-opacity-10 border-warning mb-4">
+                        <div class="card-body">
+                            <h6 class="card-title text-warning"><i class="fas fa-exclamation-triangle"></i> Important!</h6>
+                            <p class="card-text small mb-0">
+                                • This action <strong>CANNOT</strong> be undone<br>
+                                • There is <strong>NO</strong> way to recover deleted data<br>
+                                • Consider downloading a backup first<br>
+                                • Only administrators can perform this action
+                            </p>
+                        </div>
+                    </div>
+
+                    <form method="POST" onsubmit="return confirmEmptyTrash()">
+                        {% csrf_token %}
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="confirm1" required>
+                            <label class="form-check-label text-danger" for="confirm1">
+                                I understand that all {{ trashed_count }} return(s) will be permanently deleted
+                            </label>
+                        </div>
+
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="confirm2" required>
+                            <label class="form-check-label text-danger" for="confirm2">
+                                I understand this action CANNOT be reversed
+                            </label>
+                        </div>
+
+                        <div class="form-check mb-4">
+                            <input class="form-check-input" type="checkbox" id="confirm3" required>
+                            <label class="form-check-label text-danger" for="confirm3">
+                                I have administrative authority to perform this action
+                            </label>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-end">
+                            <a href="{% url 'returns_trash_list' %}" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-arrow-left"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-danger btn-lg" id="emptyTrashBtn" disabled>
+                                <i class="fas fa-trash-restore"></i> Empty Trash ({{ trashed_count }})
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Enable button only when all checkboxes are checked
+const checkboxes = document.querySelectorAll('#confirm1, #confirm2, #confirm3');
+const submitBtn = document.getElementById('emptyTrashBtn');
+
+checkboxes.forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        submitBtn.disabled = !allChecked;
+    });
+});
+
+function confirmEmptyTrash() {
+    return confirm(
+        'FINAL WARNING!\n\n' +
+        'This will PERMANENTLY delete {{ trashed_count }} return(s).\n\n' +
+        'There is NO way to undo this action!\n\n' +
+        'Type "DELETE" in the prompt to continue.'
+    ) && prompt('Type DELETE to confirm:') === 'DELETE';
+}
+</script>
+{% endblock %}

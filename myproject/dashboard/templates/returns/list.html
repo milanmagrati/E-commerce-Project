@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}All Returns{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'returns_dashboard' %}">Returns</a></li>
+<li class="breadcrumb-item active">All Returns</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="fas fa-undo-alt text-primary"></i> Returns</h2>
+            <p class="text-muted">Manage return requests</p>
+        </div>
+        <div>
+            <a href="{% url 'returns_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Dashboard
+            </a>
+            {% if trash_count %}
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <a href="{% url 'returns_trash_list' %}" class="btn btn-danger">
+                    <i class="fas fa-trash"></i> Trash ({{ trash_count }})
+                </a>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filters & Search -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3">
+                <div class="col-md-4">
+                    <input type="text" name="search" class="form-control" placeholder="Search returns..." value="{{ search_query }}">
+                </div>
+                <div class="col-md-2">
+                    <select name="status" class="form-select">
+                        <option value="">All Statuses</option>
+                        {% for code, label in status_choices %}
+                            <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select name="reason" class="form-select">
+                        <option value="">All Reasons</option>
+                        {% for code, label in reason_choices %}
+                            <option value="{{ code }}" {% if reason_filter == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select name="refund_type" class="form-select">
+                        <option value="">Any Refund Type</option>
+                        {% for code, label in refund_type_choices %}
+                            <option value="{{ code }}" {% if refund_type_filter == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter"></i> Apply
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Returns Table -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Return Requests</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>RMA #</th>
+                            <th>Order</th>
+                            <th>Customer</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Created At</th>
+                            <th>Created By</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for return in returns %}
+                        <tr>
+                            <td><strong>{{ return.rma_number }}</strong></td>
+                            <td>{{ return.order.order_number }}</td>
+                            <td>
+                                <div>{{ return.customer_name }}</div>
+                                <small class="text-muted">{{ return.customer_phone }}</small>
+                            </td>
+                            <td>रू {{ return.total_amount }}</td>
+                            <td>
+                                <span class="badge bg-{{ return.get_return_status_display|lower }}">
+                                    {{ return.get_return_status_display }}
+                                </span>
+                            </td>
+                            <td>
+                                <small>{{ return.created_at|date:"M d, Y" }}</small>
+                            </td>
+                            <td>{{ return.created_by.username|default:"System" }}</td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'return_detail' return.id %}" class="btn btn-outline-primary" title="View">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    {% if user.is_superuser or user.role == 'administrator' or user.can_delete_returns %}
+                                    <a href="{% url 'return_trash' return.id %}" class="btn btn-outline-danger" title="Move to Trash">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5">
+                                <i class="fas fa-box fa-3x text-muted mb-3 d-block"></i>
+                                <p class="text-muted mb-0">No return requests found</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        {% if returns.has_other_pages %}
+        <div class="card-footer bg-white border-top">
+            <nav>
+                <ul class="pagination pagination-sm mb-0 justify-content-center">
+                    {% if returns.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ returns.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">Previous</a>
+                    </li>
+                    {% endif %}
+
+                    <li class="page-item active">
+                        <span class="page-link">Page {{ returns.number }} of {{ returns.paginator.num_pages }}</span>
+                    </li>
+
+                    {% if returns.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ returns.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

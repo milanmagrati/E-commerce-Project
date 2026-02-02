@@ -1,0 +1,1697 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Edit Order - POS{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+<style>
+  :root {
+    --primary: #667eea;
+    --primary-dark: #5568d3;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --info: #3b82f6;
+  }
+
+  body {
+    background: #f8fafc;
+  }
+
+  .pos-wrapper {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 1.5rem;
+  }
+
+  .pos-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    animation: slideIn 0.4s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .pos-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: white;
+    padding: 1.25rem 1.5rem;
+    border-radius: 12px 12px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .pos-header h4 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .pos-body {
+    padding: 1.5rem;
+  }
+
+  .form-control,
+  .form-select {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    height: 38px;
+    background: white;
+    transition: all 0.3s ease;
+  }
+
+  .form-control:focus,
+  .form-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    outline: none;
+    transform: translateY(-1px);
+  }
+
+  textarea.form-control {
+    resize: none;
+    min-height: 38px;
+  }
+
+  .form-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    display: block;
+  }
+
+  .table-wrapper {
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fafbfc;
+    animation: fadeIn 0.5s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  .table-scroll {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .table-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .table-scroll::-webkit-scrollbar-track {
+    background: #f1f5f9;
+  }
+
+  .table-scroll::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    border-radius: 4px;
+  }
+
+  .product-table {
+    width: 100%;
+    margin: 0;
+  }
+
+  .product-table thead {
+    background: var(--primary);
+    color: white;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .product-table thead th {
+    padding: 0.75rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    border: none;
+    white-space: nowrap;
+  }
+
+  .product-table tbody td {
+    padding: 0.75rem 0.5rem;
+    font-size: 0.875rem;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
+  }
+
+  .product-table tbody tr {
+    animation: slideInRow 0.3s ease-out;
+  }
+
+  @keyframes slideInRow {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .product-table tbody tr:hover {
+    background: #f8fafc;
+    transform: scale(1.005);
+    transition: all 0.2s ease;
+  }
+
+  .empty-cart {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #94a3b8;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+
+    0%,
+    100% {
+      opacity: 0.6;
+    }
+
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .empty-cart i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.4;
+  }
+
+  .qty-control {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .qty-control .btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+  }
+
+  .qty-control .btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .qty-control .btn:active {
+    transform: scale(0.95);
+  }
+
+  .qty-control input {
+    width: 50px;
+    text-align: center;
+    height: 30px;
+    font-size: 0.875rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+  }
+
+  .qty-control input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+
+  .btn-add-product {
+    background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+    border: none;
+    color: white;
+    padding: 0 1.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+  }
+
+  .btn-add-product::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+
+  .btn-add-product:hover::before {
+    width: 300px;
+    height: 300px;
+  }
+
+  .btn-add-product:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+  }
+
+  .btn-add-product:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
+
+  .btn-add-product i {
+    transition: transform 0.3s ease;
+  }
+
+  .btn-add-product:hover i {
+    transform: rotate(90deg) scale(1.1);
+  }
+
+  .btn-create {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    border: none;
+    color: white;
+    padding: 0.75rem 3rem;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  }
+
+  .btn-create::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transition: left 0.5s;
+  }
+
+  .btn-create:hover::before {
+    left: 100%;
+  }
+
+  .btn-create:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+  }
+
+  .btn-create:active {
+    transform: translateY(-1px);
+  }
+
+  .btn-create:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+    transform: none;
+    animation: none;
+    box-shadow: none;
+  }
+
+  .total-box {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+    animation: fadeInUp 0.5s ease-out;
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+    transition: all 0.3s ease;
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .total-box:hover {
+    box-shadow: 0 8px 30px rgba(102, 126, 234, 0.4);
+    transform: translateY(-2px);
+  }
+
+  .total-box .total-amount {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+    animation: countUp 0.5s ease-out;
+  }
+
+  @keyframes countUp {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .total-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+    opacity: 0;
+    animation: fadeInLeft 0.5s ease-out forwards;
+  }
+
+  .total-row:nth-child(1) {
+    animation-delay: 0.1s;
+  }
+
+  .total-row:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .total-row:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  .total-row:nth-child(4) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes fadeInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .recent-section {
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 2px solid #e2e8f0;
+  }
+
+  .order-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    height: 100%;
+    animation: slideInUp 0.4s ease-out;
+  }
+
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .order-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  }
+
+  .order-number {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+    transition: color 0.3s ease;
+  }
+
+  .order-card:hover .order-number {
+    color: var(--primary-dark);
+  }
+
+  .product-card {
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 100%;
+  }
+
+  .product-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+  }
+
+  .product-img {
+    height: 180px;
+    object-fit: cover;
+    width: 100%;
+    transition: transform 0.5s ease;
+  }
+
+  .product-card:hover .product-img {
+    transform: scale(1.1) rotate(2deg);
+  }
+
+  .product-card-body {
+    padding: 0.75rem;
+    background: white;
+    transition: background 0.3s ease;
+  }
+
+  .product-card:hover .product-card-body {
+    background: #f8fafc;
+  }
+
+  .badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .section-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
+    margin: 1.5rem 0;
+  }
+
+  .btn-danger {
+    transition: all 0.3s ease;
+  }
+
+  .btn-danger:hover {
+    transform: rotate(15deg) scale(1.1);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+  }
+
+  .btn-danger:active {
+    transform: rotate(0) scale(0.95);
+  }
+
+  @keyframes fadeOut {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    to {
+      opacity: 0;
+      transform: translateX(-50px);
+    }
+  }
+
+  .deleting {
+    animation: fadeOut 0.3s ease-out forwards;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .fa-spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  .btn-light {
+    transition: all 0.3s ease;
+  }
+
+  .btn-light:hover {
+    transform: translateX(-5px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .alert-success {
+    animation: slideDown 0.4s ease-out;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  #productModal img.product-img {
+    width: 100% !important;
+    height: 180px !important;
+    object-fit: cover !important;
+    display: block !important;
+  }
+
+  .valley-info-box {
+    margin-top: 5px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    animation: slideInRight 0.3s ease-out;
+    border-left: 4px solid transparent;
+    clear: both;
+  }
+
+  .valley-info-box.valley {
+    background: #d1fae5;
+    border-left-color: #10b981;
+    color: #065f46;
+  }
+
+  .valley-info-box.out-valley {
+    background: #fef3c7;
+    border-left-color: #f59e0b;
+    color: #92400e;
+  }
+
+  .valley-info-box.unknown {
+    background: #e5e7eb;
+    border-left-color: #6b7280;
+    color: #374151;
+  }
+
+  .valley-info-box.error {
+    background: #fee2e2;
+    border-left-color: #ef4444;
+    color: #991b1b;
+  }
+
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .fixed-height-row {
+    min-height: 70px;
+  }
+
+  .fixed-height-row .col-md-2 {
+    margin-bottom: 0;
+  }
+
+  #partialPaymentModal .modal-content {
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  }
+
+  #partialPaymentModal .modal-header {
+    background: linear-gradient(135deg, var(--warning) 0%, #f59e0b 100%);
+    color: white;
+    border-radius: 12px 12px 0 0;
+  }
+
+  #partialPaymentModal .btn-close {
+    filter: brightness(0) invert(1);
+  }
+
+  .payment-info-box {
+    background: #f0f9ff;
+    border-left: 4px solid var(--info);
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    animation: slideInRight 0.3s ease-out;
+  }
+
+  .row-spacing {
+    margin-bottom: 0.75rem !important;
+  }
+
+  .form-control,
+  .form-select,
+  .btn-add-product {
+    height: 38px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pos-wrapper">
+  <div class="pos-card">
+    <div class="pos-header">
+      <h4><i class="fas fa-edit"></i> Edit Order #{{ order.order_number }}</h4>
+      <div class="d-flex gap-2">
+        <a href="{% url 'city_management' %}" class="btn btn-info btn-sm">
+          <i class="fas fa-city"></i> Manage Cities
+        </a>
+        <a href="{% url 'order_detail' order.id %}" class="btn btn-light btn-sm">
+          <i class="fas fa-arrow-left"></i> Back
+        </a>
+      </div>
+    </div>
+
+    <div class="pos-body">
+      {% if messages %}
+      {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <form method="post" id="orderForm">
+        {% csrf_token %}
+
+        <!-- Row 1 -->
+        <div class="row g-3 mb-3 row-spacing">
+          <div class="col-md-2">
+            <label class="form-label">Search Phone</label>
+            <input type="text" class="form-control" id="phoneSearch" placeholder="Phone number"
+              value="{{ order.customer_phone }}">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Name *</label>
+            <input type="text" name="customer_name" id="customerName" class="form-control" placeholder="Name" required
+              value="{{ order.customer_name }}">
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Email</label>
+            <input type="email" name="customer_email" id="customerEmailInput" class="form-control"
+              placeholder="email@example.com" value="{{ order.customer_email|default:'' }}">
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Branch/City *</label>
+            <select name="branch_city" id="branchCity" class="form-control" required>
+              {% if order.branch_city %}
+                <option value="{{ order.branch_city }}" selected>{{ order.branch_city }}</option>
+              {% endif %}
+            </select>
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Address *</label>
+            <input type="text" name="shipping_address" id="customerAddress" class="form-control" placeholder="Address"
+              required value="{{ order.shipping_address }}">
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Landmark</label>
+            <input type="text" name="landmark" id="customerLandmark" class="form-control" placeholder="Landmark"
+              value="{{ order.landmark|default:'' }}">
+          </div>
+        </div>
+
+        <!-- Row 2 -->
+        <div class="row g-3 mb-3 row-spacing">
+          <div class="col-md-2">
+            <label class="form-label">Created By *</label>
+            <select name="created_by" id="createdBy" class="form-select" required>
+              <option value="">Select User</option>
+              {% for user in users %}
+              <option value="{{ user.id }}" {% if order.created_by.id == user.id %}selected{% endif %}>
+                {{ user.get_full_name|default:user.username }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Discount</label>
+            <input type="number" id="discount" name="discount" class="form-control" placeholder="0" step="0.01"
+              value="{{ order.discount_amount|default_if_none:'0' }}">
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Shipping</label>
+            <input type="number" id="shipping" name="shipping_charge" class="form-control" placeholder="0" step="0.01"
+              value="{{ order.shipping_charge|default_if_none:'0' }}">
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Order Note</label>
+            <textarea name="notes" id="orderNotes" class="form-control"
+              placeholder="Note...">{{ order.notes|default:'' }}</textarea>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Status</label>
+            <select name="order_status" class="form-select">
+              {% for s in statuses %}
+              <option value="{{ s }}" {% if order.order_status == s %}selected{% endif %}>{{ s|capfirst }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <!-- Row 3 -->
+        <div class="row g-3 mb-3 row-spacing fixed-height-row">
+          <div class="col-md-2">
+            <label class="form-label">Phone *</label>
+            <input type="text" name="customer_phone" id="customerPhone" class="form-control" placeholder="Phone"
+              required value="{{ order.customer_phone }}">
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Order From *</label>
+            <select name="order_from" class="form-select" required>
+              <option value="">Select Source</option>
+              {% for src in order_sources %}
+              <option value="{{ src }}" {% if order.order_from == src %}selected{% endif %}>{{ src|capfirst }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Payment</label>
+            <select name="payment_method" id="paymentMethod" class="form-select">
+              <option value="cod" {% if order.payment_method == 'cod' %}selected{% endif %}>Cash on Delivery</option>
+              <option value="esewa" {% if order.payment_method == 'esewa' %}selected{% endif %}>eSewa</option>
+              <option value="khalti" {% if order.payment_method == 'khalti' %}selected{% endif %}>Khalti</option>
+              <option value="bank" {% if order.payment_method == 'bank' %}selected{% endif %}>Bank Transfer</option>
+              <option value="cash" {% if order.payment_method == 'cash' %}selected{% endif %}>Cash</option>
+              <option value="partial" {% if order.payment_method == 'partial' %}selected{% endif %}>Partial Payment
+              </option>
+            </select>
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Tax (%)</label>
+            <input type="number" id="taxPercent" name="tax_percent" class="form-control" placeholder="13" step="0.01"
+              min="0" value="{{ order.tax_percent|default_if_none:'13' }}">
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">IN/OUT *</label>
+            <select name="in_out" id="inOutSelect" class="form-select" required>
+              <option value="in" {% if order.in_out == 'in' %}selected{% endif %}>Valley</option>
+              <option value="out" {% if order.in_out == 'out' %}selected{% endif %}>Out Valley</option>
+            </select>
+            <div id="valleyStatusInfo"></div>
+          </div>
+
+          <div class="col-md-2">
+            <div style="margin-top: auto; padding-top: 20px;">
+              <button id="addProductsBtn" type="button" class="btn btn-add-product w-100" data-bs-toggle="modal"
+                data-bs-target="#productModal">
+                <i class="fas fa-plus-circle"></i> Add Products
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- Products Table -->
+        <div class="table-wrapper mb-3">
+          <div class="table-scroll">
+            <table class="product-table">
+              <thead>
+                <tr>
+                  <th>Product Name</th>
+                  <th width="150">Variant</th>
+                  <th width="140">Quantity</th>
+                  <th width="100">Price</th>
+                  <th width="60"></th>
+                </tr>
+              </thead>
+              <tbody id="cartBody">
+                <tr id="emptyRow">
+                  <td colspan="5">
+                    <div class="empty-cart">
+                      <i class="fas fa-shopping-cart"></i>
+                      <p class="mb-0">No products added</p>
+                      <small>Click "Add Products" to start</small>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Total Box -->
+        <div class="total-box">
+          <div class="row align-items-center">
+            <div class="col-md-6">
+              <div class="total-row">
+                <span>Subtotal:</span>
+                <strong id="subtotal">रू 0.00</strong>
+              </div>
+              <div class="total-row">
+                <span>Discount:</span>
+                <strong id="discountAmount">- रू 0.00</strong>
+              </div>
+              <div class="total-row">
+                <span>Shipping:</span>
+                <strong id="shippingAmount">+ रू 0.00</strong>
+              </div>
+              <div class="total-row">
+                <span>Tax (<span id="taxPercentDisplay">13</span>%):</span>
+                <strong id="taxAmount">+ रू 0.00</strong>
+              </div>
+            </div>
+            <div class="col-md-6 text-end">
+              <small class="d-block mb-2">TOTAL AMOUNT</small>
+              <div class="total-amount" id="totalAmount">रू 0.00</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-center mt-4">
+          <button type="submit" class="btn btn-create" id="submitBtn">
+            <i class="fas fa-save"></i> Update Order
+          </button>
+        </div>
+
+        <!-- Hidden Inputs -->
+        <input type="hidden" name="order_items" id="orderItems">
+        <input type="hidden" name="total_amount" id="totalInput">
+        <input type="hidden" name="payment_status" value="{{ order.payment_status }}">
+        <input type="hidden" name="partial_amount_paid" id="partialAmountPaidHidden"
+          value="{{ order.partial_amount_paid|default:'0' }}">
+        <input type="hidden" name="remaining_amount" id="remainingAmountHidden"
+          value="{{ order.remaining_amount|default:'0' }}">
+        <input type="hidden" name="is_partial_payment" id="isPartialPayment"
+          value="{% if order.is_partial_payment %}true{% else %}false{% endif %}">
+      </form>
+
+      <!-- Recent Orders -->
+      <div class="recent-section">
+        <h5 class="mb-3"><i class="fas fa-history"></i> Recent Orders</h5>
+        <div class="row g-2" id="recentOrdersContainer">
+          {% for recent_order in recent_orders|slice:":6" %}
+          <div class="col-md-2">
+            <a href="{% url 'order_detail' recent_order.id %}" class="text-decoration-none">
+              <div class="order-card">
+                <div class="order-number">
+                  <i class="fas fa-receipt"></i> #{{ recent_order.order_number|slice:"-4:" }}
+                </div>
+                <p class="mb-1 small fw-bold text-dark">{{ recent_order.customer_name }}</p>
+                <p class="mb-1 small text-muted">{{ recent_order.created_by.username }}</p>
+                <p class="mb-0 small text-muted">{{ recent_order.created_at|date:"M d, H:i" }}</p>
+              </div>
+            </a>
+          </div>
+          {% empty %}
+          <div class="col-12 text-center text-muted py-3">
+            <i class="fas fa-inbox fa-2x mb-2"></i>
+            <p>No recent orders</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Product Modal -->
+<div class="modal fade" id="productModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-box"></i> Select Products</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="searchProduct" class="form-control mb-3" placeholder="🔍 Search products...">
+        <div id="productGrid" class="row g-3" style="min-height: 200px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Variation Modal -->
+<div class="modal fade" id="variationModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-layer-group"></i> Select Variation</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="variationBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Partial Payment Modal -->
+<div class="modal fade" id="partialPaymentModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-money-bill-wave"></i> Partial Payment Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Total Order Amount</label>
+          <input type="text" class="form-control" id="totalOrderAmount" readonly
+            style="background: #f8fafc; font-weight: 600; font-size: 1.1rem; color: var(--primary);">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Amount Paid <span class="text-danger">*</span></label>
+          <input type="number" class="form-control" id="partialAmountPaid" placeholder="Enter paid amount" step="0.01"
+            min="0">
+          <small class="text-muted">Enter the amount customer has already paid</small>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Remaining Amount</label>
+          <input type="text" class="form-control" id="remainingAmount" readonly
+            style="background: #fef3c7; font-weight: 600; font-size: 1.1rem; color: #f59e0b;">
+        </div>
+        <div class="alert alert-info mb-0" style="font-size: 0.875rem;">
+          <i class="fas fa-info-circle"></i> The remaining amount will be collected later from the customer.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="confirmPartialPayment()">
+          <i class="fas fa-check"></i> Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script id="initial-items-data" type="application/json">{{ initial_items_json|safe }}</script>
+
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+<script>
+  let cart = [];
+  let productModal, variationModal, partialPaymentModal;
+  let isProductLoading = false;
+  let isPartialPaymentSelected = document.getElementById('isPartialPayment').value === 'true';
+  let currentCityDetectionInProgress = false;
+  let citySelectInstance = null;
+
+  const initialItems = JSON.parse(document.getElementById('initial-items-data').textContent || '[]');
+
+  // ✅ LOCAL STORAGE CONFIGURATION
+  const ORDER_ID = '{{ order.id }}';
+  const STORAGE_KEY = 'pos_edit_order_' + ORDER_ID;
+  const EXPIRY_HOURS = 24;
+
+  // ✅ SAVE FORM DATA
+  function saveFormData() {
+    try {
+      const branchCity = citySelectInstance ? citySelectInstance.getValue() : '';
+      
+      const formData = {
+        timestamp: Date.now(),
+        orderId: ORDER_ID,
+        customerName: document.getElementById('customerName').value,
+        customerEmail: document.getElementById('customerEmailInput').value,
+        branchCity: branchCity,
+        customerAddress: document.getElementById('customerAddress').value,
+        customerLandmark: document.getElementById('customerLandmark').value,
+        createdBy: document.getElementById('createdBy').value,
+        discount: document.getElementById('discount').value,
+        shipping: document.getElementById('shipping').value,
+        orderNotes: document.getElementById('orderNotes').value,
+        customerPhone: document.getElementById('customerPhone').value,
+        paymentMethod: document.getElementById('paymentMethod').value,
+        taxPercent: document.getElementById('taxPercent').value,
+        inOut: document.getElementById('inOutSelect').value,
+        orderFrom: document.querySelector('select[name="order_from"]').value,
+        orderStatus: document.querySelector('select[name="order_status"]').value,
+        cart: cart,
+        isPartialPayment: isPartialPaymentSelected,
+        partialAmountPaid: document.getElementById('partialAmountPaidHidden').value,
+        remainingAmount: document.getElementById('remainingAmountHidden').value
+      };
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
+    } catch (err) {
+      console.error('Error saving:', err);
+    }
+  }
+
+  // ✅ LOAD FORM DATA
+  function loadFormData() {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (!stored) return null;
+
+      const formData = JSON.parse(stored);
+      
+      // Check expiry
+      const hoursPassed = (Date.now() - formData.timestamp) / (1000 * 60 * 60);
+      if (hoursPassed > EXPIRY_HOURS || formData.orderId !== ORDER_ID) {
+        clearFormData();
+        return null;
+      }
+
+      return formData;
+    } catch (err) {
+      console.error('Error loading:', err);
+      clearFormData();
+      return null;
+    }
+  }
+
+  // ✅ CLEAR FORM DATA
+  function clearFormData() {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  // ✅ RESTORE FORM FIELDS
+  function restoreFormFields(formData) {
+    if (!formData) return;
+
+    document.getElementById('customerName').value = formData.customerName || '';
+    document.getElementById('customerEmailInput').value = formData.customerEmail || '';
+    document.getElementById('customerAddress').value = formData.customerAddress || '';
+    document.getElementById('customerLandmark').value = formData.customerLandmark || '';
+    document.getElementById('createdBy').value = formData.createdBy || '';
+    document.getElementById('discount').value = formData.discount || '0';
+    document.getElementById('shipping').value = formData.shipping || '0';
+    document.getElementById('orderNotes').value = formData.orderNotes || '';
+    document.getElementById('customerPhone').value = formData.customerPhone || '';
+    document.getElementById('paymentMethod').value = formData.paymentMethod || 'cod';
+    document.getElementById('taxPercent').value = formData.taxPercent || '13';
+    document.getElementById('inOutSelect').value = formData.inOut || 'in';
+
+    if (formData.orderFrom) {
+      document.querySelector('select[name="order_from"]').value = formData.orderFrom;
+    }
+    if (formData.orderStatus) {
+      document.querySelector('select[name="order_status"]').value = formData.orderStatus;
+    }
+
+    // Restore cart
+    cart = formData.cart || [];
+    updateCart();
+
+    // Restore partial payment
+    if (formData.isPartialPayment) {
+      isPartialPaymentSelected = true;
+      document.getElementById('isPartialPayment').value = 'true';
+      document.getElementById('partialAmountPaidHidden').value = formData.partialAmountPaid;
+      document.getElementById('remainingAmountHidden').value = formData.remainingAmount;
+      showPartialPaymentInfo(parseFloat(formData.partialAmountPaid), parseFloat(formData.remainingAmount));
+    }
+
+    // Store city to restore after TomSelect init
+    if (formData.branchCity) {
+      window.savedCityValue = formData.branchCity;
+    }
+
+    showToastNotification('Previous data restored', 'info');
+  }
+
+  // ✅ SETUP AUTO-SAVE
+  function setupAutoSave() {
+    const inputs = ['customerName', 'customerEmailInput', 'customerAddress', 'customerLandmark', 
+                    'createdBy', 'discount', 'shipping', 'orderNotes', 'customerPhone', 
+                    'paymentMethod', 'taxPercent', 'inOutSelect'];
+
+    inputs.forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('input', saveFormData);
+        el.addEventListener('change', saveFormData);
+      }
+    });
+
+    const selects = ['order_from', 'order_status'];
+    selects.forEach(function(name) {
+      const el = document.querySelector('select[name="' + name + '"]');
+      if (el) el.addEventListener('change', saveFormData);
+    });
+  }
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    productModal = new bootstrap.Modal(document.getElementById('productModal'));
+    variationModal = new bootstrap.Modal(document.getElementById('variationModal'));
+    partialPaymentModal = new bootstrap.Modal(document.getElementById('partialPaymentModal'));
+
+    // Load initial cart
+    cart = initialItems.filter(function(i) { return i.id !== null && i.id !== undefined; });
+
+    // Load saved data
+    const savedData = loadFormData();
+    if (savedData) {
+      restoreFormFields(savedData);
+    } else {
+      updateCart();
+    }
+
+    // Setup auto-save
+    setupAutoSave();
+
+    // Initialize TomSelect
+    citySelectInstance = new TomSelect('#branchCity', {
+        valueField: 'name',
+        labelField: 'name',
+        searchField: 'name',
+        create: true,
+        preload: 'focus',
+        openOnFocus: true,
+        load: function(query, callback) {
+            fetch('/api/cities/?q=' + encodeURIComponent(query))
+                .then(function(r) { return r.json(); })
+                .then(function(json) { callback(json.cities || []); })
+                .catch(function() { callback([]); });
+        },
+        render: {
+            option: function(data, escape) {
+                const icon = data.valley_status === 'valley' ? 'fa-mountain text-success' : 'fa-truck text-warning';
+                return '<div><i class="fas ' + icon + ' me-2"></i><span>' + escape(data.name) + '</span></div>';
+            },
+            item: function(data, escape) {
+                return '<div>' + escape(data.name) + '</div>';
+            }
+        },
+        onChange: function(value) {
+            if (value) detectValleyStatusFromCity();
+            else clearValleyStatusInfo();
+            saveFormData();
+        },
+        onInitialize: function() {
+            // Restore saved city value
+            if (window.savedCityValue) {
+                if (!this.options[window.savedCityValue]) {
+                    this.addOption({name: window.savedCityValue});
+                }
+                this.setValue(window.savedCityValue, true);
+                delete window.savedCityValue;
+                setTimeout(function() { detectValleyStatusFromCity(); }, 500);
+            }
+        }
+    });
+
+    const taxPercent = document.getElementById('taxPercent').value || '13';
+    document.getElementById('taxPercentDisplay').textContent = taxPercent;
+
+    // Modal events
+    document.getElementById('productModal').addEventListener('shown.bs.modal', function () {
+      loadProducts('');
+      document.getElementById('searchProduct').value = '';
+      document.getElementById('searchProduct').focus();
+    });
+
+    document.getElementById('variationModal').addEventListener('shown.bs.modal', function () {
+      const sel = document.getElementById('variationSelect');
+      if (sel) setTimeout(function() { sel.focus(); }, 100);
+    });
+
+    document.getElementById('variationModal').addEventListener('hidden.bs.modal', function () {
+      const btn = document.getElementById('addProductsBtn');
+      if (btn) setTimeout(function() { btn.focus(); }, 100);
+    });
+
+    // Product card click
+    document.getElementById('productGrid').addEventListener('click', function (e) {
+      if (isProductLoading) return;
+      const card = e.target.closest('.product-card');
+      if (!card) return;
+
+      const id = parseInt(card.dataset.id);
+      const name = card.dataset.name;
+      const price = parseFloat(card.dataset.price);
+      const type = card.dataset.type;
+      const sku = card.dataset.sku || '';
+
+      if (type === 'variable') {
+        loadVariationsDropdown(id, name);
+        productModal.hide();
+        setTimeout(function() { variationModal.show(); }, 300);
+      } else {
+        addToCart(id, name, price, null, sku);
+        productModal.hide();
+      }
+    });
+
+    // Search products
+    let searchTimer = null;
+    document.getElementById('searchProduct').addEventListener('input', function (e) {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(function () { loadProducts(e.target.value.trim()); }, 250);
+    });
+
+    // Update total on changes
+    document.getElementById('discount').addEventListener('input', updateTotal);
+    document.getElementById('shipping').addEventListener('input', updateTotal);
+    document.getElementById('taxPercent').addEventListener('input', function () {
+      document.getElementById('taxPercentDisplay').textContent = this.value || '0';
+      updateTotal();
+    });
+
+    // Payment method change
+    document.getElementById('paymentMethod').addEventListener('change', function (e) {
+      if (e.target.value === 'partial') {
+        openPartialPaymentModal();
+      } else {
+        isPartialPaymentSelected = false;
+        document.getElementById('isPartialPayment').value = 'false';
+        document.getElementById('partialAmountPaidHidden').value = '0';
+        document.getElementById('remainingAmountHidden').value = '0';
+        const infoBox = document.querySelector('.payment-info-box');
+        if (infoBox) infoBox.remove();
+        saveFormData();
+      }
+    });
+
+    document.getElementById('partialAmountPaid').addEventListener('input', calculateRemainingAmount);
+
+    // Show existing partial payment info
+    if (isPartialPaymentSelected) {
+      const paid = parseFloat('{{ order.partial_amount_paid|default:"0" }}');
+      const remaining = parseFloat('{{ order.remaining_amount|default:"0" }}');
+      showPartialPaymentInfo(paid, remaining);
+    }
+
+    updateTotal();
+
+    // Form submit
+    document.getElementById('orderForm').addEventListener('submit', function (e) {
+      if (cart.length === 0) {
+        e.preventDefault();
+        showToastNotification('Please add at least one product!', 'warning');
+        return false;
+      }
+
+      const email = document.querySelector('[name="customer_email"]').value;
+      if (email && !isValidEmail(email)) {
+        e.preventDefault();
+        showToastNotification('Please enter a valid email', 'warning');
+        return false;
+      }
+
+      const paymentMethod = document.getElementById('paymentMethod').value;
+      if (paymentMethod === 'partial' && !isPartialPaymentSelected) {
+        e.preventDefault();
+        showToastNotification('Please complete partial payment details', 'warning');
+        openPartialPaymentModal();
+        return false;
+      }
+
+      // Clear localStorage on submit
+      clearFormData();
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+    });
+  });
+
+  function detectValleyStatusFromCity() {
+    const cityName = citySelectInstance ? citySelectInstance.getValue() : '';
+    const inOutSelect = document.getElementById('inOutSelect');
+
+    if (!cityName || currentCityDetectionInProgress) return;
+
+    currentCityDetectionInProgress = true;
+    inOutSelect.disabled = true;
+    inOutSelect.innerHTML = '<option value="">Detecting...</option>';
+    clearValleyStatusInfo();
+
+    const urls = [
+      '/api/cities/get-valley-status/?city=' + encodeURIComponent(cityName),
+      '/get_valley_status/?city=' + encodeURIComponent(cityName)
+    ];
+
+    let index = 0;
+
+    function tryNext() {
+      if (index >= urls.length) {
+        restoreInOutOptions(inOutSelect);
+        inOutSelect.value = 'in';
+        showValleyInfo('error', cityName, 'Error');
+        inOutSelect.disabled = false;
+        currentCityDetectionInProgress = false;
+        saveFormData();
+        return;
+      }
+
+      fetch(urls[index++])
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          restoreInOutOptions(inOutSelect);
+          if (data.success) {
+            const isValley = (data.valley_status === 'valley') || (data.in_out && String(data.in_out).toLowerCase() === 'in');
+            inOutSelect.value = isValley ? 'in' : 'out';
+            showValleyInfo(isValley ? 'valley' : 'out_valley', cityName, data.display_status || '');
+            inOutSelect.disabled = false;
+            currentCityDetectionInProgress = false;
+            saveFormData();
+          } else {
+            tryNext();
+          }
+        })
+        .catch(function() { tryNext(); });
+    }
+
+    tryNext();
+  }
+
+  function showValleyInfo(status, cityName, displayStatus) {
+    const infoDiv = document.getElementById('valleyStatusInfo');
+    const messages = {
+      valley: '<i class="fas fa-mountain"></i> <strong>' + cityName + '</strong> is Valley',
+      out_valley: '<i class="fas fa-truck"></i> <strong>' + cityName + '</strong> is Out Valley',
+      error: '<i class="fas fa-exclamation-triangle"></i> Error detecting status'
+    };
+    const classes = {
+      valley: 'valley-info-box valley',
+      out_valley: 'valley-info-box out-valley',
+      error: 'valley-info-box error'
+    };
+    infoDiv.innerHTML = '<div class="' + classes[status] + '">' + messages[status] + '</div>';
+  }
+
+  function clearValleyStatusInfo() {
+    document.getElementById('valleyStatusInfo').innerHTML = '';
+  }
+
+  function restoreInOutOptions(sel) {
+    sel.innerHTML = '<option value="in">Valley</option><option value="out">Out Valley</option>';
+  }
+
+  function showToastNotification(message, type) {
+    type = type || 'info';
+    const colors = {success: '#10b981', warning: '#f59e0b', error: '#ef4444', info: '#3b82f6'};
+    const icons = {success: 'fa-check-circle', warning: 'fa-exclamation-triangle', error: 'fa-times-circle', info: 'fa-info-circle'};
+    
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;background:' + colors[type] + ';color:white;padding:12px 20px;border-radius:8px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-width:300px;font-size:0.9rem;';
+    toast.innerHTML = '<div class="d-flex align-items-center gap-2"><i class="fas ' + icons[type] + '"></i><span>' + message + '</span></div>';
+    document.body.appendChild(toast);
+    setTimeout(function() { toast.remove(); }, 5000);
+  }
+
+  function loadProducts(q) {
+    const grid = document.getElementById('productGrid');
+    isProductLoading = true;
+    grid.innerHTML = '<div class="col-12 text-center py-4"><div class="spinner-border text-primary"></div></div>';
+
+    fetch('/api/search-products/?q=' + encodeURIComponent(q || ''))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        const products = data.products || [];
+        if (!products.length) {
+          grid.innerHTML = '<div class="col-12 text-center text-muted py-4"><i class="fas fa-search fa-3x mb-3"></i><p>No products found</p></div>';
+        } else {
+          grid.innerHTML = products.map(renderProductCard).join('');
+        }
+        isProductLoading = false;
+      })
+      .catch(function () {
+        grid.innerHTML = '<div class="col-12 text-center text-danger py-4"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><p>Error loading products</p></div>';
+        isProductLoading = false;
+      });
+  }
+
+  function renderProductCard(p) {
+    const img = p.image ? '<img src="' + p.image + '" class="product-img">' : 
+                '<div class="bg-light d-flex align-items-center justify-content-center" style="height:180px;"><i class="fas fa-image fa-3x text-muted"></i></div>';
+    return '<div class="col-md-3"><div class="product-card" data-id="' + p.id + '" data-name="' + esc(p.name) + '" data-price="' + p.price + '" data-type="' + p.product_type + '" data-sku="' + esc(p.sku || '') + '">' +
+      img + '<div class="product-card-body"><h6 class="mb-1 small fw-bold">' + esc(p.name) + '</h6>' +
+      '<p class="text-muted mb-2" style="font-size:0.7rem;">' + esc(p.sku || '') + '</p>' +
+      '<div class="d-flex justify-content-between align-items-center"><span class="fw-bold text-success">रू ' + p.price + '</span>' +
+      '<span class="badge bg-info">' + (p.stock || 'N/A') + '</span></div></div></div></div>';
+  }
+
+  function loadVariationsDropdown(productId, productName) {
+    const body = document.getElementById('variationBody');
+    body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+
+    fetch('/api/product/' + productId + '/variations/')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        const variations = data.variations || [];
+        if (!variations.length) {
+          body.innerHTML = '<div class="alert alert-warning mb-0"><i class="fas fa-exclamation-circle"></i> No variations found</div>';
+          return;
+        }
+
+        let opts = '';
+        variations.forEach(function (v) {
+          const attrs = (v.attributes || []).map(function (a) { return a.name + ': ' + a.value; }).join(', ');
+          opts += '<option value="' + v.id + '" data-price="' + v.price + '" data-sku="' + esc(v.sku) + '">' +
+            esc(v.sku) + ' — ' + esc(attrs) + ' — रू ' + v.price + ' (Stock: ' + v.stock + ')</option>';
+        });
+
+        body.innerHTML = '<div class="mb-3"><label class="form-label">Choose variation for <strong>' + esc(productName) + '</strong></label>' +
+          '<select class="form-select" id="variationSelect">' + opts + '</select></div>' +
+          '<div class="text-end"><button type="button" class="btn btn-secondary me-2" onclick="variationModal.hide()">Cancel</button>' +
+          '<button type="button" class="btn btn-primary" onclick="confirmVariation(' + productId + ', \'' + esc(productName).replace(/'/g, "\\'") + '\')"><i class="fas fa-plus-circle"></i> Add</button></div>';
+      })
+      .catch(function () {
+        body.innerHTML = '<div class="alert alert-danger mb-0"><i class="fas fa-exclamation-triangle"></i> Error loading variations</div>';
+      });
+  }
+
+  function confirmVariation(productId, productName) {
+    const sel = document.getElementById('variationSelect');
+    if (!sel || !sel.options.length) {
+      showToastNotification('No variations available', 'warning');
+      variationModal.hide();
+      return;
+    }
+
+    const opt = sel.options[sel.selectedIndex];
+    const varId = parseInt(opt.value);
+    const price = parseFloat(opt.dataset.price);
+    const sku = opt.dataset.sku || '';
+
+    addToCart(productId, productName, price, varId, sku);
+    variationModal.hide();
+  }
+
+  function addToCart(id, name, price, varId, sku) {
+    const existing = cart.find(function (i) { return i.id === id && i.varId === varId; });
+    if (existing) {
+      existing.qty++;
+    } else {
+      cart.push({ id: id, varId: varId, name: name, sku: sku, price: price, qty: 1 });
+    }
+    updateCart();
+    saveFormData();
+  }
+
+  function updateCart() {
+    const tbody = document.getElementById('cartBody');
+
+    if (cart.length === 0) {
+      tbody.innerHTML = '<tr id="emptyRow"><td colspan="5"><div class="empty-cart"><i class="fas fa-shopping-cart"></i><p class="mb-0">No products added</p><small>Click "Add Products"</small></div></td></tr>';
+      updateTotal();
+      return;
+    }
+
+    let html = '';
+    cart.forEach(function (item, i) {
+      html += '<tr id="row-' + i + '"><td><strong>' + esc(item.name) + '</strong><br><small class="text-muted">रू ' + item.price.toFixed(2) + ' each</small></td>' +
+        '<td>' + (item.sku ? '<span class="badge bg-secondary">' + esc(item.sku) + '</span>' : '-') + '</td>' +
+        '<td><div class="qty-control"><button type="button" class="btn btn-sm btn-outline-primary" onclick="changeQty(' + i + ', -1)"><i class="fas fa-minus"></i></button>' +
+        '<input type="number" value="' + item.qty + '" onchange="setQty(' + i + ', this.value)" min="1">' +
+        '<button type="button" class="btn btn-sm btn-outline-primary" onclick="changeQty(' + i + ', 1)"><i class="fas fa-plus"></i></button></div></td>' +
+        '<td><strong class="text-success">रू ' + (item.price * item.qty).toFixed(2) + '</strong></td>' +
+        '<td><button type="button" class="btn btn-sm btn-danger" onclick="removeItem(' + i + ')"><i class="fas fa-trash"></i></button></td></tr>';
+    });
+
+    tbody.innerHTML = html;
+    updateTotal();
+  }
+
+  function changeQty(i, change) {
+    cart[i].qty += change;
+    if (cart[i].qty < 1) cart[i].qty = 1;
+    updateCart();
+    saveFormData();
+  }
+
+  function setQty(i, val) {
+    const qty = parseInt(val);
+    if (qty > 0) {
+      cart[i].qty = qty;
+      updateCart();
+      saveFormData();
+    }
+  }
+
+  function removeItem(i) {
+    cart.splice(i, 1);
+    updateCart();
+    saveFormData();
+  }
+
+  function updateTotal() {
+    const subtotal = cart.reduce(function (sum, i) { return sum + (i.price * i.qty); }, 0);
+    const discount = parseFloat(document.getElementById('discount').value) || 0;
+    const shipping = parseFloat(document.getElementById('shipping').value) || 0;
+    const taxPercent = parseFloat(document.getElementById('taxPercent').value) || 0;
+
+    const afterDiscount = subtotal - discount;
+    const taxAmount = (afterDiscount * taxPercent) / 100;
+    const total = afterDiscount + shipping + taxAmount;
+
+    document.getElementById('subtotal').textContent = 'रू ' + subtotal.toFixed(2);
+    document.getElementById('discountAmount').textContent = '- रू ' + discount.toFixed(2);
+    document.getElementById('shippingAmount').textContent = '+ रू ' + shipping.toFixed(2);
+    document.getElementById('taxAmount').textContent = '+ रू ' + taxAmount.toFixed(2);
+    document.getElementById('totalAmount').textContent = 'रू ' + total.toFixed(2);
+
+    document.getElementById('orderItems').value = JSON.stringify(cart);
+    document.getElementById('totalInput').value = total.toFixed(2);
+  }
+
+  function openPartialPaymentModal() {
+    const total = parseFloat(document.getElementById('totalInput').value) || 0;
+
+    if (total <= 0) {
+      showToastNotification('Please add products first', 'warning');
+      document.getElementById('paymentMethod').value = '{{ order.payment_method }}';
+      return;
+    }
+
+    document.getElementById('totalOrderAmount').value = 'रू ' + total.toFixed(2);
+
+    const existingPaid = parseFloat(document.getElementById('partialAmountPaidHidden').value) || 0;
+    if (existingPaid > 0) {
+      document.getElementById('partialAmountPaid').value = existingPaid;
+      calculateRemainingAmount();
+    } else {
+      document.getElementById('partialAmountPaid').value = '';
+      document.getElementById('remainingAmount').value = 'रू ' + total.toFixed(2);
+    }
+
+    partialPaymentModal.show();
+  }
+
+  function calculateRemainingAmount() {
+    const total = parseFloat(document.getElementById('totalInput').value) || 0;
+    const paid = parseFloat(document.getElementById('partialAmountPaid').value) || 0;
+
+    if (paid > total) {
+      document.getElementById('partialAmountPaid').value = total;
+      document.getElementById('remainingAmount').value = 'रू 0.00';
+      return;
+    }
+
+    const remaining = total - paid;
+    document.getElementById('remainingAmount').value = 'रू ' + remaining.toFixed(2);
+  }
+
+  function confirmPartialPayment() {
+    const total = parseFloat(document.getElementById('totalInput').value) || 0;
+    const paid = parseFloat(document.getElementById('partialAmountPaid').value);
+
+    if (!paid && paid !== 0) {
+      showToastNotification('Please enter amount paid', 'warning');
+      document.getElementById('partialAmountPaid').focus();
+      return;
+    }
+
+    if (paid < 0 || paid > total) {
+      showToastNotification('Invalid amount', 'warning');
+      return;
+    }
+
+    if (paid === 0) {
+      showToastNotification('Please enter valid amount', 'warning');
+      return;
+    }
+
+    const remaining = total - paid;
+
+    document.getElementById('isPartialPayment').value = 'true';
+    document.getElementById('partialAmountPaidHidden').value = paid.toFixed(2);
+    document.getElementById('remainingAmountHidden').value = remaining.toFixed(2);
+
+    isPartialPaymentSelected = true;
+    partialPaymentModal.hide();
+
+    showPartialPaymentInfo(paid, remaining);
+    saveFormData();
+  }
+
+  function showPartialPaymentInfo(paid, remaining) {
+    const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
+    let infoBox = paymentLabel.querySelector('.payment-info-box');
+
+    if (!infoBox) {
+      infoBox = document.createElement('div');
+      infoBox.className = 'payment-info-box';
+      paymentLabel.appendChild(infoBox);
+    }
+
+    infoBox.innerHTML = '<small><strong>Paid:</strong> रू ' + paid.toFixed(2) + '<br><strong>Remaining:</strong> रू ' + remaining.toFixed(2) + '</small>';
+  }
+
+  function esc(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+</script>
+
+{% endblock %}

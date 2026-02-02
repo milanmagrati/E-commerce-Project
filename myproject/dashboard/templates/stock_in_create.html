@@ -1,0 +1,1299 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Stock In - Create{% endblock %}
+
+{% block content %}
+<div class="stock-in-create-page">
+    <div class="page-header-custom">
+        <div>
+            <h1><i class="fas fa-box-open"></i> Create Stock In Transaction</h1>
+            <p class="page-subtitle">Record incoming stock with products and variants</p>
+        </div>
+        <a href="{% url 'inventory_dashboard' %}" class="btn-back-custom">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <form id="stockInForm" method="POST">
+        {% csrf_token %}
+        
+        <!-- Stock In Info Card -->
+        <div class="form-card-custom">
+            <div class="card-title-custom">
+                <i class="fas fa-info-circle"></i> Stock In Information
+            </div>
+            
+            <div class="form-grid">
+                <div class="form-group-custom">
+                    <label>Type <span class="text-danger">*</span></label>
+                    <select name="stock_in_type" class="form-control-custom" required>
+                        <option value="purchase">📦 Purchase Order</option>
+                        <option value="return">↩️ Customer Return</option>
+                        <option value="adjustment">⚙️ Stock Adjustment</option>
+                        <option value="transfer">🔄 Transfer In</option>
+                        <option value="other">📋 Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group-custom">
+                    <label>Supplier Name</label>
+                    <input type="text" name="supplier_name" class="form-control-custom" placeholder="Enter supplier name (optional)">
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Notes / Remarks</label>
+                <textarea name="notes" class="form-control-custom" rows="3" placeholder="Add any additional notes or remarks..."></textarea>
+            </div>
+        </div>
+
+        <!-- Products Card -->
+        <div class="form-card-custom">
+            <div class="card-header-flex">
+                <div class="card-title-custom">
+                    <i class="fas fa-boxes"></i> Products & Variants
+                </div>
+                <button type="button" class="btn-add-product-custom" onclick="openProductModal()">
+                    <i class="fas fa-plus-circle"></i> Add Product
+                </button>
+            </div>
+            
+            <div class="items-table-wrapper">
+                <table class="items-table-custom">
+                    <thead>
+                        <tr>
+                            <th width="5%">#</th>
+                            <th width="35%">Product</th>
+                            <th width="25%">Variant / Attributes</th>
+                            <th width="10%">Qty</th>
+                            <th width="12%">Unit Cost</th>
+                            <th width="10%">Total</th>
+                            <th width="5%"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsTableBody">
+                        <tr class="empty-state-row">
+                            <td colspan="7">
+                                <div class="empty-state-custom">
+                                    <i class="fas fa-box-open fa-3x"></i>
+                                    <p>No products added yet</p>
+                                    <small>Click "Add Product" to start adding items</small>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="totals-box">
+                <div class="total-item">
+                    <span class="total-label">Total Products:</span>
+                    <span class="total-value" id="totalItems">0</span>
+                </div>
+                <div class="total-item">
+                    <span class="total-label">Total Quantity:</span>
+                    <span class="total-value total-highlight" id="totalQuantity">0</span>
+                </div>
+                <div class="total-item">
+                    <span class="total-label">Total Cost:</span>
+                    <span class="total-value total-highlight">Rs <span id="totalCost">0.00</span></span>
+                </div>
+            </div>
+        </div>
+
+        <input type="hidden" name="items" id="itemsInput" value="[]">
+        
+        <div class="form-actions-custom">
+            <button type="submit" class="btn-submit-custom">
+                <i class="fas fa-check-circle"></i> Create Stock In
+            </button>
+            <a href="{% url 'inventory_dashboard' %}" class="btn-cancel-custom">
+                <i class="fas fa-times-circle"></i> Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Product Selection Modal -->
+<div id="productModal" class="modal-custom">
+    <div class="modal-dialog-custom">
+        <div class="modal-content-custom">
+            <div class="modal-header-custom">
+                <h3><i class="fas fa-search"></i> Select Product</h3>
+                <button type="button" class="modal-close-btn" onclick="closeProductModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="modal-body-custom">
+                <div class="search-box-custom">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="productSearch" class="search-input-custom" placeholder="Search products by name..." onkeyup="filterProducts()">
+                </div>
+                
+                <div class="products-grid" id="productsList">
+                    {% for product in products %}
+                    <div class="product-card-modal" 
+                         data-id="{{ product.id }}" 
+                         data-name="{{ product.name }}" 
+                         data-type="{{ product.product_type }}"
+                         onclick="selectProduct({{ product.id }}, '{{ product.name }}', '{{ product.product_type }}')">
+                        <div class="product-image-wrapper">
+                            {% if product.image %}
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}">
+                            {% else %}
+                            <div class="product-placeholder-img">
+                                <i class="fas fa-image"></i>
+                            </div>
+                            {% endif %}
+                            <span class="product-type-badge badge-{{ product.product_type }}">
+                                {{ product.product_type|title }}
+                            </span>
+                        </div>
+                        <div class="product-details-modal">
+                            <div class="product-name-modal">{{ product.name }}</div>
+                            {% if product.product_type == 'simple' %}
+                            <div class="product-stock-modal">
+                                <i class="fas fa-cube"></i> Current Stock: {{ product.stock }}
+                            </div>
+                            {% else %}
+                            <div class="product-stock-modal">
+                                <i class="fas fa-layer-group"></i> Variable Product
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="product-select-icon">
+                            <i class="fas fa-arrow-right"></i>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Variation Selection Modal -->
+<div id="variationModal" class="modal-custom">
+    <div class="modal-dialog-custom">
+        <div class="modal-content-custom">
+            <div class="modal-header-custom">
+                <h3><i class="fas fa-layer-group"></i> Select Variation</h3>
+                <button type="button" class="modal-close-btn" onclick="closeVariationModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="modal-body-custom">
+                <div id="variationsList" class="variations-grid"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Item Details Modal (Quantity & Cost) -->
+<div id="itemModal" class="modal-custom">
+    <div class="modal-dialog-custom modal-sm">
+        <div class="modal-content-custom">
+            <div class="modal-header-custom">
+                <h3><i class="fas fa-edit"></i> Add Item Details</h3>
+                <button type="button" class="modal-close-btn" onclick="closeItemModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="modal-body-custom">
+                <div class="selected-product-info">
+                    <div class="info-row">
+                        <strong>Product:</strong>
+                        <span id="itemProductName"></span>
+                    </div>
+                    <div class="info-row" id="itemVariationRow" style="display: none;">
+                        <strong>Variation:</strong>
+                        <span id="itemVariationName"></span>
+                    </div>
+                </div>
+                
+                <div class="form-group-custom">
+                    <label>Quantity <span class="text-danger">*</span></label>
+                    <input type="number" id="itemQuantity" class="form-control-custom" min="1" value="1" required>
+                </div>
+                
+                <div class="form-group-custom">
+                    <label>Unit Cost (Rs)</label>
+                    <input type="number" id="itemUnitCost" class="form-control-custom" min="0" step="0.01" value="0" placeholder="0.00">
+                </div>
+                
+                <div class="form-group-custom">
+                    <label>Notes (Optional)</label>
+                    <textarea id="itemNotes" class="form-control-custom" rows="2" placeholder="Add notes for this item..."></textarea>
+                </div>
+                
+                <button type="button" class="btn-submit-custom w-100" onclick="addItemToList()">
+                    <i class="fas fa-plus-circle"></i> Add to List
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+:root {
+    --primary: #8b5cf6;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --info: #3b82f6;
+    --dark: #0f172a;
+    --dark-card: #1e293b;
+    --border: #334155;
+    --text-light: #f1f5f9;
+    --text-muted: #94a3b8;
+}
+
+.stock-in-create-page {
+    background: var(--dark);
+    min-height: 100vh;
+    padding: 2rem;
+    color: var(--text-light);
+}
+
+.page-header-custom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    animation: slideDown 0.5s ease;
+}
+
+.page-header-custom h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--text-light);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.page-subtitle {
+    color: var(--text-muted);
+    margin: 0.5rem 0 0 0;
+    font-size: 0.95rem;
+}
+
+.btn-back-custom {
+    background: var(--dark-card);
+    color: var(--text-light);
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    text-decoration: none;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s;
+}
+
+.btn-back-custom:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    transform: translateY(-2px);
+}
+
+.form-card-custom {
+    background: var(--dark-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.card-title-custom {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-light);
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.card-header-flex {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+.form-group-custom {
+    margin-bottom: 1.5rem;
+}
+
+.form-group-custom label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+.form-control-custom {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-light);
+    font-size: 0.95rem;
+    transition: all 0.3s;
+}
+
+.form-control-custom:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+/* SELECT DROPDOWN - DARK THEME */
+.form-control-custom select,
+select.form-control-custom {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: #1e293b;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-light);
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: all 0.3s;
+    cursor: pointer;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23f1f5f9' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 12px;
+    padding-right: 2.5rem;
+}
+
+.form-control-custom select option,
+select.form-control-custom option {
+    background: #1e293b;
+    color: #f1f5f9;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.form-control-custom select option:hover,
+select.form-control-custom option:hover {
+    background: rgba(139, 92, 246, 0.3);
+    color: white;
+}
+
+.form-control-custom select option:checked,
+select.form-control-custom option:checked {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+    color: white;
+    font-weight: 800;
+}
+
+.form-control-custom select:focus,
+select.form-control-custom:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: #1e293b;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.btn-add-product-custom {
+    background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-add-product-custom:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+}
+
+.items-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+}
+
+.items-table-custom {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.items-table-custom thead {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.items-table-custom th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--border);
+}
+
+.items-table-custom td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-light);
+}
+
+.empty-state-row td {
+    border: none;
+}
+
+.empty-state-custom {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+}
+
+.empty-state-custom i {
+    color: var(--border);
+    margin-bottom: 1rem;
+}
+
+.empty-state-custom p {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1rem 0 0.5rem 0;
+}
+
+.empty-state-custom small {
+    font-size: 0.9rem;
+}
+
+.item-row {
+    transition: all 0.2s;
+}
+
+.item-row:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.item-number {
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.product-info-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.product-name-cell {
+    font-weight: 600;
+    color: var(--text-light);
+}
+
+.variation-badge {
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--primary);
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.simple-badge {
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-muted);
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.qty-cell, .cost-cell, .total-cell {
+    font-weight: 600;
+}
+
+.total-cell {
+    color: var(--success);
+    font-size: 1.05rem;
+}
+
+.btn-remove-item {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 0.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-remove-item:hover {
+    background: rgba(239, 68, 68, 0.25);
+    transform: scale(1.1);
+}
+
+.totals-box {
+    background: rgba(139, 92, 246, 0.08);
+    border: 2px solid rgba(139, 92, 246, 0.2);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.total-item {
+    text-align: center;
+}
+
+.total-label {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.total-value {
+    display: block;
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--text-light);
+}
+
+.total-highlight {
+    color: var(--success);
+}
+
+.form-actions-custom {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.btn-submit-custom {
+    background: linear-gradient(135deg, var(--primary) 0%, #a78bfa 100%);
+    color: white;
+    padding: 1rem 2.5rem;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s;
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.btn-submit-custom:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
+}
+
+.btn-cancel-custom {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    padding: 1rem 2.5rem;
+    border: 2px solid rgba(239, 68, 68, 0.3);
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 700;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s;
+}
+
+.btn-cancel-custom:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: var(--danger);
+    transform: translateY(-2px);
+}
+
+/* Modal Styles */
+.modal-custom {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 9999;
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-custom.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-dialog-custom {
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-dialog-custom.modal-sm {
+    max-width: 500px;
+}
+
+.modal-content-custom {
+    background: var(--dark-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    animation: slideUp 0.3s ease;
+}
+
+.modal-header-custom {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header-custom h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-light);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.modal-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+}
+
+.modal-close-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+}
+
+.modal-body-custom {
+    padding: 1.5rem;
+}
+
+.search-box-custom {
+    position: relative;
+    margin-bottom: 1.5rem;
+}
+
+.search-icon {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+}
+
+.search-input-custom {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 3rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-light);
+    font-size: 0.95rem;
+}
+
+.search-input-custom:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.products-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.product-card-modal {
+    background: rgba(255, 255, 255, 0.03);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    position: relative;
+}
+
+.product-card-modal:hover {
+    border-color: var(--primary);
+    background: rgba(139, 92, 246, 0.08);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+.product-image-wrapper {
+    position: relative;
+    width: 100%;
+    height: 150px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.product-image-wrapper img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.product-placeholder-img {
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 2rem;
+}
+
+.product-type-badge {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.badge-simple {
+    background: rgba(148, 163, 184, 0.9);
+    color: white;
+}
+
+.badge-variable {
+    background: rgba(139, 92, 246, 0.9);
+    color: white;
+}
+
+.product-details-modal {
+    flex: 1;
+}
+
+.product-name-modal {
+    font-weight: 700;
+    color: var(--text-light);
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.product-stock-modal {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.product-select-icon {
+    text-align: right;
+    color: var(--primary);
+    font-size: 1.25rem;
+}
+
+.variations-grid {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.variation-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.variation-card:hover {
+    border-color: var(--primary);
+    background: rgba(139, 92, 246, 0.08);
+    transform: translateX(5px);
+}
+
+.variation-details {
+    flex: 1;
+}
+
+.variation-sku {
+    font-weight: 700;
+    color: var(--text-light);
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.variation-attributes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.attr-badge {
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--primary);
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.variation-stock {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.variation-icon {
+    color: var(--primary);
+    font-size: 1.25rem;
+}
+
+.selected-product-info {
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-row strong {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.info-row span {
+    color: var(--text-light);
+    font-weight: 600;
+}
+
+.w-100 {
+    width: 100%;
+}
+
+.text-danger {
+    color: var(--danger);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--dark);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .stock-in-create-page {
+        padding: 1rem;
+    }
+    
+    .page-header-custom {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .totals-box {
+        grid-template-columns: 1fr;
+    }
+    
+    .products-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .form-actions-custom {
+        flex-direction: column;
+    }
+    
+    .btn-submit-custom,
+    .btn-cancel-custom {
+        width: 100%;
+        justify-content: center;
+    }
+}
+</style>
+
+<script>
+// Global variables
+let items = [];
+let selectedProduct = null;
+let selectedVariation = null;
+
+// Open product modal
+function openProductModal() {
+    document.getElementById('productModal').classList.add('active');
+}
+
+// Close product modal
+function closeProductModal() {
+    document.getElementById('productModal').classList.remove('active');
+    document.getElementById('productSearch').value = '';
+    filterProducts();
+}
+
+// Filter products
+function filterProducts() {
+    const searchTerm = document.getElementById('productSearch').value.toLowerCase();
+    const products = document.querySelectorAll('.product-card-modal');
+    
+    products.forEach(product => {
+        const name = product.getAttribute('data-name').toLowerCase();
+        if (name.includes(searchTerm)) {
+            product.style.display = 'flex';
+        } else {
+            product.style.display = 'none';
+        }
+    });
+}
+
+// Select product
+function selectProduct(productId, productName, productType) {
+    selectedProduct = {
+        id: productId,
+        name: productName,
+        type: productType
+    };
+    
+    closeProductModal();
+    
+    if (productType === 'variable') {
+        // Load variations
+        loadVariations(productId);
+    } else {
+        // Simple product - go directly to item details
+        selectedVariation = null;
+        showItemModal();
+    }
+}
+
+// Load variations for variable product
+function loadVariations(productId) {
+    fetch(`/api/product/${productId}/stock-in/`)
+        .then(response => response.json())
+        .then(data => {
+            const variationsList = document.getElementById('variationsList');
+            variationsList.innerHTML = '';
+            
+            if (data.variations && data.variations.length > 0) {
+                data.variations.forEach(variation => {
+                    const attrs = variation.attributes.map(attr => 
+                        `<span class="attr-badge">${attr.name}: ${attr.value}</span>`
+                    ).join('');
+                    
+                    const variationCard = document.createElement('div');
+                    variationCard.className = 'variation-card';
+                    variationCard.onclick = () => selectVariation(variation);
+                    
+                    variationCard.innerHTML = `
+                        <div class="variation-details">
+                            <div class="variation-sku">${variation.sku}</div>
+                            <div class="variation-attributes">${attrs}</div>
+                            <div class="variation-stock">
+                                <i class="fas fa-cube"></i> Current Stock: ${variation.stock}
+                            </div>
+                        </div>
+                        <div class="variation-icon">
+                            <i class="fas fa-arrow-right"></i>
+                        </div>
+                    `;
+                    
+                    variationsList.appendChild(variationCard);
+                });
+                
+                document.getElementById('variationModal').classList.add('active');
+            } else {
+                alert('No variations found for this product');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading variations:', error);
+            alert('Error loading variations');
+        });
+}
+
+// Select variation
+function selectVariation(variation) {
+    selectedVariation = variation;
+    closeVariationModal();
+    showItemModal();
+}
+
+// Close variation modal
+function closeVariationModal() {
+    document.getElementById('variationModal').classList.remove('active');
+}
+
+// Show item details modal
+function showItemModal() {
+    document.getElementById('itemProductName').textContent = selectedProduct.name;
+    
+    if (selectedVariation) {
+        const variationName = selectedVariation.attributes.map(attr => 
+            `${attr.name}: ${attr.value}`
+        ).join(' | ');
+        
+        document.getElementById('itemVariationName').textContent = variationName;
+        document.getElementById('itemVariationRow').style.display = 'flex';
+    } else {
+        document.getElementById('itemVariationRow').style.display = 'none';
+    }
+    
+    // Reset form
+    document.getElementById('itemQuantity').value = 1;
+    document.getElementById('itemUnitCost').value = 0;
+    document.getElementById('itemNotes').value = '';
+    
+    document.getElementById('itemModal').classList.add('active');
+}
+
+// Close item modal
+function closeItemModal() {
+    document.getElementById('itemModal').classList.remove('active');
+}
+
+// ✅ UPDATED - Add item to list with SAFE DECIMAL HANDLING
+function addItemToList() {
+    const quantity = parseInt(document.getElementById('itemQuantity').value) || 0;
+    const unitCostInput = document.getElementById('itemUnitCost').value || '0';
+    
+    // ✅ SAFE DECIMAL CONVERSION
+    let unitCost = 0;
+    try {
+        const parsed = parseFloat(unitCostInput);
+        unitCost = isNaN(parsed) || !isFinite(parsed) ? 0 : Math.max(0, parsed);
+        unitCost = Math.round(unitCost * 100) / 100; // Round to 2 decimals
+    } catch (e) {
+        console.error('Invalid unit cost:', e);
+        unitCost = 0;
+    }
+    
+    const notes = (document.getElementById('itemNotes').value || '').trim();
+    
+    if (quantity < 1) {
+        alert('Quantity must be at least 1');
+        return;
+    }
+    
+    const total = quantity * unitCost;
+    
+    const item = {
+        product_id: selectedProduct.id,
+        product_name: selectedProduct.name,
+        variation_id: selectedVariation ? selectedVariation.id : null,
+        variation_name: selectedVariation ? 
+            selectedVariation.attributes.map(attr => `${attr.name}: ${attr.value}`).join(' | ') : null,
+        variation_sku: selectedVariation ? selectedVariation.sku : null,
+        quantity: quantity,
+        unit_cost: unitCost.toFixed(2),  // ✅ Always format as string with 2 decimals
+        total: total.toFixed(2),          // ✅ Always format as string with 2 decimals
+        notes: notes
+    };
+    
+    items.push(item);
+    updateItemsTable();
+    updateTotals();
+    closeItemModal();
+}
+
+// Update items table
+function updateItemsTable() {
+    const tbody = document.getElementById('itemsTableBody');
+    
+    if (items.length === 0) {
+        tbody.innerHTML = `
+            <tr class="empty-state-row">
+                <td colspan="7">
+                    <div class="empty-state-custom">
+                        <i class="fas fa-box-open fa-3x"></i>
+                        <p>No products added yet</p>
+                        <small>Click "Add Product" to start adding items</small>
+                    </div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = items.map((item, index) => {
+        const variationDisplay = item.variation_name ? 
+            `<span class="variation-badge">${item.variation_name}</span>` : 
+            `<span class="simple-badge">Simple Product</span>`;
+        
+        return `
+            <tr class="item-row">
+                <td class="item-number">${index + 1}</td>
+                <td>
+                    <div class="product-name-cell">${item.product_name}</div>
+                </td>
+                <td class="variation-info-cell">${variationDisplay}</td>
+                <td class="qty-cell">${item.quantity}</td>
+                <td class="cost-cell">Rs ${parseFloat(item.unit_cost).toFixed(2)}</td>
+                <td class="total-cell">Rs ${parseFloat(item.total).toFixed(2)}</td>
+                <td>
+                    <button type="button" class="btn-remove-item" onclick="removeItem(${index})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Remove item
+function removeItem(index) {
+    if (confirm('Remove this item?')) {
+        items.splice(index, 1);
+        updateItemsTable();
+        updateTotals();
+    }
+}
+
+// Update totals
+function updateTotals() {
+    const totalItems = items.length;
+    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalCost = items.reduce((sum, item) => sum + parseFloat(item.total), 0);
+    
+    document.getElementById('totalItems').textContent = totalItems;
+    document.getElementById('totalQuantity').textContent = totalQuantity;
+    document.getElementById('totalCost').textContent = totalCost.toFixed(2);
+    
+    // Update hidden input
+    document.getElementById('itemsInput').value = JSON.stringify(items);
+}
+
+// Form submission
+document.getElementById('stockInForm').addEventListener('submit', function(e) {
+    if (items.length === 0) {
+        e.preventDefault();
+        alert('Please add at least one product');
+        return false;
+    }
+});
+
+// Close modals on outside click
+document.querySelectorAll('.modal-custom').forEach(modal => {
+    modal.addEventListener('click', function(e) {
+        if (e.target === this) {
+            this.classList.remove('active');
+        }
+    });
+});
+</script>
+{% endblock %}

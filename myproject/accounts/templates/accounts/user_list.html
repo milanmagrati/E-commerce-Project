@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% block title %}User Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0"><i class="fas fa-users-cog"></i> User Management</h4>
+                        <div>
+                            <a href="{% url 'user_trash' %}" class="btn btn-warning me-2">
+                                <i class="fas fa-trash"></i> Trash ({{ deleted_count }})
+                            </a>
+                            <a href="{% url 'user_create' %}" class="btn btn-light">
+                                <i class="fas fa-user-plus"></i> Add New User
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Role Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card text-center shadow-sm border-primary">
+                <div class="card-body">
+                    <i class="fas fa-user-shield fa-3x text-primary mb-2"></i>
+                    <h3 class="mb-0">{{ role_counts.administrator }}</h3>
+                    <p class="text-muted mb-0">Administrator{{ role_counts.administrator|pluralize }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center shadow-sm border-warning">
+                <div class="card-body">
+                    <i class="fas fa-warehouse fa-3x text-warning mb-2"></i>
+                    <h3 class="mb-0">{{ role_counts.warehouse }}</h3>
+                    <p class="text-muted mb-0">Warehouse Staff</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center shadow-sm border-success">
+                <div class="card-body">
+                    <i class="fas fa-user-tie fa-3x text-success mb-2"></i>
+                    <h3 class="mb-0">{{ role_counts.sales }}</h3>
+                    <p class="text-muted mb-0">Sales Team</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search and Filter -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <form method="GET" class="row g-3">
+                        <div class="col-md-6">
+                            <input type="text" class="form-control" name="search" 
+                                   placeholder="Search by username, email, or name..." 
+                                   value="{{ search }}">
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select" name="role">
+                                <option value="">All Roles</option>
+                                <option value="administrator" {% if role_filter == 'administrator' %}selected{% endif %}>Administrator</option>
+                                <option value="warehouse" {% if role_filter == 'warehouse' %}selected{% endif %}>Warehouse</option>
+                                <option value="sales" {% if role_filter == 'sales' %}selected{% endif %}>Sales</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-search"></i> Filter
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>User</th>
+                                    <th>Contact</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Joined</th>
+                                    <th>Created By</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td>
+                                        <div>
+                                            <strong>{{ user.username }}</strong>
+                                            {% if user.is_superuser %}
+                                            <i class="fas fa-crown text-warning ms-1" title="Superuser"></i>
+                                            {% endif %}
+                                            <br>
+                                            <small class="text-muted">
+                                                {{ user.get_full_name|default:"No name" }}
+                                            </small>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div>
+                                            {% if user.email %}
+                                            <i class="fas fa-envelope text-muted"></i> {{ user.email }}<br>
+                                            {% endif %}
+                                            {% if user.phone %}
+                                            <i class="fas fa-phone text-muted"></i> {{ user.phone }}
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if user.role == 'administrator' %}
+                                        <span class="badge bg-primary"><i class="fas fa-user-shield"></i> Administrator</span>
+                                        {% elif user.role == 'warehouse' %}
+                                        <span class="badge bg-warning"><i class="fas fa-warehouse"></i> Warehouse</span>
+                                        {% elif user.role == 'sales' %}
+                                        <span class="badge bg-success"><i class="fas fa-user-tie"></i> Sales</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if user.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small>{{ user.date_joined|date:"M d, Y" }}</small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {{ user.created_by.username|default:"System" }}
+                                        </small>
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'user_edit' user.id %}" 
+                                               class="btn btn-sm btn-outline-primary"
+                                               title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            
+                                            {% if user.id != request.user.id %}
+                                            <a href="{% url 'user_toggle_status' user.id %}" 
+                                               class="btn btn-sm btn-outline-warning"
+                                               title="{% if user.is_active %}Deactivate{% else %}Activate{% endif %}">
+                                                <i class="fas fa-{% if user.is_active %}pause{% else %}play{% endif %}"></i>
+                                            </a>
+                                            
+                                            {% if not user.is_superuser %}
+                                            <a href="{% url 'user_soft_delete' user.id %}" 
+                                               class="btn btn-sm btn-outline-danger"
+                                               onclick="return confirm('Move user {{ user.username }} to trash?')"
+                                               title="Move to Trash">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                            {% endif %}
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="7" class="text-center py-5">
+                                        <i class="fas fa-users fa-3x text-muted mb-3 d-block"></i>
+                                        <p class="text-muted">No users found</p>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+</style>
+{% endblock %}

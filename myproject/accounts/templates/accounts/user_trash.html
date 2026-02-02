@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block title %}Trash - User Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient-danger text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0"><i class="fas fa-trash-restore"></i> Trash - Deleted Users</h4>
+                        <a href="{% url 'user_list' %}" class="btn btn-light">
+                            <i class="fas fa-arrow-left"></i> Back to Users
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trash Info -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-warning">
+                <i class="fas fa-info-circle"></i>
+                <strong>About Trash:</strong> Users here are soft-deleted and can be restored. 
+                To permanently delete, click the "Hard Delete" button (this action cannot be undone).
+            </div>
+        </div>
+    </div>
+
+    <!-- Trash Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Deleted On</th>
+                                    <th>Deleted By</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td>
+                                        <div>
+                                            <strong>{{ user.username }}</strong><br>
+                                            <small class="text-muted">{{ user.get_full_name|default:"No name" }}</small>
+                                        </div>
+                                    </td>
+                                    <td>{{ user.email }}</td>
+                                    <td>
+                                        {% if user.role == 'administrator' %}
+                                        <span class="badge bg-primary">Administrator</span>
+                                        {% elif user.role == 'warehouse' %}
+                                        <span class="badge bg-warning">Warehouse</span>
+                                        {% elif user.role == 'sales' %}
+                                        <span class="badge bg-success">Sales</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small>{{ user.deleted_at|date:"M d, Y g:i A" }}</small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {{ user.deleted_by.username|default:"System" }}
+                                        </small>
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'user_restore' user.id %}" 
+                                               class="btn btn-sm btn-success"
+                                               onclick="return confirm('Restore user {{ user.username }}?')"
+                                               title="Restore User">
+                                                <i class="fas fa-undo"></i> Restore
+                                            </a>
+                                            
+                                            <a href="{% url 'user_hard_delete' user.id %}" 
+                                               class="btn btn-sm btn-danger"
+                                               onclick="return confirm('⚠️ PERMANENTLY DELETE {{ user.username }}? This cannot be undone!')"
+                                               title="Permanently Delete">
+                                                <i class="fas fa-times"></i> Delete Forever
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center py-5">
+                                        <i class="fas fa-check-circle fa-3x text-success mb-3 d-block"></i>
+                                        <p class="text-muted">Trash is empty!</p>
+                                        <a href="{% url 'user_list' %}" class="btn btn-primary">
+                                            <i class="fas fa-users"></i> View Active Users
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+</style>
+{% endblock %}

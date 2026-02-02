@@ -1,0 +1,1034 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Create Return Request{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'returns_dashboard' %}">Returns</a></li>
+<li class="breadcrumb-item active">Create Return</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .scanner-container {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 15px;
+        padding: 40px;
+        color: white;
+        margin-bottom: 30px;
+    }
+    
+    .barcode-icon {
+        font-size: 4rem;
+        margin-bottom: 20px;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.7; transform: scale(1.05); }
+    }
+    
+    #barcodeInput {
+        font-size: 1.8rem;
+        padding: 20px;
+        border: 3px dashed #fff;
+        border-radius: 12px;
+        text-align: center;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        background: white;
+        color: #333;
+    }
+    
+    #barcodeInput:focus {
+        border-color: #28a745;
+        box-shadow: 0 0 0 0.25rem rgba(40, 167, 69, 0.25);
+        outline: none;
+    }
+    
+    .camera-btn {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        border: none;
+        color: white;
+        padding: 15px 40px;
+        border-radius: 30px;
+        font-weight: 600;
+        font-size: 1.1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .camera-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 20px rgba(245, 87, 108, 0.4);
+        color: white;
+    }
+    
+    .scan-status {
+        padding: 15px;
+        border-radius: 10px;
+        margin-top: 20px;
+        font-weight: 600;
+        text-align: center;
+        font-size: 1.1rem;
+    }
+    
+    .scan-status.waiting {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 2px solid #bee5eb;
+    }
+    
+    .scan-status.success {
+        background: #d4edda;
+        color: #155724;
+        border: 2px solid #c3e6cb;
+    }
+    
+    .scan-status.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 2px solid #f5c6cb;
+    }
+    
+    .scan-status.duplicate {
+        background: #fff3cd;
+        color: #856404;
+        border: 2px solid #ffeeba;
+    }
+    
+    /* Scanned Orders List - Compact Design */
+    .scanned-orders-section {
+        display: none;
+        margin-top: 30px;
+    }
+    
+    .scanned-orders-section.active {
+        display: block;
+        animation: slideIn 0.4s ease;
+    }
+    
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Compact Order Card */
+    .order-compact-card {
+        border: 2px solid #e9ecef;
+        border-left: 5px solid #28a745;
+        background: white;
+        margin-bottom: 12px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .order-compact-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        border-left-color: #0d6efd;
+    }
+    
+    .order-compact-card.expanded {
+        border-left-color: #0d6efd;
+        box-shadow: 0 6px 20px rgba(13, 110, 253, 0.15);
+    }
+    
+    .order-header {
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .order-header:hover {
+        background: #f8f9fa;
+    }
+    
+    .order-compact-info {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex: 1;
+    }
+    
+    .order-number-badge {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #0d6efd;
+        min-width: 120px;
+    }
+    
+    .order-meta {
+        display: flex;
+        gap: 20px;
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+    
+    .order-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    
+    .remove-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #dc3545;
+        color: white;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .remove-btn:hover {
+        background: #c82333;
+        transform: scale(1.1);
+    }
+    
+    .expand-icon {
+        transition: transform 0.3s ease;
+        color: #6c757d;
+        font-size: 1.2rem;
+    }
+    
+    .order-compact-card.expanded .expand-icon {
+        transform: rotate(180deg);
+    }
+    
+    /* Expanded Order Details */
+    .order-details-panel {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+        background: #f8f9fa;
+        border-top: 2px solid #e9ecef;
+    }
+    
+    .order-details-panel.show {
+        max-height: 2000px;
+        padding: 20px;
+    }
+    
+    .item-selection-card {
+        background: white;
+        border: 2px solid #e9ecef;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+        transition: all 0.2s ease;
+    }
+    
+    .item-selection-card:hover {
+        border-color: #0d6efd;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
+    .item-selection-card.selected {
+        background: #e7f5ff;
+        border-color: #0d6efd;
+    }
+    
+    .return-summary-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 15px;
+    }
+    
+    .process-return-btn {
+        width: 100%;
+        padding: 15px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        background: #28a745;
+        border: none;
+        color: white;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+    
+    .process-return-btn:hover {
+        background: #218838;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+    }
+    
+    .loading-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .loading-overlay.active {
+        display: flex;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="text-center">
+            <div class="spinner-border text-light" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="text-white mt-3 fs-5">Processing return request...</p>
+        </div>
+    </div>
+
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="fas fa-undo-alt text-primary"></i> Create Return Request
+            </h2>
+            <p class="text-muted mb-0">Scan order barcode to process returns efficiently</p>
+        </div>
+        <div>
+            <a href="{% url 'returns_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Returns
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Barcode Scanner Section -->
+            <div class="scanner-container">
+                <div class="text-center">
+                    <i class="fas fa-barcode barcode-icon"></i>
+                    <h3 class="mb-2">Scan Order Barcode</h3>
+                    <p class="mb-4 opacity-75">Scan or enter order number to start return process</p>
+                </div>
+                
+                <div class="bg-white rounded p-4">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-8">
+                            <label class="form-label text-dark fw-bold">
+                                <i class="fas fa-keyboard text-primary"></i> Order Barcode / Order Number
+                            </label>
+                            <input type="text" 
+                                   class="form-control form-control-lg" 
+                                   id="barcodeInput" 
+                                   placeholder="Type: ORD000002"
+                                   autocomplete="off"
+                                   autofocus>
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle"></i> Type order number and press Enter
+                            </small>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" class="btn camera-btn w-100" id="openCameraBtn">
+                                <i class="fas fa-camera me-2"></i> Use Camera
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="scanStatus" class="scan-status waiting">
+                        <i class="fas fa-barcode me-2"></i> Waiting for scan...
+                    </div>
+                </div>
+                
+                <div class="text-center mt-3">
+                    <button type="button" class="btn btn-link text-white text-decoration-none" id="toggleManualMode">
+                        <i class="fas fa-list me-2"></i> Or select from list manually
+                    </button>
+                </div>
+            </div>
+
+            <!-- Manual Order Selection -->
+            <div class="card border-0 shadow-sm mb-4 d-none" id="manualOrderSelect">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list"></i> Manual Order Selection
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <label class="form-label fw-bold">Select Order</label>
+                    <select class="form-select form-select-lg" id="manualOrderDropdown">
+                        <option value="">-- Select an Order --</option>
+                        {% for order in recent_orders %}
+                        <option value="{{ order.order_number }}">
+                            {{ order.order_number }} - {{ order.customer_name }} - रू {{ order.total_amount }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <!-- Scanned Orders List - Compact Accordion -->
+            <div class="scanned-orders-section" id="scannedOrdersSection">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-success text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="fas fa-check-circle me-2"></i> Scanned Orders
+                            </h5>
+                            <span class="badge bg-white text-success" id="scannedCount">0 Orders</span>
+                        </div>
+                    </div>
+                    <div class="card-body p-3" id="scannedOrdersList">
+                        <!-- Scanned orders will appear here as compact cards -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="col-lg-4">
+            <!-- Recent Delivered Orders -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h6 class="mb-0">
+                        <i class="fas fa-history text-primary"></i> Recent Delivered Orders
+                    </h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush" style="max-height: 300px; overflow-y: auto;">
+                        {% for order in recent_orders|slice:":8" %}
+                        <a href="javascript:void(0)" 
+                           class="list-group-item list-group-item-action recent-order-item"
+                           data-order-number="{{ order.order_number }}">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong class="text-primary">{{ order.order_number }}</strong>
+                                <span class="badge bg-success">रू {{ order.total_amount }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">
+                                    <i class="fas fa-user"></i> {{ order.customer_name|truncatewords:2 }}
+                                </small>
+                                <small class="text-muted">
+                                    {{ order.created_at|date:"M d" }}
+                                </small>
+                            </div>
+                        </a>
+                        {% empty %}
+                        <div class="list-group-item text-center py-4">
+                            <p class="text-muted mb-0">No delivered orders</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Return Policy -->
+            <div class="card border-0 shadow-sm bg-light">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        <i class="fas fa-shield-alt text-primary"></i> Return Policy
+                    </h6>
+                    <hr>
+                    <ul class="small mb-0 ps-3">
+                        <li class="mb-2"><i class="fas fa-check text-success"></i> Returns within <strong>7 days</strong></li>
+                        <li class="mb-2"><i class="fas fa-check text-success"></i> Product must be <strong>unused</strong></li>
+                        <li class="mb-0"><i class="fas fa-check text-success"></i> Refund in <strong>5-7 days</strong></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    console.log('🔧 Return scanner initialized');
+
+    // Scanned orders storage
+    let scannedOrders = new Map();
+    let expandedOrderId = null;
+    
+    // Auto-submit configuration
+    let typingTimer;
+    let scanBuffer = '';
+    let lastKeyTime = 0;
+    const TYPING_DELAY = 300; // Wait 300ms after last keystroke
+    const SCAN_SPEED_THRESHOLD = 50; // Barcode scanners type within 50ms between characters
+    
+    // DOM Elements
+    const barcodeInput = document.getElementById('barcodeInput');
+    const scanStatus = document.getElementById('scanStatus');
+    const scannedOrdersSection = document.getElementById('scannedOrdersSection');
+    const scannedOrdersList = document.getElementById('scannedOrdersList');
+    const scannedCount = document.getElementById('scannedCount');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+
+    // Manual Mode Toggle
+    document.getElementById('toggleManualMode').addEventListener('click', function() {
+        const manualSelect = document.getElementById('manualOrderSelect');
+        manualSelect.classList.toggle('d-none');
+    });
+
+    // Manual Order Selection
+    document.getElementById('manualOrderDropdown').addEventListener('change', function() {
+        const orderNumber = this.value;
+        if (orderNumber) {
+            processScannedBarcode(orderNumber);
+            this.value = '';
+        }
+    });
+
+    // Recent Order Click
+    document.querySelectorAll('.recent-order-item').forEach(item => {
+        item.addEventListener('click', function() {
+            const orderNumber = this.getAttribute('data-order-number');
+            barcodeInput.value = orderNumber;
+            processScannedBarcode(orderNumber);
+        });
+    });
+
+    // ====== AUTO-SUBMIT LOGIC ======
+    
+    // Detect fast typing (barcode scanner) vs manual typing
+    barcodeInput.addEventListener('keydown', function(e) {
+        const currentTime = new Date().getTime();
+        const timeDiff = currentTime - lastKeyTime;
+        
+        // If Enter key is pressed, process immediately
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            clearTimeout(typingTimer);
+            const barcode = this.value.trim();
+            if (barcode) {
+                processScannedBarcode(barcode);
+            }
+            return;
+        }
+        
+        lastKeyTime = currentTime;
+    });
+
+    // Auto-submit after user stops typing
+    barcodeInput.addEventListener('input', function(e) {
+        const currentValue = this.value.trim();
+        
+        // Clear previous timer
+        clearTimeout(typingTimer);
+        
+        // If empty, reset
+        if (!currentValue) {
+            scanBuffer = '';
+            return;
+        }
+        
+        // Detect if this looks like a complete order number
+        const looksLikeOrderNumber = /^ORD\d{6,}$/i.test(currentValue);
+        
+        // Set timer based on input pattern
+        const delay = looksLikeOrderNumber ? 200 : TYPING_DELAY;
+        
+        // Auto-submit after delay
+        typingTimer = setTimeout(() => {
+            const barcode = this.value.trim();
+            
+            // Only process if it looks like a valid order number
+            if (barcode && barcode.length >= 8) {
+                console.log('🚀 Auto-submitting:', barcode);
+                processScannedBarcode(barcode);
+            }
+        }, delay);
+    });
+
+    // Detect barcode scanner (very fast consecutive keystrokes)
+    let scannerBuffer = '';
+    let scannerTimer;
+    
+    barcodeInput.addEventListener('keypress', function(e) {
+        const currentTime = new Date().getTime();
+        const timeDiff = currentTime - lastKeyTime;
+        
+        // If typing very fast (< 50ms between chars), it's likely a scanner
+        if (timeDiff < SCAN_SPEED_THRESHOLD && e.key !== 'Enter') {
+            scannerBuffer += e.key;
+            
+            clearTimeout(scannerTimer);
+            scannerTimer = setTimeout(() => {
+                if (scannerBuffer.length >= 8) {
+                    console.log('📷 Scanner detected:', scannerBuffer);
+                    barcodeInput.value = scannerBuffer;
+                    processScannedBarcode(scannerBuffer);
+                }
+                scannerBuffer = '';
+            }, 100);
+        } else {
+            scannerBuffer = '';
+        }
+        
+        lastKeyTime = currentTime;
+    });
+
+    // Process Scanned Barcode (Optimized for Speed)
+    function processScannedBarcode(barcode) {
+        console.log('🔍 Processing barcode:', barcode);
+        
+        // Trim and uppercase for comparison
+        barcode = barcode.trim().toUpperCase();
+        
+        // Validate format
+        if (!barcode || barcode.length < 8) {
+            console.warn('⚠️ Invalid barcode format');
+            return;
+        }
+        
+        updateScanStatus('waiting', '<i class="fas fa-spinner fa-spin"></i> Searching...');
+        
+        // Check if already scanned
+        if (scannedOrders.has(barcode)) {
+            console.warn('⚠️ Duplicate scan:', barcode);
+            updateScanStatus('duplicate', `<i class="fas fa-exclamation-triangle"></i> Already scanned!`);
+            playErrorBeep();
+            barcodeInput.value = '';
+            barcodeInput.focus();
+            setTimeout(() => resetScanStatus(), 1500);
+            return;
+        }
+        
+        // Fetch order data via AJAX (with timeout for speed)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        
+        const apiUrl = `/api/order-by-barcode/?barcode=${encodeURIComponent(barcode)}`;
+        
+        fetch(apiUrl, { signal: controller.signal })
+            .then(response => {
+                clearTimeout(timeoutId);
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    console.log('✅ Order found:', data.order.order_number);
+                    addScannedOrder(data.order);
+                    updateScanStatus('success', `<i class="fas fa-check-circle"></i> Added!`);
+                    playSuccessBeep();
+                    
+                    // Clear input immediately
+                    barcodeInput.value = '';
+                    barcodeInput.focus();
+                    
+                    // Reset status quickly
+                    setTimeout(() => resetScanStatus(), 1000);
+                } else {
+                    console.error('❌ Error:', data.error);
+                    updateScanStatus('error', `<i class="fas fa-times-circle"></i> ${data.error}`);
+                    playErrorBeep();
+                    
+                    // Clear input and reset
+                    setTimeout(() => {
+                        barcodeInput.value = '';
+                        barcodeInput.focus();
+                        resetScanStatus();
+                    }, 2000);
+                }
+            })
+            .catch(error => {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    console.error('⏱️ Request timeout');
+                    updateScanStatus('error', `<i class="fas fa-clock"></i> Timeout - please try again`);
+                } else {
+                    console.error('🔥 Fetch error:', error);
+                    updateScanStatus('error', `<i class="fas fa-times-circle"></i> Connection error`);
+                }
+                playErrorBeep();
+                
+                setTimeout(() => {
+                    barcodeInput.value = '';
+                    barcodeInput.focus();
+                    resetScanStatus();
+                }, 2000);
+            });
+    }
+
+ 
+    // Create Order Card with Accordion
+    function createOrderCard(orderData) {
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'order-compact-card';
+        cardDiv.setAttribute('data-order-number', orderData.order_number);
+        
+        cardDiv.innerHTML = `
+            <div class="order-header" onclick="toggleOrderDetails('${orderData.order_number}')">
+                <div class="order-compact-info">
+                    <div class="order-number-badge">
+                        <i class="fas fa-shopping-bag me-2"></i>${orderData.order_number}
+                    </div>
+                    <div class="order-meta">
+                        <span><i class="fas fa-user me-1"></i>${orderData.customer_name}</span>
+                        <span><i class="fas fa-box me-1"></i>${orderData.items.length} items</span>
+                        <span class="badge bg-success">रू ${orderData.total_amount}</span>
+                    </div>
+                </div>
+                <div class="order-actions">
+                    <button type="button" class="remove-btn" onclick="event.stopPropagation(); removeOrder('${orderData.order_number}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                    <i class="fas fa-chevron-down expand-icon"></i>
+                </div>
+            </div>
+            
+            <div class="order-details-panel" id="details-${orderData.order_number}">
+                <!-- Details will be loaded when expanded -->
+            </div>
+        `;
+        
+        return cardDiv;
+    }
+
+    // Toggle Order Details
+    window.toggleOrderDetails = function(orderNumber) {
+        const card = document.querySelector(`[data-order-number="${orderNumber}"]`);
+        const detailsPanel = document.getElementById(`details-${orderNumber}`);
+        
+        // If already expanded, collapse it
+        if (card.classList.contains('expanded')) {
+            card.classList.remove('expanded');
+            detailsPanel.classList.remove('show');
+            expandedOrderId = null;
+        } else {
+            // Collapse all other cards
+            document.querySelectorAll('.order-compact-card').forEach(c => {
+                c.classList.remove('expanded');
+                const panel = c.querySelector('.order-details-panel');
+                if (panel) panel.classList.remove('show');
+            });
+            
+            // Expand this card
+            card.classList.add('expanded');
+            const orderData = scannedOrders.get(orderNumber);
+            loadOrderDetails(orderNumber, orderData, detailsPanel);
+            detailsPanel.classList.add('show');
+            expandedOrderId = orderNumber;
+            
+            // Scroll to the card
+            setTimeout(() => {
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        }
+    };
+
+    // Load Order Details into Panel
+    function loadOrderDetails(orderNumber, orderData, container) {
+        const formId = `form-${orderNumber}`;
+        
+        let html = `
+            <form id="${formId}" class="return-form">
+                <input type="hidden" name="order_id" value="${orderData.id}">
+                
+                <div class="mb-3">
+                    <h6 class="fw-bold mb-3">
+                        <i class="fas fa-box-open text-primary me-2"></i>Select Items to Return
+                    </h6>
+                    
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="selectAll-${orderNumber}" 
+                               onchange="toggleAllItems('${orderNumber}')">
+                        <label class="form-check-label fw-bold" for="selectAll-${orderNumber}">
+                            Select All Items
+                        </label>
+                    </div>
+                    
+                    <div class="items-list">
+        `;
+        
+        orderData.items.forEach((item, index) => {
+            html += `
+                <div class="item-selection-card">
+                    <div class="row align-items-center">
+                        <div class="col-md-1">
+                            <input type="checkbox" 
+                                   class="form-check-input item-checkbox" 
+                                   data-order="${orderNumber}"
+                                   data-item-id="${item.id}" 
+                                   data-price="${item.price}" 
+                                   data-qty="${item.quantity}"
+                                   id="item-${orderNumber}-${index}"
+                                   onchange="updateReturnSummary('${orderNumber}')">
+                        </div>
+                        <div class="col-md-6">
+                            <strong>${item.product_name}</strong>
+                            ${item.product_variation ? `<br><small class="text-muted">${item.product_variation}</small>` : ''}
+                        </div>
+                        <div class="col-md-2 text-center">
+                            <span class="badge bg-secondary">Qty: ${item.quantity}</span>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-1"><strong>रू ${item.price}</strong></div>
+                            <input type="number" 
+                                   class="form-control form-control-sm return-qty text-center" 
+                                   min="1" 
+                                   max="${item.quantity}" 
+                                   value="1" 
+                                   data-order="${orderNumber}"
+                                   data-item-id="${item.id}" 
+                                   onchange="updateReturnSummary('${orderNumber}')"
+                                   disabled>
+                            <small class="text-muted">Return Qty</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `
+                    </div>
+                </div>
+                
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Return Reason <span class="text-danger">*</span></label>
+                        <select name="return_reason" class="form-select" required>
+                            <option value="">-- Select Reason --</option>
+                            {% for code, label in reason_choices %}
+                            <option value="{{ code }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Refund Type <span class="text-danger">*</span></label>
+                        <select name="refund_type" class="form-select" required>
+                            {% for code, label in refund_type_choices %}
+                            <option value="{{ code }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Customer Notes</label>
+                        <textarea name="customer_notes" class="form-control" rows="3" 
+                                  placeholder="Describe the issue..." maxlength="1000"></textarea>
+                    </div>
+                </div>
+                
+                <div class="return-summary-box" id="summary-${orderNumber}">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Selected Items:</span>
+                        <strong class="selected-count">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Total Quantity:</span>
+                        <strong class="total-qty">0</strong>
+                    </div>
+                    <hr class="bg-white opacity-50">
+                    <div class="d-flex justify-content-between">
+                        <strong>Refund Amount:</strong>
+                        <strong class="refund-amount fs-5">रू 0.00</strong>
+                    </div>
+                </div>
+                
+                <button type="button" class="process-return-btn mt-3" onclick="processReturn('${orderNumber}')">
+                    <i class="fas fa-check-circle me-2"></i>Process Return for ${orderNumber}
+                </button>
+            </form>
+        `;
+        
+        container.innerHTML = html;
+    }
+
+    // Toggle All Items for an Order
+    window.toggleAllItems = function(orderNumber) {
+        const selectAllCheckbox = document.getElementById(`selectAll-${orderNumber}`);
+        const itemCheckboxes = document.querySelectorAll(`.item-checkbox[data-order="${orderNumber}"]`);
+        const qtyInputs = document.querySelectorAll(`.return-qty[data-order="${orderNumber}"]`);
+        
+        itemCheckboxes.forEach((checkbox, index) => {
+            checkbox.checked = selectAllCheckbox.checked;
+            const card = checkbox.closest('.item-selection-card');
+            card.classList.toggle('selected', selectAllCheckbox.checked);
+            qtyInputs[index].disabled = !selectAllCheckbox.checked;
+        });
+        
+        updateReturnSummary(orderNumber);
+    };
+
+    // Update Return Summary for an Order
+    window.updateReturnSummary = function(orderNumber) {
+        const checkboxes = document.querySelectorAll(`.item-checkbox[data-order="${orderNumber}"]`);
+        const qtyInputs = document.querySelectorAll(`.return-qty[data-order="${orderNumber}"]`);
+        const summaryBox = document.getElementById(`summary-${orderNumber}`);
+        
+        let totalRefund = 0;
+        let selectedCount = 0;
+        let totalQty = 0;
+
+        checkboxes.forEach((checkbox, index) => {
+            const card = checkbox.closest('.item-selection-card');
+            card.classList.toggle('selected', checkbox.checked);
+            qtyInputs[index].disabled = !checkbox.checked;
+            
+            if (checkbox.checked) {
+                const price = parseFloat(checkbox.getAttribute('data-price'));
+                const qty = parseInt(qtyInputs[index].value) || 1;
+                totalRefund += price * qty;
+                selectedCount++;
+                totalQty += qty;
+            }
+        });
+
+        summaryBox.querySelector('.selected-count').textContent = selectedCount;
+        summaryBox.querySelector('.total-qty').textContent = totalQty;
+        summaryBox.querySelector('.refund-amount').textContent = `रू ${totalRefund.toFixed(2)}`;
+    };
+
+    // Process Return for an Order
+    window.processReturn = function(orderNumber) {
+        console.log('📤 Processing return for:', orderNumber);
+        
+        const form = document.getElementById(`form-${orderNumber}`);
+        const checkboxes = form.querySelectorAll('.item-checkbox');
+        const qtyInputs = form.querySelectorAll('.return-qty');
+        
+        const selectedItems = [];
+        checkboxes.forEach((checkbox, index) => {
+            if (checkbox.checked) {
+                selectedItems.push({
+                    order_item_id: checkbox.getAttribute('data-item-id'),
+                    quantity: parseInt(qtyInputs[index].value) || 1
+                });
+            }
+        });
+
+        if (selectedItems.length === 0) {
+            alert('Please select at least one item');
+            return;
+        }
+
+        if (!form.checkValidity()) {
+            form.classList.add('was-validated');
+            alert('Please fill all required fields');
+            return;
+        }
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('order_id', scannedOrders.get(orderNumber).id);
+        formData.append('return_items', JSON.stringify(selectedItems));
+        formData.append('return_reason', form.querySelector('[name="return_reason"]').value);
+        formData.append('refund_type', form.querySelector('[name="refund_type"]').value);
+        formData.append('customer_notes', form.querySelector('[name="customer_notes"]').value);
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        showLoading();
+        
+        // Submit via fetch
+        fetch('{% url "return_create" %}', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (response.ok) {
+                window.location.href = '{% url "returns_list" %}';
+            } else {
+                throw new Error('Submission failed');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error submitting return request');
+            loadingOverlay.classList.remove('active');
+        });
+    };
+
+    // Remove Order
+    window.removeOrder = function(orderNumber) {
+        if (confirm(`Remove order ${orderNumber}?`)) {
+            scannedOrders.delete(orderNumber);
+            
+            if (scannedOrders.size === 0) {
+                scannedOrdersSection.classList.remove('active');
+            }
+            
+            // Remove the card element
+            const card = document.querySelector(`[data-order-number="${orderNumber}"]`);
+            if (card) {
+                card.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => card.remove(), 300);
+            }
+            
+            // Update count
+            scannedCount.textContent = `${scannedOrders.size} Order${scannedOrders.size !== 1 ? 's' : ''}`;
+        }
+    };
+
+    // Update/Reset Scan Status
+    function updateScanStatus(type, message) {
+        scanStatus.className = `scan-status ${type}`;
+        scanStatus.innerHTML = message;
+    }
+
+    function resetScanStatus() {
+        updateScanStatus('waiting', '<i class="fas fa-barcode"></i> Ready to scan...');
+    }
+
+    // Loading Overlay
+    function showLoading() {
+        loadingOverlay.classList.add('active');
+    }
+
+    // Audio Feedback (Faster)
+    function playSuccessBeep() {
+        try {
+            const context = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.frequency.value = 800;
+            gain.gain.setValueAtTime(0.3, context.currentTime);
+            oscillator.start(context.currentTime);
+            oscillator.stop(context.currentTime + 0.08);
+        } catch(e) {}
+    }
+
+    function playErrorBeep() {
+        try {
+            const context = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.frequency.value = 400;
+            gain.gain.setValueAtTime(0.2, context.currentTime);
+            oscillator.start(context.currentTime);
+            oscillator.stop(context.currentTime + 0.15);
+        } catch(e) {}
+    }
+
+    // Add slideOut animation to CSS
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(-20px); }
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Focus input on load
+    barcodeInput.focus();
+    
+    // Auto-focus input when clicking anywhere on scanner container
+    document.querySelector('.scanner-container').addEventListener('click', () => {
+        barcodeInput.focus();
+    });
+
+    console.log('✅ Auto-submit enabled - No Enter key needed!');
+})();
+</script>
+
+{% endblock %}

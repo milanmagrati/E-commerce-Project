@@ -1,0 +1,562 @@
+{% extends 'base.html' %}
+{% block title %}Edit User - {{ edit_user.username }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-lg-11 mx-auto">
+            <div class="card shadow-lg border-0">
+                <div class="card-header bg-gradient-warning text-white py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0"><i class="fas fa-user-edit"></i> Edit User: {{ edit_user.username }}</h4>
+                        <a href="{% url 'user_list' %}" class="btn btn-light btn-sm">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="card-body p-4">
+                    <form method="POST" id="editUserForm">
+                        {% csrf_token %}
+                        
+                        <!-- Account Information -->
+                        <div class="form-section">
+                            <div class="section-title">
+                                <i class="fas fa-user-circle"></i> Account Information
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label required">Username</label>
+                                    <input type="text" class="form-control" name="username" value="{{ edit_user.username }}" required>
+                                    <small class="text-muted">Current: {{ edit_user.username }}</small>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label required">Email</label>
+                                    <input type="email" class="form-control" name="email" value="{{ edit_user.email }}" required>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">New Password</label>
+                                    <div class="input-group">
+                                        <input type="password" class="form-control" name="password" id="password" placeholder="Leave blank to keep current">
+                                        <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                    <small class="text-muted">Leave empty to keep existing password</small>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">Phone</label>
+                                    <input type="text" class="form-control" name="phone" value="{{ edit_user.phone|default:'' }}" placeholder="98XXXXXXXX">
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">First Name</label>
+                                    <input type="text" class="form-control" name="first_name" value="{{ edit_user.first_name }}">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Last Name</label>
+                                    <input type="text" class="form-control" name="last_name" value="{{ edit_user.last_name }}">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Account Status</label>
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" name="is_active" id="isActive" {% if edit_user.is_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="isActive">
+                                            <strong>{% if edit_user.is_active %}Active{% else %}Inactive{% endif %}</strong>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Role Selection -->
+                        <div class="form-section">
+                            <div class="section-title">
+                                <i class="fas fa-user-tag"></i> Role Selection
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label class="form-label required">Role</label>
+                                    <select class="form-select form-select-lg" name="role" id="roleSelect" required>
+                                        <option value="administrator" {% if edit_user.role == 'administrator' %}selected{% endif %}>👑 Administrator</option>
+                                        <option value="warehouse" {% if edit_user.role == 'warehouse' %}selected{% endif %}>📦 Warehouse</option>
+                                        <option value="sales" {% if edit_user.role == 'sales' %}selected{% endif %}>💼 Sales</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="alert alert-info mt-4" id="roleAlert">
+                                        <i class="fas fa-info-circle"></i> 
+                                        <strong>Current Role:</strong> {{ edit_user.get_role_display }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Custom Permissions -->
+                        {% if edit_user.role != 'administrator' %}
+                        <div class="form-section" id="permissionsSection">
+                            <div class="section-title">
+                                <i class="fas fa-shield-alt"></i> Custom Permissions - Check to Enable
+                                <button type="button" class="btn btn-sm btn-outline-success float-end" onclick="checkAll()">
+                                    <i class="fas fa-check-double"></i> Check All
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger float-end me-2" onclick="uncheckAll()">
+                                    <i class="fas fa-times"></i> Uncheck All
+                                </button>
+                            </div>
+                            
+                            <div class="row">
+                                <!-- Orders Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-primary">
+                                            <i class="fas fa-shopping-cart"></i> Orders Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_orders" id="can_view_orders" {% if edit_user.can_view_orders %}checked{% endif %}>
+                                                <label for="can_view_orders">View Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_orders" id="can_create_orders" {% if edit_user.can_create_orders %}checked{% endif %}>
+                                                <label for="can_create_orders">Create Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_orders" id="can_edit_orders" {% if edit_user.can_edit_orders %}checked{% endif %}>
+                                                <label for="can_edit_orders">Edit Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_orders" id="can_delete_orders" {% if edit_user.can_delete_orders %}checked{% endif %}>
+                                                <label for="can_delete_orders">Delete Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_cancel_orders" id="can_cancel_orders" {% if edit_user.can_cancel_orders %}checked{% endif %}>
+                                                <label for="can_cancel_orders">Cancel Orders</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Products Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-success">
+                                            <i class="fas fa-box"></i> Products Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_products" id="can_view_products" {% if edit_user.can_view_products %}checked{% endif %}>
+                                                <label for="can_view_products">View Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_products" id="can_create_products" {% if edit_user.can_create_products %}checked{% endif %}>
+                                                <label for="can_create_products">Create Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_products" id="can_edit_products" {% if edit_user.can_edit_products %}checked{% endif %}>
+                                                <label for="can_edit_products">Edit Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_products" id="can_delete_products" {% if edit_user.can_delete_products %}checked{% endif %}>
+                                                <label for="can_delete_products">Delete Products</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Customers Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-info">
+                                            <i class="fas fa-users"></i> Customers Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_customers" id="can_view_customers" {% if edit_user.can_view_customers %}checked{% endif %}>
+                                                <label for="can_view_customers">View Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_customers" id="can_create_customers" {% if edit_user.can_create_customers %}checked{% endif %}>
+                                                <label for="can_create_customers">Create Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_customers" id="can_edit_customers" {% if edit_user.can_edit_customers %}checked{% endif %}>
+                                                <label for="can_edit_customers">Edit Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_customers" id="can_delete_customers" {% if edit_user.can_delete_customers %}checked{% endif %}>
+                                                <label for="can_delete_customers">Delete Customers</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 🆕 RETURNS MODULE -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-danger">
+                                            <i class="fas fa-undo-alt"></i> Returns Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_returns" id="can_view_returns" {% if edit_user.can_view_returns %}checked{% endif %}>
+                                                <label for="can_view_returns">View Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_returns" id="can_create_returns" {% if edit_user.can_create_returns %}checked{% endif %}>
+                                                <label for="can_create_returns">Create Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_returns" id="can_edit_returns" {% if edit_user.can_edit_returns %}checked{% endif %}>
+                                                <label for="can_edit_returns">Edit Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_returns" id="can_delete_returns" {% if edit_user.can_delete_returns %}checked{% endif %}>
+                                                <label for="can_delete_returns">Delete Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_approve_returns" id="can_approve_returns" {% if edit_user.can_approve_returns %}checked{% endif %}>
+                                                <label for="can_approve_returns">Approve Returns</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Dispatch Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-warning text-dark">
+                                            <i class="fas fa-truck"></i> Dispatch Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dispatch" id="can_view_dispatch" {% if edit_user.can_view_dispatch %}checked{% endif %}>
+                                                <label for="can_view_dispatch">View Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_dispatch" id="can_manage_dispatch" {% if edit_user.can_manage_dispatch %}checked{% endif %}>
+                                                <label for="can_manage_dispatch">Manage Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_scan_barcodes" id="can_scan_barcodes" {% if edit_user.can_scan_barcodes %}checked{% endif %}>
+                                                <label for="can_scan_barcodes">Barcode Scanner</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Inventory Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-secondary">
+                                            <i class="fas fa-warehouse"></i> Inventory Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_inventory" id="can_view_inventory" {% if edit_user.can_view_inventory %}checked{% endif %}>
+                                                <label for="can_view_inventory">View Inventory</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_inventory" id="can_manage_inventory" {% if edit_user.can_manage_inventory %}checked{% endif %}>
+                                                <label for="can_manage_inventory">Manage Inventory</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_adjust_stock" id="can_adjust_stock" {% if edit_user.can_adjust_stock %}checked{% endif %}>
+                                                <label for="can_adjust_stock">Adjust Stock</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Reports Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-dark">
+                                            <i class="fas fa-chart-bar"></i> Reports Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_reports" id="can_view_reports" {% if edit_user.can_view_reports %}checked{% endif %}>
+                                                <label for="can_view_reports">View Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_sales_reports" id="can_view_sales_reports" {% if edit_user.can_view_sales_reports %}checked{% endif %}>
+                                                <label for="can_view_sales_reports">Sales Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_financial_reports" id="can_view_financial_reports" {% if edit_user.can_view_financial_reports %}checked{% endif %}>
+                                                <label for="can_view_financial_reports">Financial Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_data" id="can_export_data" {% if edit_user.can_export_data %}checked{% endif %}>
+                                                <label for="can_export_data">Export Data</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Pricing & Discounts Module -->
+                                <div class="col-12 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                            <i class="fas fa-dollar-sign"></i> Pricing & Discount Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="row">
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_view_cost_price" id="can_view_cost_price" {% if edit_user.can_view_cost_price %}checked{% endif %}>
+                                                        <label for="can_view_cost_price">View Cost Price</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_edit_prices" id="can_edit_prices" {% if edit_user.can_edit_prices %}checked{% endif %}>
+                                                        <label for="can_edit_prices">Edit Prices</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_give_discounts" id="can_give_discounts" {% if edit_user.can_give_discounts %}checked{% endif %}>
+                                                        <label for="can_give_discounts">Give Discounts</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label fw-bold small">Max Discount %</label>
+                                                    <input type="number" class="form-control" name="max_discount_percent" id="max_discount_percent" value="{{ edit_user.max_discount_percent|default:0 }}" min="0" max="100" step="0.01">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning border-0 shadow-sm">
+                            <i class="fas fa-crown fa-2x text-warning float-start me-3"></i>
+                            <h5 class="alert-heading">Administrator Role</h5>
+                            <p class="mb-0">This user has the <strong>Administrator</strong> role and has all permissions by default. Change the role above to customize permissions.</p>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- User Metadata -->
+                        <div class="form-section">
+                            <div class="section-title">
+                                <i class="fas fa-info-circle"></i> User Information
+                            </div>
+                            <div class="row">
+                                <div class="col-md-4 mb-2">
+                                    <strong><i class="fas fa-calendar-plus text-success"></i> Created:</strong><br>
+                                    <span class="text-muted">{{ edit_user.date_joined|date:"F d, Y g:i A" }}</span>
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <strong><i class="fas fa-sign-in-alt text-primary"></i> Last Login:</strong><br>
+                                    <span class="text-muted">{{ edit_user.last_login|date:"F d, Y g:i A"|default:"Never logged in" }}</span>
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <strong><i class="fas fa-shield-alt text-info"></i> User ID:</strong><br>
+                                    <span class="text-muted">#{{ edit_user.id }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div class="d-flex justify-content-between mt-4 pt-3 border-top">
+                            <a href="{% url 'user_list' %}" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-warning text-white btn-lg" id="submitBtn">
+                                <i class="fas fa-save"></i> Update User
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+    
+    .form-section {
+        margin-bottom: 30px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .section-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #dee2e6;
+    }
+    
+    .section-title i {
+        color: #f59e0b;
+        margin-right: 8px;
+    }
+    
+    .required:after {
+        content: " *";
+        color: red;
+    }
+    
+    .perm-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        overflow: hidden;
+        height: 100%;
+        background: white;
+        transition: all 0.3s;
+    }
+
+    .perm-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    
+    .perm-card-header {
+        padding: 12px 15px;
+        color: white;
+        font-weight: 600;
+        font-size: 14px;
+    }
+    
+    .perm-card-body {
+        padding: 15px;
+    }
+    
+    .perm-item {
+        padding: 10px;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        align-items: center;
+    }
+    
+    .perm-item:last-child {
+        border-bottom: none;
+    }
+    
+    .perm-item:hover {
+        background: #f8f9fa;
+    }
+    
+    .perm-item input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        cursor: pointer;
+    }
+    
+    .perm-item label {
+        margin: 0;
+        cursor: pointer;
+        flex: 1;
+        font-size: 14px;
+    }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+// Toggle password visibility
+const togglePassword = document.getElementById('togglePassword');
+const passwordInput = document.getElementById('password');
+
+if (togglePassword && passwordInput) {
+    togglePassword.addEventListener('click', function() {
+        const type = passwordInput.type === 'password' ? 'text' : 'password';
+        passwordInput.type = type;
+        this.querySelector('i').classList.toggle('fa-eye');
+        this.querySelector('i').classList.toggle('fa-eye-slash');
+    });
+}
+
+// Check all permissions
+function checkAll() {
+    document.querySelectorAll('#permissionsSection input[type="checkbox"]').forEach(cb => {
+        cb.checked = true;
+    });
+    document.getElementById('max_discount_percent').value = '100.00';
+}
+
+// Uncheck all permissions
+function uncheckAll() {
+    document.querySelectorAll('#permissionsSection input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+    });
+    document.getElementById('max_discount_percent').value = '0.00';
+}
+
+// Hide/show permissions based on role
+document.getElementById('roleSelect').addEventListener('change', function() {
+    const permSection = document.getElementById('permissionsSection');
+    const roleAlert = document.getElementById('roleAlert');
+    
+    if (this.value === 'administrator') {
+        if (permSection) permSection.style.display = 'none';
+        roleAlert.innerHTML = '<i class="fas fa-crown text-warning"></i> <strong>Administrator selected:</strong> Full access granted automatically.';
+        roleAlert.className = 'alert alert-warning mt-4';
+    } else {
+        if (permSection) permSection.style.display = 'block';
+        const roleNames = {
+            'warehouse': 'Warehouse',
+            'sales': 'Sales'
+        };
+        roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleNames[this.value]} role selected:</strong> Customize permissions below.`;
+        roleAlert.className = 'alert alert-info mt-4';
+    }
+});
+
+// Form submission with confirmation
+document.getElementById('editUserForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    Swal.fire({
+        title: 'Update User?',
+        text: 'Are you sure you want to update this user\'s information?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#f59e0b',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: '<i class="fas fa-check"></i> Yes, Update',
+        cancelButtonText: '<i class="fas fa-times"></i> Cancel'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Updating User...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            this.submit();
+        }
+    });
+});
+
+// Active status toggle label update
+document.getElementById('isActive').addEventListener('change', function() {
+    const label = this.nextElementSibling;
+    if (this.checked) {
+        label.innerHTML = '<strong>Active</strong>';
+        label.classList.remove('text-danger');
+        label.classList.add('text-success');
+    } else {
+        label.innerHTML = '<strong>Inactive</strong>';
+        label.classList.remove('text-success');
+        label.classList.add('text-danger');
+    }
+});
+</script>
+{% endblock %}

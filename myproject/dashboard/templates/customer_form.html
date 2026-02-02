@@ -1,0 +1,661 @@
+{% extends 'base.html' %}
+{% block title %}{{ action }} Customer - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <a href="{% url 'customers_list' %}" class="btn btn-secondary mb-3">
+            <i class="fas fa-arrow-left"></i> Back to Customers
+        </a>
+        <h2><i class="fas fa-user-plus"></i> {{ action }} Customer</h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-gradient-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-user-edit"></i> Customer Information</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    {% if form.errors %}
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <strong><i class="fas fa-exclamation-triangle"></i> Please correct the errors below:</strong>
+                        <ul class="mb-0 mt-2">
+                            {% for field in form %}
+                                {% for error in field.errors %}
+                                <li>{{ field.label }}: {{ error }}</li>
+                                {% endfor %}
+                            {% endfor %}
+                            {% for error in form.non_field_errors %}
+                            <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endif %}
+
+                    <!-- Basic Information -->
+                    <div class="section-header">
+                        <i class="fas fa-user-circle"></i> Basic Information
+                    </div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-8">
+                            <label class="form-label">Full Name <span class="text-danger">*</span></label>
+                            <input type="text" name="name" class="form-control {% if form.name.errors %}is-invalid{% endif %}" 
+                                   value="{{ form.name.value|default:'' }}" placeholder="Enter customer name" required>
+                            {% if form.name.errors %}
+                            <div class="invalid-feedback">{{ form.name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Customer Type <span class="text-danger">*</span></label>
+                            <select name="customer_type" class="form-select {% if form.customer_type.errors %}is-invalid{% endif %}" required>
+                                <option value="">Select Type</option>
+                                <option value="regular" {% if form.customer_type.value == 'regular' %}selected{% endif %}>Regular</option>
+                                <option value="wholesale" {% if form.customer_type.value == 'wholesale' %}selected{% endif %}>Wholesale</option>
+                                <option value="vip" {% if form.customer_type.value == 'vip' %}selected{% endif %}>VIP</option>
+                            </select>
+                            {% if form.customer_type.errors %}
+                            <div class="invalid-feedback">{{ form.customer_type.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Contact Information -->
+                    <div class="section-header">
+                        <i class="fas fa-phone"></i> Contact Information
+                    </div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label">Email Address <span class="text-danger">*</span></label>
+                            <input type="email" name="email" class="form-control {% if form.email.errors %}is-invalid{% endif %}" 
+                                   value="{{ form.email.value|default:'' }}" placeholder="customer@example.com" required>
+                            {% if form.email.errors %}
+                            <div class="invalid-feedback">{{ form.email.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                            <input type="tel" name="phone" class="form-control {% if form.phone.errors %}is-invalid{% endif %}" 
+                                   value="{{ form.phone.value|default:'' }}" placeholder="98XXXXXXXX" required>
+                            {% if form.phone.errors %}
+                            <div class="invalid-feedback">{{ form.phone.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Alternate Phone</label>
+                            <input type="tel" name="alternate_phone" class="form-control" 
+                                   value="{{ form.alternate_phone.value|default:'' }}" placeholder="Optional">
+                        </div>
+                    </div>
+
+                    <!-- Address Information -->
+                    <div class="section-header">
+                        <i class="fas fa-map-marker-alt"></i> Address Information
+                    </div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <label class="form-label">Street Address <span class="text-danger">*</span></label>
+                            <input type="text" name="address" class="form-control {% if form.address.errors %}is-invalid{% endif %}" 
+                                   value="{{ form.address.value|default:'' }}" placeholder="Enter full street address" required>
+                            {% if form.address.errors %}
+                            <div class="invalid-feedback">{{ form.address.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">City <span class="text-danger">*</span></label>
+                            <select name="city" class="form-select {% if form.city.errors %}is-invalid{% endif %}" required>
+                                <option value="">Select City</option>
+                                <option value="Kathmandu" {% if form.city.value == 'Kathmandu' %}selected{% endif %}>Kathmandu</option>
+                                <option value="Pokhara" {% if form.city.value == 'Pokhara' %}selected{% endif %}>Pokhara</option>
+                                <option value="Lalitpur" {% if form.city.value == 'Lalitpur' %}selected{% endif %}>Lalitpur</option>
+                                <option value="Bhaktapur" {% if form.city.value == 'Bhaktapur' %}selected{% endif %}>Bhaktapur</option>
+                                <option value="Biratnagar" {% if form.city.value == 'Biratnagar' %}selected{% endif %}>Biratnagar</option>
+                                <option value="Birgunj" {% if form.city.value == 'Birgunj' %}selected{% endif %}>Birgunj</option>
+                                <option value="Dharan" {% if form.city.value == 'Dharan' %}selected{% endif %}>Dharan</option>
+                                <option value="Hetauda" {% if form.city.value == 'Hetauda' %}selected{% endif %}>Hetauda</option>
+                                <option value="Butwal" {% if form.city.value == 'Butwal' %}selected{% endif %}>Butwal</option>
+                                <option value="Janakpur" {% if form.city.value == 'Janakpur' %}selected{% endif %}>Janakpur</option>
+                                <option value="Nepalgunj" {% if form.city.value == 'Nepalgunj' %}selected{% endif %}>Nepalgunj</option>
+                                <option value="Other" {% if form.city.value == 'Other' %}selected{% endif %}>Other</option>
+                            </select>
+                            {% if form.city.errors %}
+                            <div class="invalid-feedback">{{ form.city.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Landmark</label>
+                            <input type="text" name="landmark" class="form-control" 
+                                   value="{{ form.landmark.value|default:'' }}" placeholder="Near temple, school, etc.">
+                            <small class="text-muted">Optional - Helps with delivery</small>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label class="form-label">State/Province</label>
+                            <input type="text" name="state" class="form-control" 
+                                   value="{{ form.state.value|default:'' }}" placeholder="Province name">
+                            <small class="text-muted">Optional</small>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label class="form-label">Postal Code</label>
+                            <input type="text" name="postal_code" class="form-control" 
+                                   value="{{ form.postal_code.value|default:'' }}" placeholder="44600">
+                            <small class="text-muted">Optional</small>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label class="form-label">Country</label>
+                            <input type="text" name="country" class="form-control" 
+                                   value="{{ form.country.value|default:'Nepal' }}" placeholder="Nepal">
+                            <small class="text-muted">Default: Nepal</small>
+                        </div>
+                    </div>
+
+                    <!-- Additional Information -->
+                    <div class="section-header">
+                        <i class="fas fa-sticky-note"></i> Additional Information
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="3" 
+                                  placeholder="Any additional information about the customer...">{{ form.notes.value|default:'' }}</textarea>
+                        <small class="text-muted">Internal notes (not visible to customer)</small>
+                    </div>
+
+                    <!-- Status Section -->
+                    <div class="active-customer-wrapper">
+                        <div class="active-customer-card">
+                            <div class="switch-container">
+                                <input class="form-check-input custom-switch" type="checkbox" name="is_active" id="isActive" 
+                                       {% if form.is_active.value or form.is_active.value == None %}checked{% endif %}>
+                                <label class="switch-label" for="isActive">
+                                    <div class="label-content">
+                                        <div class="label-header">
+                                            <i class="fas fa-toggle-on switch-icon"></i>
+                                            <span class="label-title">Active Customer</span>
+                                            <span class="status-badge" id="statusBadge">Active</span>
+                                        </div>
+                                        <p class="label-description">
+                                            Inactive customers won't appear in active customer lists
+                                        </p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-save"></i> Save Customer
+                        </button>
+                        <a href="{% url 'customers_list' %}" class="btn btn-secondary btn-lg">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-info-circle"></i> Customer Types</h5>
+            </div>
+            <div class="card-body">
+                <div class="info-item">
+                    <div class="info-icon bg-success">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div>
+                        <strong>Regular</strong>
+                        <p class="mb-0 small text-muted">Standard retail customers</p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <div class="info-icon bg-info">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div>
+                        <strong>Wholesale</strong>
+                        <p class="mb-0 small text-muted">Bulk buyers with special pricing</p>
+                    </div>
+                </div>
+                <div class="info-item mb-0">
+                    <div class="info-icon bg-warning">
+                        <i class="fas fa-crown"></i>
+                    </div>
+                    <div>
+                        <strong>VIP</strong>
+                        <p class="mb-0 small text-muted">Premium customers with exclusive benefits</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="fas fa-lightbulb"></i> Quick Tips</h5>
+            </div>
+            <div class="card-body">
+                <div class="tip-item">
+                    <i class="fas fa-check-circle text-success"></i>
+                    <span>Fields marked with <span class="text-danger">*</span> are required</span>
+                </div>
+                <div class="tip-item">
+                    <i class="fas fa-shield-alt text-primary"></i>
+                    <span>All customer data is encrypted and secure</span>
+                </div>
+                <div class="tip-item">
+                    <i class="fas fa-envelope text-info"></i>
+                    <span>Email must be unique for each customer</span>
+                </div>
+                <div class="tip-item mb-0">
+                    <i class="fas fa-phone text-success"></i>
+                    <span>Use valid Nepali phone format</span>
+                </div>
+            </div>
+        </div>
+
+        {% if customer %}
+        <div class="card shadow-sm">
+            <div class="card-header bg-gradient-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Quick Stats</h5>
+            </div>
+            <div class="card-body">
+                <div class="stat-item">
+                    <div class="stat-label">
+                        <i class="fas fa-shopping-cart text-primary"></i>
+                        <span>Total Orders</span>
+                    </div>
+                    <strong class="badge bg-primary fs-6">0</strong>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">
+                        <i class="fas fa-money-bill-wave text-success"></i>
+                        <span>Total Spent</span>
+                    </div>
+                    <strong class="text-success">रू 0.00</strong>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">
+                        <i class="fas fa-calendar-alt text-info"></i>
+                        <span>Member Since</span>
+                    </div>
+                    <strong>{{ customer.created_at|date:"M d, Y" }}</strong>
+                </div>
+                <div class="stat-item mb-0">
+                    <div class="stat-label">
+                        <i class="fas fa-clock text-warning"></i>
+                        <span>Last Order</span>
+                    </div>
+                    <strong>Never</strong>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .section-header {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 14px 18px;
+        border-radius: 10px;
+        font-weight: 600;
+        color: #495057;
+        margin-bottom: 24px;
+        margin-top: 16px;
+        border-left: 5px solid #667eea;
+        font-size: 1.05rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    .section-header i {
+        margin-right: 12px;
+        color: #667eea;
+        font-size: 1.2rem;
+    }
+    
+    .form-label {
+        font-weight: 600;
+        color: #495057;
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .form-control, .form-select {
+        border-radius: 8px;
+        border: 1.5px solid #ced4da;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+    }
+    
+    .form-control:focus, .form-select:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.15);
+        transform: translateY(-1px);
+    }
+    
+    .form-control::placeholder {
+        color: #adb5bd;
+        font-size: 0.9rem;
+    }
+    
+    .is-invalid {
+        border-color: #dc3545;
+    }
+    
+    .invalid-feedback {
+        display: block;
+        font-size: 0.875rem;
+        color: #dc3545;
+        margin-top: 0.25rem;
+    }
+    
+    .card {
+        border: none;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    .card-header {
+        border-bottom: none;
+        padding: 1.25rem;
+        font-weight: 600;
+    }
+    
+    .btn-lg {
+        padding: 0.7rem 2rem;
+        font-size: 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-lg:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .info-item {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 15px 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+    
+    .info-icon {
+        width: 45px;
+        height: 45px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.2rem;
+    }
+    
+    .tip-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+    
+    .tip-item i {
+        margin-top: 2px;
+        font-size: 1rem;
+    }
+    
+    .stat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+    
+    .stat-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .stat-label i {
+        font-size: 1.1rem;
+    }
+    
+    textarea.form-control {
+        min-height: 100px;
+        resize: vertical;
+    }
+    
+    small.text-muted {
+        font-size: 0.8rem;
+    }
+    
+    .alert {
+        border-radius: 10px;
+        border: none;
+    }
+    
+    .text-danger {
+        font-weight: 600;
+    }
+
+    /* Active Customer Section - Premium Design */
+    .active-customer-wrapper {
+        margin-bottom: 2rem;
+    }
+
+    .active-customer-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        border: 2px solid #e9ecef;
+        border-radius: 14px;
+        padding: 24px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .active-customer-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .active-customer-card:hover {
+        border-color: #667eea;
+        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.12);
+        transform: translateY(-2px);
+    }
+
+    .active-customer-card:hover::before {
+        opacity: 1;
+    }
+
+    .switch-container {
+        display: flex;
+        align-items: flex-start;
+        gap: 20px;
+    }
+
+    .custom-switch {
+        width: 56px;
+        height: 28px;
+        cursor: pointer;
+        border: none;
+        background-color: #cbd5e1;
+        border-radius: 100px;
+        position: relative;
+        flex-shrink: 0;
+        margin-top: 2px;
+        transition: all 0.3s ease;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+
+    .custom-switch::before {
+        content: '';
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: white;
+        top: 3px;
+        left: 3px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    }
+
+    .custom-switch:checked {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+    }
+
+    .custom-switch:checked::before {
+        transform: translateX(28px);
+    }
+
+    .custom-switch:focus {
+        outline: none;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+    }
+
+    .switch-label {
+        cursor: pointer;
+        margin: 0;
+        flex: 1;
+        user-select: none;
+    }
+
+    .label-content {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .label-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .switch-icon {
+        font-size: 1.4rem;
+        color: #667eea;
+        transition: all 0.3s ease;
+    }
+
+    .custom-switch:checked ~ .switch-label .switch-icon {
+        color: #10b981;
+        animation: iconBounce 0.5s ease;
+    }
+
+    @keyframes iconBounce {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.2); }
+    }
+
+    .label-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #1e293b;
+        letter-spacing: -0.01em;
+    }
+
+    .status-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background: #fee2e2;
+        color: #dc2626;
+        transition: all 0.3s ease;
+    }
+
+    .custom-switch:checked ~ .switch-label .status-badge {
+        background: #d1fae5;
+        color: #059669;
+    }
+
+    .custom-switch:checked ~ .switch-label .status-badge::after {
+        content: ' ✓';
+    }
+
+    .label-description {
+        margin: 0;
+        font-size: 0.9rem;
+        color: #64748b;
+        line-height: 1.5;
+        padding-left: 32px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 576px) {
+        .switch-container {
+            gap: 15px;
+        }
+        
+        .label-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        
+        .label-description {
+            padding-left: 0;
+        }
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const switchInput = document.getElementById('isActive');
+    const statusBadge = document.getElementById('statusBadge');
+    
+    if (switchInput && statusBadge) {
+        // Update badge text based on switch state
+        function updateBadge() {
+            if (switchInput.checked) {
+                statusBadge.textContent = 'Active';
+            } else {
+                statusBadge.textContent = 'Inactive';
+            }
+        }
+        
+        // Initial update
+        updateBadge();
+        
+        // Listen for changes
+        switchInput.addEventListener('change', updateBadge);
+    }
+});
+</script>
+{% endblock %}

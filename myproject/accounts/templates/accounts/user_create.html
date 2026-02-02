@@ -1,0 +1,747 @@
+{% extends 'base.html' %}
+{% block title %}Create User - Permission Control{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-lg-11 mx-auto">
+            <div class="card shadow-lg border-0">
+                <div class="card-header bg-gradient-primary text-white py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0"><i class="fas fa-user-plus"></i> Create New User - Full Permission Control</h4>
+                        <a href="{% url 'user_list' %}" class="btn btn-light btn-sm">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </a>
+                    </div>
+                </div>
+
+                <div class="card-body p-4">
+                    <form method="POST" id="userCreateForm">
+                        {% csrf_token %}
+
+                        <!-- SECTION 1: Account Information -->
+                        <div class="form-section">
+                            <div class="section-title">
+                                <i class="fas fa-user-circle"></i> Account Information
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label required">Username</label>
+                                    <input type="text" class="form-control" name="username" id="username" required>
+                                    <small class="text-muted">Min 3 characters, no spaces</small>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label required">Email</label>
+                                    <input type="email" class="form-control" name="email" id="email" required>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label required">Password</label>
+                                    <div class="input-group">
+                                        <input type="password" class="form-control" name="password" id="password" required>
+                                        <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Password Strength Indicator -->
+                                    <div class="password-strength-bar mt-2" style="display: none;">
+                                        <div class="strength-bar" id="strengthBar"></div>
+                                    </div>
+                                    <small id="strengthText" class="d-block mt-1"></small>
+
+                                    <!-- Password Requirements Alert -->
+                                    <div class="alert alert-warning mt-2 p-2" id="passwordRequirements" style="display: none; font-size: 12px;">
+                                        <strong><i class="fas fa-info-circle"></i> Password Requirements:</strong>
+                                        <ul class="mb-0 mt-1 ps-3" id="requirementsList">
+                                            <li id="req-length" class="req-item">
+                                                <i class="fas fa-circle text-muted"></i> At least 8 characters
+                                            </li>
+                                            <li id="req-uppercase" class="req-item">
+                                                <i class="fas fa-circle text-muted"></i> Contains uppercase letter (A-Z)
+                                            </li>
+                                            <li id="req-lowercase" class="req-item">
+                                                <i class="fas fa-circle text-muted"></i> Contains lowercase letter (a-z)
+                                            </li>
+                                            <li id="req-number" class="req-item">
+                                                <i class="fas fa-circle text-muted"></i> Contains number (0-9)
+                                            </li>
+                                            <li id="req-special" class="req-item">
+                                                <i class="fas fa-circle text-muted"></i> Contains special character (!@#$%^&*)
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">Phone</label>
+                                    <input type="text" class="form-control" name="phone" placeholder="98XXXXXXXX">
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">First Name</label>
+                                    <input type="text" class="form-control" name="first_name">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Last Name</label>
+                                    <input type="text" class="form-control" name="last_name">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Account Status</label>
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" name="is_active" id="isActive" checked>
+                                        <label class="form-check-label" for="isActive">
+                                            <strong>Active</strong> (can login)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 2: Role Selection -->
+                        <div class="form-section">
+                            <div class="section-title">
+                                <i class="fas fa-user-tag"></i> Role Selection
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label class="form-label required">Choose Role</label>
+                                    <select class="form-select form-select-lg" name="role" id="roleSelect" required>
+                                        <option value="">-- Select Role --</option>
+                                        <option value="administrator">👑 Administrator</option>
+                                        <option value="warehouse">📦 Warehouse</option>
+                                        <option value="sales">💼 Sales</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <div id="roleInfo" class="alert alert-info mt-4 d-none">
+                                        <strong id="roleTitle"></strong>
+                                        <p id="roleDesc" class="mb-0 small"></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 3: Custom Permissions -->
+                        <div class="form-section" id="permissionsSection" style="display: none;">
+                            <div class="section-title">
+                                <i class="fas fa-shield-alt"></i> Custom Permissions - Check to Enable
+                                <button type="button" class="btn btn-sm btn-outline-success float-end" onclick="checkAllPermissions()">
+                                    <i class="fas fa-check-double"></i> Check All
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger float-end me-2" onclick="uncheckAllPermissions()">
+                                    <i class="fas fa-times"></i> Uncheck All
+                                </button>
+                            </div>
+
+                            <div class="row">
+                                <!-- Orders Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-primary">
+                                            <i class="fas fa-shopping-cart"></i> Orders Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_orders" id="can_view_orders">
+                                                <label for="can_view_orders">View Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_orders" id="can_create_orders">
+                                                <label for="can_create_orders">Create Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_orders" id="can_edit_orders">
+                                                <label for="can_edit_orders">Edit Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_orders" id="can_delete_orders">
+                                                <label for="can_delete_orders">Delete Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_cancel_orders" id="can_cancel_orders">
+                                                <label for="can_cancel_orders">Cancel Orders</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Products Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-success">
+                                            <i class="fas fa-box"></i> Products Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_products" id="can_view_products">
+                                                <label for="can_view_products">View Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_products" id="can_create_products">
+                                                <label for="can_create_products">Create Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_products" id="can_edit_products">
+                                                <label for="can_edit_products">Edit Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_products" id="can_delete_products">
+                                                <label for="can_delete_products">Delete Products</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Customers Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-info">
+                                            <i class="fas fa-users"></i> Customers Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_customers" id="can_view_customers">
+                                                <label for="can_view_customers">View Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_customers" id="can_create_customers">
+                                                <label for="can_create_customers">Create Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_customers" id="can_edit_customers">
+                                                <label for="can_edit_customers">Edit Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_customers" id="can_delete_customers">
+                                                <label for="can_delete_customers">Delete Customers</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 🆕 RETURNS MODULE -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-danger">
+                                            <i class="fas fa-undo-alt"></i> Returns Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_returns" id="can_view_returns">
+                                                <label for="can_view_returns">View Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_returns" id="can_create_returns">
+                                                <label for="can_create_returns">Create Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_returns" id="can_edit_returns">
+                                                <label for="can_edit_returns">Edit Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_returns" id="can_delete_returns">
+                                                <label for="can_delete_returns">Delete Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_approve_returns" id="can_approve_returns">
+                                                <label for="can_approve_returns">Approve Returns</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Dispatch Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-warning text-dark">
+                                            <i class="fas fa-truck"></i> Dispatch Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dispatch" id="can_view_dispatch">
+                                                <label for="can_view_dispatch">View Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_dispatch" id="can_manage_dispatch">
+                                                <label for="can_manage_dispatch">Manage Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_scan_barcodes" id="can_scan_barcodes">
+                                                <label for="can_scan_barcodes">Use Barcode Scanner</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Inventory Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-secondary">
+                                            <i class="fas fa-warehouse"></i> Inventory Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_inventory" id="can_view_inventory">
+                                                <label for="can_view_inventory">View Inventory</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_inventory" id="can_manage_inventory">
+                                                <label for="can_manage_inventory">Manage Inventory</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_adjust_stock" id="can_adjust_stock">
+                                                <label for="can_adjust_stock">Adjust Stock</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Reports Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-dark">
+                                            <i class="fas fa-chart-bar"></i> Reports Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_reports" id="can_view_reports">
+                                                <label for="can_view_reports">View Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_sales_reports" id="can_view_sales_reports">
+                                                <label for="can_view_sales_reports">Sales Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_financial_reports" id="can_view_financial_reports">
+                                                <label for="can_view_financial_reports">Financial Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_data" id="can_export_data">
+                                                <label for="can_export_data">Export Data</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Pricing Module -->
+                                <div class="col-12 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                            <i class="fas fa-dollar-sign"></i> Pricing & Discount Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="row">
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_view_cost_price" id="can_view_cost_price">
+                                                        <label for="can_view_cost_price">View Cost Prices</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_edit_prices" id="can_edit_prices">
+                                                        <label for="can_edit_prices">Edit Prices</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_give_discounts" id="can_give_discounts">
+                                                        <label for="can_give_discounts">Give Discounts</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label fw-bold small">Max Discount %</label>
+                                                    <input type="number" class="form-control" name="max_discount_percent" id="max_discount_percent" value="0" min="0" max="100" step="0.01">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Buttons -->
+                        <div class="d-flex justify-content-between mt-4 pt-3 border-top">
+                            <a href="{% url 'user_list' %}" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                <i class="fas fa-save"></i> Create User
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .form-section {
+        margin-bottom: 30px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+
+    .section-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .section-title i {
+        color: #667eea;
+        margin-right: 8px;
+    }
+
+    .required:after {
+        content: " *";
+        color: red;
+    }
+
+    /* Password Strength Bar */
+    .password-strength-bar {
+        height: 5px;
+        background: #e0e0e0;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .strength-bar {
+        height: 100%;
+        width: 0%;
+        transition: all 0.3s ease;
+    }
+
+    .strength-weak {
+        background: #dc3545;
+        width: 25%;
+    }
+
+    .strength-medium {
+        background: #ffc107;
+        width: 60%;
+    }
+
+    .strength-strong {
+        background: #28a745;
+        width: 100%;
+    }
+
+    /* Password Requirements */
+    .req-item {
+        font-size: 12px;
+        margin-bottom: 3px;
+    }
+
+    .req-met i {
+        color: #28a745 !important;
+    }
+
+    .req-met {
+        color: #28a745;
+        text-decoration: line-through;
+    }
+
+    .perm-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        overflow: hidden;
+        height: 100%;
+        background: white;
+        transition: all 0.3s;
+    }
+
+    .perm-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+
+    .perm-card-header {
+        padding: 12px 15px;
+        color: white;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .perm-card-body {
+        padding: 15px;
+    }
+
+    .perm-item {
+        padding: 10px;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        align-items: center;
+    }
+
+    .perm-item:last-child {
+        border-bottom: none;
+    }
+
+    .perm-item:hover {
+        background: #f8f9fa;
+    }
+
+    .perm-item input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        cursor: pointer;
+    }
+
+    .perm-item label {
+        margin: 0;
+        cursor: pointer;
+        flex: 1;
+        font-size: 14px;
+    }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+// Password validation
+const passwordInput = document.getElementById('password');
+const togglePassword = document.getElementById('togglePassword');
+const strengthBar = document.getElementById('strengthBar');
+const strengthText = document.getElementById('strengthText');
+const passwordRequirements = document.getElementById('passwordRequirements');
+const submitBtn = document.getElementById('submitBtn');
+
+// Show/Hide password requirements on focus
+passwordInput.addEventListener('focus', function() {
+    passwordRequirements.style.display = 'block';
+    document.querySelector('.password-strength-bar').style.display = 'block';
+});
+
+// Toggle password visibility
+togglePassword.addEventListener('click', function() {
+    const type = passwordInput.type === 'password' ? 'text' : 'password';
+    passwordInput.type = type;
+    this.querySelector('i').classList.toggle('fa-eye');
+    this.querySelector('i').classList.toggle('fa-eye-slash');
+});
+
+// Real-time password validation
+passwordInput.addEventListener('input', function() {
+    const password = this.value;
+    let strength = 0;
+    let metRequirements = 0;
+
+    // Check each requirement
+    const hasLength = password.length >= 8;
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+    // Update requirement indicators
+    updateRequirement('req-length', hasLength);
+    updateRequirement('req-uppercase', hasUppercase);
+    updateRequirement('req-lowercase', hasLowercase);
+    updateRequirement('req-number', hasNumber);
+    updateRequirement('req-special', hasSpecial);
+
+    // Calculate strength
+    if (hasLength) metRequirements++;
+    if (hasUppercase) metRequirements++;
+    if (hasLowercase) metRequirements++;
+    if (hasNumber) metRequirements++;
+    if (hasSpecial) metRequirements++;
+
+    // Update strength bar
+    strengthBar.className = 'strength-bar';
+    if (metRequirements <= 2) {
+        strengthBar.classList.add('strength-weak');
+        strengthText.textContent = 'Weak password';
+        strengthText.style.color = '#dc3545';
+    } else if (metRequirements <= 4) {
+        strengthBar.classList.add('strength-medium');
+        strengthText.textContent = 'Medium strength';
+        strengthText.style.color = '#ffc107';
+    } else {
+        strengthBar.classList.add('strength-strong');
+        strengthText.textContent = 'Strong password ✓';
+        strengthText.style.color = '#28a745';
+    }
+});
+
+function updateRequirement(id, met) {
+    const element = document.getElementById(id);
+    if (met) {
+        element.classList.add('req-met');
+        element.querySelector('i').className = 'fas fa-check-circle';
+    } else {
+        element.classList.remove('req-met');
+        element.querySelector('i').className = 'fas fa-circle text-muted';
+    }
+}
+
+// Form validation before submit
+document.getElementById('userCreateForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const password = passwordInput.value;
+    const username = document.getElementById('username').value;
+    const email = document.getElementById('email').value;
+    const role = document.getElementById('roleSelect').value;
+
+    // Validate username
+    if (username.length < 3) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Invalid Username',
+            text: 'Username must be at least 3 characters long',
+            confirmButtonColor: '#667eea'
+        });
+        return false;
+    }
+
+    // Validate email
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(email)) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Invalid Email',
+            text: 'Please enter a valid email address',
+            confirmButtonColor: '#667eea'
+        });
+        return false;
+    }
+
+    // Validate password
+    const hasLength = password.length >= 8;
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+    if (!hasLength || !hasUppercase || !hasLowercase || !hasNumber || !hasSpecial) {
+        let errorMessage = '<div style="text-align: left;"><strong>Password must meet these requirements:</strong><ul style="margin-top: 10px;">';
+        if (!hasLength) errorMessage += '<li>At least 8 characters long</li>';
+        if (!hasUppercase) errorMessage += '<li>Contains uppercase letter (A-Z)</li>';
+        if (!hasLowercase) errorMessage += '<li>Contains lowercase letter (a-z)</li>';
+        if (!hasNumber) errorMessage += '<li>Contains number (0-9)</li>';
+        if (!hasSpecial) errorMessage += '<li>Contains special character (!@#$%^&*)</li>';
+        errorMessage += '</ul></div>';
+
+        Swal.fire({
+            icon: 'error',
+            title: 'Weak Password',
+            html: errorMessage,
+            confirmButtonColor: '#667eea',
+            width: '500px'
+        });
+        return false;
+    }
+
+    // Validate role selection
+    if (!role) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Role Required',
+            text: 'Please select a role for this user',
+            confirmButtonColor: '#667eea'
+        });
+        return false;
+    }
+
+    // All validations passed - submit form
+    Swal.fire({
+        title: 'Creating User...',
+        text: 'Please wait',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    this.submit();
+});
+
+// Role permissions configuration
+const roleDefaults = {
+    'warehouse': {
+        title: '📦 Warehouse Role Selected',
+        desc: 'Default permissions loaded. Customize below as needed.',
+        permissions: ['can_view_orders', 'can_edit_orders', 'can_view_products', 'can_view_customers', 
+                     'can_view_dispatch', 'can_manage_dispatch', 'can_scan_barcodes', 
+                     'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
+                     'can_view_returns']
+    },
+    'sales': {
+        title: '💼 Sales Role Selected',
+        desc: 'Default permissions loaded. Customize below as needed.',
+        permissions: ['can_view_orders', 'can_create_orders', 'can_edit_orders', 
+                     'can_view_products', 'can_view_customers', 'can_create_customers', 
+                     'can_edit_customers', 'can_give_discounts', 'can_view_inventory',
+                     'can_view_returns', 'can_create_returns']
+    }
+};
+
+// Role selection handler
+document.getElementById('roleSelect').addEventListener('change', function() {
+    const role = this.value;
+    const permSection = document.getElementById('permissionsSection');
+    const roleInfo = document.getElementById('roleInfo');
+    const roleTitle = document.getElementById('roleTitle');
+    const roleDesc = document.getElementById('roleDesc');
+
+    if (role === 'administrator') {
+        permSection.style.display = 'none';
+        roleInfo.classList.remove('d-none');
+        roleTitle.textContent = '👑 Administrator - Full Access';
+        roleDesc.textContent = 'Administrators have all permissions by default. No customization needed.';
+    } else if (role && roleDefaults[role]) {
+        permSection.style.display = 'block';
+        roleInfo.classList.remove('d-none');
+        roleTitle.textContent = roleDefaults[role].title;
+        roleDesc.textContent = roleDefaults[role].desc;
+
+        // Uncheck all first
+        uncheckAllPermissions();
+
+        // Check default permissions
+        roleDefaults[role].permissions.forEach(perm => {
+            const checkbox = document.getElementById(perm);
+            if (checkbox) checkbox.checked = true;
+        });
+
+        // Set default discount for sales
+        if (role === 'sales') {
+            document.getElementById('max_discount_percent').value = '10.00';
+        }
+    } else {
+        permSection.style.display = 'none';
+        roleInfo.classList.add('d-none');
+    }
+});
+
+// Check all permissions
+function checkAllPermissions() {
+    document.querySelectorAll('#permissionsSection input[type="checkbox"]').forEach(cb => {
+        cb.checked = true;
+    });
+    document.getElementById('max_discount_percent').value = '100.00';
+}
+
+// Uncheck all permissions
+function uncheckAllPermissions() {
+    document.querySelectorAll('#permissionsSection input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+    });
+    document.getElementById('max_discount_percent').value = '0.00';
+}
+</script>
+{% endblock %}
