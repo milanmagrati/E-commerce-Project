@@ -2237,9 +2237,12 @@
         <div class="product-card-body">
           <h6 class="mb-1 small fw-bold">${escapeHtml(p.name)}</h6>
           <p class="text-muted mb-2" style="font-size: 0.7rem;">${escapeHtml(p.sku || '')}</p>
-          <div class="d-flex justify-content-between align-items-center">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
             <span class="fw-bold text-success">रू ${p.price}</span>
-            <span class="badge bg-info">${p.stock ?? ''}</span>
+            <div>
+              ${p.stock > 0 ? `<span class="badge bg-success">In Stock: ${p.stock}</span>` : '<span class="badge bg-danger">Out of Stock</span>'}
+              ${p.product_type === 'variable' ? '<span class="badge bg-info ms-1">Has Variations</span>' : ''}
+            </div>
           </div>
         </div>
       </div>
@@ -2302,6 +2305,7 @@
                                      data-variation-id="${v.id}"
                                      data-price="${v.price}"
                                      data-sku="${escapeHtml(v.sku)}"
+                                     data-varname="${escapeHtml(displayName)}"
                                      onclick="selectVariation(this)">
                                     
                                     <div class="variation-check-icon">
@@ -2376,9 +2380,9 @@
         
         const varId = parseInt(selectedItem.dataset.variationId);
         const price = parseFloat(selectedItem.dataset.price) || 0;
-        const sku = selectedItem.dataset.sku || '';
+        const variantName = selectedItem.dataset.varname || selectedItem.dataset.sku || '';
         
-        addToCart(productId, productName, price, varId, sku);
+        addToCart(productId, productName, price, varId, variantName);
         variationModal.hide();
     }
 
@@ -2406,7 +2410,7 @@
         cart.forEach((item, i) => {
             html += `<tr id="row-${i}">
       <td><strong>${escapeHtml(item.name)}</strong><br><small class="text-muted">रू ${item.price} each</small></td>
-      <td>${item.sku ? `<span class="badge bg-secondary">${escapeHtml(item.sku)}</span>` : '-'}</td>
+      <td>${item.varId ? (item.sku ? `<span class="badge bg-secondary">${escapeHtml(item.sku)}</span>` : '-') : '-'}</td>
       <td>
         <div class="qty-control">
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="changeQty(${i}, -1)"><i class="fas fa-minus"></i></button>

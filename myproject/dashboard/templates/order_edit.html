@@ -1366,6 +1366,8 @@
     let customProductImageFile = null;
     const ORDER_ID = '{{ order.id }}';
     const STORAGE_KEY = `order_edit_draft_${ORDER_ID}`;
+    // Session-only backup (persists across navigations in same tab) to survive other pages clearing localStorage
+    const SESSION_KEY = `order_edit_draft_${ORDER_ID}_session`; 
 
     // ✅ TOAST NOTIFICATION
     function showToastNotification(message, type = 'info') {
@@ -1413,7 +1415,7 @@
 
                 grid.innerHTML = products.map(p => `
                     <div class="col-md-3 col-sm-6">
-                        <div class="product-card" onclick="selectProduct(${p.id}, '${p.name.replace(/'/g, "\\'")}', ${p.product_type === 'variable'})">
+                        <div class="product-card" data-id="${p.id}" data-name="${encodeURIComponent(p.name)}" data-has-variations="${p.product_type === 'variable'}">
                             <img src="${p.image || 'https://via.placeholder.com/150?text=No+Image'}" class="product-img" alt="${p.name}">
                             <div class="product-card-body">
                                 <h6 class="mb-1" style="font-size: 0.9rem; font-weight: 700; color: #1e293b;">${p.name}</h6>
@@ -1426,6 +1428,25 @@
                         </div>
                     </div>
                 `).join('');
+
+                // Attach click handlers safely (avoid inline JS escaping issues)
+                setTimeout(() => {
+                    const cards = grid.querySelectorAll('.product-card');
+                    cards.forEach(card => {
+                        card.style.cursor = 'pointer';
+                        card.addEventListener('click', function() {
+                            try {
+                                const pid = Number(this.dataset.id);
+                                const pname = decodeURIComponent(this.dataset.name || '');
+                                const hasVariations = String(this.dataset.hasVariations) === 'true' || this.dataset.hasVariations === 'true' || this.dataset.hasVariations === 'True';
+                                selectProduct(pid, pname, hasVariations);
+                            } catch (err) {
+                                console.error('Error handling product card click', err, this.dataset);
+                                showToastNotification('Error selecting product. Check console for details.', 'error');
+                            }
+                        });
+                    });
+                }, 10);
             })
             .catch(err => {
                 console.error('Error loading products:', err);
@@ -1435,27 +1456,54 @@
 
     // ✅ SELECT PRODUCT
     function selectProduct(productId, productName, hasVariations) {
-        if (hasVariations) {
-            loadVariations(productId, productName);
-        } else {
+        try {
+            console.log('selectProduct called', { productId, productName, hasVariations });
+
+            if (hasVariations) {
+                loadVariations(productId, productName);
+                return;
+            }
+
             fetch(`/api/product/${productId}/`)
-                .then(res => res.json())
-                .then(product => {
-                    addToCart({
-                        id: product.id,
-                        varId: null,
-                        name: product.name,
-                        sku: product.sku || '',
-                        price: parseFloat(product.price),
-                        qty: 1,
-                        isCustom: product.is_custom || false,
-                        category: product.category || '',
-                        description: product.description || ''
-                    });
-                    productModal.hide();
-                    showToastNotification(`✅ ${product.name} added to cart!`, 'success');
-                    saveFormData();
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to fetch product');
+                    return res.json();
+                })
+.then(data => {
+                    try {
+                        if (!data || !data.success || !data.product) {
+                            throw new Error((data && data.message) || 'Invalid product data');
+                        }
+
+                        const product = data.product;
+
+                        addToCart({
+                            id: product.id,
+                            varId: null,
+                            name: product.name,
+                            sku: product.sku || '',
+                            price: parseFloat(product.price) || 0,
+                            qty: 1,
+                            isCustom: product.is_custom || false,
+                            category: product.category ? product.category.id : '',
+                            description: product.description || ''
+                        });
+                        productModal.hide();
+                        showToastNotification(`✅ ${product.name} added to cart!`, 'success');
+                        saveFormData();
+
+                    } catch (err) {
+                        console.error('Error adding product to cart', err, data);
+                        showToastNotification('Error adding product to cart', 'error');
+                    }
+                })
+                .catch(err => {
+                    console.error('Error selecting product:', err);
+                    showToastNotification('Failed to load product details', 'error');
                 });
+        } catch (err) {
+            console.error('selectProduct unexpected error', err);
+            showToastNotification('Unexpected error. See console for details.', 'error');
         }
     }
 
@@ -1465,9 +1513,11 @@
         variationBody.innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2">Loading variations...</p></div>';
 
         fetch(`/api/product/${productId}/variations/`)
-            .then(res => res.json())
-            .then(variations => {
-                if (variations.length === 0) {
+            .then(res => { if (!res.ok) throw new Error('Network response not ok'); return res.json(); })
+            .then(data => {
+                const variations = data && Array.isArray(data.variations) ? data.variations : (Array.isArray(data) ? data : []);
+
+                if (!variations || variations.length === 0) {
                     variationBody.innerHTML = '<div class="text-center text-muted"><i class="fas fa-box-open fa-3x mb-3"></i><p>No variations available</p></div>';
                     return;
                 }
@@ -1479,7 +1529,7 @@
                     </div>
                     <div class="variation-list">
                         ${variations.map(v => `
-                            <div class="variation-item" onclick="selectVariation(${productId}, ${v.id}, '${productName}', '${v.sku}', ${v.price})">
+                            <div class="variation-item" tabindex="0" data-varid="${v.id}" data-sku="${v.sku}" data-varname="${(v.variation_name || v.name || v.sku || '').replace(/"/g, '&quot;')}" data-price="${v.price}">
                                 <div class="variation-check-icon">
                                     <i class="fas fa-check"></i>
                                 </div>
@@ -1488,7 +1538,7 @@
                                 </div>
                                 <div class="variation-info">
                                     <div class="variation-name">
-                                        <strong>${v.name || v.sku}</strong>
+                                        <strong>${v.variation_name || v.sku || ''}</strong>
                                     </div>
                                     <div class="variation-sku text-muted small">
                                         SKU: ${v.sku}
@@ -1503,12 +1553,47 @@
                             </div>
                         `).join('')}
                     </div>
-                    <div class="variation-footer">
-                        <button type="button" class="btn btn-secondary w-100" onclick="variationModal.hide()">
+                    <div class="variation-footer d-flex gap-2">
+                        <button type="button" class="btn btn-secondary" onclick="variationModal.hide()">
                             <i class="fas fa-times"></i> Cancel
+                        </button>
+                        <button type="button" class="btn btn-success" id="addVariationToCartBtn">
+                            <i class="fas fa-shopping-cart"></i> Add to Cart
                         </button>
                     </div>
                 `;
+
+                // Setup selection handling
+                setTimeout(() => {
+                    const items = document.querySelectorAll('.variation-item');
+                    let selectedVar = null;
+
+                    function selectVarNode(el) {
+                        items.forEach(i => i.classList.remove('selected'));
+                        el.classList.add('selected');
+                        selectedVar = {
+                            id: Number(el.dataset.varid),
+                            sku: el.dataset.sku,
+                            varName: el.dataset.varname || el.dataset.sku || '',
+                            price: parseFloat(el.dataset.price)
+                        };
+                    }
+
+                    items.forEach(el => {
+                        el.addEventListener('click', () => selectVarNode(el));
+                        el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') selectVarNode(el); });
+                    });
+
+                    const addBtn = document.getElementById('addVariationToCartBtn');
+                    if (addBtn) {
+                        addBtn.addEventListener('click', () => {
+                            if (!selectedVar) { alert('Please select a variation'); return; }
+                            // Pass variation display name (varName) instead of SKU so variant shows the variation name
+                            selectVariation(productId, selectedVar.id, productName, selectedVar.varName, selectedVar.price);
+                        });
+                    }
+                }, 10);
+
 
                 productModal.hide();
                 setTimeout(() => variationModal.show(), 300);
@@ -1516,22 +1601,24 @@
             .catch(err => {
                 console.error('Error loading variations:', err);
                 variationBody.innerHTML = '<div class="text-center text-danger"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><p>Failed to load variations</p></div>';
+                showToastNotification('Failed to load variations', 'error');
             });
     }
 
-    // ✅ SELECT VARIATION
-    function selectVariation(productId, variationId, productName, sku, price) {
+    // ✅ SELECT VARIATION (store variation name as SKU/variant display)
+    function selectVariation(productId, variationId, productName, variantName, price) {
+        // Use variantName as the displayed 'sku' so the cart shows the variation name
         addToCart({
             id: productId,
             varId: variationId,
             name: productName,
-            sku: sku,
+            sku: variantName || '',
             price: parseFloat(price),
             qty: 1,
             isCustom: false
         });
         variationModal.hide();
-        showToastNotification(`✅ ${productName} (${sku}) added to cart!`, 'success');
+        showToastNotification(`✅ ${productName} (${variantName}) added to cart!`, 'success');
         saveFormData();
     }
 
@@ -1573,7 +1660,7 @@
                     <br><small class="text-muted">रू ${item.price.toFixed(2)} each</small>
                 </td>
                 <td>
-                    ${item.sku ? `<span class="badge bg-secondary">${item.sku}</span>` : '-'}
+                    ${item.varId ? (item.sku ? `<span class="badge bg-secondary">${item.sku}</span>` : '-') : '-'}
                 </td>
                 <td>
                     <div class="qty-control">
@@ -1656,37 +1743,120 @@
         document.getElementById('orderItems').value = JSON.stringify(cart);
     }
 
-    // ✅ DETECT VALLEY STATUS FROM CITY
-    function detectValleyStatusFromCity() {
-        const cityName = document.getElementById('branchCity').value;
-        const infoBox = document.getElementById('valleyStatusInfo');
+    // ✅ DETECT VALLEY STATUS FROM CITY (robust version - same UX as Order Create)
+    let currentCityDetectionInProgress = false;
 
-        if (!cityName) {
-            infoBox.innerHTML = '';
-            return;
+    function detectValleyStatusFromCity() {
+        const citySelect = document.getElementById('branchCity');
+        const cityName = citySelect.value;
+        const inOutSelect = document.getElementById('inOutSelect');
+
+        if (!cityName || currentCityDetectionInProgress) return;
+
+        currentCityDetectionInProgress = true;
+
+        const originalValue = inOutSelect.value;
+        inOutSelect.disabled = true;
+        inOutSelect.innerHTML = '<option value="">Detecting valley status...</option>';
+
+        clearValleyStatusInfo();
+
+        const valleyEndpoints = [
+            `/api/cities/get-valley-status/?city=${encodeURIComponent(cityName)}`,
+            `/get_valley_status/?city=${encodeURIComponent(cityName)}`
+        ];
+
+        let attemptIndex = 0;
+
+        function tryNextEndpoint() {
+            if (attemptIndex >= valleyEndpoints.length) {
+                restoreInOutOptions(inOutSelect);
+                console.error('All valley detection attempts failed');
+                inOutSelect.value = originalValue || 'in';
+                showValleyInfo('error', cityName, 'Network or server error');
+                showToastNotification('Error detecting valley status. Defaulted to Valley. Please check network.', 'error');
+                inOutSelect.disabled = false;
+                currentCityDetectionInProgress = false;
+                saveFormData();
+                return;
+            }
+
+            const url = valleyEndpoints[attemptIndex++];
+            fetch(url)
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    restoreInOutOptions(inOutSelect);
+
+                    if (data.success) {
+                        if ((data.valley_status && data.valley_status === 'valley') || (data.in_out && String(data.in_out).toLowerCase() === 'in')) {
+                            inOutSelect.value = 'in';
+                            showValleyInfo('valley', cityName, data.display_status || 'Valley');
+                        } else {
+                            inOutSelect.value = 'out';
+                            showValleyInfo('out_valley', cityName, data.display_status || 'Out Valley');
+                        }
+
+                        if (!data.exists && data.message) {
+                            showToastNotification(data.message, (data.valley_status === 'valley' || (data.in_out && String(data.in_out).toLowerCase() === 'in')) ? 'success' : 'warning');
+                        }
+
+                        inOutSelect.disabled = false;
+                        currentCityDetectionInProgress = false;
+                        saveFormData();
+                    } else {
+                        tryNextEndpoint();
+                    }
+                })
+                .catch(err => {
+                    console.warn('Valley detection attempt failed for', url, err);
+                    tryNextEndpoint();
+                });
         }
 
-        fetch(`/api/detect-valley-status/?city=${encodeURIComponent(cityName)}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'valley') {
-                    document.getElementById('inOutSelect').value = 'in';
-                    infoBox.innerHTML = `<div class="valley-info-box valley"><i class="fas fa-check-circle"></i> <strong>Valley City</strong></div>`;
-                } else if (data.status === 'out-valley') {
-                    document.getElementById('inOutSelect').value = 'out';
-                    infoBox.innerHTML = `<div class="valley-info-box out-valley"><i class="fas fa-map-marker-alt"></i> <strong>Out Valley City</strong></div>`;
-                } else {
-                    infoBox.innerHTML = `<div class="valley-info-box unknown"><i class="fas fa-question-circle"></i> <strong>Unknown City</strong></div>`;
-                }
-            })
-            .catch(() => {
-                infoBox.innerHTML = `<div class="valley-info-box error"><i class="fas fa-exclamation-triangle"></i> <strong>Error detecting</strong></div>`;
-            });
+        tryNextEndpoint();
     }
 
-    // ✅ CLEAR VALLEY STATUS INFO
+    function showValleyInfo(status, cityName, displayStatus) {
+        const infoDiv = document.getElementById('valleyStatusInfo');
+
+        let message = '';
+        let className = '';
+
+        switch (status) {
+            case 'valley':
+                message = `<i class="fas fa-mountain"></i> <strong>${cityName}</strong> is a Valley city (${displayStatus}). Auto-set to <strong>Valley</strong>`;
+                className = 'valley-info-box valley';
+                break;
+            case 'out_valley':
+                message = `<i class="fas fa-truck"></i> <strong>${cityName}</strong> is an Out Valley city (${displayStatus}). Auto-set to <strong>Out Valley</strong>`;
+                className = 'valley-info-box out-valley';
+                break;
+            case 'unknown':
+                message = `<i class="fas fa-question-circle"></i> <strong>${cityName}</strong> not found in database. Defaulting to <strong>Valley</strong>`;
+                className = 'valley-info-box unknown';
+                break;
+            case 'error':
+                message = `<i class="fas fa-exclamation-triangle"></i> Error detecting valley status for <strong>${cityName}</strong>. Defaulting to <strong>Valley</strong>`;
+                className = 'valley-info-box error';
+                break;
+        }
+
+        infoDiv.innerHTML = `<div class="${className}">${message}</div>`;
+    }
+
     function clearValleyStatusInfo() {
-        document.getElementById('valleyStatusInfo').innerHTML = '';
+        const infoDiv = document.getElementById('valleyStatusInfo');
+        infoDiv.innerHTML = '';
+    }
+
+    function restoreInOutOptions(selectElement) {
+        selectElement.innerHTML = `
+        <option value="in">Valley</option>
+        <option value="out">Out Valley</option>
+        `;
     }
 
     // ✅ PARTIAL PAYMENT
@@ -1763,11 +1933,24 @@
         saveFormData();
     }
 
-    // ✅ SAVE FORM DATA TO LOCAL STORAGE
+    // ✅ SAVE FORM DATA TO LOCAL STORAGE (with safe serialization + backup)
     function saveFormData() {
         try {
+            // Serialize only plain data to avoid JSON errors (files, circular refs etc)
+            const safeCart = cart.map(item => ({
+                id: item.id,
+                varId: item.varId === undefined ? null : item.varId,
+                name: item.name || '',
+                sku: item.sku || '',
+                price: Number(item.price) || 0,
+                qty: Number(item.qty) || 1,
+                isCustom: !!item.isCustom,
+                category: item.category || '',
+                description: item.description || ''
+            }));
+
             const formData = {
-                cart: cart,
+                cart: safeCart,
                 customerName: document.getElementById('customerName').value,
                 customerEmail: document.getElementById('customerEmailInput').value,
                 branchCity: document.getElementById('branchCity').value,
@@ -1789,24 +1972,69 @@
                 timestamp: Date.now()
             };
 
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
-            console.log('✅ Draft saved');
+            const payload = JSON.stringify(formData);
+            // Primary + backup in localStorage
+            localStorage.setItem(STORAGE_KEY, payload);
+            localStorage.setItem(`${STORAGE_KEY}_backup`, payload);
+            // Session backup (survives page navigation in same tab, even if localStorage is cleared elsewhere)
+            try { sessionStorage.setItem(SESSION_KEY, payload); } catch(e) { /* ignore */ }
+
+            console.log('✅ Draft saved (primary + backup + session)', {
+                primary: !!localStorage.getItem(STORAGE_KEY),
+                backup: !!localStorage.getItem(`${STORAGE_KEY}_backup`),
+                session: !!sessionStorage.getItem(SESSION_KEY),
+                timestamp: formData.timestamp,
+                cartCount: (formData.cart || []).length
+            });
         } catch (err) {
             console.error('Error saving draft:', err);
         }
     }
 
-    // ✅ LOAD FORM DATA FROM LOCAL STORAGE
+    // ✅ LOAD FORM DATA FROM LOCAL STORAGE (with backup fallback)
     function loadFormData() {
         try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (!stored) return false;
+            let stored = localStorage.getItem(STORAGE_KEY);
+
+            // If primary key missing, check backup and restore it
+            if (!stored) {
+                const backup = localStorage.getItem(`${STORAGE_KEY}_backup`);
+                if (backup) {
+                    console.warn('Primary draft missing — restoring from backup');
+                    try {
+                        localStorage.setItem(STORAGE_KEY, backup);
+                        stored = backup;
+                    } catch (e) {
+                        console.error('Failed to restore primary draft from backup:', e);
+                        // proceed with backup in memory
+                        stored = backup;
+                    }
+                } else {
+                    // If no primary or backup, check session storage (survives same-tab navigation)
+                    const sessionDraft = sessionStorage.getItem(SESSION_KEY);
+                    if (sessionDraft) {
+                        console.warn('Primary/backup missing — restoring draft from sessionStorage');
+                        try {
+                            // Restore into localStorage for consistency
+                            localStorage.setItem(STORAGE_KEY, sessionDraft);
+                            localStorage.setItem(`${STORAGE_KEY}_backup`, sessionDraft);
+                        } catch(e) {
+                            console.error('Failed to restore draft from sessionStorage into localStorage:', e);
+                        }
+                        stored = sessionDraft;
+                    } else {
+                        return false;
+                    }
+                }
+            }
 
             const formData = JSON.parse(stored);
 
+            // Validate timestamp
             const hoursSinceSaved = (Date.now() - formData.timestamp) / (1000 * 60 * 60);
             if (hoursSinceSaved > 24) {
                 localStorage.removeItem(STORAGE_KEY);
+                localStorage.removeItem(`${STORAGE_KEY}_backup`);
                 return false;
             }
 
@@ -1831,7 +2059,8 @@
                 document.querySelector('select[name="order_status"]').value = formData.orderStatus;
             }
 
-            cart = formData.cart || [];
+            // Ensure cart is array
+            cart = Array.isArray(formData.cart) ? formData.cart : [];
             updateCart();
 
             if (formData.isPartialPayment) {
@@ -1867,15 +2096,18 @@
 
         } catch (err) {
             console.error('Error loading form data:', err);
-            clearFormData();
+            // Do not aggressively clear backup — keep it for diagnostics, but remove primary to avoid broken state
+            try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
             hideFloatingButton();
             return false;
         }
     }
 
-    // ✅ CLEAR FORM DATA FROM LOCAL STORAGE
+    // ✅ CLEAR FORM DATA FROM LOCAL STORAGE (also remove backup)
     function clearFormData() {
-        localStorage.removeItem(STORAGE_KEY);
+        try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+        try { localStorage.removeItem(`${STORAGE_KEY}_backup`); } catch(e) {}
+        try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {}
     }
 
     // ✅ CLEAR DRAFT WITH CONFIRMATION
@@ -1887,6 +2119,10 @@
 
     // ✅ CLEAR DRAFT AND RESET FORM
     function clearDraftAndReset() {
+        // Mark this session so we don't automatically restore the draft on reload
+        try {
+            sessionStorage.setItem('order_edit_just_cleared', '1');
+        } catch(e) { /* ignore */ }
         clearFormData();
         location.reload();
     }
@@ -2090,7 +2326,7 @@
             id: {{ item.product.id }},
             varId: {% if item.variation %}{{ item.variation.id }}{% else %}null{% endif %},
             name: "{{ item.product.name|escapejs }}",
-            sku: "{% if item.variation %}{{ item.variation.sku|escapejs }}{% elif item.product.sku %}{{ item.product.sku|escapejs }}{% endif %}",
+            sku: "{% if item.variation %}{% if item.variation.variation_name %}{{ item.variation.variation_name|escapejs }}{% else %}{{ item.variation.sku|escapejs }}{% endif %}{% elif item.product.sku %}{{ item.product.sku|escapejs }}{% endif %}",
             price: {{ item.price }},
             qty: {{ item.quantity }},
             isCustom: {{ item.product.is_custom|yesno:'true,false' }},
@@ -2099,17 +2335,25 @@
         });
         {% endfor %}
 
-        // Check for draft
+        // Check for draft and auto-restore unless the user just cleared it
         const hasDraft = localStorage.getItem(STORAGE_KEY);
+        console.log('🔁 Draft keys status:', { primary: !!hasDraft, backup: !!localStorage.getItem(STORAGE_KEY + '_backup'), cartLength: cart.length });
         if (hasDraft) {
             const draft = JSON.parse(hasDraft);
-            const isDifferent = JSON.stringify(draft.cart) !== JSON.stringify(cart);
-            
-            if (isDifferent && confirm('Found unsaved draft. Do you want to restore it?')) {
-                loadFormData();
-            } else {
+            const justCleared = sessionStorage.getItem('order_edit_just_cleared');
+
+            if (justCleared) {
+                // User cleared the draft in this tab — do not auto-restore and remove the flag
+                try { sessionStorage.removeItem('order_edit_just_cleared'); } catch(e) {}
                 updateCart();
                 updateTotal();
+            } else {
+                // Auto-restore draft (no prompt) so changes persist across refreshes
+                const restored = loadFormData();
+                if (!restored) {
+                    updateCart();
+                    updateTotal();
+                }
             }
 
             if (cart.length > 0) {
@@ -2123,6 +2367,21 @@
         // Setup auto-save
         setupAutoSave();
         setInterval(saveFormData, 5000);
+
+        // Ensure latest state is saved when user quickly refreshes or navigates away
+        window.addEventListener('beforeunload', function() { try { console.log('event: beforeunload - saving draft'); saveFormData(); } catch(e) {} });
+        window.addEventListener('pagehide', function() { try { console.log('event: pagehide - saving draft'); saveFormData(); } catch(e) {} });
+        document.addEventListener('visibilitychange', function() { if (document.hidden) try { console.log('event: visibilitychange (hidden) - saving draft'); saveFormData(); } catch(e) {} });
+
+        // Listen for storage events (useful to detect changes done in other tabs/pages)
+        window.addEventListener('storage', function(e) {
+            try {
+                console.warn('Storage event detected:', e.key, e.newValue ? 'set' : 'removed');
+                if (e.key && (e.key.indexOf(STORAGE_KEY) === 0 || e.key.indexOf(SESSION_KEY) === 0)) {
+                    console.warn('Draft-related storage change detected', e);
+                }
+            } catch (err) { console.error('Error handling storage event', err); }
+        });
 
         // Detect valley status on city change
         document.getElementById('branchCity').addEventListener('change', detectValleyStatusFromCity);

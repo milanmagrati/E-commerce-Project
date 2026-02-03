@@ -7,7 +7,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib import messages
 from django.db.models import Sum, Count, Q, F, Prefetch
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, Http404
 from datetime import datetime, timedelta
 from .models import (Product, Order, OrderItem, Category, Customer, 
                      ProductVariation, ProductImage, ProductVariantOption,
@@ -2174,6 +2174,9 @@ def order_edit(request, order_id):
             })
     initial_items_json = json.dumps(initial_items_list)
 
+    # ✅ Get active cities for Branch/City select (from City management)
+    cities = City.objects.filter(is_active=True).order_by('name')
+
     context = {
         "order": order,
         "order_items": order_items,
@@ -2183,6 +2186,7 @@ def order_edit(request, order_id):
         "order_sources": order_sources,
         "payment_methods": payment_methods,
         "recent_orders": Order.objects.all().order_by("-created_at")[:6],
+        "cities": cities,
     }
 
     return render(request, "order_edit.html", context)
@@ -2421,6 +2425,45 @@ def api_get_customer(request, customer_id):
         'postal_code': customer.postal_code or '',
     })
 
+
+# ✅ SINGLE PRODUCT API (used by order edit/create modals)
+@login_required
+@require_http_methods(["GET"])
+def api_get_product(request, product_id):
+    """Return product details (non-variation) for POS modals"""
+    try:
+        # Role-aware access
+        if request.user.is_superuser or getattr(request.user, 'role', None) in ['administrator', 'warehouse']:
+            product = get_object_or_404(Product, id=product_id, is_deleted=False)
+        else:
+            product = get_object_or_404(Product, id=product_id, is_deleted=False, user=request.user)
+
+        data = {
+            'id': product.id,
+            'name': product.name,
+            'sku': product.sku if getattr(product, 'sku', None) else getattr(product, 'slug', ''),
+            'price': str(product.price) if getattr(product, 'price', None) is not None else '0',
+            'is_custom': bool(getattr(product, 'is_custom', False)),
+            'category': {
+                'id': product.category.id,
+                'name': product.category.name
+            } if getattr(product, 'category', None) else None,
+            'description': product.description or '',
+            'image': product.image.url if getattr(product, 'image', None) else None,
+            'product_type': getattr(product, 'product_type', 'simple'),
+            'stock': getattr(product, 'stock_quantity', getattr(product, 'stock', 0)),
+        }
+
+        return JsonResponse({'success': True, 'product': data})
+
+    except Http404:
+        return JsonResponse({'success': False, 'message': 'Product not found'}, status=404)
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in api_get_product: {str(e)}")
+        traceback.print_exc()
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 @login_required
 def api_search_products(request):
     """
@@ -2529,8 +2572,13 @@ def api_get_product_variations(request, product_id):
             if v.stock <= 0:
                 continue
             
-            # ✅ Get variation display name
-            variation_display = v.variation_name if hasattr(v, 'variation_name') and v.variation_name else v.sku
+            # ✅ Get variation display name (prefer explicit variation_name, then name, then SKU)
+            if hasattr(v, 'variation_name') and v.variation_name:
+                variation_display = v.variation_name
+            elif hasattr(v, 'name') and v.name:
+                variation_display = v.name
+            else:
+                variation_display = v.sku
             
             out.append({
                 "id": v.id,
