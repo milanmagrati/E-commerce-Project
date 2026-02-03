@@ -163,7 +163,7 @@
                                     {% widthratio order.partial_amount_paid order.total_amount 100 as percentage %}
                                     <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" 
                                          role="progressbar" 
-                                         style="width: {{ percentage }}%"
+                                         style="width: {{ percentage }}%;"
                                          aria-valuenow="{{ percentage }}" 
                                          aria-valuemin="0" 
                                          aria-valuemax="100">
@@ -430,7 +430,7 @@
                         {% widthratio order.partial_amount_paid order.total_amount 100 as percentage %}
                         <div class="progress-bar bg-success progress-bar-striped" 
                              role="progressbar" 
-                             style="width: {{ percentage }}%"
+                             style="width: {{ percentage }}%;"
                              aria-valuenow="{{ percentage }}" 
                              aria-valuemin="0" 
                              aria-valuemax="100">

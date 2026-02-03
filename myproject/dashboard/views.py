@@ -5491,3 +5491,8 @@ def create_custom_product(request):
             'success': False,
             'message': f'Error creating custom product: {str(e)}'
         }, status=500)
+        
+    
+    
+    
+    # my name is milan
