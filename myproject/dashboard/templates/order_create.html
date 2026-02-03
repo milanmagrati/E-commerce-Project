@@ -746,7 +746,6 @@
         }
     }
 
-    /* Tooltip on hover */
     .floating-clear-btn::before {
         content: 'Clear Draft';
         position: absolute;
@@ -779,6 +778,165 @@
         opacity: 1;
     }
 
+    /* ✨ CLEAN VARIATION MODAL STYLES */
+    .variation-header {
+        text-align: center;
+    }
+
+    .variation-list {
+        max-height: 450px;
+        overflow-y: auto;
+        padding-right: 0.5rem;
+    }
+
+    .variation-list::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .variation-list::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 3px;
+    }
+
+    .variation-list::-webkit-scrollbar-thumb {
+        background: var(--primary);
+        border-radius: 3px;
+    }
+
+    .variation-item {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative;
+        background: white;
+    }
+
+    .variation-item:hover {
+        border-color: var(--primary);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        transform: translateX(4px);
+    }
+
+    .variation-item.selected {
+        border-color: var(--primary);
+        background: linear-gradient(to right, #f0f4ff, white);
+        box-shadow: 0 4px 16px rgba(102, 126, 234, 0.25);
+    }
+
+    .variation-check-icon {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 24px;
+        height: 24px;
+        background: var(--success);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 0.75rem;
+        opacity: 0;
+        transform: scale(0);
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    .variation-item.selected .variation-check-icon {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    .variation-image-box {
+        flex-shrink: 0;
+    }
+
+    .variation-image-box img {
+        width: 80px;
+        height: 80px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 2px solid #e2e8f0;
+        transition: all 0.3s ease;
+    }
+
+    .variation-item:hover .variation-image-box img {
+        border-color: var(--primary);
+        transform: scale(1.05);
+    }
+
+    .variation-info {
+        flex: 1;
+    }
+
+    .variation-name {
+        font-size: 1rem;
+        line-height: 1.3;
+    }
+
+    .variation-sku {
+        font-size: 0.875rem;
+    }
+
+    .variation-price {
+        font-size: 1.1rem;
+    }
+
+    .variation-stock .badge {
+        font-size: 0.75rem;
+        padding: 0.35rem 0.75rem;
+    }
+
+    .variation-footer {
+        background: #f8f9fa;
+        margin: 0 -1rem -1rem;
+        padding: 1rem;
+        border-radius: 0 0 8px 8px;
+    }
+
+    /* ✨ CUSTOM PRODUCT MODAL STYLES */
+    #customProductModal .modal-header {
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+        color: #1f2937;
+        border-bottom: 3px solid #d97706;
+    }
+
+    #customProductModal .form-control:focus,
+    #customProductModal .form-select:focus {
+        border-color: #f59e0b;
+        box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.1);
+    }
+
+    .btn-warning.btn-sm {
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+        border: none;
+        color: #1f2937;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        padding: 0.375rem 0.75rem;
+    }
+
+    .btn-warning.btn-sm:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
+    }
+
+    .custom-product-badge {
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+        color: #1f2937;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        margin-left: 0.5rem;
+    }
+
     /* Mobile responsive */
     @media (max-width: 768px) {
         .floating-clear-btn {
@@ -793,37 +951,16 @@
             font-size: 0.6rem;
             padding: 3px 6px;
         }
-    }
 
-    /* Phone Search Input Feedback */
-    #phoneSearch {
-        transition: all 0.3s ease;
+        .variation-item {
+            flex-direction: column;
+            text-align: center;
+        }
+        
+        .variation-image-box {
+            margin: 0 auto;
+        }
     }
-
-    #phoneSearch:focus {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    /* Loading state for phone search */
-    .phone-loading {
-        position: relative;
-    }
-
-    .phone-loading::after {
-        content: '';
-        position: absolute;
-        right: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 16px;
-        height: 16px;
-        border: 2px solid #f59e0b;
-        border-top-color: transparent;
-        border-radius: 50%;
-        animation: spin 0.6s linear infinite;
-    }
-
 </style>
 {% endblock %}
 
@@ -1101,9 +1238,15 @@
 <div class="modal fade" id="productModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <h5 class="modal-title"><i class="fas fa-box"></i> Select Products</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <div class="d-flex gap-2 align-items-center">
+                    <!-- ✨ NEW: Add Custom Product Button -->
+                    <button type="button" class="btn btn-warning btn-sm" onclick="openCustomProductModal()">
+                        <i class="fas fa-bolt"></i> Add Custom Product
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
             </div>
             <div class="modal-body">
                 <input type="text" id="searchProduct" class="form-control mb-3" placeholder="🔍 Search products...">
@@ -1113,9 +1256,9 @@
     </div>
 </div>
 
-<!-- Variation Modal -->
+<!-- ✨ VARIATION MODAL - CLEAN & PROFESSIONAL -->
 <div class="modal fade" id="variationModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="fas fa-layer-group"></i> Select Variation</h5>
@@ -1165,12 +1308,136 @@
     </div>
 </div>
 
+<!-- ✨ CUSTOM PRODUCT MODAL -->
+<div class="modal fade" id="customProductModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title">
+                    <i class="fas fa-bolt"></i> Add Custom Product (Quick Sale)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="customProductForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <!-- Product Name -->
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">
+                                Product Name <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control" id="customProductName" 
+                                   placeholder="e.g., Custom T-Shirt, Walk-in Sale Item" required>
+                        </div>
+
+                        <!-- Quantity -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">
+                                Quantity <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" class="form-control" id="customProductQty" 
+                                   placeholder="1" value="1" min="1" required>
+                        </div>
+
+                        <!-- Price -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                Price (रू) <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" class="form-control" id="customProductPrice" 
+                                   placeholder="0.00" step="0.01" min="0" required>
+                        </div>
+
+                        <!-- SKU -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                SKU <small class="text-muted">(Auto-generated)</small>
+                            </label>
+                            <input type="text" class="form-control" id="customProductSKU" 
+                                   placeholder="CUSTOM-xxxxx" readonly>
+                        </div>
+
+                        <!-- Category -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Category</label>
+                            <select class="form-select" id="customProductCategory">
+                                <option value="">Select Category (Optional)</option>
+                                {% for category in categories %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Stock Status -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Stock Status</label>
+                            <select class="form-select" id="customProductStockStatus">
+                                <option value="in_stock">In Stock</option>
+                                <option value="out_of_stock">Out of Stock</option>
+                                <option value="pre_order">Pre-Order</option>
+                            </select>
+                        </div>
+
+                        <!-- Description -->
+                        <div class="col-12">
+                            <label class="form-label fw-bold">Description</label>
+                            <textarea class="form-control" id="customProductDescription" 
+                                      rows="2" placeholder="Optional product details or notes..."></textarea>
+                        </div>
+
+                        <!-- Image Upload -->
+                        <div class="col-12">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-image text-primary"></i> Product Image
+                            </label>
+                            <input type="file" class="form-control" id="customProductImage" 
+                                   accept="image/*" onchange="previewCustomImage(this)">
+                            <small class="text-muted">Optional - Max 5MB (JPG, PNG, WEBP)</small>
+                        </div>
+
+                        <!-- Image Preview -->
+                        <div class="col-12" id="customImagePreview" style="display: none;">
+                            <div class="text-center p-3 bg-light rounded">
+                                <img id="customImagePreviewImg" src="" alt="Preview" 
+                                     style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 2px solid #e2e8f0;">
+                                <div class="mt-2">
+                                    <button type="button" class="btn btn-sm btn-danger" onclick="removeCustomImage()">
+                                        <i class="fas fa-trash"></i> Remove Image
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info mt-3 mb-0">
+                        <i class="fas fa-info-circle"></i> 
+                        <small>
+                            <strong>Quick Sale:</strong> This product will be saved to your inventory and added to the current order immediately.
+                        </small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-success btn-lg" id="saveCustomProductBtn" onclick="saveCustomProduct()">
+                    <i class="fas fa-check-circle"></i> Save & Add to Cart
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     let cart = [];
-    let productModal, variationModal, partialPaymentModal;
+    let productModal, variationModal, partialPaymentModal, customProductModal;
     let isPartialPaymentSelected = false;
     let currentCityDetectionInProgress = false;
     let isProductLoading = false;
+    let selectedVariationId = null;
+    let customProductImageFile = null;
 
     // ✅ LOCAL STORAGE CONFIGURATION
     const STORAGE_KEY = 'pos_order_data';
@@ -1223,7 +1490,6 @@
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
             
-            // ✅ Show floating button if any data exists
             const hasData = formData.customerName || formData.customerPhone || cart.length > 0;
             if (hasData) {
                 showFloatingButton();
@@ -1241,7 +1507,6 @@
         try {
             const formData = JSON.parse(stored);
             
-            // Check if data is expired (24 hours)
             const hoursPassed = (Date.now() - formData.timestamp) / (1000 * 60 * 60);
             if (hoursPassed > EXPIRY_HOURS) {
                 clearFormData();
@@ -1250,7 +1515,6 @@
                 return false;
             }
 
-            // Restore form fields
             document.getElementById('customerName').value = formData.customerName || '';
             document.getElementById('customerEmailInput').value = formData.customerEmail || '';
             document.getElementById('branchCity').value = formData.branchCity || '';
@@ -1272,18 +1536,15 @@
                 document.querySelector('select[name="order_status"]').value = formData.orderStatus;
             }
 
-            // Restore cart
             cart = formData.cart || [];
             updateCart();
 
-            // Restore partial payment if applicable
             if (formData.isPartialPayment) {
                 isPartialPaymentSelected = true;
                 document.getElementById('isPartialPayment').value = 'true';
                 document.getElementById('partialAmountPaidHidden').value = formData.partialAmountPaid;
                 document.getElementById('remainingAmountHidden').value = formData.remainingAmount;
 
-                // Show partial payment info box
                 const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
                 let infoBox = paymentLabel.querySelector('.payment-info-box');
 
@@ -1301,7 +1562,6 @@
                 `;
             }
 
-            // Trigger valley status detection if city is selected
             if (formData.branchCity) {
                 detectValleyStatusFromCity();
             }
@@ -1332,10 +1592,8 @@
 
     // ✅ CLEAR DRAFT AND RESET FORM
     function clearDraftAndReset() {
-        // Clear localStorage
         clearFormData();
         
-        // Clear all form fields
         document.getElementById('customerName').value = '';
         document.getElementById('customerEmailInput').value = '';
         document.getElementById('branchCity').value = '';
@@ -1353,36 +1611,28 @@
         document.querySelector('select[name="order_from"]').value = '';
         document.querySelector('select[name="order_status"]').value = 'processing';
         
-        // Clear cart
         cart = [];
         updateCart();
         
-        // Clear valley status info
         clearValleyStatusInfo();
         
-        // Clear partial payment
         isPartialPaymentSelected = false;
         document.getElementById('isPartialPayment').value = 'false';
         document.getElementById('partialAmountPaidHidden').value = '0';
         document.getElementById('remainingAmountHidden').value = '0';
         
-        // Remove partial payment info box if exists
         const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
         const infoBox = paymentLabel.querySelector('.payment-info-box');
         if (infoBox) {
             infoBox.remove();
         }
         
-        // ✅ HIDE FLOATING BUTTON
         hideFloatingButton();
         
-        // Update total
         updateTotal();
         
-        // Show success message
         showToastNotification('✅ Draft cleared! Starting fresh order.', 'success');
         
-        // Focus on phone search
         document.getElementById('phoneSearch').focus();
     }
 
@@ -1402,7 +1652,6 @@
             }
         });
 
-        // Also save on select changes for order_from and order_status
         const orderFromSelect = document.querySelector('select[name="order_from"]');
         const orderStatusSelect = document.querySelector('select[name="order_status"]');
         
@@ -1418,7 +1667,6 @@
     function searchCustomerByPhone(phone) {
         const phoneInput = document.getElementById('phoneSearch');
         
-        // Show loading state
         phoneInput.style.borderColor = '#f59e0b';
         phoneInput.style.background = '#fffbeb';
         
@@ -1429,43 +1677,34 @@
             })
             .then(data => {
                 if (data.success && data.customer) {
-                    // Fill in customer details
                     document.getElementById('customerName').value = data.customer.name || '';
                     document.getElementById('customerEmailInput').value = data.customer.email || '';
                     document.getElementById('customerPhone').value = data.customer.phone || '';
                     document.getElementById('customerAddress').value = data.customer.address || '';
                     document.getElementById('customerLandmark').value = data.customer.landmark || '';
                     
-                    // Set branch/city if available
                     if (data.customer.branch_city) {
                         document.getElementById('branchCity').value = data.customer.branch_city;
-                        // Trigger valley status detection
                         detectValleyStatusFromCity();
                     }
                     
-                    // Success feedback
                     phoneInput.style.borderColor = '#10b981';
                     phoneInput.style.background = '#d1fae5';
                     
-                    // Show success notification
                     showToastNotification(`✅ Customer found: ${data.customer.name}`, 'success');
                     
-                    // Save to draft
                     saveFormData();
                     
-                    // Reset phone input styling after 2 seconds
                     setTimeout(() => {
                         phoneInput.style.borderColor = '';
                         phoneInput.style.background = '';
                     }, 2000);
                 } else {
-                    // Customer not found
                     phoneInput.style.borderColor = '#ef4444';
                     phoneInput.style.background = '#fee2e2';
                     
                     showToastNotification(data.message || 'No customer found with this phone number', 'warning');
                     
-                    // Reset styling after 2 seconds
                     setTimeout(() => {
                         phoneInput.style.borderColor = '';
                         phoneInput.style.background = '';
@@ -1485,44 +1724,194 @@
             });
     }
 
+    // ✨ CUSTOM PRODUCT FUNCTIONALITY
+
+    // Open custom product modal
+    function openCustomProductModal() {
+        // Clear form
+        document.getElementById('customProductForm').reset();
+        document.getElementById('customImagePreview').style.display = 'none';
+        customProductImageFile = null;
+        
+        // Auto-generate SKU
+        const timestamp = Date.now().toString().slice(-8);
+        document.getElementById('customProductSKU').value = `CUSTOM-${timestamp}`;
+        
+        // Set default quantity
+        document.getElementById('customProductQty').value = '1';
+        
+        // Show modal
+        productModal.hide(); // Hide product selection modal
+        setTimeout(() => {
+            customProductModal.show();
+        }, 300);
+    }
+
+    // Preview custom product image
+    function previewCustomImage(input) {
+        if (input.files && input.files[0]) {
+            // Check file size (5MB max)
+            if (input.files[0].size > 5242880) {
+                showToastNotification('Image too large! Maximum size is 5MB', 'error');
+                input.value = '';
+                return;
+            }
+
+            // Check file type
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+            if (!allowedTypes.includes(input.files[0].type)) {
+                showToastNotification('Invalid file type! Please upload JPG, PNG, or WEBP', 'error');
+                input.value = '';
+                return;
+            }
+
+            customProductImageFile = input.files[0];
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('customImagePreviewImg').src = e.target.result;
+                document.getElementById('customImagePreview').style.display = 'block';
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    // Remove custom product image
+    function removeCustomImage() {
+        document.getElementById('customProductImage').value = '';
+        document.getElementById('customImagePreview').style.display = 'none';
+        customProductImageFile = null;
+    }
+
+    // Save custom product
+    function saveCustomProduct() {
+        // Get form values
+        const name = document.getElementById('customProductName').value.trim();
+        const price = parseFloat(document.getElementById('customProductPrice').value);
+        const qty = parseInt(document.getElementById('customProductQty').value);
+        const sku = document.getElementById('customProductSKU').value.trim();
+        const category = document.getElementById('customProductCategory').value;
+        const stockStatus = document.getElementById('customProductStockStatus').value;
+        const description = document.getElementById('customProductDescription').value.trim();
+
+        // Validate required fields
+        if (!name) {
+            showToastNotification('Please enter product name', 'warning');
+            document.getElementById('customProductName').focus();
+            return;
+        }
+
+        if (!price || price <= 0) {
+            showToastNotification('Please enter a valid price', 'warning');
+            document.getElementById('customProductPrice').focus();
+            return;
+        }
+
+        if (!qty || qty <= 0) {
+            showToastNotification('Please enter a valid quantity', 'warning');
+            document.getElementById('customProductQty').focus();
+            return;
+        }
+
+        // Show loading state
+        const saveBtn = document.getElementById('saveCustomProductBtn');
+        const originalHTML = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+        // Create FormData
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('price', price);
+        formData.append('stock', qty);
+        formData.append('sku', sku || `CUSTOM-${Date.now().toString().slice(-8)}`);
+        formData.append('category', category || '');
+        formData.append('stock_status', stockStatus);
+        formData.append('description', description);
+        
+        if (customProductImageFile) {
+            formData.append('image', customProductImageFile);
+        }
+
+        // Get CSRF token
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+        // Send to server
+        fetch('/api/create-custom-product/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Add to cart immediately
+                addToCart(
+                    data.product.id,
+                    data.product.name,
+                    data.product.price,
+                    null,
+                    data.product.sku
+                );
+
+                // Show success message
+                showToastNotification(`✅ Custom product "${name}" added to cart!`, 'success');
+
+                // Close modal
+                customProductModal.hide();
+
+                // Reset form
+                document.getElementById('customProductForm').reset();
+                document.getElementById('customImagePreview').style.display = 'none';
+                customProductImageFile = null;
+
+            } else {
+                showToastNotification(data.message || 'Error creating custom product', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToastNotification('Network error. Please try again.', 'error');
+        })
+        .finally(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalHTML;
+        });
+    }
+
     // ✅ DOM CONTENT LOADED
     document.addEventListener('DOMContentLoaded', function () {
         productModal = new bootstrap.Modal(document.getElementById('productModal'));
         variationModal = new bootstrap.Modal(document.getElementById('variationModal'));
         partialPaymentModal = new bootstrap.Modal(document.getElementById('partialPaymentModal'));
+        customProductModal = new bootstrap.Modal(document.getElementById('customProductModal'));
 
-        // ✅ LOAD SAVED DATA ON PAGE LOAD
         const hasDraft = loadFormData();
         
-        // ✅ SHOW FLOATING BUTTON IF DRAFT EXISTS
         if (hasDraft) {
             showFloatingButton();
         } else {
             hideFloatingButton();
         }
 
-        // ✅ SETUP AUTO-SAVE
         setupAutoSave();
 
-        // ✅ PHONE SEARCH EVENT LISTENER
         document.getElementById('phoneSearch').addEventListener('input', function(e) {
             const phone = e.target.value.trim();
             
-            // Clear previous timer
             clearTimeout(phoneSearchTimer);
             
-            // Clear styling if phone is empty
             if (!phone) {
                 this.style.borderColor = '';
                 this.style.background = '';
                 return;
             }
             
-            // Add visual feedback - typing
             this.style.borderColor = '#3b82f6';
             this.style.background = '#eff6ff';
             
-            // Debounce - wait 500ms after user stops typing
             phoneSearchTimer = setTimeout(() => {
                 searchCustomerByPhone(phone);
             }, 500);
@@ -1535,9 +1924,9 @@
         });
 
         document.getElementById('variationModal').addEventListener('shown.bs.modal', function () {
-            const variationSelect = document.getElementById('variationSelect');
-            if (variationSelect) {
-                setTimeout(() => variationSelect.focus(), 100);
+            const firstItem = document.querySelector('.variation-item');
+            if (firstItem) {
+                setTimeout(() => firstItem.focus(), 100);
             }
         });
 
@@ -1774,27 +2163,57 @@
     function loadProducts(q) {
         const grid = document.getElementById('productGrid');
         isProductLoading = true;
-        grid.innerHTML = `<div class="col-12 text-center py-4"><div class="spinner-border"></div></div>`;
+        grid.innerHTML = `<div class="col-12 text-center py-4">
+            <div class="spinner-border text-primary"></div>
+            <p class="mt-2 text-muted">Loading products...</p>
+        </div>`;
 
         fetch(`/api/search-products/?q=${encodeURIComponent(q || '')}`)
             .then(r => {
-                if (!r.ok) throw new Error('Network response was not ok');
+                console.log('Product API Status:', r.status);
+                if (!r.ok) {
+                    throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                }
                 return r.json();
             })
             .then(data => {
-                const products = data.products || [];
-                if (!products.length) {
-                    grid.innerHTML = `<div class="col-12 text-center text-muted py-4">No products found</div>`;
+                console.log('✅ Product API Response:', data);
+                
+                if (!data.success && data.error) {
+                    console.error('API Error:', data.error);
+                    grid.innerHTML = `<div class="col-12 text-center py-4 text-danger">
+                        <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+                        <p><strong>Error loading products</strong></p>
+                        <small>${data.error}</small>
+                    </div>`;
                     isProductLoading = false;
                     return;
                 }
+                
+                const products = data.products || [];
+                
+                if (!products.length) {
+                    grid.innerHTML = `<div class="col-12 text-center text-muted py-4">
+                        <i class="fas fa-box-open fa-3x mb-3" style="opacity: 0.3;"></i>
+                        <p>No products found</p>
+                        ${q ? `<small>Try a different search term</small>` : `<small>Add products to get started</small>`}
+                    </div>`;
+                    isProductLoading = false;
+                    return;
+                }
+                
                 grid.innerHTML = products.map(p => renderProductCard(p)).join('');
                 isProductLoading = false;
             })
             .catch(err => {
-                console.error('Error loading products:', err);
-                grid.innerHTML = `<div class="col-12 text-center py-4 text-danger">Error loading products. Please try again.</div>`;
-                showToastNotification('Error loading products. Check your network and try again.', 'danger');
+                console.error('❌ Error loading products:', err);
+                grid.innerHTML = `<div class="col-12 text-center py-4 text-danger">
+                    <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+                    <p><strong>Error loading products</strong></p>
+                    <small>Please check your network connection and try again.</small>
+                    <br><small class="text-muted mt-2">Error: ${err.message}</small>
+                </div>`;
+                showToastNotification('Error loading products. Check console for details.', 'error');
                 isProductLoading = false;
             });
     }
@@ -1827,147 +2246,140 @@
     </div>
   `;
     }
-function loadVariationsDropdown(productId, productName) {
-    const body = document.getElementById('variationBody');
-    body.innerHTML = `<div class="text-center py-4">
-        <div class="spinner-border text-primary"></div>
-        <p class="mt-2 text-muted">Loading variations...</p>
-    </div>`;
 
-    fetch(`/api/product/${productId}/variations/`)
-        .then(r => {
-            if (!r.ok) throw new Error('Network response was not ok');
-            return r.json();
-        })
-        .then(data => {
-            console.log('✅ Variation API Response:', data); // Debug log
-            
-            // Check for explicit failure
-            if (data.success === false) {
-                body.innerHTML = `<div class="alert alert-danger mb-0">
-                    <i class="fas fa-exclamation-triangle"></i> ${data.message || 'Error loading variations'}
-                </div>`;
-                return;
-            }
-            
-            const variations = data.variations || [];
-            
-            console.log(`📦 Total variations found: ${variations.length}`); // Debug
-            
-            if (variations.length === 0) {
-                body.innerHTML = `<div class="alert alert-warning mb-0">
-                    <i class="fas fa-info-circle"></i> <strong>No variations found</strong>
-                    <br><small>This product doesn't have any variations set up yet.</small>
-                    <br><small class="text-muted">Please add variations in the product management section.</small>
-                </div>`;
-                return;
-            }
+    // ✨ LOAD VARIATIONS - CLEAN & PROFESSIONAL
+    function loadVariationsDropdown(productId, productName) {
+        const body = document.getElementById('variationBody');
+        body.innerHTML = `<div class="text-center py-4">
+            <div class="spinner-border text-primary"></div>
+            <p class="mt-2 text-muted">Loading variations...</p>
+        </div>`;
 
-            // ✅ Filter for available variations (active and in stock)
-            const availableVariations = variations.filter(v => {
-                const isActive = v.is_active !== false; // Default to true if not specified
-                const hasStock = v.stock > 0;
-                console.log(`  - ${v.sku}: active=${isActive}, stock=${v.stock}, status=${v.status}`);
-                return isActive && hasStock;
-            });
-            
-            console.log(`✅ Available variations: ${availableVariations.length}`); // Debug
-            
-            if (availableVariations.length === 0) {
-                // Show all variations with their status
-                const allVariationsHtml = variations.map(v => {
-                    const reason = !v.is_active ? 'Inactive' : 
-                                   v.stock <= 0 ? 'Out of Stock' : 
-                                   v.status !== 'active' ? `Status: ${v.status}` : 'Unknown';
-                    return `<li><strong>${v.sku}</strong> - ${reason}</li>`;
-                }).join('');
+        fetch(`/api/product/${productId}/variations/`)
+            .then(r => {
+                if (!r.ok) throw new Error('Network response was not ok');
+                return r.json();
+            })
+            .then(data => {
+                console.log('✅ Variation API Response:', data);
                 
-                body.innerHTML = `<div class="alert alert-warning mb-0">
-                    <i class="fas fa-box-open"></i> <strong>No available variations</strong>
-                    <br><small>Found ${variations.length} variation(s), but none are available for ordering:</small>
-                    <ul class="mt-2 mb-0 small">${allVariationsHtml}</ul>
-                </div>`;
-                return;
-            }
+                if (!data.success) {
+                    body.innerHTML = `<div class="alert alert-danger mb-0">
+                        <i class="fas fa-exclamation-triangle"></i> ${data.message || 'Error loading variations'}
+                    </div>`;
+                    return;
+                }
+                
+                const variations = data.variations || [];
+                
+                if (variations.length === 0) {
+                    body.innerHTML = `<div class="alert alert-warning mb-0">
+                        <i class="fas fa-info-circle"></i> <strong>No variations available</strong>
+                        <br><small>All variations are either out of stock or inactive.</small>
+                    </div>`;
+                    return;
+                }
 
-            // ✅ Build the variation selector
-            body.innerHTML = `
-                <div class="mb-3">
-                    <label class="form-label fw-bold">
-                        Choose variation for <span class="text-primary">${escapeHtml(productName)}</span>
-                    </label>
-                    <select class="form-select form-select-lg" id="variationSelect" style="cursor: pointer;">
-                        ${availableVariations.map(v => {
-                            const attrs = (v.attributes || []).map(a => `${a.name}: ${a.value}`).join(', ');
-                            const stockBadge = v.stock > 10 ? 'In Stock' :
-                                             v.stock > 0 ? `Low Stock (${v.stock})` :
-                                             'Out of Stock';
+                // ✨ CLEAN & PROFESSIONAL CARD DESIGN
+                body.innerHTML = `
+                    <div class="variation-header mb-3 pb-3 border-bottom">
+                        <h6 class="text-muted mb-1"><i class="fas fa-layer-group"></i> Select Variation for</h6>
+                        <h5 class="fw-bold text-primary mb-0">${escapeHtml(productName)}</h5>
+                        <small class="text-muted">${variations.length} option(s) available</small>
+                    </div>
+
+                    <div class="variation-list" id="variationList">
+                        ${variations.map((v, index) => {
+                            const stockClass = v.stock > 10 ? 'success' : v.stock > 0 ? 'warning' : 'danger';
+                            const stockText = v.stock > 10 ? `${v.stock} In Stock` : 
+                                             v.stock > 0 ? `Only ${v.stock} left` : 'Out of Stock';
                             
-                            return `<option value="${v.id}"
-                                      data-price="${v.price}"
-                                      data-sku="${escapeHtml(v.sku)}">
-                                ${escapeHtml(v.sku)} — ${escapeHtml(attrs)} — रू ${v.price} — ${stockBadge}
-                              </option>`;
+                            const imageSrc = v.image || 'https://via.placeholder.com/80x80?text=No+Image';
+                            const displayName = v.variation_name || v.sku;
+                            
+                            return `
+                                <div class="variation-item ${index === 0 ? 'selected' : ''}" 
+                                     data-variation-id="${v.id}"
+                                     data-price="${v.price}"
+                                     data-sku="${escapeHtml(v.sku)}"
+                                     onclick="selectVariation(this)">
+                                    
+                                    <div class="variation-check-icon">
+                                        <i class="fas fa-check-circle"></i>
+                                    </div>
+                                    
+                                    <div class="variation-image-box">
+                                        <img src="${imageSrc}" alt="${escapeHtml(displayName)}" 
+                                             onerror="this.src='https://via.placeholder.com/80x80?text=No+Image'">
+                                    </div>
+                                    
+                                    <div class="variation-info">
+                                        <div class="variation-name fw-bold text-dark mb-1">${escapeHtml(displayName)}</div>
+                                        <div class="variation-sku text-muted small mb-2">
+                                            <i class="fas fa-barcode"></i> ${escapeHtml(v.sku)}
+                                        </div>
+                                        <div class="variation-price text-success fw-bold mb-2">
+                                            रू ${v.price}
+                                        </div>
+                                        <div class="variation-stock">
+                                            <span class="badge bg-${stockClass}">
+                                                <i class="fas fa-box"></i> ${stockText}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
                         }).join('')}
-                    </select>
-                    <small class="text-muted d-block mt-2">
-                        <i class="fas fa-info-circle"></i> ${availableVariations.length} variation(s) available
-                    </small>
-                </div>
+                    </div>
 
-                <div class="d-flex gap-2 justify-content-end">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times"></i> Cancel
-                    </button>
-                    <button type="button" class="btn btn-success btn-lg"
-                            onclick="confirmVariation(${productId}, '${escapeHtml(productName).replace(/'/g, "\\'")}')">
-                        <i class="fas fa-plus-circle"></i> Add to Cart
-                    </button>
-                </div>
-            `;
-            
-            // Auto-focus on select
-            setTimeout(() => {
-                const selectEl = document.getElementById('variationSelect');
-                if (selectEl) selectEl.focus();
-            }, 100);
-        })
-        .catch(err => {
-            console.error('❌ Error loading variations:', err);
-            body.innerHTML = `<div class="alert alert-danger mb-0">
-                <i class="fas fa-exclamation-triangle"></i> <strong>Network error</strong>
-                <br><small>Could not load variations. Please check your connection and try again.</small>
-                <br><small class="text-muted">Error: ${err.message}</small>
-            </div>`;
+                    <div class="variation-footer mt-4 pt-3 border-top">
+                        <div class="d-flex gap-2 justify-content-end">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                <i class="fas fa-times"></i> Cancel
+                            </button>
+                            <button type="button" class="btn btn-success btn-lg" onclick="confirmVariationSelection(${productId}, '${escapeHtml(productName).replace(/'/g, "\\'")}')">
+                                <i class="fas fa-shopping-cart"></i> Add to Cart
+                            </button>
+                        </div>
+                    </div>
+                `;
+            })
+            .catch(err => {
+                console.error('❌ Error loading variations:', err);
+                body.innerHTML = `<div class="alert alert-danger mb-0">
+                    <i class="fas fa-exclamation-triangle"></i> <strong>Network error</strong>
+                    <br><small>Could not load variations. Please check your connection.</small>
+                </div>`;
+            });
+    }
+
+    // ✅ SELECT VARIATION
+    function selectVariation(element) {
+        // Remove selected from all
+        document.querySelectorAll('.variation-item').forEach(item => {
+            item.classList.remove('selected');
         });
-}
+        
+        // Add selected to clicked
+        element.classList.add('selected');
+        selectedVariationId = parseInt(element.dataset.variationId);
+    }
 
-    function confirmVariation(productId, productName) {
-        try {
-            const sel = document.getElementById('variationSelect');
-            if (!sel || sel.options.length === 0) {
-                showToastNotification('No variations available to add', 'warning');
-                variationModal.hide();
-                return;
-            }
-
-            const opt = sel.options[sel.selectedIndex];
-            if (!opt) {
-                showToastNotification('Please select a variation', 'warning');
-                sel.focus();
-                return;
-            }
-
-            const varId = parseInt(opt.value) || null;
-            const price = parseFloat(opt.dataset.price) || 0;
-            const sku = opt.dataset.sku || '';
-
-            addToCart(productId, productName, price, varId, sku);
-            variationModal.hide();
-        } catch (err) {
-            console.error('confirmVariation error:', err);
-            showToastNotification('Could not add variation to cart', 'danger');
+    // ✅ CONFIRM VARIATION SELECTION
+    function confirmVariationSelection(productId, productName) {
+        const selectedItem = document.querySelector('.variation-item.selected');
+        
+        if (!selectedItem) {
+            showToastNotification('Please select a variation first', 'warning');
+            return;
         }
+        
+        const varId = parseInt(selectedItem.dataset.variationId);
+        const price = parseFloat(selectedItem.dataset.price) || 0;
+        const sku = selectedItem.dataset.sku || '';
+        
+        addToCart(productId, productName, price, varId, sku);
+        variationModal.hide();
     }
 
     function addToCart(id, name, price, varId, sku) {
@@ -2152,7 +2564,7 @@ function loadVariationsDropdown(productId, productName) {
         return re.test(email);
     }
 
-    document.getElementById('orderForm').addEventListener('submit', function (e) {
+       document.getElementById('orderForm').addEventListener('submit', function (e) {
         if (cart.length === 0) {
             e.preventDefault();
             showToastNotification('Please add products to the order', 'warning');
@@ -2188,7 +2600,6 @@ function loadVariationsDropdown(productId, productName) {
             return;
         }
 
-        // ✅ CLEAR LOCAL STORAGE AND HIDE BUTTON WHEN SUBMITTING ORDER
         clearFormData();
         hideFloatingButton();
         

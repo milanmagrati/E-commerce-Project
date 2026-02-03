@@ -28,29 +28,48 @@ class Product(models.Model):
         ('variable', 'Variable Product'),
     )
     
-    product_type = models.CharField(max_length=20, choices=PRODUCT_TYPE, default='simple')
     STOCK_STATUS = (
         ('in_stock', 'In Stock'),
         ('out_of_stock', 'Out of Stock'),
         ('low_stock', 'Low Stock'),
     )
 
-    # ✅ FIXED: Changed User to settings.AUTH_USER_MODEL
+    # User/Owner
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='products')
+    
+    # Basic Information
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
     description = models.TextField()
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
+    
+    # Product Type
+    product_type = models.CharField(max_length=20, choices=PRODUCT_TYPE, default='simple')
+    
+    # Pricing
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # Inventory
     stock = models.IntegerField(default=0)
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS, default='in_stock')
+    
+    # Media
     image = models.ImageField(upload_to='products/', blank=True, null=True)
-    barcode = models.CharField(max_length=100, blank=True, null=True)  # ADD THIS
+    
+    # Identifiers
+    barcode = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Status Flags
     is_active = models.BooleanField(default=True, null=True, blank=True)
+    is_deleted = models.BooleanField(default=False)
+    
+    # ✅ NEW: Custom Product Flag (for quick sales)
+    is_custom_product = models.BooleanField(default=False, help_text="Mark as custom/quick sale product")
+    
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
@@ -58,8 +77,8 @@ class Product(models.Model):
 
     class Meta:
         ordering = ['-created_at']
-        
-
+        verbose_name = 'Product'
+        verbose_name_plural = 'Products'
 class Customer(models.Model):
     CUSTOMER_TYPES = [
         ('retail', 'Retail'),

@@ -22,6 +22,7 @@ import uuid, os
 from django.core.files.storage import default_storage
 from django.core.files.base import File
 from django.conf import settings
+from django.utils.text import slugify
 from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem
 
 # ✅ IMPORT DECORATORS
@@ -1543,7 +1544,7 @@ def orders_list(request):
 @login_required
 @permission_required('can_create_orders')
 def order_create(request):
-    """Create a new order with city management integration"""
+    """Create a new order with city management integration and custom product support"""
     if request.method == "POST":
         try:
             with transaction.atomic():
@@ -1718,14 +1719,20 @@ def order_create(request):
                 return redirect("orders_list")
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             messages.error(request, f"Error creating order: {str(e)}")
             return redirect("order_create")
 
+    # ✅ GET REQUEST - SHOW FORM
     users = User.objects.filter(is_active=True).order_by("username")
-    recent_orders = Order.objects.all().order_by("-created_at")[:6]
+    recent_orders = Order.objects.filter(is_deleted=False).order_by("-created_at")[:6]
     
-    # ✅ GET CITIES FROM DATABASE INSTEAD OF HARDCODED LIST
+    # ✅ GET CITIES FROM DATABASE
     cities = City.objects.filter(is_active=True).order_by('name')
+    
+    # ✅ GET CATEGORIES FOR CUSTOM PRODUCT MODAL
+    categories = Category.objects.all().order_by('name')
     
     return render(
         request,
@@ -1733,10 +1740,10 @@ def order_create(request):
         {
             "users": users,
             "recent_orders": recent_orders,
-            "cities": cities,  # ✅ PASS CITIES QUERYSET
+            "cities": cities,
+            "categories": categories,  # ✅ ADDED FOR CUSTOM PRODUCT FEATURE
         },
     )
-    
 @login_required
 @permission_required('can_view_orders')
 def order_detail(request, order_id):
@@ -2414,45 +2421,70 @@ def api_get_customer(request, customer_id):
         'postal_code': customer.postal_code or '',
     })
 
-
 @login_required
 def api_search_products(request):
     """
     Returns products for POS modal grid.
     Supports ?q= search. If q is empty, returns first 40 products.
     """
-    q = (request.GET.get("q") or "").strip()
+    try:
+        q = (request.GET.get("q") or "").strip()
 
-    # Role-aware visibility: administrators and warehouse users can see all products.
-    # Other users (e.g., sales) will only see products they created.
-    if request.user.is_superuser or getattr(request.user, 'role', None) in ['administrator', 'warehouse']:
-        qs = Product.objects.filter(is_active=True, is_deleted=False).order_by("name")
-    else:
-        qs = Product.objects.filter(is_active=True, is_deleted=False, user=request.user).order_by("name")
+        # Role-aware visibility: administrators and warehouse users can see all products.
+        # Other users (e.g., sales) will only see products they created.
+        if request.user.is_superuser or getattr(request.user, 'role', None) in ['administrator', 'warehouse']:
+            qs = Product.objects.filter(is_active=True, is_deleted=False).order_by("name")
+        else:
+            qs = Product.objects.filter(is_active=True, is_deleted=False, user=request.user).order_by("name")
 
-    if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(slug__icontains=q))
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(slug__icontains=q))
 
-    qs = qs[:40]
+        qs = qs[:40]
 
-    data = []
-    for p in qs:
-        data.append({
-            "id": p.id,
-            "name": p.name,
-            "price": str(p.price),
-            "stock": p.stock,
-            "product_type": p.product_type,
-            "image": p.image.url if p.image else None,
-            # you don't have Product.sku, so using slug for display in grid
-            "sku": p.slug,
+        data = []
+        for p in qs:
+            # ✅ Get stock - try different field names
+            try:
+                stock = p.stock_quantity if hasattr(p, 'stock_quantity') else (p.stock if hasattr(p, 'stock') else 0)
+            except AttributeError:
+                stock = 0
+            
+            # ✅ Get SKU - try sku field first, then slug as fallback
+            try:
+                sku = p.sku if hasattr(p, 'sku') and p.sku else p.slug
+            except AttributeError:
+                sku = p.slug
+
+            data.append({
+                "id": p.id,
+                "name": p.name,
+                "price": str(p.price) if p.price else "0",
+                "stock": stock,
+                "product_type": p.product_type,
+                "image": p.image.url if p.image else None,
+                "sku": sku,
+            })
+
+        return JsonResponse({
+            "success": True,
+            "products": data,
+            "count": len(data)
         })
-
-    return JsonResponse({"products": data})
+    
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in api_search_products: {str(e)}")
+        traceback.print_exc()
+        
+        return JsonResponse({
+            "success": False,
+            "error": str(e),
+            "products": []
+        }, status=500)
 
 
 # varialble product variations API
-
 @login_required
 @require_http_methods(["GET"])
 def api_get_product_variations(request, product_id):
@@ -2460,66 +2492,72 @@ def api_get_product_variations(request, product_id):
     Returns variations for a variable product.
     JSON format matches your JS usage: data.variations[]
     """
-    # Role-aware access: admins and warehouse can fetch variations for any product.
-    # Other users can only fetch variations for products they own.
-    if request.user.is_superuser or getattr(request.user, 'role', None) in ['administrator', 'warehouse']:
-        product = get_object_or_404(Product, id=product_id, is_deleted=False)
-    else:
-        product = get_object_or_404(Product, id=product_id, is_deleted=False, user=request.user)
+    try:
+        # Role-based product access
+        if request.user.is_superuser or getattr(request.user, 'role', None) in ['administrator', 'warehouse']:
+            product = get_object_or_404(Product, id=product_id, is_deleted=False)
+        else:
+            product = get_object_or_404(Product, id=product_id, is_deleted=False, user=request.user)
 
-    if product.product_type != "variable":
-        return JsonResponse({
-            "success": False,
-            "message": "This product is not a variable product",
-            "variations": []
-        })
-
-    # ✅ UPDATED: Get variations with more flexible filtering
-    # Show variations that are either:
-    # 1. Active AND have stock > 0
-    # 2. OR just active (even if stock is 0, to show "out of stock" message)
-    variations = (
-        product.variations
-        .filter(is_active=True)  # Removed status="active" filter
-        .order_by("-stock", "sku")  # Show in-stock items first
-        .prefetch_related("attribute_values__attribute_value__attribute")
-    )
-
-    # ✅ If no variations found with is_active=True, try without any filter
-    if not variations.exists():
-        variations = (
-            product.variations
-            .all()  # Get ALL variations to debug
-            .order_by("-stock", "sku")
-            .prefetch_related("attribute_values__attribute_value__attribute")
-        )
-
-    out = []
-    for v in variations:
-        attrs = []
-        for link in v.attribute_values.all():
-            av = link.attribute_value
-            attrs.append({
-                "name": av.attribute.name, 
-                "value": av.value
+        # Check if variable product
+        if product.product_type != "variable":
+            return JsonResponse({
+                "success": False,
+                "message": "This product is not a variable product",
+                "variations": []
             })
 
-        out.append({
-            "id": v.id,
-            "sku": v.sku,
-            "price": str(v.price),
-            "stock": v.stock,
-            "is_active": v.is_active,  # ✅ Added to debug
-            "status": getattr(v, 'status', 'N/A'),  # ✅ Added to debug
-            "attributes": attrs,
-            "image": v.image.url if v.image else None,
-        })
+        # ✅ GET ALL ACTIVE VARIATIONS (ignore status field, only check is_active and stock)
+        variations = (
+            product.variations
+            .filter(is_active=True)  # Only check is_active, ignore status
+            .order_by("-stock", "sku")  # Show in-stock items first
+        )
 
-    return JsonResponse({
-        "success": True,
-        "variations": out,
-        "total": len(out)  # ✅ Added for debugging
-    })
+        if not variations.exists():
+            return JsonResponse({
+                "success": True,
+                "variations": [],
+                "total": 0,
+                "message": "No active variations found for this product"
+            })
+
+        # Build response
+        out = []
+        for v in variations:
+            # ✅ ONLY SHOW VARIATIONS WITH STOCK > 0
+            if v.stock <= 0:
+                continue
+            
+            # ✅ Get variation display name
+            variation_display = v.variation_name if hasattr(v, 'variation_name') and v.variation_name else v.sku
+            
+            out.append({
+                "id": v.id,
+                "sku": v.sku,
+                "variation_name": variation_display,  # ✅ Added variation_name
+                "price": str(v.price),
+                "stock": v.stock,
+                "is_active": v.is_active,
+                "image": v.image.url if v.image else None,
+            })
+
+        return JsonResponse({
+            "success": True,
+            "variations": out,
+            "total": len(out)
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in api_get_product_variations: {str(e)}")
+        traceback.print_exc()
+        
+        return JsonResponse({
+            "success": False,
+            "error": str(e),
+            "variations": []
+        }, status=500)
 
 @login_required
 @permission_required('can_export_data')
@@ -5333,3 +5371,123 @@ def search_customer_by_phone(request):
             'success': False,
             'message': f'Error searching customer: {str(e)}'
         })
+
+
+# add custom product 
+
+@login_required
+@require_http_methods(["POST"])
+def create_custom_product(request):
+    """
+    Create a custom product for quick sales.
+    This product is saved to inventory and can be used immediately.
+    """
+    try:
+        # Get form data
+        name = request.POST.get('name', '').strip()
+        price = request.POST.get('price', '0')
+        stock = request.POST.get('stock', '1')
+        sku = request.POST.get('sku', f'CUSTOM-{int(timezone.now().timestamp())}')
+        category_id = request.POST.get('category', '')
+        stock_status = request.POST.get('stock_status', 'in_stock')
+        description = request.POST.get('description', '')
+        
+        # Validate required fields
+        if not name:
+            return JsonResponse({
+                'success': False,
+                'message': 'Product name is required'
+            })
+        
+        # Convert and validate price and stock
+        try:
+            price = Decimal(price)
+            stock = int(stock)
+            
+            if price <= 0:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Price must be greater than 0'
+                })
+            
+            if stock < 0:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Stock cannot be negative'
+                })
+                
+        except (ValueError, InvalidOperation):
+            return JsonResponse({
+                'success': False,
+                'message': 'Invalid price or stock value'
+            })
+        
+        # Get or create category
+        category = None
+        if category_id:
+            try:
+                category = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                pass
+        
+        # If no category provided or not found, get/create "Custom" category
+        if not category:
+            category, _ = Category.objects.get_or_create(
+                name='Custom',
+                defaults={
+                    'slug': 'custom',
+                }
+            )
+        
+        # Generate unique slug
+        base_slug = slugify(sku)
+        slug = base_slug
+        counter = 1
+        while Product.objects.filter(slug=slug).exists():
+            slug = f'{base_slug}-{counter}'
+            counter += 1
+        
+        # Create product
+        product = Product.objects.create(
+            name=name,
+            slug=slug,
+            description=description or f'Custom product - {name}',
+            price=price,
+            cost_price=Decimal('0'),  # No cost for custom products
+            stock=stock,
+            category=category,
+            stock_status=stock_status,
+            product_type='simple',  # Always simple product
+            barcode=sku,  # Use SKU as barcode
+            is_active=True,
+            is_deleted=False,
+            user=request.user,
+            is_custom_product=True,  # ✅ Mark as custom product
+        )
+        
+        # Handle image upload
+        if 'image' in request.FILES:
+            product.image = request.FILES['image']
+            product.save()
+        
+        # Return success response
+        return JsonResponse({
+            'success': True,
+            'message': f'Custom product "{name}" created successfully',
+            'product': {
+                'id': product.id,
+                'name': product.name,
+                'price': str(product.price),
+                'stock': product.stock,
+                'sku': sku,
+                'image': product.image.url if product.image else None
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'success': False,
+            'message': f'Error creating custom product: {str(e)}'
+        }, status=500)

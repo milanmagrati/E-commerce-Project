@@ -147,6 +147,8 @@ urlpatterns = [
     
     # API Endpoint to search customer by phone number
     path('api/search-customer-by-phone/', views.search_customer_by_phone, name='search_customer_by_phone'),
-
+    
+    # add custom product 
+    path('api/create-custom-product/', views.create_custom_product, name='create_custom_product'),
 ]
     
