@@ -666,6 +666,134 @@
         font-size: 0.875rem;
         animation: slideInRight 0.3s ease-out;
     }
+
+    /* ✅ FLOATING CLEAR DRAFT BUTTON */
+    .floating-clear-btn {
+        position: fixed;
+        top: 80px;
+        right: 30px;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        border: none;
+        color: white;
+        font-size: 1.5rem;
+        box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4);
+        cursor: pointer;
+        z-index: 1000;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: slideInFromRight 0.5s ease-out, float 3s ease-in-out infinite;
+    }
+
+    @keyframes slideInFromRight {
+        from {
+            opacity: 0;
+            transform: translateX(100px) scale(0);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+        }
+    }
+
+    @keyframes float {
+        0%, 100% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+
+    .floating-clear-btn:hover {
+        transform: translateY(-5px) scale(1.1);
+        box-shadow: 0 8px 30px rgba(245, 158, 11, 0.6);
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    }
+
+    .floating-clear-btn:active {
+        transform: translateY(-2px) scale(1.05);
+    }
+
+    .floating-clear-btn .draft-badge {
+        position: absolute;
+        top: -10px;
+        right: -10px;
+        background: #ef4444;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        white-space: nowrap;
+        box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+        animation: pulse-badge 2s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    @keyframes pulse-badge {
+        0%, 100% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        50% {
+            transform: scale(1.1);
+            opacity: 0.9;
+        }
+    }
+
+    /* Tooltip on hover */
+    .floating-clear-btn::before {
+        content: 'Clear Draft';
+        position: absolute;
+        right: 70px;
+        background: #1f2937;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+    }
+
+    .floating-clear-btn::after {
+        content: '';
+        position: absolute;
+        right: 60px;
+        border: 6px solid transparent;
+        border-left-color: #1f2937;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+    }
+
+    .floating-clear-btn:hover::before,
+    .floating-clear-btn:hover::after {
+        opacity: 1;
+    }
+
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+        .floating-clear-btn {
+            width: 50px;
+            height: 50px;
+            font-size: 1.2rem;
+            top: 70px;
+            right: 15px;
+        }
+        
+        .draft-badge {
+            font-size: 0.6rem;
+            padding: 3px 6px;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -931,6 +1059,12 @@
 
         </div>
     </div>
+    
+    <!-- ✅ FLOATING CLEAR DRAFT BUTTON -->
+    <button type="button" class="floating-clear-btn" id="floatingClearBtn" onclick="clearDraftConfirm()" style="display: none;">
+        <i class="fas fa-eraser"></i>
+        <span class="draft-badge" id="draftBadge">Draft</span>
+    </button>
 </div>
 
 <!-- Product Modal -->
@@ -1000,6 +1134,7 @@
         </div>
     </div>
 </div>
+
 <script>
     let cart = [];
     let productModal, variationModal, partialPaymentModal;
@@ -1010,6 +1145,22 @@
     // ✅ LOCAL STORAGE CONFIGURATION
     const STORAGE_KEY = 'pos_order_data';
     const EXPIRY_HOURS = 24;
+
+    // ✅ SHOW FLOATING BUTTON
+    function showFloatingButton() {
+        const btn = document.getElementById('floatingClearBtn');
+        if (btn) {
+            btn.style.display = 'flex';
+        }
+    }
+
+    // ✅ HIDE FLOATING BUTTON
+    function hideFloatingButton() {
+        const btn = document.getElementById('floatingClearBtn');
+        if (btn) {
+            btn.style.display = 'none';
+        }
+    }
 
     // ✅ SAVE FORM DATA TO LOCAL STORAGE
     function saveFormData() {
@@ -1038,6 +1189,12 @@
 
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
+            
+            // ✅ Show floating button if any data exists
+            const hasData = formData.customerName || formData.customerPhone || cart.length > 0;
+            if (hasData) {
+                showFloatingButton();
+            }
         } catch (err) {
             console.error('Error saving form data:', err);
         }
@@ -1056,6 +1213,7 @@
             if (hoursPassed > EXPIRY_HOURS) {
                 clearFormData();
                 console.log('Stored data expired (>24 hours). Cleared.');
+                hideFloatingButton();
                 return false;
             }
 
@@ -1116,11 +1274,13 @@
             }
 
             showToastNotification('Previous order data restored', 'info');
+            showFloatingButton();
             return true;
 
         } catch (err) {
             console.error('Error loading form data:', err);
             clearFormData();
+            hideFloatingButton();
             return false;
         }
     }
@@ -1128,6 +1288,69 @@
     // ✅ CLEAR FORM DATA FROM LOCAL STORAGE
     function clearFormData() {
         localStorage.removeItem(STORAGE_KEY);
+    }
+
+    // ✅ CLEAR DRAFT WITH CONFIRMATION
+    function clearDraftConfirm() {
+        if (confirm('⚠️ Are you sure you want to clear the draft and start fresh?\n\nThis will remove all unsaved order data including:\n- Customer information\n- Products in cart\n- Payment details\n\nThis action cannot be undone.')) {
+            clearDraftAndReset();
+        }
+    }
+
+    // ✅ CLEAR DRAFT AND RESET FORM
+    function clearDraftAndReset() {
+        // Clear localStorage
+        clearFormData();
+        
+        // Clear all form fields
+        document.getElementById('customerName').value = '';
+        document.getElementById('customerEmailInput').value = '';
+        document.getElementById('branchCity').value = '';
+        document.getElementById('customerAddress').value = '';
+        document.getElementById('customerLandmark').value = '';
+        document.getElementById('createdBy').value = '{{ request.user.id }}';
+        document.getElementById('discount').value = '0';
+        document.getElementById('shipping').value = '0';
+        document.getElementById('orderNotes').value = '';
+        document.getElementById('customerPhone').value = '';
+        document.getElementById('phoneSearch').value = '';
+        document.getElementById('paymentMethod').value = 'cod';
+        document.getElementById('taxPercent').value = '13';
+        document.getElementById('inOutSelect').value = 'in';
+        document.querySelector('select[name="order_from"]').value = '';
+        document.querySelector('select[name="order_status"]').value = 'processing';
+        
+        // Clear cart
+        cart = [];
+        updateCart();
+        
+        // Clear valley status info
+        clearValleyStatusInfo();
+        
+        // Clear partial payment
+        isPartialPaymentSelected = false;
+        document.getElementById('isPartialPayment').value = 'false';
+        document.getElementById('partialAmountPaidHidden').value = '0';
+        document.getElementById('remainingAmountHidden').value = '0';
+        
+        // Remove partial payment info box if exists
+        const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
+        const infoBox = paymentLabel.querySelector('.payment-info-box');
+        if (infoBox) {
+            infoBox.remove();
+        }
+        
+        // ✅ HIDE FLOATING BUTTON
+        hideFloatingButton();
+        
+        // Update total
+        updateTotal();
+        
+        // Show success message
+        showToastNotification('✅ Draft cleared! Starting fresh order.', 'success');
+        
+        // Focus on phone search
+        document.getElementById('phoneSearch').focus();
     }
 
     // ✅ SETUP AUTO-SAVE ON INPUT CHANGES
@@ -1164,7 +1387,14 @@
         partialPaymentModal = new bootstrap.Modal(document.getElementById('partialPaymentModal'));
 
         // ✅ LOAD SAVED DATA ON PAGE LOAD
-        loadFormData();
+        const hasDraft = loadFormData();
+        
+        // ✅ SHOW FLOATING BUTTON IF DRAFT EXISTS
+        if (hasDraft) {
+            showFloatingButton();
+        } else {
+            hideFloatingButton();
+        }
 
         // ✅ SETUP AUTO-SAVE
         setupAutoSave();
@@ -1242,7 +1472,7 @@
                 if (infoBox) {
                     infoBox.remove();
                 }
-                saveFormData(); // Save after clearing partial payment
+                saveFormData();
             }
         });
 
@@ -1292,7 +1522,7 @@
                 showToastNotification('Error detecting valley status. Defaulted to Valley. Please check network.', 'error');
                 inOutSelect.disabled = false;
                 currentCityDetectionInProgress = false;
-                saveFormData(); // Save after error
+                saveFormData();
                 return;
             }
 
@@ -1320,7 +1550,7 @@
 
                         inOutSelect.disabled = false;
                         currentCityDetectionInProgress = false;
-                        saveFormData(); // Save after successful detection
+                        saveFormData();
                     } else {
                         tryNextEndpoint();
                     }
@@ -1542,13 +1772,12 @@
         }
     }
 
-    // ✅ MODIFIED: Auto-save after adding to cart
     function addToCart(id, name, price, varId, sku) {
         const existing = cart.find(i => i.id === id && i.varId === varId);
         if (existing) existing.qty++;
         else cart.push({ id, varId, name, sku, price, qty: 1 });
         updateCart();
-        saveFormData(); // Auto-save after adding to cart
+        saveFormData();
     }
 
     function updateCart() {
@@ -1584,12 +1813,11 @@
         updateTotal();
     }
 
-    // ✅ MODIFIED: Auto-save after quantity change
     function changeQty(i, change) {
         cart[i].qty += change;
         if (cart[i].qty < 1) cart[i].qty = 1;
         updateCart();
-        saveFormData(); // Auto-save after quantity change
+        saveFormData();
     }
 
     function setQty(i, val) {
@@ -1597,11 +1825,10 @@
         if (qty > 0) {
             cart[i].qty = qty;
             updateCart();
-            saveFormData(); // Auto-save after manual quantity set
+            saveFormData();
         }
     }
 
-    // ✅ MODIFIED: Auto-save after removing item
     function removeItem(i) {
         const row = document.getElementById(`row-${i}`);
         if (row) {
@@ -1609,7 +1836,7 @@
         }
         cart.splice(i, 1);
         updateCart();
-        saveFormData(); // Auto-save after removing item
+        saveFormData();
     }
 
     function updateTotal() {
@@ -1662,7 +1889,6 @@
         document.getElementById('remainingAmount').value = `रू ${remaining.toFixed(2)}`;
     }
 
-    // ✅ MODIFIED: Auto-save after confirming partial payment
     function confirmPartialPayment() {
         const total = parseFloat(document.getElementById('totalInput').value) || 0;
         const paid = parseFloat(document.getElementById('partialAmountPaid').value);
@@ -1714,7 +1940,7 @@
   `;
 
         showToastNotification('Partial payment details saved successfully', 'success');
-        saveFormData(); // Auto-save after partial payment confirmation
+        saveFormData();
     }
 
     function escapeHtml(str) {
@@ -1728,7 +1954,6 @@
         return re.test(email);
     }
 
-    // ✅ MODIFIED: Clear localStorage on successful form submission
     document.getElementById('orderForm').addEventListener('submit', function (e) {
         if (cart.length === 0) {
             e.preventDefault();
@@ -1765,8 +1990,9 @@
             return;
         }
 
-        // ✅ CLEAR LOCAL STORAGE WHEN SUBMITTING ORDER
+        // ✅ CLEAR LOCAL STORAGE AND HIDE BUTTON WHEN SUBMITTING ORDER
         clearFormData();
+        hideFloatingButton();
         
         document.getElementById('submitBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
         document.getElementById('submitBtn').disabled = true;
