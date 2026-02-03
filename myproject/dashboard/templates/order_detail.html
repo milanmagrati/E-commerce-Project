@@ -22,7 +22,6 @@
                 <a href="{% url 'order_invoice' order.id %}" class="btn btn-primary" target="_blank">
                     <i class="fas fa-print"></i> Print Invoice
                 </a>
-                <!-- ✅ UPDATED: Move to Trash Button -->
                 <button type="button" class="btn btn-danger" 
                         onclick="moveOrderToTrash({{ order.id }}, '{{ order.order_number|escapejs }}')">
                     <i class="fas fa-trash-alt"></i> Move to Trash
@@ -32,7 +31,7 @@
     </div>
 </div>
 
-<!-- ✅ ORDER STATUS CARDS - PLAIN TEXT VERSION -->
+<!-- ORDER STATUS CARDS -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
         <div class="status-card">
@@ -83,7 +82,51 @@
     </div>
 </div>
 
-<!-- ✅ PARTIAL PAYMENT ALERT -->
+<!-- ✅ ORDER SOURCE & CREATION INFO -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="info-card">
+            <div class="info-icon bg-purple">
+                <i class="fas fa-store"></i>
+            </div>
+            <div class="info-content">
+                <small class="text-muted d-block mb-1">Order Source</small>
+                <strong class="order-source-text">
+                    {% if order.order_from == 'website' %}
+                        <i class="fas fa-globe"></i> Website
+                    {% elif order.order_from == 'facebook' %}
+                        <i class="fab fa-facebook"></i> Facebook
+                    {% elif order.order_from == 'instagram' %}
+                        <i class="fab fa-instagram"></i> Instagram
+                    {% elif order.order_from == 'phone' %}
+                        <i class="fas fa-phone"></i> Phone
+                    {% elif order.order_from == 'walk-in' %}
+                        <i class="fas fa-walking"></i> Walk-in
+                    {% else %}
+                        <i class="fas fa-question-circle"></i> {{ order.order_from|default:"Unknown"|title }}
+                    {% endif %}
+                </strong>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="info-card">
+            <div class="info-icon bg-teal">
+                <i class="fas fa-user-tie"></i>
+            </div>
+            <div class="info-content">
+                <small class="text-muted d-block mb-1">Created By</small>
+                <strong class="creator-text">
+                    <i class="fas fa-user-circle"></i> 
+                    {{ order.created_by.get_full_name|default:order.created_by.username }}
+                </strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PARTIAL PAYMENT ALERT -->
 {% if order.is_partial_payment %}
 <div class="row mb-4">
     <div class="col-12">
@@ -157,8 +200,8 @@
                         <thead class="table-light">
                             <tr>
                                 <th width="8%">Image</th>
-                                <th width="25%">Product Details</th>
-                                <th width="20%">Variant</th>
+                                <th width="28%">Product Details</th>
+                                <th width="18%">Variant</th>
                                 <th width="13%">Price</th>
                                 <th width="10%">Qty</th>
                                 <th width="14%">Subtotal</th>
@@ -179,7 +222,16 @@
                                 </td>
                                 <td>
                                     <div class="product-details-cell">
-                                        <strong class="product-name-text">{{ item.product_name }}</strong>
+                                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                                            <strong class="product-name-text">{{ item.product_name }}</strong>
+                                            
+                                            <!-- ✅ CUSTOM PRODUCT BADGE -->
+                                            {% if item.product.is_custom_product %}
+                                            <span class="custom-product-badge">
+                                                <i class="fas fa-bolt"></i> CUSTOM
+                                            </span>
+                                            {% endif %}
+                                        </div>
                                         
                                         {% if item.product_sku %}
                                         <div class="mt-1">
@@ -187,6 +239,19 @@
                                                 <i class="fas fa-barcode"></i> {{ item.product_sku }}
                                             </span>
                                         </div>
+                                        {% endif %}
+                                        
+                                        <!-- ✅ PRODUCT TYPE INDICATOR -->
+                                        {% if item.product %}
+                                            {% if item.product.product_type == 'variable' %}
+                                            <small class="text-muted mt-1 d-block">
+                                                <i class="fas fa-layer-group"></i> Variable Product
+                                            </small>
+                                            {% elif item.product.product_type == 'simple' and item.product.is_custom_product %}
+                                            <small class="text-warning mt-1 d-block">
+                                                <i class="fas fa-bolt"></i> Quick Sale Item
+                                            </small>
+                                            {% endif %}
                                         {% endif %}
                                     </div>
                                 </td>
@@ -332,7 +397,7 @@
 
     <!-- Right Column -->
     <div class="col-lg-4">
-        <!-- ✅ PARTIAL PAYMENT CARD -->
+        <!-- PARTIAL PAYMENT CARD -->
         {% if order.is_partial_payment %}
         <div class="card shadow-sm mb-3 partial-payment-card">
             <div class="card-header bg-gradient-warning text-dark">
@@ -413,7 +478,7 @@
             </div>
         </div>
 
-        <!-- ✅ IN/OUT Information Card -->
+        <!-- IN/OUT Information Card -->
         <div class="card shadow-sm mb-3">
             <div class="card-header bg-gradient-dark text-white">
                 <h5 class="mb-0">
@@ -648,9 +713,97 @@
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
     
-    /* ✅ IN/OUT SECTION STYLES */
     .bg-gradient-dark {
         background: linear-gradient(135deg, #343a40 0%, #212529 100%);
+    }
+    
+    /* ✅ INFO CARDS */
+    .info-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        height: 100%;
+        border: 2px solid transparent;
+    }
+
+    .info-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        border-color: #667eea;
+    }
+
+    .info-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        color: white;
+        flex-shrink: 0;
+    }
+
+    .info-icon.bg-purple {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .info-icon.bg-teal {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    }
+
+    .info-content {
+        flex-grow: 1;
+    }
+
+    .info-content small {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+
+    .order-source-text,
+    .creator-text {
+        font-size: 1.1rem;
+        color: #2c3e50;
+    }
+    
+    /* ✅ CUSTOM PRODUCT BADGE */
+    .custom-product-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+        color: #1f2937;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        box-shadow: 0 2px 6px rgba(251, 191, 36, 0.3);
+        animation: customBadgePulse 2s ease-in-out infinite;
+    }
+
+    .custom-product-badge i {
+        font-size: 0.65rem;
+        animation: rotateBolt 3s linear infinite;
+    }
+
+    @keyframes customBadgePulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 2px 6px rgba(251, 191, 36, 0.3); }
+        50% { transform: scale(1.05); box-shadow: 0 4px 12px rgba(251, 191, 36, 0.5); }
+    }
+
+    @keyframes rotateBolt {
+        0%, 90%, 100% { transform: rotate(0deg); }
+        95% { transform: rotate(15deg); }
     }
     
     .in-out-info {
@@ -733,7 +886,6 @@
         line-height: 1.5;
     }
     
-    /* ✅ STATUS CARDS - PLAIN TEXT STYLING (NO BADGES) */
     .status-card {
         background: white;
         border-radius: 12px;
@@ -776,7 +928,6 @@
         font-weight: 700;
     }
     
-    /* ✅ THIS IS THE KEY - PLAIN TEXT STYLE */
     .status-info .status-value {
         margin: 0;
         font-size: 1.25rem;
@@ -798,7 +949,6 @@
         font-weight: 800;
     }
     
-    /* ✅ PARTIAL PAYMENT ALERT STYLES */
     .partial-payment-alert {
         background: linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%);
         border-left: 5px solid #ffc107;
@@ -891,6 +1041,12 @@
         white-space: normal;
         word-break: break-word;
         line-height: 1.3;
+        transition: all 0.3s ease;
+    }
+
+    .variant-badge-column:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
     }
 
     .variant-badge-column i {
@@ -908,6 +1064,7 @@
         padding: 5px 10px;
         background: #f8f9fa;
         border-radius: 4px;
+        border: 1px dashed #dee2e6;
     }
 
     .price-text {
@@ -918,14 +1075,15 @@
 
     .quantity-badge {
         display: inline-block;
-        background: #6c757d;
+        background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
         color: white;
-        padding: 5px 14px;
+        padding: 6px 14px;
         border-radius: 20px;
         font-weight: 700;
         font-size: 0.85rem;
-        min-width: 35px;
+        min-width: 40px;
         text-align: center;
+        box-shadow: 0 2px 4px rgba(108, 117, 125, 0.3);
     }
 
     .subtotal-text {
@@ -934,9 +1092,14 @@
         font-weight: 700;
     }
 
+    .table-hover tbody tr {
+        transition: all 0.2s ease;
+    }
+
     .table-hover tbody tr:hover {
         background-color: #f8f9fa;
-        transition: all 0.2s ease;
+        transform: scale(1.01);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
     
     .customer-info-item {
@@ -1158,6 +1321,11 @@
     }
 
     @media (max-width: 768px) {
+        .custom-product-badge {
+            font-size: 0.65rem;
+            padding: 3px 8px;
+        }
+        
         .variant-badge-column {
             font-size: 0.72rem;
             padding: 5px 8px;
@@ -1170,6 +1338,11 @@
         .price-text,
         .subtotal-text {
             font-size: 0.85rem;
+        }
+
+        .quantity-badge {
+            padding: 4px 10px;
+            font-size: 0.75rem;
         }
 
         .timeline {
@@ -1213,10 +1386,9 @@
     }
 </style>
 
-<!-- ✅ MOVE TO TRASH SCRIPT -->
 <script>
 function moveOrderToTrash(orderId, orderNumber) {
-    if (confirm('Move order "' + orderNumber + '" to trash?')) {
+    if (confirm('⚠️ Move order "' + orderNumber + '" to trash?\n\nThis action can be undone from the trash section.')) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = '/orders/' + orderId + '/move-to-trash/';
@@ -1233,14 +1405,14 @@ function moveOrderToTrash(orderId, orderNumber) {
     }
 }
 
-// JavaScript for status update and interactive features
+// Enhanced page load animations
 document.addEventListener('DOMContentLoaded', function() {
-    // Add fade-in animation to cards
-    const cards = document.querySelectorAll('.card');
+    // Fade-in animation for cards
+    const cards = document.querySelectorAll('.card, .status-card, .info-card');
     cards.forEach((card, index) => {
         card.style.opacity = '0';
         card.style.transform = 'translateY(20px)';
-        card.style.transition = `opacity 0.5s ease ${index * 0.1}s, transform 0.5s ease ${index * 0.1}s`;
+        card.style.transition = `opacity 0.5s ease ${index * 0.08}s, transform 0.5s ease ${index * 0.08}s`;
         
         setTimeout(() => {
             card.style.opacity = '1';
@@ -1248,15 +1420,21 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 100);
     });
     
-    // Add animation to partial payment alert if exists
+    // Pulse animation for custom product badges
+    const customBadges = document.querySelectorAll('.custom-product-badge');
+    if (customBadges.length > 0) {
+        console.log(`✨ Found ${customBadges.length} custom product(s) in this order`);
+    }
+    
+    // Animate partial payment alert
     const partialAlert = document.querySelector('.partial-payment-alert');
     if (partialAlert) {
         setTimeout(() => {
-            partialAlert.classList.add('animated', 'pulse');
+            partialAlert.style.animation = 'slideDown 0.5s ease-out, pulse 2s ease-in-out infinite';
         }, 500);
     }
     
-    // Auto-refresh status values on form submit
+    // Form submission loading state
     const statusForm = document.querySelector('form');
     if (statusForm) {
         statusForm.addEventListener('submit', function() {
@@ -1267,6 +1445,56 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // Smooth scroll for timeline
+    const timeline = document.querySelector('.timeline');
+    if (timeline) {
+        timeline.style.scrollBehavior = 'smooth';
+    }
+    
+    // Highlight custom products in table
+    const customProductRows = document.querySelectorAll('tr:has(.custom-product-badge)');
+    customProductRows.forEach(row => {
+        row.style.background = 'linear-gradient(to right, #fffbeb, transparent)';
+    });
 });
+
+// Toast notification helper
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    const bgColor = type === 'success' ? '#10b981' :
+                    type === 'warning' ? '#f59e0b' :
+                    type === 'error' ? '#ef4444' : '#3b82f6';
+    
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${bgColor};
+        color: white;
+        padding: 15px 20px;
+        border-radius: 8px;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        animation: slideInRight 0.3s ease-out;
+        max-width: 350px;
+    `;
+    
+    toast.innerHTML = `
+        <div class="d-flex align-items-center gap-2">
+            <i class="fas ${type === 'success' ? 'fa-check-circle' :
+                           type === 'warning' ? 'fa-exclamation-triangle' :
+                           type === 'error' ? 'fa-times-circle' : 'fa-info-circle'}"></i>
+            <span>${message}</span>
+        </div>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.animation = 'slideInRight 0.3s ease-out reverse';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
 </script>
 {% endblock %}
