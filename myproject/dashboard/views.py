@@ -2468,32 +2468,58 @@ def api_get_product_variations(request, product_id):
         product = get_object_or_404(Product, id=product_id, is_deleted=False, user=request.user)
 
     if product.product_type != "variable":
-        return JsonResponse({"variations": []})
+        return JsonResponse({
+            "success": False,
+            "message": "This product is not a variable product",
+            "variations": []
+        })
 
+    # ✅ UPDATED: Get variations with more flexible filtering
+    # Show variations that are either:
+    # 1. Active AND have stock > 0
+    # 2. OR just active (even if stock is 0, to show "out of stock" message)
     variations = (
         product.variations
-        .filter(is_active=True, status="active")
-        .order_by("sku")
+        .filter(is_active=True)  # Removed status="active" filter
+        .order_by("-stock", "sku")  # Show in-stock items first
         .prefetch_related("attribute_values__attribute_value__attribute")
     )
+
+    # ✅ If no variations found with is_active=True, try without any filter
+    if not variations.exists():
+        variations = (
+            product.variations
+            .all()  # Get ALL variations to debug
+            .order_by("-stock", "sku")
+            .prefetch_related("attribute_values__attribute_value__attribute")
+        )
 
     out = []
     for v in variations:
         attrs = []
         for link in v.attribute_values.all():
             av = link.attribute_value
-            attrs.append({"name": av.attribute.name, "value": av.value})
+            attrs.append({
+                "name": av.attribute.name, 
+                "value": av.value
+            })
 
         out.append({
             "id": v.id,
             "sku": v.sku,
             "price": str(v.price),
             "stock": v.stock,
+            "is_active": v.is_active,  # ✅ Added to debug
+            "status": getattr(v, 'status', 'N/A'),  # ✅ Added to debug
             "attributes": attrs,
             "image": v.image.url if v.image else None,
         })
 
-    return JsonResponse({"variations": out})
+    return JsonResponse({
+        "success": True,
+        "variations": out,
+        "total": len(out)  # ✅ Added for debugging
+    })
 
 @login_required
 @permission_required('can_export_data')
@@ -5266,3 +5292,44 @@ def returns_bulk_action(request):
         return redirect('returns_list')
     
     return redirect('returns_list')
+
+# phone search API
+@login_required
+@require_http_methods(["GET"])
+def search_customer_by_phone(request):
+    """Search customer by phone number"""
+    phone = request.GET.get('phone', '').strip()
+    
+    if not phone:
+        return JsonResponse({'success': False, 'message': 'Phone number required'})
+    
+    try:
+        # Search in Order model for customer with this phone
+        from .models import Order
+        
+        # Get the most recent order with this phone number
+        order = Order.objects.filter(customer_phone=phone).order_by('-created_at').first()
+        
+        if order:
+            return JsonResponse({
+                'success': True,
+                'customer': {
+                    'name': order.customer_name,
+                    'email': order.customer_email or '',
+                    'phone': order.customer_phone,
+                    'address': order.shipping_address or '',
+                    'landmark': order.landmark or '',
+                    'branch_city': order.branch_city or '',
+                }
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'message': 'No customer found with this phone number'
+            })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f'Error searching customer: {str(e)}'
+        })

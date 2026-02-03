@@ -794,6 +794,36 @@
             padding: 3px 6px;
         }
     }
+
+    /* Phone Search Input Feedback */
+    #phoneSearch {
+        transition: all 0.3s ease;
+    }
+
+    #phoneSearch:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    /* Loading state for phone search */
+    .phone-loading {
+        position: relative;
+    }
+
+    .phone-loading::after {
+        content: '';
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 16px;
+        height: 16px;
+        border: 2px solid #f59e0b;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+
 </style>
 {% endblock %}
 
@@ -1146,6 +1176,9 @@
     const STORAGE_KEY = 'pos_order_data';
     const EXPIRY_HOURS = 24;
 
+    // ✅ PHONE SEARCH TIMER
+    let phoneSearchTimer = null;
+
     // ✅ SHOW FLOATING BUTTON
     function showFloatingButton() {
         const btn = document.getElementById('floatingClearBtn');
@@ -1381,6 +1414,78 @@
         }
     }
 
+    // ✅ SEARCH CUSTOMER BY PHONE
+    function searchCustomerByPhone(phone) {
+        const phoneInput = document.getElementById('phoneSearch');
+        
+        // Show loading state
+        phoneInput.style.borderColor = '#f59e0b';
+        phoneInput.style.background = '#fffbeb';
+        
+        fetch(`/api/search-customer-by-phone/?phone=${encodeURIComponent(phone)}`)
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.customer) {
+                    // Fill in customer details
+                    document.getElementById('customerName').value = data.customer.name || '';
+                    document.getElementById('customerEmailInput').value = data.customer.email || '';
+                    document.getElementById('customerPhone').value = data.customer.phone || '';
+                    document.getElementById('customerAddress').value = data.customer.address || '';
+                    document.getElementById('customerLandmark').value = data.customer.landmark || '';
+                    
+                    // Set branch/city if available
+                    if (data.customer.branch_city) {
+                        document.getElementById('branchCity').value = data.customer.branch_city;
+                        // Trigger valley status detection
+                        detectValleyStatusFromCity();
+                    }
+                    
+                    // Success feedback
+                    phoneInput.style.borderColor = '#10b981';
+                    phoneInput.style.background = '#d1fae5';
+                    
+                    // Show success notification
+                    showToastNotification(`✅ Customer found: ${data.customer.name}`, 'success');
+                    
+                    // Save to draft
+                    saveFormData();
+                    
+                    // Reset phone input styling after 2 seconds
+                    setTimeout(() => {
+                        phoneInput.style.borderColor = '';
+                        phoneInput.style.background = '';
+                    }, 2000);
+                } else {
+                    // Customer not found
+                    phoneInput.style.borderColor = '#ef4444';
+                    phoneInput.style.background = '#fee2e2';
+                    
+                    showToastNotification(data.message || 'No customer found with this phone number', 'warning');
+                    
+                    // Reset styling after 2 seconds
+                    setTimeout(() => {
+                        phoneInput.style.borderColor = '';
+                        phoneInput.style.background = '';
+                    }, 2000);
+                }
+            })
+            .catch(error => {
+                console.error('Error searching customer:', error);
+                phoneInput.style.borderColor = '#ef4444';
+                phoneInput.style.background = '#fee2e2';
+                showToastNotification('Error searching customer. Please try again.', 'error');
+                
+                setTimeout(() => {
+                    phoneInput.style.borderColor = '';
+                    phoneInput.style.background = '';
+                }, 2000);
+            });
+    }
+
+    // ✅ DOM CONTENT LOADED
     document.addEventListener('DOMContentLoaded', function () {
         productModal = new bootstrap.Modal(document.getElementById('productModal'));
         variationModal = new bootstrap.Modal(document.getElementById('variationModal'));
@@ -1398,6 +1503,30 @@
 
         // ✅ SETUP AUTO-SAVE
         setupAutoSave();
+
+        // ✅ PHONE SEARCH EVENT LISTENER
+        document.getElementById('phoneSearch').addEventListener('input', function(e) {
+            const phone = e.target.value.trim();
+            
+            // Clear previous timer
+            clearTimeout(phoneSearchTimer);
+            
+            // Clear styling if phone is empty
+            if (!phone) {
+                this.style.borderColor = '';
+                this.style.background = '';
+                return;
+            }
+            
+            // Add visual feedback - typing
+            this.style.borderColor = '#3b82f6';
+            this.style.background = '#eff6ff';
+            
+            // Debounce - wait 500ms after user stops typing
+            phoneSearchTimer = setTimeout(() => {
+                searchCustomerByPhone(phone);
+            }, 500);
+        });
 
         document.getElementById('productModal').addEventListener('shown.bs.modal', () => {
             loadProducts('');
@@ -1698,51 +1827,120 @@
     </div>
   `;
     }
+function loadVariationsDropdown(productId, productName) {
+    const body = document.getElementById('variationBody');
+    body.innerHTML = `<div class="text-center py-4">
+        <div class="spinner-border text-primary"></div>
+        <p class="mt-2 text-muted">Loading variations...</p>
+    </div>`;
 
-    function loadVariationsDropdown(productId, productName) {
-        const body = document.getElementById('variationBody');
-        body.innerHTML = `<div class="text-center py-4"><div class="spinner-border"></div></div>`;
+    fetch(`/api/product/${productId}/variations/`)
+        .then(r => {
+            if (!r.ok) throw new Error('Network response was not ok');
+            return r.json();
+        })
+        .then(data => {
+            console.log('✅ Variation API Response:', data); // Debug log
+            
+            // Check for explicit failure
+            if (data.success === false) {
+                body.innerHTML = `<div class="alert alert-danger mb-0">
+                    <i class="fas fa-exclamation-triangle"></i> ${data.message || 'Error loading variations'}
+                </div>`;
+                return;
+            }
+            
+            const variations = data.variations || [];
+            
+            console.log(`📦 Total variations found: ${variations.length}`); // Debug
+            
+            if (variations.length === 0) {
+                body.innerHTML = `<div class="alert alert-warning mb-0">
+                    <i class="fas fa-info-circle"></i> <strong>No variations found</strong>
+                    <br><small>This product doesn't have any variations set up yet.</small>
+                    <br><small class="text-muted">Please add variations in the product management section.</small>
+                </div>`;
+                return;
+            }
 
-        fetch(`/api/product/${productId}/variations/`)
-            .then(r => {
-                if (!r.ok) throw new Error('Network response was not ok');
-                return r.json();
-            })
-            .then(data => {
-                const variations = data.variations || [];
-                if (!variations.length) {
-                    body.innerHTML = `<div class="alert alert-warning mb-0">No active variations found.</div>`;
-                    return;
-                }
-
-                body.innerHTML = `
-        <div class="mb-3">
-          <label class="form-label">Choose variation for <strong>${escapeHtml(productName)}</strong></label>
-          <select class="form-select" id="variationSelect">
-            ${variations.map(v => {
-                    const attrs = (v.attributes || []).map(a => `${a.name}: ${a.value}`).join(', ');
-                    return `<option value="${v.id}"
-                              data-price="${v.price}"
-                              data-sku="${escapeHtml(v.sku)}">
-                        ${escapeHtml(v.sku)} — ${escapeHtml(attrs)} — रू ${v.price} (Stock: ${v.stock})
-                      </option>`;
-                }).join('')}
-          </select>
-        </div>
-
-        <div class="text-end">
-          <button type="button" class="btn btn-primary"
-                  onclick="confirmVariation(${productId}, '${productName.replace(/'/g, "\\'")}')">
-            Add to cart
-          </button>
-        </div>
-      `;
-            })
-            .catch(err => {
-                console.error('Error loading variations:', err);
-                body.innerHTML = `<div class="alert alert-danger mb-0"><i class="fas fa-exclamation-triangle"></i> Error loading variations. Please try again.</div>`;
+            // ✅ Filter for available variations (active and in stock)
+            const availableVariations = variations.filter(v => {
+                const isActive = v.is_active !== false; // Default to true if not specified
+                const hasStock = v.stock > 0;
+                console.log(`  - ${v.sku}: active=${isActive}, stock=${v.stock}, status=${v.status}`);
+                return isActive && hasStock;
             });
-    }
+            
+            console.log(`✅ Available variations: ${availableVariations.length}`); // Debug
+            
+            if (availableVariations.length === 0) {
+                // Show all variations with their status
+                const allVariationsHtml = variations.map(v => {
+                    const reason = !v.is_active ? 'Inactive' : 
+                                   v.stock <= 0 ? 'Out of Stock' : 
+                                   v.status !== 'active' ? `Status: ${v.status}` : 'Unknown';
+                    return `<li><strong>${v.sku}</strong> - ${reason}</li>`;
+                }).join('');
+                
+                body.innerHTML = `<div class="alert alert-warning mb-0">
+                    <i class="fas fa-box-open"></i> <strong>No available variations</strong>
+                    <br><small>Found ${variations.length} variation(s), but none are available for ordering:</small>
+                    <ul class="mt-2 mb-0 small">${allVariationsHtml}</ul>
+                </div>`;
+                return;
+            }
+
+            // ✅ Build the variation selector
+            body.innerHTML = `
+                <div class="mb-3">
+                    <label class="form-label fw-bold">
+                        Choose variation for <span class="text-primary">${escapeHtml(productName)}</span>
+                    </label>
+                    <select class="form-select form-select-lg" id="variationSelect" style="cursor: pointer;">
+                        ${availableVariations.map(v => {
+                            const attrs = (v.attributes || []).map(a => `${a.name}: ${a.value}`).join(', ');
+                            const stockBadge = v.stock > 10 ? 'In Stock' :
+                                             v.stock > 0 ? `Low Stock (${v.stock})` :
+                                             'Out of Stock';
+                            
+                            return `<option value="${v.id}"
+                                      data-price="${v.price}"
+                                      data-sku="${escapeHtml(v.sku)}">
+                                ${escapeHtml(v.sku)} — ${escapeHtml(attrs)} — रू ${v.price} — ${stockBadge}
+                              </option>`;
+                        }).join('')}
+                    </select>
+                    <small class="text-muted d-block mt-2">
+                        <i class="fas fa-info-circle"></i> ${availableVariations.length} variation(s) available
+                    </small>
+                </div>
+
+                <div class="d-flex gap-2 justify-content-end">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="button" class="btn btn-success btn-lg"
+                            onclick="confirmVariation(${productId}, '${escapeHtml(productName).replace(/'/g, "\\'")}')">
+                        <i class="fas fa-plus-circle"></i> Add to Cart
+                    </button>
+                </div>
+            `;
+            
+            // Auto-focus on select
+            setTimeout(() => {
+                const selectEl = document.getElementById('variationSelect');
+                if (selectEl) selectEl.focus();
+            }, 100);
+        })
+        .catch(err => {
+            console.error('❌ Error loading variations:', err);
+            body.innerHTML = `<div class="alert alert-danger mb-0">
+                <i class="fas fa-exclamation-triangle"></i> <strong>Network error</strong>
+                <br><small>Could not load variations. Please check your connection and try again.</small>
+                <br><small class="text-muted">Error: ${err.message}</small>
+            </div>`;
+        });
+}
 
     function confirmVariation(productId, productName) {
         try {
