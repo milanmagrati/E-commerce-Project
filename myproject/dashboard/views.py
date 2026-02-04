@@ -1675,9 +1675,11 @@ def order_create(request):
                     product = get_object_or_404(Product, id=product_id)
 
                     variation = None
+                    variation_name = None
                     if var_id:
                         variation = get_object_or_404(ProductVariation, id=int(var_id), product=product)
                         sku = variation.sku
+                        variation_name = getattr(variation, 'variation_name', None) or variation.sku
 
                     OrderItem.objects.create(
                         order=order,
@@ -1685,6 +1687,7 @@ def order_create(request):
                         product_variation=variation,
                         product_name=product.name,
                         product_sku=sku,
+                        variation_name=variation_name,
                         quantity=qty,
                         price=price,
                         total=price * qty,
@@ -1773,12 +1776,14 @@ def order_detail(request, order_id):
                 old_payment_status = order.payment_status
                 old_tracking = order.tracking_number or ''
                 old_admin_notes = order.admin_notes or ''
+                old_logistics = order.logistics or ''  # ✅ NEW: Track logistics changes
                 
                 # Get new values from form
                 new_order_status = request.POST.get('order_status', order.order_status)
                 new_payment_status = request.POST.get('payment_status', order.payment_status)
                 new_tracking = request.POST.get('tracking_number', '').strip()
                 new_admin_notes = request.POST.get('admin_notes', '').strip()
+                new_logistics = request.POST.get('logistics', '').strip()  # ✅ NEW: Get logistics value
                 
                 # ✅ ENHANCED PARTIAL PAYMENT HANDLING
                 # If changing TO partial payment status
@@ -1821,6 +1826,7 @@ def order_detail(request, order_id):
                 order.payment_status = new_payment_status
                 order.tracking_number = new_tracking
                 order.admin_notes = new_admin_notes
+                order.logistics = new_logistics  # ✅ NEW: Update logistics field
                 
                 # ✅ ADD IN/OUT FIELD UPDATE SUPPORT (if provided)
                 new_in_out = request.POST.get('in_out')
@@ -1870,6 +1876,30 @@ def order_detail(request, order_id):
                         description=f'Payment status changed from "{old_payment_status}" to "{order.payment_status}"'
                     )
                     changes_made.append('Payment Status')
+                
+                # ✅ NEW: Logistics changed
+                if old_logistics != new_logistics:
+                    logistics_display = {
+                        'ncm': 'NCM',
+                        'sundarijal': 'Sundarijal',
+                        'express': 'Express',
+                        'local': 'Local Delivery',
+                        'other': 'Other',
+                        '': 'None'
+                    }
+                    old_display = logistics_display.get(old_logistics, old_logistics or 'None')
+                    new_display = logistics_display.get(new_logistics, new_logistics or 'None')
+                    
+                    OrderActivityLog.objects.create(
+                        order=order,
+                        action_type='updated',
+                        user=request.user,
+                        field_name='logistics',
+                        old_value=old_logistics,
+                        new_value=new_logistics,
+                        description=f'Logistics provider changed from "{old_display}" to "{new_display}"'
+                    )
+                    changes_made.append('Logistics Provider')
                 
                 # Tracking number added or updated
                 if old_tracking != new_tracking:
@@ -2091,9 +2121,11 @@ def order_edit(request, order_id):
 
                     product = get_object_or_404(Product, id=product_id)
                     variation = None
+                    variation_name = None
                     if var_id:
                         variation = get_object_or_404(ProductVariation, id=int(var_id))
                         sku = variation.sku
+                        variation_name = getattr(variation, 'variation_name', None) or variation.sku
 
                     OrderItem.objects.create(
                         order=order,
@@ -2101,6 +2133,7 @@ def order_edit(request, order_id):
                         product_variation=variation,
                         product_name=product.name,
                         product_sku=sku,
+                        variation_name=variation_name,
                         quantity=qty,
                         price=price,
                         total=price * qty,
@@ -2588,6 +2621,10 @@ def api_get_product_variations(request, product_id):
                 "stock": v.stock,
                 "is_active": v.is_active,
                 "image": v.image.url if v.image else None,
+                "category": {
+                    "id": product.category.id,
+                    "name": product.category.name
+                } if getattr(product, 'category', None) else None,
             })
 
         return JsonResponse({

@@ -24,5 +24,12 @@ urlpatterns = [
     path('', include('dashboard.urls')),
     path('accounts/', include('accounts.urls')), 
     path('logistics/', include('logistics.urls')), 
+    path('ncm/', include('ncm.urls')),
 
-]  + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    
+
+] 
+# Serve media files in development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

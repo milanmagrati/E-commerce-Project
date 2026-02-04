@@ -168,6 +168,28 @@ class Order(models.Model):
     def __str__(self):
         return self.order_number
     
+     # ✅ ADD THESE NCM INTEGRATION FIELDS
+    ncm_order_id = models.IntegerField(blank=True, null=True, unique=True, db_index=True)
+    ncm_status = models.CharField(max_length=100, blank=True)
+    ncm_created_at = models.DateTimeField(blank=True, null=True)
+    
+    # NCM Branch details (use these for API calls)
+    ncm_from_branch = models.CharField(max_length=100, blank=True, default='TINKUNE')
+    ncm_destination_branch = models.CharField(max_length=100, blank=True)
+    
+    # Delivery type for NCM
+    NCM_DELIVERY_TYPES = [
+        ('Door2Door', 'Door to Door'),
+        ('Branch2Door', 'Branch to Door'),
+        ('Door2Branch', 'Door to Branch'),
+        ('Branch2Branch', 'Branch to Branch'),
+    ]
+    ncm_delivery_type = models.CharField(max_length=20, choices=NCM_DELIVERY_TYPES, default='Door2Door')
+    
+    # Weight for shipping calculation
+    package_weight = models.DecimalField(max_digits=5, decimal_places=2, default=1.0, help_text="Weight in kg")
+    
+    
     def calculate_totals(self):
         """Calculate order totals based on items, discount, shipping, and tax"""
         from decimal import Decimal
@@ -189,6 +211,7 @@ class OrderItem(models.Model):
     
     product_name = models.CharField(max_length=255, default='')
     product_sku = models.CharField(max_length=100, blank=True, null=True)
+    variation_name = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0)

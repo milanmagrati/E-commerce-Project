@@ -1485,7 +1485,8 @@
                             price: parseFloat(product.price) || 0,
                             qty: 1,
                             isCustom: product.is_custom || false,
-                            category: product.category ? product.category.id : '',
+                            category: product.category && product.category.id ? product.category.id : null,
+                            categoryName: product.category && product.category.name ? product.category.name : '',
                             description: product.description || ''
                         });
                         productModal.hide();
@@ -1529,7 +1530,7 @@
                     </div>
                     <div class="variation-list">
                         ${variations.map(v => `
-                            <div class="variation-item" tabindex="0" data-varid="${v.id}" data-sku="${v.sku}" data-varname="${(v.variation_name || v.name || v.sku || '').replace(/"/g, '&quot;')}" data-price="${v.price}">
+                            <div class="variation-item" tabindex="0" data-varid="${v.id}" data-sku="${v.sku}" data-varname="${(v.variation_name || v.name || v.sku || '').replace(/"/g, '&quot;')}" data-price="${v.price}" data-category-id="${v.category ? v.category.id : ''}" data-category-name="${v.category ? (v.category.name || '').replace(/"/g, '&quot;') : ''}">
                                 <div class="variation-check-icon">
                                     <i class="fas fa-check"></i>
                                 </div>
@@ -1575,7 +1576,9 @@
                             id: Number(el.dataset.varid),
                             sku: el.dataset.sku,
                             varName: el.dataset.varname || el.dataset.sku || '',
-                            price: parseFloat(el.dataset.price)
+                            price: parseFloat(el.dataset.price),
+                            categoryId: el.dataset.categoryId || '',
+                            categoryName: el.dataset.categoryName || ''
                         };
                     }
 
@@ -1589,7 +1592,7 @@
                         addBtn.addEventListener('click', () => {
                             if (!selectedVar) { alert('Please select a variation'); return; }
                             // Pass variation display name (varName) instead of SKU so variant shows the variation name
-                            selectVariation(productId, selectedVar.id, productName, selectedVar.varName, selectedVar.price);
+                            selectVariation(productId, selectedVar.id, productName, selectedVar.varName, selectedVar.price, selectedVar.categoryId, selectedVar.categoryName);
                         });
                     }
                 }, 10);
@@ -1606,7 +1609,7 @@
     }
 
     // ✅ SELECT VARIATION (store variation name as SKU/variant display)
-    function selectVariation(productId, variationId, productName, variantName, price) {
+    function selectVariation(productId, variationId, productName, variantName, price, categoryId, categoryName) {
         // Use variantName as the displayed 'sku' so the cart shows the variation name
         addToCart({
             id: productId,
@@ -1615,7 +1618,9 @@
             sku: variantName || '',
             price: parseFloat(price),
             qty: 1,
-            isCustom: false
+            isCustom: false,
+            category: categoryId || null,
+            categoryName: categoryName || ''
         });
         variationModal.hide();
         showToastNotification(`✅ ${productName} (${variantName}) added to cart!`, 'success');

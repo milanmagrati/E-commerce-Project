@@ -225,7 +225,6 @@
                                         <div class="d-flex align-items-center gap-2 flex-wrap">
                                             <strong class="product-name-text">{{ item.product_name }}</strong>
                                             
-                                            <!-- ✅ CUSTOM PRODUCT BADGE -->
                                             {% if item.product.is_custom_product %}
                                             <span class="custom-product-badge">
                                                 <i class="fas fa-bolt"></i> CUSTOM
@@ -239,19 +238,6 @@
                                                 <i class="fas fa-barcode"></i> {{ item.product_sku }}
                                             </span>
                                         </div>
-                                        {% endif %}
-                                        
-                                        <!-- ✅ PRODUCT TYPE INDICATOR -->
-                                        {% if item.product %}
-                                            {% if item.product.product_type == 'variable' %}
-                                            <small class="text-muted mt-1 d-block">
-                                                <i class="fas fa-layer-group"></i> Variable Product
-                                            </small>
-                                            {% elif item.product.product_type == 'simple' and item.product.is_custom_product %}
-                                            <small class="text-warning mt-1 d-block">
-                                                <i class="fas fa-bolt"></i> Quick Sale Item
-                                            </small>
-                                            {% endif %}
                                         {% endif %}
                                     </div>
                                 </td>
@@ -339,7 +325,7 @@
         </div>
 
         <!-- Update Order Status -->
-        <div class="card shadow-sm">
+        <div class="card shadow-sm mb-4">
             <div class="card-header bg-info text-white">
                 <h5 class="mb-0"><i class="fas fa-edit"></i> Update Order Status</h5>
             </div>
@@ -374,12 +360,31 @@
                                 <option value="cod" {% if order.payment_status == 'cod' %}selected{% endif %}>COD</option>
                             </select>
                         </div>
+                        
+                        <!-- ✅✅✅ NEW: LOGISTICS FIELD ✅✅✅ -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-truck"></i> Logistics Provider
+                            </label>
+                            <select name="logistics" class="form-select form-select-lg" id="logisticsSelect">
+                                <option value="">-- Select Logistics --</option>
+                                <option value="ncm" {% if order.logistics == 'ncm' %}selected{% endif %}>🚛 NCM</option>
+                                <option value="sundarijal" {% if order.logistics == 'sundarijal' %}selected{% endif %}>Sundarijal</option>
+                                <option value="express" {% if order.logistics == 'express' %}selected{% endif %}>Express</option>
+                                <option value="local" {% if order.logistics == 'local' %}selected{% endif %}>Local Delivery</option>
+                                <option value="other" {% if order.logistics == 'other' %}selected{% endif %}>Other</option>
+                            </select>
+                            <small class="text-info d-block mt-1">
+                                <i class="fas fa-info-circle"></i> Select <strong>NCM</strong> to enable NCM Logistics integration below
+                            </small>
+                        </div>
+                        
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Tracking Number</label>
                             <input type="text" name="tracking_number" class="form-control form-control-lg" 
                                    value="{{ order.tracking_number|default:'' }}" placeholder="Enter tracking number">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-12">
                             <label class="form-label fw-bold">Admin Notes</label>
                             <textarea name="admin_notes" class="form-control" rows="3" 
                                       placeholder="Internal notes...">{{ order.admin_notes|default:'' }}</textarea>
@@ -393,55 +398,188 @@
                 </form>
             </div>
         </div>
-    </div>
 
-    <!-- Right Column -->
-    <div class="col-lg-4">
-        <!-- PARTIAL PAYMENT CARD -->
-        {% if order.is_partial_payment %}
-        <div class="card shadow-sm mb-3 partial-payment-card">
-            <div class="card-header bg-gradient-warning text-dark">
-                <h5 class="mb-0">
-                    <i class="fas fa-coins"></i> Partial Payment Details
-                </h5>
+        <!-- ✅✅✅ NCM LOGISTICS INTEGRATION SECTION ✅✅✅ -->
+        {% if order.logistics == 'ncm' %}
+        <div class="card shadow-sm ncm-integration-card">
+            <div class="card-header bg-gradient-ncm text-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-truck-fast"></i> NCM Logistics Integration
+                    </h5>
+                    <span class="ncm-logo-badge">
+                        <i class="fas fa-shipping-fast"></i> NCM
+                    </span>
+                </div>
             </div>
             <div class="card-body">
-                <div class="partial-payment-item">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-muted">
-                            <i class="fas fa-money-bill-wave"></i> Total Amount
-                        </span>
-                        <strong class="fs-5">रू {{ order.total_amount|floatformat:2 }}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-success">
-                            <i class="fas fa-check-circle"></i> Amount Paid
-                        </span>
-                        <strong class="fs-5 text-success">रू {{ order.partial_amount_paid|floatformat:2 }}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-danger">
-                            <i class="fas fa-hourglass-half"></i> Remaining
-                        </span>
-                        <strong class="fs-5 text-danger">रू {{ order.remaining_amount|floatformat:2 }}</strong>
-                    </div>
-                    
-                    <div class="progress" style="height: 20px;">
-                        {% widthratio order.partial_amount_paid order.total_amount 100 as percentage %}
-                        <div class="progress-bar bg-success progress-bar-striped" 
-                             role="progressbar" 
-                             style="width: {{ percentage }}%;"
-                             aria-valuenow="{{ percentage }}" 
-                             aria-valuemin="0" 
-                             aria-valuemax="100">
-                            {{ percentage }}% Paid
+                {% if order.ncm_order_id %}
+                    <!-- ✅ Order EXISTS in NCM -->
+                    <div class="ncm-status-box ncm-status-active">
+                        <div class="ncm-status-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="ncm-status-content">
+                            <div class="ncm-status-label">Active in NCM System</div>
+                            <div class="ncm-status-details">
+                                <div class="ncm-detail-row">
+                                    <span class="ncm-detail-label">
+                                        <i class="fas fa-hashtag"></i> NCM Order ID:
+                                    </span>
+                                    <strong class="ncm-order-id">{{ order.ncm_order_id }}</strong>
+                                </div>
+                                <div class="ncm-detail-row">
+                                    <span class="ncm-detail-label">
+                                        <i class="fas fa-info-circle"></i> NCM Status:
+                                    </span>
+                                    <span class="badge bg-primary">{{ order.ncm_status|default:"Unknown" }}</span>
+                                </div>
+                                <div class="ncm-detail-row">
+                                    <span class="ncm-detail-label">
+                                        <i class="fas fa-calendar-alt"></i> Created:
+                                    </span>
+                                    <span>{{ order.ncm_created_at|date:"M d, Y h:i A"|default:"N/A" }}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- NCM Actions -->
+                    <div class="ncm-actions-grid">
+                        <form method="POST" action="{% url 'ncm:sync_status' order.id %}" class="ncm-action-form">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-ncm btn-ncm-primary">
+                                <i class="fas fa-sync-alt"></i>
+                                <span>Sync Status</span>
+                            </button>
+                        </form>
+                        
+                        <a href="{% url 'ncm:track_order' order.id %}" class="btn-ncm btn-ncm-info">
+                            <i class="fas fa-map-marker-alt"></i>
+                            <span>Track Order</span>
+                        </a>
+                    </div>
+
+                    <!-- Shipping Details -->
+                    <div class="ncm-shipping-details mt-3">
+                        <div class="ncm-shipping-header">
+                            <i class="fas fa-route"></i> Shipping Route
+                        </div>
+                        <div class="ncm-route-display">
+                            <div class="ncm-route-point">
+                                <i class="fas fa-map-pin text-success"></i>
+                                <div>
+                                    <small>From Branch</small>
+                                    <strong>{{ order.ncm_from_branch|default:"Not set" }}</strong>
+                                </div>
+                            </div>
+                            <div class="ncm-route-arrow">
+                                <i class="fas fa-arrow-right"></i>
+                            </div>
+                            <div class="ncm-route-point">
+                                <i class="fas fa-map-pin text-danger"></i>
+                                <div>
+                                    <small>To Branch</small>
+                                    <strong>{{ order.ncm_destination_branch|default:"Not set" }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="ncm-delivery-type mt-2">
+                            <i class="fas fa-truck"></i> {{ order.get_ncm_delivery_type_display|default:"Door to Door" }}
+                        </div>
+                    </div>
+
+                {% else %}
+                    <!-- ❌ Order NOT in NCM -->
+                    <div class="ncm-status-box ncm-status-pending">
+                        <div class="ncm-status-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="ncm-status-content">
+                            <div class="ncm-status-label">Not Yet Created in NCM</div>
+                            <p class="ncm-status-message">
+                                This order hasn't been sent to NCM system yet. Click below to create the shipment.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Pre-flight Check -->
+                    <div class="ncm-preflight-check">
+                        <div class="preflight-header">
+                            <i class="fas fa-clipboard-check"></i> Pre-flight Check
+                        </div>
+                        <div class="preflight-items">
+                            <div class="preflight-item {% if order.customer_name %}check-pass{% else %}check-fail{% endif %}">
+                                <i class="fas {% if order.customer_name %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                Customer Name: {% if order.customer_name %}{{ order.customer_name }}{% else %}<span class="text-danger">Missing</span>{% endif %}
+                            </div>
+                            <div class="preflight-item {% if order.customer_phone %}check-pass{% else %}check-fail{% endif %}">
+                                <i class="fas {% if order.customer_phone %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                Phone Number: {% if order.customer_phone %}{{ order.customer_phone }}{% else %}<span class="text-danger">Missing</span>{% endif %}
+                            </div>
+                            <div class="preflight-item {% if order.shipping_address %}check-pass{% else %}check-fail{% endif %}">
+                                <i class="fas {% if order.shipping_address %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                Shipping Address: {% if order.shipping_address %}✓ Provided{% else %}<span class="text-danger">Missing</span>{% endif %}
+                            </div>
+                            <div class="preflight-item {% if order.total_amount %}check-pass{% else %}check-fail{% endif %}">
+                                <i class="fas {% if order.total_amount %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                COD Amount: {% if order.total_amount %}रू {{ order.total_amount }}{% else %}<span class="text-danger">Missing</span>{% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Create in NCM Button -->
+                    <form method="POST" action="{% url 'ncm:create_shipment' order.id %}" id="ncmCreateForm">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-map-pin"></i> NCM Destination Branch
+                            </label>
+                            <select name="ncm_destination_branch" id="ncmBranchSelect" class="form-select form-select-lg" required>
+                                <option value="">-- Loading NCM branches... --</option>
+                            </select>
+                            <small class="text-muted d-block mt-2">
+                                <i class="fas fa-info-circle"></i> Select the NCM branch for delivery
+                            </small>
+                        </div>
+                        <input type="hidden" name="ncm_branch_name" id="ncmBranchName" value="">
+                        
+                        <button type="submit" 
+                                class="btn-ncm-create"
+                                id="ncmCreateBtn"
+                                {% if not order.customer_name or not order.customer_phone or not order.shipping_address %}disabled{% endif %}>
+                            <i class="fas fa-plus-circle"></i>
+                            <span>Create Shipment in NCM</span>
+                        </button>
+                    </form>
+
+                    {% if not order.customer_name or not order.customer_phone or not order.shipping_address %}
+                    <small class="text-danger d-block mt-2 text-center">
+                        <i class="fas fa-info-circle"></i> Please fill all required fields before creating NCM shipment
+                    </small>
+                    {% endif %}
+                {% endif %}
+
+                <!-- Quick Actions Footer -->
+                <div class="ncm-footer-actions mt-3 pt-3 border-top">
+                    <a href="{% url 'ncm:branches' %}" class="ncm-footer-link" target="_blank">
+                        <i class="fas fa-building"></i> View NCM Branches
+                    </a>
+                    <span class="ncm-footer-divider">|</span>
+                    <a href="#" class="ncm-footer-link" onclick="alert('NCM Helpline: 01-5970736'); return false;">
+                        <i class="fas fa-phone"></i> NCM Helpline
+                    </a>
                 </div>
             </div>
         </div>
         {% endif %}
+        <!-- ✅✅✅ NCM INTEGRATION SECTION ENDS ✅✅✅ -->
 
+    </div>
+
+    <!-- Right Column -->
+    <div class="col-lg-4">
         <!-- Customer Information -->
         <div class="card shadow-sm mb-3">
             <div class="card-header bg-gradient-primary text-white">
@@ -475,75 +613,6 @@
                     <i class="fas fa-eye"></i> View Customer Profile
                 </a>
                 {% endif %}
-            </div>
-        </div>
-
-        <!-- IN/OUT Information Card -->
-        <div class="card shadow-sm mb-3">
-            <div class="card-header bg-gradient-dark text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-arrow-right-arrow-left"></i> IN/OUT Information
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="in-out-info">
-                    <div class="in-out-status d-flex align-items-center justify-content-between mb-3">
-                        <div class="d-flex align-items-center">
-                            <div class="in-out-icon {% if order.in_out == 'in' %}in-icon{% else %}out-icon{% endif %} me-3">
-                                <i class="fas {% if order.in_out == 'in' %}fa-arrow-down-to-line{% else %}fa-arrow-up-from-line{% endif %}"></i>
-                            </div>
-                            <div>
-                                <small class="text-muted d-block">Order Type</small>
-                                <h4 class="mb-0 {% if order.in_out == 'in' %}text-success{% else %}text-danger{% endif %}">
-                                    {{ order.in_out|upper }}
-                                </h4>
-                            </div>
-                        </div>
-                        <div class="in-out-badge {% if order.in_out == 'in' %}in-badge{% else %}out-badge{% endif %}">
-                            {% if order.in_out == 'in' %}
-                                <i class="fas fa-sign-in-alt"></i> VALLEY
-                            {% else %}
-                                <i class="fas fa-sign-out-alt"></i> OUT VALLEY
-                            {% endif %}
-                        </div>
-                    </div>
-                    
-                    <div class="in-out-details">
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <div class="detail-box">
-                                    <small class="text-muted d-block">
-                                        <i class="fas fa-building"></i> Branch/City
-                                    </small>
-                                    <strong>{{ order.branch_city|default:"Not specified" }}</strong>
-                                </div>
-                            </div>
-                            <div class="col-6">
-                                <div class="detail-box">
-                                    <small class="text-muted d-block">
-                                        <i class="fas fa-map-marker-alt"></i> Shipping To
-                                    </small>
-                                    <strong>{{ order.shipping_address|truncatechars:20 }}</strong>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="mt-3">
-                            <div class="in-out-description">
-                                <small class="text-muted d-block mb-1">Description</small>
-                                <p class="mb-0 small">
-                                    {% if order.in_out == 'in' %}
-                                        <i class="fas fa-info-circle text-success"></i>
-                                        This is an IN order - Products are coming into inventory from customer/supplier.
-                                    {% else %}
-                                        <i class="fas fa-info-circle text-danger"></i>
-                                        This is an OUT order - Products are going out to customer.
-                                    {% endif %}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -605,896 +674,591 @@
                 {% endif %}
             </div>
         </div>
-
-        <!-- Customer Order Note -->
-        {% if order.notes %}
-        <div class="card shadow-sm mb-3">
-            <div class="card-header bg-warning text-dark">
-                <h5 class="mb-0"><i class="fas fa-sticky-note"></i> Customer Note</h5>
-            </div>
-            <div class="card-body">
-                <div class="note-content">
-                    <i class="fas fa-quote-left text-warning me-2"></i>
-                    <span class="note-text">{{ order.notes }}</span>
-                    <i class="fas fa-quote-right text-warning ms-2"></i>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Admin Notes Display -->
-        {% if order.admin_notes %}
-        <div class="card shadow-sm mb-3">
-            <div class="card-header bg-dark text-white">
-                <h5 class="mb-0"><i class="fas fa-user-shield"></i> Admin Notes</h5>
-            </div>
-            <div class="card-body">
-                <div class="admin-note-content">
-                    <i class="fas fa-info-circle text-info me-2"></i>
-                    <span>{{ order.admin_notes }}</span>
-                </div>
-                <hr>
-                <small class="text-muted">
-                    <i class="fas fa-user-cog"></i> Internal note - Not visible to customer
-                </small>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Activity Timeline -->
-        <div class="card shadow-sm">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0"><i class="fas fa-history"></i> Order Activity Log</h5>
-            </div>
-            <div class="card-body">
-                <div class="timeline">
-                    {% for log in activity_logs %}
-                    <div class="timeline-item">
-                        <div class="timeline-marker 
-                            {% if log.action_type == 'created' %}bg-success
-                            {% elif log.action_type == 'status_changed' %}bg-primary
-                            {% elif log.action_type == 'payment_changed' %}bg-info
-                            {% elif log.action_type == 'tracking_added' or log.action_type == 'tracking_updated' %}bg-warning
-                            {% elif log.action_type == 'notes_added' or log.action_type == 'notes_updated' %}bg-dark
-                            {% elif log.action_type == 'deleted' %}bg-danger
-                            {% elif log.action_type == 'restored' %}bg-success
-                            {% else %}bg-secondary{% endif %}">
-                        </div>
-                        <div class="timeline-content">
-                            <small class="text-muted">
-                                <i class="fas fa-calendar-alt"></i> 
-                                {{ log.created_at|date:"M d, Y" }} at {{ log.created_at|date:"h:i A" }}
-                            </small>
-                            <p class="mb-0">
-                                <strong>
-                                    {% if log.action_type == 'created' %}
-                                        <i class="fas fa-plus-circle text-success"></i> {{ log.get_action_type_display }}
-                                    {% elif log.action_type == 'status_changed' %}
-                                        <i class="fas fa-sync-alt text-primary"></i> {{ log.get_action_type_display }}
-                                    {% elif log.action_type == 'payment_changed' %}
-                                        <i class="fas fa-credit-card text-info"></i> {{ log.get_action_type_display }}
-                                    {% elif log.action_type == 'tracking_added' %}
-                                        <i class="fas fa-truck text-warning"></i> {{ log.get_action_type_display }}
-                                    {% elif log.action_type == 'tracking_updated' %}
-                                        <i class="fas fa-edit text-warning"></i> {{ log.get_action_type_display }}
-                                    {% elif log.action_type == 'notes_added' or log.action_type == 'notes_updated' %}
-                                        <i class="fas fa-sticky-note text-dark"></i> {{ log.get_action_type_display }}
-                                    {% elif log.action_type == 'deleted' %}
-                                        <i class="fas fa-trash-alt text-danger"></i> {{ log.get_action_type_display }}
-                                    {% elif log.action_type == 'restored' %}
-                                        <i class="fas fa-undo text-success"></i> {{ log.get_action_type_display }}
-                                    {% else %}
-                                        <i class="fas fa-edit"></i> {{ log.get_action_type_display }}
-                                    {% endif %}
-                                </strong>
-                            </p>
-                            <small class="activity-detail">
-                                {{ log.description }}
-                                {% if log.user %}
-                                    <br><span class="text-muted">by <strong>{{ log.user.get_full_name|default:log.user.username }}</strong></span>
-                                {% endif %}
-                            </small>
-                        </div>
-                    </div>
-                    {% empty %}
-                    <div class="text-center text-muted py-4">
-                        <i class="fas fa-inbox fa-3x mb-3 opacity-50"></i>
-                        <p class="mb-0">No activity logs yet</p>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 
 <style>
-    .bg-gradient-primary {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    .bg-gradient-dark {
-        background: linear-gradient(135deg, #343a40 0%, #212529 100%);
-    }
-    
-    /* ✅ INFO CARDS */
-    .info-card {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        display: flex;
-        align-items: center;
-        gap: 15px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-        height: 100%;
-        border: 2px solid transparent;
-    }
+/* ==================== EXISTING STYLES (keeping all your existing styles) ==================== */
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
 
-    .info-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        border-color: #667eea;
-    }
+.status-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    height: 100%;
+}
 
-    .info-icon {
-        width: 50px;
-        height: 50px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-        color: white;
-        flex-shrink: 0;
-    }
+.status-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
 
-    .info-icon.bg-purple {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
+.status-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    color: white;
+    flex-shrink: 0;
+}
 
-    .info-icon.bg-teal {
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-    }
+.status-info {
+    flex-grow: 1;
+}
 
-    .info-content {
-        flex-grow: 1;
-    }
+.status-info h6 {
+    margin: 0 0 8px 0;
+    font-size: 0.7rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 700;
+}
 
-    .info-content small {
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        font-weight: 600;
-    }
+.status-info .status-value {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #2c3e50;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1.2;
+}
 
-    .order-source-text,
-    .creator-text {
-        font-size: 1.1rem;
-        color: #2c3e50;
-    }
-    
-    /* ✅ CUSTOM PRODUCT BADGE */
-    .custom-product-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-        color: #1f2937;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 0.7rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        box-shadow: 0 2px 6px rgba(251, 191, 36, 0.3);
-        animation: customBadgePulse 2s ease-in-out infinite;
-    }
+.customer-info-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 15px;
+    padding: 15px 0;
+    border-bottom: 1px solid #e9ecef;
+}
 
-    .custom-product-badge i {
-        font-size: 0.65rem;
-        animation: rotateBolt 3s linear infinite;
-    }
+.customer-info-item i {
+    font-size: 1.3rem;
+    width: 25px;
+    text-align: center;
+    margin-top: 5px;
+}
 
-    @keyframes customBadgePulse {
-        0%, 100% { transform: scale(1); box-shadow: 0 2px 6px rgba(251, 191, 36, 0.3); }
-        50% { transform: scale(1.05); box-shadow: 0 4px 12px rgba(251, 191, 36, 0.5); }
-    }
+.customer-info-item small {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+}
 
-    @keyframes rotateBolt {
-        0%, 90%, 100% { transform: rotate(0deg); }
-        95% { transform: rotate(15deg); }
-    }
-    
-    .in-out-info {
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #e9ecef;
-    }
-    
-    .in-out-icon {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.8rem;
-        color: white;
-    }
-    
-    .in-out-icon.in-icon {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-        animation: pulseIn 2s infinite;
-    }
-    
-    .in-out-icon.out-icon {
-        background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
-        animation: pulseOut 2s infinite;
-    }
-    
-    @keyframes pulseIn {
-        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
-        50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
-    }
-    
-    @keyframes pulseOut {
-        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
-        50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
-    }
-    
-    .in-out-badge {
-        padding: 8px 16px;
-        border-radius: 30px;
-        font-weight: 700;
-        font-size: 1rem;
-        letter-spacing: 1px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    
-    .in-out-badge.in-badge {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-        color: white;
-    }
-    
-    .in-out-badge.out-badge {
-        background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
-        color: white;
-    }
-    
-    .detail-box {
-        background: white;
-        padding: 12px;
-        border-radius: 8px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-        border-left: 4px solid #6c757d;
-        transition: all 0.3s ease;
-    }
-    
-    .detail-box:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    
-    .in-out-description {
-        background: white;
-        padding: 12px;
-        border-radius: 8px;
-        border: 1px solid #e9ecef;
-        font-size: 0.85rem;
-        line-height: 1.5;
-    }
-    
-    .status-card {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        display: flex;
-        align-items: center;
-        gap: 15px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        transition: transform 0.3s ease;
-        height: 100%;
-    }
-    
-    .status-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-    
-    .status-icon {
-        width: 60px;
-        height: 60px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.8rem;
-        color: white;
-        flex-shrink: 0;
-    }
-    
-    .status-info {
-        flex-grow: 1;
-    }
-    
-    .status-info h6 {
-        margin: 0 0 8px 0;
-        font-size: 0.7rem;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        font-weight: 700;
-    }
-    
-    .status-info .status-value {
-        margin: 0;
-        font-size: 1.25rem;
-        font-weight: 800;
-        color: #2c3e50;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        line-height: 1.2;
-    }
-    
-    .status-info p {
-        margin: 0;
-        font-size: 1rem;
-        font-weight: 600;
-    }
-    
-    .status-info h4 {
-        font-size: 1.8rem;
-        font-weight: 800;
-    }
-    
-    .partial-payment-alert {
-        background: linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%);
-        border-left: 5px solid #ffc107;
-        border-radius: 12px;
-        animation: slideDown 0.5s ease-out;
-    }
-    
-    @keyframes slideDown {
-        from { opacity: 0; transform: translateY(-20px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    
-    .partial-icon {
-        width: 70px;
-        height: 70px;
-        background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 2rem;
-        color: white;
-        margin-right: 20px;
-        animation: pulse 2s ease-in-out infinite;
-        flex-shrink: 0;
-    }
-    
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.1); }
-    }
-    
-    .payment-stat {
-        padding: 15px;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
-    }
-    
-    .payment-stat:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    
-    .partial-payment-card {
-        border: 2px solid #ffc107;
-        animation: slideInRight 0.5s ease-out;
-    }
-    
-    @keyframes slideInRight {
-        from { opacity: 0; transform: translateX(20px); }
-        to { opacity: 1; transform: translateX(0); }
-    }
-    
-    .bg-gradient-warning {
-        background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
-    }
-    
-    .partial-payment-item {
-        background: #fff9e6;
-        padding: 15px;
-        border-radius: 8px;
-    }
+.shipping-details .detail-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 15px;
+    padding: 14px 0;
+    border-bottom: 1px solid #e9ecef;
+    transition: all 0.2s ease;
+}
 
-    .product-details-cell {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
+.shipping-details .detail-row:hover {
+    background: #f8f9fa;
+    margin: 0 -15px;
+    padding: 14px 15px;
+    border-radius: 8px;
+}
 
-    .product-name-text {
-        font-size: 0.95rem;
-        color: #2c3e50;
-        font-weight: 600;
-        line-height: 1.4;
-    }
+.shipping-details .detail-row:last-child {
+    border-bottom: none;
+}
 
-    .variant-badge-column {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 7px 12px;
-        border-radius: 6px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-        white-space: normal;
-        word-break: break-word;
-        line-height: 1.3;
-        transition: all 0.3s ease;
-    }
+.shipping-details .detail-row i {
+    font-size: 1.3rem;
+    width: 28px;
+    text-align: center;
+    margin-top: 8px;
+    flex-shrink: 0;
+}
 
-    .variant-badge-column:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
-    }
+.shipping-details .detail-row small {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    font-weight: 600;
+    color: #6c757d;
+}
 
-    .variant-badge-column i {
-        font-size: 0.85rem;
-        flex-shrink: 0;
-    }
+.shipping-details .detail-row p {
+    font-size: 0.95rem;
+    color: #2c3e50;
+    line-height: 1.5;
+}
 
-    .simple-product-label {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.8rem;
-        color: #6c757d;
-        font-style: italic;
-        padding: 5px 10px;
-        background: #f8f9fa;
-        border-radius: 4px;
-        border: 1px dashed #dee2e6;
-    }
+/* ==================== NCM INTEGRATION STYLES ==================== */
+.ncm-integration-card {
+    border: 2px solid #667eea;
+    animation: slideInUp 0.5s ease-out;
+}
 
-    .price-text {
-        font-size: 0.95rem;
-        font-weight: 600;
-        color: #2ecc71;
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
     }
-
-    .quantity-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
-        color: white;
-        padding: 6px 14px;
-        border-radius: 20px;
-        font-weight: 700;
-        font-size: 0.85rem;
-        min-width: 40px;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(108, 117, 125, 0.3);
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
+}
 
-    .subtotal-text {
-        font-size: 1rem;
-        color: #27ae60;
-        font-weight: 700;
+.bg-gradient-ncm {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.ncm-logo-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    backdrop-filter: blur(10px);
+}
+
+.ncm-status-box {
+    display: flex;
+    gap: 15px;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
+
+.ncm-status-active {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border: 2px solid #10b981;
+}
+
+.ncm-status-pending {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 2px solid #f59e0b;
+}
+
+.ncm-status-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.ncm-status-active .ncm-status-icon {
+    background: #10b981;
+    color: white;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.ncm-status-pending .ncm-status-icon {
+    background: #f59e0b;
+    color: white;
+    animation: shake 3s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
     }
-
-    .table-hover tbody tr {
-        transition: all 0.2s ease;
+    50% {
+        transform: scale(1.1);
     }
+}
 
-    .table-hover tbody tr:hover {
-        background-color: #f8f9fa;
-        transform: scale(1.01);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+@keyframes shake {
+    0%, 90%, 100% {
+        transform: rotate(0deg);
+    }
+    92%, 96% {
+        transform: rotate(-10deg);
+    }
+    94%, 98% {
+        transform: rotate(10deg);
+    }
+}
+
+.ncm-status-content {
+    flex-grow: 1;
+}
+
+.ncm-status-label {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 10px;
+}
+
+.ncm-status-message {
+    color: #4b5563;
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.ncm-status-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ncm-detail-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.95rem;
+}
+
+.ncm-detail-label {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.ncm-order-id {
+    color: #667eea;
+    font-size: 1.1rem;
+    font-family: 'Courier New', monospace;
+}
+
+.ncm-actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.ncm-action-form {
+    margin: 0;
+}
+
+.btn-ncm {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    width: 100%;
+}
+
+.btn-ncm-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-ncm-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+    color: white;
+}
+
+.btn-ncm-info {
+    background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+
+.btn-ncm-info:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(6, 182, 212, 0.4);
+    color: white;
+}
+
+.btn-ncm-create {
+    width: 100%;
+    padding: 16px 24px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(16, 185, 129, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.btn-ncm-create:hover:not(:disabled) {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.btn-ncm-create:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.ncm-shipping-details {
+    background: #f9fafb;
+    padding: 15px;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+}
+
+.ncm-shipping-header {
+    font-weight: 700;
+    color: #374151;
+    margin-bottom: 12px;
+    font-size: 0.95rem;
+}
+
+.ncm-route-display {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+}
+
+.ncm-route-point {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+}
+
+.ncm-route-point i {
+    font-size: 1.5rem;
+}
+
+.ncm-route-point small {
+    display: block;
+    color: #6b7280;
+    font-size: 0.75rem;
+}
+
+.ncm-route-point strong {
+    display: block;
+    color: #1f2937;
+}
+
+.ncm-route-arrow {
+    color: #9ca3af;
+    font-size: 1.2rem;
+}
+
+.ncm-delivery-type {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #4b5563;
+    font-weight: 600;
+}
+
+.ncm-preflight-check {
+    background: #f3f4f6;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 15px;
+}
+
+.preflight-header {
+    font-weight: 700;
+    color: #374151;
+    margin-bottom: 12px;
+    font-size: 0.95rem;
+}
+
+.preflight-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.preflight-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.preflight-item.check-pass {
+    border-left: 3px solid #10b981;
+}
+
+.preflight-item.check-pass i {
+    color: #10b981;
+}
+
+.preflight-item.check-fail {
+    border-left: 3px solid #ef4444;
+}
+
+.preflight-item.check-fail i {
+    color: #ef4444;
+}
+
+.ncm-footer-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 0.85rem;
+}
+
+.ncm-footer-link {
+    color: #667eea;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.ncm-footer-link:hover {
+    color: #764ba2;
+    text-decoration: underline;
+}
+
+.ncm-footer-divider {
+    color: #d1d5db;
+}
+
+@media (max-width: 768px) {
+    .ncm-actions-grid {
+        grid-template-columns: 1fr;
     }
     
-    .customer-info-item {
-        display: flex;
-        align-items: flex-start;
-        gap: 15px;
-        padding: 15px 0;
-        border-bottom: 1px solid #e9ecef;
-    }
-    
-    .customer-info-item i {
-        font-size: 1.3rem;
-        width: 25px;
-        text-align: center;
-        margin-top: 5px;
-    }
-    
-    .customer-info-item small {
-        display: block;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 3px;
-    }
-    
-    .timeline {
-        position: relative;
-        padding-left: 30px;
-        max-height: 500px;
-        overflow-y: auto;
-        padding-right: 10px;
-    }
-
-    .timeline::-webkit-scrollbar {
-        width: 6px;
-    }
-
-    .timeline::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 10px;
-    }
-
-    .timeline::-webkit-scrollbar-thumb {
-        background: #667eea;
-        border-radius: 10px;
-    }
-
-    .timeline::-webkit-scrollbar-thumb:hover {
-        background: #764ba2;
-    }
-    
-    .timeline::before {
-        content: '';
-        position: absolute;
-        left: 8px;
-        top: 0;
-        bottom: 0;
-        width: 3px;
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    .timeline-item {
-        position: relative;
-        margin-bottom: 25px;
-        padding-bottom: 5px;
-    }
-    
-    .timeline-item:last-child {
-        margin-bottom: 0;
-    }
-    
-    .timeline-marker {
-        position: absolute;
-        left: -26px;
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        border: 3px solid white;
-        box-shadow: 0 0 0 2px currentColor, 0 2px 8px rgba(0,0,0,0.2);
-        z-index: 1;
-    }
-    
-    .timeline-content {
-        padding-left: 15px;
-        background: #f8f9fa;
-        padding: 12px 15px;
-        border-radius: 8px;
-        border-left: 3px solid #667eea;
-        transition: all 0.2s ease;
-    }
-
-    .timeline-content:hover {
-        background: #e9ecef;
-        transform: translateX(3px);
-    }
-    
-    .timeline-content small {
-        display: block;
-        margin-bottom: 5px;
-        color: #6c757d;
-        font-size: 0.75rem;
-    }
-
-    .timeline-content p {
-        margin: 5px 0;
-        font-size: 0.95rem;
-    }
-
-    .activity-detail {
-        display: block;
-        margin-top: 5px;
-        color: #495057;
-        font-size: 0.85rem;
-        line-height: 1.5;
-    }
-
-    .shipping-details {
-        display: flex;
+    .ncm-route-display {
         flex-direction: column;
     }
-
-    .detail-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 15px;
-        padding: 14px 0;
-        border-bottom: 1px solid #e9ecef;
-        transition: all 0.2s ease;
+    
+    .ncm-route-arrow {
+        transform: rotate(90deg);
     }
-
-    .detail-row:hover {
-        background: #f8f9fa;
-        margin: 0 -15px;
-        padding: 14px 15px;
-        border-radius: 8px;
-    }
-
-    .detail-row:last-child {
-        border-bottom: none;
-    }
-
-    .detail-row i {
-        font-size: 1.3rem;
-        width: 28px;
-        text-align: center;
-        margin-top: 8px;
-        flex-shrink: 0;
-    }
-
-    .detail-row small {
-        display: block;
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 4px;
-        font-weight: 600;
-        color: #6c757d;
-    }
-
-    .detail-row p {
-        font-size: 0.95rem;
-        color: #2c3e50;
-        line-height: 1.5;
-    }
-
-    .tracking-alert {
-        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-        border: 2px solid #64b5f6;
-        border-radius: 12px;
-        padding: 16px;
-    }
-
-    .tracking-icon {
-        width: 50px;
-        height: 50px;
-        background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 1.5rem;
-        flex-shrink: 0;
-    }
-
-    .tracking-code {
-        background: white;
-        padding: 8px 16px;
-        border-radius: 8px;
-        color: #1976d2;
-        font-weight: 700;
-        font-size: 1rem;
-        border: 2px dashed #64b5f6;
-        display: inline-block;
-        letter-spacing: 1px;
-    }
-
-    .note-content {
-        background: #fff9e6;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 4px solid #ffc107;
-    }
-
-    .note-text {
-        font-style: italic;
-        color: #856404;
-        font-size: 0.95rem;
-    }
-
-    .admin-note-content {
-        background: #e7f3ff;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 4px solid #0d6efd;
-        font-size: 0.95rem;
-        color: #084298;
-        line-height: 1.6;
-    }
-
-    @media (max-width: 768px) {
-        .custom-product-badge {
-            font-size: 0.65rem;
-            padding: 3px 8px;
-        }
-        
-        .variant-badge-column {
-            font-size: 0.72rem;
-            padding: 5px 8px;
-        }
-        
-        .product-name-text {
-            font-size: 0.85rem;
-        }
-        
-        .price-text,
-        .subtotal-text {
-            font-size: 0.85rem;
-        }
-
-        .quantity-badge {
-            padding: 4px 10px;
-            font-size: 0.75rem;
-        }
-
-        .timeline {
-            max-height: 400px;
-        }
-        
-        .partial-payment-alert {
-            padding: 15px;
-        }
-        
-        .partial-icon {
-            width: 50px;
-            height: 50px;
-            font-size: 1.5rem;
-        }
-        
-        .status-card {
-            padding: 15px;
-        }
-        
-        .status-icon {
-            width: 50px;
-            height: 50px;
-            font-size: 1.5rem;
-        }
-        
-        .status-info .status-value {
-            font-size: 0.95rem;
-        }
-        
-        .in-out-icon {
-            width: 50px;
-            height: 50px;
-            font-size: 1.5rem;
-        }
-        
-        .in-out-badge {
-            font-size: 0.85rem;
-            padding: 6px 12px;
-        }
-    }
+}
 </style>
 
 <script>
 function moveOrderToTrash(orderId, orderNumber) {
-    if (confirm('⚠️ Move order "' + orderNumber + '" to trash?\n\nThis action can be undone from the trash section.')) {
+    if (confirm(`Move order ${orderNumber} to trash? This action can be undone from the trash section.`)) {
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = '/orders/' + orderId + '/move-to-trash/';
+        form.action = `/orders/${orderId}/move-to-trash/`;
         
         const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
         const csrfInput = document.createElement('input');
         csrfInput.type = 'hidden';
         csrfInput.name = 'csrfmiddlewaretoken';
         csrfInput.value = csrfToken;
-        
         form.appendChild(csrfInput);
+        
         document.body.appendChild(form);
         form.submit();
     }
 }
 
-// Enhanced page load animations
+// Load NCM branches on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Fade-in animation for cards
-    const cards = document.querySelectorAll('.card, .status-card, .info-card');
-    cards.forEach((card, index) => {
-        card.style.opacity = '0';
-        card.style.transform = 'translateY(20px)';
-        card.style.transition = `opacity 0.5s ease ${index * 0.08}s, transform 0.5s ease ${index * 0.08}s`;
+    const branchSelect = document.getElementById('ncmBranchSelect');
+    const branchNameInput = document.getElementById('ncmBranchName');
+    const createBtn = document.getElementById('ncmCreateBtn');
+    let branchMap = {}; // Map code -> name
+    
+    if (branchSelect) {
+        // Fetch NCM branches from server
+        fetch("{% url 'ncm:branches_json' %}")
+            .then(response => response.json())
+            .then(data => {
+                branchSelect.innerHTML = '<option value="">-- Select NCM Branch --</option>';
+                
+                if (data.branches && data.branches.length > 0) {
+                    data.branches.forEach(branch => {
+                        const option = document.createElement('option');
+                        option.value = branch.code;
+                        option.textContent = `${branch.name} (${branch.code})`;
+                        option.dataset.branchName = branch.name; // Store name in data attribute
+                        branchSelect.appendChild(option);
+                        branchMap[branch.code] = branch.name; // Build map
+                    });
+                    
+                    // Pre-select if branch_city matches
+                    const branchCity = "{{ order.branch_city|default:''|lower }}";
+                    if (branchCity) {
+                        for (let i = 0; i < branchSelect.options.length; i++) {
+                            if (branchSelect.options[i].textContent.toLowerCase().includes(branchCity)) {
+                                branchSelect.selectedIndex = i;
+                                const selectedOption = branchSelect.options[i];
+                                branchNameInput.value = selectedOption.dataset.branchName || selectedOption.value;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    createBtn.disabled = false;
+                } else {
+                    branchSelect.innerHTML = '<option value="">No branches available</option>';
+                    createBtn.disabled = true;
+                }
+            })
+            .catch(error => {
+                console.error('Error loading NCM branches:', error);
+                branchSelect.innerHTML = '<option value="">Error loading branches</option>';
+                createBtn.disabled = true;
+            });
         
-        setTimeout(() => {
-            card.style.opacity = '1';
-            card.style.transform = 'translateY(0)';
-        }, 100);
-    });
-    
-    // Pulse animation for custom product badges
-    const customBadges = document.querySelectorAll('.custom-product-badge');
-    if (customBadges.length > 0) {
-        console.log(`✨ Found ${customBadges.length} custom product(s) in this order`);
-    }
-    
-    // Animate partial payment alert
-    const partialAlert = document.querySelector('.partial-payment-alert');
-    if (partialAlert) {
-        setTimeout(() => {
-            partialAlert.style.animation = 'slideDown 0.5s ease-out, pulse 2s ease-in-out infinite';
-        }, 500);
-    }
-    
-    // Form submission loading state
-    const statusForm = document.querySelector('form');
-    if (statusForm) {
-        statusForm.addEventListener('submit', function() {
-            const submitBtn = this.querySelector('button[type="submit"]');
-            if (submitBtn) {
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
-                submitBtn.disabled = true;
+        // Enable/disable button and update hidden field based on selection
+        branchSelect.addEventListener('change', function() {
+            createBtn.disabled = !this.value;
+            if (this.value && this.selectedOptions[0]) {
+                branchNameInput.value = this.selectedOptions[0].dataset.branchName || this.value;
+            } else {
+                branchNameInput.value = '';
             }
         });
     }
     
-    // Smooth scroll for timeline
-    const timeline = document.querySelector('.timeline');
-    if (timeline) {
-        timeline.style.scrollBehavior = 'smooth';
+    // NCM Create Form Handling
+    const ncmCreateForm = document.getElementById('ncmCreateForm');
+    if (ncmCreateForm) {
+        ncmCreateForm.addEventListener('submit', function(e) {
+            const submitBtn = this.querySelector('button[type=submit]');
+            if (submitBtn && !submitBtn.disabled) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Creating...</span>';
+                submitBtn.disabled = true;
+            }
+        });
     }
-    
-    // Highlight custom products in table
-    const customProductRows = document.querySelectorAll('tr:has(.custom-product-badge)');
-    customProductRows.forEach(row => {
-        row.style.background = 'linear-gradient(to right, #fffbeb, transparent)';
-    });
 });
 
-// Toast notification helper
-function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    const bgColor = type === 'success' ? '#10b981' :
-                    type === 'warning' ? '#f59e0b' :
-                    type === 'error' ? '#ef4444' : '#3b82f6';
-    
-    toast.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: ${bgColor};
-        color: white;
-        padding: 15px 20px;
-        border-radius: 8px;
-        z-index: 9999;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        animation: slideInRight 0.3s ease-out;
-        max-width: 350px;
-    `;
-    
-    toast.innerHTML = `
-        <div class="d-flex align-items-center gap-2">
-            <i class="fas ${type === 'success' ? 'fa-check-circle' :
-                           type === 'warning' ? 'fa-exclamation-triangle' :
-                           type === 'error' ? 'fa-times-circle' : 'fa-info-circle'}"></i>
-            <span>${message}</span>
-        </div>
-    `;
-    
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        toast.style.animation = 'slideInRight 0.3s ease-out reverse';
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
+// Highlight NCM section when logistics changed to NCM
+const logisticsSelect = document.getElementById('logisticsSelect');
+if (logisticsSelect) {
+    logisticsSelect.addEventListener('change', function() {
+        if (this.value === 'ncm') {
+            alert('✅ NCM Logistics selected!\n\nAfter clicking "Update Order", scroll down to see the NCM Integration section where you can create the shipment.');
+        }
+    });
 }
 </script>
+
 {% endblock %}

@@ -1,0 +1,156 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NCM Branches - Nepal Can Move</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .header-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        .branch-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            border-left: 4px solid #667eea;
+        }
+        .branch-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+        }
+        .branch-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 0.5rem;
+        }
+        .branch-info {
+            display: flex;
+            align-items: center;
+            margin: 0.5rem 0;
+            color: #4a5568;
+        }
+        .branch-info i {
+            width: 20px;
+            margin-right: 10px;
+            color: #667eea;
+        }
+        .badge-custom {
+            background-color: #667eea;
+            color: white;
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+        }
+        .search-box {
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-section">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="mb-2"><i class="fas fa-building"></i> NCM Branches</h1>
+                    <p class="mb-0">Nepal Can Move - Logistics Partner Locations</p>
+                </div>
+                <a href="/" class="btn btn-light">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        {% if messages %}
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        {% endif %}
+
+        {% if error_message %}
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-circle"></i> <strong>Error:</strong> {{ error_message }}
+        </div>
+        {% endif %}
+
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="branch-card text-center">
+                    <h2 class="text-primary mb-0">{{ total_branches }}</h2>
+                    <p class="text-muted mb-0">Total Branches</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" class="form-control form-control-lg" 
+                   placeholder="🔍 Search branches...">
+        </div>
+
+        <div id="branchesList">
+            {% if branches %}
+                {% for branch in branches %}
+                <div class="branch-card" data-branch="{{ branch.name|lower }}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="branch-name">
+                                <i class="fas fa-map-marker-alt text-danger"></i> {{ branch.name }}
+                            </div>
+                            
+                            <div class="branch-info">
+                                <i class="fas fa-phone"></i>
+                                <span><strong>Phone:</strong> {{ branch.phone }}</span>
+                            </div>
+                            
+                            <div class="branch-info">
+                                <i class="fas fa-location-dot"></i>
+                                <span><strong>Address:</strong> {{ branch.address|default:"Not available" }}</span>
+                            </div>
+                        </div>
+                        
+                        <span class="badge-custom">
+                            <i class="fas fa-truck"></i> Active
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
+                    <h4 class="text-muted">No branches available</h4>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('searchInput').addEventListener('keyup', function() {
+            const searchValue = this.value.toLowerCase();
+            const branches = document.querySelectorAll('.branch-card');
+            
+            branches.forEach(branch => {
+                const branchData = branch.getAttribute('data-branch');
+                branch.style.display = branchData.includes(searchValue) ? 'block' : 'none';
+            });
+        });
+    </script>
+</body>
+</html>

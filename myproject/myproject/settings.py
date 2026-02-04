@@ -40,10 +40,17 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    "dashboard",
+]
+
+EXTERNAL_APPS = [
+     "dashboard",
     "accounts",
     "logistics",
+    "ncm"
 ]
+INSTALLED_APPS.extend(EXTERNAL_APPS)
+
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -147,3 +154,32 @@ PASSWORD_RESET_TIMEOUT = 3600  # 1 hour
 # uuqw cnwz ybnt wvut
 
 
+# NCM API Configuration
+NCM_API_KEY = config('NCM_API_KEY')
+NCM_API_BASE_URL = config('NCM_API_BASE_URL')
+NCM_API_BASE_URL_V2 = config('NCM_API_BASE_URL_V2')
+
+
+# Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_integration.log'),
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'ncm': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
