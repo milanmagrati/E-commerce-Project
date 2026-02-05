@@ -362,3 +362,5 @@ Sending to NCM API: POST https://portal.nepalcanmove.com/api/v1/order/create
 Order Data: {'name': 'Madeson Hurley', 'phone': '9866041152', 'phone2': '', 'cod_charge': '1437.43', 'address': 'Voluptates ipsum nis', 'fbranch': 'TINKUNE', 'branch': 'KALANKI', 'package': 'Chaim Chan', 'vref_id': 'ORD000036', 'instruction': 'Libero aut consequat', 'delivery_type': 'Door2Door', 'weight': '1.00'}
 ✓ NCM Order created successfully: {'Message': 'Order Successfully Created', 'orderid': 18411013, 'weight': 1.0, 'delivery_charge': 120.0, 'delivery_type': 'Pickup/Collect'}
 NCM Order created: ORD000036 -> NCM ID: 18411013
+Bulk sync: 30 orders
+Bulk sync: 30 orders

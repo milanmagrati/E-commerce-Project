@@ -674,6 +674,95 @@
                 {% endif %}
             </div>
         </div>
+
+        <!-- Activity Log Section -->
+        <div class="card shadow-sm mb-3 activity-log-card">
+            <div class="card-header bg-gradient-info text-white d-flex align-items-center justify-content-between">
+                <h5 class="mb-0"><i class="fas fa-history"></i> Activity Log</h5>
+                <span class="badge bg-light text-dark">{{ activity_logs|length }} Activities</span>
+            </div>
+            <div class="card-body p-0">
+                {% if activity_logs %}
+                    <div class="activity-timeline">
+                        {% for log in activity_logs %}
+                        <div class="activity-item {% if forloop.first %}first{% endif %}{% if forloop.last %}last{% endif %}">
+                            <div class="activity-timeline-marker">
+                                <div class="activity-icon" data-action="{{ log.action_type }}">
+                                    {% if log.action_type == 'created' %}
+                                        <i class="fas fa-file-plus"></i>
+                                    {% elif log.action_type == 'status_changed' %}
+                                        <i class="fas fa-exchange-alt"></i>
+                                    {% elif log.action_type == 'payment_changed' %}
+                                        <i class="fas fa-credit-card"></i>
+                                    {% elif log.action_type == 'tracking_added' or log.action_type == 'tracking_updated' %}
+                                        <i class="fas fa-barcode"></i>
+                                    {% elif log.action_type == 'notes_added' or log.action_type == 'notes_updated' %}
+                                        <i class="fas fa-sticky-note"></i>
+                                    {% else %}
+                                        <i class="fas fa-edit"></i>
+                                    {% endif %}
+                                </div>
+                                {% if not forloop.last %}
+                                <div class="activity-timeline-line"></div>
+                                {% endif %}
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-header">
+                                    <span class="activity-action-badge">
+                                        {{ log.get_action_type_display }}
+                                    </span>
+                                    <span class="activity-time">
+                                        <i class="fas fa-clock"></i> 
+                                        {{ log.created_at|date:"M d, Y h:i A" }}
+                                    </span>
+                                </div>
+                                <div class="activity-description">
+                                    {{ log.description }}
+                                </div>
+                                {% if log.user %}
+                                <div class="activity-user">
+                                    <i class="fas fa-user-circle"></i>
+                                    <strong>{{ log.user.get_full_name|default:log.user.username }}</strong>
+                                </div>
+                                {% endif %}
+                                {% if log.field_name %}
+                                <div class="activity-field-change">
+                                    <small>
+                                        <strong>Field:</strong> <code>{{ log.field_name }}</code>
+                                    </small>
+                                    {% if log.old_value and log.new_value %}
+                                    <div class="field-values mt-1">
+                                        <div class="value-row">
+                                            <span class="value-label old-value">
+                                                <i class="fas fa-arrow-left"></i> Old: 
+                                            </span>
+                                            <span class="value-text">{{ log.old_value }}</span>
+                                        </div>
+                                        <div class="value-row">
+                                            <span class="value-label new-value">
+                                                <i class="fas fa-arrow-right"></i> New:
+                                            </span>
+                                            <span class="value-text">{{ log.new_value }}</span>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty-state-activity">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-inbox"></i>
+                        </div>
+                        <p class="empty-state-text">No activity recorded yet</p>
+                        <small class="text-muted">Activities will appear here as order changes are made</small>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1154,6 +1243,279 @@
     
     .ncm-route-arrow {
         transform: rotate(90deg);
+    }
+}
+
+/* ==================== ACTIVITY LOG STYLES ==================== */
+.bg-gradient-info {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.activity-log-card {
+    border: 1px solid #e5e7eb;
+    animation: slideInDown 0.5s ease-out;
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.activity-timeline {
+    position: relative;
+    padding: 20px 0;
+}
+
+.activity-item {
+    display: flex;
+    gap: 15px;
+    padding: 15px 20px;
+    border-left: 2px solid #e5e7eb;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.activity-item:hover {
+    background-color: #f8f9fa;
+    border-left-color: #3b82f6;
+}
+
+.activity-item.first {
+    border-radius: 8px 8px 0 0;
+}
+
+.activity-item.last {
+    border-radius: 0 0 8px 8px;
+}
+
+.activity-timeline-marker {
+    flex-shrink: 0;
+    position: relative;
+    width: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.activity-icon {
+    width: 36px;
+    height: 36px;
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    position: relative;
+    z-index: 2;
+    transition: all 0.3s ease;
+}
+
+.activity-item:hover .activity-icon {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    transform: scale(1.15);
+}
+
+.activity-icon[data-action="created"] {
+    color: #10b981;
+}
+
+.activity-icon[data-action="status_changed"] {
+    color: #f59e0b;
+}
+
+.activity-icon[data-action="payment_changed"] {
+    color: #8b5cf6;
+}
+
+.activity-icon[data-action="tracking_added"],
+.activity-icon[data-action="tracking_updated"] {
+    color: #06b6d4;
+}
+
+.activity-icon[data-action="notes_added"],
+.activity-icon[data-action="notes_updated"] {
+    color: #ec4899;
+}
+
+.activity-timeline-line {
+    flex-grow: 1;
+    width: 2px;
+    background: #e5e7eb;
+    margin-top: 5px;
+    min-height: 40px;
+}
+
+.activity-content {
+    flex-grow: 1;
+    padding-top: 5px;
+}
+
+.activity-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.activity-action-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+    color: #1e40af;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.activity-time {
+    font-size: 0.8rem;
+    color: #9ca3af;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.activity-description {
+    font-size: 0.95rem;
+    color: #374151;
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.activity-user {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: #6b7280;
+    padding: 6px 10px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    width: fit-content;
+    margin-bottom: 8px;
+}
+
+.activity-user i {
+    color: #3b82f6;
+}
+
+.activity-user strong {
+    color: #1f2937;
+}
+
+.activity-field-change {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 0.85rem;
+    margin-top: 8px;
+}
+
+.activity-field-change code {
+    background: #f3f4f6;
+    color: #dc2626;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+}
+
+.field-values {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.value-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.value-label {
+    font-weight: 600;
+    min-width: 70px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.value-label.old-value {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.value-label.new-value {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.value-text {
+    flex-grow: 1;
+    background: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+    word-break: break-word;
+    font-family: 'Courier New', monospace;
+}
+
+.empty-state-activity {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+    background: linear-gradient(135deg, #f8f9fa 0%, #f0f1f5 100%);
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    color: #d1d5db;
+    margin-bottom: 12px;
+}
+
+.empty-state-text {
+    font-size: 1rem;
+    color: #6b7280;
+    font-weight: 500;
+    margin: 0 0 6px 0;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 576px) {
+    .activity-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .activity-item {
+        padding: 12px 15px;
+        gap: 10px;
+    }
+    
+    .activity-timeline-marker {
+        width: 30px;
+    }
+    
+    .activity-icon {
+        width: 30px;
+        height: 30px;
+        font-size: 0.9rem;
     }
 }
 </style>
