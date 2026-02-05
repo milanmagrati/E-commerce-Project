@@ -58,6 +58,7 @@ urlpatterns = [
     path('orders/<int:order_id>/delete/', views.order_delete, name='order_delete'),
     path('orders/<int:order_id>/invoice/', views.order_invoice, name='order_invoice'),
     path('orders/bulk-action/', views.orders_bulk_action, name='orders_bulk_action'),
+    path('orders/bulk-ncm-send/', views.orders_bulk_ncm_send, name='orders_bulk_ncm_send'),
     
     path('orders/trash/', views.orders_trash, name='orders_trash'),
     path('orders/<int:order_id>/restore/', views.order_restore, name='order_restore'),

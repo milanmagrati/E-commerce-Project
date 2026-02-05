@@ -8,11 +8,51 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2><i class="fas fa-shopping-cart"></i> Orders Management</h2>
             <div class="d-flex gap-2 flex-wrap">
-                <!-- ✅ STATS SETTINGS BUTTON -->
                 <button class="btn btn-outline-secondary btn-lg" onclick="openStatsSettings()">
                     <i class="fas fa-cog"></i> Customize Stats
                 </button>
-                <!-- ✅ TRASH BUTTON -->
+                
+                <div class="btn-group">
+                    <button type="button" class="btn btn-gradient-logistics btn-lg dropdown-toggle" 
+                            data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-truck-loading"></i> 
+                        {% if logistics_filter == 'sent' %}
+                            Sent to Logistics
+                        {% elif logistics_filter == 'not_sent' %}
+                            Not Sent to Logistics
+                        {% else %}
+                            Logistics Filter
+                        {% endif %}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <a class="dropdown-item {% if not logistics_filter %}active{% endif %}" 
+                               href="?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if payment_filter %}payment={{ payment_filter }}&{% endif %}{% if date_filter %}date_range={{ date_filter }}&{% endif %}{% if start_date %}start_date={{ start_date }}&{% endif %}{% if end_date %}end_date={{ end_date }}{% endif %}">
+                                <i class="fas fa-list"></i> All Orders
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item {% if logistics_filter == 'sent' %}active{% endif %}" 
+                               href="?logistics_status=sent{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">
+                                <i class="fas fa-check-circle text-success"></i> Sent to Logistics
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if logistics_filter == 'not_sent' %}active{% endif %}" 
+                               href="?logistics_status=not_sent{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">
+                                <i class="fas fa-exclamation-circle text-warning"></i> Not Sent to Logistics
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+                
+                <button class="btn btn-gradient-ncm btn-lg" id="bulkNCMButton" 
+                        onclick="openNCMModal()" style="display: none;">
+                    <i class="fas fa-truck-loading"></i> Bulk Send to NCM
+                    <span class="badge bg-white text-primary ms-2" id="ncmCountBadge">0</span>
+                </button>
+                
                 <a href="{% url 'orders_trash' %}" class="btn btn-danger btn-lg">
                     <i class="fas fa-trash-alt"></i> Trash
                 </a>
@@ -27,15 +67,16 @@
     </div>
 </div>
 
-<!-- ✅ CUSTOMIZABLE STATISTICS CARDS (4 visible at a time) -->
 <div class="row g-3 mb-4" id="statsContainer">
-    <!-- Stats will be dynamically loaded here -->
-</div>
+    </div>
 
-<!-- Search and Filter -->
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <form method="get" class="row g-3" id="filterForm">
+            {% if logistics_filter %}
+            <input type="hidden" name="logistics_status" value="{{ logistics_filter }}">
+            {% endif %}
+            
             <div class="col-md-3">
                 <div class="input-group">
                     <span class="input-group-text"><i class="fas fa-search"></i></span>
@@ -107,7 +148,6 @@
     </div>
 </div>
 
-<!-- Bulk Actions Bar -->
 <div id="bulkActionsBar" class="card shadow-sm mb-3" style="display: none;">
     <div class="card-body py-2">
         <form method="post" action="{% url 'orders_bulk_action' %}" id="bulkActionForm" onsubmit="return confirmBulkAction()">
@@ -137,11 +177,11 @@
                     </button>
                 </div>
             </div>
+            <div id="bulkInputsContainer"></div>
         </form>
     </div>
 </div>
 
-<!-- Orders Table -->
 <div class="card shadow-sm">
     <div class="card-header bg-gradient-primary text-white">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -163,9 +203,19 @@
                 {% else %}
                     <span class="badge bg-light text-dark ms-2">Today</span>
                 {% endif %}
+                
+                {% if logistics_filter == 'sent' %}
+                    <span class="badge bg-success ms-2">
+                        <i class="fas fa-check-circle"></i> Sent to Logistics
+                    </span>
+                {% elif logistics_filter == 'not_sent' %}
+                    <span class="badge bg-warning ms-2">
+                        <i class="fas fa-exclamation-circle"></i> Not Sent to Logistics
+                    </span>
+                {% endif %}
             </h5>
             {% if orders %}
-            <a href="{% url 'export_orders_excel' %}{% if search_query or status_filter or payment_filter or date_filter %}?search={{ search_query }}&status={{ status_filter }}&payment={{ payment_filter }}&date_range={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}{% endif %}" 
+            <a href="{% url 'export_orders_excel' %}{% if search_query or status_filter or payment_filter or date_filter or logistics_filter %}?search={{ search_query }}&status={{ status_filter }}&payment={{ payment_filter }}&date_range={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&logistics_status={{ logistics_filter }}{% endif %}" 
                class="btn btn-light btn-sm">
                 <i class="fas fa-download"></i> Export Current View
             </a>
@@ -251,10 +301,31 @@
                                 <a href="{% url 'order_invoice' order.id %}" class="btn btn-primary" title="Invoice" target="_blank">
                                     <i class="fas fa-file-invoice"></i>
                                 </a>
-                                <a href="{% url 'export_order_details' order.id %}" class="btn btn-success" title="Export to Excel">
-                                    <i class="fas fa-file-excel"></i>
-                                </a>
-                                <!-- ✅ UPDATED: Move to Trash Button -->
+                                
+                                {% if order.logistics == 'ncm' %}
+                                    {% if order.ncm_order_id %}
+                                        <a href="{% url 'order_detail' order.id %}" 
+                                           class="btn btn-ncm-active" 
+                                           title="Track in NCM (ID: {{ order.ncm_order_id }})">
+                                            <i class="fas fa-shipping-fast"></i>
+                                        </a>
+                                    {% else %}
+                                        <button type="button" 
+                                                class="btn btn-ncm-send" 
+                                                title="Send to NCM Logistics"
+                                                onclick="sendSingleOrderToNCM({{ order.id }}, '{{ order.order_number|escapejs }}')">
+                                            <i class="fas fa-truck-loading"></i>
+                                        </button>
+                                    {% endif %}
+                                {% else %}
+                                    <button type="button" 
+                                            class="btn btn-ncm-send" 
+                                            title="Send to NCM Logistics"
+                                            onclick="sendSingleOrderToNCM({{ order.id }}, '{{ order.order_number|escapejs }}')">
+                                        <i class="fas fa-truck-loading"></i>
+                                    </button>
+                                {% endif %}
+                                
                                 <button type="button" class="btn btn-danger" title="Move to Trash" 
                                         onclick="moveOrderToTrash({{ order.id }}, '{{ order.order_number|escapejs }}')">
                                     <i class="fas fa-trash-alt"></i>
@@ -278,26 +349,25 @@
         </div>
     </div>
     
-    <!-- Pagination -->
     {% if orders.has_other_pages %}
     <div class="card-footer">
         <nav aria-label="Page navigation">
             <ul class="pagination justify-content-center mb-0">
                 {% if orders.has_previous %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ orders.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">Previous</a>
+                    <a class="page-link" href="?page={{ orders.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">Previous</a>
                 </li>
                 {% endif %}
                 
                 {% for num in orders.paginator.page_range %}
                 <li class="page-item {% if orders.number == num %}active{% endif %}">
-                    <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">{{ num }}</a>
+                    <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">{{ num }}</a>
                 </li>
                 {% endfor %}
                 
                 {% if orders.has_next %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ orders.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">Next</a>
+                    <a class="page-link" href="?page={{ orders.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">Next</a>
                 </li>
                 {% endif %}
             </ul>
@@ -306,7 +376,128 @@
     {% endif %}
 </div>
 
-<!-- ✅ STATS SETTINGS MODAL -->
+<div class="modal fade" id="ncmLogisticsModal" tabindex="-1" aria-labelledby="ncmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-gradient-ncm text-white">
+                <h5 class="modal-title" id="ncmModalLabel">
+                    <i class="fas fa-truck-loading"></i> Send Orders to NCM Logistics
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="ncmBulkSendForm" method="post" action="{% url 'orders_bulk_ncm_send' %}">
+                    {% csrf_token %}
+                    
+                    <div class="alert alert-info mb-4">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="ncm-icon-large">
+                                <i class="fas fa-boxes"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-1 fw-bold">
+                                    <span id="modalSelectedCount">0</span> Orders Selected
+                                </h6>
+                                <p class="mb-0 small">Ready to be sent to NCM Express</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <div class="ncm-settings-card">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-warehouse text-primary"></i> From Branch
+                                </label>
+                                <select name="from_branch" class="form-select form-select-lg" required>
+                                    <option value="TINKUNE" selected>TINKUNE</option>
+                                    <option value="LAZIMPAT">LAZIMPAT</option>
+                                    <option value="KALIMATI">KALIMATI</option>
+                                    <option value="KOTESHWOR">KOTESHWOR</option>
+                                    <option value="BALAJU">BALAJU</option>
+                                    <option value="CHABAHIL">CHABAHIL</option>
+                                    <option value="BANESHWOR">BANESHWOR</option>
+                                </select>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle"></i> Your warehouse location
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="ncm-settings-card">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-truck text-success"></i> Delivery Type
+                                </label>
+                                <select name="delivery_type" class="form-select form-select-lg" required>
+                                    <option value="Door2Door" selected>🏠 Door to Door</option>
+                                    <option value="Branch2Door">🏢 Branch to Door</option>
+                                    <option value="Door2Branch">🏠 Door to Branch</option>
+                                    <option value="Branch2Branch">🏢 Branch to Branch</option>
+                                </select>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle"></i> How NCM will deliver
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <div class="ncm-settings-card">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-weight text-warning"></i> Default Weight (kg)
+                                </label>
+                                <input type="number" name="default_weight" class="form-control form-control-lg" 
+                                       value="1.0" step="0.1" min="0.1" required>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle"></i> For orders without specified weight
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="ncm-settings-card">
+                                <div class="form-check form-switch pt-2">
+                                    <input class="form-check-input" type="checkbox" id="autoSetLogistics" 
+                                           name="auto_set_logistics" checked>
+                                    <label class="form-check-label fw-bold" for="autoSetLogistics">
+                                        <i class="fas fa-magic text-primary"></i> Auto-set Logistics to NCM
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block mt-2 ms-4">
+                                    <i class="fas fa-check-circle text-success"></i> Recommended: Updates logistics field automatically
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-warning mb-0">
+                        <h6 class="alert-heading">
+                            <i class="fas fa-exclamation-triangle"></i> Important Notes
+                        </h6>
+                        <ul class="mb-0 ps-3 small">
+                            <li>Verify all customer details (name, phone, address) are correct</li>
+                            <li>Orders already sent to NCM will be skipped automatically</li>
+                            <li>Orders missing required information will be skipped</li>
+                        </ul>
+                    </div>
+                    
+                    <div id="ncmOrderIdsContainer"></div>
+                </form>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary btn-lg" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-gradient-ncm btn-lg px-4" onclick="submitNCMBulkSend()">
+                    <i class="fas fa-paper-plane"></i> Send to NCM Now
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="statsSettingsModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -503,7 +694,162 @@
         to { opacity: 1; transform: translateY(0); }
     }
 
-    /* ✅ STATS SELECTION MODAL STYLES */
+    /* NCM BUTTON STYLES */
+    .btn-ncm-send {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        border-radius: 4px;
+        transition: all 0.3s ease;
+    }
+
+    .btn-ncm-send:hover {
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        transform: scale(1.1);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-ncm-active {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border: none;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        border-radius: 4px;
+        animation: pulse-ncm 2s infinite;
+    }
+
+    @keyframes pulse-ncm {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        }
+        50% {
+            box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+        }
+    }
+
+    .btn-ncm-active:hover {
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+        transform: scale(1.1);
+        color: white;
+    }
+
+    /* NCM GRADIENT BUTTON */
+    .btn-gradient-ncm {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-gradient-ncm:hover {
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        color: white;
+    }
+
+    .bg-gradient-ncm {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    /* LOGISTICS FILTER BUTTON STYLES */
+    .btn-gradient-logistics {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+        border: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+    }
+    
+    .btn-gradient-logistics:hover {
+        background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
+        color: white;
+    }
+    
+    .btn-gradient-logistics:focus,
+    .btn-gradient-logistics:active,
+    .btn-gradient-logistics.show {
+        background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+        color: white;
+        box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
+    }
+    
+    /* Dropdown menu styling */
+    .dropdown-menu {
+        border: none;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        border-radius: 8px;
+        padding: 8px 0;
+        min-width: 220px;
+    }
+    
+    .dropdown-item {
+        padding: 10px 20px;
+        transition: all 0.2s ease;
+        font-weight: 500;
+    }
+    
+    .dropdown-item:hover {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white !important;
+    }
+    
+    .dropdown-item.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white !important;
+    }
+    
+    .dropdown-item i {
+        margin-right: 8px;
+        width: 20px;
+        text-align: center;
+    }
+    
+    .dropdown-divider {
+        margin: 8px 0;
+        opacity: 0.1;
+    }
+
+    /* NCM MODAL STYLES */
+    .ncm-settings-card {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 4px solid #667eea;
+        transition: all 0.3s ease;
+    }
+
+    .ncm-settings-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border-left-width: 6px;
+    }
+
+    .ncm-icon-large {
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        color: white;
+    }
+
+    .form-check-switch .form-check-input:checked {
+        background-color: #667eea;
+        border-color: #667eea;
+    }
+
+    /* Stats Selection Modal */
     .stats-selection {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -561,7 +907,6 @@
         font-size: 0.9rem;
     }
 
-    /* Responsive adjustments */
     @media (max-width: 768px) {
         .stat-card {
             margin-bottom: 1rem;
@@ -574,7 +919,7 @@
 </style>
 
 <script>
-// ✅ STATS DATA FROM BACKEND
+// Stats Data
 const statsData = {
     total_orders: {
         value: {{ total_orders }},
@@ -614,22 +959,21 @@ const statsData = {
     }
 };
 
-// Load stats preference on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadStatsCards();
+    console.log('✅ Orders page loaded successfully');
 });
 
 function loadStatsCards() {
-    // ✅ Get saved preference or use default 4 cards
     const savedStats = localStorage.getItem('selectedStats');
-    const selectedStats = savedStats ? JSON.parse(savedStats) : ['total_orders', 'total_revenue', 'pending_orders', 'delivered_today'];
+    let selectedStats = savedStats ? JSON.parse(savedStats) : ['total_orders', 'total_revenue', 'pending_orders', 'delivered_today'];
     
     const container = document.getElementById('statsContainer');
     container.innerHTML = '';
     
     selectedStats.forEach(statKey => {
-        const stat = statsData[statKey];
-        if (stat) {
+        if (statsData[statKey]) {
+            const stat = statsData[statKey];
             const col = document.createElement('div');
             col.className = 'col-md-3';
             col.innerHTML = `
@@ -649,106 +993,78 @@ function loadStatsCards() {
 }
 
 function openStatsSettings() {
-    // Load current selection
+    const modal = new bootstrap.Modal(document.getElementById('statsSettingsModal'));
     const savedStats = localStorage.getItem('selectedStats');
     const selectedStats = savedStats ? JSON.parse(savedStats) : ['total_orders', 'total_revenue', 'pending_orders', 'delivered_today'];
     
-    // Reset all checkboxes
-    document.querySelectorAll('.stats-selection input[type="checkbox"]').forEach(cb => {
-        cb.checked = false;
-    });
-    
-    // Check saved stats
-    selectedStats.forEach(statKey => {
-        const checkbox = document.getElementById('stat_' + statKey);
-        if (checkbox) checkbox.checked = true;
+    document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
+        checkbox.checked = selectedStats.includes(checkbox.value);
     });
     
     updateSelectionMessage();
-    
-    // Show modal
-    const modal = new bootstrap.Modal(document.getElementById('statsSettingsModal'));
     modal.show();
 }
 
 function toggleStatSelection(statKey) {
-    const checkbox = document.getElementById('stat_' + statKey);
+    const checkbox = document.getElementById(`stat_${statKey}`);
     checkbox.checked = !checkbox.checked;
     updateSelectionMessage();
 }
 
 function updateSelectionMessage() {
-    const checkedCount = document.querySelectorAll('.stats-selection input[type="checkbox"]:checked').length;
-    const message = document.getElementById('selectionMessage');
+    const checked = document.querySelectorAll('.stat-option input[type="checkbox"]:checked');
+    const messageDiv = document.getElementById('selectionMessage');
     const saveBtn = document.getElementById('saveStatsBtn');
     
-    if (checkedCount === 0) {
-        message.className = 'alert alert-info mt-3';
-        message.innerHTML = '<i class="fas fa-hand-pointer"></i> Please select exactly 4 statistics';
-        saveBtn.disabled = true;
-    } else if (checkedCount < 4) {
-        message.className = 'alert alert-warning mt-3';
-        message.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Select ' + (4 - checkedCount) + ' more statistic(s)';
-        saveBtn.disabled = true;
-    } else if (checkedCount === 4) {
-        message.className = 'alert alert-success mt-3';
-        message.innerHTML = '<i class="fas fa-check-circle"></i> Perfect! Click Save to apply';
+    if (checked.length === 4) {
+        messageDiv.className = 'alert alert-success mt-3';
+        messageDiv.innerHTML = '<i class="fas fa-check-circle"></i> Perfect! 4 statistics selected';
         saveBtn.disabled = false;
+    } else if (checked.length < 4) {
+        messageDiv.className = 'alert alert-info mt-3';
+        messageDiv.innerHTML = `<i class="fas fa-hand-pointer"></i> Select ${4 - checked.length} more statistic(s)`;
+        saveBtn.disabled = true;
     } else {
-        message.className = 'alert alert-danger mt-3';
-        message.innerHTML = '<i class="fas fa-times-circle"></i> Please select only 4 statistics (deselect ' + (checkedCount - 4) + ')';
+        messageDiv.className = 'alert alert-warning mt-3';
+        messageDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Too many! Unselect ${checked.length - 4} statistic(s)`;
         saveBtn.disabled = true;
     }
 }
 
 function saveStatsPreference() {
-    const selected = [];
-    document.querySelectorAll('.stats-selection input[type="checkbox"]:checked').forEach(cb => {
-        selected.push(cb.value);
-    });
+    const checked = Array.from(document.querySelectorAll('.stat-option input[type="checkbox"]:checked'))
+        .map(cb => cb.value);
     
-    if (selected.length === 4) {
-        localStorage.setItem('selectedStats', JSON.stringify(selected));
-        
-        // Close modal
+    if (checked.length === 4) {
+        localStorage.setItem('selectedStats', JSON.stringify(checked));
+        loadStatsCards();
         bootstrap.Modal.getInstance(document.getElementById('statsSettingsModal')).hide();
         
-        // Reload stats cards
-        loadStatsCards();
-        
-        // Show success message
-        alert('✅ Statistics preference saved successfully!');
+        const toast = document.createElement('div');
+        toast.className = 'position-fixed top-0 end-0 p-3';
+        toast.style.zIndex = '9999';
+        toast.innerHTML = `
+            <div class="toast show" role="alert">
+                <div class="toast-header bg-success text-white">
+                    <strong class="me-auto"><i class="fas fa-check-circle"></i> Success</strong>
+                    <button type="button" class="btn-close btn-close-white" onclick="this.closest('.toast').remove()"></button>
+                </div>
+                <div class="toast-body">
+                    Statistics preference saved successfully!
+                </div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
     }
 }
 
-// ✅ MOVE TO TRASH FUNCTION
-function moveOrderToTrash(orderId, orderNumber) {
-    if (confirm('Move order "' + orderNumber + '" to trash?')) {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/orders/' + orderId + '/move-to-trash/';
-        
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
-        if (csrfToken) {
-            const csrfInput = document.createElement('input');
-            csrfInput.type = 'hidden';
-            csrfInput.name = 'csrfmiddlewaretoken';
-            csrfInput.value = csrfToken.value;
-            form.appendChild(csrfInput);
-        }
-        
-        document.body.appendChild(form);
-        form.submit();
-    }
-}
-
-// Toggle Custom Date Inputs
 function toggleCustomDate() {
-    var select = document.getElementById('dateRangeSelect');
-    var startDiv = document.getElementById('customDateStart');
-    var endDiv = document.getElementById('customDateEnd');
+    const dateRange = document.getElementById('dateRangeSelect').value;
+    const startDiv = document.getElementById('customDateStart');
+    const endDiv = document.getElementById('customDateEnd');
     
-    if (select.value === 'custom') {
+    if (dateRange === 'custom') {
         startDiv.style.display = 'block';
         endDiv.style.display = 'block';
     } else {
@@ -757,83 +1073,195 @@ function toggleCustomDate() {
     }
 }
 
-// Toggle Select All Checkboxes
+// Bulk Actions Logic
 function toggleSelectAll(checkbox) {
-    var checkboxes = document.querySelectorAll('.order-checkbox');
-    for (var i = 0; i < checkboxes.length; i++) {
-        checkboxes[i].checked = checkbox.checked;
-    }
+    const orderCheckboxes = document.querySelectorAll('.order-checkbox');
+    orderCheckboxes.forEach(cb => cb.checked = checkbox.checked);
     updateBulkActions();
 }
 
-// Update Bulk Actions Bar
 function updateBulkActions() {
-    var checkboxes = document.querySelectorAll('.order-checkbox:checked');
-    var count = checkboxes.length;
-    var bulkBar = document.getElementById('bulkActionsBar');
-    var selectedCount = document.getElementById('selectedCount');
+    const checkedBoxes = document.querySelectorAll('.order-checkbox:checked');
+    const count = checkedBoxes.length;
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const selectedCount = document.getElementById('selectedCount');
+    const bulkNCMButton = document.getElementById('bulkNCMButton');
+    const ncmCountBadge = document.getElementById('ncmCountBadge');
     
+    // Update main bulk bar visibility
     if (count > 0) {
         bulkBar.style.display = 'block';
-        selectedCount.textContent = count + ' order' + (count > 1 ? 's' : '') + ' selected';
+        selectedCount.textContent = `${count} order${count > 1 ? 's' : ''} selected`;
         
-        var form = document.getElementById('bulkActionForm');
-        var existingInputs = form.querySelectorAll('input[name="order_ids"]');
-        for (var i = 0; i < existingInputs.length; i++) {
-            existingInputs[i].remove();
+        // Show NCM button
+        bulkNCMButton.style.display = 'inline-block';
+        ncmCountBadge.textContent = count;
+        
+        // Populate the standard bulk action form with hidden inputs
+        const bulkInputsContainer = document.getElementById('bulkInputsContainer');
+        if (bulkInputsContainer) {
+            bulkInputsContainer.innerHTML = '';
+            checkedBoxes.forEach(cb => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'order_ids';
+                input.value = cb.value;
+                bulkInputsContainer.appendChild(input);
+            });
         }
         
-        for (var i = 0; i < checkboxes.length; i++) {
-            var input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'order_ids';
-            input.value = checkboxes[i].value;
-            form.appendChild(input);
+        // Handle "Select All" checkbox state
+        const selectAllCb = document.getElementById('selectAll');
+        if (selectAllCb) {
+            selectAllCb.indeterminate = count > 0 && count < document.querySelectorAll('.order-checkbox').length;
+            selectAllCb.checked = count === document.querySelectorAll('.order-checkbox').length;
         }
     } else {
         bulkBar.style.display = 'none';
-        document.getElementById('selectAll').checked = false;
+        bulkNCMButton.style.display = 'none';
+        const selectAllCb = document.getElementById('selectAll');
+        if (selectAllCb) {
+            selectAllCb.indeterminate = false;
+            selectAllCb.checked = false;
+        }
     }
 }
 
-// Clear Selection
 function clearSelection() {
-    var checkboxes = document.querySelectorAll('.order-checkbox');
-    for (var i = 0; i < checkboxes.length; i++) {
-        checkboxes[i].checked = false;
-    }
-    document.getElementById('selectAll').checked = false;
+    document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = false);
+    const selectAllCb = document.getElementById('selectAll');
+    if (selectAllCb) selectAllCb.checked = false;
     updateBulkActions();
 }
 
-// Confirm Bulk Action
 function confirmBulkAction() {
-    var action = document.querySelector('[name="bulk_action"]').value;
-    var count = document.querySelectorAll('.order-checkbox:checked').length;
+    const action = document.querySelector('select[name="bulk_action"]').value;
+    const count = document.querySelectorAll('.order-checkbox:checked').length;
     
     if (!action) {
-        alert('Please select an action!');
+        alert('Please select an action');
         return false;
     }
     
-    var message = '';
-    if (action === 'delete') {
-        message = 'Move ' + count + ' order(s) to trash?';
-    } else if (action === 'mark_delivered') {
-        message = 'Mark ' + count + ' order(s) as DELIVERED?';
-    } else if (action === 'mark_cancelled') {
-        message = 'Mark ' + count + ' order(s) as CANCELLED?';
-    } else if (action === 'mark_processing') {
-        message = 'Mark ' + count + ' order(s) as PROCESSING?';
-    } else if (action === 'mark_shipped') {
-        message = 'Mark ' + count + ' order(s) as SHIPPED?';
-    } else if (action === 'mark_paid') {
-        message = 'Mark ' + count + ' order(s) as PAID?';
-    } else if (action === 'mark_pending') {
-        message = 'Mark ' + count + ' order(s) as PENDING PAYMENT?';
+    return confirm(`Are you sure you want to ${action.replace(/_/g, ' ')} ${count} order(s)?`);
+}
+
+// --- NCM LOGISTICS FUNCTIONS ---
+
+function openNCMModal() {
+    const checkedBoxes = document.querySelectorAll('.order-checkbox:checked');
+    const count = checkedBoxes.length;
+    
+    if (count === 0) {
+        alert('Please select at least one order');
+        return;
     }
     
-    return confirm(message);
+    // Update count display in modal
+    const selectedCountElement = document.getElementById('modalSelectedCount');
+    if (selectedCountElement) {
+        selectedCountElement.textContent = count;
+    }
+    
+    // Inject hidden inputs into NCM form
+    const container = document.getElementById('ncmOrderIdsContainer');
+    if (container) {
+        container.innerHTML = ''; // Clear previous inputs
+        checkedBoxes.forEach(cb => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'order_ids';
+            input.value = cb.value;
+            container.appendChild(input);
+        });
+    } else {
+        console.error('NCM Order IDs container not found!');
+        return;
+    }
+    
+    // Show Modal
+    try {
+        const modalElement = document.getElementById('ncmLogisticsModal');
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    } catch (error) {
+        console.error('Error showing NCM modal:', error);
+        alert('Could not open modal. Please reload the page.');
+    }
+}
+
+function submitNCMBulkSend() {
+    const form = document.getElementById('ncmBulkSendForm');
+    if (form) {
+        if (form.checkValidity()) {
+            form.submit();
+        } else {
+            form.reportValidity();
+        }
+    }
+}
+
+// Helper function to send single order (uses the same bulk endpoint with 1 ID)
+function sendSingleOrderToNCM(orderId, orderNumber) {
+    if (confirm(`Send order ${orderNumber} to NCM Logistics?`)) {
+        // Create a temporary form to post to the endpoint
+        const form = document.createElement('form');
+        form.method = 'POST';
+        // Ensure this matches the URL in your urls.py for bulk actions
+        form.action = "{% url 'orders_bulk_ncm_send' %}"; 
+        
+        // Add CSRF Token
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
+        
+        // Add Order ID (as a list item, so the backend .getlist works)
+        const idInput = document.createElement('input');
+        idInput.type = 'hidden';
+        idInput.name = 'order_ids';
+        idInput.value = orderId;
+        form.appendChild(idInput);
+        
+        // Add defaults for single send
+        const branchInput = document.createElement('input');
+        branchInput.type = 'hidden';
+        branchInput.name = 'from_branch';
+        branchInput.value = 'TINKUNE'; // Default
+        form.appendChild(branchInput);
+
+        const deliveryInput = document.createElement('input');
+        deliveryInput.type = 'hidden';
+        deliveryInput.name = 'delivery_type';
+        deliveryInput.value = 'Door2Door'; // Default
+        form.appendChild(deliveryInput);
+        
+        // Auto set logistics flag
+        const autoInput = document.createElement('input');
+        autoInput.type = 'hidden';
+        autoInput.name = 'auto_set_logistics';
+        autoInput.value = 'on'; 
+        form.appendChild(autoInput);
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function moveOrderToTrash(orderId, orderNumber) {
+    if (confirm(`Are you sure you want to move order ${orderNumber} to trash?`)) {
+        // Construct the URL manually or use a JS variable if available
+        window.location.href = `/orders/delete/${orderId}/`; 
+    }
+}
+
+// Initialize on load
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateBulkActions);
+} else {
+    updateBulkActions();
 }
 </script>
 {% endblock %}

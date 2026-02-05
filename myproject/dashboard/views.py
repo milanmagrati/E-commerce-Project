@@ -9,6 +9,8 @@ from django.contrib import messages
 from django.db.models import Sum, Count, Q, F, Prefetch
 from django.http import JsonResponse, HttpResponse, Http404
 from datetime import datetime, timedelta
+
+import requests
 from .models import (Product, Order, OrderItem, Category, Customer, 
                      ProductVariation, ProductImage, ProductVariantOption,
                      OrderActivityLog, StockIn, City, StockInItem)
@@ -1417,7 +1419,8 @@ def orders_list(request):
     # Get all orders initially
     orders = Order.objects.select_related('customer', 'created_by').filter(
         is_deleted=False
-    ).order_by('-created_at')    
+    ).order_by('-created_at')
+    
     # GET FILTER PARAMETERS - DEFAULT TO 'today'
     date_filter = request.GET.get('date_range', 'today')
     search_query = request.GET.get('search', '')
@@ -1425,6 +1428,7 @@ def orders_list(request):
     payment_filter = request.GET.get('payment', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
+    logistics_filter = request.GET.get('logistics_status', '')  # ✅ NEW: Logistics filter
     
     # Search filter
     if search_query:
@@ -1442,6 +1446,18 @@ def orders_list(request):
     # Payment filter
     if payment_filter:
         orders = orders.filter(payment_status=payment_filter)
+    
+    # ✅ NEW: LOGISTICS STATUS FILTER
+    if logistics_filter == 'sent':
+        # Show only orders sent to NCM (have ncm_order_id)
+        orders = orders.filter(logistics='ncm').exclude(
+            Q(ncm_order_id__isnull=True)
+        )
+    elif logistics_filter == 'not_sent':
+        # Show only orders not sent to NCM (no ncm_order_id but logistics is ncm)
+        orders = orders.filter(
+            Q(logistics='ncm') & Q(ncm_order_id__isnull=True)
+        )
     
     # DATE RANGE FILTER
     today = timezone.now().date()
@@ -1493,8 +1509,6 @@ def orders_list(request):
     total_orders = len(orders_list)
     total_revenue = sum(o.total_amount for o in orders_list)
     pending_orders = len([o for o in orders_list if o.order_status == 'pending'])
-    
-    # ✅ ADD NEW STATISTICS
     confirmed_orders = len([o for o in orders_list if o.order_status == 'confirmed'])
     dispatched_orders = len([o for o in orders_list if o.order_status == 'dispatched'])
     
@@ -1528,14 +1542,15 @@ def orders_list(request):
         'total_revenue': total_revenue,
         'pending_orders': pending_orders,
         'delivered_today': delivered_today,
-        'confirmed_orders': confirmed_orders,  # ✅ NEW
-        'dispatched_orders': dispatched_orders,  # ✅ NEW
+        'confirmed_orders': confirmed_orders,
+        'dispatched_orders': dispatched_orders,
         'search_query': search_query,
         'status_filter': status_filter,
         'payment_filter': payment_filter,
         'date_filter': date_filter,
         'start_date': start_date,
         'end_date': end_date,
+        'logistics_filter': logistics_filter,  # ✅ NEW: Pass to template
         'order_products': order_products,
     }
     
@@ -3072,7 +3087,7 @@ def variation_delete(request, variation_id):
 @login_required
 @permission_required('can_delete_orders')
 def orders_bulk_action(request):
-    """Handle bulk actions on orders"""
+    """Handle bulk actions on orders including NCM bulk sending"""
     if request.method == 'POST':
         order_ids = request.POST.getlist('order_ids')
         action = request.POST.get('bulk_action')
@@ -3093,7 +3108,11 @@ def orders_bulk_action(request):
                 messages.error(request, "No valid orders found!")
                 return redirect('orders_list')
             
-            if action == 'delete':
+            # ✅ NEW: HANDLE SEND TO NCM ACTION
+            if action == 'send_to_ncm':
+                return bulk_send_to_ncm(request, orders)
+            
+            elif action == 'delete':
                 # ✅ SOFT DELETE - Move to trash instead of permanent delete
                 # Only restore stock for dispatched orders
                 for order in orders:
@@ -3214,6 +3233,181 @@ def orders_bulk_action(request):
     
     return redirect('orders_list')
 
+
+@login_required
+@permission_required('can_delete_orders')
+def orders_bulk_ncm_send(request):
+    """
+    Handle Bulk Sending to NCM Logistics
+    """
+    if request.method != 'POST':
+        messages.error(request, '❌ Invalid request method')
+        return redirect('orders_list')
+    
+    # 1. Get Form Data
+    order_ids = request.POST.getlist('order_ids')
+    from_branch = request.POST.get('from_branch', 'TINKUNE')
+    delivery_type = request.POST.get('delivery_type', 'Door2Door')
+    
+    # Handle auto_set_logistics checkbox
+    auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
+    
+    # Handle weight (default to 1.0 if invalid)
+    try:
+        default_weight = float(request.POST.get('default_weight', '1.0'))
+    except (ValueError, TypeError):
+        default_weight = 1.0
+
+    if not order_ids:
+        messages.error(request, '❌ No orders selected for NCM dispatch!')
+        return redirect('orders_list')
+
+    # 2. Get Orders
+    orders = Order.objects.filter(id__in=order_ids, is_deleted=False)
+    count = orders.count()
+
+    if count == 0:
+        messages.error(request, '❌ No valid active orders found matching selection.')
+        return redirect('orders_list')
+
+    # 3. Auto-set Logistics Field (if checked)
+    if auto_set_logistics:
+        orders.update(logistics='ncm')
+
+    # 4. Processing Variables
+    success_count = 0
+    skip_count = 0
+    error_count = 0
+    error_details = []
+
+    # 5. Iterate and Send
+    for order in orders:
+        result = send_single_order_to_ncm(
+            request=request, 
+            order=order, 
+            from_branch=from_branch, 
+            delivery_type=delivery_type, 
+            default_weight=default_weight
+        )
+
+        if result['status'] == 'success':
+            success_count += 1
+        elif result['status'] == 'skipped':
+            skip_count += 1
+        else:
+            error_count += 1
+            # Capture the specific error message for the first few failures
+            if len(error_details) < 3: 
+                error_details.append(f"{order.order_number}: {result['message']}")
+
+    # 6. Final Feedback
+    if success_count > 0:
+        messages.success(request, f'✅ Successfully sent {success_count} order(s) to NCM.')
+    
+    if skip_count > 0:
+        messages.warning(request, f'⚠️ Skipped {skip_count} order(s) (Already sent or missing info).')
+        
+    if error_count > 0:
+        messages.error(request, f'❌ Failed to send {error_count} order(s).')
+        # Show specific API errors
+        for err in error_details:
+            messages.error(request, f"Error: {err}")
+
+    return redirect('orders_list')
+
+def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0):
+    """
+    Helper function to send a single order to NCM API.
+    """
+    try:
+        # Check if already has NCM ID
+        if order.ncm_order_id:
+            return {'status': 'skipped', 'message': 'Already has NCM ID'}
+
+        # 1. Get API Credentials from Settings
+        # Ensure NCM_API_BASE_URL does NOT have a trailing slash
+        base_url = getattr(settings, 'NCM_API_BASE_URL', '').rstrip('/')
+        api_key = getattr(settings, 'NCM_API_KEY', '')
+
+        if not base_url or not api_key:
+            return {'status': 'error', 'message': 'NCM configuration missing in settings.py'}
+
+        # Construct Endpoint (use /order/create not /ordercreate)
+        api_url = f"{base_url}/order/create"
+
+        # 2. Prepare Data
+        # Ensure product name isn't None
+        product_name = "General Item"
+        first_item = order.items.first()
+        if first_item:
+            product_name = first_item.product_name or "General Item"
+
+        # Calculate Weight
+        weight = default_weight
+        # If your order model has a weight field, use it
+        if hasattr(order, 'weight') and order.weight:
+             weight = float(order.weight)
+
+        # Clean phone number (remove non-digits)
+        phone = ''.join(filter(str.isdigit, str(order.customer_phone or "")))
+        
+        payload = {
+            "name": str(order.customer_name or "").strip(),
+            "phone": phone,
+            "phone2": "", # Optional
+            "cod_charge": float(order.total_amount or 0),
+            "address": str(order.shipping_address or "").strip(),
+            "fbranch": from_branch,
+            "branch": str(order.branch_city or "KATHMANDU").upper(),
+            "package": str(product_name)[:100], # Limit length
+            "vrefid": str(order.order_number),
+            "instruction": str(order.notes or "")[:100],
+            "deliverytype": delivery_type,
+            "weight": weight
+        }
+
+        # 3. Send Request
+        headers = {
+            'Authorization': f'Token {api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        response = requests.post(api_url, json=payload, headers=headers, timeout=15)
+
+        # 4. Handle Response
+        if response.status_code == 200:
+            resp_data = response.json()
+            
+            # Check NCM specific success message
+            if resp_data.get('Message') == 'Order Successfully Created':
+                # Save NCM ID to Order
+                order.ncm_order_id = str(resp_data.get('orderid'))
+                order.logistics = 'ncm' # Ensure logistics is set
+                order.save()
+
+                # Log Activity
+                OrderActivityLog.objects.create(
+                    order=order,
+                    user=request.user,
+                    action_type='updated',
+                    description=f"Sent to NCM. NCM ID: {order.ncm_order_id}"
+                )
+                return {'status': 'success', 'message': 'Sent successfully'}
+            else:
+                # API returned 200 but with an internal error message
+                return {'status': 'error', 'message': str(resp_data)}
+        
+        elif response.status_code == 404:
+            # 404 means the URL is wrong OR the Resource ID is wrong. 
+            # Since we are creating, it's likely the URL.
+            print(f"DEBUG: NCM 404 Error. Attempted URL: {api_url}")
+            return {'status': 'error', 'message': f'API Endpoint 404. Checked URL: {api_url}'}
+            
+        else:
+            return {'status': 'error', 'message': f'HTTP Error {response.status_code}: {response.text}'}
+
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
 # ==================== DISPATCH MANAGEMENT VIEWS ====================
 
 @login_required
