@@ -1447,17 +1447,16 @@ def orders_list(request):
     if payment_filter:
         orders = orders.filter(payment_status=payment_filter)
     
-    # ✅ NEW: LOGISTICS STATUS FILTER
+    # ✅ FIXED: LOGISTICS STATUS FILTER
     if logistics_filter == 'sent':
-        # Show only orders sent to NCM (have ncm_order_id)
-        orders = orders.filter(logistics='ncm').exclude(
-            Q(ncm_order_id__isnull=True)
-        )
+        # Show only orders successfully sent to NCM (must have an NCM ID)
+        orders = orders.filter(ncm_order_id__isnull=False)
+        
     elif logistics_filter == 'not_sent':
-        # Show only orders not sent to NCM (no ncm_order_id but logistics is ncm)
-        orders = orders.filter(
-            Q(logistics='ncm') & Q(ncm_order_id__isnull=True)
-        )
+        # Show ALL orders that haven't been sent to NCM yet
+        # REMOVED: Q(logistics='ncm') requirement
+        # This now includes orders with logistics=NULL or no NCM ID
+        orders = orders.filter(ncm_order_id__isnull=True)
     
     # DATE RANGE FILTER
     today = timezone.now().date()
@@ -1550,12 +1549,11 @@ def orders_list(request):
         'date_filter': date_filter,
         'start_date': start_date,
         'end_date': end_date,
-        'logistics_filter': logistics_filter,  # ✅ NEW: Pass to template
+        'logistics_filter': logistics_filter,
         'order_products': order_products,
     }
     
     return render(request, 'orders_list.html', context)
-
 @login_required
 @permission_required('can_create_orders')
 def order_create(request):
