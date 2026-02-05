@@ -18,6 +18,10 @@ class CustomUser(AbstractUser):
         null=True
     )
     
+    # ✅ Vendor/Seller ID for logistics API integration
+    vendor_id = models.CharField(max_length=100, blank=True, null=True, unique=True, 
+                                help_text="Unique vendor ID for logistics providers like NCM")
+    
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='sales')
     email = models.EmailField(unique=True, blank=False)
     phone = models.CharField(max_length=15, blank=True, null=True)

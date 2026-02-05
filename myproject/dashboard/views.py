@@ -3316,8 +3316,16 @@ def orders_bulk_ncm_send(request):
 def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0):
     """
     Helper function to send a single order to NCM API.
+    ✅ FIXED: Improved bulk send support with robust vendor ID handling
     """
     try:
+        # Validate order has required fields
+        if not order.order_number:
+            return {'status': 'error', 'message': f'Order {order.id} has no order_number'}
+        
+        if not order.customer_name or not order.customer_phone or not order.shipping_address:
+            return {'status': 'error', 'message': f'Order {order.order_number} missing required customer info'}
+        
         # Check if already has NCM ID
         if order.ncm_order_id:
             return {'status': 'skipped', 'message': 'Already has NCM ID'}
@@ -3343,11 +3351,36 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         # Calculate Weight
         weight = default_weight
         # If your order model has a weight field, use it
-        if hasattr(order, 'weight') and order.weight:
-             weight = float(order.weight)
+        if hasattr(order, 'package_weight') and order.package_weight:
+             weight = float(order.package_weight)
 
         # Clean phone number (remove non-digits)
         phone = ''.join(filter(str.isdigit, str(order.customer_phone or "")))
+        
+        # ✅ FIXED: Generate Vendor Reference ID - Use order ID directly
+        # NCM requires vrefid field to be populated with order reference
+        vendor_ref_id = str(order.id)  # Start with order ID (guaranteed to exist)
+        
+        # Try to use order_number if available (better for tracking)
+        if order.order_number:
+            order_num = str(order.order_number).strip()
+            if order_num:
+                vendor_ref_id = order_num
+        
+        # If vendor_id exists from creator, use it as main reference
+        try:
+            if order.created_by and hasattr(order.created_by, 'vendor_id') and order.created_by.vendor_id:
+                vendor_id_str = str(order.created_by.vendor_id).strip()
+                if vendor_id_str:
+                    vendor_ref_id = vendor_id_str
+        except:
+            pass
+        
+        # Ensure vendor_ref_id is always set and valid
+        if not vendor_ref_id or vendor_ref_id.strip() == "":
+            vendor_ref_id = str(order.id)
+        
+        vendor_ref_id = vendor_ref_id.strip()
         
         payload = {
             "name": str(order.customer_name or "").strip(),
@@ -3358,7 +3391,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             "fbranch": from_branch,
             "branch": str(order.branch_city or "KATHMANDU").upper(),
             "package": str(product_name)[:100], # Limit length
-            "vrefid": str(order.order_number),
+            "vref_id": vendor_ref_id,
             "instruction": str(order.notes or "")[:100],
             "deliverytype": delivery_type,
             "weight": weight
@@ -3371,6 +3404,25 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         }
 
         response = requests.post(api_url, json=payload, headers=headers, timeout=15)
+        
+        # ✅ ENHANCED DEBUG LOGGING FOR BULK SEND FIX
+        print(f"\n" + "="*80)
+        print(f"🔵 NCM BULK SEND DEBUG - Order: {order.id}")
+        print(f"="*80)
+        print(f"Order ID: {order.id}")
+        print(f"Order Number: {order.order_number or 'NOT SET'}")
+        print(f"Created By: {order.created_by.username if order.created_by else 'None'}")
+        print(f"Final Vendor Ref ID: {payload.get('vref_id')}")
+        print(f"\nPayload being sent to NCM:")
+        for key, value in payload.items():
+            if key == 'address':
+                print(f"  {key}: {value[:50]}..." if len(str(value)) > 50 else f"  {key}: {value}")
+            else:
+                print(f"  {key}: {value}")
+        print(f"\nHTTP Response Status: {response.status_code}")
+        if response.status_code != 200:
+            print(f"❌ ERROR Response: {response.text}")
+        print(f"="*80 + "\n")
 
         # 4. Handle Response
         if response.status_code == 200:
@@ -3388,7 +3440,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                     order=order,
                     user=request.user,
                     action_type='updated',
-                    description=f"Sent to NCM. NCM ID: {order.ncm_order_id}"
+                    description=f"Sent to NCM. NCM ID: {order.ncm_order_id}, Vendor Ref: {vendor_ref_id}"
                 )
                 return {'status': 'success', 'message': 'Sent successfully'}
             else:
