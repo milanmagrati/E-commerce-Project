@@ -1706,19 +1706,7 @@ def order_create(request):
                         total=price * qty,
                     )
 
-                # ✅ CREATE ACTIVITY LOG WITH PARTIAL PAYMENT INFO
-                description = f"Order #{order.order_number} was created with total amount रू {order.total_amount}"
-                if is_partial_payment:
-                    description += f" | Partial Payment: रू {partial_amount_paid} paid, रू {remaining_amount} remaining"
-                
-                OrderActivityLog.objects.create(
-                    order=order,
-                    action_type='created',
-                    user=created_by,
-                    description=description
-                )
-
-                # ✅ ADD CITY DETECTION LOG
+                # ✅ ADD CITY DETECTION LOG (Order creation is logged via signals.py)
                 valley_status = "Valley" if in_out.lower() == 'in' else "Out Valley"
                 OrderActivityLog.objects.create(
                     order=order,
