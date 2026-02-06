@@ -163,7 +163,7 @@
                             <small class="text-muted">{{ order.ncm_created_at|time:"h:i A" }}</small>
                         </td>
                         <td>
-                            <span class="badge bg-info">{{ order.ncm_from_branch|default:"N/A" }}</span>
+                            <span class="badge bg-info">{{ order.ncm_destination_branch|default:"N/A" }}</span>
                         </td>
                         <td>
                             <strong>{{ order.customer_name }}</strong>
