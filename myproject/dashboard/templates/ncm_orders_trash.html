@@ -1,0 +1,423 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}NCM Orders Trash{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2><i class="fas fa-trash-alt"></i> NCM Orders Trash</h2>
+            <div class="d-flex gap-2">
+                <a href="{% url 'ncm_orders_list' %}" class="btn btn-secondary btn-lg">
+                    <i class="fas fa-arrow-left"></i> Back to NCM Orders
+                </a>
+                {% if total_orders > 0 %}
+                <button type="button" class="btn btn-danger btn-lg" onclick="emptyTrash()">
+                    <i class="fas fa-trash"></i> Empty Trash ({{ total_orders }})
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="stat-card bg-gradient-danger text-white">
+            <div class="stat-icon">
+                <i class="fas fa-trash-alt"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ total_orders }}</h3>
+                <p>Items in Trash</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="stat-card bg-gradient-warning text-white">
+            <div class="stat-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="stat-content">
+                <h3>NCM Orders</h3>
+                <p>Deleted NCM Orders</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="stat-card bg-gradient-info text-white">
+            <div class="stat-icon">
+                <i class="fas fa-undo"></i>
+            </div>
+            <div class="stat-content">
+                <h3>Restore</h3>
+                <p>Can Be Recovered</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-5">
+                <input type="text" class="form-control" name="search" 
+                       placeholder="Search Order ID, NCM ID, Customer..." 
+                       value="{{ search_query }}">
+            </div>
+            
+            <div class="col-md-3">
+                <select name="branch" class="form-select">
+                    <option value="">All Branches</option>
+                    {% for branch in branches %}
+                    <option value="{{ branch }}" {% if branch_filter == branch %}selected{% endif %}>
+                        {{ branch }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-search"></i> Search
+                </button>
+            </div>
+            
+            <div class="col-md-2">
+                <a href="{% url 'ncm_orders_trash' %}" class="btn btn-secondary w-100">
+                    <i class="fas fa-redo"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk Actions Bar -->
+<div id="bulkActionsBar" class="card shadow-sm mb-3" style="display: none;">
+    <div class="card-body py-2">
+        <form method="post" action="{% url 'ncm_orders_bulk_trash_action' %}" id="bulkActionForm" onsubmit="return confirmBulkAction()">
+            {% csrf_token %}
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <span id="selectedCount" class="fw-bold text-danger">0 orders selected</span>
+                </div>
+                <div class="col-md-4">
+                    <select name="bulk_action" class="form-select form-select-sm" required>
+                        <option value="">Select Action</option>
+                        <option value="restore">Restore Orders</option>
+                        <option value="permanent_delete">Delete Permanently</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-sm btn-danger">
+                        <i class="fas fa-check"></i> Apply Action
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="clearSelection()">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+            </div>
+            <div id="orderIdsContainer"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Orders Table -->
+<div class="card shadow-sm">
+    <div class="card-header bg-danger text-white">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fas fa-trash-alt"></i> Trashed NCM Orders ({{ total_orders }})
+            </h5>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="3%">
+                            <input type="checkbox" id="selectAll" class="form-check-input" onclick="toggleSelectAll(this)">
+                        </th>
+                        <th width="5%">S.N.</th>
+                        <th width="10%">Order ID</th>
+                        <th width="10%">NCM ID</th>
+                        <th width="8%">Branch</th>
+                        <th width="12%">Customer</th>
+                        <th width="10%">Phone</th>
+                        <th width="10%">Amount</th>
+                        <th width="10%">Deleted At</th>
+                        <th width="10%">Deleted By</th>
+                        <th width="12%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="form-check-input order-checkbox" 
+                                   value="{{ order.id }}" onchange="updateBulkActions()">
+                        </td>
+                        <td>{{ forloop.counter }}</td>
+                        <td>
+                            <strong class="text-primary">{{ order.order_number }}</strong>
+                        </td>
+                        <td>
+                            <code>{{ order.ncm_order_id }}</code>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">{{ order.ncm_from_branch|default:"N/A" }}</span>
+                        </td>
+                        <td>
+                            <strong>{{ order.customer_name }}</strong>
+                        </td>
+                        <td>
+                            {{ order.customer_phone }}
+                        </td>
+                        <td>
+                            <strong class="text-success">रू {{ order.total_amount|floatformat:2 }}</strong>
+                        </td>
+                        <td>
+                            <small>{{ order.deleted_at|date:"M d, Y" }}</small><br>
+                            <small class="text-muted">{{ order.deleted_at|time:"h:i A" }}</small>
+                        </td>
+                        <td>
+                            {% if order.deleted_by %}
+                            <small><i class="fas fa-user"></i> {{ order.deleted_by.username }}</small>
+                            {% else %}
+                            <small class="text-muted">N/A</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-success" 
+                                        onclick="restoreOrder({{ order.id }}, '{{ order.order_number|escapejs }}')"
+                                        title="Restore">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                                <button type="button" class="btn btn-danger" 
+                                        onclick="permanentDelete({{ order.id }}, '{{ order.order_number|escapejs }}')"
+                                        title="Delete Permanently">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="11" class="text-center py-5">
+                            <i class="fas fa-trash-alt fa-3x text-muted mb-3 d-block"></i>
+                            <p class="text-muted mb-3">Trash is empty</p>
+                            <a href="{% url 'ncm_orders_list' %}" class="btn btn-primary">
+                                <i class="fas fa-arrow-left"></i> Go to NCM Orders
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Pagination -->
+    {% if orders.has_other_pages %}
+    <div class="card-footer">
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center mb-0">
+                {% if orders.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ orders.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}">Previous</a>
+                </li>
+                {% endif %}
+                
+                {% for num in orders.paginator.page_range %}
+                <li class="page-item {% if orders.number == num %}active{% endif %}">
+                    <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}">{{ num }}</a>
+                </li>
+                {% endfor %}
+                
+                {% if orders.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ orders.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+    
+    .stat-icon {
+        font-size: 2.5rem;
+        margin-right: 20px;
+        opacity: 0.8;
+    }
+    
+    .stat-content h3 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    
+    .stat-content p {
+        margin: 0;
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    
+    .bg-gradient-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+    
+    .bg-gradient-info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    #bulkActionsBar {
+        background: linear-gradient(135deg, #fff5f5 0%, #ffe5e5 100%);
+        border-left: 4px solid #ef4444;
+        animation: slideDown 0.3s ease;
+    }
+    
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+<script>
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.order-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateBulkActions();
+}
+
+function updateBulkActions() {
+    const checked = document.querySelectorAll('.order-checkbox:checked');
+    const count = checked.length;
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const selectedCount = document.getElementById('selectedCount');
+    const container = document.getElementById('orderIdsContainer');
+    
+    if (count > 0) {
+        bulkBar.style.display = 'block';
+        selectedCount.textContent = `${count} order${count > 1 ? 's' : ''} selected`;
+        
+        // Add hidden inputs
+        container.innerHTML = '';
+        checked.forEach(cb => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'order_ids';
+            input.value = cb.value;
+            container.appendChild(input);
+        });
+    } else {
+        bulkBar.style.display = 'none';
+    }
+}
+
+function clearSelection() {
+    document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = false);
+    document.getElementById('selectAll').checked = false;
+    updateBulkActions();
+}
+
+function confirmBulkAction() {
+    const action = document.querySelector('select[name="bulk_action"]').value;
+    const count = document.querySelectorAll('.order-checkbox:checked').length;
+    
+    if (!action) {
+        alert('Please select an action');
+        return false;
+    }
+    
+    if (action === 'permanent_delete') {
+        return confirm(`⚠️ PERMANENT DELETE\n\nAre you sure you want to PERMANENTLY delete ${count} order(s)?\n\nThis action CANNOT be undone!`);
+    } else if (action === 'restore') {
+        return confirm(`Restore ${count} order(s)?`);
+    }
+    
+    return true;
+}
+
+function restoreOrder(orderId, orderNumber) {
+    if (confirm(`Restore order ${orderNumber}?`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/ncm-orders/restore/${orderId}/`;
+        
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = 'csrfmiddlewaretoken';
+        csrf.value = '{{ csrf_token }}';
+        form.appendChild(csrf);
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function permanentDelete(orderId, orderNumber) {
+    if (confirm(`⚠️ PERMANENT DELETE\n\nAre you sure you want to PERMANENTLY delete order ${orderNumber}?\n\nThis action CANNOT be undone!`)) {
+        if (confirm(`⚠️ FINAL CONFIRMATION\n\nLast chance! Delete ${orderNumber} forever?`)) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/ncm-orders/permanent-delete/${orderId}/`;
+            
+            const csrf = document.createElement('input');
+            csrf.type = 'hidden';
+            csrf.name = 'csrfmiddlewaretoken';
+            csrf.value = '{{ csrf_token }}';
+            form.appendChild(csrf);
+            
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+}
+
+function emptyTrash() {
+    if (confirm(`⚠️ EMPTY TRASH\n\nAre you sure you want to PERMANENTLY delete ALL {{ total_orders }} order(s) in trash?\n\nThis action CANNOT be undone!`)) {
+        if (confirm(`⚠️ FINAL CONFIRMATION\n\nLast chance! Empty entire trash forever?`)) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '{% url "ncm_orders_empty_trash" %}';
+            
+            const csrf = document.createElement('input');
+            csrf.type = 'hidden';
+            csrf.name = 'csrfmiddlewaretoken';
+            csrf.value = '{{ csrf_token }}';
+            form.appendChild(csrf);
+            
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -8,6 +8,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib import messages
 from django.db.models import Sum, Count, Q, F, Prefetch
 from django.http import JsonResponse, HttpResponse, Http404
+from django.core.paginator import Paginator
 from datetime import datetime, timedelta
 
 import requests
@@ -3096,7 +3097,7 @@ def orders_bulk_action(request):
             
             # ✅ NEW: HANDLE SEND TO NCM ACTION
             if action == 'send_to_ncm':
-                return bulk_send_to_ncm(request, orders)
+                return orders_bulk_ncm_send(request, orders)
             
             elif action == 'delete':
                 # ✅ SOFT DELETE - Move to trash instead of permanent delete
@@ -3419,7 +3420,9 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             # Check NCM specific success message
             if resp_data.get('Message') == 'Order Successfully Created':
                 # Save NCM ID to Order
-                order.ncm_order_id = str(resp_data.get('orderid'))
+                ncm_id = resp_data.get('orderid')
+                if ncm_id:
+                    order.ncm_order_id = int(ncm_id)
                 order.logistics = 'ncm' # Ensure logistics is set
                 order.save()
 
@@ -5813,3 +5816,1046 @@ def create_custom_product(request):
     
     
     # my name is milan
+
+@login_required
+def ncm_orders_list(request):
+    """
+    NCM Orders Management Page - Shows all orders sent to NCM with details and activity logs
+    """
+    # Get all NCM orders (orders with ncm_order_id)
+    orders = Order.objects.select_related('customer', 'created_by').filter(
+        is_deleted=False,
+        logistics='ncm',
+        ncm_order_id__isnull=False
+    ).order_by('-ncm_created_at')
+    
+    # Get filter parameters
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+    
+    # Search filter
+    if search_query:
+        orders = orders.filter(
+            Q(order_number__icontains=search_query) |
+            Q(ncm_order_id__icontains=search_query) |
+            Q(customer_name__icontains=search_query) |
+            Q(customer_phone__icontains=search_query)
+        )
+    
+    # Branch filter
+    if branch_filter:
+        orders = orders.filter(ncm_from_branch=branch_filter)
+    
+    # Status filter
+    if status_filter:
+        orders = orders.filter(ncm_status=status_filter)
+    
+    # Date range filter
+    if date_from:
+        try:
+            orders = orders.filter(ncm_created_at__date__gte=date_from)
+        except:
+            pass
+    
+    if date_to:
+        try:
+            orders = orders.filter(ncm_created_at__date__lte=date_to)
+        except:
+            pass
+    
+    # Get total count before pagination
+    total_orders = orders.count()
+    
+    # Get unique branches and statuses for filter dropdowns
+    branches = Order.objects.filter(
+        is_deleted=False,
+        logistics='ncm'
+    ).exclude(
+        ncm_from_branch__isnull=True
+    ).exclude(
+        ncm_from_branch=''
+    ).values_list('ncm_from_branch', flat=True).distinct().order_by('ncm_from_branch')
+    
+    statuses = Order.objects.filter(
+        is_deleted=False,
+        logistics='ncm'
+    ).exclude(
+        ncm_status__isnull=True
+    ).exclude(
+        ncm_status=''
+    ).values_list('ncm_status', flat=True).distinct().order_by('ncm_status')
+    
+    # Pagination
+    paginator = Paginator(orders, 25)
+    page_number = request.GET.get('page', 1)
+    orders_page = paginator.get_page(page_number)
+    
+    # Get product names for paginated orders
+    order_products = {}
+    for order in orders_page:
+        try:
+            first_item = order.items.first()
+            if first_item:
+                order_products[order.id] = first_item.product_name
+            else:
+                order_products[order.id] = "No products"
+        except:
+            order_products[order.id] = "No products"
+    
+    # ✅ GET ACTIVITY LOGS FOR PAGINATED ORDERS
+    activity_logs = {}
+    try:
+        from dashboard.models import OrderActivityLog
+        
+        order_ids = [order.id for order in orders_page]
+        all_logs = OrderActivityLog.objects.filter(
+            order_id__in=order_ids
+        ).select_related('user', 'order').order_by('-created_at')
+        
+        # Group logs by order_id
+        for log in all_logs:
+            if log.order_id not in activity_logs:
+                activity_logs[log.order_id] = []
+            activity_logs[log.order_id].append(log)
+        
+        # Limit to 10 most recent logs per order
+        for order_id in activity_logs:
+            activity_logs[order_id] = activity_logs[order_id][:10]
+    except Exception as e:
+        print(f"Error loading activity logs: {e}")
+        activity_logs = {}
+    
+    context = {
+        'orders': orders_page,
+        'total_orders': total_orders,
+        'search_query': search_query,
+        'branch_filter': branch_filter,
+        'status_filter': status_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+        'branches': list(branches),
+        'statuses': list(statuses),
+        'order_products': order_products,
+        'activity_logs': activity_logs,
+    }
+    
+    return render(request, 'ncm_orders_list.html', context)
+
+
+@login_required
+def ncm_order_detail(request, order_id):
+    """
+    View detailed information about NCM order with activity logs
+    """
+    order = get_object_or_404(Order, id=order_id, is_deleted=False)
+    
+    # Check if order has NCM ID
+    if not order.ncm_order_id:
+        messages.warning(request, f'⚠️ Order {order.order_number} has not been sent to NCM yet.')
+    
+    # Get order items
+    order_items = order.items.all().select_related('product')
+    
+    # Calculate subtotal
+    subtotal = sum(item.total for item in order_items)
+    
+    # Get activity logs
+    activity_logs = []
+    try:
+        from dashboard.models import OrderActivityLog
+        activity_logs = OrderActivityLog.objects.filter(
+            order=order
+        ).select_related('user').order_by('-created_at')[:50]
+    except Exception as e:
+        print(f"Error loading activity logs: {e}")
+    
+    context = {
+        'order': order,
+        'order_items': order_items,
+        'activity_logs': activity_logs,
+        'subtotal': subtotal,
+    }
+    
+    return render(request, 'ncm_order_detail.html', context)
+
+
+@login_required
+def ncm_track_order(request, order_id):
+    """
+    Track NCM order status from NCM API and update local database
+    """
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+        
+        # Check if order has NCM ID
+        if not order.ncm_order_id:
+            messages.error(request, f'❌ Order {order.order_number} has not been sent to NCM yet.')
+            return redirect('ncm_orders_list')
+        
+        # Get NCM API settings
+        base_url = getattr(settings, 'NCM_API_BASE_URL', None)
+        api_key = getattr(settings, 'NCM_API_KEY', None)
+        
+        if not base_url or not api_key:
+            messages.error(request, '❌ NCM API credentials not configured in settings.')
+            return redirect('ncm_order_detail', order_id=order_id)
+        
+        # Build API URL
+        api_url = f"{base_url.rstrip('/')}/orderstatus"
+        
+        print(f"\n{'='*70}")
+        print(f"🔍 Tracking NCM Order: {order.order_number}")
+        print(f"📍 NCM Order ID: {order.ncm_order_id}")
+        print(f"🌐 API URL: {api_url}")
+        print(f"{'='*70}\n")
+        
+        # Call NCM tracking API
+        response = requests.get(
+            api_url,
+            params={'id': order.ncm_order_id},
+            headers={
+                'Authorization': f'Token {api_key}',
+                'Content-Type': 'application/json'
+            },
+            timeout=15
+        )
+        
+        print(f"📥 Response Status: {response.status_code}")
+        print(f"📄 Response Body: {response.text}\n")
+        
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                
+                # NCM returns array of status history
+                if data and isinstance(data, list) and len(data) > 0:
+                    latest_status = data[0]
+                    new_status = latest_status.get('status', '')
+                    
+                    print(f"✅ Latest Status: {new_status}\n")
+                    
+                    if new_status:
+                        old_status = order.ncm_status
+                        
+                        # Update order status if changed
+                        if new_status != old_status:
+                            order.ncm_status = new_status
+                            order.save()
+                            
+                            # Log activity
+                            try:
+                                from dashboard.models import OrderActivityLog
+                                OrderActivityLog.objects.create(
+                                    order=order,
+                                    user=request.user,
+                                    action_type='status_changed',
+                                    description=f'NCM status updated from "{old_status}" to "{new_status}"',
+                                    field_name='ncm_status',
+                                    old_value=old_status or 'N/A',
+                                    new_value=new_status
+                                )
+                            except Exception as e:
+                                print(f"⚠️ Error logging activity: {e}")
+                            
+                            messages.success(request, f'✅ Status updated to: {new_status}')
+                        else:
+                            messages.info(request, f'ℹ️ Current status: {new_status} (No change)')
+                    else:
+                        messages.warning(request, 'ℹ️ No status information in response')
+                else:
+                    messages.info(request, 'ℹ️ No tracking data available yet from NCM')
+                    
+            except ValueError as e:
+                messages.error(request, f'❌ Invalid JSON response from NCM API')
+                print(f"❌ JSON Parse Error: {e}\n")
+        
+        elif response.status_code == 404:
+            messages.error(request, f'❌ NCM Order ID {order.ncm_order_id} not found in NCM system')
+        
+        elif response.status_code == 401:
+            messages.error(request, '❌ Authentication failed. Check NCM API key.')
+        
+        else:
+            messages.error(request, f'❌ Failed to fetch tracking data (HTTP {response.status_code})')
+        
+    except requests.exceptions.Timeout:
+        messages.error(request, '❌ Request timeout. NCM server is not responding.')
+    
+    except requests.exceptions.ConnectionError:
+        messages.error(request, '❌ Cannot connect to NCM server. Check internet connection.')
+    
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
+        print(f"💥 Exception: {e}\n")
+        import traceback
+        traceback.print_exc()
+    
+    # Redirect back to detail page
+    return redirect('ncm_order_detail', order_id=order_id)
+
+
+@login_required
+def ncm_sync_all_statuses(request):
+    """
+    Sync status for all NCM orders (admin function)
+    """
+    if not request.user.is_staff:
+        messages.error(request, '❌ Admin access required')
+        return redirect('ncm_orders_list')
+    
+    try:
+        # Get all NCM orders
+        ncm_orders = Order.objects.filter(
+            is_deleted=False,
+            logistics='ncm'
+        ).exclude(
+            Q(ncm_order_id__isnull=True) | Q(ncm_order_id='')
+        )
+        
+        total = ncm_orders.count()
+        updated = 0
+        errors = 0
+        
+        for order in ncm_orders:
+            try:
+                # Call tracking for each order
+                base_url = getattr(settings, 'NCM_API_BASE_URL', None)
+                api_key = getattr(settings, 'NCM_API_KEY', None)
+                
+                if not base_url or not api_key:
+                    continue
+                
+                api_url = f"{base_url.rstrip('/')}/orderstatus"
+                
+                response = requests.get(
+                    api_url,
+                    params={'id': order.ncm_order_id},
+                    headers={
+                        'Authorization': f'Token {api_key}',
+                        'Content-Type': 'application/json'
+                    },
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data and isinstance(data, list) and len(data) > 0:
+                        latest_status = data[0]
+                        new_status = latest_status.get('status', '')
+                        
+                        if new_status and new_status != order.ncm_status:
+                            order.ncm_status = new_status
+                            order.save()
+                            updated += 1
+            except:
+                errors += 1
+                continue
+        
+        messages.success(request, f'✅ Synced {updated} orders out of {total}. Errors: {errors}')
+    
+    except Exception as e:
+        messages.error(request, f'❌ Sync failed: {str(e)}')
+    
+    return redirect('ncm_orders_list')
+
+
+@login_required
+def ncm_branches_json(request):
+    """
+    Display NCM branches fetched from NCM API as HTML page or JSON API
+    """
+    import requests
+    from django.conf import settings
+    
+    branches = []
+    error_message = None
+    
+    try:
+        # Get NCM API credentials
+        base_url = getattr(settings, 'NCM_API_BASE_URL_V2', None)
+        if not base_url:
+            base_url = getattr(settings, 'NCM_API_BASE_URL', None)
+        
+        api_key = getattr(settings, 'NCM_API_KEY', None)
+        
+        if not base_url or not api_key:
+            error_message = 'NCM API not configured in settings'
+        else:
+            # Construct API URL for branches
+            # Base URL is already like: https://portal.nepalcanmove.com/api/v2
+            # So just append /branches
+            base_url = base_url.rstrip('/')
+            api_url = f"{base_url}/branches"
+            
+            print(f"🔵 Fetching NCM branches from: {api_url}")
+            
+            # Call NCM API
+            response = requests.get(
+                api_url,
+                headers={
+                    'Authorization': f'Token {api_key}',
+                    'Content-Type': 'application/json'
+                },
+                timeout=10
+            )
+            
+            print(f"📥 Response Status: {response.status_code}")
+            print(f"📄 Response: {response.text[:500]}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Handle different possible response formats
+                if isinstance(data, list):
+                    branches = data
+                elif isinstance(data, dict):
+                    if 'branches' in data:
+                        branches = data['branches']
+                    elif 'data' in data:
+                        branches = data['data']
+                    elif 'results' in data:
+                        branches = data['results']
+                    else:
+                        # If it's a single object, wrap it in a list
+                        branches = [data] if data else []
+                
+                # Ensure proper format with 'code' and 'name'
+                formatted_branches = []
+                for branch in branches:
+                    if isinstance(branch, dict):
+                        formatted_branches.append({
+                            'code': branch.get('code') or branch.get('id') or branch.get('name', ''),
+                            'name': branch.get('name') or branch.get('code', ''),
+                        })
+                branches = formatted_branches
+                print(f"✅ Got {len(branches)} branches")
+            elif response.status_code == 401:
+                error_message = 'Authentication failed - Check NCM_API_KEY'
+            elif response.status_code == 404:
+                error_message = 'NCM API endpoint not found - Check NCM_API_BASE_URL (should be: https://portal.nepalcanmove.com/api/v2)'
+            else:
+                error_message = f'NCM API Error: HTTP {response.status_code}'
+    
+    except requests.exceptions.Timeout:
+        error_message = 'Request timeout - NCM server not responding'
+    except requests.exceptions.ConnectionError:
+        error_message = 'Cannot connect to NCM server'
+    except Exception as e:
+        error_message = f'Error fetching branches: {str(e)}'
+        print(f"💥 Error: {error_message}")
+    
+    # Return JSON if requested via API
+    if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
+        if error_message:
+            return JsonResponse({'error': error_message, 'branches': []}, status=400)
+        return JsonResponse({'branches': branches})
+    
+    # Otherwise return HTML page
+    context = {
+        'branches': branches,
+        'error_message': error_message,
+        'page_title': 'NCM Branches'
+    }
+    return render(request, 'ncm_branches.html', context)
+
+
+
+@login_required
+def orders_bulk_ncm_send(request):
+    """
+    Bulk send multiple orders to NCM logistics
+    """
+    if request.method != 'POST':
+        messages.error(request, '❌ Invalid request method')
+        return redirect('orders_list')
+    
+    try:
+        # Get form data
+        order_ids = request.POST.getlist('order_ids')
+        from_branch = request.POST.get('from_branch', 'TINKUNE')
+        delivery_type = request.POST.get('delivery_type', 'Door2Door')
+        default_weight = float(request.POST.get('default_weight', 1.0))
+        auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
+        
+        if not order_ids:
+            messages.error(request, '❌ No orders selected')
+            return redirect('orders_list')
+        
+        # Get orders
+        orders = Order.objects.filter(id__in=order_ids, is_deleted=False)
+        
+        if not orders.exists():
+            messages.error(request, '❌ No valid orders found')
+            return redirect('orders_list')
+        
+        # Track results
+        results = {
+            'success': [],
+            'skipped': [],
+            'failed': [],
+        }
+        
+        # Process each order
+        for order in orders:
+            result = send_single_order_to_ncm(
+                request, 
+                order, 
+                from_branch=from_branch,
+                delivery_type=delivery_type,
+                default_weight=default_weight
+            )
+            
+            if result['status'] == 'success':
+                results['success'].append(order.order_number)
+                
+                # Auto-set logistics if enabled
+                if auto_set_logistics and order.logistics != 'ncm':
+                    order.logistics = 'ncm'
+                    order.save()
+            
+            elif result['status'] == 'skipped':
+                results['skipped'].append(f"{order.order_number}: {result['message']}")
+            
+            else:
+                results['failed'].append(f"{order.order_number}: {result['message']}")
+        
+        # Show results
+        if results['success']:
+            messages.success(
+                request, 
+                f"✅ Successfully sent {len(results['success'])} order(s) to NCM: {', '.join(results['success'])}"
+            )
+        
+        if results['skipped']:
+            messages.warning(
+                request,
+                f"⚠️ Skipped {len(results['skipped'])} order(s): {'; '.join(results['skipped'][:3])}"
+            )
+        
+        if results['failed']:
+            messages.error(
+                request,
+                f"❌ Failed {len(results['failed'])} order(s): {'; '.join(results['failed'][:3])}"
+            )
+        
+    except Exception as e:
+        messages.error(request, f'❌ Bulk send error: {str(e)}')
+        import traceback
+        traceback.print_exc()
+    
+    return redirect('orders_list')
+
+
+@login_required
+def ncm_single_order_send(request, order_id):
+    """
+    Send single order to NCM from order detail page
+    """
+    if request.method != 'POST':
+        messages.error(request, '❌ Invalid request method')
+        return redirect('order_detail', order_id=order_id)
+    
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+        
+        result = send_single_order_to_ncm(request, order)
+        
+        if result['status'] == 'success':
+            messages.success(request, f"✅ {result['message']}")
+        elif result['status'] == 'skipped':
+            messages.warning(request, f"⚠️ {result['message']}")
+        else:
+            messages.error(request, f"❌ {result['message']}")
+    
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
+    
+    return redirect('order_detail', order_id=order_id)
+
+
+def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0):
+    """
+    Helper function to send single order to NCM - COMPLETE VERSION
+    Returns: dict with 'status' and 'message'
+    """
+    import requests
+    from django.conf import settings
+    from django.utils import timezone
+    
+    try:
+        # CHECK 1: Already sent?
+        if hasattr(order, 'ncm_order_id') and order.ncm_order_id:
+            return {
+                'status': 'skipped',
+                'message': f'Already sent (NCM ID: {order.ncm_order_id})'
+            }
+        
+        # CHECK 2: Required fields
+        missing = []
+        if not getattr(order, 'customer_name', None):
+            missing.append('customer_name')
+        if not getattr(order, 'customer_phone', None):
+            missing.append('customer_phone')
+        if not getattr(order, 'shipping_address', None):
+            missing.append('shipping_address')
+        
+        if missing:
+            return {
+                'status': 'skipped',
+                'message': f'Missing required fields: {", ".join(missing)}'
+            }
+        
+        # Get product name
+        product_name = 'General Items'
+        try:
+            if hasattr(order, 'items'):
+                first_item = order.items.first()
+                if first_item and hasattr(first_item, 'product_name'):
+                    product_name = first_item.product_name
+        except:
+            pass
+        
+        # Get weight
+        weight = default_weight
+        if hasattr(order, 'package_weight') and order.package_weight:
+            try:
+                weight = float(order.package_weight)
+            except:
+                weight = default_weight
+        
+        # Get destination branch
+        destination_branch = 'KATHMANDU'
+        if hasattr(order, 'branch_city') and order.branch_city:
+            destination_branch = str(order.branch_city).upper()
+        
+        # Get API credentials
+        base_url = getattr(settings, 'NCM_API_BASE_URL', None)
+        api_key = getattr(settings, 'NCM_API_KEY', None)
+        
+        if not base_url or not api_key:
+            return {
+                'status': 'error',
+                'message': 'NCM API not configured in settings'
+            }
+        
+        # Build API URL
+        base_url = base_url.rstrip('/')
+        api_url = f"{base_url}/order/create"
+        
+        # Build payload
+        payload = {
+            "name": str(order.customer_name)[:50],
+            "phone": str(order.customer_phone),
+            "phone2": "",
+            "cod_charge": float(order.total_amount or 0),
+            "address": str(order.shipping_address)[:200],
+            "fbranch": from_branch,
+            "branch": destination_branch,
+            "package": str(product_name)[:50],
+            "vref_id": str(order.order_number),
+            "instruction": "",
+            "delivery_type": delivery_type,
+            "weight": weight
+        }
+        
+        print(f"\n{'='*70}")
+        print(f"🚀 Sending {order.order_number} to NCM")
+        print(f"{'='*70}")
+        print(f"📍 URL: {api_url}")
+        print(f"📦 Payload: {payload}")
+        print(f"{'='*70}\n")
+        
+        # Call NCM API
+        response = requests.post(
+            api_url,
+            json=payload,
+            headers={
+                'Authorization': f'Token {api_key}',
+                'Content-Type': 'application/json'
+            },
+            timeout=30
+        )
+        
+        print(f"📥 Response Status: {response.status_code}")
+        print(f"📄 Response Body: {response.text}\n")
+        
+        # Handle response
+        if response.status_code == 200:
+            try:
+                data = response.json()
+            except:
+                return {
+                    'status': 'error',
+                    'message': 'Invalid JSON response from NCM'
+                }
+            
+            # NCM SUCCESS: {"Message": "Order Successfully Created", "orderid": 747}
+            if data.get('Message') == 'Order Successfully Created':
+                ncm_id = data.get('orderid')
+                
+                if not ncm_id:
+                    return {
+                        'status': 'error',
+                        'message': 'No order ID in NCM response'
+                    }
+                
+                # Update order - assign as integer
+                order.ncm_order_id = int(ncm_id)
+                order.ncm_status = 'Pickup Order Created'
+                order.ncm_created_at = timezone.now()
+                order.ncm_from_branch = from_branch
+                order.ncm_delivery_type = delivery_type
+                order.ncm_destination_branch = destination_branch
+                order.save()
+                
+                print(f"✅ SUCCESS! NCM Order ID: {ncm_id}\n")
+                
+                # Log activity
+                try:
+                    from dashboard.models import OrderActivityLog
+                    OrderActivityLog.objects.create(
+                        order=order,
+                        user=request.user if request else None,
+                        action_type='status_changed',
+                        description=f'Sent to NCM Logistics (ID: {ncm_id}, Branch: {from_branch})'
+                    )
+                except Exception as e:
+                    print(f"⚠️ Log error: {e}")
+                
+                return {
+                    'status': 'success',
+                    'message': f'Sent to NCM (ID: {ncm_id})'
+                }
+            else:
+                error_msg = data.get('Error', data.get('message', str(data)))
+                return {
+                    'status': 'error',
+                    'message': f'NCM Error: {error_msg}'
+                }
+        
+        elif response.status_code == 400:
+            try:
+                data = response.json()
+                errors = data.get('Error', {})
+                if isinstance(errors, dict):
+                    error_list = [f"{k}: {v}" for k, v in errors.items()]
+                    error_msg = ", ".join(error_list)
+                else:
+                    error_msg = str(errors)
+            except:
+                error_msg = response.text[:200]
+            
+            return {
+                'status': 'error',
+                'message': f'Validation error: {error_msg}'
+            }
+        
+        elif response.status_code == 401:
+            return {
+                'status': 'error',
+                'message': 'Authentication failed - Check NCM_API_KEY'
+            }
+        
+        elif response.status_code == 404:
+            return {
+                'status': 'error',
+                'message': 'API endpoint not found - Check NCM_API_BASE_URL'
+            }
+        
+        else:
+            return {
+                'status': 'error',
+                'message': f'HTTP {response.status_code}'
+            }
+    
+    except requests.exceptions.Timeout:
+        return {
+            'status': 'error',
+            'message': 'Request timeout (30s)'
+        }
+    
+    except requests.exceptions.ConnectionError:
+        return {
+            'status': 'error',
+            'message': 'Cannot connect to NCM server'
+        }
+    
+    except Exception as e:
+        print(f"💥 Exception: {str(e)}\n")
+        import traceback
+        traceback.print_exc()
+        return {
+            'status': 'error',
+            'message': str(e)[:100]
+        }
+
+
+
+
+
+# ============================================================================
+# NCM TRASH VIEWS
+# ============================================================================
+
+@login_required
+def ncm_orders_trash(request):
+    """
+    NCM Orders Trash - Shows deleted NCM orders
+    """
+    # Get all deleted NCM orders
+    orders = Order.objects.select_related('customer', 'created_by').filter(
+        is_deleted=True,
+        logistics='ncm',
+        ncm_order_id__isnull=False
+    ).order_by('-deleted_at')
+    
+    # Get filter parameters
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    
+    # Search filter
+    if search_query:
+        orders = orders.filter(
+            Q(order_number__icontains=search_query) |
+            Q(ncm_order_id__icontains=search_query) |
+            Q(customer_name__icontains=search_query) |
+            Q(customer_phone__icontains=search_query)
+        )
+    
+    # Branch filter
+    if branch_filter:
+        orders = orders.filter(ncm_from_branch=branch_filter)
+    
+    # Get total count before pagination
+    total_orders = orders.count()
+    
+    # Get unique branches for filter dropdown
+    branches = Order.objects.filter(
+        is_deleted=True,
+        logistics='ncm'
+    ).exclude(
+        ncm_from_branch__isnull=True
+    ).exclude(
+        ncm_from_branch=''
+    ).values_list('ncm_from_branch', flat=True).distinct().order_by('ncm_from_branch')
+    
+    # Pagination
+    paginator = Paginator(orders, 25)
+    page_number = request.GET.get('page', 1)
+    orders_page = paginator.get_page(page_number)
+    
+    # Get product names
+    order_products = {}
+    for order in orders_page:
+        try:
+            first_item = order.items.first()
+            if first_item:
+                order_products[order.id] = first_item.product_name
+            else:
+                order_products[order.id] = "No products"
+        except:
+            order_products[order.id] = "No products"
+    
+    context = {
+        'orders': orders_page,
+        'total_orders': total_orders,
+        'search_query': search_query,
+        'branch_filter': branch_filter,
+        'branches': list(branches),
+        'order_products': order_products,
+    }
+    
+    return render(request, 'ncm_orders_trash.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def ncm_order_move_to_trash(request, order_id):
+    """
+    Move NCM order to trash (soft delete)
+    """
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+        
+        # Soft delete
+        order.is_deleted = True
+        order.deleted_at = timezone.now()
+        order.deleted_by = request.user
+        order.save()
+        
+        # Log activity
+        try:
+            from dashboard.models import OrderActivityLog
+            OrderActivityLog.objects.create(
+                order=order,
+                user=request.user,
+                action_type='status_changed',
+                description=f'Order moved to trash by {request.user.username}'
+            )
+        except:
+            pass
+        
+        messages.success(request, f'✅ Order {order.order_number} moved to trash successfully')
+    
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
+    
+    # Check referer to redirect appropriately
+    referer = request.META.get('HTTP_REFERER', '')
+    if 'ncm-orders' in referer:
+        return redirect('ncm_orders_list')
+    else:
+        return redirect('orders_list')
+
+
+@login_required
+@require_http_methods(["POST"])
+def ncm_order_restore(request, order_id):
+    """
+    Restore NCM order from trash
+    """
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=True)
+        
+        # Restore order
+        order.is_deleted = False
+        order.deleted_at = None
+        order.deleted_by = None
+        order.save()
+        
+        # Log activity
+        try:
+            from dashboard.models import OrderActivityLog
+            OrderActivityLog.objects.create(
+                order=order,
+                user=request.user,
+                action_type='status_changed',
+                description=f'Order restored from trash by {request.user.username}'
+            )
+        except:
+            pass
+        
+        messages.success(request, f'✅ Order {order.order_number} restored successfully')
+    
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
+    
+    return redirect('ncm_orders_trash')
+
+
+@login_required
+@require_http_methods(["POST"])
+def ncm_order_permanent_delete(request, order_id):
+    """
+    Permanently delete NCM order (cannot be undone)
+    """
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=True)
+        
+        order_number = order.order_number
+        
+        # Permanently delete
+        order.delete()
+        
+        messages.success(request, f'✅ Order {order_number} permanently deleted')
+    
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
+    
+    return redirect('ncm_orders_trash')
+
+
+@login_required
+@require_http_methods(["POST"])
+def ncm_orders_bulk_trash_action(request):
+    """
+    Bulk actions for trash: restore or permanent delete
+    """
+    try:
+        order_ids = request.POST.getlist('order_ids')
+        action = request.POST.get('bulk_action')
+        
+        if not order_ids:
+            messages.error(request, '❌ No orders selected')
+            return redirect('ncm_orders_trash')
+        
+        if not action:
+            messages.error(request, '❌ No action selected')
+            return redirect('ncm_orders_trash')
+        
+        orders = Order.objects.filter(id__in=order_ids, is_deleted=True)
+        count = orders.count()
+        
+        if action == 'restore':
+            # Restore all selected orders
+            for order in orders:
+                order.is_deleted = False
+                order.deleted_at = None
+                order.deleted_by = None
+                order.save()
+                
+                # Log activity
+                try:
+                    from dashboard.models import OrderActivityLog
+                    OrderActivityLog.objects.create(
+                        order=order,
+                        user=request.user,
+                        action_type='status_changed',
+                        description=f'Order restored from trash (bulk action)'
+                    )
+                except:
+                    pass
+            
+            messages.success(request, f'✅ {count} order(s) restored successfully')
+        
+        elif action == 'permanent_delete':
+            # Permanently delete all selected orders
+            orders.delete()
+            messages.success(request, f'✅ {count} order(s) permanently deleted')
+        
+        else:
+            messages.error(request, f'❌ Invalid action: {action}')
+    
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
+    
+    return redirect('ncm_orders_trash')
+
+
+@login_required
+@require_http_methods(["POST"])
+def ncm_orders_empty_trash(request):
+    """
+    Empty entire NCM trash (delete all trashed orders permanently)
+    """
+    if not request.user.is_staff:
+        messages.error(request, '❌ Admin access required')
+        return redirect('ncm_orders_trash')
+    
+    try:
+        # Get all deleted NCM orders
+        orders = Order.objects.filter(
+            is_deleted=True,
+            logistics='ncm'
+        ).exclude(
+            Q(ncm_order_id__isnull=True) | Q(ncm_order_id='')
+        )
+        
+        count = orders.count()
+        
+        if count == 0:
+            messages.info(request, 'ℹ️ Trash is already empty')
+            return redirect('ncm_orders_trash')
+        
+        # Permanently delete all
+        orders.delete()
+        
+        messages.success(request, f'✅ Trash emptied! {count} order(s) permanently deleted')
+    
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
+    
+    return redirect('ncm_orders_trash')

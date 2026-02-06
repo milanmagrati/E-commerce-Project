@@ -152,5 +152,24 @@ urlpatterns = [
     
     # add custom product 
     path('api/create-custom-product/', views.create_custom_product, name='create_custom_product'),
+
+      # ✅ NCM ORDERS MANAGEMENT (already exists in your code)
+    path('ncm-orders/', views.ncm_orders_list, name='ncm_orders_list'),
+    path('ncm-orders/<int:order_id>/', views.ncm_order_detail, name='ncm_order_detail'),
+    path('ncm-orders/track/<int:order_id>/', views.ncm_track_order, name='ncm_track_order'),
+    path('ncm-orders/sync-all/', views.ncm_sync_all_statuses, name='ncm_sync_all_statuses'),
+    
+    # ✅ NCM TRASH MANAGEMENT (NEW - ADD THESE)
+    path('ncm-orders/trash/', views.ncm_orders_trash, name='ncm_orders_trash'),
+    path('ncm-orders/move-to-trash/<int:order_id>/', views.ncm_order_move_to_trash, name='ncm_order_move_to_trash'),
+    path('ncm-orders/restore/<int:order_id>/', views.ncm_order_restore, name='ncm_order_restore'),
+    path('ncm-orders/permanent-delete/<int:order_id>/', views.ncm_order_permanent_delete, name='ncm_order_permanent_delete'),
+    path('ncm-orders/bulk-trash-action/', views.ncm_orders_bulk_trash_action, name='ncm_orders_bulk_trash_action'),
+    path('ncm-orders/empty-trash/', views.ncm_orders_empty_trash, name='ncm_orders_empty_trash'),
+    
+    # ✅ NCM API ENDPOINTS
+    path('api/ncm-branches/', views.ncm_branches_json, name='ncm_branches_json'),
+
+
 ]
     

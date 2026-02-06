@@ -243,6 +243,17 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.8; }
         }
+
+        /* ==================== NCM MENU HIGHLIGHT ==================== */
+        .sidebar li.ncm-menu > a {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border-left: 3px solid #667eea;
+        }
+
+        .sidebar li.ncm-menu:hover > a {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+            border-left-color: #764ba2;
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -299,7 +310,7 @@
 
                 <!-- ==================== ORDERS ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_orders %}
-                <li class="{% if 'order' in request.resolver_match.url_name %}active{% endif %}">
+                <li class="{% if 'order' in request.resolver_match.url_name and 'ncm' not in request.resolver_match.url_name %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#ordersMenu" aria-expanded="false">
                         <i class="fas fa-shopping-cart"></i> Orders
                         <i class="fas fa-chevron-down float-end mt-1"></i>
@@ -396,45 +407,27 @@
                 </li>
                 {% endif %}
 
-                <!-- ==================== NCM LOGISTICS ✅ UPDATED ==================== -->
+                <!-- ==================== ✅ NCM LOGISTICS (UPDATED WITH NCM ORDERS) ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' %}
-                <li class="{% if 'ncm' in request.resolver_match.url_name %}active{% endif %}">
+                <li class="ncm-menu {% if 'ncm' in request.resolver_match.url_name %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#ncmMenu" aria-expanded="false">
-                        <i class="fas fa-truck-fast"></i> NCM Logistics
+                        <i class="fas fa-truck-loading"></i> NCM Logistics
                         <span class="ncm-badge">NEW</span>
                         <i class="fas fa-chevron-down float-end mt-1"></i>
                     </a>
                     <ul class="collapse list-unstyled" id="ncmMenu">
-                        <li class="{% if request.resolver_match.url_name == 'ncm:branches' %}active{% endif %}">
-                            <a href="{% url 'ncm:branches' %}">
-                                <i class="fas fa-building"></i> NCM Branches
-                            </a>
+                        <li class="{% if request.resolver_match.url_name == 'ncm_orders_list' %}active{% endif %}">
+                            <a href="{% url 'ncm_orders_list' %}">NCM Orders</a>
                         </li>
-                        <li class="{% if request.resolver_match.url_name == 'ncm:bulk_sync' %}active{% endif %}">
+                        <li class="{% if request.resolver_match.url_name == 'ncm_orders_trash' %}active{% endif %}">
+                            <a href="{% url 'ncm_orders_trash' %}">NCM Trash</a>
+                        </li>
+                   <li class="{% if request.resolver_match.url_name == 'ncm:bulk_sync' %}active{% endif %}">
                             <a href="{% url 'ncm:bulk_sync' %}">
-                                <i class="fas fa-sync-alt"></i> Bulk Sync Orders
-                            </a>
+                                </i>Sync Orders</a>
                         </li>
-                    </ul>
-                </li>
-                {% endif %}
-
-                <!-- ==================== LOGISTICS (OLD - Keep for now) ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
-                <li class="{% if 'logistics' in request.resolver_match.namespace %}active{% endif %}">
-                    <a href="#" data-bs-toggle="collapse" data-bs-target="#logisticsMenu" aria-expanded="false">
-                        <i class="fas fa-truck-moving"></i> Logistics
-                        <i class="fas fa-chevron-down float-end mt-1"></i>
-                    </a>
-                    <ul class="collapse list-unstyled" id="logisticsMenu">
-                        <li class="{% if request.resolver_match.url_name == 'logistics:dashboard' %}active{% endif %}">
-                            <a href="{% url 'logistics:dashboard' %}">Dashboard</a>
-                        </li>
-                        <li class="{% if request.resolver_match.url_name == 'logistics:orders_list' %}active{% endif %}">
-                            <a href="{% url 'logistics:orders_list' %}">All Shipments</a>
-                        </li>
-                        <li class="{% if request.resolver_match.url_name == 'logistics:branches_list' %}active{% endif %}">
-                            <a href="{% url 'logistics:branches_list' %}">NCM Branches</a>
+                        <li class="{% if request.resolver_match.url_name == 'ncm_branches_json' %}active{% endif %}">
+                            <a href="{% url 'ncm_branches_json' %}" target="_blank">NCM Branches</a>
                         </li>
                     </ul>
                 </li>

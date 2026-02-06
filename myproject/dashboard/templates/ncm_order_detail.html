@@ -1,0 +1,813 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}NCM Order Detail - {{ order.order_number }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2>
+                <i class="fas fa-shipping-fast"></i> NCM Order Details
+                <span class="badge bg-primary ms-2">{{ order.ncm_order_id }}</span>
+            </h2>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'ncm_orders_list' %}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to NCM Orders
+                </a>
+                <a href="{% url 'ncm_track_order' order.id %}" class="btn btn-success">
+                    <i class="fas fa-sync"></i> Update Status from NCM
+                </a>
+                <a href="{% url 'order_edit' order.id %}" class="btn btn-warning">
+                    <i class="fas fa-edit"></i> Edit Order
+                </a>
+                <a href="{% url 'order_invoice' order.id %}" class="btn btn-primary" target="_blank">
+                    <i class="fas fa-file-invoice"></i> Invoice
+                </a>
+                <form method="post" action="{% url 'ncm_order_move_to_trash' order.id %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger" 
+                            onclick="return confirm('Move order {{ order.order_number }} to trash?\n\nYou can restore it later from the trash.')">
+                        <i class="fas fa-trash-alt"></i> Move to Trash
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ FIXED Status Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="status-card bg-gradient-primary text-white">
+            <div class="status-content-wrapper">
+                <div class="status-icon-circle">
+                    <i class="fas fa-box"></i>
+                </div>
+                <div class="status-text">
+                    <h6>ORDER STATUS</h6>
+                    <h4>{{ order.order_status|upper|default:"PENDING" }}</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="status-card bg-gradient-success text-white">
+            <div class="status-content-wrapper">
+                <div class="status-icon-circle">
+                    <i class="fas fa-credit-card"></i>
+                </div>
+                <div class="status-text">
+                    <h6>PAYMENT STATUS</h6>
+                    <h4>{{ order.payment_status|upper|default:"UNPAID" }}</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="status-card bg-gradient-warning text-white">
+            <div class="status-content-wrapper">
+                <div class="status-icon-circle">
+                    <i class="fas fa-truck-loading"></i>
+                </div>
+                <div class="status-text">
+                    <h6>NCM STATUS</h6>
+                    <h4>{{ order.ncm_status|upper|default:"PICKUP ORDER CREATED" }}</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="status-card bg-gradient-info text-white">
+            <div class="status-content-wrapper">
+                <div class="status-icon-circle">
+                    <i class="fas fa-money-bill-wave"></i>
+                </div>
+                <div class="status-text">
+                    <h6>TOTAL AMOUNT</h6>
+                    <h3>रू {{ order.total_amount|floatformat:2|default:"0.00" }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- NCM Information -->
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-gradient-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-truck-loading"></i> NCM Logistics Information</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th width="40%">NCM Order ID:</th>
+                        <td><strong class="text-primary">{{ order.ncm_order_id|default:"Not sent to NCM" }}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>Vendor Ref ID:</th>
+                        <td><strong>{{ order.order_number }}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>NCM Status:</th>
+                        <td>
+                            <span class="badge bg-success fs-6">
+                                {{ order.ncm_status|default:"Pickup Order Created" }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>From Branch:</th>
+                        <td><span class="badge bg-info">{{ order.ncm_from_branch|default:"N/A" }}</span></td>
+                    </tr>
+                    <tr>
+                        <th>To Branch:</th>
+                        <td><span class="badge bg-warning text-dark">{{ order.ncm_destination_branch|default:"N/A" }}</span></td>
+                    </tr>
+                    <tr>
+                        <th>Delivery Type:</th>
+                        <td>
+                            <span class="badge bg-secondary">
+                                {{ order.ncm_delivery_type|default:"Door2Door" }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Sent to NCM:</th>
+                        <td>
+                            {% if order.ncm_created_at %}
+                                {{ order.ncm_created_at|date:"M d, Y h:i A" }}
+                            {% else %}
+                                <span class="text-muted">Not sent yet</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Tracking Number:</th>
+                        <td>
+                            {% if order.tracking_number %}
+                                <code class="tracking-code">{{ order.tracking_number }}</code>
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Customer Information -->
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-gradient-success text-white">
+                <h5 class="mb-0"><i class="fas fa-user"></i> Customer Information</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th width="40%">Receiver Name:</th>
+                        <td><strong>{{ order.customer_name }}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>Phone Number:</th>
+                        <td>
+                            <i class="fas fa-phone text-primary"></i> {{ order.customer_phone }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Email:</th>
+                        <td>{{ order.customer_email|default:"N/A" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Delivery Address:</th>
+                        <td>{{ order.shipping_address }}</td>
+                    </tr>
+                    <tr>
+                        <th>Landmark:</th>
+                        <td>{{ order.landmark|default:"N/A" }}</td>
+                    </tr>
+                    <tr>
+                        <th>City:</th>
+                        <td>{{ order.branch_city|default:"N/A" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Postal Code:</th>
+                        <td>{{ order.postal_code|default:"N/A" }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Order Information -->
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-gradient-warning text-white">
+                <h5 class="mb-0"><i class="fas fa-shopping-cart"></i> Order Information</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th width="40%">Order Number:</th>
+                        <td><strong class="text-primary">{{ order.order_number }}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>Order Status:</th>
+                        <td>
+                            <span class="badge bg-primary">
+                                {{ order.order_status|capfirst }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Payment Status:</th>
+                        <td>
+                            <span class="badge bg-success">
+                                {{ order.payment_status|upper }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Payment Method:</th>
+                        <td>{{ order.payment_method|upper|default:"COD" }}</td>
+                    </tr>
+                    <tr>
+                        <th>COD Amount:</th>
+                        <td><strong class="text-success fs-5">रू {{ order.total_amount|floatformat:2 }}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>Order Created:</th>
+                        <td>{{ order.created_at|date:"M d, Y h:i A" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Created By:</th>
+                        <td>
+                            <i class="fas fa-user-circle"></i>
+                            {{ order.created_by.get_full_name|default:order.created_by.username }}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Order Items -->
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-gradient-info text-white">
+                <h5 class="mb-0"><i class="fas fa-box"></i> Order Items</h5>
+            </div>
+            <div class="card-body">
+                {% if order_items %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Product</th>
+                                <th>SKU</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in order_items %}
+                            <tr>
+                                <td>
+                                    <strong>{{ item.product_name }}</strong>
+                                    {% if item.variation_name %}
+                                    <br><small class="text-muted">{{ item.variation_name }}</small>
+                                    {% endif %}
+                                </td>
+                                <td><small class="text-muted">{{ item.product_sku|default:"N/A" }}</small></td>
+                                <td><span class="badge bg-primary">{{ item.quantity }}</span></td>
+                                <td>रू {{ item.price|floatformat:2 }}</td>
+                                <td><strong>रू {{ item.total_price|floatformat:2 }}</strong></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="4" class="text-end">Subtotal:</th>
+                                <th>रू {{ subtotal|floatformat:2 }}</th>
+                            </tr>
+                            {% if order.discount_amount %}
+                            <tr>
+                                <th colspan="4" class="text-end">Discount:</th>
+                                <th class="text-danger">- रू {{ order.discount_amount|floatformat:2 }}</th>
+                            </tr>
+                            {% endif %}
+                            {% if order.shipping_charge %}
+                            <tr>
+                                <th colspan="4" class="text-end">Shipping:</th>
+                                <th>रू {{ order.shipping_charge|floatformat:2 }}</th>
+                            </tr>
+                            {% endif %}
+                            <tr class="table-success">
+                                <th colspan="4" class="text-end">Total:</th>
+                                <th><strong class="text-success">रू {{ order.total_amount|floatformat:2 }}</strong></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-inbox fa-3x text-muted mb-2"></i>
+                    <p class="text-muted mb-0">No items found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- ✅ Activity Log Section -->
+    <div class="col-12">
+        <div class="card shadow-sm activity-log-card">
+            <div class="card-header bg-gradient-dark text-white d-flex align-items-center justify-content-between">
+                <h5 class="mb-0"><i class="fas fa-history"></i> Activity Log</h5>
+                <span class="badge bg-light text-dark">{{ activity_logs|length }} Activities</span>
+            </div>
+            <div class="card-body p-0">
+                {% if activity_logs %}
+                <div class="activity-timeline">
+                    {% for log in activity_logs %}
+                    <div class="activity-item {% if forloop.first %}first{% endif %} {% if forloop.last %}last{% endif %}">
+                        <div class="activity-timeline-marker">
+                            <div class="activity-icon" data-action="{{ log.action_type }}">
+                                {% if log.action_type == 'created' %}
+                                    <i class="fas fa-file-plus"></i>
+                                {% elif log.action_type == 'status_changed' %}
+                                    <i class="fas fa-exchange-alt"></i>
+                                {% elif log.action_type == 'payment_changed' %}
+                                    <i class="fas fa-credit-card"></i>
+                                {% elif log.action_type == 'tracking_added' or log.action_type == 'tracking_updated' %}
+                                    <i class="fas fa-barcode"></i>
+                                {% elif log.action_type == 'notes_added' or log.action_type == 'notes_updated' %}
+                                    <i class="fas fa-sticky-note"></i>
+                                {% elif log.action_type == 'ncm_sent' %}
+                                    <i class="fas fa-truck-loading"></i>
+                                {% elif log.action_type == 'ncm_updated' %}
+                                    <i class="fas fa-sync"></i>
+                                {% else %}
+                                    <i class="fas fa-edit"></i>
+                                {% endif %}
+                            </div>
+                            {% if not forloop.last %}
+                            <div class="activity-timeline-line"></div>
+                            {% endif %}
+                        </div>
+                        <div class="activity-content">
+                            <div class="activity-header">
+                                <span class="activity-action-badge">{{ log.action_type|title|replace:"_: " }}</span>
+                                <span class="activity-time">
+                                    <i class="fas fa-clock"></i>
+                                    {{ log.created_at|date:"M d, Y h:i A" }}
+                                </span>
+                            </div>
+                            <div class="activity-description">
+                                {{ log.description }}
+                            </div>
+                            {% if log.user %}
+                            <div class="activity-user">
+                                <i class="fas fa-user-circle"></i>
+                                <strong>{{ log.user.get_full_name|default:log.user.username }}</strong>
+                            </div>
+                            {% endif %}
+                            {% if log.field_name %}
+                            <div class="activity-field-change">
+                                <small><strong>Field:</strong> <code>{{ log.field_name }}</code></small>
+                                {% if log.old_value and log.new_value %}
+                                <div class="field-values mt-1">
+                                    <div class="value-row">
+                                        <span class="value-label old-value">
+                                            <i class="fas fa-arrow-left"></i> Old
+                                        </span>
+                                        <span class="value-text">{{ log.old_value }}</span>
+                                    </div>
+                                    <div class="value-row">
+                                        <span class="value-label new-value">
+                                            <i class="fas fa-arrow-right"></i> New
+                                        </span>
+                                        <span class="value-text">{{ log.new_value }}</span>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state-activity">
+                    <div class="empty-state-icon">
+                        <i class="fas fa-inbox"></i>
+                    </div>
+                    <p class="empty-state-text">No activity recorded yet</p>
+                    <small class="text-muted">Activities will appear here as order changes are made</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .bg-gradient-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+    
+    .bg-gradient-info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    .bg-gradient-dark {
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    }
+    
+    /* ✅ FIXED STATUS CARD STYLES */
+    .status-card {
+        border-radius: 15px;
+        padding: 25px 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        height: 100%;
+        min-height: 140px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .status-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+    }
+    
+    .status-content-wrapper {
+        width: 100%;
+        text-align: center;
+    }
+    
+    .status-icon-circle {
+        width: 60px;
+        height: 60px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 15px;
+        font-size: 1.8rem;
+        color: white;
+    }
+    
+    .status-text h6 {
+        margin: 0 0 8px 0;
+        font-size: 0.7rem;
+        color: rgba(255, 255, 255, 0.9);
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        font-weight: 700;
+    }
+    
+    .status-text h4 {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        line-height: 1.3;
+    }
+    
+    .status-text h3 {
+        margin: 0;
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: white;
+        letter-spacing: 0.5px;
+    }
+    
+    .tracking-code {
+        background: #f3f4f6;
+        color: #dc2626;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+    
+    /* ✅ ACTIVITY LOG STYLES */
+    .activity-log-card {
+        border: 1px solid #e5e7eb;
+        animation: slideInUp 0.5s ease-out;
+    }
+    
+    @keyframes slideInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .activity-timeline {
+        position: relative;
+        padding: 20px;
+    }
+    
+    .activity-item {
+        display: flex;
+        gap: 15px;
+        padding: 15px 20px;
+        border-left: 2px solid #e5e7eb;
+        position: relative;
+        transition: all 0.2s ease;
+    }
+    
+    .activity-item:hover {
+        background-color: #f8f9fa;
+        border-left-color: #3b82f6;
+    }
+    
+    .activity-item.first {
+        border-radius: 8px 8px 0 0;
+    }
+    
+    .activity-item.last {
+        border-radius: 0 0 8px 8px;
+        border-left: 2px solid #e5e7eb;
+    }
+    
+    .activity-timeline-marker {
+        flex-shrink: 0;
+        position: relative;
+        width: 40px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .activity-icon {
+        width: 36px;
+        height: 36px;
+        background: white;
+        border: 2px solid #e5e7eb;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        position: relative;
+        z-index: 2;
+        transition: all 0.3s ease;
+    }
+    
+    .activity-item:hover .activity-icon {
+        border-color: #3b82f6;
+        background: #eff6ff;
+        transform: scale(1.15);
+    }
+    
+    .activity-icon[data-action="created"] {
+        color: #10b981;
+        border-color: #10b981;
+    }
+    
+    .activity-icon[data-action="status_changed"] {
+        color: #f59e0b;
+        border-color: #f59e0b;
+    }
+    
+    .activity-icon[data-action="payment_changed"] {
+        color: #8b5cf6;
+        border-color: #8b5cf6;
+    }
+    
+    .activity-icon[data-action="tracking_added"],
+    .activity-icon[data-action="tracking_updated"] {
+        color: #06b6d4;
+        border-color: #06b6d4;
+    }
+    
+    .activity-icon[data-action="notes_added"],
+    .activity-icon[data-action="notes_updated"] {
+        color: #ec4899;
+        border-color: #ec4899;
+    }
+    
+    .activity-icon[data-action="ncm_sent"],
+    .activity-icon[data-action="ncm_updated"] {
+        color: #667eea;
+        border-color: #667eea;
+    }
+    
+    .activity-timeline-line {
+        flex-grow: 1;
+        width: 2px;
+        background: #e5e7eb;
+        margin-top: 5px;
+        min-height: 40px;
+    }
+    
+    .activity-content {
+        flex-grow: 1;
+        padding-top: 5px;
+    }
+    
+    .activity-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+    }
+    
+    .activity-action-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+        color: #1e40af;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .activity-time {
+        font-size: 0.8rem;
+        color: #9ca3af;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    
+    .activity-description {
+        font-size: 0.95rem;
+        color: #374151;
+        margin-bottom: 8px;
+        line-height: 1.5;
+    }
+    
+    .activity-user {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85rem;
+        color: #6b7280;
+        padding: 6px 10px;
+        background: #f3f4f6;
+        border-radius: 6px;
+        width: fit-content;
+        margin-bottom: 8px;
+    }
+    
+    .activity-user i {
+        color: #3b82f6;
+    }
+    
+    .activity-user strong {
+        color: #1f2937;
+    }
+    
+    .activity-field-change {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 10px;
+        font-size: 0.85rem;
+        margin-top: 8px;
+    }
+    
+    .activity-field-change code {
+        background: #f3f4f6;
+        color: #dc2626;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+    }
+    
+    .field-values {
+        margin-top: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    
+    .value-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .value-label {
+        font-weight: 600;
+        min-width: 70px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+    }
+    
+    .value-label.old-value {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    
+    .value-label.new-value {
+        background: #dcfce7;
+        color: #166534;
+    }
+    
+    .value-text {
+        flex-grow: 1;
+        background: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        border: 1px solid #e5e7eb;
+        word-break: break-word;
+        font-family: 'Courier New', monospace;
+    }
+    
+    .empty-state-activity {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        text-align: center;
+        background: linear-gradient(135deg, #f8f9fa 0%, #f0f1f5 100%);
+    }
+    
+    .empty-state-icon {
+        font-size: 4rem;
+        color: #d1d5db;
+        margin-bottom: 15px;
+    }
+    
+    .empty-state-text {
+        font-size: 1.1rem;
+        color: #6b7280;
+        font-weight: 600;
+        margin: 0 0 8px 0;
+    }
+    
+    /* Responsive Adjustments */
+    @media (max-width: 768px) {
+        .status-card {
+            min-height: 120px;
+            padding: 20px 15px;
+        }
+        
+        .status-icon-circle {
+            width: 50px;
+            height: 50px;
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+        }
+        
+        .status-text h4 {
+            font-size: 1rem;
+        }
+        
+        .status-text h3 {
+            font-size: 1.4rem;
+        }
+        
+        .activity-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .activity-item {
+            padding: 12px 15px;
+            gap: 10px;
+        }
+        
+        .activity-timeline-marker {
+            width: 30px;
+        }
+        
+        .activity-icon {
+            width: 30px;
+            height: 30px;
+            font-size: 0.9rem;
+        }
+    }
+</style>
+{% endblock %}

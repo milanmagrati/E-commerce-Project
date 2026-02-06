@@ -167,3 +167,13 @@ def get_item(dictionary, key):
     return None
 
 
+@register.filter(name='replace')
+def replace(value, arg):
+    """Replace substring in string - usage: {{ value|replace:"old:new" }}"""
+    try:
+        if ':' not in arg:
+            return value
+        old, new = arg.split(':', 1)
+        return str(value).replace(old, new)
+    except (ValueError, AttributeError):
+        return value

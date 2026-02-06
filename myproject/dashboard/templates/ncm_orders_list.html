@@ -1,0 +1,635 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}NCM Orders Management{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2><i class="fas fa-truck-loading"></i> NCM Orders Management</h2>
+            <div class="d-flex gap-2">
+                <a href="{% url 'ncm_orders_trash' %}" class="btn btn-danger btn-lg">
+                    <i class="fas fa-trash-alt"></i> Trash
+                    {% if trash_count > 0 %}
+                    <span class="badge bg-white text-danger ms-1">{{ trash_count }}</span>
+                    {% endif %}
+                </a>
+                <a href="{% url 'orders_list' %}" class="btn btn-secondary btn-lg">
+                    <i class="fas fa-arrow-left"></i> Back to Orders
+                </a>
+                <a href="{% url 'export_orders_excel' %}?logistics=ncm" class="btn btn-success btn-lg">
+                    <i class="fas fa-file-excel"></i> Export NCM Orders
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card bg-gradient-primary text-white">
+            <div class="stat-icon">
+                <i class="fas fa-boxes"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ total_orders }}</h3>
+                <p>Total NCM Orders</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="stat-card bg-gradient-success text-white">
+            <div class="stat-icon">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ orders.paginator.count }}</h3>
+                <p>In Transit</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="stat-card bg-gradient-warning text-white">
+            <div class="stat-icon">
+                <i class="fas fa-clock"></i>
+            </div>
+            <div class="stat-content">
+                <h3>{{ total_orders }}</h3>
+                <p>Active Shipments</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="stat-card bg-gradient-info text-white">
+            <div class="stat-icon">
+                <i class="fas fa-shipping-fast"></i>
+            </div>
+            <div class="stat-content">
+                <h3>Today</h3>
+                <p>Last Updated</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <input type="text" class="form-control" name="search" 
+                       placeholder="Search Order ID, NCM ID, Customer..." 
+                       value="{{ search_query }}">
+            </div>
+            
+            <div class="col-md-2">
+                <select name="branch" class="form-select">
+                    <option value="">Branch</option>
+                    {% for branch in branches %}
+                    <option value="{{ branch }}" {% if branch_filter == branch %}selected{% endif %}>
+                        {{ branch }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <select name="status" class="form-select">
+                    <option value="">Delivery Status</option>
+                    {% for status in statuses %}
+                    <option value="{{ status }}" {% if status_filter == status %}selected{% endif %}>
+                        {{ status }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <input type="date" class="form-control" name="date_from" 
+                       placeholder="From Date" value="{{ date_from }}">
+            </div>
+            
+            <div class="col-md-2">
+                <input type="date" class="form-control" name="date_to" 
+                       placeholder="To Date" value="{{ date_to }}">
+            </div>
+            
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-danger w-100">
+                    Filter
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Orders Table with Activity Logs -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 ncm-orders-table">
+                <thead class="table-light">
+                    <tr>
+                        <th width="5%">S.N.</th>
+                        <th width="10%">Order ID</th>
+                        <th width="10%">Vendor Ref ID</th>
+                        <th width="10%">Created Date</th>
+                        <th width="8%">Branch</th>
+                        <th width="12%">Receiver</th>
+                        <th width="10%">Phone Number</th>
+                        <th width="15%">Address</th>
+                        <th width="8%">COD Amount</th>
+                        <th width="10%">Status</th>
+                        <th width="12%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <!-- Order Row -->
+                    <tr class="order-row" data-order-id="{{ order.id }}">
+                        <td>{{ forloop.counter }}</td>
+                        <td>
+                            <strong class="text-primary">{{ order.ncm_order_id }}</strong>
+                        </td>
+                        <td>
+                            <strong>{{ order.order_number }}</strong>
+                        </td>
+                        <td>
+                            {{ order.ncm_created_at|date:"m/d/Y" }}<br>
+                            <small class="text-muted">{{ order.ncm_created_at|time:"h:i A" }}</small>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">{{ order.ncm_from_branch|default:"N/A" }}</span>
+                        </td>
+                        <td>
+                            <strong>{{ order.customer_name }}</strong>
+                        </td>
+                        <td>
+                            {{ order.customer_phone }}
+                        </td>
+                        <td>
+                            <small>{{ order.shipping_address|truncatewords:5 }}</small>
+                        </td>
+                        <td>
+                            <strong class="text-success">रू {{ order.total_amount|floatformat:2 }}</strong>
+                        </td>
+                        <td>
+                            <span class="badge bg-success">{{ order.ncm_status|default:"Pickup Order Created" }}</span>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-primary" 
+                                        onclick="toggleActivityLog({{ order.id }})"
+                                        title="Toggle Activity Log">
+                                    <i class="fas fa-history"></i>
+                                </button>
+                                <a href="{% url 'ncm_order_detail' order.id %}" 
+                                   class="btn btn-info" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{% url 'order_edit' order.id %}" 
+                                   class="btn btn-warning" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <button type="button" class="btn btn-danger" 
+                                        onclick="moveToTrash({{ order.id }}, '{{ order.order_number|escapejs }}')"
+                                        title="Move to Trash">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    
+                    <!-- Activity Log Row (Hidden by default) -->
+                    <tr class="activity-log-row" id="activity-log-{{ order.id }}" style="display: none;">
+                        <td colspan="11" class="p-0">
+                            <div class="activity-log-container">
+                                <div class="activity-log-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-history"></i> 
+                                        Activity Log for {{ order.order_number }}
+                                    </h6>
+                                    <button type="button" class="btn-close-log" 
+                                            onclick="toggleActivityLog({{ order.id }})">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="activity-log-body">
+                                    {% if order.id in activity_logs and activity_logs|get_item:order.id %}
+                                    <div class="activity-timeline-mini">
+                                        {% for log in activity_logs|get_item:order.id %}
+                                        <div class="activity-item-mini">
+                                            <div class="activity-icon-mini" data-action="{{ log.action_type }}">
+                                                {% if log.action_type == 'created' %}
+                                                    <i class="fas fa-file-plus"></i>
+                                                {% elif log.action_type == 'status_changed' %}
+                                                    <i class="fas fa-exchange-alt"></i>
+                                                {% elif log.action_type == 'payment_changed' %}
+                                                    <i class="fas fa-credit-card"></i>
+                                                {% elif log.action_type == 'tracking_added' or log.action_type == 'tracking_updated' %}
+                                                    <i class="fas fa-barcode"></i>
+                                                {% else %}
+                                                    <i class="fas fa-edit"></i>
+                                                {% endif %}
+                                            </div>
+                                            <div class="activity-content-mini">
+                                                <div class="activity-header-mini">
+                                                    <span class="activity-badge-mini">{{ log.action_type|title }}</span>
+                                                    <span class="activity-time-mini">
+                                                        <i class="fas fa-clock"></i>
+                                                        {{ log.created_at|date:"M d, h:i A" }}
+                                                    </span>
+                                                </div>
+                                                <div class="activity-description-mini">
+                                                    {{ log.description }}
+                                                </div>
+                                                {% if log.user %}
+                                                <div class="activity-user-mini">
+                                                    <i class="fas fa-user"></i>
+                                                    {{ log.user.username }}
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% else %}
+                                    <div class="empty-activity">
+                                        <i class="fas fa-inbox"></i>
+                                        <p>No activity logs available</p>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="11" class="text-center py-5">
+                            <i class="fas fa-inbox fa-3x text-muted mb-3 d-block"></i>
+                            <p class="text-muted">No NCM orders found</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Pagination -->
+    {% if orders.has_other_pages %}
+    <div class="card-footer">
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center mb-0">
+                {% if orders.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ orders.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">Previous</a>
+                </li>
+                {% endif %}
+                
+                {% for num in orders.paginator.page_range %}
+                {% if num == orders.number %}
+                <li class="page-item active">
+                    <span class="page-link">{{ num }}</span>
+                </li>
+                {% elif num > orders.number|add:'-3' and num < orders.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">{{ num }}</a>
+                </li>
+                {% endif %}
+                {% endfor %}
+                
+                {% if orders.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ orders.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+    
+    .stat-icon {
+        font-size: 2.5rem;
+        margin-right: 20px;
+        opacity: 0.8;
+    }
+    
+    .stat-content h3 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    
+    .stat-content p {
+        margin: 0;
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .bg-gradient-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+    
+    .bg-gradient-info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    .ncm-orders-table th {
+        font-weight: 600;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        color: #6c757d;
+        background: #f8f9fa;
+    }
+    
+    .ncm-orders-table td {
+        vertical-align: middle;
+        font-size: 0.9rem;
+    }
+    
+    .order-row {
+        transition: background-color 0.2s ease;
+    }
+    
+    .order-row:hover {
+        background-color: #f8f9fa;
+    }
+    
+    /* Activity Log Styles */
+    .activity-log-row {
+        background: #f8f9fa !important;
+        border-top: 2px solid #3b82f6 !important;
+    }
+    
+    .activity-log-container {
+        padding: 0;
+        animation: slideDown 0.3s ease;
+    }
+    
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            max-height: 0;
+        }
+        to {
+            opacity: 1;
+            max-height: 500px;
+        }
+    }
+    
+    .activity-log-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px 20px;
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+    
+    .activity-log-header h6 {
+        margin: 0;
+        font-weight: 600;
+    }
+    
+    .btn-close-log {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .btn-close-log:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+    
+    .activity-log-body {
+        padding: 20px;
+        max-height: 400px;
+        overflow-y: auto;
+        background: white;
+    }
+    
+    .activity-timeline-mini {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .activity-item-mini {
+        display: flex;
+        gap: 15px;
+        padding: 12px;
+        background: #f9fafb;
+        border-radius: 8px;
+        border-left: 3px solid #3b82f6;
+        transition: all 0.2s ease;
+    }
+    
+    .activity-item-mini:hover {
+        background: #f3f4f6;
+        transform: translateX(5px);
+    }
+    
+    .activity-icon-mini {
+        width: 36px;
+        height: 36px;
+        background: white;
+        border: 2px solid #e5e7eb;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+    
+    .activity-icon-mini[data-action="created"] {
+        color: #10b981;
+        border-color: #10b981;
+    }
+    
+    .activity-icon-mini[data-action="status_changed"] {
+        color: #f59e0b;
+        border-color: #f59e0b;
+    }
+    
+    .activity-icon-mini[data-action="payment_changed"] {
+        color: #8b5cf6;
+        border-color: #8b5cf6;
+    }
+    
+    .activity-icon-mini[data-action="tracking_added"],
+    .activity-icon-mini[data-action="tracking_updated"] {
+        color: #06b6d4;
+        border-color: #06b6d4;
+    }
+    
+    .activity-content-mini {
+        flex-grow: 1;
+    }
+    
+    .activity-header-mini {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .activity-badge-mini {
+        display: inline-block;
+        background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+        color: #1e40af;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .activity-time-mini {
+        font-size: 0.75rem;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .activity-description-mini {
+        font-size: 0.85rem;
+        color: #374151;
+        line-height: 1.4;
+        margin-bottom: 6px;
+    }
+    
+    .activity-user-mini {
+        font-size: 0.75rem;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    
+    .activity-user-mini i {
+        color: #3b82f6;
+    }
+    
+    .empty-activity {
+        text-align: center;
+        padding: 40px 20px;
+        color: #9ca3af;
+    }
+    
+    .empty-activity i {
+        font-size: 3rem;
+        margin-bottom: 10px;
+        display: block;
+    }
+    
+    .empty-activity p {
+        margin: 0;
+        font-size: 0.9rem;
+    }
+    
+    /* Scrollbar styling */
+    .activity-log-body::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .activity-log-body::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+    
+    .activity-log-body::-webkit-scrollbar-thumb {
+        background: #3b82f6;
+        border-radius: 4px;
+    }
+    
+    .activity-log-body::-webkit-scrollbar-thumb:hover {
+        background: #2563eb;
+    }
+</style>
+
+<script>
+function toggleActivityLog(orderId) {
+    const activityRow = document.getElementById('activity-log-' + orderId);
+    
+    if (activityRow.style.display === 'none') {
+        // Close all other activity logs
+        document.querySelectorAll('.activity-log-row').forEach(row => {
+            row.style.display = 'none';
+        });
+        
+        // Open this one
+        activityRow.style.display = 'table-row';
+    } else {
+        activityRow.style.display = 'none';
+    }
+}
+
+function moveToTrash(orderId, orderNumber) {
+    if (confirm(`Move order ${orderNumber} to trash?\n\nYou can restore it later from the trash.`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/ncm-orders/move-to-trash/${orderId}/`;
+        
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = 'csrfmiddlewaretoken';
+        csrf.value = '{{ csrf_token }}';
+        form.appendChild(csrf);
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Close activity log when clicking outside
+document.addEventListener('click', function(event) {
+    const activityLogs = document.querySelectorAll('.activity-log-row');
+    const isClickInsideLog = event.target.closest('.activity-log-container');
+    const isClickOnToggle = event.target.closest('[onclick^="toggleActivityLog"]');
+    
+    if (!isClickInsideLog && !isClickOnToggle) {
+        activityLogs.forEach(log => {
+            log.style.display = 'none';
+        });
+    }
+});
+</script>
+{% endblock %}
