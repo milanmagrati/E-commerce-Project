@@ -5206,9 +5206,9 @@ def return_create(request):
             return redirect('return_create')
     
     # GET request
-    # Get recent delivered orders for scanning
+    # Get recent delivered, shipped, or processing orders for scanning
     recent_orders = Order.objects.filter(
-        order_status='delivered',
+        order_status__in=['delivered', 'shipped', 'processing'],
         is_deleted=False
     ).select_related('customer', 'created_by').prefetch_related(
         'items__product',
@@ -5223,10 +5223,10 @@ def return_create(request):
             order = Order.objects.select_related('customer').prefetch_related(
                 'items__product',
                 'items__product_variation'
-            ).get(id=request.GET.get('order_id'), order_status='delivered')
+            ).get(id=request.GET.get('order_id'), order_status__in=['delivered', 'shipped', 'processing'])
             order_items = order.items.all()
         except Order.DoesNotExist:
-            messages.error(request, 'Order not found or not delivered')
+            messages.error(request, 'Order not found or not in returnable status')
     
     context = {
         'recent_orders': recent_orders,
@@ -5241,17 +5241,18 @@ def return_create(request):
 @login_required
 def api_get_order_by_barcode(request):
     """AJAX endpoint to fetch order data by barcode/order number"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     barcode = request.GET.get('barcode', '').strip()
     
     if not barcode:
         return JsonResponse({'success': False, 'error': 'No barcode provided'})
     
     try:
+        logger.info(f"API request for barcode: {barcode}")
         # Build query - search by order number
-        order = Order.objects.select_related('customer', 'created_by').prefetch_related(
-            'items__product',
-            'items__product_variation'
-        ).filter(
+        order = Order.objects.filter(
             order_number__iexact=barcode,  # Case-insensitive match
             is_deleted=False
         ).first()
@@ -5267,11 +5268,11 @@ def api_get_order_by_barcode(request):
                 })
             
             # Check if order exists but not delivered
-            pending_order = Order.objects.filter(order_number__iexact=barcode, is_deleted=False).exclude(order_status='delivered').first()
+            pending_order = Order.objects.filter(order_number__iexact=barcode, is_deleted=False).exclude(order_status__in=['delivered', 'processing', 'shipped']).first()
             if pending_order:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Order "{barcode}" is not delivered yet (Status: {pending_order.order_status})'
+                    'error': f'Order "{barcode}" cannot be returned (Status: {pending_order.order_status})'
                 })
             
             return JsonResponse({
@@ -5279,63 +5280,78 @@ def api_get_order_by_barcode(request):
                 'error': f'Order "{barcode}" not found'
             })
         
-        # Check if delivered
-        if order.order_status != 'delivered':
+        # Check if delivered or processing
+        if order.order_status not in ['delivered', 'processing', 'shipped']:
             return JsonResponse({
                 'success': False,
-                'error': f'Order "{barcode}" is not delivered (Status: {order.order_status}). Only delivered orders can be returned.'
+                'error': f'Order "{barcode}" cannot be returned (Status: {order.order_status}). Only delivered, shipped, or processing orders can be returned.'
             })
         
         # Prepare order items
         items = []
-        for item in order.items.all():
-            # Get SKU and barcode
-            sku = item.product_sku or ''
-            barcode_val = ''
-            
-            # Try to get barcode from variation or product
-            if item.product_variation:
-                if hasattr(item.product_variation, 'barcode'):
-                    barcode_val = item.product_variation.barcode or ''
-                if not barcode_val and hasattr(item.product, 'barcode'):
-                    barcode_val = item.product.barcode or ''
-                if not sku:
-                    sku = item.product_variation.sku
-            else:
-                if hasattr(item.product, 'barcode'):
-                    barcode_val = item.product.barcode or ''
-            
-            items.append({
-                'id': item.id,
-                'product_name': item.product_name,
-                'product_sku': sku,
-                'product_barcode': barcode_val,
-                'price': str(item.price),
-                'quantity': item.quantity,
-                'product_variation': item.product_variation.sku if item.product_variation else None
-            })
+        try:
+            for item in order.items.all():
+                try:
+                    # Get SKU and barcode with safe defaults
+                    sku = item.product_sku or ''
+                    barcode_val = ''
+                    
+                    # Try to get barcode from variation first
+                    if item.product_variation and item.product_variation.barcode:
+                        barcode_val = item.product_variation.barcode
+                    elif item.product and item.product.barcode:
+                        barcode_val = item.product.barcode
+                    
+                    # Get SKU from variation if not set on item
+                    if not sku and item.product_variation:
+                        sku = item.product_variation.sku or ''
+                    
+                    items.append({
+                        'id': item.id,
+                        'product_name': item.product_name or 'Unknown',
+                        'product_sku': sku,
+                        'product_barcode': barcode_val,
+                        'price': str(item.price or 0),
+                        'quantity': item.quantity or 1,
+                        'product_variation': item.product_variation.sku if item.product_variation else None
+                    })
+                except Exception as e:
+                    logger.warning(f"Error building item {item.id}: {str(e)}")
+                    items.append({
+                        'id': item.id,
+                        'product_name': item.product_name or 'Unknown',
+                        'product_sku': item.product_sku or '',
+                        'product_barcode': '',
+                        'price': str(item.price or 0),
+                        'quantity': item.quantity or 1,
+                        'product_variation': None
+                    })
+        except Exception as e:
+            logger.error(f"Error processing items for order {order.id}: {str(e)}")
+            items = []
         
         return JsonResponse({
             'success': True,
             'order': {
                 'id': order.id,
                 'order_number': order.order_number,
-                'customer_name': order.customer_name,
-                'customer_phone': order.customer_phone,
+                'customer_name': order.customer_name or 'N/A',
+                'customer_phone': order.customer_phone or 'N/A',
                 'customer_email': order.customer_email or '',
-                'created_at': order.created_at.strftime('%b %d, %Y'),
-                'total_amount': str(order.total_amount),
+                'created_at': order.created_at.strftime('%b %d, %Y') if order.created_at else '',
+                'total_amount': str(order.total_amount or 0),
                 'items': items
             }
-        })
+        }, status=200)
         
     except Exception as e:
         import traceback
+        logger.error(f"API Error: {str(e)}")
         traceback.print_exc()
         return JsonResponse({
             'success': False,
             'error': f'Server error: {str(e)}'
-        })
+        }, status=500)
 
 
 @login_required

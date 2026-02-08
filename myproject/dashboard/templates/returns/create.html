@@ -377,9 +377,14 @@
                 <div class="card border-0 shadow-sm mb-4">
                     <div class="card-header bg-success text-white">
                         <div class="d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">
-                                <i class="fas fa-check-circle me-2"></i> Scanned Orders
-                            </h5>
+                            <div>
+                                <h5 class="mb-0">
+                                    <i class="fas fa-check-circle me-2"></i> Scanned Orders
+                                </h5>
+                                <small id="draftIndicator" class="text-success-light" style="display:none;">
+                                    <i class="fas fa-history me-1"></i> Draft (Auto-saved)
+                                </small>
+                            </div>
                             <span class="badge bg-white text-success" id="scannedCount">0 Orders</span>
                         </div>
                     </div>
@@ -455,6 +460,9 @@
     let scannedOrders = new Map();
     let expandedOrderId = null;
     
+    // LocalStorage key for draft saves
+    const DRAFT_STORAGE_KEY = 'return_scanner_draft_orders';
+    
     // Auto-submit configuration
     let typingTimer;
     let scanBuffer = '';
@@ -469,6 +477,58 @@
     const scannedOrdersList = document.getElementById('scannedOrdersList');
     const scannedCount = document.getElementById('scannedCount');
     const loadingOverlay = document.getElementById('loadingOverlay');
+
+    // ✅ Save draft to localStorage
+    function saveDraft() {
+        try {
+            const draftData = Array.from(scannedOrders.entries()).map(([key, value]) => ({
+                order_number: key,
+                order: value
+            }));
+            localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+            console.log('💾 Draft saved:', draftData.length, 'order(s)');
+        } catch (e) {
+            console.error('Failed to save draft:', e);
+        }
+    }
+
+    // ✅ Load draft from localStorage
+    function loadDraft() {
+        try {
+            const draftData = localStorage.getItem(DRAFT_STORAGE_KEY);
+            if (draftData) {
+                const orders = JSON.parse(draftData);
+                orders.forEach(item => {
+                    addScannedOrder(item.order);
+                });
+                // Show draft indicator
+                const draftIndicator = document.getElementById('draftIndicator');
+                if (draftIndicator) {
+                    draftIndicator.style.display = 'block';
+                }
+                console.log('📂 Draft loaded:', orders.length, 'order(s)');
+                return true;
+            }
+        } catch (e) {
+            console.error('Failed to load draft:', e);
+        }
+        return false;
+    }
+
+    // ✅ Clear draft
+    function clearDraft() {
+        try {
+            localStorage.removeItem(DRAFT_STORAGE_KEY);
+            // Hide draft indicator
+            const draftIndicator = document.getElementById('draftIndicator');
+            if (draftIndicator) {
+                draftIndicator.style.display = 'none';
+            }
+            console.log('🗑️ Draft cleared');
+        } catch (e) {
+            console.error('Failed to clear draft:', e);
+        }
+    }
 
     // Manual Mode Toggle
     document.getElementById('toggleManualMode').addEventListener('click', function() {
@@ -605,11 +665,21 @@
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
         
         const apiUrl = `/api/order-by-barcode/?barcode=${encodeURIComponent(barcode)}`;
+        console.log('📡 Calling API:', apiUrl);
         
         fetch(apiUrl, { signal: controller.signal })
             .then(response => {
                 clearTimeout(timeoutId);
-                return response.json();
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.text().then(text => {
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error(`Invalid JSON response: ${text.substring(0, 200)}`);
+                    }
+                });
             })
             .then(data => {
                 if (data.success) {
@@ -643,8 +713,11 @@
                     console.error('⏱️ Request timeout');
                     updateScanStatus('error', `<i class="fas fa-clock"></i> Timeout - please try again`);
                 } else {
-                    console.error('🔥 Fetch error:', error);
-                    updateScanStatus('error', `<i class="fas fa-times-circle"></i> Connection error`);
+                    console.error('🔥 Fetch error:', error.message);
+                    const errorMsg = error.message.includes('HTTP') ? 
+                        `Error: ${error.message}` : 
+                        'Connection error';
+                    updateScanStatus('error', `<i class="fas fa-times-circle"></i> ${errorMsg}`);
                 }
                 playErrorBeep();
                 
@@ -932,6 +1005,8 @@
         })
         .then(response => {
             if (response.ok) {
+                // ✅ Clear draft after successful submission
+                clearDraft();
                 window.location.href = '{% url "returns_list" %}';
             } else {
                 throw new Error('Submission failed');
@@ -943,6 +1018,32 @@
             loadingOverlay.classList.remove('active');
         });
     };
+
+    // Add Scanned Order
+    function addScannedOrder(orderData) {
+        // Store order data
+        scannedOrders.set(orderData.order_number, orderData);
+        
+        // Show scanned orders section
+        if (!scannedOrdersSection.classList.contains('active')) {
+            scannedOrdersSection.classList.add('active');
+        }
+        
+        // Create and add order card
+        const cardDiv = createOrderCard(orderData);
+        scannedOrdersList.appendChild(cardDiv);
+        
+        // Update count
+        scannedCount.textContent = `${scannedOrders.size} Order${scannedOrders.size !== 1 ? 's' : ''}`;
+        
+        // ✅ Save draft
+        saveDraft();
+        
+        // Scroll to the new card
+        setTimeout(() => {
+            cardDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
+    }
 
     // Remove Order
     window.removeOrder = function(orderNumber) {
@@ -962,6 +1063,9 @@
             
             // Update count
             scannedCount.textContent = `${scannedOrders.size} Order${scannedOrders.size !== 1 ? 's' : ''}`;
+            
+            // ✅ Save draft
+            saveDraft();
         }
     };
 
@@ -1026,6 +1130,9 @@
     document.querySelector('.scanner-container').addEventListener('click', () => {
         barcodeInput.focus();
     });
+
+    // ✅ Load draft from localStorage on page load
+    loadDraft();
 
     console.log('✅ Auto-submit enabled - No Enter key needed!');
 })();
