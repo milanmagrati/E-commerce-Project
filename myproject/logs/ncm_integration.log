@@ -420,3 +420,4 @@ Order Data: {'name': 'Cassidy Sims', 'phone': '9866041834', 'phone2': '', 'cod_c
 ✓ NCM Order created successfully: {'Message': 'Order Successfully Created', 'orderid': 18431977, 'weight': 1.0, 'delivery_charge': 120.0, 'delivery_type': 'Pickup/Collect'}
 NCM Order created: ORD000052 -> NCM ID: 18431977
 Bulk sync: 44 orders
+Bulk sync: 45 orders

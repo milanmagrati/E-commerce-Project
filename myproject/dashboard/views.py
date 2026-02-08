@@ -6163,15 +6163,71 @@ def ncm_sync_all_statuses(request):
 
 
 @login_required
+@login_required
 def ncm_branches_json(request):
     """
     Display NCM branches fetched from NCM API as HTML page or JSON API
+    ✅ ENHANCED: Properly extracts all branch fields (Name, Code, Areas, Municipality, District, etc.)
     """
     import requests
     from django.conf import settings
     
     branches = []
     error_message = None
+    districts = set()
+    
+    # ✅ MUNICIPALITY MAPPING - Extract municipality names from address patterns
+    MUNICIPALITY_MAPPING = {
+        'Arughat Tallo Bazar': 'AARUGHAT RURAL MUNICIPALITY',
+        'Arughat': 'AARUGHAT RURAL MUNICIPALITY',
+        'Amargadhi': 'AMARGADHI MUNICIPALITY',
+        'Amargadhi-5': 'AMARGADHI MUNICIPALITY',
+        'Dadeldhura Bazar': 'DADELDHURA MUNICIPALITY',
+        'Shitaganga Rural Municipality': 'SHITAGANGA RURAL MUNICIPALITY',
+        'Shitaganga': 'SHITAGANGA RURAL MUNICIPALITY',
+        'Sunwarshi': 'SUNWARSHI MUNICIPALITY',
+        'Chowk, Amargadhi': 'AMARGADHI MUNICIPALITY',
+    }
+    
+    # ✅ DISTRICT TO REGION MAPPING
+    DISTRICT_TO_REGION = {
+        'Taplejung': 'Koshi', 'Panchthar': 'Koshi', 'Ilam': 'Koshi', 'Jhapa': 'Koshi',
+        'Morang': 'Koshi', 'Sunsari': 'Koshi', 'Dhankuta': 'Koshi', 'Terhathum': 'Koshi',
+        'Bhojpur': 'Koshi', 'Sankhuwasabha': 'Koshi',
+        
+        'Saptari': 'Madhesh', 'Siraha': 'Madhesh', 'Dhanusa': 'Madhesh', 'Mahottari': 'Madhesh',
+        'Rautahat': 'Madhesh', 'Bara': 'Madhesh', 'Parsa': 'Madhesh',
+        
+        'Kathmandu': 'Bagmati', 'Lalitpur': 'Bagmati', 'Bhaktapur': 'Bagmati', 'Nuwakot': 'Bagmati',
+        'Rasuwa': 'Bagmati', 'Sindhuli': 'Bagmati', 'Kavre': 'Bagmati', 'Makwanpur': 'Bagmati',
+        'Dolakha': 'Bagmati', 'Ramechhap': 'Bagmati',
+        
+        'Gorkha': 'Gandaki', 'Lamjung': 'Gandaki', 'Tanahu': 'Gandaki', 'Syangja': 'Gandaki',
+        'Kaski': 'Gandaki', 'Manang': 'Gandaki', 'Mustang': 'Gandaki',
+        
+        'Nawalpur': 'Lumbini', 'Parasi': 'Lumbini', 'Rupandehi': 'Lumbini', 'Kapilvastu': 'Lumbini',
+        'Arghakhanchi': 'Lumbini', 'Gulmi': 'Lumbini', 'Palpa': 'Lumbini',
+        
+        'Salyan': 'Karnali', 'Pyuthan': 'Karnali', 'Rolpa': 'Karnali', 'Rukum': 'Karnali',
+        'Dailekh': 'Karnali', 'Jajarkot': 'Karnali', 'Jumla': 'Karnali', 'Dolpa': 'Karnali',
+        'Humla': 'Karnali', 'Achham': 'Karnali',
+        
+        'Dadeldhura': 'Sudurpaschim', 'Baitadi': 'Sudurpaschim', 'Bajhang': 'Sudurpaschim',
+        'Bajura': 'Sudurpaschim', 'Kailali': 'Sudurpaschim', 'Kanchanpur': 'Sudurpaschim',
+        'Doti': 'Sudurpaschim',
+    }
+    
+    # ✅ MUNICIPALITY TO DISTRICT MAPPING (for cases where API doesn't have district field)
+    MUNICIPALITY_TO_DISTRICT = {
+        'Arughat Tallo Bazar': 'Gorkha', 'Arughat': 'Gorkha',
+        'Shitaganga Rural Municipality-04': 'Arghakhanchi', 'Shitaganga': 'Arghakhanchi',
+        'Amargadhi': 'Bajhang', 'Amargadhi Municipality': 'Bajhang',
+        'Amarai Arghakhanchi': 'Arghakhanchi',
+        'Amardaha': 'Morang', 'Subarnapur': 'Morang',
+        'Jitpur Simara': 'Bara', 'Jitpur Simara Sub-Metropolitan City': 'Bara',
+        'Sudhodhan Rural Municipality': 'Rupandehi',
+        'Aanbuk Khaireni': 'Tanahu',
+    }
     
     try:
         # Get NCM API credentials
@@ -6185,12 +6241,12 @@ def ncm_branches_json(request):
             error_message = 'NCM API not configured in settings'
         else:
             # Construct API URL for branches
-            # Base URL is already like: https://portal.nepalcanmove.com/api/v2
-            # So just append /branches
             base_url = base_url.rstrip('/')
             api_url = f"{base_url}/branches"
             
+            print(f"\n{'='*80}")
             print(f"🔵 Fetching NCM branches from: {api_url}")
+            print(f"{'='*80}")
             
             # Call NCM API
             response = requests.get(
@@ -6203,7 +6259,8 @@ def ncm_branches_json(request):
             )
             
             print(f"📥 Response Status: {response.status_code}")
-            print(f"📄 Response: {response.text[:500]}")
+            raw_response = response.text[:2000]
+            print(f"📄 Raw Response:\n{raw_response}")
             
             if response.status_code == 200:
                 data = response.json()
@@ -6222,16 +6279,107 @@ def ncm_branches_json(request):
                         # If it's a single object, wrap it in a list
                         branches = [data] if data else []
                 
-                # Ensure proper format with 'code' and 'name'
+                print(f"\n📊 Raw branches count: {len(branches)}")
+                if branches:
+                    print(f"📋 Sample raw branch keys: {list(branches[0].keys()) if isinstance(branches[0], dict) else 'Not a dict'}")
+                    print(f"📋 Sample raw branch data:\n{json.dumps(branches[0], indent=2, default=str)}")
+                    # Print first 3 branches to see pattern
+                    print(f"\n📋 First 3 branches:")
+                    for i in range(min(3, len(branches))):
+                        print(f"  Branch {i+1}: {json.dumps(branches[i], indent=2, default=str)}\n")
+                    # ✅ Debug: Print municipality-related fields from first branch
+                    print(f"\n🔍 MUNICIPALITY DEBUG - All fields in first branch:")
+                    first_branch = branches[0] if isinstance(branches[0], dict) else {}
+                    for key in first_branch.keys():
+                        if 'munic' in key.lower() or 'city' in key.lower() or 'town' in key.lower() or 'area' in key.lower():
+                            print(f"   {key}: {first_branch[key]}")
+                
+                # ✅ ENHANCED: Direct field extraction - API has District and Region data
                 formatted_branches = []
-                for branch in branches:
+                for idx, branch in enumerate(branches):
                     if isinstance(branch, dict):
-                        formatted_branches.append({
-                            'code': branch.get('code') or branch.get('id') or branch.get('name', ''),
-                            'name': branch.get('name') or branch.get('code', ''),
-                        })
+                        try:
+                            # ===== DIRECT EXTRACTION - Try all possible field name variations =====
+                            code_value = str(branch.get('code') or branch.get('Code') or branch.get('id') or branch.get('ID') or '').strip()
+                            name_value = str(branch.get('name') or branch.get('Name') or branch.get('branch_name') or branch.get('Branch_Name') or '').strip()
+                            
+                            # MUNICIPALITY - Extract from mapping or address
+                            address = branch.get('address', '')
+                            municipality_value = ''
+                            
+                            # First try municipality mapping
+                            for address_pattern, muni_name in MUNICIPALITY_MAPPING.items():
+                                if address_pattern.lower() in address.lower():
+                                    municipality_value = muni_name
+                                    break
+                            
+                            # If not found in mapping, extract first part of address
+                            if not municipality_value:
+                                municipality_value = address.split(',')[0].strip() if address else ''
+                            
+                            # DISTRICT - API uses 'district_name'
+                            district_value = str(
+                                branch.get('district_name') or 
+                                branch.get('district') or 
+                                branch.get('District') or ''
+                            ).strip()
+                            
+                            # REGION/PROVINCE - API uses 'province_name'
+                            region_value = str(
+                                branch.get('province_name') or 
+                                branch.get('region') or 
+                                branch.get('Region') or ''
+                            ).strip()
+                            
+                            # Other fields
+                            areas_value = str(branch.get('areas_covered') or branch.get('Areas_Covered') or branch.get('areas') or branch.get('Areas') or '').strip()
+                            phone_value = str(branch.get('phone') or branch.get('Phone') or branch.get('PHONE') or branch.get('telephone') or '').strip()
+                            coords_value = str(branch.get('coordinates') or branch.get('Coordinates') or branch.get('lat_long') or '').strip()
+                            address_value = str(branch.get('address') or branch.get('Address') or branch.get('location') or '').strip()
+                            
+                            # Map all fields
+                            formatted_branch = {
+                                # Core fields (required)
+                                'code': code_value or 'N/A',
+                                'name': name_value or 'N/A',
+                                
+                                # ✅ All fields from API
+                                'areas_covered': areas_value or 'N/A',
+                                'municipality': municipality_value or 'N/A',
+                                'district': district_value or 'N/A',
+                                'region': region_value or 'N/A',
+                                'phone': phone_value or 'N/A',
+                                'coordinates': coords_value or 'N/A',
+                                'address': address_value or 'N/A',
+                                
+                                # Additional metadata if available
+                                'is_active': branch.get('is_active', True) or branch.get('active', True) or branch.get('Active', True) or True,
+                            }
+                            
+                            # Only add if has code and name
+                            if formatted_branch['code'] != 'N/A' and formatted_branch['name'] != 'N/A':
+                                formatted_branches.append(formatted_branch)
+                                # Safely add to districts set
+                                if formatted_branch['district'] != 'N/A':
+                                    districts.add(formatted_branch['district'])
+                                
+                                if idx == 0:
+                                    print(f"\n✅ Sample formatted branch:")
+                                    print(f"  Code: {formatted_branch['code']}")
+                                    print(f"  Name: {formatted_branch['name']}")
+                                    print(f"  District: {formatted_branch['district']}")
+                                    print(f"  Region: {formatted_branch['region']}")
+                                    print(f"  Municipality: {formatted_branch['municipality']}")
+                                    print(f"  Phone: {formatted_branch['phone']}\n")
+                        except Exception as e:
+                            print(f"⚠️ Error processing branch at index {idx}: {str(e)}")
+                            continue
+                
                 branches = formatted_branches
-                print(f"✅ Got {len(branches)} branches")
+                print(f"✅ Got {len(branches)} branches with all fields")
+                print(f"📍 Unique districts found: {sorted(districts)}\n")
+                print(f"{'='*80}\n")
+                
             elif response.status_code == 401:
                 error_message = 'Authentication failed - Check NCM_API_KEY'
             elif response.status_code == 404:
@@ -6246,6 +6394,8 @@ def ncm_branches_json(request):
     except Exception as e:
         error_message = f'Error fetching branches: {str(e)}'
         print(f"💥 Error: {error_message}")
+        import traceback
+        traceback.print_exc()
     
     # Return JSON if requested via API
     if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
@@ -6254,10 +6404,14 @@ def ncm_branches_json(request):
         return JsonResponse({'branches': branches})
     
     # Otherwise return HTML page
+    # ✅ Ensure districts is always a safe iterable for the template
+    safe_districts = sorted(list(districts)) if districts else []
+    
     context = {
         'branches': branches,
         'error_message': error_message,
-        'page_title': 'NCM Branches'
+        'page_title': 'NCM Branches',
+        'districts': safe_districts,
     }
     return render(request, 'ncm_branches.html', context)
 
