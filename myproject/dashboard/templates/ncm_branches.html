@@ -97,8 +97,8 @@
                             </div>
                         </div>
                         <div class="col-lg-6">
-                            <div class="d-flex gap-2">
-                                <div class="filter-group">
+                            <div class="d-flex gap-2 flex-wrap">
+                                <div class="filter-group flex-fill">
                                     <i class="fas fa-filter filter-icon"></i>
                                     <select class="form-select filter-select" id="filterRegion">
                                         <option value="">All Regions</option>
@@ -111,7 +111,7 @@
                                         <option value="sudurpaschim">Sudurpaschim</option>
                                     </select>
                                 </div>
-                                <div class="filter-group">
+                                <div class="filter-group flex-fill">
                                     <i class="fas fa-map filter-icon"></i>
                                     <select class="form-select filter-select" id="filterDistrict">
                                         <option value="">All Districts</option>
@@ -120,9 +120,10 @@
                                         {% endfor %}
                                     </select>
                                 </div>
-                                <div class="filter-group">
+                                <div class="filter-group flex-fill">
                                     <i class="fas fa-sort filter-icon"></i>
                                     <select class="form-select filter-select" id="sortBranches">
+                                        <option value="relevance">Relevance</option>
                                         <option value="name-asc">A to Z</option>
                                         <option value="name-desc">Z to A</option>
                                         <option value="district">District</option>
@@ -134,17 +135,21 @@
                     </div>
                     <div class="row mt-3">
                         <div class="col-12">
-                            <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                                 <div>
                                     <small class="text-muted">
                                         <i class="fas fa-info-circle me-1"></i>
                                         Showing <span class="fw-semibold text-primary" id="resultCount">{{ branches|length }}</span> branches
                                     </small>
                                 </div>
-                                <div>
+                                <div class="d-flex gap-2 flex-wrap">
                                     <span class="badge bg-light text-dark border">
                                         <i class="fas fa-highlighter text-warning me-1"></i>
                                         Search matches highlighted
+                                    </span>
+                                    <span class="badge bg-light text-dark border" id="matchBadge" style="display: none;">
+                                        <i class="fas fa-star text-success me-1"></i>
+                                        <span id="matchCount">0</span> exact matches
                                     </span>
                                 </div>
                             </div>
@@ -216,20 +221,20 @@
                 </div>
                 
                 <div class="table-responsive" style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
-                    <table class="table table-hover align-middle mb-0" style="min-width: 1400px;">
+                    <table class="table table-hover align-middle mb-0 ncm-branches-table">
                         <thead class="table-light">
                             <tr>
-                                <th class="text-center" style="min-width: 40px; width: 5%;">#</th>
-                                <th style="min-width: 120px; width: 12%;">Branch</th>
-                                <th class="text-center" style="min-width: 80px; width: 8%;">Code</th>
-                                <th style="min-width: 280px; width: 22%;">Areas Covered</th>
-                                <th style="min-width: 120px; width: 12%;">Municipality</th>
-                                <th style="min-width: 100px; width: 10%;">District</th>
-                                <th style="min-width: 90px; width: 9%;">Region</th>
-                                <th class="text-center" style="min-width: 110px; width: 11%;">Contact</th>
-                                <th class="text-center" style="min-width: 60px; width: 6%;">Map</th>
-                                <th style="min-width: 120px; width: 10%;">Address</th>
-                                <th class="text-center" style="min-width: 90px; width: 8%;">Actions</th>
+                                <th class="col-num text-center">#</th>
+                                <th class="col-branch">Branch</th>
+                                <th class="col-code text-center">Code</th>
+                                <th class="col-areas">Areas Covered</th>
+                                <th class="col-municipality">Municipality</th>
+                                <th class="col-district">District</th>
+                                <th class="col-region">Region</th>
+                                <th class="col-contact text-center">Contact</th>
+                                <th class="col-map text-center">Map</th>
+                                <th class="col-address">Address</th>
+                                <th class="col-actions text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="branchesTableBody">
@@ -242,8 +247,9 @@
                                 data-areas="{{ branch.areas_covered|lower }}"
                                 data-municipality="{{ branch.municipality|lower }}"
                                 data-phone="{{ branch.phone|lower }}"
-                                data-address="{{ branch.address|lower }}">
-                                <td class="text-center text-muted fw-semibold">
+                                data-address="{{ branch.address|lower }}"
+                                data-original-index="{{ forloop.counter }}">
+                                <td class="text-center text-muted fw-semibold row-number">
                                     {{ forloop.counter }}
                                 </td>
                                 <td>
@@ -265,13 +271,13 @@
                                     </div>
                                 </td>
                                 <td class="text-center">
-                                    <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-3 py-2 rounded-pill">
+                                    <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-3 py-2 rounded-pill branch-code">
                                         {{ branch.code }}
                                     </span>
                                 </td>
                                 <td>
                                     <div class="areas-container">
-                                        <div class="areas-text">
+                                        <div class="areas-text" data-original-text="{{ branch.areas_covered|default:"N/A" }}">
                                             {{ branch.areas_covered|default:"N/A" }}
                                         </div>
                                         {% if branch.areas_covered and branch.areas_covered|length > 100 %}
@@ -283,15 +289,15 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <span class="text-muted">{{ branch.municipality|default:"N/A" }}</span>
+                                    <span class="text-muted branch-municipality">{{ branch.municipality|default:"N/A" }}</span>
                                 </td>
                                 <td>
-                                    <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-3 py-1">
+                                    <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-3 py-1 branch-district">
                                         {{ branch.district|default:"N/A" }}
                                     </span>
                                 </td>
                                 <td>
-                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-3 py-1">
+                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-3 py-1 branch-region">
                                         {{ branch.region|default:"N/A" }}
                                     </span>
                                 </td>
@@ -299,10 +305,10 @@
                                     {% if branch.phone %}
                                     <a href="tel:{{ branch.phone }}" class="text-decoration-none phone-link">
                                         <i class="fas fa-phone-alt me-1"></i>
-                                        <span>{{ branch.phone }}</span>
+                                        <span class="branch-phone">{{ branch.phone }}</span>
                                     </a>
                                     {% else %}
-                                    <span class="text-muted">N/A</span>
+                                    <span class="text-muted branch-phone">N/A</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-center">
@@ -321,7 +327,7 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <div class="address-text">
+                                    <div class="address-text" data-original-text="{{ branch.address|default:"N/A" }}">
                                         {{ branch.address|default:"N/A" }}
                                     </div>
                                 </td>
@@ -347,7 +353,7 @@
 
                 <!-- Pagination -->
                 <div class="card-footer card-footer-glass">
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <div>
                             <small class="text-muted">
                                 Page <span id="currentPage">1</span> of <span id="totalPages">1</span>
@@ -357,13 +363,13 @@
                             <nav aria-label="Branch pagination">
                                 <ul class="pagination pagination-sm mb-0" id="paginationControls">
                                     <li class="page-item disabled" id="prevPage">
-                                        <a class="page-link" href="#" onclick="changePage(-1)">
+                                        <a class="page-link" href="#" onclick="changePage(-1); return false;">
                                             <i class="fas fa-chevron-left"></i>
                                         </a>
                                     </li>
-                                    <li class="page-item active"><a class="page-link" href="#" onclick="goToPage(1)">1</a></li>
+                                    <li class="page-item active"><a class="page-link" href="#" onclick="goToPage(1); return false;">1</a></li>
                                     <li class="page-item" id="nextPage">
-                                        <a class="page-link" href="#" onclick="changePage(1)">
+                                        <a class="page-link" href="#" onclick="changePage(1); return false;">
                                             <i class="fas fa-chevron-right"></i>
                                         </a>
                                     </li>
@@ -372,7 +378,7 @@
                         </div>
                         <div>
                             <small class="text-muted">
-                                <span id="startItem">1</span>-<span id="endItem">{{ branches|length }}</span> of <span>{{ branches|length }}</span> items
+                                <span id="startItem">1</span>-<span id="endItem">{{ branches|length }}</span> of <span id="totalItems">{{ branches|length }}</span> items
                             </small>
                         </div>
                     </div>
@@ -466,7 +472,6 @@
 
     .card-glass:hover {
         box-shadow: var(--shadow-medium);
-        transform: translateY(-2px);
     }
 
     .card-header-glass {
@@ -599,6 +604,8 @@
         justify-content: center;
         border-radius: 50%;
         transition: var(--transition);
+        cursor: pointer;
+        z-index: 10;
     }
 
     .btn-clear-search:hover {
@@ -610,6 +617,7 @@
     .filter-group {
         position: relative;
         flex: 1;
+        min-width: 150px;
     }
 
     .filter-icon {
@@ -641,6 +649,85 @@
         margin-bottom: 0;
     }
 
+    .ncm-branches-table {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    .ncm-branches-table thead th {
+        background: linear-gradient(180deg, #f8f9fa, #e9ecef);
+        border-bottom: 2px solid rgba(67, 97, 238, 0.1);
+        font-weight: 600;
+        color: #495057;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 1rem 0.75rem;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        white-space: nowrap;
+        vertical-align: middle;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Table column widths */
+    .ncm-branches-table .col-num {
+        width: 5%;
+        min-width: 50px;
+    }
+
+    .ncm-branches-table .col-branch {
+        width: 12%;
+        min-width: 100px;
+    }
+
+    .ncm-branches-table .col-code {
+        width: 8%;
+        min-width: 90px;
+    }
+
+    .ncm-branches-table .col-areas {
+        width: 22%;
+        min-width: 180px;
+    }
+
+    .ncm-branches-table .col-municipality {
+        width: 12%;
+        min-width: 100px;
+    }
+
+    .ncm-branches-table .col-district {
+        width: 10%;
+        min-width: 85px;
+    }
+
+    .ncm-branches-table .col-region {
+        width: 9%;
+        min-width: 80px;
+    }
+
+    .ncm-branches-table .col-contact {
+        width: 11%;
+        min-width: 100px;
+    }
+
+    .ncm-branches-table .col-map {
+        width: 6%;
+        min-width: 60px;
+    }
+
+    .ncm-branches-table .col-address {
+        width: 10%;
+        min-width: 100px;
+    }
+
+    .ncm-branches-table .col-actions {
+        width: 8%;
+        min-width: 80px;
+    }
+
     .table thead th {
         background: linear-gradient(180deg, #f8f9fa, #e9ecef);
         border-bottom: 2px solid rgba(67, 97, 238, 0.1);
@@ -660,6 +747,7 @@
     .table tbody tr {
         transition: var(--transition);
         border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+        height: auto;
     }
 
     .table tbody tr:hover {
@@ -667,51 +755,38 @@
     }
 
     .table td {
-        padding: 0.75rem 0.5rem;
+        padding: 0.75rem 0.75rem;
         vertical-align: middle;
         border-bottom: 1px solid rgba(0, 0, 0, 0.03);
-    }
-
-    .table thead th,
-    .table tbody td {
-        overflow: visible;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        height: auto;
     }
 
     /* Branch Avatar */
     .branch-avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, rgba(67, 97, 238, 0.1), rgba(58, 12, 163, 0.1));
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--primary-color);
-    }
-
-    .table tbody td {
-        vertical-align: middle;
-        padding: 0.75rem;
-        word-wrap: break-word;
+        display: none;
     }
 
     /* Areas Covered */
     .areas-container {
         width: 100%;
-        min-width: 100%;
+        overflow: hidden;
     }
 
     .areas-text {
-        font-size: 0.8rem;
-        line-height: 1.3;
+        font-size: 0.85rem;
+        line-height: 1.4;
         color: #495057;
-        max-height: 3.2em;
+        max-height: 5.6em;
         overflow: hidden;
         text-overflow: ellipsis;
         display: -webkit-box;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
+        -webkit-line-clamp: 4;
+        line-clamp: 4;
         -webkit-box-orient: vertical;
+        word-break: break-word;
+        white-space: normal;
     }
 
     .areas-text.expanded {
@@ -723,6 +798,7 @@
     .toggle-areas {
         color: var(--primary-color) !important;
         transition: var(--transition);
+        word-break: break-word;
     }
 
     .toggle-areas:hover {
@@ -731,10 +807,13 @@
 
     /* Address Text */
     .address-text {
-        font-size: 0.8rem;
-        line-height: 1.3;
+        font-size: 0.85rem;
+        line-height: 1.4;
         color: #6c757d;
         word-break: break-word;
+        white-space: normal;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* Phone Link */
@@ -746,7 +825,7 @@
 
     .phone-link:hover {
         color: #3a86ff;
-        text-decoration: underline;
+        text-decoration: underline !important;
     }
 
     /* Map Button */
@@ -770,29 +849,46 @@
         letter-spacing: 0.3px;
     }
 
-    /* Search Highlight */
+    /* Search Highlight - Enhanced */
     .highlight {
-        background: linear-gradient(90deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.05)) !important;
+        background: linear-gradient(90deg, rgba(255, 193, 7, 0.2), rgba(255, 193, 7, 0.1)) !important;
         position: relative;
-    }
-
-    .highlight::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        background: linear-gradient(180deg, #ffc107, #ff9800);
-        border-radius: 2px;
+        animation: pulseHighlight 2s ease-in-out infinite;
+        box-shadow: inset 4px 0 0 0 #ffc107 !important;
     }
 
     .highlight-text {
         background: linear-gradient(90deg, #ffc107, #ff9800);
         color: #000;
-        padding: 0.1em 0.3em;
-        border-radius: 3px;
+        padding: 0.15em 0.3em;
+        border-radius: 4px;
         font-weight: 600;
+        box-shadow: 0 2px 4px rgba(255, 193, 7, 0.3);
+        display: inline;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    /* Top Match Indicator */
+    .top-match {
+        background: linear-gradient(90deg, rgba(76, 201, 240, 0.15), rgba(76, 201, 240, 0.05)) !important;
+        box-shadow: inset 4px 0 0 0 #4cc9f0, 0 2px 8px rgba(76, 201, 240, 0.2) !important;
+    }
+
+    .top-match .row-number::after {
+        content: '★';
+        color: #4cc9f0;
+        margin-left: 5px;
+        font-size: 1.1em;
+    }
+
+    @keyframes pulseHighlight {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+        }
+        50% {
+            box-shadow: 0 0 15px 2px rgba(255, 193, 7, 0.3);
+        }
     }
 
     /* Pagination */
@@ -856,18 +952,6 @@
         margin-top: 0.125rem;
     }
 
-    /* Loading Animation */
-    .loading-skeleton {
-        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-        background-size: 200% 100%;
-        animation: loading 1.5s infinite;
-    }
-
-    @keyframes loading {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-    }
-
     /* Animations */
     @keyframes fadeInUp {
         from {
@@ -909,13 +993,73 @@
         }
 
         .table-responsive {
-            font-size: 0.85rem;
+            font-size: 0.80rem;
         }
 
-        .areas-text {
-            -webkit-line-clamp: 2;
-            line-clamp: 2;
-            max-height: 3em;
+        .ncm-branches-table {
+            table-layout: auto;
+            min-width: 100%;
+        }
+
+        .ncm-branches-table thead th,
+        .ncm-branches-table td {
+            padding: 0.5rem 0.4rem;
+            font-size: 0.8rem;
+        }
+
+        .ncm-branches-table .col-num {
+            width: 5%;
+            min-width: 40px;
+        }
+
+        .ncm-branches-table .col-branch {
+            width: 12%;
+            min-width: 80px;
+        }
+
+        .ncm-branches-table .col-code {
+            width: 8%;
+            min-width: 70px;
+        }
+
+        .ncm-branches-table .col-areas {
+            width: 20%;
+            min-width: 120px;
+        }
+
+        .ncm-branches-table .col-municipality {
+            width: 12%;
+            min-width: 80px;
+        }
+
+        .ncm-branches-table .col-district {
+            width: 10%;
+            min-width: 70px;
+        }
+
+        .ncm-branches-table .col-region {
+            width: 9%;
+            min-width: 60px;
+        }
+
+        .ncm-branches-table .col-contact {
+            width: 10%;
+            min-width: 80px;
+        }
+
+        .ncm-branches-table .col-map {
+            width: 6%;
+            min-width: 50px;
+        }
+
+        .ncm-branches-table .col-address {
+            width: 10%;
+            min-width: 80px;
+        }
+
+        .ncm-branches-table .col-actions {
+            width: 8%;
+            min-width: 70px;
         }
 
         .branch-avatar {
@@ -926,6 +1070,15 @@
 
         .card-header-glass, .card-footer-glass {
             padding: 0.75rem 1rem;
+        }
+
+        .areas-text {
+            font-size: 0.8rem;
+        }
+
+        .branch-code, .branch-district, .branch-region {
+            font-size: 0.7rem;
+            padding: 0.25rem 0.5rem !important;
         }
     }
 
@@ -958,6 +1111,7 @@
     let filteredBranches = [];
     let currentSearchTerm = '';
     let currentBranchCode = '';
+    let allBranches = [];
 
     // DOM Elements
     const searchInput = document.getElementById('branchSearch');
@@ -975,9 +1129,12 @@
     const totalPagesSpan = document.getElementById('totalPages');
     const startItemSpan = document.getElementById('startItem');
     const endItemSpan = document.getElementById('endItem');
+    const totalItemsSpan = document.getElementById('totalItems');
     const prevPageBtn = document.getElementById('prevPage');
     const nextPageBtn = document.getElementById('nextPage');
     const paginationControls = document.getElementById('paginationControls');
+    const matchBadge = document.getElementById('matchBadge');
+    const matchCount = document.getElementById('matchCount');
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
@@ -989,34 +1146,81 @@
 
     // Initialize branches
     function initBranches() {
-        filteredBranches = Array.from(branchItems);
+        allBranches = Array.from(branchItems);
+        filteredBranches = [...allBranches];
         updateDisplay();
     }
 
-    // Debounced search function
-    let searchTimeout;
+    // Calculate match score for relevance sorting
+    function calculateMatchScore(item, searchTerm) {
+        if (!searchTerm) return 0;
+        
+        const term = searchTerm.toLowerCase();
+        let score = 0;
+        
+        // Get all searchable fields
+        const name = item.getAttribute('data-name') || '';
+        const code = item.getAttribute('data-code') || '';
+        const district = item.getAttribute('data-district') || '';
+        const region = item.getAttribute('data-region') || '';
+        const areas = item.getAttribute('data-areas') || '';
+        const municipality = item.getAttribute('data-municipality') || '';
+        const phone = item.getAttribute('data-phone') || '';
+        const address = item.getAttribute('data-address') || '';
+        
+        // Exact matches get highest priority
+        if (name === term) score += 1000;
+        if (code === term) score += 1000;
+        
+        // Starts with gets high priority
+        if (name.startsWith(term)) score += 500;
+        if (code.startsWith(term)) score += 500;
+        if (district.startsWith(term)) score += 400;
+        if (areas.startsWith(term)) score += 300;
+        
+        // Contains in name/code gets medium priority
+        if (name.includes(term)) score += 200;
+        if (code.includes(term)) score += 200;
+        
+        // Contains in other fields gets lower priority
+        if (district.includes(term)) score += 100;
+        if (region.includes(term)) score += 80;
+        if (areas.includes(term)) score += 60;
+        if (municipality.includes(term)) score += 50;
+        if (address.includes(term)) score += 40;
+        if (phone.includes(term)) score += 30;
+        
+        // Count occurrences in areas (more mentions = more relevant)
+        const areasMatches = (areas.match(new RegExp(term, 'g')) || []).length;
+        score += areasMatches * 20;
+        
+        return score;
+    }
+
+    // Enhanced filter function
     const filterBranches = debounce(() => {
         const searchTerm = searchInput.value.toLowerCase().trim();
         const regionFilter = filterRegion.value.toLowerCase();
         const districtFilter = filterDistrict.value.toLowerCase();
         currentSearchTerm = searchTerm;
         
-        filteredBranches = Array.from(branchItems).filter(item => {
-            const name = item.getAttribute('data-name');
-            const code = item.getAttribute('data-code');
-            const district = item.getAttribute('data-district');
-            const region = item.getAttribute('data-region');
-            const areas = item.getAttribute('data-areas');
-            const municipality = item.getAttribute('data-municipality');
-            const phone = item.getAttribute('data-phone');
-            const address = item.getAttribute('data-address');
+        // Filter branches
+        filteredBranches = allBranches.filter(item => {
+            const name = item.getAttribute('data-name') || '';
+            const code = item.getAttribute('data-code') || '';
+            const district = item.getAttribute('data-district') || '';
+            const region = item.getAttribute('data-region') || '';
+            const areas = item.getAttribute('data-areas') || '';
+            const municipality = item.getAttribute('data-municipality') || '';
+            const phone = item.getAttribute('data-phone') || '';
+            const address = item.getAttribute('data-address') || '';
             
             // Check filters
-            let regionMatch = !regionFilter || region.includes(regionFilter);
-            let districtMatch = !districtFilter || district.includes(districtFilter);
+            const regionMatch = !regionFilter || region.includes(regionFilter);
+            const districtMatch = !districtFilter || district.includes(districtFilter);
             
-            // Check search term
-            let searchMatch = !searchTerm || 
+            // Check search term - search in all fields
+            const searchMatch = !searchTerm || 
                 name.includes(searchTerm) || 
                 code.includes(searchTerm) ||
                 district.includes(searchTerm) ||
@@ -1029,10 +1233,33 @@
             return regionMatch && districtMatch && searchMatch;
         });
 
-        // Sort if needed
+        // Calculate match scores and sort
+        if (searchTerm) {
+            filteredBranches = filteredBranches.map(item => ({
+                element: item,
+                score: calculateMatchScore(item, searchTerm)
+            }))
+            .sort((a, b) => b.score - a.score)
+            .map(item => item.element);
+        }
+
+        // Apply additional sorting if selected
         const sortValue = sortSelect.value;
-        if (sortValue) {
+        if (sortValue && sortValue !== 'relevance') {
             sortFilteredBranches();
+        }
+
+        // Update match count
+        const exactMatches = filteredBranches.filter(item => {
+            const score = calculateMatchScore(item, searchTerm);
+            return score >= 500; // High relevance matches
+        }).length;
+
+        if (searchTerm) {
+            matchBadge.style.display = '';
+            matchCount.textContent = exactMatches;
+        } else {
+            matchBadge.style.display = 'none';
         }
 
         currentPage = 1;
@@ -1044,13 +1271,18 @@
     function sortFilteredBranches() {
         const sortValue = sortSelect.value;
         
+        if (sortValue === 'relevance' && currentSearchTerm) {
+            // Already sorted by relevance
+            return;
+        }
+        
         filteredBranches.sort((a, b) => {
-            const aName = a.getAttribute('data-name');
-            const bName = b.getAttribute('data-name');
-            const aDistrict = a.getAttribute('data-district');
-            const bDistrict = b.getAttribute('data-district');
-            const aRegion = a.getAttribute('data-region');
-            const bRegion = b.getAttribute('data-region');
+            const aName = a.getAttribute('data-name') || '';
+            const bName = b.getAttribute('data-name') || '';
+            const aDistrict = a.getAttribute('data-district') || '';
+            const bDistrict = b.getAttribute('data-district') || '';
+            const aRegion = a.getAttribute('data-region') || '';
+            const bRegion = b.getAttribute('data-region') || '';
 
             switch(sortValue) {
                 case 'name-asc':
@@ -1058,22 +1290,22 @@
                 case 'name-desc':
                     return bName.localeCompare(aName);
                 case 'district':
-                    return aDistrict.localeCompare(bDistrict);
+                    return aDistrict.localeCompare(bDistrict) || aName.localeCompare(bName);
                 case 'region':
-                    return aRegion.localeCompare(bRegion);
+                    return aRegion.localeCompare(bRegion) || aName.localeCompare(bName);
                 default:
                     return 0;
             }
         });
     }
 
-    // Update display
+    // Enhanced update display with better highlighting
     function updateDisplay() {
-        // Hide all items first
+        // Hide all items first and remove all highlights
         branchItems.forEach(item => {
             item.style.display = 'none';
             removeHighlights(item);
-            item.classList.remove('highlight');
+            item.classList.remove('highlight', 'top-match');
         });
 
         // Calculate pagination
@@ -1081,30 +1313,45 @@
         const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredBranches.length);
         const currentItems = filteredBranches.slice(startIndex, endIndex);
 
+        // Reorder items in DOM for smooth animation
+        currentItems.forEach((item, index) => {
+            tableBody.appendChild(item);
+        });
+
         // Show current page items
         currentItems.forEach((item, index) => {
             item.style.display = '';
             
             // Update row number
-            const numberCell = item.querySelector('td:first-child');
+            const numberCell = item.querySelector('.row-number');
             if (numberCell) {
-                numberCell.textContent = startIndex + index + 1;
+                // Remove any existing star
+                numberCell.innerHTML = (startIndex + index + 1).toString();
             }
 
-            // Highlight search term
+            // Highlight search term and mark top matches
             if (currentSearchTerm) {
+                const score = calculateMatchScore(item, currentSearchTerm);
+                
+                // Mark top 3 matches on first page
+                if (currentPage === 1 && index < 3 && score >= 500) {
+                    item.classList.add('top-match');
+                } else {
+                    item.classList.add('highlight');
+                }
+                
                 highlightSearchTerm(item, currentSearchTerm);
-                item.classList.add('highlight');
             }
         });
 
         // Update counts
         resultCount.textContent = filteredBranches.length;
         startItemSpan.textContent = filteredBranches.length > 0 ? startIndex + 1 : 0;
-        endItemSpan.textContent = Math.min(endIndex, filteredBranches.length);
+        endItemSpan.textContent = endIndex;
+        totalItemsSpan.textContent = filteredBranches.length;
 
         // Show/hide no results
-        if (filteredBranches.length === 0 && branchItems.length > 0) {
+        if (filteredBranches.length === 0 && allBranches.length > 0) {
             noResults.style.display = '';
             branchesContainer.style.display = 'none';
         } else {
@@ -1115,20 +1362,107 @@
         // Show/hide clear button
         clearButton.style.display = currentSearchTerm ? 'block' : 'none';
 
+        // Update stats
+        document.getElementById('displayedBranches').textContent = filteredBranches.length;
+
         // Add animations
         addPageAnimations(currentItems);
     }
 
+    // Enhanced highlighting function
+    function highlightSearchTerm(element, term) {
+        if (!term) return;
+        
+        // Elements to search and highlight
+        const searchableElements = [
+            { selector: '.branch-name', attr: null },
+            { selector: '.branch-code', attr: null },
+            { selector: '.areas-text', attr: 'data-original-text' },
+            { selector: '.branch-municipality', attr: null },
+            { selector: '.branch-district', attr: null },
+            { selector: '.branch-region', attr: null },
+            { selector: '.branch-phone', attr: null },
+            { selector: '.address-text', attr: 'data-original-text' }
+        ];
+        
+        searchableElements.forEach(({ selector, attr }) => {
+            const el = element.querySelector(selector);
+            if (!el) return;
+            
+            // Get original text
+            const originalText = attr ? el.getAttribute(attr) : el.textContent;
+            if (!originalText) return;
+            
+            const lowerText = originalText.toLowerCase();
+            const lowerTerm = term.toLowerCase();
+            
+            if (lowerText.includes(lowerTerm)) {
+                // Create highlighted version
+                const regex = new RegExp(`(${escapeRegExp(term)})`, 'gi');
+                const highlighted = originalText.replace(regex, '<span class="highlight-text">$1</span>');
+                el.innerHTML = highlighted;
+            }
+        });
+    }
+
+    // Remove highlights and restore original text
+    function removeHighlights(element) {
+        const searchableElements = [
+            { selector: '.branch-name', attr: null },
+            { selector: '.branch-code', attr: null },
+            { selector: '.areas-text', attr: 'data-original-text' },
+            { selector: '.branch-municipality', attr: null },
+            { selector: '.branch-district', attr: null },
+            { selector: '.branch-region', attr: null },
+            { selector: '.branch-phone', attr: null },
+            { selector: '.address-text', attr: 'data-original-text' }
+        ];
+        
+        searchableElements.forEach(({ selector, attr }) => {
+            const el = element.querySelector(selector);
+            if (!el) return;
+            
+            if (attr) {
+                const originalText = el.getAttribute(attr);
+                if (originalText) {
+                    el.textContent = originalText;
+                }
+            } else {
+                // Remove highlight spans
+                const text = el.textContent;
+                el.textContent = text;
+            }
+        });
+    }
+
+    // Escape special regex characters
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     // Update pagination
     function updatePagination() {
-        totalPages = Math.ceil(filteredBranches.length / ITEMS_PER_PAGE);
+        totalPages = Math.max(1, Math.ceil(filteredBranches.length / ITEMS_PER_PAGE));
         
         currentPageSpan.textContent = currentPage;
         totalPagesSpan.textContent = totalPages;
 
         // Update pagination buttons
-        prevPageBtn.classList.toggle('disabled', currentPage === 1);
-        nextPageBtn.classList.toggle('disabled', currentPage === totalPages);
+        if (prevPageBtn) {
+            if (currentPage === 1) {
+                prevPageBtn.classList.add('disabled');
+            } else {
+                prevPageBtn.classList.remove('disabled');
+            }
+        }
+
+        if (nextPageBtn) {
+            if (currentPage === totalPages) {
+                nextPageBtn.classList.add('disabled');
+            } else {
+                nextPageBtn.classList.remove('disabled');
+            }
+        }
 
         // Update page numbers
         updatePageNumbers();
@@ -1150,9 +1484,8 @@
         // Add page number buttons
         for (let i = startPage; i <= endPage; i++) {
             const li = document.createElement('li');
-            li.className = `page-item ${i === currentPage ? 'active' : ''}`;
-            li.innerHTML = `<a class="page-link" href="#" onclick="goToPage(${i})">${i}</a>`;
-            li.classList.add('page-number');
+            li.className = `page-item page-number ${i === currentPage ? 'active' : ''}`;
+            li.innerHTML = `<a class="page-link" href="#" onclick="goToPage(${i}); return false;">${i}</a>`;
             nextPageBtn.parentNode.insertBefore(li, nextPageBtn);
         }
     }
@@ -1166,6 +1499,7 @@
             updatePagination();
             scrollToTop();
         }
+        return false;
     }
 
     // Go to specific page
@@ -1176,52 +1510,22 @@
             updatePagination();
             scrollToTop();
         }
+        return false;
     }
 
     // Scroll to top of table
     function scrollToTop() {
         const table = document.querySelector('.table-responsive');
         if (table) {
-            table.scrollTop = 0;
+            table.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
-    }
-
-    // Highlight search term
-    function highlightSearchTerm(element, term) {
-        removeHighlights(element);
-        
-        const textElements = element.querySelectorAll('.branch-name, .areas-text, .address-text, .badge');
-        
-        textElements.forEach(el => {
-            const originalText = el.textContent;
-            const lowerText = originalText.toLowerCase();
-            
-            if (lowerText.includes(term)) {
-                const regex = new RegExp(term, 'gi');
-                const highlighted = originalText.replace(regex, match => 
-                    `<span class="highlight-text">${match}</span>`
-                );
-                el.innerHTML = highlighted;
-            }
-        });
-    }
-
-    // Remove highlights
-    function removeHighlights(element) {
-        const highlightedElements = element.querySelectorAll('.highlight-text');
-        highlightedElements.forEach(el => {
-            const parent = el.parentNode;
-            if (parent) {
-                parent.innerHTML = parent.innerHTML.replace(/<span class="highlight-text">(.*?)<\/span>/g, '$1');
-            }
-        });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // Toggle areas view
     function toggleAreas(button) {
         const container = button.closest('.areas-container');
         const textElement = container.querySelector('.areas-text');
-        const icon = button.querySelector('i');
         const isExpanded = textElement.classList.contains('expanded');
         
         if (isExpanded) {
@@ -1251,22 +1555,24 @@
             const row = cb.closest('.branch-item');
             return {
                 name: row.querySelector('.branch-name').textContent,
-                code: row.querySelector('.badge').textContent,
-                district: row.querySelector('.badge.bg-info').textContent,
-                region: row.querySelector('.badge.bg-warning').textContent,
-                phone: row.querySelector('.phone-link span')?.textContent || 'N/A',
-                address: row.querySelector('.address-text').textContent
+                code: row.querySelector('.branch-code').textContent.trim(),
+                district: row.querySelector('.branch-district').textContent.trim(),
+                region: row.querySelector('.branch-region').textContent.trim(),
+                municipality: row.querySelector('.branch-municipality').textContent,
+                phone: row.querySelector('.branch-phone').textContent,
+                address: row.querySelector('.address-text').getAttribute('data-original-text') || row.querySelector('.address-text').textContent,
+                areas: row.querySelector('.areas-text').getAttribute('data-original-text') || row.querySelector('.areas-text').textContent
             };
         });
 
         // Create CSV
         const csv = [
-            ['Branch Name', 'Branch Code', 'District', 'Region', 'Phone', 'Address'],
-            ...selectedBranches.map(b => [b.name, b.code, b.district, b.region, b.phone, b.address])
+            ['Branch Name', 'Branch Code', 'District', 'Region', 'Municipality', 'Phone', 'Address', 'Areas Covered'],
+            ...selectedBranches.map(b => [b.name, b.code, b.district, b.region, b.municipality, b.phone, b.address, b.areas])
         ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
 
         // Download
-        const blob = new Blob([csv], { type: 'text/csv' });
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -1284,7 +1590,7 @@
         searchInput.value = '';
         filterRegion.value = '';
         filterDistrict.value = '';
-        sortSelect.value = 'name-asc';
+        sortSelect.value = 'relevance';
         currentSearchTerm = '';
         filterBranches();
         searchInput.focus();
@@ -1292,28 +1598,56 @@
 
     // Copy to clipboard
     function copyToClipboard(code, name) {
-        navigator.clipboard.writeText(code).then(() => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(() => {
+                showToast(`Copied <strong>${code}</strong> from ${name}`, 'success');
+            }).catch(err => {
+                fallbackCopyToClipboard(code, name);
+            });
+        } else {
+            fallbackCopyToClipboard(code, name);
+        }
+    }
+
+    // Fallback copy method
+    function fallbackCopyToClipboard(code, name) {
+        const textArea = document.createElement('textarea');
+        textArea.value = code;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
             showToast(`Copied <strong>${code}</strong> from ${name}`, 'success');
-        }).catch(err => {
-            showToast('Failed to copy: ' + err, 'error');
-        });
+        } catch (err) {
+            showToast('Failed to copy', 'error');
+        }
+        document.body.removeChild(textArea);
+    }
+
+    // Copy current branch code from modal
+    function copyCurrentBranchCode() {
+        if (currentBranchCode) {
+            copyToClipboard(currentBranchCode, 'Branch');
+        }
     }
 
     // Show branch details
     function showBranchDetails(code) {
-        const branchRow = document.querySelector(`.branch-item[data-code="${code}"]`);
+        const branchRow = document.querySelector(`.branch-item[data-code="${code.toLowerCase()}"]`);
         if (!branchRow) return;
 
         currentBranchCode = code;
         
         const name = branchRow.querySelector('.branch-name').textContent;
-        const branchCode = branchRow.querySelector('.badge.bg-primary').textContent;
-        const areas = branchRow.querySelector('.areas-text').textContent;
-        const municipality = branchRow.querySelector('td:nth-child(5)').textContent;
-        const district = branchRow.querySelector('.badge.bg-info').textContent;
-        const region = branchRow.querySelector('.badge.bg-warning').textContent;
-        const phone = branchRow.querySelector('.phone-link span')?.textContent || 'N/A';
-        const address = branchRow.querySelector('.address-text').textContent;
+        const branchCode = branchRow.querySelector('.branch-code').textContent.trim();
+        const areas = branchRow.querySelector('.areas-text').getAttribute('data-original-text') || branchRow.querySelector('.areas-text').textContent;
+        const municipality = branchRow.querySelector('.branch-municipality').textContent;
+        const district = branchRow.querySelector('.branch-district').textContent.trim();
+        const region = branchRow.querySelector('.branch-region').textContent.trim();
+        const phone = branchRow.querySelector('.branch-phone').textContent;
+        const address = branchRow.querySelector('.address-text').getAttribute('data-original-text') || branchRow.querySelector('.address-text').textContent;
 
         const modalBody = `
             <div class="row">
@@ -1380,10 +1714,16 @@
     // Show toast notification
     function showToast(message, type = 'success') {
         const toast = document.createElement('div');
-        toast.className = `toast-notification ${type === 'error' ? 'border-danger' : type === 'warning' ? 'border-warning' : 'border-success'}`;
+        const borderColor = type === 'error' ? 'danger' : type === 'warning' ? 'warning' : 'success';
+        const iconClass = type === 'error' ? 'fa-exclamation-circle text-danger' : 
+                         type === 'warning' ? 'fa-exclamation-triangle text-warning' : 
+                         'fa-check-circle text-success';
+        
+        toast.className = `toast-notification border-${borderColor}`;
+        toast.style.borderLeft = `4px solid var(--bs-${borderColor})`;
         toast.innerHTML = `
             <div class="toast-content">
-                <i class="fas ${type === 'error' ? 'fa-exclamation-circle text-danger' : type === 'warning' ? 'fa-exclamation-triangle text-warning' : 'fa-check-circle text-success'} me-2"></i>
+                <i class="fas ${iconClass}"></i>
                 <div class="small">
                     ${message}
                 </div>
@@ -1430,6 +1770,7 @@
     function addPageAnimations(items) {
         items.forEach((item, index) => {
             item.style.animation = 'none';
+            item.style.opacity = '0';
             setTimeout(() => {
                 item.style.animation = `fadeInUp 0.4s ease ${index * 0.05}s forwards`;
             }, 10);
@@ -1437,33 +1778,59 @@
     }
 
     // Event listeners
-    searchInput.addEventListener('input', filterBranches);
-    sortSelect.addEventListener('change', filterBranches);
-    filterRegion.addEventListener('change', filterBranches);
-    filterDistrict.addEventListener('change', filterBranches);
+    if (searchInput) {
+        searchInput.addEventListener('input', filterBranches);
+    }
 
-    clearButton.addEventListener('click', () => {
-        searchInput.value = '';
-        currentSearchTerm = '';
-        filterBranches();
-        searchInput.focus();
-    });
+    if (sortSelect) {
+        sortSelect.addEventListener('change', filterBranches);
+    }
+
+    if (filterRegion) {
+        filterRegion.addEventListener('change', filterBranches);
+    }
+
+    if (filterDistrict) {
+        filterDistrict.addEventListener('change', filterBranches);
+    }
+
+    if (clearButton) {
+        clearButton.addEventListener('click', () => {
+            searchInput.value = '';
+            currentSearchTerm = '';
+            filterBranches();
+            searchInput.focus();
+        });
+    }
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd + K to focus search
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
             e.preventDefault();
-            searchInput.focus();
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
         }
+        
+        // Escape to clear search when focused
         if (e.key === 'Escape' && document.activeElement === searchInput) {
             searchInput.value = '';
+            currentSearchTerm = '';
             filterBranches();
         }
-        if (e.key === 'ArrowLeft' && currentPage > 1) {
-            changePage(-1);
-        }
-        if (e.key === 'ArrowRight' && currentPage < totalPages) {
-            changePage(1);
+        
+        // Arrow keys for pagination (when not in input)
+        if (document.activeElement !== searchInput) {
+            if (e.key === 'ArrowLeft' && currentPage > 1) {
+                e.preventDefault();
+                changePage(-1);
+            }
+            if (e.key === 'ArrowRight' && currentPage < totalPages) {
+                e.preventDefault();
+                changePage(1);
+            }
         }
     });
 </script>
