@@ -2691,35 +2691,42 @@ def api_get_product_variations(request, product_id):
 
 @login_required
 @permission_required('can_export_data')
-@require_http_methods(["GET"])
-def export_orders_excel(request):
-    """Export orders to Excel with ALL columns - like order details"""
+@require_http_methods(["POST"])
+def export_selected_orders_excel(request):
+    """Export selected orders to Excel"""
     try:
-        # ✅ Get all orders
-        orders = Order.objects.filter(created_by=request.user).order_by('-created_at')
+        from django.db import connection
+        import sys
         
-        # Apply filters from query parameters
-        search_query = request.GET.get("search", "")
-        status_filter = request.GET.get("status", "")
-        payment_filter = request.GET.get("payment", "")
+        # Get selected order IDs from POST
+        order_ids = request.POST.getlist('order_ids')
         
-        if search_query:
-            orders = orders.filter(
-                Q(order_number__icontains=search_query) |
-                Q(customer_name__icontains=search_query) |
-                Q(customer_phone__icontains=search_query)
-            )
+        print(f"\n\nDEBUG: Received order_ids from POST: {order_ids}", file=sys.stderr)
         
-        if status_filter:
-            orders = orders.filter(order_status=status_filter)
+        if not order_ids:
+            return HttpResponse("No orders selected", status=400)
         
-        if payment_filter:
-            orders = orders.filter(payment_status=payment_filter)
+        # Convert to integers
+        try:
+            order_ids = [int(id) for id in order_ids]
+            print(f"DEBUG: Converted order_ids to integers: {order_ids}", file=sys.stderr)
+        except (ValueError, TypeError):
+            return HttpResponse("Invalid order IDs", status=400)
+        
+        # Get orders - use same filter as orders_list view (all orders, not just user's)
+        orders = Order.objects.filter(id__in=order_ids, is_deleted=False).order_by('-created_at')
+        
+        print(f"DEBUG: Found {orders.count()} orders to export", file=sys.stderr)
+        print(f"DEBUG: Current user: {request.user.id} ({request.user.username})", file=sys.stderr)
+        
+        if not orders.exists():
+            print(f"DEBUG: No orders found with IDs: {order_ids}", file=sys.stderr)
+            return HttpResponse("No orders found", status=404)
         
         # Create workbook
         wb = Workbook()
         ws = wb.active
-        ws.title = "Orders"
+        ws.title = "Selected Orders"
         
         # Define styles
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -2736,8 +2743,8 @@ def export_orders_excel(request):
         headers = [
             'Order ID', 'Order Number', 'Order Date', 'Order Status', 'Payment Status', 
             'Payment Method', 'Customer Name', 'Phone Number', 'Email Address', 
-            'Shipping Address', 'Branch/City', 'Landmark', 'IN/OUT',  # ✅ UPDATED HEADERS
-            'Product #', 'SKU', 'Product Name', 'Quantity', 'Unit Price', 'Total Price',
+            'Shipping Address', 'Branch/City', 'Landmark', 'IN/OUT',
+            'Products (with Qty)', 'SKU', 'Quantities', 'Unit Price(s)', 'Total Price(s)',
             'Grand Total'
         ]
         
@@ -2749,17 +2756,15 @@ def export_orders_excel(request):
             cell.alignment = center_alignment
             cell.border = border
         
-        # ✅ Get all items using RAW SQL to avoid decimal errors
-        from django.db import connection
+        # ✅ Get order items using RAW SQL
         with connection.cursor() as cursor:
-            cursor.execute("""
+            placeholders = ','.join(['%s'] * len(order_ids))
+            cursor.execute(f"""
                 SELECT order_id, product_sku, product_name, quantity, price
                 FROM dashboard_orderitem
-                WHERE order_id IN (
-                    SELECT id FROM dashboard_order WHERE created_by_id = %s
-                )
+                WHERE order_id IN ({placeholders})
                 ORDER BY order_id, id
-            """, [request.user.id])
+            """, order_ids)
             
             all_items = cursor.fetchall()
         
@@ -2771,95 +2776,76 @@ def export_orders_excel(request):
                 items_by_order[order_id] = []
             items_by_order[order_id].append(item)
         
-        # ============= WRITE ALL ROWS =============
+        # ============= WRITE ALL ROWS - ONE ROW PER ORDER =============
         current_row = 2
         for order in orders:
-            # Get items for this order
             order_items = items_by_order.get(order.id, [])
             
-            # If no items, create one row with order info only
-            if not order_items:
-                row_data = [
-                    order.id,
-                    order.order_number,
-                    order.created_at.strftime("%Y-%m-%d %H:%M"),
-                    order.order_status.capitalize(),
-                    order.payment_status.upper(),
-                    order.payment_method.upper(),
-                    order.customer_name or "N/A",
-                    order.customer_phone or "N/A",
-                    order.customer_email or "N/A",
-                    order.shipping_address or "N/A",
-                    order.branch_city or "N/A",  # ✅ UPDATED: branch_city instead of city
-                    order.landmark or "N/A",
-                    order.in_out.upper() if order.in_out else "IN",  # ✅ ADDED: in_out field
-                    "",  # Product #
-                    "",  # SKU
-                    "",  # Product Name
-                    "",  # Quantity
-                    "",  # Unit Price
-                    "",  # Total Price
-                    float(order.total_amount)
-                ]
+            # Combine all product info into single fields
+            if order_items:
+                product_names = []
+                product_skus = []
+                quantities = []
+                prices = []
+                total_prices = []
                 
-                for col_num, value in enumerate(row_data, 1):
-                    cell = ws.cell(row=current_row, column=col_num)
-                    cell.value = value
-                    cell.border = border
-                    cell.alignment = center_alignment
-                    if col_num in [20]:  # Adjusted for new column count
-                        cell.number_format = '"रू "#,##0.00'
-                
-                current_row += 1
-            else:
-                # Write one row per item
-                for idx, item in enumerate(order_items, 1):
+                for item in order_items:
                     product_sku = item[1] or "N/A"
                     product_name = item[2] or "N/A"
                     quantity = item[3] or 0
                     price = float(item[4]) if item[4] else 0.00
                     total_price = quantity * price
                     
-                    row_data = [
-                        order.id,
-                        order.order_number,
-                        order.created_at.strftime("%Y-%m-%d %H:%M"),
-                        order.order_status.capitalize(),
-                        order.payment_status.upper(),
-                        order.payment_method.upper(),
-                        order.customer_name or "N/A",
-                        order.customer_phone or "N/A",
-                        order.customer_email or "N/A",
-                        order.shipping_address or "N/A",
-                        order.branch_city or "N/A",  # ✅ UPDATED: branch_city instead of city
-                        order.landmark or "N/A",
-                        order.in_out.upper() if order.in_out else "IN",  # ✅ ADDED: in_out field
-                        idx,  # Product #
-                        product_sku,  # SKU
-                        product_name,  # Product Name
-                        quantity,  # Quantity
-                        price,  # Unit Price
-                        total_price,  # Total Price
-                        float(order.total_amount)  # Grand Total
-                    ]
-                    
-                    for col_num, value in enumerate(row_data, 1):
-                        cell = ws.cell(row=current_row, column=col_num)
-                        cell.value = value
-                        cell.border = border
-                        cell.alignment = center_alignment
-                        if col_num in [18, 19, 20]:  # Adjusted for new column count
-                            cell.number_format = '"रू "#,##0.00'
-                    
-                    current_row += 1
+                    product_names.append(f"{product_name} (Qty: {quantity})")
+                    product_skus.append(product_sku)
+                    quantities.append(str(quantity))
+                    prices.append(f"रू {price:.2f}")
+                    total_prices.append(f"रू {total_price:.2f}")
+                
+                # Combine with semicolon separator
+                combined_products = "; ".join(product_names)
+                combined_skus = "; ".join(product_skus)
+                combined_quantities = ", ".join(quantities)
+                combined_prices = ", ".join(prices)
+                combined_total_prices = ", ".join(total_prices)
+            else:
+                combined_products = "N/A"
+                combined_skus = "N/A"
+                combined_quantities = ""
+                combined_prices = ""
+                combined_total_prices = ""
+            
+            # Single row per order with all products combined
+            row_data = [
+                order.id, order.order_number, order.created_at.strftime("%Y-%m-%d %H:%M"),
+                order.order_status.capitalize(), order.payment_status.upper(),
+                order.payment_method.upper(), order.customer_name or "N/A",
+                order.customer_phone or "N/A", order.customer_email or "N/A",
+                order.shipping_address or "N/A", order.branch_city or "N/A",
+                order.landmark or "N/A", order.in_out.upper() if order.in_out else "IN",
+                combined_products, combined_skus, combined_quantities, 
+                combined_prices, combined_total_prices,
+                float(order.total_amount)
+            ]
+            
+            for col_num, value in enumerate(row_data, 1):
+                cell = ws.cell(row=current_row, column=col_num)
+                cell.value = value
+                cell.border = border
+                cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                if col_num in [19, 20]:  # Price and Total columns
+                    cell.alignment = center_alignment
+                    cell.number_format = '"रू "#,##0.00'
+            
+            current_row += 1
         
-        # Adjust column widths (added one more for IN/OUT)
-        column_widths = [10, 15, 18, 12, 12, 12, 18, 15, 15, 20, 12, 15, 8, 8, 10, 20, 10, 12, 12, 12]
+        # Adjust column widths
+        column_widths = [10, 15, 18, 12, 12, 12, 18, 15, 15, 20, 12, 15, 8, 30, 12, 12, 15, 15, 12]
         for col_num, width in enumerate(column_widths, 1):
             ws.column_dimensions[chr(64 + col_num)].width = width
         
         # Create response
-        filename = f"Orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        filename = f"Selected_Orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         response = HttpResponse(
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
@@ -2869,11 +2855,11 @@ def export_orders_excel(request):
         return response
         
     except Exception as e:
-        print(f"Error exporting orders: {str(e)}")
+        print(f"Error exporting selected orders: {str(e)}")
         import traceback
         traceback.print_exc()
         return HttpResponse(f"Error exporting orders: {str(e)}", status=500)
-    
+
 @login_required
 @permission_required('can_export_data')
 @require_http_methods(["GET"])

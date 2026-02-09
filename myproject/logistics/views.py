@@ -207,7 +207,7 @@ def bulk_send_to_ncm(request):
 
 @login_required
 def sync_ncm_status_view(request, order_id):
-    """Sync single order status from NCM"""
+    """Sync single order status from NCM and update local order status"""
     
     order = get_object_or_404(Order, id=order_id, is_deleted=False)
     
@@ -221,11 +221,33 @@ def sync_ncm_status_view(request, order_id):
         service = NCMService()
         new_status = service.sync_status(logistics_order)
         
+        # ✅ SYNCHRONIZE LOCAL ORDER STATUS BASED ON NCM STATUS
+        ncm_status_upper = new_status.upper().strip() if new_status else ""
+        
+        # Check if NCM status is "DELIVERED"
+        if "DELIVERED" in ncm_status_upper:
+            order.order_status = "delivered"
+            order.payment_status = "paid"
+            messages.success(request, f'✓ Order synchronized: Status → Delivered | Payment → Paid')
+        
+        # Check if NCM status is "PICKUP COMPLETE"
+        elif "PICKUP COMPLETE" in ncm_status_upper or ("PICKUP" in ncm_status_upper and "COMPLETE" in ncm_status_upper):
+            order.order_status = "shipped"
+            messages.success(request, f'✓ Order synchronized: Status → Shipped')
+        
+        # Check if NCM status is return-related (RTV, RETURNED, RETURN, etc.)
+        elif any(return_keyword in ncm_status_upper for return_keyword in ["RTV", "RETURNED", "RETURN"]):
+            order.order_status = "returned"
+            # Keep payment status as it was (don't change it)
+            messages.success(request, f'✓ Order synchronized: Status → Returned | Payment status unchanged')
+        
+        else:
+            # For other statuses, just show the NCM status
+            messages.info(request, f'✓ NCM Status synced: {new_status}')
+        
         order.ncm_status = new_status
         order.ncm_last_synced = timezone.now()
         order.save()
-        
-        messages.success(request, f'✓ Status updated: {new_status}')
         
     except LogisticsOrder.DoesNotExist:
         messages.error(request, 'Logistics order not found')
@@ -254,13 +276,30 @@ def bulk_sync_ncm_status(request):
                 logistics_order = LogisticsOrder.objects.get(order_reference=order.order_number)
                 new_status = service.sync_status(logistics_order)
                 
+                # ✅ SYNCHRONIZE LOCAL ORDER STATUS BASED ON NCM STATUS
+                ncm_status_upper = new_status.upper().strip() if new_status else ""
+                
+                # Check if NCM status is "DELIVERED"
+                if "DELIVERED" in ncm_status_upper:
+                    order.order_status = "delivered"
+                    order.payment_status = "paid"
+                
+                # Check if NCM status is "PICKUP COMPLETE"
+                elif "PICKUP COMPLETE" in ncm_status_upper or ("PICKUP" in ncm_status_upper and "COMPLETE" in ncm_status_upper):
+                    order.order_status = "shipped"
+                
+                # Check if NCM status is return-related (RTV, RETURNED, RETURN, etc.)
+                elif any(return_keyword in ncm_status_upper for return_keyword in ["RTV", "RETURNED", "RETURN"]):
+                    order.order_status = "returned"
+                    # Keep payment status as it was (don't change it)
+                
                 order.ncm_status = new_status
                 order.ncm_last_synced = timezone.now()
                 order.save()
                 
                 success_count += 1
                 
-            except:
+            except Exception as e:
                 error_count += 1
         
         if success_count > 0:
@@ -320,3 +359,81 @@ def logistics_orders_list(request):
     }
     
     return render(request, 'logistics/orders_list.html', context)
+
+
+# ==================== AJAX ENDPOINTS ====================
+@login_required
+@require_POST
+def sync_order_status_ajax(request, order_id):
+    """AJAX endpoint to sync NCM status and update local order status"""
+    
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+        
+        if not order.ncm_order_id:
+            return JsonResponse({
+                'success': False,
+                'message': 'Order not sent to NCM yet'
+            }, status=400)
+        
+        logistics_order = LogisticsOrder.objects.get(order_reference=order.order_number)
+        
+        service = NCMService()
+        new_status = service.sync_status(logistics_order)
+        
+        # ✅ SYNCHRONIZE LOCAL ORDER STATUS BASED ON NCM STATUS
+        ncm_status_upper = new_status.upper().strip() if new_status else ""
+        status_changed = False
+        payment_changed = False
+        
+        # Check if NCM status is "DELIVERED"
+        if "DELIVERED" in ncm_status_upper:
+            if order.order_status != "delivered":
+                order.order_status = "delivered"
+                status_changed = True
+            if order.payment_status != "paid":
+                order.payment_status = "paid"
+                payment_changed = True
+            message = "Order synchronized: Status → Delivered | Payment → Paid"
+        
+        # Check if NCM status is "PICKUP COMPLETE"
+        elif "PICKUP COMPLETE" in ncm_status_upper or ("PICKUP" in ncm_status_upper and "COMPLETE" in ncm_status_upper):
+            if order.order_status != "shipped":
+                order.order_status = "shipped"
+                status_changed = True
+            message = "Order synchronized: Status → Shipped"
+        
+        # Check if NCM status is return-related (RTV, RETURNED, RETURN, etc.)
+        elif any(return_keyword in ncm_status_upper for return_keyword in ["RTV", "RETURNED", "RETURN"]):
+            if order.order_status != "returned":
+                order.order_status = "returned"
+                status_changed = True
+            message = "Order synchronized: Status → Returned"
+        
+        else:
+            message = f"NCM Status: {new_status}"
+        
+        order.ncm_status = new_status
+        order.ncm_last_synced = timezone.now()
+        order.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': message,
+            'ncm_status': new_status,
+            'order_status': order.order_status,
+            'payment_status': order.payment_status,
+            'status_changed': status_changed,
+            'payment_changed': payment_changed
+        })
+        
+    except LogisticsOrder.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'message': 'Logistics order not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f'Failed to sync: {str(e)}'
+        }, status=500)

@@ -17,6 +17,7 @@ urlpatterns = [
     # Actions
     path('send/<int:order_id>/', views.send_order_to_ncm, name='send_to_ncm'),
     path('sync/<int:order_id>/', views.sync_ncm_status_view, name='sync_status'),
+    path('api/sync/<int:order_id>/', views.sync_order_status_ajax, name='sync_status_ajax'),
     path('bulk-send/', views.bulk_send_to_ncm, name='bulk_send'),
     path('bulk-sync/', views.bulk_sync_ncm_status, name='bulk_sync'),
     

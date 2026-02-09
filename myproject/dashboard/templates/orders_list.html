@@ -52,12 +52,15 @@
                     <i class="fas fa-truck-loading"></i> Bulk Send to NCM
                     <span class="badge bg-white text-primary ms-2" id="ncmCountBadge">0</span>
                 </button>
+
+                <button class="btn btn-success btn-lg" id="exportExcelButton" 
+                        onclick="exportSelectedOrders()" style="display: none;">
+                    <i class="fas fa-file-excel"></i> Export to Excel
+                    <span class="badge bg-white text-success ms-2" id="exportCountBadge">0</span>
+                </button>
                 
                 <a href="{% url 'orders_trash' %}" class="btn btn-danger btn-lg">
                     <i class="fas fa-trash-alt"></i> Trash
-                </a>
-                <a href="{% url 'export_orders_excel' %}" class="btn btn-success btn-lg">
-                    <i class="fas fa-file-excel"></i> Export to Excel
                 </a>
                 <a href="{% url 'order_create' %}" class="btn btn-primary btn-lg">
                     <i class="fas fa-plus-circle"></i> Create New Order
@@ -159,6 +162,7 @@
                 <div class="col-md-4">
                     <select name="bulk_action" class="form-select form-select-sm" required>
                         <option value="">Select Action</option>
+                        <option value="export_excel">📊 Export to Excel</option>
                         <option value="delete">Move to Trash</option>
                         <option value="mark_processing">Mark as Processing</option>
                         <option value="mark_shipped">Mark as Shipped</option>
@@ -214,12 +218,6 @@
                     </span>
                 {% endif %}
             </h5>
-            {% if orders %}
-            <a href="{% url 'export_orders_excel' %}{% if search_query or status_filter or payment_filter or date_filter or logistics_filter %}?search={{ search_query }}&status={{ status_filter }}&payment={{ payment_filter }}&date_range={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&logistics_status={{ logistics_filter }}{% endif %}" 
-               class="btn btn-light btn-sm">
-                <i class="fas fa-download"></i> Export Current View
-            </a>
-            {% endif %}
         </div>
     </div>
     <div class="card-body p-0">
@@ -495,6 +493,20 @@
                 </button>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- ✅ NCM PROFESSIONAL LOADING OVERLAY -->
+<div id="ncmLoadingOverlay" class="ncm-loading-overlay" style="display: none;">
+    <div class="ncm-loading-container">
+        <div class="ncm-spinner">
+            <div class="ncm-spinner-ball"></div>
+            <div class="ncm-spinner-ball"></div>
+            <div class="ncm-spinner-ball"></div>
+            <div class="ncm-spinner-ball"></div>
+            <div class="ncm-spinner-ball"></div>
+        </div>
+        <p class="ncm-loading-text">Sending to NCM...</p>
     </div>
 </div>
 
@@ -916,6 +928,104 @@
             grid-template-columns: 1fr;
         }
     }
+
+    /* ✅ NCM PROFESSIONAL LOADING ANIMATION */
+    .ncm-loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        backdrop-filter: blur(3px);
+    }
+
+    .ncm-loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 25px;
+        background: white;
+        padding: 50px 60px;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        max-width: 400px;
+    }
+
+    /* Animated Spinner */
+    .ncm-spinner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 80px;
+    }
+
+    .ncm-spinner-ball {
+        width: 14px;
+        height: 60px;
+        border-radius: 50%;
+        background: linear-gradient(to bottom, #FF0000, #FF4500);
+        animation: ncmPulse 1.2s ease-in-out infinite;
+    }
+
+    .ncm-spinner-ball:nth-child(1) {
+        animation-delay: -0.5s;
+        background: linear-gradient(to bottom, #DC143C, #FF0000);
+    }
+
+    .ncm-spinner-ball:nth-child(2) {
+        animation-delay: -0.4s;
+        background: linear-gradient(to bottom, #FF1744, #FF4500);
+    }
+
+    .ncm-spinner-ball:nth-child(3) {
+        animation-delay: -0.3s;
+        background: linear-gradient(to bottom, #FF6347, #FFA500);
+    }
+
+    .ncm-spinner-ball:nth-child(4) {
+        animation-delay: -0.2s;
+        background: linear-gradient(to bottom, #FF4500, #FFD700);
+    }
+
+    .ncm-spinner-ball:nth-child(5) {
+        animation-delay: -0.1s;
+        background: linear-gradient(to bottom, #FF6347, #FF0000);
+    }
+
+    @keyframes ncmPulse {
+        0%, 100% {
+            transform: scaleY(0.4);
+            opacity: 0.5;
+        }
+        50% {
+            transform: scaleY(1);
+            opacity: 1;
+        }
+    }
+
+    .ncm-loading-text {
+        font-size: 18px;
+        font-weight: 700;
+        color: #2c3e50;
+        margin: 0;
+        letter-spacing: 0.5px;
+        animation: ncmPulseText 1.5s ease-in-out infinite;
+    }
+
+    @keyframes ncmPulseText {
+        0%, 100% {
+            opacity: 0.6;
+        }
+        50% {
+            opacity: 1;
+        }
+    }
 </style>
 
 <script>
@@ -1087,6 +1197,8 @@ function updateBulkActions() {
     const selectedCount = document.getElementById('selectedCount');
     const bulkNCMButton = document.getElementById('bulkNCMButton');
     const ncmCountBadge = document.getElementById('ncmCountBadge');
+    const exportExcelButton = document.getElementById('exportExcelButton');
+    const exportCountBadge = document.getElementById('exportCountBadge');
     
     // Update main bulk bar visibility
     if (count > 0) {
@@ -1096,6 +1208,10 @@ function updateBulkActions() {
         // Show NCM button
         bulkNCMButton.style.display = 'inline-block';
         ncmCountBadge.textContent = count;
+        
+        // Show Export button
+        exportExcelButton.style.display = 'inline-block';
+        exportCountBadge.textContent = count;
         
         // Populate the standard bulk action form with hidden inputs
         const bulkInputsContainer = document.getElementById('bulkInputsContainer');
@@ -1119,6 +1235,7 @@ function updateBulkActions() {
     } else {
         bulkBar.style.display = 'none';
         bulkNCMButton.style.display = 'none';
+        exportExcelButton.style.display = 'none';
         const selectAllCb = document.getElementById('selectAll');
         if (selectAllCb) {
             selectAllCb.indeterminate = false;
@@ -1143,7 +1260,62 @@ function confirmBulkAction() {
         return false;
     }
     
+    if (count === 0) {
+        alert('Please select at least one order');
+        return false;
+    }
+    
+    // Handle export_excel separately
+    if (action === 'export_excel') {
+        exportSelectedOrders();
+        return false; // Prevent form submission
+    }
+    
     return confirm(`Are you sure you want to ${action.replace(/_/g, ' ')} ${count} order(s)?`);
+}
+
+function exportSelectedOrders() {
+    // Get all selected order IDs
+    const checkedBoxes = document.querySelectorAll('.order-checkbox:checked');
+    const orderIds = Array.from(checkedBoxes).map(cb => cb.value);
+    
+    if (orderIds.length === 0) {
+        alert('Please select at least one order to export');
+        return;
+    }
+    
+    console.log('Exporting orders:', orderIds);
+    
+    // Create a form to submit selected order IDs
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/orders/export/selected/';  // Fixed: Use hardcoded URL instead of Django template tag
+    
+    // Add CSRF token
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrfmiddlewaretoken';
+    csrfInput.value = document.querySelector('[name="csrfmiddlewaretoken"]').value;
+    form.appendChild(csrfInput);
+    
+    // Add order IDs
+    orderIds.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'order_ids';
+        input.value = id;
+        form.appendChild(input);
+    });
+    
+    // Submit the form
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+    
+    // Reset selection
+    setTimeout(() => {
+        clearSelection();
+    }, 500);
 }
 
 // --- NCM LOGISTICS FUNCTIONS ---
@@ -1190,20 +1362,73 @@ function openNCMModal() {
     }
 }
 
+// ✅ FLAG TO PREVENT DOUBLE CLICKS
+let ncmSendInProgress = false;
+
 function submitNCMBulkSend() {
+    // Prevent double-click/double-tap
+    if (ncmSendInProgress) {
+        console.warn('NCM send already in progress, ignoring click');
+        return;
+    }
+    
     const form = document.getElementById('ncmBulkSendForm');
-    if (form) {
-        if (form.checkValidity()) {
-            form.submit();
-        } else {
-            form.reportValidity();
+    const submitBtn = event.target;
+    
+    if (form && form.checkValidity()) {
+        // ✅ SET FLAG TO PREVENT FURTHER CLICKS
+        ncmSendInProgress = true;
+        
+        // ✅ DISABLE THE BUTTON AND SHOW LOADING STATE
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Sending to NCM...';
+        
+        // ✅ SHOW PROFESSIONAL LOADING OVERLAY
+        const loadingOverlay = document.getElementById('ncmLoadingOverlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'flex';
         }
+        
+        // ✅ AUTO-ENABLE BUTTON AFTER 10 SECONDS (SAFETY TIMEOUT)
+        const timeout = setTimeout(() => {
+            ncmSendInProgress = false;
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send to NCM Now';
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
+            }
+            console.warn('NCM send timeout - button re-enabled');
+        }, 10000); // 10 seconds
+        
+        // ✅ SUBMIT THE FORM
+        form.addEventListener('submit', function() {
+            clearTimeout(timeout);
+        }, { once: true });
+        
+        form.submit();
+    } else {
+        form.reportValidity();
     }
 }
 
 // Helper function to send single order (uses the same bulk endpoint with 1 ID)
 function sendSingleOrderToNCM(orderId, orderNumber) {
+    // ✅ CHECK IF ANOTHER SEND IS IN PROGRESS
+    if (ncmSendInProgress) {
+        alert('⏳ A previous order is still being sent. Please wait a moment.');
+        return;
+    }
+    
     if (confirm(`Send order ${orderNumber} to NCM Logistics?`)) {
+        // ✅ SET FLAG TO PREVENT FURTHER CLICKS
+        ncmSendInProgress = true;
+        
+        // ✅ AUTO-ENABLE FLAG AFTER 10 SECONDS (SAFETY TIMEOUT)
+        const timeout = setTimeout(() => {
+            ncmSendInProgress = false;
+            console.warn('Single order send timeout - button re-enabled');
+        }, 10000); // 10 seconds
+        
         // Create a temporary form to post to the endpoint
         const form = document.createElement('form');
         form.method = 'POST';
@@ -1246,6 +1471,13 @@ function sendSingleOrderToNCM(orderId, orderNumber) {
         form.appendChild(autoInput);
         
         document.body.appendChild(form);
+        
+        // ✅ SHOW LOADING MESSAGE
+        setTimeout(() => {
+            ncmSendInProgress = false;
+            clearTimeout(timeout);
+        }, 1000);
+        
         form.submit();
     }
 }

@@ -476,11 +476,6 @@
                             <a href="#">Financial Reports</a>
                         </li>
                         {% endif %}
-                        {% if user.is_superuser or user.role == 'administrator' or user.can_export_data %}
-                        <li>
-                            <a href="{% url 'export_orders_excel' %}">Export Orders</a>
-                        </li>
-                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}

@@ -446,13 +446,10 @@
 
                     <!-- NCM Actions -->
                     <div class="ncm-actions-grid">
-                        <form method="POST" action="{% url 'ncm:sync_status' order.id %}" class="ncm-action-form">
-                            {% csrf_token %}
-                            <button type="submit" class="btn-ncm btn-ncm-primary">
-                                <i class="fas fa-sync-alt"></i>
-                                <span>Sync Status</span>
-                            </button>
-                        </form>
+                        <button type="button" class="btn-ncm btn-ncm-primary" id="syncStatusBtn" onclick="syncNCMStatusAJAX({{ order.id }})">
+                            <i class="fas fa-sync-alt"></i>
+                            <span id="syncBtnText">Sync Status</span>
+                        </button>
                         
                         <a href="{% url 'ncm:track_order' order.id %}" class="btn-ncm btn-ncm-info">
                             <i class="fas fa-map-marker-alt"></i>
@@ -763,6 +760,20 @@
                 {% endif %}
             </div>
         </div>
+    </div>
+</div>
+
+<!-- NCM Loading Overlay -->
+<div id="ncmLoadingOverlay" class="ncm-loading-overlay">
+    <div class="ncm-loading-container">
+        <div class="ncm-spinner">
+            <div class="ncm-spinner-ball"></div>
+            <div class="ncm-spinner-ball"></div>
+            <div class="ncm-spinner-ball"></div>
+            <div class="ncm-spinner-ball"></div>
+            <div class="ncm-spinner-ball"></div>
+        </div>
+        <div class="ncm-loading-text">Sending to NCM...</div>
     </div>
 </div>
 
@@ -1518,9 +1529,93 @@
         font-size: 0.9rem;
     }
 }
+
+/* ==================== NCM LOADING OVERLAY STYLES ==================== */
+.ncm-loading-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+}
+
+.ncm-loading-container {
+    background: white;
+    border-radius: 16px;
+    padding: 50px 60px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    max-width: 400px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 25px;
+}
+
+.ncm-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 50px;
+}
+
+.ncm-spinner-ball {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ef4444 0%, #f97316 50%, #eab308 100%);
+    animation: ncmPulse 1.2s ease-in-out infinite;
+}
+
+.ncm-spinner-ball:nth-child(1) { animation-delay: 0s; }
+.ncm-spinner-ball:nth-child(2) { animation-delay: 0.1s; }
+.ncm-spinner-ball:nth-child(3) { animation-delay: 0.2s; }
+.ncm-spinner-ball:nth-child(4) { animation-delay: 0.3s; }
+.ncm-spinner-ball:nth-child(5) { animation-delay: 0.4s; }
+
+@keyframes ncmPulse {
+    0% {
+        transform: scaleY(0.4);
+        opacity: 0.7;
+    }
+    50% {
+        transform: scaleY(1);
+        opacity: 1;
+    }
+    100% {
+        transform: scaleY(0.4);
+        opacity: 0.7;
+    }
+}
+
+.ncm-loading-text {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+    animation: ncmPulseText 1.5s ease-in-out infinite;
+}
+
+@keyframes ncmPulseText {
+    0%, 100% {
+        opacity: 0.6;
+    }
+    50% {
+        opacity: 1;
+    }
+}
 </style>
 
 <script>
+// Global flag to prevent double-click on NCM operations
+let ncmSendInProgress = false;
+
 function moveOrderToTrash(orderId, orderNumber) {
     if (confirm(`Move order ${orderNumber} to trash? This action can be undone from the trash section.`)) {
         const form = document.createElement('form');
@@ -1599,18 +1694,122 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // NCM Create Form Handling
+''    // NCM Create Form Handling - With Double-Click Protection
     const ncmCreateForm = document.getElementById('ncmCreateForm');
     if (ncmCreateForm) {
         ncmCreateForm.addEventListener('submit', function(e) {
-            const submitBtn = this.querySelector('button[type=submit]');
-            if (submitBtn && !submitBtn.disabled) {
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Creating...</span>';
-                submitBtn.disabled = true;
+            // Prevent default form submission
+            e.preventDefault();
+            
+            // Check if already sending
+            if (ncmSendInProgress === true) {
+                return;
             }
+            
+            // Mark as sending
+            ncmSendInProgress = true;
+            
+            const submitBtn = this.querySelector('button[type=submit]');
+            const loadingOverlay = document.getElementById('ncmLoadingOverlay');
+            
+            if (submitBtn) {
+                // Disable button and show loading state
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Sending to NCM...</span>';
+            }
+            
+            // Show loading overlay
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'flex';
+            }
+            
+            // Set 10-second timeout to reset state in case of error
+            const timeoutId = setTimeout(() => {
+                ncmSendInProgress = false;
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-plus-circle"></i> <span>Create Shipment in NCM</span>';
+                }
+                if (loadingOverlay) {
+                    loadingOverlay.style.display = 'none';
+                }
+            }, 10000);
+            
+            // Submit the form
+            this.submit();
         });
     }
 });
+
+// ✅ AJAX NCM STATUS SYNC FUNCTION
+function syncNCMStatusAJAX(orderId) {
+    const syncBtn = document.getElementById('syncStatusBtn');
+    const syncBtnText = document.getElementById('syncBtnText');
+    
+    // Disable button and show loading state
+    syncBtn.disabled = true;
+    syncBtnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+    
+    // Send AJAX request to sync status
+    fetch(`/logistics/api/sync/${orderId}/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            showNotification('success', data.message);
+            
+            // If status or payment changed, reload page to show updated values
+            if (data.status_changed || data.payment_changed) {
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            } else {
+                // Just reset button
+                syncBtn.disabled = false;
+                syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+            }
+        } else {
+            showNotification('error', data.message);
+            syncBtn.disabled = false;
+            syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('error', 'Failed to sync status. Please try again.');
+        syncBtn.disabled = false;
+        syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+    });
+}
+
+// ✅ NOTIFICATION HELPER FUNCTION
+function showNotification(type, message) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} alert-dismissible fade show`;
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 4 seconds
+    setTimeout(() => {
+        notification.remove();
+    }, 4000);
+}
 
 // Highlight NCM section when logistics changed to NCM
 const logisticsSelect = document.getElementById('logisticsSelect');
