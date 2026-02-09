@@ -52,6 +52,12 @@
                     <i class="fas fa-truck-loading"></i> Bulk Send to NCM
                     <span class="badge bg-white text-primary ms-2" id="ncmCountBadge">0</span>
                 </button>
+                
+                <button class="btn btn-info btn-lg" id="bulkSyncButton" 
+                        onclick="bulkSyncSelectedOrders()" style="display: none;">
+                    <i class="fas fa-sync-alt"></i> Bulk Sync Orders
+                    <span class="badge bg-white text-info ms-2" id="syncCountBadge">0</span>
+                </button>
 
                 <button class="btn btn-success btn-lg" id="exportExcelButton" 
                         onclick="exportSelectedOrders()" style="display: none;">
@@ -1230,6 +1236,8 @@ function updateBulkActions() {
     const selectedCount = document.getElementById('selectedCount');
     const bulkNCMButton = document.getElementById('bulkNCMButton');
     const ncmCountBadge = document.getElementById('ncmCountBadge');
+    const bulkSyncButton = document.getElementById('bulkSyncButton');
+    const syncCountBadge = document.getElementById('syncCountBadge');
     const exportExcelButton = document.getElementById('exportExcelButton');
     const exportCountBadge = document.getElementById('exportCountBadge');
     
@@ -1241,6 +1249,10 @@ function updateBulkActions() {
         // Show NCM button
         bulkNCMButton.style.display = 'inline-block';
         ncmCountBadge.textContent = count;
+        
+        // Show Sync button
+        bulkSyncButton.style.display = 'inline-block';
+        syncCountBadge.textContent = count;
         
         // Show Export button
         exportExcelButton.style.display = 'inline-block';
@@ -1268,6 +1280,7 @@ function updateBulkActions() {
     } else {
         bulkBar.style.display = 'none';
         bulkNCMButton.style.display = 'none';
+        bulkSyncButton.style.display = 'none';
         exportExcelButton.style.display = 'none';
         const selectAllCb = document.getElementById('selectAll');
         if (selectAllCb) {
@@ -1352,6 +1365,49 @@ function exportSelectedOrders() {
 }
 
 // --- NCM LOGISTICS FUNCTIONS ---
+
+function bulkSyncSelectedOrders() {
+    const checkedBoxes = document.querySelectorAll('.order-checkbox:checked');
+    const count = checkedBoxes.length;
+    
+    if (count === 0) {
+        alert('Please select at least one order');
+        return;
+    }
+    
+    if (confirm(`Sync NCM status for ${count} order(s)?`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = "{% url 'logistics:bulk_sync_selected' %}";
+        
+        // Add CSRF token
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = document.querySelector('[name="csrfmiddlewaretoken"]').value;
+        form.appendChild(csrfInput);
+        
+        // Add order IDs
+        checkedBoxes.forEach(cb => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'order_ids';
+            input.value = cb.value;
+            form.appendChild(input);
+        });
+        
+        // Show loading state
+        const bulkSyncButton = document.getElementById('bulkSyncButton');
+        const originalText = bulkSyncButton.innerHTML;
+        bulkSyncButton.disabled = true;
+        bulkSyncButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Syncing...';
+        
+        // Submit the form
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    }
+}
 
 function openNCMModal() {
     const checkedBoxes = document.querySelectorAll('.order-checkbox:checked');
@@ -1530,6 +1586,9 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
+    
+    // Update FAB badge count when page loads
+    updateFabBadge();
 });
 
 function moveOrderToTrash(orderId, orderNumber) {
@@ -1539,11 +1598,170 @@ function moveOrderToTrash(orderId, orderNumber) {
     }
 }
 
+// Update FAB badge with current order count
+function updateFabBadge() {
+    const orderListHeader = document.querySelector('.card-header h5');
+    if (orderListHeader) {
+        // Extract count from text like "Order List (5 orders)"
+        const match = orderListHeader.textContent.match(/\((\d+)\s+orders?\)/);
+        if (match) {
+            const count = match[1];
+            const badge = document.getElementById('fabOrderCount');
+            if (badge) {
+                badge.textContent = count;
+                // Change badge color based on count
+                if (count > 10) {
+                    badge.style.background = '#ffc107'; // Amber for high count
+                    badge.style.color = '#000';
+                } else if (count > 5) {
+                    badge.style.background = '#fd7e14'; // Orange for medium count
+                } else {
+                    badge.style.background = '#dc3545'; // Red for low count
+                }
+            }
+        }
+    }
+}
+
 // Initialize on load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', updateBulkActions);
 } else {
     updateBulkActions();
 }
+
+// Floating Action Button - Sync All Orders
+function syncAllOrdersFAB() {
+    const fab = document.getElementById('fabSyncAllOrders');
+    
+    if (!confirm('Sync all NCM orders? This may take a moment...')) {
+        return;
+    }
+    
+    // Show loading state
+    fab.classList.add('loading');
+    fab.disabled = true;
+    
+    // Create and submit form
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = "{% url 'logistics:bulk_sync' %}";
+    
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrfmiddlewaretoken';
+    csrfInput.value = document.querySelector('[name="csrfmiddlewaretoken"]').value;
+    form.appendChild(csrfInput);
+    
+    document.body.appendChild(form);
+    form.submit();
+}
 </script>
+
+<style>
+/* Floating Action Button Styles */
+.fab-sync-all {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(23, 162, 184, 0.4);
+    transition: all 0.3s ease;
+    z-index: 999;
+}
+
+.fab-sync-all:hover {
+    transform: scale(1.1) translateY(-5px);
+    box-shadow: 0 8px 30px rgba(23, 162, 184, 0.6);
+}
+
+.fab-sync-all:active {
+    transform: scale(0.95);
+}
+
+.fab-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #dc3545;
+    color: white;
+    border: 2px solid white;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.4);
+}
+
+.fab-sync-all-tooltip {
+    position: absolute;
+    bottom: 90px;
+    right: 0;
+    background: #17a2b8;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(10px);
+    pointer-events: none;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+.fab-sync-all:hover .fab-sync-all-tooltip {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .fab-sync-all {
+        bottom: 20px;
+        right: 20px;
+        width: 60px;
+        height: 60px;
+        font-size: 24px;
+    }
+}
+
+/* Loading state */
+.fab-sync-all.loading {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.fab-sync-all.loading i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
+
+<!-- Floating Action Button for Sync All Orders -->
+<button class="fab-sync-all" id="fabSyncAllOrders" onclick="syncAllOrdersFAB()">
+    <span class="fab-sync-all-tooltip">Sync All Orders</span>
+    <i class="fas fa-sync-alt"></i>
+    <span class="fab-badge" id="fabOrderCount">{{ orders.count }}</span>
+</button>
+
 {% endblock %}

@@ -221,6 +221,13 @@ def sync_ncm_status_view(request, order_id):
         service = NCMService()
         new_status = service.sync_status(logistics_order)
         
+        # Handle case where sync returns None (API error or empty response)
+        if new_status is None:
+            return JsonResponse({
+                'success': False,
+                'message': 'Unable to retrieve status from NCM. Please try again later.'
+            }, status=500)
+        
         # ✅ SYNCHRONIZE LOCAL ORDER STATUS BASED ON NCM STATUS
         ncm_status_upper = new_status.upper().strip() if new_status else ""
         
@@ -258,6 +265,7 @@ def sync_ncm_status_view(request, order_id):
 
 
 @login_required
+@login_required
 def bulk_sync_ncm_status(request):
     """Sync status for all NCM orders"""
     
@@ -267,14 +275,36 @@ def bulk_sync_ncm_status(request):
             is_deleted=False
         ).exclude(ncm_status__in=['DELIVERED', 'RETURNED', 'CANCELLED'])
         
-        service = NCMService()
+        try:
+            service = NCMService()
+        except Exception as e:
+            messages.error(request, f'NCM Service Error: {str(e)}')
+            return redirect('orders_list')
+        
         success_count = 0
         error_count = 0
         
         for order in ncm_orders:
             try:
-                logistics_order = LogisticsOrder.objects.get(order_reference=order.order_number)
+                # Get or create LogisticsOrder
+                logistics_order, created = LogisticsOrder.objects.get_or_create(
+                    order_reference=order.order_number,
+                    defaults={
+                        'provider': service.provider,
+                        'ncm_order_id': str(order.ncm_order_id),
+                        'customer_name': order.customer_name,
+                        'customer_phone': order.customer_phone,
+                        'customer_address': order.shipping_address,
+                        'status': order.ncm_status or 'CREATED'
+                    }
+                )
+                
                 new_status = service.sync_status(logistics_order)
+                
+                # Skip if sync returned None (API error)
+                if new_status is None:
+                    error_count += 1
+                    continue
                 
                 # ✅ SYNCHRONIZE LOCAL ORDER STATUS BASED ON NCM STATUS
                 ncm_status_upper = new_status.upper().strip() if new_status else ""
@@ -303,11 +333,97 @@ def bulk_sync_ncm_status(request):
                 error_count += 1
         
         if success_count > 0:
-            messages.success(request, f'✓ Synced {success_count} order(s)')
+            messages.success(request, f'✓ {success_count} order(s) synced successfully!')
         if error_count > 0:
-            messages.warning(request, f'⚠ {error_count} order(s) failed')
+            messages.warning(request, f'⚠ {error_count} order(s) failed or skipped')
+        if success_count == 0 and error_count == 0:
+            messages.info(request, 'No orders pending sync')
     
-    return redirect('logistics_dashboard')
+    return redirect('orders_list')
+
+
+@login_required
+def bulk_sync_selected_orders(request):
+    """Sync status for selected NCM orders"""
+    
+    if request.method == 'POST':
+        order_ids = request.POST.getlist('order_ids')
+        
+        if not order_ids:
+            messages.warning(request, 'No orders selected')
+            return redirect('orders_list')
+        
+        ncm_orders = Order.objects.filter(
+            id__in=order_ids,
+            ncm_order_id__isnull=False,
+            is_deleted=False
+        )
+        
+        try:
+            service = NCMService()
+        except Exception as e:
+            messages.error(request, f'NCM Service Error: {str(e)}')
+            return redirect('orders_list')
+        
+        success_count = 0
+        error_count = 0
+        
+        for order in ncm_orders:
+            try:
+                # Get or create LogisticsOrder
+                logistics_order, created = LogisticsOrder.objects.get_or_create(
+                    order_reference=order.order_number,
+                    defaults={
+                        'provider': service.provider,
+                        'ncm_order_id': str(order.ncm_order_id),
+                        'customer_name': order.customer_name,
+                        'customer_phone': order.customer_phone,
+                        'customer_address': order.shipping_address,
+                        'status': order.ncm_status or 'CREATED'
+                    }
+                )
+                
+                new_status = service.sync_status(logistics_order)
+                
+                # Skip if sync returned None (API error)
+                if new_status is None:
+                    error_count += 1
+                    continue
+                
+                # ✅ SYNCHRONIZE LOCAL ORDER STATUS BASED ON NCM STATUS
+                ncm_status_upper = new_status.upper().strip() if new_status else ""
+                
+                # Check if NCM status is "DELIVERED"
+                if "DELIVERED" in ncm_status_upper:
+                    order.order_status = "delivered"
+                    order.payment_status = "paid"
+                
+                # Check if NCM status is "PICKUP COMPLETE"
+                elif "PICKUP COMPLETE" in ncm_status_upper or ("PICKUP" in ncm_status_upper and "COMPLETE" in ncm_status_upper):
+                    order.order_status = "shipped"
+                
+                # Check if NCM status is return-related (RTV, RETURNED, RETURN, etc.)
+                elif any(return_keyword in ncm_status_upper for return_keyword in ["RTV", "RETURNED", "RETURN"]):
+                    order.order_status = "returned"
+                    # Keep payment status as it was (don't change it)
+                
+                order.ncm_status = new_status
+                order.ncm_last_synced = timezone.now()
+                order.save()
+                
+                success_count += 1
+                
+            except Exception as e:
+                error_count += 1
+        
+        if success_count > 0:
+            messages.success(request, f'✓ {success_count} order(s) synced successfully!')
+        if error_count > 0:
+            messages.warning(request, f'⚠ {error_count} order(s) failed or skipped')
+        if success_count == 0 and error_count == 0:
+            messages.info(request, 'No orders to sync')
+    
+    return redirect('orders_list')
 
 
 @login_required
@@ -376,10 +492,29 @@ def sync_order_status_ajax(request, order_id):
                 'message': 'Order not sent to NCM yet'
             }, status=400)
         
-        logistics_order = LogisticsOrder.objects.get(order_reference=order.order_number)
-        
         service = NCMService()
+        
+        # Try to get existing LogisticsOrder, or create it if it doesn't exist
+        logistics_order, created = LogisticsOrder.objects.get_or_create(
+            order_reference=order.order_number,
+            defaults={
+                'provider': service.provider,
+                'ncm_order_id': str(order.ncm_order_id),
+                'customer_name': order.customer_name,
+                'customer_phone': order.customer_phone,
+                'customer_address': order.shipping_address,
+                'status': order.ncm_status or 'CREATED'
+            }
+        )
+        
         new_status = service.sync_status(logistics_order)
+        
+        # Handle case where sync returns None (API error or empty response)
+        if new_status is None:
+            return JsonResponse({
+                'success': False,
+                'message': 'Unable to retrieve status from NCM. Please try again later.'
+            }, status=500)
         
         # ✅ SYNCHRONIZE LOCAL ORDER STATUS BASED ON NCM STATUS
         ncm_status_upper = new_status.upper().strip() if new_status else ""
@@ -408,7 +543,8 @@ def sync_order_status_ajax(request, order_id):
             if order.order_status != "returned":
                 order.order_status = "returned"
                 status_changed = True
-            message = "Order synchronized: Status → Returned"
+            # Keep payment status as it was (don't change it)
+            message = "Order synchronized: Status → Returned | Payment unchanged"
         
         else:
             message = f"NCM Status: {new_status}"

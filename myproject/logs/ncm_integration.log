@@ -464,3 +464,15 @@ Sending to NCM API: POST https://portal.nepalcanmove.com/api/v1/order/create
 Order Data: {'name': 'haaaalin', 'phone': '9866041895', 'phone2': '', 'cod_charge': '38.00', 'address': 'eruioeuiroe', 'fbranch': 'TINKUNE', 'branch': 'BUTWAL', 'package': 'Sawyer Moody', 'vref_id': 'ORD000071', 'instruction': '', 'delivery_type': 'Door2Door', 'weight': '1.00'}
 ✓ NCM Order created successfully: {'Message': 'Order Successfully Created', 'orderid': 18517335, 'weight': 1.0, 'delivery_charge': 170.0, 'delivery_type': 'Pickup/Collect'}
 NCM Order created: ORD000071 -> NCM ID: 18517335
+Syncing NCM Order ID: 18514290
+Status synced: ORD000066 -> Pickup Complete
+Syncing NCM Order ID: 18514290
+Status synced: ORD000066 -> Pickup Complete
+Syncing NCM Order ID: 18514304
+Status synced: ORD000057 -> Pickup Complete
+Syncing NCM Order ID: 18514290
+Status synced: ORD000066 -> Pickup Complete
+Syncing NCM Order ID: 18514295
+Status synced: ORD000062 -> Pickup Complete
+Bulk sync: 11 orders
+Bulk sync: 11 orders

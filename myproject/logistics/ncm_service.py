@@ -1,6 +1,9 @@
 import requests
 from django.utils import timezone
 from .models import LogisticsProvider, LogisticsOrder, StatusLog
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class NCMService:
@@ -63,7 +66,7 @@ class NCMService:
             'delivery_type': order_data.get('delivery_type', 'Door2Door'),
         }
         
-        response = self._make_request('POST', '/api/v1/order/create', json=ncm_data)
+        response = self._make_request('POST', '/order/create', json=ncm_data)
         
         if response.status_code == 200:
             data = response.json()
@@ -95,34 +98,43 @@ class NCMService:
         """Get latest status from NCM"""
         ncm_order_id = logistics_order.ncm_order_id
         
-        response = self._make_request('GET', f'/api/v1/order/status?id={ncm_order_id}')
-        
-        if response.status_code == 200:
-            statuses = response.json()
-            if statuses and len(statuses) > 0:
-                latest = statuses[0]
-                ncm_status = latest.get('status')
-                
-                new_status = self._map_status(ncm_status)
-                
-                logistics_order.status = new_status
-                logistics_order.last_synced = timezone.now()
-                logistics_order.save()
-                
-                StatusLog.objects.create(
-                    logistics_order=logistics_order,
-                    status=ncm_status,
-                    message='Status synced from NCM'
-                )
-                
-                return new_status
-        
-        return None
+        try:
+            response = self._make_request('GET', f'/order/status?id={ncm_order_id}')
+            
+            if response.status_code == 200:
+                statuses = response.json()
+                if statuses and len(statuses) > 0:
+                    latest = statuses[0]
+                    ncm_status = latest.get('status')
+                    
+                    new_status = self._map_status(ncm_status)
+                    
+                    logistics_order.status = new_status
+                    logistics_order.last_synced = timezone.now()
+                    logistics_order.save()
+                    
+                    StatusLog.objects.create(
+                        logistics_order=logistics_order,
+                        status=ncm_status,
+                        message='Status synced from NCM'
+                    )
+                    
+                    return ncm_status
+                else:
+                    logger.warning(f'Empty status response from NCM for order {ncm_order_id}')
+                    return None
+            else:
+                error_msg = response.text if response.text else f'HTTP {response.status_code}'
+                logger.error(f'NCM API error for order {ncm_order_id}: {error_msg}')
+                return None
+        except Exception as e:
+            logger.error(f'Exception syncing status for order {ncm_order_id}: {str(e)}')
+            return None
     
     def get_order_details(self, logistics_order):
         """Get full order details from NCM"""
         ncm_order_id = logistics_order.ncm_order_id
-        response = self._make_request('GET', f'/api/v1/order?id={ncm_order_id}')
+        response = self._make_request('GET', f'/order?id={ncm_order_id}')
         
         if response.status_code == 200:
             return response.json()
@@ -134,7 +146,7 @@ class NCMService:
             'orderid': logistics_order.ncm_order_id,
             'comments': comment_text
         }
-        response = self._make_request('POST', '/api/v1/comment', json=payload)
+        response = self._make_request('POST', '/comment', json=payload)
         
         if response.status_code == 200:
             StatusLog.objects.create(
@@ -147,7 +159,7 @@ class NCMService:
     
     def get_branches(self):
         """Get list of NCM branches"""
-        response = self._make_request('GET', '/api/v2/branches')
+        response = self._make_request('GET', '/branches')
         
         if response.status_code == 200:
             return response.json()
@@ -160,7 +172,7 @@ class NCMService:
             'destination': to_branch,
             'type': delivery_type
         }
-        response = self._make_request('GET', '/api/v1/shipping-rate', params=params)
+        response = self._make_request('GET', '/shipping-rate', params=params)
         
         if response.status_code == 200:
             return response.json()

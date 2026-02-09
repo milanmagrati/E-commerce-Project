@@ -20,6 +20,7 @@ urlpatterns = [
     path('api/sync/<int:order_id>/', views.sync_order_status_ajax, name='sync_status_ajax'),
     path('bulk-send/', views.bulk_send_to_ncm, name='bulk_send'),
     path('bulk-sync/', views.bulk_sync_ncm_status, name='bulk_sync'),
+    path('bulk-sync-selected/', views.bulk_sync_selected_orders, name='bulk_sync_selected'),
     
     
     
