@@ -69,6 +69,38 @@
         </div>
     </div>
 
+    <!-- Bulk Actions Toolbar -->
+    <div id="bulkActionsToolbar" class="card border-0 shadow-sm mb-4" style="display: none;">
+        <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="text-muted">
+                        <strong id="selectedCount">0</strong> return(s) selected
+                    </span>
+                </div>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-sm btn-warning" id="bulkApproveBtn" title="Approve Selected">
+                        <i class="fas fa-check-circle"></i> Approve
+                    </button>
+                    <button type="button" class="btn btn-sm btn-info" id="bulkRejectBtn" title="Reject Selected">
+                        <i class="fas fa-times-circle"></i> Reject
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary" id="bulkProcessBtn" title="Mark as Processing">
+                        <i class="fas fa-spinner"></i> Processing
+                    </button>
+                    {% if user.is_superuser or user.role == 'administrator' or user.can_delete_returns %}
+                    <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn" title="Move to Trash">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-light" id="bulkClearBtn" title="Clear Selection">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Returns Table -->
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white border-bottom">
@@ -76,9 +108,12 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover mb-0" id="returnsTable">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="selectAllCheckbox" class="form-check-input" title="Select All">
+                            </th>
                             <th>RMA #</th>
                             <th>Order</th>
                             <th>Customer</th>
@@ -92,6 +127,9 @@
                     <tbody>
                         {% for return in returns %}
                         <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input return-checkbox" value="{{ return.id }}" data-rma="{{ return.rma_number }}">
+                            </td>
                             <td><strong>{{ return.rma_number }}</strong></td>
                             <td>{{ return.order.order_number }}</td>
                             <td>
@@ -123,7 +161,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="8" class="text-center py-5">
+                            <td colspan="9" class="text-center py-5">
                                 <i class="fas fa-box fa-3x text-muted mb-3 d-block"></i>
                                 <p class="text-muted mb-0">No return requests found</p>
                             </td>
@@ -160,4 +198,138 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Bulk Actions Form (Hidden) -->
+<form id="bulkActionForm" method="POST" action="{% url 'returns_bulk_action' %}" style="display: none;">
+    {% csrf_token %}
+    <input type="hidden" id="bulkActionInput" name="bulk_action" value="">
+    <div id="returnIdsContainer"></div>
+</form>
+
+<!-- Bulk Actions Script -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const returnCheckboxes = document.querySelectorAll('.return-checkbox');
+    const bulkActionsToolbar = document.getElementById('bulkActionsToolbar');
+    const selectedCount = document.getElementById('selectedCount');
+    const bulkActionForm = document.getElementById('bulkActionForm');
+    const bulkActionInput = document.getElementById('bulkActionInput');
+    const returnIdsContainer = document.getElementById('returnIdsContainer');
+    
+    // Select all checkbox handler
+    selectAllCheckbox.addEventListener('change', function() {
+        returnCheckboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+        updateBulkActionsToolbar();
+    });
+    
+    // Individual checkbox handler
+    returnCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            updateBulkActionsToolbar();
+            // Update select all checkbox state
+            const allChecked = Array.from(returnCheckboxes).every(cb => cb.checked);
+            const someChecked = Array.from(returnCheckboxes).some(cb => cb.checked);
+            selectAllCheckbox.checked = allChecked;
+            selectAllCheckbox.indeterminate = someChecked && !allChecked;
+        });
+    });
+    
+    // Update toolbar visibility and selected count
+    function updateBulkActionsToolbar() {
+        const checked = document.querySelectorAll('.return-checkbox:checked');
+        const count = checked.length;
+        
+        selectedCount.textContent = count;
+        bulkActionsToolbar.style.display = count > 0 ? 'block' : 'none';
+    }
+    
+    // Get selected IDs
+    function getSelectedIds() {
+        const checked = document.querySelectorAll('.return-checkbox:checked');
+        return Array.from(checked).map(cb => cb.value);
+    }
+    
+    // Get selected RMA numbers for confirmation
+    function getSelectedRMAs() {
+        const checked = document.querySelectorAll('.return-checkbox:checked');
+        return Array.from(checked).map(cb => cb.dataset.rma);
+    }
+    
+    // Helper to submit bulk action
+    function submitBulkAction(action) {
+        const ids = getSelectedIds();
+        const rmas = getSelectedRMAs();
+        if (ids.length === 0) return;
+        
+        // Build confirmation message based on action
+        let confirmMessage = '';
+        switch(action) {
+            case 'approve':
+                confirmMessage = `Approve ${ids.length} return(s)?`;
+                break;
+            case 'reject':
+                confirmMessage = `Reject ${ids.length} return(s)?`;
+                break;
+            case 'processing':
+                confirmMessage = `Mark ${ids.length} return(s) as processing?`;
+                break;
+            case 'trash':
+                confirmMessage = `Move ${ids.length} return(s) to trash?`;
+                break;
+        }
+        
+        if (confirmMessage && rmas.length <= 5) {
+            confirmMessage += `\n\n${rmas.join(', ')}`;
+        }
+        
+        if (confirm(confirmMessage)) {
+            // Clear container and add hidden inputs
+            returnIdsContainer.innerHTML = '';
+            ids.forEach(id => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'return_ids';
+                input.value = id;
+                returnIdsContainer.appendChild(input);
+            });
+            
+            bulkActionInput.value = action;
+            bulkActionForm.submit();
+        }
+    }
+    
+    // Bulk Approve
+    document.getElementById('bulkApproveBtn').addEventListener('click', function() {
+        submitBulkAction('approve');
+    });
+    
+    // Bulk Reject
+    document.getElementById('bulkRejectBtn').addEventListener('click', function() {
+        submitBulkAction('reject');
+    });
+    
+    // Bulk Processing
+    document.getElementById('bulkProcessBtn').addEventListener('click', function() {
+        submitBulkAction('processing');
+    });
+    
+    // Bulk Delete
+    document.getElementById('bulkDeleteBtn').addEventListener('click', function() {
+        submitBulkAction('trash');
+    });
+    
+    // Clear selection
+    document.getElementById('bulkClearBtn').addEventListener('click', function() {
+        returnCheckboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+        updateBulkActionsToolbar();
+    });
+});
+</script>
 {% endblock %}

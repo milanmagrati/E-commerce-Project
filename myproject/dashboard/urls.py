@@ -146,6 +146,7 @@ urlpatterns = [
     
     # Bulk Actions
     path('returns/bulk-action/', views.returns_bulk_action, name='returns_bulk_action'),
+    path('returns/trash/bulk-action/', views.returns_trash_bulk_action, name='returns_trash_bulk_action'),
     
     # API Endpoint to search customer by phone number
     path('api/search-customer-by-phone/', views.search_customer_by_phone, name='search_customer_by_phone'),

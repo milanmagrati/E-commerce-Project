@@ -66,7 +66,7 @@ ProductVariationFormSet = forms.inlineformset_factory(
     Product,
     ProductVariation,
     form=ProductVariationForm,
-    extra=1,
+    extra=0,
     can_delete=True,
     min_num=0,
     validate_min=False,

@@ -46,6 +46,32 @@
         </div>
     </div>
 
+    <!-- Bulk Actions Toolbar -->
+    <div id="bulkActionsToolbar" class="card border-0 shadow-sm mb-4" style="display: none;">
+        <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="text-muted">
+                        <strong id="selectedCount">0</strong> return(s) selected
+                    </span>
+                </div>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-sm btn-success" id="bulkRestoreBtn" title="Restore Selected">
+                        <i class="fas fa-undo"></i> Restore
+                    </button>
+                    {% if user.is_superuser or user.role == 'administrator' %}
+                    <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn" title="Delete Permanently">
+                        <i class="fas fa-times"></i> Delete Permanently
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-light" id="bulkClearBtn" title="Clear Selection">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Trashed Returns Table -->
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white border-bottom">
@@ -53,9 +79,12 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover mb-0" id="trashedReturnsTable">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="selectAllCheckbox" class="form-check-input" title="Select All">
+                            </th>
                             <th>RMA #</th>
                             <th>Order</th>
                             <th>Customer</th>
@@ -69,6 +98,9 @@
                     <tbody>
                         {% for return in trashed_returns %}
                         <tr class="text-muted">
+                            <td>
+                                <input type="checkbox" class="form-check-input return-checkbox" value="{{ return.id }}" data-rma="{{ return.rma_number }}">
+                            </td>
                             <td><strong>{{ return.rma_number }}</strong></td>
                             <td>{{ return.order.order_number }}</td>
                             <td>
@@ -101,7 +133,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="8" class="text-center py-5">
+                            <td colspan="9" class="text-center py-5">
                                 <i class="fas fa-trash fa-3x text-muted mb-3 d-block"></i>
                                 <p class="text-muted mb-0">Trash is empty</p>
                             </td>
@@ -139,28 +171,121 @@
     </div>
 </div>
 
-<!-- Empty Trash Modal -->
-<div class="modal fade" id="emptyTrashModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title"><i class="fas fa-exclamation-triangle"></i> Empty Trash</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <strong>Warning!</strong> This action cannot be undone!
-                </div>
-                <p>Are you sure you want to permanently delete all trashed returns?</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <a href="{% url 'returns_empty_trash' %}" class="btn btn-danger">
-                    <i class="fas fa-trash"></i> Empty Trash
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Bulk Actions Form (Hidden) -->
+<form id="bulkActionForm" method="POST" action="{% url 'returns_trash_bulk_action' %}" style="display: none;">
+    {% csrf_token %}
+    <input type="hidden" id="bulkActionInput" name="bulk_action" value="">
+    <div id="returnIdsContainer"></div>
+</form>
+
+<!-- Bulk Actions Script -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const returnCheckboxes = document.querySelectorAll('.return-checkbox');
+    const bulkActionsToolbar = document.getElementById('bulkActionsToolbar');
+    const selectedCount = document.getElementById('selectedCount');
+    const bulkActionForm = document.getElementById('bulkActionForm');
+    const bulkActionInput = document.getElementById('bulkActionInput');
+    const returnIdsContainer = document.getElementById('returnIdsContainer');
+    
+    // Select all checkbox handler
+    selectAllCheckbox.addEventListener('change', function() {
+        returnCheckboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+        updateBulkActionsToolbar();
+    });
+    
+    // Individual checkbox handler
+    returnCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            updateBulkActionsToolbar();
+            // Update select all checkbox state
+            const allChecked = Array.from(returnCheckboxes).every(cb => cb.checked);
+            const someChecked = Array.from(returnCheckboxes).some(cb => cb.checked);
+            selectAllCheckbox.checked = allChecked;
+            selectAllCheckbox.indeterminate = someChecked && !allChecked;
+        });
+    });
+    
+    // Update toolbar visibility and selected count
+    function updateBulkActionsToolbar() {
+        const checked = document.querySelectorAll('.return-checkbox:checked');
+        const count = checked.length;
+        
+        selectedCount.textContent = count;
+        bulkActionsToolbar.style.display = count > 0 ? 'block' : 'none';
+    }
+    
+    // Get selected IDs
+    function getSelectedIds() {
+        const checked = document.querySelectorAll('.return-checkbox:checked');
+        return Array.from(checked).map(cb => cb.value);
+    }
+    
+    // Get selected RMA numbers for confirmation
+    function getSelectedRMAs() {
+        const checked = document.querySelectorAll('.return-checkbox:checked');
+        return Array.from(checked).map(cb => cb.dataset.rma);
+    }
+    
+    // Helper to submit bulk action
+    function submitBulkAction(action) {
+        const ids = getSelectedIds();
+        const rmas = getSelectedRMAs();
+        if (ids.length === 0) return;
+        
+        // Build confirmation message based on action
+        let confirmMessage = '';
+        switch(action) {
+            case 'restore':
+                confirmMessage = `Restore ${ids.length} return(s)?`;
+                break;
+            case 'permanent_delete':
+                confirmMessage = `⚠️ Permanently delete ${ids.length} return(s)? This cannot be undone!`;
+                break;
+        }
+        
+        if (confirmMessage && rmas.length <= 5) {
+            confirmMessage += `\n\n${rmas.join(', ')}`;
+        }
+        
+        if (confirm(confirmMessage)) {
+            // Clear container and add hidden inputs
+            returnIdsContainer.innerHTML = '';
+            ids.forEach(id => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'return_ids';
+                input.value = id;
+                returnIdsContainer.appendChild(input);
+            });
+            
+            bulkActionInput.value = action;
+            bulkActionForm.submit();
+        }
+    }
+    
+    // Bulk Restore
+    document.getElementById('bulkRestoreBtn').addEventListener('click', function() {
+        submitBulkAction('restore');
+    });
+    
+    // Bulk Delete
+    document.getElementById('bulkDeleteBtn').addEventListener('click', function() {
+        submitBulkAction('permanent_delete');
+    });
+    
+    // Clear selection
+    document.getElementById('bulkClearBtn').addEventListener('click', function() {
+        returnCheckboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+        updateBulkActionsToolbar();
+    });
+});
+</script>
 {% endblock %}

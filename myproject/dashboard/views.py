@@ -495,6 +495,7 @@ def product_add(request):
         'temp_image_url': temp_url,
         'temp_image_path': temp_path,
     })
+@login_required
 @permission_required('can_edit_products')
 def product_edit(request, product_id):
     product = get_object_or_404(Product, pk=product_id, is_deleted=False)
@@ -552,15 +553,28 @@ def product_edit(request, product_id):
                             option_values=size_options
                         )
                 
+                # ✅ FIXED: Always try to save formset if it's valid
                 if formset.is_valid():
                     formset.save()
+                    messages.success(request, f'Product "{product.name}" updated successfully!')
+                else:
+                    # If formset has errors, show them and re-render the form
+                    messages.error(request, 'Please correct the variation errors below.')
+                    return render(request, 'product_form.html', {
+                        'form': form,
+                        'formset': formset,
+                        'product': product,
+                        'action': 'Edit',
+                        'current_step': 1,
+                    })
+            else:
+                messages.success(request, f'Product "{product.name}" updated successfully!')
             
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
                 ProductImage.objects.create(product=product, image=img)
             
-            messages.success(request, f'Product "{product.name}" updated successfully!')
             # Clean up any temporary uploaded image saved in session
             temp_to_remove = request.session.pop('temp_product_image', None)
             if temp_to_remove and default_storage.exists(temp_to_remove):
@@ -581,11 +595,29 @@ def product_edit(request, product_id):
             except Exception as e:
                 print('Temp save error on edit:', e)
     else:
+        # ✅ FIXED: Get completely fresh product from database
+        # Re-query to avoid any cached instances
+        product = Product.objects.get(pk=product_id)
+        
+        # Get existing variant options
+        variant_option = product.variant_options.filter(option_name='Variant').first()
+        size_option = product.variant_options.filter(option_name='Size').first()
+        
         form = ProductForm(instance=product, initial={
             'variant_options': variant_option.option_values if variant_option else '',
             'size_options': size_option.option_values if size_option else ''
         })
-        formset = ProductVariationFormSet(instance=product)
+        
+        # ✅ FIXED: Get completely fresh variations from database
+        # Use raw database query to bypass any Django ORM caching
+        variations_qs = ProductVariation.objects.filter(product_id=product_id).order_by('created_at')
+        
+        # Clear any cached relations
+        if hasattr(product, '_prefetched_objects_cache'):
+            product._prefetched_objects_cache.clear()
+        
+        # Create formset with fresh queryset
+        formset = ProductVariationFormSet(instance=product, queryset=variations_qs)
     
     # If there's a temp image in session (from previous failed upload), pass it to the template
     temp_path = request.session.get('temp_product_image')
@@ -612,7 +644,10 @@ def product_edit(request, product_id):
 @login_required
 @permission_required('can_view_products')
 def product_detail(request, product_id):
-    product = get_object_or_404(Product, pk=product_id, user=request.user)
+    # ✅ FIXED: Use same filter as product_edit for consistency
+    product = get_object_or_404(Product, pk=product_id, is_deleted=False)
+    # ✅ FIXED: Refresh from database to get latest changes
+    product.refresh_from_db()
     
     try:
         profit = (product.price or 0) - (product.cost_price or 0)
@@ -691,6 +726,13 @@ def product_detail(request, product_id):
     product_images = product.images.all()
     order_items = product.orderitem_set.all()[:10]
     
+    # ✅ FIXED: Explicitly fetch fresh variations from database
+    # Clear any cached relations to ensure fresh data
+    if hasattr(product, '_prefetched_objects_cache'):
+        product._prefetched_objects_cache.clear()
+    
+    variations = ProductVariation.objects.filter(product=product).order_by('created_at')
+    
     # Calculate profit margin
     profit_margin = 0
     if product.cost_price and product.cost_price > 0:
@@ -698,6 +740,7 @@ def product_detail(request, product_id):
     
     context = {
         'product': product,
+        'variations': variations,  # ✅ ADDED: Explicitly pass variations
         'product_images': product_images,
         'order_items': order_items,
         'profit_margin': profit_margin,
@@ -5662,10 +5705,63 @@ def returns_bulk_action(request):
                 approved_at=timezone.now()
             )
             messages.success(request, f'✅ {count} return(s) rejected!')
+            
+        elif action == 'processing':
+            returns.update(
+                return_status='processing'
+            )
+            messages.success(request, f'✅ {count} return(s) marked as processing!')
         
         return redirect('returns_list')
     
     return redirect('returns_list')
+
+@login_required
+@require_POST
+def returns_trash_bulk_action(request):
+    """Handle bulk actions on trashed returns"""
+    return_ids = request.POST.getlist('return_ids')
+    action = request.POST.get('bulk_action')
+    
+    if not return_ids:
+        messages.error(request, '❌ No returns selected!')
+        return redirect('returns_trash_list')
+    
+    try:
+        returns = ReturnRequest.objects.filter(id__in=return_ids, is_deleted=True)
+        count = returns.count()
+        
+        if count == 0:
+            messages.error(request, 'No valid returns found!')
+            return redirect('returns_trash_list')
+        
+        if action == 'restore':
+            returns.update(is_deleted=False, deleted_at=None, deleted_by=None)
+            
+            # Log activity for each restored return
+            for return_request in returns:
+                ReturnActivityLog.objects.create(
+                    return_request=return_request,
+                    user=request.user,
+                    action_type='restored',
+                    description=f'Restored from trash by {request.user.username}'
+                )
+            
+            messages.success(request, f'✅ {count} return(s) restored successfully!')
+            
+        elif action == 'permanent_delete':
+            returns.delete()
+            messages.success(request, f'✅ {count} return(s) permanently deleted!')
+            
+        else:
+            messages.error(request, 'Invalid action selected!')
+            
+    except Exception as e:
+        messages.error(request, f'Error processing bulk action: {str(e)}')
+        import traceback
+        traceback.print_exc()
+    
+    return redirect('returns_trash_list')
 
 # phone search API
 @login_required
