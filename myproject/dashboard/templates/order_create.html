@@ -1713,6 +1713,9 @@
                         phoneInput.style.background = '';
                     }, 2000);
                 } else {
+                    // Auto-populate phone field even when no customer is found
+                    document.getElementById('customerPhone').value = phone;
+                    
                     phoneInput.style.borderColor = '#ef4444';
                     phoneInput.style.background = '#fee2e2';
                     
