@@ -525,7 +525,7 @@
                 </p>
                 
                 <div class="stats-selection">
-                    <div class="form-check stat-option" onclick="toggleStatSelection('total_orders')">
+                    <div class="form-check stat-option">
                         <input class="form-check-input" type="checkbox" id="stat_total_orders" value="total_orders">
                         <label class="form-check-label" for="stat_total_orders">
                             <div class="stat-preview bg-primary-gradient">
@@ -535,7 +535,7 @@
                         </label>
                     </div>
                     
-                    <div class="form-check stat-option" onclick="toggleStatSelection('total_revenue')">
+                    <div class="form-check stat-option">
                         <input class="form-check-input" type="checkbox" id="stat_total_revenue" value="total_revenue">
                         <label class="form-check-label" for="stat_total_revenue">
                             <div class="stat-preview bg-success-gradient">
@@ -545,7 +545,7 @@
                         </label>
                     </div>
                     
-                    <div class="form-check stat-option" onclick="toggleStatSelection('pending_orders')">
+                    <div class="form-check stat-option">
                         <input class="form-check-input" type="checkbox" id="stat_pending_orders" value="pending_orders">
                         <label class="form-check-label" for="stat_pending_orders">
                             <div class="stat-preview bg-warning-gradient">
@@ -555,7 +555,7 @@
                         </label>
                     </div>
                     
-                    <div class="form-check stat-option" onclick="toggleStatSelection('delivered_today')">
+                    <div class="form-check stat-option">
                         <input class="form-check-input" type="checkbox" id="stat_delivered_today" value="delivered_today">
                         <label class="form-check-label" for="stat_delivered_today">
                             <div class="stat-preview bg-info-gradient">
@@ -565,7 +565,7 @@
                         </label>
                     </div>
                     
-                    <div class="form-check stat-option" onclick="toggleStatSelection('confirmed_orders')">
+                    <div class="form-check stat-option">
                         <input class="form-check-input" type="checkbox" id="stat_confirmed_orders" value="confirmed_orders">
                         <label class="form-check-label" for="stat_confirmed_orders">
                             <div class="stat-preview bg-success">
@@ -575,7 +575,7 @@
                         </label>
                     </div>
                     
-                    <div class="form-check stat-option" onclick="toggleStatSelection('dispatched_orders')">
+                    <div class="form-check stat-option">
                         <input class="form-check-input" type="checkbox" id="stat_dispatched_orders" value="dispatched_orders">
                         <label class="form-check-label" for="stat_dispatched_orders">
                             <div class="stat-preview bg-purple-gradient">
@@ -1103,23 +1103,44 @@ function loadStatsCards() {
 }
 
 function openStatsSettings() {
-    const modal = new bootstrap.Modal(document.getElementById('statsSettingsModal'));
+    const modalElement = document.getElementById('statsSettingsModal');
+    
+    // Get saved stats or use defaults
     const savedStats = localStorage.getItem('selectedStats');
     const selectedStats = savedStats ? JSON.parse(savedStats) : ['total_orders', 'total_revenue', 'pending_orders', 'delivered_today'];
     
+    // Update checkboxes - remove old listeners and add fresh ones
     document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
-        checkbox.checked = selectedStats.includes(checkbox.value);
+        // Clone and replace to remove all old event listeners
+        const newCheckbox = checkbox.cloneNode(true);
+        checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+        
+        // Set checked state
+        newCheckbox.checked = selectedStats.includes(newCheckbox.value);
+        
+        // Add fresh change event listener
+        newCheckbox.addEventListener('change', updateSelectionMessage);
     });
     
     updateSelectionMessage();
-    modal.show();
+    
+    // Show modal - get or create instance
+    if (modalElement) {
+        // Dispose of existing modal instance if it exists
+        const existingModal = bootstrap.Modal.getInstance(modalElement);
+        if (existingModal) {
+            existingModal.dispose();
+        }
+        
+        // Create fresh modal instance
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    } else {
+        console.error('Stats settings modal not found');
+    }
 }
 
-function toggleStatSelection(statKey) {
-    const checkbox = document.getElementById(`stat_${statKey}`);
-    checkbox.checked = !checkbox.checked;
-    updateSelectionMessage();
-}
+// Toggle function is no longer needed - using change event handlers instead
 
 function updateSelectionMessage() {
     const checked = document.querySelectorAll('.stat-option input[type="checkbox"]:checked');
@@ -1148,7 +1169,19 @@ function saveStatsPreference() {
     if (checked.length === 4) {
         localStorage.setItem('selectedStats', JSON.stringify(checked));
         loadStatsCards();
-        bootstrap.Modal.getInstance(document.getElementById('statsSettingsModal')).hide();
+        
+        // Close modal safely and dispose properly
+        const modalElement = document.getElementById('statsSettingsModal');
+        if (modalElement) {
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            if (modalInstance) {
+                modalInstance.hide();
+                // Dispose after brief delay to allow animation to complete
+                setTimeout(() => {
+                    modalInstance.dispose();
+                }, 300);
+            }
+        }
         
         const toast = document.createElement('div');
         toast.className = 'position-fixed top-0 end-0 p-3';
