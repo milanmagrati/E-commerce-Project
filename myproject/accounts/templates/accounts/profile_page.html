@@ -71,7 +71,7 @@
                         {% endif %}
                         <div class="d-flex align-items-center">
                             <i class="fas fa-calendar text-primary me-3" style="width: 20px;"></i>
-                            <small>Joined {{ user.date_joined|date:"M d, Y" }}</small>
+                            <small>Joined {{ user.date_joined|nepali_date }}</small>
                         </div>
                     </div>
 
@@ -105,7 +105,7 @@
                     </div>
                     <div class="d-flex justify-content-between mb-3 pb-2 border-bottom">
                         <span class="text-muted">Last Login:</span>
-                        <small>{{ user.last_login|date:"M d, Y H:i"|default:"Never" }}</small>
+                        <small>{{ user.last_login|nepali_datetime|default:"Never" }}</small>
                     </div>
                     <div class="d-flex justify-content-between mb-3 pb-2 border-bottom">
                         <span class="text-muted">Account Type:</span>

@@ -147,7 +147,7 @@
                     <i class="fas fa-calendar text-secondary"></i>
                     <div>
                         <small class="text-muted">Member Since</small>
-                        <p class="mb-0">{{ customer.created_at|date:"F d, Y" }}</p>
+                        <p class="mb-0">{{ customer.created_at|nepali_date }}</p>
                     </div>
                 </div>
             </div>
@@ -184,7 +184,7 @@
                                 <td>
                                     <strong>{{ order.order_number }}</strong>
                                 </td>
-                                <td>{{ order.created_at|date:"M d, Y" }}</td>
+                                <td>{{ order.created_at|nepali_date }}</td>
                                 <td>
                                     <span class="badge bg-secondary">{{ order.items.count }} items</span>
                                 </td>

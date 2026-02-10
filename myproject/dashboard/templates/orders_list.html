@@ -264,8 +264,8 @@
                             </div>
                         </td>
                         <td>
-                            <span class="text-muted small">{{ order.created_at|date:"M d, Y" }}</span><br>
-                            <small class="text-muted">{{ order.created_at|date:"h:i A" }}</small>
+                            <span class="text-muted small">{{ order.created_at|nepali_date }}</span><br>
+                            <small class="text-muted">{{ order.created_at|nepali_time }}</small>
                         </td>
                         <td>
                             {% with product_name=order_products|get_item:order.id %}
@@ -1077,6 +1077,22 @@ const statsData = {
 
 document.addEventListener('DOMContentLoaded', function() {
     loadStatsCards();
+    
+    // Initialize event listeners for stats checkboxes
+    document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectionMessage);
+    });
+    
+    // Initialize modal cleanup to prevent backdrop issues
+    const statsModal = document.getElementById('statsSettingsModal');
+    if (statsModal) {
+        statsModal.addEventListener('hidden.bs.modal', function() {
+            // Remove any lingering backdrops
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(backdrop => backdrop.remove());
+        });
+    }
+    
     console.log('✅ Orders page loaded successfully');
 });
 
@@ -1111,39 +1127,28 @@ function loadStatsCards() {
 function openStatsSettings() {
     const modalElement = document.getElementById('statsSettingsModal');
     
+    if (!modalElement) {
+        console.error('Stats settings modal not found');
+        return;
+    }
+    
     // Get saved stats or use defaults
     const savedStats = localStorage.getItem('selectedStats');
     const selectedStats = savedStats ? JSON.parse(savedStats) : ['total_orders', 'total_revenue', 'pending_orders', 'delivered_today'];
     
-    // Update checkboxes - remove old listeners and add fresh ones
+    // Update checkboxes with saved state (no cloning needed)
     document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
-        // Clone and replace to remove all old event listeners
-        const newCheckbox = checkbox.cloneNode(true);
-        checkbox.parentNode.replaceChild(newCheckbox, checkbox);
-        
-        // Set checked state
-        newCheckbox.checked = selectedStats.includes(newCheckbox.value);
-        
-        // Add fresh change event listener
-        newCheckbox.addEventListener('change', updateSelectionMessage);
+        checkbox.checked = selectedStats.includes(checkbox.value);
     });
     
     updateSelectionMessage();
     
-    // Show modal - get or create instance
-    if (modalElement) {
-        // Dispose of existing modal instance if it exists
-        const existingModal = bootstrap.Modal.getInstance(modalElement);
-        if (existingModal) {
-            existingModal.dispose();
-        }
-        
-        // Create fresh modal instance
-        const modal = new bootstrap.Modal(modalElement);
-        modal.show();
-    } else {
-        console.error('Stats settings modal not found');
+    // Show modal - reuse existing instance or create new one
+    let modal = bootstrap.Modal.getInstance(modalElement);
+    if (!modal) {
+        modal = new bootstrap.Modal(modalElement);
     }
+    modal.show();
 }
 
 // Toggle function is no longer needed - using change event handlers instead
@@ -1176,16 +1181,12 @@ function saveStatsPreference() {
         localStorage.setItem('selectedStats', JSON.stringify(checked));
         loadStatsCards();
         
-        // Close modal safely and dispose properly
+        // Close modal properly - just hide, don't dispose
         const modalElement = document.getElementById('statsSettingsModal');
         if (modalElement) {
             const modalInstance = bootstrap.Modal.getInstance(modalElement);
             if (modalInstance) {
                 modalInstance.hide();
-                // Dispose after brief delay to allow animation to complete
-                setTimeout(() => {
-                    modalInstance.dispose();
-                }, 300);
             }
         }
         

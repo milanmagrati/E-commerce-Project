@@ -182,7 +182,7 @@
                             <strong class="text-success">रू {{ order.total_amount|floatformat:2 }}</strong>
                         </td>
                         <td>
-                            <small>{{ order.deleted_at|date:"M d, Y" }}</small><br>
+                            <small>{{ order.deleted_at|nepali_date }}</small><br>
                             <small class="text-muted">{{ order.deleted_at|time:"h:i A" }}</small>
                         </td>
                         <td>

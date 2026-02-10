@@ -1,5 +1,7 @@
 from django import template
 from decimal import Decimal
+from django.utils import timezone
+import pytz
 
 register = template.Library()
 
@@ -177,3 +179,76 @@ def replace(value, arg):
         return str(value).replace(old, new)
     except (ValueError, AttributeError):
         return value
+
+# Nepali Timezone Filters
+NEPALI_TZ = pytz.timezone('Asia/Kathmandu')
+
+@register.filter(name='nepali_datetime')
+def nepali_datetime(dt_value):
+    """Format datetime in Nepali timezone (Asia/Kathmandu) with full date and time"""
+    if not dt_value:
+        return "—"
+    try:
+        # Convert to Nepali timezone
+        if hasattr(dt_value, 'astimezone'):
+            nepali_dt = dt_value.astimezone(NEPALI_TZ)
+            return nepali_dt.strftime('%b %d, %Y %I:%M %p')
+        return str(dt_value)
+    except (AttributeError, TypeError):
+        return "—"
+
+
+@register.filter(name='nepali_date')
+def nepali_date(dt_value):
+    """Format date in Nepali timezone format (e.g., Feb 09, 2026)"""
+    if not dt_value:
+        return "—"
+    try:
+        if hasattr(dt_value, 'astimezone'):
+            nepali_dt = dt_value.astimezone(NEPALI_TZ)
+            return nepali_dt.strftime('%b %d, %Y')
+        return str(dt_value)
+    except (AttributeError, TypeError):
+        return "—"
+
+
+@register.filter(name='nepali_time')
+def nepali_time(dt_value):
+    """Format time in Nepali timezone format (e.g., 10:01 AM)"""
+    if not dt_value:
+        return "—"
+    try:
+        if hasattr(dt_value, 'astimezone'):
+            nepali_dt = dt_value.astimezone(NEPALI_TZ)
+            return nepali_dt.strftime('%I:%M %p')
+        return str(dt_value)
+    except (AttributeError, TypeError):
+        return "—"
+
+
+@register.filter(name='nepali_short_datetime')
+def nepali_short_datetime(dt_value):
+    """Format datetime in short Nepali timezone format (e.g., Feb 09 10:01 AM)"""
+    if not dt_value:
+        return "—"
+    try:
+        if hasattr(dt_value, 'astimezone'):
+            nepali_dt = dt_value.astimezone(NEPALI_TZ)
+            return nepali_dt.strftime('%b %d %I:%M %p')
+        return str(dt_value)
+    except (AttributeError, TypeError):
+        return "—"
+
+
+@register.simple_tag
+def current_nepali_time():
+    """Get current time in Nepali timezone"""
+    now = timezone.now().astimezone(NEPALI_TZ)
+    return now.strftime('%I:%M %p')
+
+
+@register.simple_tag
+def current_nepali_datetime():
+    """Get current date and time in Nepali timezone"""
+    now = timezone.now().astimezone(NEPALI_TZ)
+    return now.strftime('%b %d, %Y %I:%M %p')

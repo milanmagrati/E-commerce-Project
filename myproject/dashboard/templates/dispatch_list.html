@@ -236,8 +236,8 @@
                                 </td>
                                 <td>{{ dispatch.created_by.username|default:"N/A" }}</td>
                                 <td>
-                                    <small>{{ dispatch.created_at|date:"M d, Y" }}</small><br>
-                                    <small class="text-muted">{{ dispatch.created_at|date:"h:i A" }}</small>
+                                    <small>{{ dispatch.created_at|nepali_date }}</small><br>
+                                    <small class="text-muted">{{ dispatch.created_at|nepali_time }}</small>
                                 </td>
                                 <td onclick="event.stopPropagation();">
                                     <a href="{% url 'dispatch_detail' dispatch.pk %}" 
