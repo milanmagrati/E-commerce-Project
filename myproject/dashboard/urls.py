@@ -126,6 +126,12 @@ urlpatterns = [
     path('api/cities/', views.api_get_cities, name='api_get_cities'),
     path('api/cities/get-valley-status/', views.api_get_city_valley_status, name='get_city_valley_status'),
     
+    # ✅ NEW: Setup Management URLs
+    path('setup/', views.setup_management, name='setup_management'),
+    path('setup/add/', views.setup_add, name='setup_add'),
+    path('setup/<int:setup_id>/edit/', views.setup_edit, name='setup_edit'),
+    path('setup/<int:setup_id>/delete/', views.setup_delete, name='setup_delete'),
+    
     
        # ==================== 🆕 RETURN MANAGEMENT ====================
     # Dashboard & List

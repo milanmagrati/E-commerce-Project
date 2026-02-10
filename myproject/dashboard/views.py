@@ -1461,7 +1461,7 @@ def orders_list(request):
     from decimal import Decimal, InvalidOperation
     
     # Get all orders initially
-    orders = Order.objects.select_related('customer', 'created_by').filter(
+    orders = Order.objects.select_related('customer', 'created_by', 'status_setup', 'payment_setup', 'payment_status_setup').filter(
         is_deleted=False
     ).order_by('-created_at')
     
@@ -1623,8 +1623,40 @@ def order_create(request):
                 created_by_id = request.POST.get("created_by")
                 order_from = request.POST.get("order_from")
                 order_status = request.POST.get("order_status") or "processing"
-                payment_method = request.POST.get("payment_method") or "cod"
+                payment_method = request.POST.get("payment_method") or ""
                 payment_status = request.POST.get("payment_status") or "pending"
+
+                # ✅ NEW: Get payment_setup, status_setup, and payment_status_setup from POST
+                payment_setup_id = request.POST.get("payment_setup")
+                status_setup_id = request.POST.get("status_setup")
+                payment_status_setup_id = request.POST.get("payment_status_setup")
+                payment_setup = None
+                status_setup = None
+                payment_status_setup = None
+
+                if payment_setup_id:
+                    try:
+                        from .models import Setup
+                        payment_setup = Setup.objects.get(id=payment_setup_id, setup_type='payment')
+                        # Sync payment_method with the setup name
+                        payment_method = payment_setup.name.lower().replace(' ', '_')
+                    except Setup.DoesNotExist:
+                        payment_setup = None
+
+                if status_setup_id:
+                    try:
+                        from .models import Setup
+                        status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
+                    except Setup.DoesNotExist:
+                        status_setup = None
+
+                if payment_status_setup_id:
+                    try:
+                        from .models import Setup
+                        payment_status_setup = Setup.objects.get(id=payment_status_setup_id, setup_type='payment_status')
+                        payment_status = payment_status_setup.name.lower().replace(' ', '_')
+                    except Setup.DoesNotExist:
+                        payment_status_setup = None
 
                 discount_amount = Decimal(request.POST.get("discount") or "0")
                 shipping_charge = Decimal(request.POST.get("shipping_charge") or "0")
@@ -1699,7 +1731,7 @@ def order_create(request):
                 if is_partial_payment:
                     payment_status = "partial"
 
-                # ✅ UPDATED: Use branch_city from City model, added in_out field
+                # ✅ UPDATED: Use branch_city from City model, added in_out field, and Setup fields
                 order = Order.objects.create(
                     order_number=order_number,
                     created_by=created_by,
@@ -1715,6 +1747,9 @@ def order_create(request):
                     order_status=order_status,
                     payment_method=payment_method,
                     payment_status=payment_status,
+                    payment_setup=payment_setup,
+                    status_setup=status_setup,
+                    payment_status_setup=payment_status_setup,
                     discount_amount=discount_amount,
                     shipping_charge=shipping_charge,
                     tax_percent=tax_percent,
@@ -1787,6 +1822,12 @@ def order_create(request):
     # ✅ GET CATEGORIES FOR CUSTOM PRODUCT MODAL
     categories = Category.objects.all().order_by('name')
     
+    # ✅ NEW: GET PAYMENT AND STATUS SETUPS
+    from .models import Setup
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+
     return render(
         request,
         "order_create.html",
@@ -1794,7 +1835,10 @@ def order_create(request):
             "users": users,
             "recent_orders": recent_orders,
             "cities": cities,
-            "categories": categories,  # ✅ ADDED FOR CUSTOM PRODUCT FEATURE
+            "categories": categories,
+            "payment_setups": payment_setups,
+            "status_setups": status_setups,
+            "payment_status_setups": payment_status_setups,
         },
     )
 @login_required
@@ -1827,17 +1871,61 @@ def order_detail(request, order_id):
                 old_tracking = order.tracking_number or ''
                 old_admin_notes = order.admin_notes or ''
                 old_logistics = order.logistics or ''  # ✅ NEW: Track logistics changes
-                
+                old_status_setup = order.status_setup
+                old_payment_setup = order.payment_setup
+                old_payment_status_setup = order.payment_status_setup
+
                 # Get new values from form
-                new_order_status = request.POST.get('order_status', order.order_status)
-                new_payment_status = request.POST.get('payment_status', order.payment_status)
                 new_tracking = request.POST.get('tracking_number', '').strip()
                 new_admin_notes = request.POST.get('admin_notes', '').strip()
                 new_logistics = request.POST.get('logistics', '').strip()  # ✅ NEW: Get logistics value
+
+                # ✅ Get status_setup, payment_setup, and payment_status_setup from POST
+                from .models import Setup
+                status_setup_id = request.POST.get('status_setup')
+                payment_setup_id = request.POST.get('payment_setup')
+                payment_status_setup_id = request.POST.get('payment_status_setup')
+
+                new_order_status = old_order_status
+                new_payment_status = old_payment_status
+
+                if status_setup_id:
+                    try:
+                        status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
+                        order.status_setup = status_setup
+                        new_order_status = status_setup.name.lower().replace(' ', '_')
+                    except Setup.DoesNotExist:
+                        pass
+                else:
+                    order.status_setup = None
+
+                if payment_setup_id:
+                    try:
+                        payment_setup = Setup.objects.get(id=payment_setup_id, setup_type='payment')
+                        order.payment_setup = payment_setup
+                        order.payment_method = payment_setup.name.lower().replace(' ', '_')
+                    except Setup.DoesNotExist:
+                        pass
+                else:
+                    order.payment_setup = None
+
+                if payment_status_setup_id:
+                    try:
+                        ps_setup = Setup.objects.get(id=payment_status_setup_id, setup_type='payment_status')
+                        order.payment_status_setup = ps_setup
+                        new_payment_status = ps_setup.name.lower().replace(' ', '_')
+                    except Setup.DoesNotExist:
+                        pass
+                else:
+                    order.payment_status_setup = None
                 
                 # ✅ ENHANCED PARTIAL PAYMENT HANDLING
+                # Check if the payment setup name contains "partial"
+                is_new_partial = 'partial' in new_payment_status.lower()
+                was_old_partial = 'partial' in old_payment_status.lower()
+
                 # If changing TO partial payment status
-                if old_payment_status != 'partial' and new_payment_status == 'partial':
+                if not was_old_partial and is_new_partial:
                     order.is_partial_payment = True
                     # Initialize partial payment amounts if not set
                     if order.partial_amount_paid is None:
@@ -1857,7 +1945,7 @@ def order_detail(request, order_id):
                     )
                 
                 # If changing FROM partial payment status
-                elif old_payment_status == 'partial' and new_payment_status != 'partial':
+                elif was_old_partial and not is_new_partial:
                     order.is_partial_payment = False
                     
                     # Create activity log for clearing partial payment
@@ -1872,8 +1960,12 @@ def order_detail(request, order_id):
                     )
                 
                 # Update order fields
-                order.order_status = new_order_status
-                order.payment_status = new_payment_status
+                order.order_status = new_order_status or order.order_status or 'processing'
+                # Set payment_status: if partial, use 'partial', otherwise use derived name
+                if is_new_partial:
+                    order.payment_status = 'partial'
+                else:
+                    order.payment_status = new_payment_status or order.payment_status or 'pending'
                 order.tracking_number = new_tracking
                 order.admin_notes = new_admin_notes
                 order.logistics = new_logistics  # ✅ NEW: Update logistics field
@@ -2013,6 +2105,12 @@ def order_detail(request, order_id):
     # GET request - display order details
     order_items = order.items.select_related('product', 'product_variation').all()
     activity_logs = order.activity_logs.select_related('user').order_by('-created_at')[:20]
+
+    # Get Setup options for dropdowns
+    from .models import Setup
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
     
     # Calculate subtotal
     subtotal = sum(item.total for item in order_items) or Decimal('0.00')
@@ -2048,6 +2146,11 @@ def order_detail(request, order_id):
         
         # ✅ CALCULATE PARTIAL PAYMENT PERCENTAGE FOR PROGRESS BAR
         'partial_payment_percentage': 0,
+
+        # ✅ Setup dropdowns
+        'status_setups': status_setups,
+        'payment_setups': payment_setups,
+        'payment_status_setups': payment_status_setups,
     }
     
     # Calculate percentage for progress bar
@@ -2093,8 +2196,46 @@ def order_edit(request, order_id):
                 order.created_by = get_object_or_404(User, id=created_by_id)
                 
                 order.order_from = request.POST.get("order_from")
-                order.order_status = request.POST.get("order_status")
-                order.payment_method = request.POST.get("payment_method")
+
+                # ✅ NEW: Get payment_setup, status_setup, and payment_status_setup from POST
+                from .models import Setup
+                payment_setup_id = request.POST.get("payment_setup")
+                status_setup_id = request.POST.get("status_setup")
+                payment_status_setup_id = request.POST.get("payment_status_setup")
+
+                if status_setup_id:
+                    try:
+                        status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
+                        order.status_setup = status_setup
+                        # Sync order_status with the setup name so the NOT NULL field stays valid
+                        order.order_status = status_setup.name.lower().replace(' ', '_')
+                    except Setup.DoesNotExist:
+                        order.status_setup = None
+                else:
+                    # Keep existing order_status if no status_setup is selected
+                    order.order_status = order.order_status or 'processing'
+
+                if payment_setup_id:
+                    try:
+                        payment_setup = Setup.objects.get(id=payment_setup_id, setup_type='payment')
+                        order.payment_setup = payment_setup
+                        # Sync payment_method with the setup name
+                        order.payment_method = payment_setup.name.lower().replace(' ', '_')
+                    except Setup.DoesNotExist:
+                        order.payment_setup = None
+                else:
+                    # Keep existing payment_method if no payment_setup is selected
+                    order.payment_setup = None
+
+                if payment_status_setup_id:
+                    try:
+                        ps_setup = Setup.objects.get(id=payment_status_setup_id, setup_type='payment_status')
+                        order.payment_status_setup = ps_setup
+                        order.payment_status = ps_setup.name.lower().replace(' ', '_')
+                    except Setup.DoesNotExist:
+                        order.payment_status_setup = None
+                else:
+                    order.payment_status = order.payment_status or 'pending'
                 
                 order.discount_amount = Decimal(request.POST.get("discount") or "0")
                 order.shipping_charge = Decimal(request.POST.get("shipping_charge") or "0")
@@ -2259,6 +2400,12 @@ def order_edit(request, order_id):
 
     # ✅ Get active cities for Branch/City select (from City management)
     cities = City.objects.filter(is_active=True).order_by('name')
+    
+    # ✅ NEW: GET PAYMENT AND STATUS SETUPS
+    from .models import Setup
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
 
     context = {
         "order": order,
@@ -2270,6 +2417,9 @@ def order_edit(request, order_id):
         "payment_methods": payment_methods,
         "recent_orders": Order.objects.all().order_by("-created_at")[:6],
         "cities": cities,
+        "payment_setups": payment_setups,
+        "status_setups": status_setups,
+        "payment_status_setups": payment_status_setups,
     }
 
     return render(request, "order_edit.html", context)
@@ -5165,7 +5315,7 @@ def return_create(request):
                     messages.error(request, 'Order not selected')
                     return redirect('return_create')
                 
-                order = get_object_or_404(Order, id=order_id, order_status='delivered')
+                order = get_object_or_404(Order, id=order_id, order_status__in=['delivered', 'shipped', 'processing'])
                 
                 # Get return details
                 return_reason = request.POST.get('return_reason')
@@ -6266,20 +6416,18 @@ def ncm_sync_all_statuses(request):
 
 
 @login_required
-@login_required
 def ncm_branches_json(request):
     """
-    Display NCM branches fetched from NCM API as HTML page or JSON API
-    ✅ ENHANCED: Properly extracts all branch fields (Name, Code, Areas, Municipality, District, etc.)
+    Display NCM branches fetched from NCM API as HTML page or JSON API.
+    Extracts all branch fields (Name, Code, Areas, Municipality, District, etc.)
     """
     import requests
     from django.conf import settings
-    
+
     branches = []
     error_message = None
     districts = set()
-    
-    # ✅ MUNICIPALITY MAPPING - Extract municipality names from address patterns
+
     MUNICIPALITY_MAPPING = {
         'Arughat Tallo Bazar': 'AARUGHAT RURAL MUNICIPALITY',
         'Arughat': 'AARUGHAT RURAL MUNICIPALITY',
@@ -6291,36 +6439,34 @@ def ncm_branches_json(request):
         'Sunwarshi': 'SUNWARSHI MUNICIPALITY',
         'Chowk, Amargadhi': 'AMARGADHI MUNICIPALITY',
     }
-    
-    # ✅ DISTRICT TO REGION MAPPING
+
     DISTRICT_TO_REGION = {
         'Taplejung': 'Koshi', 'Panchthar': 'Koshi', 'Ilam': 'Koshi', 'Jhapa': 'Koshi',
         'Morang': 'Koshi', 'Sunsari': 'Koshi', 'Dhankuta': 'Koshi', 'Terhathum': 'Koshi',
         'Bhojpur': 'Koshi', 'Sankhuwasabha': 'Koshi',
-        
+
         'Saptari': 'Madhesh', 'Siraha': 'Madhesh', 'Dhanusa': 'Madhesh', 'Mahottari': 'Madhesh',
         'Rautahat': 'Madhesh', 'Bara': 'Madhesh', 'Parsa': 'Madhesh',
-        
+
         'Kathmandu': 'Bagmati', 'Lalitpur': 'Bagmati', 'Bhaktapur': 'Bagmati', 'Nuwakot': 'Bagmati',
         'Rasuwa': 'Bagmati', 'Sindhuli': 'Bagmati', 'Kavre': 'Bagmati', 'Makwanpur': 'Bagmati',
         'Dolakha': 'Bagmati', 'Ramechhap': 'Bagmati',
-        
+
         'Gorkha': 'Gandaki', 'Lamjung': 'Gandaki', 'Tanahu': 'Gandaki', 'Syangja': 'Gandaki',
         'Kaski': 'Gandaki', 'Manang': 'Gandaki', 'Mustang': 'Gandaki',
-        
+
         'Nawalpur': 'Lumbini', 'Parasi': 'Lumbini', 'Rupandehi': 'Lumbini', 'Kapilvastu': 'Lumbini',
         'Arghakhanchi': 'Lumbini', 'Gulmi': 'Lumbini', 'Palpa': 'Lumbini',
-        
+
         'Salyan': 'Karnali', 'Pyuthan': 'Karnali', 'Rolpa': 'Karnali', 'Rukum': 'Karnali',
         'Dailekh': 'Karnali', 'Jajarkot': 'Karnali', 'Jumla': 'Karnali', 'Dolpa': 'Karnali',
         'Humla': 'Karnali', 'Achham': 'Karnali',
-        
+
         'Dadeldhura': 'Sudurpaschim', 'Baitadi': 'Sudurpaschim', 'Bajhang': 'Sudurpaschim',
         'Bajura': 'Sudurpaschim', 'Kailali': 'Sudurpaschim', 'Kanchanpur': 'Sudurpaschim',
         'Doti': 'Sudurpaschim',
     }
-    
-    # ✅ MUNICIPALITY TO DISTRICT MAPPING (for cases where API doesn't have district field)
+
     MUNICIPALITY_TO_DISTRICT = {
         'Arughat Tallo Bazar': 'Gorkha', 'Arughat': 'Gorkha',
         'Shitaganga Rural Municipality-04': 'Arghakhanchi', 'Shitaganga': 'Arghakhanchi',
@@ -6333,25 +6479,18 @@ def ncm_branches_json(request):
     }
     
     try:
-        # Get NCM API credentials
         base_url = getattr(settings, 'NCM_API_BASE_URL_V2', None)
         if not base_url:
             base_url = getattr(settings, 'NCM_API_BASE_URL', None)
-        
+
         api_key = getattr(settings, 'NCM_API_KEY', None)
-        
+
         if not base_url or not api_key:
             error_message = 'NCM API not configured in settings'
         else:
-            # Construct API URL for branches
             base_url = base_url.rstrip('/')
             api_url = f"{base_url}/branches"
-            
-            print(f"\n{'='*80}")
-            print(f"🔵 Fetching NCM branches from: {api_url}")
-            print(f"{'='*80}")
-            
-            # Call NCM API
+
             response = requests.get(
                 api_url,
                 headers={
@@ -6360,15 +6499,10 @@ def ncm_branches_json(request):
                 },
                 timeout=10
             )
-            
-            print(f"📥 Response Status: {response.status_code}")
-            raw_response = response.text[:2000]
-            print(f"📄 Raw Response:\n{raw_response}")
-            
+
             if response.status_code == 200:
                 data = response.json()
-                
-                # Handle different possible response formats
+
                 if isinstance(data, list):
                     branches = data
                 elif isinstance(data, dict):
@@ -6379,74 +6513,46 @@ def ncm_branches_json(request):
                     elif 'results' in data:
                         branches = data['results']
                     else:
-                        # If it's a single object, wrap it in a list
                         branches = [data] if data else []
-                
-                print(f"\n📊 Raw branches count: {len(branches)}")
-                if branches:
-                    print(f"📋 Sample raw branch keys: {list(branches[0].keys()) if isinstance(branches[0], dict) else 'Not a dict'}")
-                    print(f"📋 Sample raw branch data:\n{json.dumps(branches[0], indent=2, default=str)}")
-                    # Print first 3 branches to see pattern
-                    print(f"\n📋 First 3 branches:")
-                    for i in range(min(3, len(branches))):
-                        print(f"  Branch {i+1}: {json.dumps(branches[i], indent=2, default=str)}\n")
-                    # ✅ Debug: Print municipality-related fields from first branch
-                    print(f"\n🔍 MUNICIPALITY DEBUG - All fields in first branch:")
-                    first_branch = branches[0] if isinstance(branches[0], dict) else {}
-                    for key in first_branch.keys():
-                        if 'munic' in key.lower() or 'city' in key.lower() or 'town' in key.lower() or 'area' in key.lower():
-                            print(f"   {key}: {first_branch[key]}")
-                
-                # ✅ ENHANCED: Direct field extraction - API has District and Region data
+
                 formatted_branches = []
-                for idx, branch in enumerate(branches):
+                for branch in branches:
                     if isinstance(branch, dict):
                         try:
-                            # ===== DIRECT EXTRACTION - Try all possible field name variations =====
                             code_value = str(branch.get('code') or branch.get('Code') or branch.get('id') or branch.get('ID') or '').strip()
                             name_value = str(branch.get('name') or branch.get('Name') or branch.get('branch_name') or branch.get('Branch_Name') or '').strip()
-                            
-                            # MUNICIPALITY - Extract from mapping or address
+
                             address = branch.get('address', '')
                             municipality_value = ''
-                            
-                            # First try municipality mapping
+
                             for address_pattern, muni_name in MUNICIPALITY_MAPPING.items():
                                 if address_pattern.lower() in address.lower():
                                     municipality_value = muni_name
                                     break
-                            
-                            # If not found in mapping, extract first part of address
+
                             if not municipality_value:
                                 municipality_value = address.split(',')[0].strip() if address else ''
-                            
-                            # DISTRICT - API uses 'district_name'
+
                             district_value = str(
-                                branch.get('district_name') or 
-                                branch.get('district') or 
+                                branch.get('district_name') or
+                                branch.get('district') or
                                 branch.get('District') or ''
                             ).strip()
-                            
-                            # REGION/PROVINCE - API uses 'province_name'
+
                             region_value = str(
-                                branch.get('province_name') or 
-                                branch.get('region') or 
+                                branch.get('province_name') or
+                                branch.get('region') or
                                 branch.get('Region') or ''
                             ).strip()
-                            
-                            # Other fields
+
                             areas_value = str(branch.get('areas_covered') or branch.get('Areas_Covered') or branch.get('areas') or branch.get('Areas') or '').strip()
                             phone_value = str(branch.get('phone') or branch.get('Phone') or branch.get('PHONE') or branch.get('telephone') or '').strip()
                             coords_value = str(branch.get('coordinates') or branch.get('Coordinates') or branch.get('lat_long') or '').strip()
                             address_value = str(branch.get('address') or branch.get('Address') or branch.get('location') or '').strip()
-                            
-                            # Map all fields
+
                             formatted_branch = {
-                                # Core fields (required)
                                 'code': code_value or 'N/A',
                                 'name': name_value or 'N/A',
-                                
-                                # ✅ All fields from API
                                 'areas_covered': areas_value or 'N/A',
                                 'municipality': municipality_value or 'N/A',
                                 'district': district_value or 'N/A',
@@ -6454,51 +6560,31 @@ def ncm_branches_json(request):
                                 'phone': phone_value or 'N/A',
                                 'coordinates': coords_value or 'N/A',
                                 'address': address_value or 'N/A',
-                                
-                                # Additional metadata if available
                                 'is_active': branch.get('is_active', True) or branch.get('active', True) or branch.get('Active', True) or True,
                             }
-                            
-                            # Only add if has code and name
+
                             if formatted_branch['code'] != 'N/A' and formatted_branch['name'] != 'N/A':
                                 formatted_branches.append(formatted_branch)
-                                # Safely add to districts set
                                 if formatted_branch['district'] != 'N/A':
                                     districts.add(formatted_branch['district'])
-                                
-                                if idx == 0:
-                                    print(f"\n✅ Sample formatted branch:")
-                                    print(f"  Code: {formatted_branch['code']}")
-                                    print(f"  Name: {formatted_branch['name']}")
-                                    print(f"  District: {formatted_branch['district']}")
-                                    print(f"  Region: {formatted_branch['region']}")
-                                    print(f"  Municipality: {formatted_branch['municipality']}")
-                                    print(f"  Phone: {formatted_branch['phone']}\n")
-                        except Exception as e:
-                            print(f"⚠️ Error processing branch at index {idx}: {str(e)}")
+                        except Exception:
                             continue
-                
+
                 branches = formatted_branches
-                print(f"✅ Got {len(branches)} branches with all fields")
-                print(f"📍 Unique districts found: {sorted(districts)}\n")
-                print(f"{'='*80}\n")
-                
+
             elif response.status_code == 401:
                 error_message = 'Authentication failed - Check NCM_API_KEY'
             elif response.status_code == 404:
-                error_message = 'NCM API endpoint not found - Check NCM_API_BASE_URL (should be: https://portal.nepalcanmove.com/api/v2)'
+                error_message = 'NCM API endpoint not found - Check NCM_API_BASE_URL'
             else:
                 error_message = f'NCM API Error: HTTP {response.status_code}'
-    
+
     except requests.exceptions.Timeout:
         error_message = 'Request timeout - NCM server not responding'
     except requests.exceptions.ConnectionError:
         error_message = 'Cannot connect to NCM server'
     except Exception as e:
         error_message = f'Error fetching branches: {str(e)}'
-        print(f"💥 Error: {error_message}")
-        import traceback
-        traceback.print_exc()
     
     # Return JSON if requested via API
     if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
@@ -7116,3 +7202,116 @@ def ncm_orders_empty_trash(request):
         messages.error(request, f'❌ Error: {str(e)}')
     
     return redirect('ncm_orders_trash')
+
+
+# ✅ NEW: SETUP MANAGEMENT VIEWS
+@login_required
+@permission_required('can_view_orders')
+def setup_management(request):
+    """Manage Payment, Status, and Payment Status setups"""
+    from .models import Setup
+
+    # Get all setups grouped by type
+    payment_setups = Setup.objects.filter(setup_type='payment').order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status').order_by('name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status').order_by('name')
+
+    context = {
+        'payment_setups': payment_setups,
+        'status_setups': status_setups,
+        'payment_status_setups': payment_status_setups,
+        'page_title': 'Setup Management',
+    }
+
+    return render(request, 'setup_management.html', context)
+
+
+@login_required
+@permission_required('can_create_orders')
+def setup_add(request):
+    """Add new setup (Payment or Status)"""
+    from .models import Setup
+    
+    if request.method == 'POST':
+        setup_type = request.POST.get('setup_type')
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        is_active = request.POST.get('is_active') == 'on'
+        
+        if not setup_type or not name:
+            messages.error(request, '❌ Setup type and name are required!')
+            return redirect('setup_management')
+        
+        # Check if setup already exists
+        if Setup.objects.filter(setup_type=setup_type, name=name).exists():
+            messages.error(request, f'❌ {name} already exists!')
+            return redirect('setup_management')
+        
+        try:
+            setup = Setup.objects.create(
+                setup_type=setup_type,
+                name=name,
+                description=description,
+                is_active=is_active
+            )
+            messages.success(request, f'✅ {name} setup created successfully!')
+        except Exception as e:
+            messages.error(request, f'❌ Error creating setup: {str(e)}')
+        
+        return redirect('setup_management')
+    
+    return redirect('setup_management')
+
+
+@login_required
+@permission_required('can_create_orders')
+def setup_edit(request, setup_id):
+    """Edit existing setup"""
+    from .models import Setup
+    
+    setup = get_object_or_404(Setup, id=setup_id)
+    
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        is_active = request.POST.get('is_active') == 'on'
+        
+        if not name:
+            messages.error(request, '❌ Setup name is required!')
+            return redirect('setup_management')
+        
+        # Check if name already exists (excluding current setup)
+        if Setup.objects.filter(setup_type=setup.setup_type, name=name).exclude(id=setup_id).exists():
+            messages.error(request, f'❌ {name} already exists!')
+            return redirect('setup_management')
+        
+        try:
+            setup.name = name
+            setup.description = description
+            setup.is_active = is_active
+            setup.save()
+            messages.success(request, f'✅ {name} setup updated successfully!')
+        except Exception as e:
+            messages.error(request, f'❌ Error updating setup: {str(e)}')
+        
+        return redirect('setup_management')
+    
+    return redirect('setup_management')
+
+
+@login_required
+@permission_required('can_delete_orders')
+def setup_delete(request, setup_id):
+    """Delete setup"""
+    from .models import Setup
+    
+    setup = get_object_or_404(Setup, id=setup_id)
+    setup_name = setup.name
+    
+    try:
+        setup.delete()
+        messages.success(request, f'✅ {setup_name} setup deleted successfully!')
+    except Exception as e:
+        messages.error(request, f'❌ Error deleting setup: {str(e)}')
+    
+    return redirect('setup_management')

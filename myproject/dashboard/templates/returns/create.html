@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load dashboard_extras %}
 
 {% block title %}Create Return Request{% endblock %}
 
@@ -1029,9 +1030,9 @@
             scannedOrdersSection.classList.add('active');
         }
         
-        // Create and add order card
+        // Create and add order card at the top
         const cardDiv = createOrderCard(orderData);
-        scannedOrdersList.appendChild(cardDiv);
+        scannedOrdersList.prepend(cardDiv);
         
         // Update count
         scannedCount.textContent = `${scannedOrders.size} Order${scannedOrders.size !== 1 ? 's' : ''}`;
@@ -1039,9 +1040,9 @@
         // ✅ Save draft
         saveDraft();
         
-        // Scroll to the new card
+        // Scroll to the new card at the top
         setTimeout(() => {
-            cardDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            cardDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
     }
 

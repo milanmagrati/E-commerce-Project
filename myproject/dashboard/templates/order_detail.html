@@ -40,7 +40,14 @@
             </div>
             <div class="status-info">
                 <h6>ORDER STATUS</h6>
-                <p class="status-value">{{ order.order_status|default:"pending"|upper }}</p>
+                <!-- ✅ NEW: Display status_setup name if available -->
+                <p class="status-value">
+                    {% if order.status_setup %}
+                        {{ order.status_setup.name|replace:"_: "|upper }}
+                    {% else %}
+                        {{ order.order_status|default:"pending"|replace:"_: "|upper }}
+                    {% endif %}
+                </p>
             </div>
         </div>
     </div>
@@ -52,11 +59,17 @@
             </div>
             <div class="status-info">
                 <h6>PAYMENT STATUS</h6>
-                <p class="status-value">{{ order.payment_status|default:"pending"|upper }}</p>
+                <span class="payment-badge payment-badge-{{ order.payment_status|default:'pending' }}">
+                    {% if order.payment_status_setup %}
+                        {{ order.payment_status_setup.name|replace:"_: "|upper }}
+                    {% else %}
+                        {{ order.payment_status|default:"pending"|replace:"_: "|upper }}
+                    {% endif %}
+                </span>
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="status-card">
             <div class="status-icon bg-info">
@@ -64,7 +77,15 @@
             </div>
             <div class="status-info">
                 <h6>PAYMENT METHOD</h6>
-                <p class="status-value">{{ order.payment_method|default:"cod"|upper }}</p>
+                <span class="payment-method-badge">
+                    {% if order.payment_setup %}
+                        {{ order.payment_setup.name|replace:"_: " }}
+                    {% elif order.payment_method %}
+                        {{ order.payment_method|replace:"_: " }}
+                    {% else %}
+                        Not Set
+                    {% endif %}
+                </span>
             </div>
         </div>
     </div>
@@ -337,27 +358,29 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Order Status</label>
-                            <select name="order_status" class="form-select form-select-lg">
-                                <option value="pending" {% if order.order_status == 'pending' %}selected{% endif %}>Pending</option>
-                                <option value="processing" {% if order.order_status == 'processing' %}selected{% endif %}>Processing</option>
-                                <option value="confirmed" {% if order.order_status == 'confirmed' %}selected{% endif %}>Confirmed</option>
-                                <option value="packed" {% if order.order_status == 'packed' %}selected{% endif %}>Packed</option>
-                                <option value="shipped" {% if order.order_status == 'shipped' %}selected{% endif %}>Shipped</option>
-                                <option value="delivered" {% if order.order_status == 'delivered' %}selected{% endif %}>Delivered</option>
-                                <option value="cancelled" {% if order.order_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
-                                <option value="returned" {% if order.order_status == 'returned' %}selected{% endif %}>Returned</option>
-                                <option value="dispatched" {% if order.order_status == 'dispatched' %}selected{% endif %}>Dispatched</option>
+                            <select name="status_setup" class="form-select form-select-lg">
+                                <option value="">Select Order Status</option>
+                                {% for setup in status_setups %}
+                                    <option value="{{ setup.id }}" {% if order.status_setup and order.status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Payment Status</label>
-                            <select name="payment_status" class="form-select form-select-lg">
-                                <option value="pending" {% if order.payment_status == 'pending' %}selected{% endif %}>Pending</option>
-                                <option value="paid" {% if order.payment_status == 'paid' %}selected{% endif %}>Paid</option>
-                                <option value="partial" {% if order.payment_status == 'partial' %}selected{% endif %}>Partial</option>
-                                <option value="failed" {% if order.payment_status == 'failed' %}selected{% endif %}>Failed</option>
-                                <option value="refunded" {% if order.payment_status == 'refunded' %}selected{% endif %}>Refunded</option>
-                                <option value="cod" {% if order.payment_status == 'cod' %}selected{% endif %}>COD</option>
+                            <select name="payment_status_setup" class="form-select form-select-lg">
+                                <option value="">Select Payment Status</option>
+                                {% for setup in payment_status_setups %}
+                                    <option value="{{ setup.id }}" {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Payment Method</label>
+                            <select name="payment_setup" class="form-select form-select-lg">
+                                <option value="">Select Payment Method</option>
+                                {% for setup in payment_setups %}
+                                    <option value="{{ setup.id }}" {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                         
@@ -833,6 +856,68 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     line-height: 1.2;
+}
+
+/* Payment Status Badge */
+.payment-badge {
+    display: inline-block;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    line-height: 1.4;
+}
+
+.payment-badge-pending {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
+
+.payment-badge-paid {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+}
+
+.payment-badge-failed {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
+
+.payment-badge-refunded {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+
+.payment-badge-cod {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.payment-badge-partial {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
+
+/* Payment Method Badge */
+.payment-method-badge {
+    display: inline-block;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    line-height: 1.4;
+    background: #ede9fe;
+    color: #5b21b6;
+    border: 1px solid #c4b5fd;
+    text-transform: capitalize;
 }
 
 .customer-info-item {

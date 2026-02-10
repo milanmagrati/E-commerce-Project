@@ -515,6 +515,10 @@
                         <li class="{% if request.resolver_match.url_name == 'city_management' %}active{% endif %}">
                             <a href="{% url 'city_management' %}">City Setup</a>
                         </li>
+                        <!-- ✅ UPDATED: Custom Setup Management Page -->
+                        <li class="{% if request.resolver_match.url_name == 'setup_management' %}active{% endif %}">
+                            <a href="{% url 'setup_management' %}">Payment & Status Setup</a>
+                        </li>
                         <li>
                             <a href="#">System Settings</a>
                         </li>

@@ -285,14 +285,30 @@
                         </td>
                         <td>
                             <strong class="payment-status-{{ order.payment_status }}">
-                                {{ order.payment_status|upper }}
+                                {% if order.payment_status_setup %}
+                                    {{ order.payment_status_setup.name|replace:"_: "|upper }}
+                                {% else %}
+                                    {{ order.payment_status|replace:"_: "|upper }}
+                                {% endif %}
                             </strong>
                             <br>
-                            <small class="text-muted">{{ order.payment_method|upper }}</small>
+                            <small class="text-muted">
+                                {% if order.payment_setup %}
+                                    {{ order.payment_setup.name|replace:"_: "|upper }}
+                                {% elif order.payment_method %}
+                                    {{ order.payment_method|replace:"_: "|upper }}
+                                {% endif %}
+                            </small>
                         </td>
                         <td>
-                            <strong class="order-status-{{ order.order_status }}">
-                                {{ order.order_status|capfirst }}
+                            <strong class="order-status-{{ order.order_status|default:'pending' }}" style="color: #f59e0b; font-weight: 700;">
+                                {% if order.status_setup %}
+                                    {{ order.status_setup.name|replace:"_: "|capfirst }}
+                                {% elif order.order_status %}
+                                    {{ order.order_status|replace:"_: "|capfirst }}
+                                {% else %}
+                                    Pending
+                                {% endif %}
                             </strong>
                         </td>
                         <td>
@@ -691,7 +707,9 @@
     .payment-status-cod { color: #3b82f6 !important; font-size: 0.9rem; }
     .payment-status-refunded { color: #8b5cf6 !important; font-size: 0.9rem; }
 
-    /* Order Status Colors */
+    /* Order Status Colors - fallback for custom statuses */
+    strong[class^="order-status-"] { color: #1f2937; font-size: 0.9rem; font-weight: 700; }
+    /* Specific status colors override the fallback */
     .order-status-pending { color: #f59e0b !important; font-size: 0.9rem; }
     .order-status-processing { color: #3b82f6 !important; font-size: 0.9rem; }
     .order-status-confirmed { color: #8b5cf6 !important; font-size: 0.9rem; }
@@ -1088,9 +1106,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const statsModal = document.getElementById('statsSettingsModal');
     if (statsModal) {
         statsModal.addEventListener('hidden.bs.modal', function() {
-            // Remove any lingering backdrops
-            const backdrops = document.querySelectorAll('.modal-backdrop');
-            backdrops.forEach(backdrop => backdrop.remove());
+            // Remove any lingering backdrops and body locks
+            document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+            // Dispose the modal instance so next open starts fresh
+            const instance = bootstrap.Modal.getInstance(statsModal);
+            if (instance) {
+                instance.dispose();
+            }
         });
     }
     
@@ -1127,28 +1152,37 @@ function loadStatsCards() {
 
 function openStatsSettings() {
     const modalElement = document.getElementById('statsSettingsModal');
-    
+
     if (!modalElement) {
         console.error('Stats settings modal not found');
         return;
     }
-    
+
+    // Clean up any lingering modal state from previous opens
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+
+    // Dispose any existing modal instance to avoid stale state
+    let existingModal = bootstrap.Modal.getInstance(modalElement);
+    if (existingModal) {
+        existingModal.dispose();
+    }
+
     // Get saved stats or use defaults
     const savedStats = localStorage.getItem('selectedStats');
     const selectedStats = savedStats ? JSON.parse(savedStats) : ['total_orders', 'total_revenue', 'pending_orders', 'delivered_today'];
-    
-    // Update checkboxes with saved state (no cloning needed)
+
+    // Update checkboxes with saved state
     document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
         checkbox.checked = selectedStats.includes(checkbox.value);
     });
-    
+
     updateSelectionMessage();
-    
-    // Show modal - reuse existing instance or create new one
-    let modal = bootstrap.Modal.getInstance(modalElement);
-    if (!modal) {
-        modal = new bootstrap.Modal(modalElement);
-    }
+
+    // Always create a fresh modal instance
+    const modal = new bootstrap.Modal(modalElement);
     modal.show();
 }
 
@@ -1177,17 +1211,27 @@ function updateSelectionMessage() {
 function saveStatsPreference() {
     const checked = Array.from(document.querySelectorAll('.stat-option input[type="checkbox"]:checked'))
         .map(cb => cb.value);
-    
+
     if (checked.length === 4) {
         localStorage.setItem('selectedStats', JSON.stringify(checked));
         loadStatsCards();
-        
-        // Close modal properly - just hide, don't dispose
+
+        // Close modal properly
         const modalElement = document.getElementById('statsSettingsModal');
         if (modalElement) {
             const modalInstance = bootstrap.Modal.getInstance(modalElement);
             if (modalInstance) {
                 modalInstance.hide();
+            } else {
+                // Fallback: manually clean up if no instance exists
+                modalElement.classList.remove('show');
+                modalElement.style.display = 'none';
+                modalElement.removeAttribute('aria-modal');
+                modalElement.removeAttribute('role');
+                document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
             }
         }
         
@@ -1380,7 +1424,7 @@ function bulkSyncSelectedOrders() {
     if (confirm(`Sync NCM status for ${count} order(s)?`)) {
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = "{% url 'logistics:bulk_sync_selected' %}";
+        form.action = "{% url 'ncm:bulk_sync' %}";
         
         // Add CSRF token
         const csrfInput = document.createElement('input');
@@ -1647,7 +1691,7 @@ function syncAllOrdersFAB() {
     // Create and submit form
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = "{% url 'logistics:bulk_sync' %}";
+    form.action = "{% url 'ncm:bulk_sync' %}";
     
     const csrfInput = document.createElement('input');
     csrfInput.type = 'hidden';

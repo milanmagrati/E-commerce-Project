@@ -45,7 +45,7 @@
                 </div>
                 <div class="status-text">
                     <h6>ORDER STATUS</h6>
-                    <h4>{{ order.order_status|upper|default:"PENDING" }}</h4>
+                    <h4>{{ order.order_status|replace:"_: "|upper|default:"PENDING" }}</h4>
                 </div>
             </div>
         </div>
@@ -59,7 +59,7 @@
                 </div>
                 <div class="status-text">
                     <h6>PAYMENT STATUS</h6>
-                    <h4>{{ order.payment_status|upper|default:"UNPAID" }}</h4>
+                    <h4>{{ order.payment_status|replace:"_: "|upper|default:"UNPAID" }}</h4>
                 </div>
             </div>
         </div>
@@ -219,7 +219,7 @@
                         <th>Order Status:</th>
                         <td>
                             <span class="badge bg-primary">
-                                {{ order.order_status|capfirst }}
+                                {{ order.order_status|replace:"_: "|capfirst }}
                             </span>
                         </td>
                     </tr>
@@ -227,7 +227,7 @@
                         <th>Payment Status:</th>
                         <td>
                             <span class="badge bg-success">
-                                {{ order.payment_status|upper }}
+                                {{ order.payment_status|replace:"_: "|upper }}
                             </span>
                         </td>
                     </tr>

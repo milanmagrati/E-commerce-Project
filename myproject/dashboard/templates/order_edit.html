@@ -1058,18 +1058,26 @@
                         <input type="number" id="shipping" name="shipping_charge" class="form-control" placeholder="0"
                             value="{{ order.shipping_charge|floatformat:2 }}" step="0.01">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Order Note</label>
                         <textarea name="notes" id="orderNotes" class="form-control" placeholder="Note...">{{ order.notes }}</textarea>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Status</label>
-                        <select name="order_status" class="form-select">
-                            <option value="processing" {% if order.order_status == 'processing' %}selected{% endif %}>Processing</option>
-                            <option value="confirmed" {% if order.order_status == 'confirmed' %}selected{% endif %}>Confirmed</option>
-                            <option value="shipped" {% if order.order_status == 'shipped' %}selected{% endif %}>Shipped</option>
-                            <option value="delivered" {% if order.order_status == 'delivered' %}selected{% endif %}>Delivered</option>
-                            <option value="cancelled" {% if order.order_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                        <select name="status_setup" id="statusSetup" class="form-select">
+                            <option value="">Select Order Status</option>
+                            {% for setup in status_setups %}
+                                <option value="{{ setup.id }}" {% if order.status_setup and order.status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Payment Status</label>
+                        <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
+                            <option value="">Select Payment Status</option>
+                            {% for setup in payment_status_setups %}
+                                <option value="{{ setup.id }}" {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                 </div>
@@ -1094,13 +1102,11 @@
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Payment</label>
-                        <select name="payment_method" id="paymentMethod" class="form-select">
-                            <option value="cod" {% if order.payment_method == 'cod' %}selected{% endif %}>Cash on Delivery</option>
-                            <option value="esewa" {% if order.payment_method == 'esewa' %}selected{% endif %}>eSewa</option>
-                            <option value="khalti" {% if order.payment_method == 'khalti' %}selected{% endif %}>Khalti</option>
-                            <option value="bank" {% if order.payment_method == 'bank' %}selected{% endif %}>Bank Transfer</option>
-                            <option value="cash" {% if order.payment_method == 'cash' %}selected{% endif %}>Cash</option>
-                            <option value="partial" {% if order.payment_method == 'partial' %}selected{% endif %}>Partial Payment</option>
+                        <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
+                            <option value="">Select Payment Method</option>
+                            {% for setup in payment_setups %}
+                                <option value="{{ setup.id }}" {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -1877,36 +1883,71 @@
         `;
     }
 
-    // ✅ PARTIAL PAYMENT
-    document.getElementById('paymentMethod').addEventListener('change', function() {
-        if (this.value === 'partial') {
-            const total = parseFloat(document.getElementById('totalInput').value) || 0;
-            document.getElementById('totalOrderAmount').value = `रू ${total.toFixed(2)}`;
-            
-            const currentPaid = parseFloat(document.getElementById('partialAmountPaidHidden').value) || 0;
-            document.getElementById('partialAmountPaid').value = currentPaid.toFixed(2);
-            
-            calculateRemaining();
-            partialPaymentModal.show();
-        } else {
-            isPartialPaymentSelected = false;
-            document.getElementById('isPartialPayment').value = 'false';
-            document.getElementById('partialAmountPaidHidden').value = '0';
-            document.getElementById('remainingAmountHidden').value = '0';
-            
-            const paymentLabel = this.closest('.col-md-2');
-            const infoBox = paymentLabel.querySelector('.payment-info-box');
-            if (infoBox) infoBox.remove();
-        }
-    });
-
-    document.getElementById('partialAmountPaid').addEventListener('input', calculateRemaining);
-
+    // ✅ PARTIAL PAYMENT - Calculate remaining amount
     function calculateRemaining() {
         const total = parseFloat(document.getElementById('totalInput').value) || 0;
         const paid = parseFloat(document.getElementById('partialAmountPaid').value) || 0;
         const remaining = Math.max(0, total - paid);
         document.getElementById('remainingAmount').value = `रू ${remaining.toFixed(2)}`;
+    }
+
+    // ==================== HANDLE PAYMENT DROPDOWN CHANGE ====================
+    function handlePaymentChange() {
+        const paymentDropdown = document.getElementById('paymentSetup');
+        if (!paymentDropdown) return;
+
+        const selectedOption = paymentDropdown.options[paymentDropdown.selectedIndex];
+        const selectedText = selectedOption.text;
+
+        console.log('Payment changed to:', selectedText);
+
+        // Show partial payment modal when "Partial Payment" is selected
+        if (selectedText.includes('Partial Payment')) {
+            console.log('Showing partial payment modal');
+
+            const totalAmount = parseFloat(document.getElementById('totalInput').value) || 0;
+
+            if (totalAmount <= 0) {
+                showToastNotification('Please add products first to calculate total amount', 'warning');
+                paymentDropdown.value = '';
+                return;
+            }
+
+            document.getElementById('totalOrderAmount').value = `रू ${totalAmount.toFixed(2)}`;
+
+            // Pre-fill with existing partial amount if any
+            const currentPaid = parseFloat(document.getElementById('partialAmountPaidHidden').value) || 0;
+            if (currentPaid > 0) {
+                document.getElementById('partialAmountPaid').value = currentPaid.toFixed(2);
+            } else {
+                document.getElementById('partialAmountPaid').value = '';
+            }
+
+            calculateRemaining();
+
+            // Show the modal
+            setTimeout(() => {
+                if (partialPaymentModal) {
+                    partialPaymentModal.show();
+                    setTimeout(() => {
+                        document.getElementById('partialAmountPaid').focus();
+                    }, 300);
+                }
+            }, 100);
+        } else {
+            // Clear partial payment state when non-partial payment is selected
+            isPartialPaymentSelected = false;
+            document.getElementById('isPartialPayment').value = 'false';
+            document.getElementById('partialAmountPaidHidden').value = '0';
+            document.getElementById('remainingAmountHidden').value = '0';
+
+            const paymentLabel = paymentDropdown.closest('.col-md-2');
+            if (paymentLabel) {
+                const infoBox = paymentLabel.querySelector('.payment-info-box');
+                if (infoBox) infoBox.remove();
+            }
+            saveFormData();
+        }
     }
 
     function confirmPartialPayment() {
@@ -1930,7 +1971,7 @@
         document.getElementById('partialAmountPaidHidden').value = paid.toFixed(2);
         document.getElementById('remainingAmountHidden').value = remaining.toFixed(2);
 
-        const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
+        const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
         let infoBox = paymentLabel.querySelector('.payment-info-box');
 
         if (!infoBox) {
@@ -1979,11 +2020,11 @@
                 shipping: document.getElementById('shipping').value,
                 orderNotes: document.getElementById('orderNotes').value,
                 customerPhone: document.getElementById('customerPhone').value,
-                paymentMethod: document.getElementById('paymentMethod').value,
+                paymentSetup: document.getElementById('paymentSetup').value,
                 taxPercent: document.getElementById('taxPercent').value,
                 inOut: document.getElementById('inOutSelect').value,
                 orderFrom: document.querySelector('select[name="order_from"]').value,
-                orderStatus: document.querySelector('select[name="order_status"]').value,
+                orderStatus: document.getElementById('statusSetup') ? document.getElementById('statusSetup').value : '',
                 isPartialPayment: isPartialPaymentSelected,
                 partialAmountPaid: document.getElementById('partialAmountPaidHidden').value,
                 remainingAmount: document.getElementById('remainingAmountHidden').value,
@@ -2059,6 +2100,11 @@
             document.getElementById('customerName').value = formData.customerName || '';
             document.getElementById('customerEmailInput').value = formData.customerEmail || '';
             document.getElementById('branchCity').value = formData.branchCity || '';
+            // Also sync the visible city search input
+            const cityInput = document.getElementById('citySearchInput');
+            if (cityInput) {
+                cityInput.value = formData.branchCity || '';
+            }
             document.getElementById('customerAddress').value = formData.customerAddress || '';
             document.getElementById('customerLandmark').value = formData.customerLandmark || '';
             document.getElementById('createdBy').value = formData.createdBy || '';
@@ -2066,7 +2112,7 @@
             document.getElementById('shipping').value = formData.shipping || '0';
             document.getElementById('orderNotes').value = formData.orderNotes || '';
             document.getElementById('customerPhone').value = formData.customerPhone || '';
-            document.getElementById('paymentMethod').value = formData.paymentMethod || 'cod';
+            document.getElementById('paymentSetup').value = formData.paymentSetup || '';
             document.getElementById('taxPercent').value = formData.taxPercent || '13';
             document.getElementById('inOutSelect').value = formData.inOut || 'in';
             
@@ -2074,7 +2120,8 @@
                 document.querySelector('select[name="order_from"]').value = formData.orderFrom;
             }
             if (formData.orderStatus) {
-                document.querySelector('select[name="order_status"]').value = formData.orderStatus;
+                const statusEl = document.getElementById('statusSetup');
+                if (statusEl) statusEl.value = formData.orderStatus;
             }
 
             // Ensure cart is array
@@ -2087,7 +2134,7 @@
                 document.getElementById('partialAmountPaidHidden').value = formData.partialAmountPaid;
                 document.getElementById('remainingAmountHidden').value = formData.remainingAmount;
 
-                const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
+                const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
                 let infoBox = paymentLabel.querySelector('.payment-info-box');
 
                 if (!infoBox) {
@@ -2162,7 +2209,7 @@
         const formInputs = [
             'customerName', 'customerEmailInput', 'branchCity', 'customerAddress', 
             'customerLandmark', 'createdBy', 'discount', 'shipping', 
-            'orderNotes', 'customerPhone', 'paymentMethod', 'taxPercent', 'inOutSelect'
+            'orderNotes', 'customerPhone', 'paymentSetup', 'taxPercent', 'inOutSelect'
         ];
 
         formInputs.forEach(id => {
@@ -2174,8 +2221,8 @@
         });
 
         const orderFromSelect = document.querySelector('select[name="order_from"]');
-        const orderStatusSelect = document.querySelector('select[name="order_status"]');
-        
+        const orderStatusSelect = document.getElementById('statusSetup');
+
         if (orderFromSelect) {
             orderFromSelect.addEventListener('change', saveFormData);
         }
@@ -2601,6 +2648,14 @@
         document.getElementById('shipping').addEventListener('input', updateTotal);
         document.getElementById('taxPercent').addEventListener('input', updateTotal);
 
+        // Partial payment amount input listener
+        const paidInput = document.getElementById('partialAmountPaid');
+        if (paidInput) {
+            paidInput.addEventListener('input', calculateRemaining);
+            paidInput.addEventListener('change', calculateRemaining);
+            paidInput.addEventListener('keyup', calculateRemaining);
+        }
+
         // Form submission
         document.getElementById('orderForm').addEventListener('submit', function(e) {
             if (cart.length === 0) {
@@ -2619,16 +2674,16 @@
         // Show partial payment info if exists
         {% if order.is_partial_payment %}
         isPartialPaymentSelected = true;
-        const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
-        let infoBox = paymentLabel.querySelector('.payment-info-box');
-        
-        if (!infoBox) {
-            infoBox = document.createElement('div');
-            infoBox.className = 'payment-info-box';
-            paymentLabel.appendChild(infoBox);
+        const paymentLabel2 = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
+        let infoBox2 = paymentLabel2.querySelector('.payment-info-box');
+
+        if (!infoBox2) {
+            infoBox2 = document.createElement('div');
+            infoBox2.className = 'payment-info-box';
+            paymentLabel2.appendChild(infoBox2);
         }
-        
-        infoBox.innerHTML = `
+
+        infoBox2.innerHTML = `
             <small>
                 <strong>Paid:</strong> रू {{ order.partial_amount_paid|floatformat:2 }}<br>
                 <strong>Remaining:</strong> रू {{ order.remaining_amount|floatformat:2 }}

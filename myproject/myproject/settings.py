@@ -45,7 +45,6 @@ INSTALLED_APPS = [
 EXTERNAL_APPS = [
      "dashboard",
     "accounts",
-    "logistics",
     "ncm"
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)

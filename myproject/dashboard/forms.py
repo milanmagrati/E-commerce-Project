@@ -153,14 +153,15 @@ NEPAL_CITIES = [
 class OrderForm(forms.ModelForm):
     class Meta:
         model = Order
-        # ✅ UPDATED: Removed 'city', added 'branch_city' and 'in_out'
-        fields = ['order_from', 'order_status', 'payment_method', 'branch_city', 'in_out']
+        # ✅ UPDATED: Added payment_setup and status_setup fields
+        fields = ['order_from', 'order_status', 'payment_setup', 'status_setup', 'branch_city', 'in_out']
         widgets = {
             'order_from': forms.Select(attrs={'class': 'form-select'}),
             'order_status': forms.Select(attrs={'class': 'form-select'}),
-            'payment_method': forms.Select(attrs={'class': 'form-select'}),
-            'branch_city': forms.Select(attrs={'class': 'form-select'}),  # ✅ Changed from 'city' to 'branch_city'
-            'in_out': forms.Select(attrs={'class': 'form-select'}),  # ✅ Added new field
+            'payment_setup': forms.Select(attrs={'class': 'form-select'}),  # ✅ NEW: Added CSS class
+            'status_setup': forms.Select(attrs={'class': 'form-select'}),  # ✅ NEW: Added CSS class
+            'branch_city': forms.Select(attrs={'class': 'form-select'}),
+            'in_out': forms.Select(attrs={'class': 'form-select'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -182,15 +183,22 @@ class OrderForm(forms.ModelForm):
             ('delivered', 'Delivered'),
             ('cancelled', 'Cancelled'),
         ]
-        # Add choices for payment_method
-        self.fields['payment_method'].choices = [
-            ('cod', 'Cash on Delivery'),
-            ('esewa', 'eSewa'),
-            ('khalti', 'Khalti'),
-            ('bank', 'Bank Transfer'),
-            ('cash', 'Cash'),
-            ('partial', 'Partial Payment'),  # ✅ Added partial payment option
-        ]
+        
+        # ✅ NEW: Populate payment_setup from Setup model (Payment Setup)
+        from .models import Setup
+        payment_setups = Setup.objects.filter(setup_type='payment', is_active=True)
+        self.fields['payment_setup'].queryset = payment_setups
+        self.fields['payment_setup'].empty_label = "Select Payment Method"
+        # ✅ Ensure CSS class is applied
+        self.fields['payment_setup'].widget.attrs.update({'class': 'form-select'})
+        
+        # ✅ NEW: Populate status_setup from Setup model (Status Setup)
+        status_setups = Setup.objects.filter(setup_type='status', is_active=True)
+        self.fields['status_setup'].queryset = status_setups
+        self.fields['status_setup'].empty_label = "Select Order Status"
+        # ✅ Ensure CSS class is applied
+        self.fields['status_setup'].widget.attrs.update({'class': 'form-select'})
+        
         # ✅ UPDATED: Changed from 'city' to 'branch_city' choices
         self.fields['branch_city'].choices = NEPAL_CITIES
         

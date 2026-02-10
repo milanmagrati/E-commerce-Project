@@ -144,8 +144,39 @@ class Order(models.Model):
     landmark = models.CharField(max_length=255, blank=True)
     order_from = models.CharField(max_length=50)
     order_status = models.CharField(max_length=50, default='processing')
+    
+    # ✅ NEW: ForeignKey to Setup for Payment Setup
+    payment_setup = models.ForeignKey(
+        'Setup', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='orders_payment',
+        limit_choices_to={'setup_type': 'payment'}
+    )
     payment_method = models.CharField(max_length=50)
     payment_status = models.CharField(max_length=50, default='pending')
+
+    # ForeignKey to Setup for Payment Status Setup
+    payment_status_setup = models.ForeignKey(
+        'Setup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='orders_payment_status',
+        limit_choices_to={'setup_type': 'payment_status'}
+    )
+
+    # ✅ NEW: ForeignKey to Setup for Status Setup
+    status_setup = models.ForeignKey(
+        'Setup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='orders_status',
+        limit_choices_to={'setup_type': 'status'}
+    )
+    
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     shipping_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=13)
@@ -798,3 +829,28 @@ class DispatchItem(models.Model):
         if self.order:
             return self.order.customer_name
         return "N/A"
+
+
+# ✅ NEW: Setup/Configuration Model for dynamic dropdowns
+class Setup(models.Model):
+    SETUP_TYPES = [
+        ('payment', 'Payment Setup'),
+        ('status', 'Status Setup'),
+        ('payment_status', 'Payment Status Setup'),
+    ]
+    
+    setup_type = models.CharField(max_length=50, choices=SETUP_TYPES)
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Setup'
+        verbose_name_plural = 'Setups'
+        unique_together = ('setup_type', 'name')
+        ordering = ['setup_type', 'name']
+    
+    def __str__(self):
+        return f"{self.get_setup_type_display()} - {self.name}"

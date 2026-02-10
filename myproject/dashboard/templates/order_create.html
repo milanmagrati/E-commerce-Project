@@ -645,6 +645,7 @@
     #partialPaymentModal .modal-content {
         border-radius: 12px;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        overflow: auto;
     }
 
     #partialPaymentModal .modal-header {
@@ -655,6 +656,30 @@
 
     #partialPaymentModal .btn-close {
         filter: brightness(0) invert(1);
+    }
+
+    #partialPaymentModal .modal-body {
+        padding: 2rem;
+    }
+
+    #partialPaymentModal .form-control {
+        border: 2px solid #e2e8f0;
+        padding: 0.75rem;
+        font-size: 1rem;
+        height: auto;
+        background: white;
+        transition: all 0.3s ease;
+    }
+
+    #partialPaymentModal .form-control:focus {
+        border-color: var(--warning) !important;
+        box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15) !important;
+        outline: none !important;
+    }
+
+    #partialPaymentModal input[type="number"] {
+        font-size: 1.1rem;
+        font-weight: 500;
     }
 
     .payment-info-box {
@@ -937,6 +962,24 @@
         margin-left: 0.5rem;
     }
 
+    /* Validation error styles */
+    .field-error {
+        border-color: #ef4444 !important;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+        animation: shake 0.4s ease-in-out;
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-5px); }
+        50% { transform: translateX(5px); }
+        75% { transform: translateX(-5px); }
+    }
+
+    .field-error-label {
+        color: #ef4444 !important;
+    }
+
     /* Mobile responsive */
     @media (max-width: 768px) {
         .floating-clear-btn {
@@ -1071,18 +1114,26 @@
                         <input type="number" id="shipping" name="shipping_charge" class="form-control" placeholder="0"
                             value="0" step="0.01">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Order Note</label>
                         <textarea name="notes" id="orderNotes" class="form-control" placeholder="Note..."></textarea>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Status</label>
-                        <select name="order_status" class="form-select">
-                            <option value="processing">Processing</option>
-                            <option value="confirmed">Confirmed</option>
-                            <option value="shipped">Shipped</option>
-                            <option value="delivered">Delivered</option>
-                            <option value="cancelled">Cancelled</option>
+                        <select name="status_setup" id="statusSetup" class="form-select">
+                            <option value="">Select Order Status</option>
+                            {% for setup in status_setups %}
+                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Payment Status</label>
+                        <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
+                            <option value="">Select Payment Status</option>
+                            {% for setup in payment_status_setups %}
+                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                 </div>
@@ -1107,19 +1158,17 @@
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Payment</label>
-                        <select name="payment_method" id="paymentMethod" class="form-select">
-                            <option value="cod">Cash on Delivery</option>
-                            <option value="esewa">eSewa</option>
-                            <option value="khalti">Khalti</option>
-                            <option value="bank">Bank Transfer</option>
-                            <option value="cash">Cash</option>
-                            <option value="partial">Partial Payment</option>
+                        <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
+                            <option value="">Select Payment Method</option>
+                            {% for setup in payment_setups %}
+                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Tax (%)</label>
-                        <input type="number" id="taxPercent" name="tax_percent" class="form-control" placeholder="13"
-                            value="13" step="0.01" min="0">
+                        <input type="number" id="taxPercent" name="tax_percent" class="form-control" placeholder="0"
+                            value="0" step="0.01" min="0">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">IN/OUT *</label>
@@ -1185,7 +1234,7 @@
                                 <strong id="shippingAmount">+ रू 0.00</strong>
                             </div>
                             <div class="total-row">
-                                <span>Tax (<span id="taxPercentDisplay">13</span>%):</span>
+                                <span>Tax (<span id="taxPercentDisplay">0</span>%):</span>
                                 <strong id="taxAmount">+ रू 0.00</strong>
                             </div>
                         </div>
@@ -1298,8 +1347,8 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Amount Paid <span class="text-danger">*</span></label>
-                    <input type="number" class="form-control" id="partialAmountPaid" placeholder="Enter paid amount"
-                        step="0.01" min="0">
+                    <input type="number" class="form-control" id="partialAmountPaid" placeholder="0.00" autocomplete="off"
+                        step="0.01" min="0" max="999999" inputmode="decimal">
                     <small class="text-muted">Enter the amount customer has already paid</small>
                 </div>
                 <div class="mb-3">
@@ -1477,30 +1526,41 @@
 
     // ✅ SAVE FORM DATA TO LOCAL STORAGE
     function saveFormData() {
-        const formData = {
-            timestamp: Date.now(),
-            customerName: document.getElementById('customerName').value,
-            customerEmail: document.getElementById('customerEmailInput').value,
-            branchCity: document.getElementById('branchCity').value,
-            customerAddress: document.getElementById('customerAddress').value,
-            customerLandmark: document.getElementById('customerLandmark').value,
-            createdBy: document.getElementById('createdBy').value,
-            discount: document.getElementById('discount').value,
-            shipping: document.getElementById('shipping').value,
-            orderNotes: document.getElementById('orderNotes').value,
-            customerPhone: document.getElementById('customerPhone').value,
-            paymentMethod: document.getElementById('paymentMethod').value,
-            taxPercent: document.getElementById('taxPercent').value,
-            inOut: document.getElementById('inOutSelect').value,
-            orderFrom: document.querySelector('select[name="order_from"]').value,
-            orderStatus: document.querySelector('select[name="order_status"]').value,
-            cart: cart,
-            isPartialPayment: isPartialPaymentSelected,
-            partialAmountPaid: document.getElementById('partialAmountPaidHidden').value,
-            remainingAmount: document.getElementById('remainingAmountHidden').value
-        };
-
         try {
+            // Safe element getter with fallback
+            const getValueSafe = (id) => {
+                const el = document.getElementById(id);
+                return el ? el.value : '';
+            };
+
+            const getQueryValueSafe = (selector) => {
+                const el = document.querySelector(selector);
+                return el ? el.value : '';
+            };
+
+            const formData = {
+                timestamp: Date.now(),
+                customerName: getValueSafe('customerName'),
+                customerEmail: getValueSafe('customerEmailInput'),
+                branchCity: getValueSafe('branchCity'),
+                customerAddress: getValueSafe('customerAddress'),
+                customerLandmark: getValueSafe('customerLandmark'),
+                createdBy: getValueSafe('createdBy'),
+                discount: getValueSafe('discount'),
+                shipping: getValueSafe('shipping'),
+                orderNotes: getValueSafe('orderNotes'),
+                customerPhone: getValueSafe('customerPhone'),
+                paymentSetup: getValueSafe('paymentSetup'),
+                taxPercent: getValueSafe('taxPercent') || '0',
+                inOut: getValueSafe('inOutSelect'),
+                orderFrom: getQueryValueSafe('select[name="order_from"]'),
+                orderStatus: getQueryValueSafe('select[name="order_status"]'),
+                cart: cart,
+                isPartialPayment: isPartialPaymentSelected,
+                partialAmountPaid: getValueSafe('partialAmountPaidHidden'),
+                remainingAmount: getValueSafe('remainingAmountHidden')
+            };
+
             localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
             
             const hasData = formData.customerName || formData.customerPhone || cart.length > 0;
@@ -1528,51 +1588,66 @@
                 return false;
             }
 
-            document.getElementById('customerName').value = formData.customerName || '';
-            document.getElementById('customerEmailInput').value = formData.customerEmail || '';
-            document.getElementById('branchCity').value = formData.branchCity || '';
-            document.getElementById('customerAddress').value = formData.customerAddress || '';
-            document.getElementById('customerLandmark').value = formData.customerLandmark || '';
-            document.getElementById('createdBy').value = formData.createdBy || '';
-            document.getElementById('discount').value = formData.discount || '0';
-            document.getElementById('shipping').value = formData.shipping || '0';
-            document.getElementById('orderNotes').value = formData.orderNotes || '';
-            document.getElementById('customerPhone').value = formData.customerPhone || '';
-            document.getElementById('paymentMethod').value = formData.paymentMethod || 'cod';
-            document.getElementById('taxPercent').value = formData.taxPercent || '13';
-            document.getElementById('inOutSelect').value = formData.inOut || 'in';
+            // Safe setter with null checks
+            const setValueSafe = (id, value) => {
+                const el = document.getElementById(id);
+                if (el) el.value = value || '';
+            };
+
+            const setQueryValueSafe = (selector, value) => {
+                const el = document.querySelector(selector);
+                if (el) el.value = value || '';
+            };
+
+            // Restore all form values
+            setValueSafe('customerName', formData.customerName);
+            setValueSafe('customerEmailInput', formData.customerEmail);
+            setValueSafe('branchCity', formData.branchCity);
+            // Also sync the city search input with the branch city
+            setValueSafe('citySearchInput', formData.branchCity);
+            setValueSafe('customerAddress', formData.customerAddress);
+            setValueSafe('customerLandmark', formData.customerLandmark);
+            setValueSafe('createdBy', formData.createdBy);
+            setValueSafe('discount', formData.discount || '0');
+            setValueSafe('shipping', formData.shipping || '0');
+            setValueSafe('orderNotes', formData.orderNotes);
+            setValueSafe('customerPhone', formData.customerPhone);
+            setValueSafe('paymentSetup', formData.paymentSetup);
+            setValueSafe('taxPercent', formData.taxPercent || '0');
+            setValueSafe('inOutSelect', formData.inOut || 'in');
             
-            if (formData.orderFrom) {
-                document.querySelector('select[name="order_from"]').value = formData.orderFrom;
-            }
-            if (formData.orderStatus) {
-                document.querySelector('select[name="order_status"]').value = formData.orderStatus;
-            }
+            setQueryValueSafe('select[name="order_from"]', formData.orderFrom);
+            setQueryValueSafe('select[name="order_status"]', formData.orderStatus);
 
             cart = formData.cart || [];
             updateCart();
 
             if (formData.isPartialPayment) {
                 isPartialPaymentSelected = true;
-                document.getElementById('isPartialPayment').value = 'true';
-                document.getElementById('partialAmountPaidHidden').value = formData.partialAmountPaid;
-                document.getElementById('remainingAmountHidden').value = formData.remainingAmount;
+                setValueSafe('isPartialPayment', 'true');
+                setValueSafe('partialAmountPaidHidden', formData.partialAmountPaid);
+                setValueSafe('remainingAmountHidden', formData.remainingAmount);
 
-                const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
-                let infoBox = paymentLabel.querySelector('.payment-info-box');
+                const paymentSelect = document.querySelector('select[name="payment_setup"]');
+                if (paymentSelect) {
+                    const paymentLabel = paymentSelect.closest('.col-md-2');
+                    if (paymentLabel) {
+                        let infoBox = paymentLabel.querySelector('.payment-info-box');
 
-                if (!infoBox) {
-                    infoBox = document.createElement('div');
-                    infoBox.className = 'payment-info-box';
-                    paymentLabel.appendChild(infoBox);
+                        if (!infoBox) {
+                            infoBox = document.createElement('div');
+                            infoBox.className = 'payment-info-box';
+                            paymentLabel.appendChild(infoBox);
+                        }
+
+                        infoBox.innerHTML = `
+                            <small>
+                                <strong>Paid:</strong> रू ${parseFloat(formData.partialAmountPaid).toFixed(2)}<br>
+                                <strong>Remaining:</strong> रू ${parseFloat(formData.remainingAmount).toFixed(2)}
+                            </small>
+                        `;
+                    }
                 }
-
-                infoBox.innerHTML = `
-                    <small>
-                        <strong>Paid:</strong> रू ${parseFloat(formData.partialAmountPaid).toFixed(2)}<br>
-                        <strong>Remaining:</strong> रू ${parseFloat(formData.remainingAmount).toFixed(2)}
-                    </small>
-                `;
             }
 
             if (formData.branchCity) {
@@ -1607,22 +1682,36 @@
     function clearDraftAndReset() {
         clearFormData();
         
-        document.getElementById('customerName').value = '';
-        document.getElementById('customerEmailInput').value = '';
-        document.getElementById('branchCity').value = '';
-        document.getElementById('customerAddress').value = '';
-        document.getElementById('customerLandmark').value = '';
-        document.getElementById('createdBy').value = '{{ request.user.id }}';
-        document.getElementById('discount').value = '0';
-        document.getElementById('shipping').value = '0';
-        document.getElementById('orderNotes').value = '';
-        document.getElementById('customerPhone').value = '';
-        document.getElementById('phoneSearch').value = '';
-        document.getElementById('paymentMethod').value = 'cod';
-        document.getElementById('taxPercent').value = '13';
-        document.getElementById('inOutSelect').value = 'in';
-        document.querySelector('select[name="order_from"]').value = '';
-        document.querySelector('select[name="order_status"]').value = 'processing';
+        // Safe reset with null checks
+        const setValueSafe = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.value = value;
+        };
+
+        const setQueryValueSafe = (selector, value) => {
+            const el = document.querySelector(selector);
+            if (el) el.value = value;
+        };
+
+        setValueSafe('customerName', '');
+        setValueSafe('customerEmailInput', '');
+        setValueSafe('branchCity', '');
+        // Also clear the city search input
+        setValueSafe('citySearchInput', '');
+        setValueSafe('customerAddress', '');
+        setValueSafe('customerLandmark', '');
+        setValueSafe('createdBy', '{{ request.user.id }}');
+        setValueSafe('discount', '0');
+        setValueSafe('shipping', '0');
+        setValueSafe('orderNotes', '');
+        setValueSafe('customerPhone', '');
+        setValueSafe('phoneSearch', '');
+        setValueSafe('paymentSetup', '');
+        setValueSafe('taxPercent', '0');
+        setValueSafe('inOutSelect', 'in');
+        
+        setQueryValueSafe('select[name="order_from"]', '');
+        setQueryValueSafe('select[name="order_status"]', 'processing');
         
         cart = [];
         updateCart();
@@ -1634,7 +1723,7 @@
         document.getElementById('partialAmountPaidHidden').value = '0';
         document.getElementById('remainingAmountHidden').value = '0';
         
-        const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
+        const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
         const infoBox = paymentLabel.querySelector('.payment-info-box');
         if (infoBox) {
             infoBox.remove();
@@ -1654,7 +1743,7 @@
         const formInputs = [
             'customerName', 'customerEmailInput', 'branchCity', 'customerAddress', 
             'customerLandmark', 'createdBy', 'discount', 'shipping', 
-            'orderNotes', 'customerPhone', 'paymentMethod', 'taxPercent', 'inOutSelect'
+            'orderNotes', 'customerPhone', 'paymentSetup', 'taxPercent', 'inOutSelect'
         ];
 
         formInputs.forEach(id => {
@@ -1697,7 +1786,9 @@
                     document.getElementById('customerLandmark').value = data.customer.landmark || '';
                     
                     if (data.customer.branch_city) {
+                        // Set both branchCity and citySearchInput
                         document.getElementById('branchCity').value = data.customer.branch_city;
+                        document.getElementById('citySearchInput').value = data.customer.branch_city;
                         detectValleyStatusFromCity();
                     }
                     
@@ -2132,27 +2223,50 @@
             updateTotal();
         });
 
-        document.getElementById('paymentMethod').addEventListener('change', function (e) {
-            if (e.target.value === 'partial') {
-                openPartialPaymentModal();
-            } else {
-                isPartialPaymentSelected = false;
-                document.getElementById('isPartialPayment').value = 'false';
-                document.getElementById('partialAmountPaidHidden').value = '0';
-                document.getElementById('remainingAmountHidden').value = '0';
+        // ✅ FIX: Listen on correct paymentSetup element instead of non-existent paymentMethod
+        const paymentSetupDropdown = document.getElementById('paymentSetup');
+        if (paymentSetupDropdown) {
+            paymentSetupDropdown.addEventListener('change', function (e) {
+                // Get the selected option text
+                const selectedOption = this.options[this.selectedIndex];
+                const selectedText = selectedOption.text;
+                
+                // Show modal if payment setup contains "Partial Payment"
+                if (selectedText.includes('Partial Payment')) {
+                    // Modal will be shown by handlePaymentChange() via onchange attribute
+                } else {
+                    // Clear partial payment if user selects another payment method
+                    isPartialPaymentSelected = false;
+                    document.getElementById('isPartialPayment').value = 'false';
+                    document.getElementById('partialAmountPaidHidden').value = '0';
+                    document.getElementById('remainingAmountHidden').value = '0';
 
-                const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
-                const infoBox = paymentLabel.querySelector('.payment-info-box');
-                if (infoBox) {
-                    infoBox.remove();
+                    const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
+                    const infoBox = paymentLabel.querySelector('.payment-info-box');
+                    if (infoBox) {
+                        infoBox.remove();
+                    }
+                    saveFormData();
                 }
-                saveFormData();
-            }
-        });
+            });
+        }
 
-        document.getElementById('partialAmountPaid').addEventListener('input', function () {
-            calculateRemainingAmount();
-        });
+        // ✅ FIX: Direct event listeners for partial amount input
+        setTimeout(() => {
+            const paidInput = document.getElementById('partialAmountPaid');
+            if (paidInput) {
+                // Immediate binding of all events
+                paidInput.addEventListener('input', calculateRemainingAmount, false);
+                paidInput.addEventListener('change', calculateRemainingAmount, false);
+                paidInput.addEventListener('keyup', calculateRemainingAmount, false);
+                paidInput.addEventListener('paste', function() {
+                    setTimeout(calculateRemainingAmount, 50);
+                }, false);
+                console.log('✅ Payment input listeners attached');
+            } else {
+                console.warn('⚠️ Payment input not found during setup');
+            }
+        }, 500);
 
         document.getElementById('branchCity').addEventListener('change', function () {
             if (this.value) {
@@ -2180,62 +2294,53 @@
 
         clearValleyStatusInfo();
 
-        const valleyEndpoints = [
-            `/api/cities/get-valley-status/?city=${encodeURIComponent(cityName)}`,
-            `/get_valley_status/?city=${encodeURIComponent(cityName)}`
-        ];
+        // Use the correct API endpoint
+        const url = `/api/cities/get-valley-status/?city=${encodeURIComponent(cityName)}`;
 
-        let attemptIndex = 0;
-
-        function tryNextEndpoint() {
-            if (attemptIndex >= valleyEndpoints.length) {
+        fetch(url)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
                 restoreInOutOptions(inOutSelect);
-                console.error('All valley detection attempts failed');
+
+                if (data.success) {
+                    // Check valley status from response
+                    const isValley = (data.valley_status && data.valley_status === 'valley') || 
+                                   (data.in_out && String(data.in_out).toLowerCase() === 'in');
+                    
+                    if (isValley) {
+                        inOutSelect.value = 'in';
+                        showValleyInfo('valley', cityName, data.display_status || 'Valley');
+                    } else {
+                        inOutSelect.value = 'out';
+                        showValleyInfo('out_valley', cityName, data.display_status || 'Out Valley');
+                    }
+
+                    inOutSelect.disabled = false;
+                    currentCityDetectionInProgress = false;
+                    saveFormData();
+                } else {
+                    // City not found or error in response
+                    restoreInOutOptions(inOutSelect);
+                    inOutSelect.value = originalValue || 'in';
+                    showValleyInfo('unknown', cityName, 'Not in database');
+                    inOutSelect.disabled = false;
+                    currentCityDetectionInProgress = false;
+                }
+            })
+            .catch(err => {
+                console.error('Valley detection error:', err);
+                restoreInOutOptions(inOutSelect);
                 inOutSelect.value = originalValue || 'in';
-                showValleyInfo('error', cityName, 'Network or server error');
-                showToastNotification('Error detecting valley status. Defaulted to Valley. Please check network.', 'error');
+                showValleyInfo('error', cityName, 'Network error');
                 inOutSelect.disabled = false;
                 currentCityDetectionInProgress = false;
                 saveFormData();
-                return;
-            }
-
-            const url = valleyEndpoints[attemptIndex++];
-            fetch(url)
-                .then(response => {
-                    if (!response.ok) throw new Error('Network response was not ok');
-                    return response.json();
-                })
-                .then(data => {
-                    restoreInOutOptions(inOutSelect);
-
-                    if (data.success) {
-                        if ((data.valley_status && data.valley_status === 'valley') || (data.in_out && String(data.in_out).toLowerCase() === 'in')) {
-                            inOutSelect.value = 'in';
-                            showValleyInfo('valley', cityName, data.display_status || 'Valley');
-                        } else {
-                            inOutSelect.value = 'out';
-                            showValleyInfo('out_valley', cityName, data.display_status || 'Out Valley');
-                        }
-
-                        if (!data.exists && data.message) {
-                            showToastNotification(data.message, (data.valley_status === 'valley' || (data.in_out && String(data.in_out).toLowerCase() === 'in')) ? 'success' : 'warning');
-                        }
-
-                        inOutSelect.disabled = false;
-                        currentCityDetectionInProgress = false;
-                        saveFormData();
-                    } else {
-                        tryNextEndpoint();
-                    }
-                })
-                .catch(err => {
-                    console.warn('Valley detection attempt failed for', url, err);
-                    tryNextEndpoint();
-                });
-        }
-
-        tryNextEndpoint();
+            });
     }
 
     function showValleyInfo(status, cityName, displayStatus) {
@@ -2634,83 +2739,173 @@
 
         if (total <= 0) {
             showToastNotification('Please add products first to calculate total amount', 'warning');
-            document.getElementById('paymentMethod').value = 'cod';
+            document.getElementById('paymentSetup').value = '';
             return;
         }
 
         document.getElementById('totalOrderAmount').value = `रू ${total.toFixed(2)}`;
-        document.getElementById('partialAmountPaid').value = '';
+        // Clear the input field properly
+        const paidInput = document.getElementById('partialAmountPaid');
+        paidInput.value = '';
+        paidInput.placeholder = '0.00';
         document.getElementById('remainingAmount').value = `रू ${total.toFixed(2)}`;
 
         partialPaymentModal.show();
+        
+        // Focus on the input field after modal is shown
+        setTimeout(() => {
+            paidInput.focus();
+        }, 300);
     }
 
     function calculateRemainingAmount() {
-        const total = parseFloat(document.getElementById('totalInput').value) || 0;
-        const paid = parseFloat(document.getElementById('partialAmountPaid').value) || 0;
-
-        if (paid > total) {
-            document.getElementById('partialAmountPaid').value = total;
-            document.getElementById('remainingAmount').value = 'रू 0.00';
-            return;
+        try {
+            const totalInput = document.getElementById('totalInput');
+            const paidInput = document.getElementById('partialAmountPaid');
+            const remainingInput = document.getElementById('remainingAmount');
+            
+            if (!totalInput || !paidInput || !remainingInput) {
+                console.warn('Modal inputs not found');
+                return;
+            }
+            
+            const total = parseFloat(totalInput.value) || 0;
+            let paid = 0;
+            
+            // Get the paid value safely
+            if (paidInput.value && paidInput.value.trim() !== '') {
+                paid = parseFloat(paidInput.value);
+            }
+            
+            // If paid is not a valid number, show total as remaining
+            if (isNaN(paid)) {
+                remainingInput.value = `रू ${total.toFixed(2)}`;
+                paidInput.value = '';
+                return;
+            }
+            
+            // Don't allow negative
+            if (paid < 0) {
+                paid = 0;
+                paidInput.value = '0';
+            }
+            
+            // Cap at total
+            if (paid > total) {
+                paid = total;
+                paidInput.value = total.toFixed(2);
+            }
+            
+            const remaining = total - paid;
+            remainingInput.value = `रू ${remaining.toFixed(2)}`;
+            
+            console.log(`Total: ${total}, Paid: ${paid}, Remaining: ${remaining}`);
+        } catch (e) {
+            console.error('Error in calculateRemainingAmount:', e);
         }
+    }
 
-        const remaining = total - paid;
-        document.getElementById('remainingAmount').value = `रू ${remaining.toFixed(2)}`;
+    // ==================== HANDLE PAYMENT DROPDOWN CHANGE ====================
+    function handlePaymentChange() {
+        const paymentDropdown = document.getElementById('paymentSetup');
+        if (!paymentDropdown) return;
+        
+        const selectedOption = paymentDropdown.options[paymentDropdown.selectedIndex];
+        const selectedText = selectedOption.text;
+        
+        console.log('Payment changed to:', selectedText);
+        
+        // Show partial payment modal when "Partial Payment" is selected
+        if (selectedText.includes('Partial Payment')) {
+            console.log('Showing partial payment modal');
+            
+            // Update total in modal
+            const totalAmount = parseFloat(document.getElementById('totalInput').value) || 0;
+            document.getElementById('totalOrderAmount').value = '₹ ' + totalAmount.toFixed(2);
+            document.getElementById('partialAmountPaid').value = '';
+            document.getElementById('remainingAmount').value = '';
+            
+            // Show the modal
+            setTimeout(() => {
+                if (partialPaymentModal) {
+                    partialPaymentModal.show();
+                } else {
+                    console.error('partialPaymentModal not initialized');
+                }
+            }, 100);
+        }
     }
 
     function confirmPartialPayment() {
-        const total = parseFloat(document.getElementById('totalInput').value) || 0;
-        const paid = parseFloat(document.getElementById('partialAmountPaid').value);
+        try {
+            const total = parseFloat(document.getElementById('totalInput').value) || 0;
+            const paidInput = document.getElementById('partialAmountPaid');
+            const paidValue = paidInput.value.trim();
+            
+            // Better validation
+            if (paidValue === '' || paidValue === null) {
+                showToastNotification('Please enter the amount paid', 'warning');
+                paidInput.focus();
+                return;
+            }
 
-        if (!paid && paid !== 0) {
-            showToastNotification('Please enter the amount paid', 'warning');
-            document.getElementById('partialAmountPaid').focus();
-            return;
+            const paid = parseFloat(paidValue);
+
+            if (isNaN(paid)) {
+                showToastNotification('Please enter a valid number for amount paid', 'warning');
+                paidInput.focus();
+                return;
+            }
+
+            if (paid < 0) {
+                showToastNotification('Amount paid cannot be negative', 'warning');
+                paidInput.focus();
+                return;
+            }
+
+            if (paid === 0) {
+                showToastNotification('Please enter a valid partial payment amount (must be greater than 0)', 'warning');
+                paidInput.focus();
+                return;
+            }
+
+            if (paid > total) {
+                showToastNotification(`Amount paid (रू ${paid.toFixed(2)}) cannot exceed total (रू ${total.toFixed(2)})`, 'warning');
+                paidInput.focus();
+                return;
+            }
+
+            const remaining = total - paid;
+
+            document.getElementById('isPartialPayment').value = 'true';
+            document.getElementById('partialAmountPaidHidden').value = paid.toFixed(2);
+            document.getElementById('remainingAmountHidden').value = remaining.toFixed(2);
+
+            isPartialPaymentSelected = true;
+            partialPaymentModal.hide();
+
+            const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
+            let infoBox = paymentLabel.querySelector('.payment-info-box');
+
+            if (!infoBox) {
+                infoBox = document.createElement('div');
+                infoBox.className = 'payment-info-box';
+                paymentLabel.appendChild(infoBox);
+            }
+
+            infoBox.innerHTML = `
+        <small>
+          <strong>Paid:</strong> रू ${paid.toFixed(2)}<br>
+          <strong>Remaining:</strong> रू ${remaining.toFixed(2)}
+        </small>
+      `;
+
+            showToastNotification('Partial payment details saved successfully', 'success');
+            saveFormData();
+        } catch (e) {
+            console.error('Error in confirmPartialPayment:', e);
+            showToastNotification('An error occurred while processing payment details', 'danger');
         }
-
-        if (paid < 0) {
-            showToastNotification('Amount paid cannot be negative', 'warning');
-            return;
-        }
-
-        if (paid > total) {
-            showToastNotification('Amount paid cannot be greater than total amount', 'warning');
-            return;
-        }
-
-        if (paid === 0) {
-            showToastNotification('Please enter a valid partial payment amount', 'warning');
-            return;
-        }
-
-        const remaining = total - paid;
-
-        document.getElementById('isPartialPayment').value = 'true';
-        document.getElementById('partialAmountPaidHidden').value = paid.toFixed(2);
-        document.getElementById('remainingAmountHidden').value = remaining.toFixed(2);
-
-        isPartialPaymentSelected = true;
-        partialPaymentModal.hide();
-
-        const paymentLabel = document.querySelector('select[name="payment_method"]').closest('.col-md-2');
-        let infoBox = paymentLabel.querySelector('.payment-info-box');
-
-        if (!infoBox) {
-            infoBox = document.createElement('div');
-            infoBox.className = 'payment-info-box';
-            paymentLabel.appendChild(infoBox);
-        }
-
-        infoBox.innerHTML = `
-    <small>
-      <strong>Paid:</strong> रू ${paid.toFixed(2)}<br>
-      <strong>Remaining:</strong> रू ${remaining.toFixed(2)}
-    </small>
-  `;
-
-        showToastNotification('Partial payment details saved successfully', 'success');
-        saveFormData();
     }
 
     function escapeHtml(str) {
@@ -2725,35 +2920,84 @@
     }
 
        document.getElementById('orderForm').addEventListener('submit', function (e) {
+        // Clear previous error highlights
+        document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+        document.querySelectorAll('.field-error-label').forEach(el => el.classList.remove('field-error-label'));
+
         if (cart.length === 0) {
             e.preventDefault();
-            showToastNotification('Please add products to the order', 'warning');
+            alert('Please add at least one product to the order.');
             return;
         }
 
-        const name = document.querySelector('[name="customer_name"]').value;
-        const phone = document.querySelector('[name="customer_phone"]').value;
-        const branchCity = document.querySelector('[name="branch_city"]').value;
-        const address = document.querySelector('[name="shipping_address"]').value;
-        const createdBy = document.querySelector('[name="created_by"]').value;
-        const inOut = document.querySelector('[name="in_out"]').value;
-        const orderFrom = document.querySelector('[name="order_from"]').value;
+        // Define mandatory fields with their labels
+        const mandatoryFields = [
+            { name: 'customer_name', label: 'Name', selector: '[name="customer_name"]' },
+            { name: 'customer_phone', label: 'Phone', selector: '[name="customer_phone"]' },
+            { name: 'branch_city', label: 'Branch/City', selector: '#citySearchInput' },
+            { name: 'shipping_address', label: 'Address', selector: '[name="shipping_address"]' },
+            { name: 'created_by', label: 'Created By', selector: '[name="created_by"]' },
+            { name: 'order_from', label: 'Order From', selector: '[name="order_from"]' },
+            { name: 'in_out', label: 'IN/OUT', selector: '[name="in_out"]' },
+        ];
 
-        if (!name || !phone || !branchCity || !address || !createdBy || !inOut || !orderFrom) {
+        const missingFields = [];
+
+        mandatoryFields.forEach(field => {
+            let value = '';
+            if (field.name === 'branch_city') {
+                value = document.querySelector('[name="branch_city"]').value;
+            } else {
+                const el = document.querySelector(field.selector);
+                value = el ? el.value.trim() : '';
+            }
+
+            if (!value) {
+                missingFields.push(field);
+                // Highlight the field
+                const inputEl = document.querySelector(field.selector);
+                if (inputEl) {
+                    inputEl.classList.add('field-error');
+                    // Also highlight the label
+                    const container = inputEl.closest('.col-md-2, .col-md-3');
+                    if (container) {
+                        const label = container.querySelector('.form-label');
+                        if (label) label.classList.add('field-error-label');
+                    }
+                }
+            }
+        });
+
+        if (missingFields.length > 0) {
             e.preventDefault();
-            showToastNotification('Please fill all required fields', 'warning');
+            const fieldNames = missingFields.map(f => '  - ' + f.label).join('\n');
+            alert('Please fill the following mandatory fields:\n\n' + fieldNames);
+            // Scroll to and focus the first missing field
+            const firstMissing = document.querySelector(missingFields[0].selector);
+            if (firstMissing) {
+                firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => firstMissing.focus(), 400);
+            }
             return;
         }
 
         const email = document.querySelector('[name="customer_email"]').value;
         if (email && !isValidEmail(email)) {
             e.preventDefault();
-            showToastNotification('Please enter a valid email address', 'warning');
+            const emailInput = document.querySelector('[name="customer_email"]');
+            emailInput.classList.add('field-error');
+            alert('Please enter a valid email address.');
+            emailInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => emailInput.focus(), 400);
             return;
         }
 
-        const paymentMethod = document.getElementById('paymentMethod').value;
-        if (paymentMethod === 'partial' && !isPartialPaymentSelected) {
+        // ✅ FIX: Check if partial payment was selected and confirmed
+        const selectedPaymentSetup = document.getElementById('paymentSetup');
+        const selectedOption = selectedPaymentSetup.options[selectedPaymentSetup.selectedIndex];
+        const isPartialPaymentSetup = selectedOption.text.includes('Partial Payment');
+        
+        if (isPartialPaymentSetup && !isPartialPaymentSelected) {
             e.preventDefault();
             showToastNotification('Please complete partial payment details', 'warning');
             openPartialPaymentModal();
@@ -2765,6 +3009,26 @@
         
         document.getElementById('submitBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
         document.getElementById('submitBtn').disabled = true;
+    });
+
+    // Clear error highlight when user starts filling a field
+    document.querySelectorAll('#orderForm input, #orderForm select, #orderForm textarea').forEach(el => {
+        el.addEventListener('input', function() {
+            this.classList.remove('field-error');
+            const container = this.closest('.col-md-2, .col-md-3');
+            if (container) {
+                const label = container.querySelector('.form-label');
+                if (label) label.classList.remove('field-error-label');
+            }
+        });
+        el.addEventListener('change', function() {
+            this.classList.remove('field-error');
+            const container = this.closest('.col-md-2, .col-md-3');
+            if (container) {
+                const label = container.querySelector('.form-label');
+                if (label) label.classList.remove('field-error-label');
+            }
+        });
     });
 </script>
 
