@@ -1465,8 +1465,8 @@ def orders_list(request):
         is_deleted=False
     ).order_by('-created_at')
     
-    # GET FILTER PARAMETERS - DEFAULT TO 'today'
-    date_filter = request.GET.get('date_range', 'today')
+    # GET FILTER PARAMETERS - DEFAULT TO 'last_24_hours'
+    date_filter = request.GET.get('date_range', 'last_24_hours')
     search_query = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
     payment_filter = request.GET.get('payment', '')
@@ -1504,8 +1504,13 @@ def orders_list(request):
     
     # DATE RANGE FILTER
     today = timezone.now().date()
+    now = timezone.now()
     
-    if date_filter == 'today':
+    if date_filter == 'last_24_hours':
+        # Orders from the last 24 hours (past 24 hours from now)
+        last_24_hours = now - timedelta(hours=24)
+        orders = orders.filter(created_at__gte=last_24_hours)
+    elif date_filter == 'today':
         orders = orders.filter(created_at__date=today)
     elif date_filter == 'yesterday':
         yesterday = today - timedelta(days=1)
