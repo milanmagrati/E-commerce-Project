@@ -93,7 +93,7 @@
                 </thead>
                 <tbody>
                     {% for product in low_stock_products %}
-                    <tr>
+                    <tr class="{% if product.product_type == 'variable' %}expandable-row{% endif %}" {% if product.product_type == 'variable' %}onclick="toggleVariations(this)" style="cursor:pointer;"{% endif %}>
                         <td class="text-muted">{{ forloop.counter }}</td>
                         <td>
                             <div class="product-info">
@@ -103,9 +103,20 @@
                                 <div class="product-thumb-placeholder"><i class="fas fa-box"></i></div>
                                 {% endif %}
                                 <div>
-                                    <span class="product-name">{{ product.name }}</span>
+                                    <span class="product-name">
+                                        {{ product.name }}
+                                        {% if product.product_type == 'variable' %}
+                                        <span class="variable-badge"><i class="fas fa-layer-group"></i> Variable</span>
+                                        {% endif %}
+                                    </span>
                                     {% if product.barcode %}
                                     <small class="product-barcode">{{ product.barcode }}</small>
+                                    {% endif %}
+                                    {% if product.product_type == 'variable' and product.alert_variations %}
+                                    <small class="var-count-hint">
+                                        <i class="fas fa-chevron-right expand-icon"></i>
+                                        {{ product.alert_variations|length }} variation{{ product.alert_variations|length|pluralize }} affected
+                                    </small>
                                     {% endif %}
                                 </div>
                             </div>
@@ -128,13 +139,48 @@
                             <span class="urgency-badge urgency-critical">
                                 <i class="fas fa-fire"></i> Critical
                             </span>
-                            {% elif product.stock <= product.low_stock_threshold|floatformat:"0" %}
+                            {% else %}
                             <span class="urgency-badge urgency-warning">
                                 <i class="fas fa-exclamation"></i> Warning
                             </span>
                             {% endif %}
                         </td>
                     </tr>
+                    {% if product.product_type == 'variable' and product.alert_variations %}
+                    <tr class="variation-expand-row" style="display:none;">
+                        <td colspan="7" class="p-0">
+                            <div class="variation-list-container">
+                                <div class="variation-list-header">
+                                    <i class="fas fa-layer-group"></i> Variations of <strong>{{ product.name }}</strong>
+                                </div>
+                                <ol class="variation-numbered-list">
+                                    {% for var in product.alert_variations %}
+                                    <li>
+                                        <div class="var-list-item">
+                                            <div class="var-list-info">
+                                                <span class="var-list-name">{{ var.variation_name|default:var.sku }}</span>
+                                                <span class="var-list-sku">SKU: {{ var.sku }}</span>
+                                            </div>
+                                            <div class="var-list-stats">
+                                                <span class="stock-count stock-low">{{ var.stock }}</span>
+                                                <span class="threshold-val">/ {{ var.low_stock_threshold }}</span>
+                                                <span class="deficit-badge">
+                                                    <i class="fas fa-arrow-down"></i> {{ var.deficit }}
+                                                </span>
+                                                {% if var.stock <= 5 %}
+                                                <span class="urgency-badge urgency-critical"><i class="fas fa-fire"></i> Critical</span>
+                                                {% else %}
+                                                <span class="urgency-badge urgency-warning"><i class="fas fa-exclamation"></i> Warning</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </li>
+                                    {% endfor %}
+                                </ol>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -144,7 +190,7 @@
 
     {% if out_of_stock_products %}
     <!-- Out of Stock Products Table -->
-    <div class="alert-table-container">
+    <div class="alert-table-container mb-4">
         <div class="alert-table-header danger-header">
             <h5>
                 <i class="fas fa-times-circle"></i>
@@ -167,7 +213,7 @@
                 </thead>
                 <tbody>
                     {% for product in out_of_stock_products %}
-                    <tr>
+                    <tr class="{% if product.product_type == 'variable' %}expandable-row{% endif %}" {% if product.product_type == 'variable' %}onclick="toggleVariations(this)" style="cursor:pointer;"{% endif %}>
                         <td class="text-muted">{{ forloop.counter }}</td>
                         <td>
                             <div class="product-info">
@@ -177,9 +223,20 @@
                                 <div class="product-thumb-placeholder"><i class="fas fa-box"></i></div>
                                 {% endif %}
                                 <div>
-                                    <span class="product-name">{{ product.name }}</span>
+                                    <span class="product-name">
+                                        {{ product.name }}
+                                        {% if product.product_type == 'variable' %}
+                                        <span class="variable-badge"><i class="fas fa-layer-group"></i> Variable</span>
+                                        {% endif %}
+                                    </span>
                                     {% if product.barcode %}
                                     <small class="product-barcode">{{ product.barcode }}</small>
+                                    {% endif %}
+                                    {% if product.product_type == 'variable' and product.alert_variations %}
+                                    <small class="var-count-hint">
+                                        <i class="fas fa-chevron-right expand-icon"></i>
+                                        {{ product.alert_variations|length }} variation{{ product.alert_variations|length|pluralize }} affected
+                                    </small>
                                     {% endif %}
                                 </div>
                             </div>
@@ -200,83 +257,35 @@
                             </span>
                         </td>
                     </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if low_stock_variations %}
-    <!-- Low Stock Variations Table -->
-    <div class="alert-table-container mb-4">
-        <div class="alert-table-header variation-warning-header">
-            <h5>
-                <i class="fas fa-layer-group"></i>
-                Low Stock Variations
-                <span class="count-badge warning-badge">{{ low_var_count }}</span>
-            </h5>
-        </div>
-        <div class="table-responsive">
-            <table class="alert-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Product / Variation</th>
-                        <th>Category</th>
-                        <th class="text-center">Current Stock</th>
-                        <th class="text-center">Threshold</th>
-                        <th class="text-center">Deficit</th>
-                        <th class="text-center">Urgency</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for var in low_stock_variations %}
-                    <tr>
-                        <td class="text-muted">{{ forloop.counter }}</td>
-                        <td>
-                            <div class="product-info">
-                                {% if var.image %}
-                                <img src="{{ var.image.url }}" alt="{{ var.variation_name }}" class="product-thumb">
-                                {% elif var.product.image %}
-                                <img src="{{ var.product.image.url }}" alt="{{ var.product.name }}" class="product-thumb">
-                                {% else %}
-                                <div class="product-thumb-placeholder"><i class="fas fa-cube"></i></div>
-                                {% endif %}
-                                <div>
-                                    <span class="product-name">{{ var.product.name }}</span>
-                                    <small class="variation-detail">
-                                        <span class="variation-tag"><i class="fas fa-cube"></i> {{ var.variation_name|default:var.sku }}</span>
-                                        <span class="product-barcode">SKU: {{ var.sku }}</span>
-                                    </small>
+                    {% if product.product_type == 'variable' and product.alert_variations %}
+                    <tr class="variation-expand-row" style="display:none;">
+                        <td colspan="7" class="p-0">
+                            <div class="variation-list-container">
+                                <div class="variation-list-header">
+                                    <i class="fas fa-layer-group"></i> Variations of <strong>{{ product.name }}</strong>
                                 </div>
+                                <ol class="variation-numbered-list">
+                                    {% for var in product.alert_variations %}
+                                    <li>
+                                        <div class="var-list-item">
+                                            <div class="var-list-info">
+                                                <span class="var-list-name">{{ var.variation_name|default:var.sku }}</span>
+                                                <span class="var-list-sku">SKU: {{ var.sku }}</span>
+                                            </div>
+                                            <div class="var-list-stats">
+                                                <span class="stock-count stock-zero">0</span>
+                                                <span class="threshold-val">/ {{ var.low_stock_threshold }}</span>
+                                                <span class="order-badge">{{ var.low_stock_threshold }} units</span>
+                                                <span class="urgency-badge urgency-critical"><i class="fas fa-ban"></i> Empty</span>
+                                            </div>
+                                        </div>
+                                    </li>
+                                    {% endfor %}
+                                </ol>
                             </div>
                         </td>
-                        <td><span class="category-badge">{{ var.product.category.name|default:"Uncategorized" }}</span></td>
-                        <td class="text-center">
-                            <span class="stock-count stock-low">{{ var.stock }}</span>
-                        </td>
-                        <td class="text-center">
-                            <span class="threshold-val">{{ var.low_stock_threshold }}</span>
-                        </td>
-                        <td class="text-center">
-                            <span class="deficit-badge">
-                                <i class="fas fa-arrow-down"></i>
-                                {{ var.deficit }}
-                            </span>
-                        </td>
-                        <td class="text-center">
-                            {% if var.stock <= 5 %}
-                            <span class="urgency-badge urgency-critical">
-                                <i class="fas fa-fire"></i> Critical
-                            </span>
-                            {% else %}
-                            <span class="urgency-badge urgency-warning">
-                                <i class="fas fa-exclamation"></i> Warning
-                            </span>
-                            {% endif %}
-                        </td>
                     </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -284,75 +293,7 @@
     </div>
     {% endif %}
 
-    {% if out_of_stock_variations %}
-    <!-- Out of Stock Variations Table -->
-    <div class="alert-table-container mb-4">
-        <div class="alert-table-header variation-danger-header">
-            <h5>
-                <i class="fas fa-layer-group"></i>
-                Out of Stock Variations
-                <span class="count-badge danger-badge">{{ out_var_count }}</span>
-            </h5>
-        </div>
-        <div class="table-responsive">
-            <table class="alert-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Product / Variation</th>
-                        <th>Category</th>
-                        <th class="text-center">Current Stock</th>
-                        <th class="text-center">Threshold</th>
-                        <th class="text-center">Need to Order</th>
-                        <th class="text-center">Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for var in out_of_stock_variations %}
-                    <tr>
-                        <td class="text-muted">{{ forloop.counter }}</td>
-                        <td>
-                            <div class="product-info">
-                                {% if var.image %}
-                                <img src="{{ var.image.url }}" alt="{{ var.variation_name }}" class="product-thumb">
-                                {% elif var.product.image %}
-                                <img src="{{ var.product.image.url }}" alt="{{ var.product.name }}" class="product-thumb">
-                                {% else %}
-                                <div class="product-thumb-placeholder"><i class="fas fa-cube"></i></div>
-                                {% endif %}
-                                <div>
-                                    <span class="product-name">{{ var.product.name }}</span>
-                                    <small class="variation-detail">
-                                        <span class="variation-tag"><i class="fas fa-cube"></i> {{ var.variation_name|default:var.sku }}</span>
-                                        <span class="product-barcode">SKU: {{ var.sku }}</span>
-                                    </small>
-                                </div>
-                            </div>
-                        </td>
-                        <td><span class="category-badge">{{ var.product.category.name|default:"Uncategorized" }}</span></td>
-                        <td class="text-center">
-                            <span class="stock-count stock-zero">0</span>
-                        </td>
-                        <td class="text-center">
-                            <span class="threshold-val">{{ var.low_stock_threshold }}</span>
-                        </td>
-                        <td class="text-center">
-                            <span class="order-badge">{{ var.low_stock_threshold }} units</span>
-                        </td>
-                        <td class="text-center">
-                            <span class="urgency-badge urgency-critical">
-                                <i class="fas fa-ban"></i> Empty
-                            </span>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if not low_stock_products and not out_of_stock_products and not low_stock_variations and not out_of_stock_variations %}
+    {% if not low_stock_products and not out_of_stock_products %}
     <div class="empty-state">
         <i class="fas fa-check-circle"></i>
         <h3>All Clear!</h3>
@@ -370,13 +311,11 @@
     <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgkKqsi2A1N2STrq2NYjk3Y5OssI5hNjdkkauuj2E3N2WRrKyOYDc3ZZGsrI5gNzdjkqysjmA3N2ORrKyOYDc3Y5GtrI9gNjdikaysjl83N2SSrq6OXzY3ZJKtr45eODdlka2vjl44N2OTra+PXTg3ZZOvr49dNzdjk6+wj104N2WTr6+PXTc3Y5Ovr49dODdlk6+vj103N2OTr6+PXTg3ZZOvr49dNzdjk6+vj183OGWUrq6PXzg4ZZSur49fODhllK6vjmA4OGaUrq+NYDg4ZZStr45gNzhmla2vj2E4OGSUra+QYTc4ZZWtr5BhODhllayukGE4OGaVrK+QYTg4ZpWsr5FhODhllayukWE4OGaVra+QYjg4Y5WxspNoPjtkjaSslWtDPmGHnqKRaEc/Y4OZnY1mSD9jgpaailxGQGV/koSEe1BHW3p+gYJ8Wk1OZHZ4enhqWFJUYG9zcm5mXllXXGhubm1raGBcW19nb25samhiX11gZ2xsamlmZGFfYmhramloZmRjYmRnamlnZ2ZlY2RjZmhpZ2ZnZWRkZWdoaGdmZmZlZmZnaGdmZ2ZlZmZnZ2dnZmZmZmdnZ2dnZ2dmZ2doZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnaGdnZ2dnZ2dnZ2dnZ2doZ2dnZ2dnZ2dnaGhoZ2dnZ2dnaGhoaGdnZ2doaGhoZ2dnZ2doaGhoaGdnZ2doaGhoZ2dnZ2dnZ2doZ2doZ2dmZ2ZnZ2doaGdmZmVlZWZnZ2doZ2ZlZWRlZmZnaGdmZWRjZGVmZ2hmZWRjYmNlZmdnZWRjYmJkZ2hmZGNiYWJkZmhmZGJhYGFkZmhmZGFgX2BjZWhmYmFfXl9jZmhlYWBfXWBjZmhlYF9eXWFkZ2hkYF5eXGBkZ2hjX15dXGBkZ2djX11cW19kZmdjXl1cXF9lZ2diXl1cW15kZmdjXl1cXGBkZ2djX11cXF9kaGdkX11cXF9kZ2dlYF1cXGBkZ2dlYF5dXGBkZ2hlYF5dXGBkZ2hmYV5dXWBlZ2hmYV5eXWFlZ2hmYl5eXmJmaGhmYl9fX2JmaGhmY19fX2NnaWlnZGBgYGRoampnZGFhYWVpampnZWJhYWVpampoZWJiYmZqamppZmJiY2dqamtqZ2NjZGhrbGtqZ2RkZWlsbGtrZ2VlZmpsbG1raGZlZ2ttbm1raGdmaGxub25raGdna2xvb25raGhnbG1vb29saWhobW5vcG5saWhpbm9wcG5taWlqb3BxcG9tamlqb3Fxc3BuamlrcHFyc3BuamtscHJ0c3Fuam1tcnN0c3JwbGxudHV1dHJwbW1vdHV2dXNxbm5wdXZ2dnRxb29xdnh3d3VycHBydnl5eHZzc3F0eHp6eXd1c3R2eXt7end1dHV4en18end2dXh6fn17e3h3d3p8fn59e3l4eHt+f399e3p5en1/gIB+fHt7fH6AgYGAf316fX+BgoKBgH98foGCg4OCgYB+f4GDhISDgoGAgYKEhIWEg4KBgoOEhYaFhIOCg4OFhoaGhYSEhISFhoaHhoWFhIWGh4eHhoaFhYWGh4iIh4eGhoaHiImJiIiHh4eHiImKiomIiIiIiYqKioqJiYmJiYqLi4uKiomJioqLi4uLi4qKioqLjIyMi4uLi4uLjIyNjIuLi4uMjI2NjYyMjIyMjY2NjY2NjIyNjY2Ojo6NjY2NjY6Ojo6OjY2Ojo6Oj4+Ojo6Ojo+Pj4+Pj4+Pj4+Pj4+Qj4+Pj4+Pj5CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkZGRkZGRkZGRkZGRkZGR" type="audio/wav">
 </audio>
 <script>
-    // Play alert sound on page load
     window.addEventListener('load', function() {
         const sound = document.getElementById('alertSound');
         if (sound) {
             sound.volume = 0.3;
             sound.play().catch(() => {
-                // Autoplay blocked, show a click-to-play banner
                 const banner = document.createElement('div');
                 banner.className = 'sound-banner';
                 banner.innerHTML = '<i class="fas fa-volume-up"></i> Click to play alert sound';
@@ -390,6 +329,22 @@
     });
 </script>
 {% endif %}
+
+<script>
+function toggleVariations(row) {
+    var nextRow = row.nextElementSibling;
+    if (nextRow && nextRow.classList.contains('variation-expand-row')) {
+        var isOpen = nextRow.style.display !== 'none';
+        nextRow.style.display = isOpen ? 'none' : 'table-row';
+        row.classList.toggle('expanded', !isOpen);
+        var icon = row.querySelector('.expand-icon');
+        if (icon) {
+            icon.classList.toggle('fa-chevron-right', isOpen);
+            icon.classList.toggle('fa-chevron-down', !isOpen);
+        }
+    }
+}
+</script>
 
 <style>
 :root {
@@ -774,6 +729,188 @@
     50% { opacity: 0.5; }
 }
 
+/* ==================== VARIABLE BADGE ==================== */
+.variable-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: linear-gradient(135deg, var(--accent-purple-bg), #e0e7ff);
+    color: var(--primary);
+    padding: 0.15rem 0.55rem;
+    border-radius: 5px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-left: 0.4rem;
+    border: 1px solid rgba(102, 126, 234, 0.25);
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* ==================== EXPANDABLE ROW ==================== */
+.expandable-row {
+    position: relative;
+}
+
+.expandable-row:hover {
+    background: rgba(102, 126, 234, 0.04) !important;
+}
+
+.expandable-row.expanded {
+    background: rgba(102, 126, 234, 0.06) !important;
+    border-left: 3px solid var(--primary);
+}
+
+.var-count-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--primary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-top: 0.15rem;
+}
+
+.expand-icon {
+    font-size: 0.65rem;
+    transition: transform 0.25s ease;
+}
+
+.expanded .expand-icon {
+    transform: rotate(90deg);
+}
+
+/* ==================== VARIATION EXPAND ROW ==================== */
+.variation-expand-row {
+    background: transparent !important;
+}
+
+.variation-expand-row:hover {
+    background: transparent !important;
+}
+
+.variation-expand-row td {
+    padding: 0 !important;
+}
+
+.variation-list-container {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-top: 2px solid var(--primary);
+    border-bottom: 2px solid var(--primary);
+    margin: 0;
+    animation: varSlideDown 0.3s ease;
+}
+
+@keyframes varSlideDown {
+    from { opacity: 0; max-height: 0; }
+    to { opacity: 1; max-height: 500px; }
+}
+
+.variation-list-header {
+    padding: 0.75rem 1.5rem 0.5rem 2rem;
+    font-size: 0.8rem;
+    color: var(--primary);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 1px solid rgba(102, 126, 234, 0.15);
+}
+
+.variation-numbered-list {
+    list-style: none;
+    counter-reset: var-counter;
+    padding: 0.5rem 1.5rem 0.75rem 2rem;
+    margin: 0;
+}
+
+.variation-numbered-list li {
+    counter-increment: var-counter;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid rgba(102, 126, 234, 0.08);
+    position: relative;
+    padding-left: 2.5rem;
+}
+
+.variation-numbered-list li:last-child {
+    border-bottom: none;
+}
+
+.variation-numbered-list li::before {
+    content: counter(var-counter);
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.var-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.var-list-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.var-list-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.var-list-sku {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: 'Courier New', monospace;
+}
+
+.var-list-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.var-list-stats .stock-count {
+    font-size: 0.85rem;
+    padding: 0.2rem 0.5rem;
+}
+
+.var-list-stats .threshold-val {
+    font-size: 0.8rem;
+}
+
+.var-list-stats .deficit-badge,
+.var-list-stats .order-badge {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+}
+
+.var-list-stats .urgency-badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+}
+
+/* ==================== P-0 UTILITY ==================== */
+.p-0 { padding: 0 !important; }
+
 /* Empty State */
 .empty-state {
     text-align: center;
@@ -811,29 +948,6 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* Variation Headers */
-.variation-warning-header { border-left: 4px solid var(--primary); }
-.variation-warning-header h5 { color: var(--primary); }
-
-.variation-danger-header { border-left: 4px solid #dc2626; }
-.variation-danger-header h5 { color: #dc2626; }
-
-.variation-detail {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-}
-
-.variation-tag {
-    display: inline-block;
-    background: var(--accent-purple-bg);
-    color: var(--primary);
-    padding: 0.1rem 0.5rem;
-    border-radius: 5px;
-    font-size: 0.72rem;
-    font-weight: 600;
-}
-
 /* Text muted */
 .text-muted { color: var(--text-muted) !important; }
 
@@ -842,6 +956,10 @@
     .low-stock-alerts { padding: 1rem; }
     .header-title { font-size: 1.35rem; }
     .alert-summary-grid { grid-template-columns: 1fr; }
+    .var-list-item { flex-direction: column; align-items: flex-start; }
+    .var-list-stats { margin-top: 0.4rem; }
+    .variation-numbered-list li { padding-left: 2rem; }
+    .variation-numbered-list li::before { width: 20px; height: 20px; font-size: 0.65rem; }
 }
 </style>
 {% endblock %}

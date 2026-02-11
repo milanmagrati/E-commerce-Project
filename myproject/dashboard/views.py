@@ -179,7 +179,7 @@ def products_view(request):
     """Products list with search, filters, and date range"""
     products = Product.objects.filter(
         is_deleted=False
-    ).select_related('category').order_by('-created_at')    
+    ).select_related('category').prefetch_related('variations').order_by('-created_at')
     # Search functionality
     search_query = request.GET.get("search", "")
     if search_query:
@@ -7706,12 +7706,12 @@ def low_stock_alerts(request):
         low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
     ).annotate(
         deficit=F('low_stock_threshold') - F('stock')
-    ).order_by('stock')
+    ).select_related('category').order_by('stock')
 
     out_of_stock_products = Product.objects.filter(
         user=request.user, is_deleted=False, stock=0,
         low_stock_threshold__gt=0
-    ).order_by('name')
+    ).select_related('category').order_by('name')
 
     # Variation alerts
     low_stock_variations = ProductVariation.objects.filter(
@@ -7726,18 +7726,55 @@ def low_stock_alerts(request):
         low_stock_threshold__gt=0
     ).select_related('product', 'product__category').order_by('product__name')
 
+    # Group low-stock variations by product id
+    low_var_by_product = {}
+    for var in low_stock_variations:
+        low_var_by_product.setdefault(var.product_id, []).append(var)
+
+    # Group out-of-stock variations by product id
+    out_var_by_product = {}
+    for var in out_of_stock_variations:
+        out_var_by_product.setdefault(var.product_id, []).append(var)
+
+    # Attach variations to low stock products
+    for product in low_stock_products:
+        product.alert_variations = low_var_by_product.get(product.id, [])
+
+    # Attach variations to out of stock products
+    for product in out_of_stock_products:
+        product.alert_variations = out_var_by_product.get(product.id, [])
+
+    # Find variable products with alert variations but not already in product lists
+    low_product_ids = set(p.id for p in low_stock_products)
+    out_product_ids = set(p.id for p in out_of_stock_products)
+
+    # Variable products that have low-stock variations but product itself is not low stock
+    extra_low_products = []
+    for pid, vars_list in low_var_by_product.items():
+        if pid not in low_product_ids:
+            product = vars_list[0].product
+            product.alert_variations = vars_list
+            product.deficit = 0
+            extra_low_products.append(product)
+
+    # Variable products that have out-of-stock variations but product itself is not out of stock
+    extra_out_products = []
+    for pid, vars_list in out_var_by_product.items():
+        if pid not in out_product_ids:
+            product = vars_list[0].product
+            product.alert_variations = vars_list
+            extra_out_products.append(product)
+
     low_count = low_stock_products.count()
     out_count = out_of_stock_products.count()
     low_var_count = low_stock_variations.count()
     out_var_count = out_of_stock_variations.count()
 
     context = {
-        'low_stock_products': low_stock_products,
-        'out_of_stock_products': out_of_stock_products,
-        'low_stock_variations': low_stock_variations,
-        'out_of_stock_variations': out_of_stock_variations,
-        'low_count': low_count,
-        'out_count': out_count,
+        'low_stock_products': list(low_stock_products) + extra_low_products,
+        'out_of_stock_products': list(out_of_stock_products) + extra_out_products,
+        'low_count': low_count + len(extra_low_products),
+        'out_count': out_count + len(extra_out_products),
         'low_var_count': low_var_count,
         'out_var_count': out_var_count,
         'total_alert_count': low_count + out_count + low_var_count + out_var_count,

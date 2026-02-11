@@ -236,15 +236,15 @@
                 </thead>
                 <tbody>
                     {% for product in products %}
-                    <tr>
-                        <td>
-                            <input type="checkbox" class="form-check-input product-checkbox" 
-                                   name="product_ids" value="{{ product.id }}" 
+                    <tr class="{% if product.product_type == 'variable' %}expandable-row{% endif %}" {% if product.product_type == 'variable' and product.variations.all %}onclick="toggleVariations(this, event)" style="cursor:pointer;"{% endif %}>
+                        <td onclick="event.stopPropagation();">
+                            <input type="checkbox" class="form-check-input product-checkbox"
+                                   name="product_ids" value="{{ product.id }}"
                                    onchange="updateBulkActions()">
                         </td>
                         <td>
                             {% if product.image %}
-                            <img src="{{ product.image.url }}" alt="{{ product.name }}" 
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}"
                                  class="product-img">
                             {% else %}
                             <div class="product-img-placeholder">
@@ -253,8 +253,18 @@
                             {% endif %}
                         </td>
                         <td>
-                            <strong>{{ product.name }}</strong><br>
+                            <strong>{{ product.name }}</strong>
+                            {% if product.product_type == 'variable' %}
+                            <span class="variable-badge"><i class="fas fa-layer-group"></i> Variable</span>
+                            {% endif %}
+                            <br>
                             <small class="text-muted">SKU: {{ product.slug }}</small>
+                            {% if product.product_type == 'variable' and product.variations.all %}
+                            <small class="var-count-hint">
+                                <i class="fas fa-chevron-right expand-icon"></i>
+                                {{ product.variations.count }} variation{{ product.variations.count|pluralize }}
+                            </small>
+                            {% endif %}
                         </td>
                         <td>
                             {% if product.category %}
@@ -288,7 +298,7 @@
                             <span class="text-muted small">{{ product.created_at|date:"M d, Y" }}</span><br>
                             <small class="text-muted">{{ product.created_at|date:"h:i A" }}</small>
                         </td>
-                        <td>
+                        <td onclick="event.stopPropagation();">
                             <div class="btn-group btn-group-sm" role="group">
                                 <a href="{% url 'product_detail' product.id %}" class="btn btn-info" title="View Details">
                                     <i class="fas fa-eye"></i>
@@ -296,7 +306,6 @@
                                 <a href="{% url 'product_edit' product.id %}" class="btn btn-warning" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <!-- ✅ UPDATED: Move to Trash Button -->
                                 <button type="button" class="btn btn-danger" title="Move to Trash"
                                         onclick="moveToTrash({{ product.id }}, '{{ product.name|escapejs }}')">
                                     <i class="fas fa-trash-alt"></i>
@@ -304,6 +313,44 @@
                             </div>
                         </td>
                     </tr>
+                    {% if product.product_type == 'variable' and product.variations.all %}
+                    <tr class="variation-expand-row" style="display:none;">
+                        <td colspan="9" class="p-0">
+                            <div class="variation-list-container">
+                                <div class="variation-list-header">
+                                    <i class="fas fa-layer-group"></i> Variations of <strong>{{ product.name }}</strong>
+                                </div>
+                                <ol class="variation-numbered-list">
+                                    {% for var in product.variations.all %}
+                                    <li>
+                                        <div class="var-list-item">
+                                            <div class="var-list-info">
+                                                <span class="var-list-name">{{ var.variation_name|default:var.sku }}</span>
+                                                <span class="var-list-sku">SKU: {{ var.sku }}</span>
+                                            </div>
+                                            <div class="var-list-stats">
+                                                <span class="var-list-price">रू {{ var.price|floatformat:2 }}</span>
+                                                {% if var.stock == 0 %}
+                                                <span class="badge bg-danger">Out</span>
+                                                {% elif var.stock <= 10 %}
+                                                <span class="badge bg-warning text-dark">{{ var.stock }}</span>
+                                                {% else %}
+                                                <span class="badge bg-success">{{ var.stock }}</span>
+                                                {% endif %}
+                                                {% if var.is_active %}
+                                                <span class="badge bg-success"><i class="fas fa-check-circle"></i> Active</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary"><i class="fas fa-times-circle"></i> Inactive</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </li>
+                                    {% endfor %}
+                                </ol>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% empty %}
                     <tr>
                         <td colspan="9" class="text-center py-5">
@@ -440,15 +487,223 @@
         .stat-card {
             margin-bottom: 1rem;
         }
-        
+
         .product-img {
             width: 50px;
             height: 50px;
         }
     }
+
+    /* ==================== VARIABLE BADGE ==================== */
+    .variable-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+        color: #667eea;
+        padding: 0.15rem 0.55rem;
+        border-radius: 5px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        margin-left: 0.4rem;
+        border: 1px solid rgba(102, 126, 234, 0.25);
+        vertical-align: middle;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    /* ==================== EXPANDABLE ROW ==================== */
+    .expandable-row {
+        position: relative;
+    }
+
+    .expandable-row:hover {
+        background: rgba(102, 126, 234, 0.04) !important;
+    }
+
+    .expandable-row.expanded {
+        background: rgba(102, 126, 234, 0.06) !important;
+        border-left: 3px solid #667eea;
+    }
+
+    .var-count-hint {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        color: #667eea;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-top: 0.15rem;
+    }
+
+    .expand-icon {
+        font-size: 0.65rem;
+        transition: transform 0.25s ease;
+    }
+
+    .expanded .expand-icon {
+        transform: rotate(90deg);
+    }
+
+    /* ==================== VARIATION EXPAND ROW ==================== */
+    .variation-expand-row {
+        background: transparent !important;
+    }
+
+    .variation-expand-row:hover {
+        background: transparent !important;
+    }
+
+    .variation-expand-row td {
+        padding: 0 !important;
+    }
+
+    .variation-list-container {
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border-top: 2px solid #667eea;
+        border-bottom: 2px solid #667eea;
+        margin: 0;
+        animation: varSlideDown 0.3s ease;
+    }
+
+    @keyframes varSlideDown {
+        from { opacity: 0; max-height: 0; }
+        to { opacity: 1; max-height: 500px; }
+    }
+
+    .variation-list-header {
+        padding: 0.75rem 1.5rem 0.5rem 2rem;
+        font-size: 0.8rem;
+        color: #667eea;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        border-bottom: 1px solid rgba(102, 126, 234, 0.15);
+    }
+
+    .variation-numbered-list {
+        list-style: none;
+        counter-reset: var-counter;
+        padding: 0.5rem 1.5rem 0.75rem 2rem;
+        margin: 0;
+    }
+
+    .variation-numbered-list li {
+        counter-increment: var-counter;
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid rgba(102, 126, 234, 0.08);
+        position: relative;
+        padding-left: 2.5rem;
+    }
+
+    .variation-numbered-list li:last-child {
+        border-bottom: none;
+    }
+
+    .variation-numbered-list li::before {
+        content: counter(var-counter);
+        position: absolute;
+        left: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #667eea;
+        color: #fff;
+        font-size: 0.7rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .var-list-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .var-list-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+        min-width: 0;
+    }
+
+    .var-list-name {
+        font-weight: 600;
+        color: #1e293b;
+        font-size: 0.875rem;
+    }
+
+    .var-list-sku {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        font-family: 'Courier New', monospace;
+    }
+
+    .var-list-stats {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .var-list-price {
+        font-weight: 700;
+        color: #059669;
+        font-size: 0.85rem;
+    }
+
+    .var-list-stats .badge {
+        font-size: 0.72rem;
+    }
+
+    .p-0 { padding: 0 !important; }
+
+    @media (max-width: 768px) {
+        .var-list-item {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .var-list-stats {
+            margin-top: 0.4rem;
+        }
+        .variation-numbered-list li {
+            padding-left: 2rem;
+        }
+        .variation-numbered-list li::before {
+            width: 20px;
+            height: 20px;
+            font-size: 0.65rem;
+        }
+    }
 </style>
 
 <script>
+// Toggle Variations expand/collapse
+function toggleVariations(row, event) {
+    // Don't toggle if clicking on interactive elements
+    if (event && (event.target.closest('a') || event.target.closest('button') || event.target.closest('input'))) {
+        return;
+    }
+    var nextRow = row.nextElementSibling;
+    if (nextRow && nextRow.classList.contains('variation-expand-row')) {
+        var isOpen = nextRow.style.display !== 'none';
+        nextRow.style.display = isOpen ? 'none' : 'table-row';
+        row.classList.toggle('expanded', !isOpen);
+        var icon = row.querySelector('.expand-icon');
+        if (icon) {
+            icon.classList.toggle('fa-chevron-right', isOpen);
+            icon.classList.toggle('fa-chevron-down', !isOpen);
+        }
+    }
+}
+
 // Toggle Custom Date Inputs
 function toggleCustomDate() {
     const select = document.getElementById('dateRangeSelect');
