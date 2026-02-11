@@ -1,0 +1,1071 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dashboard_extras %}
+
+{% block title %}Daily Sales Report - {{ selected_date_display }}{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+<li class="breadcrumb-item"><a href="{% url 'sales_report' %}">Reports</a></li>
+<li class="breadcrumb-item active">Daily Sales Report</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.dsr-page { background: #f5f7fa; min-height: 100vh; }
+
+/* Date Nav */
+.date-nav {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.date-nav .date-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #1f2937;
+}
+.date-nav .date-title .today-badge {
+    font-size: .7rem;
+    background: #d1fae5;
+    color: #065f46;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-weight: 600;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.date-nav-btns {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.date-nav-btns .nav-btn {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+    color: #374151;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all .2s;
+    text-decoration: none;
+}
+.date-nav-btns .nav-btn:hover { border-color: #4f46e5; color: #4f46e5; }
+.date-nav-btns .nav-btn.disabled { opacity: .4; pointer-events: none; }
+.date-nav-btns .date-input {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: .875rem;
+    color: #374151;
+}
+
+/* Stat Cards */
+.dsr-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.dsr-stat {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    text-align: center;
+    position: relative;
+    transition: transform .2s;
+}
+.dsr-stat:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+.dsr-stat-icon {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    color: #fff;
+    margin-bottom: 10px;
+}
+.dsr-stat-icon.purple { background: linear-gradient(135deg,#6366f1,#4f46e5); }
+.dsr-stat-icon.blue { background: linear-gradient(135deg,#3b82f6,#2563eb); }
+.dsr-stat-icon.green { background: linear-gradient(135deg,#10b981,#059669); }
+.dsr-stat-icon.orange { background: linear-gradient(135deg,#f59e0b,#d97706); }
+.dsr-stat-icon.red { background: linear-gradient(135deg,#f87171,#dc2626); }
+.dsr-stat-icon.teal { background: linear-gradient(135deg,#2dd4bf,#0d9488); }
+.dsr-stat-val {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+    line-height: 1.2;
+}
+.dsr-stat-label { font-size: .8rem; color: #6b7280; margin-top: 2px; }
+.dsr-stat-growth {
+    display: inline-block;
+    font-size: .75rem;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 10px;
+    margin-top: 6px;
+}
+.dsr-stat-growth.up { background: #d1fae5; color: #065f46; }
+.dsr-stat-growth.down { background: #fee2e2; color: #991b1b; }
+
+/* Card */
+.dsr-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+.dsr-card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.dsr-card-header h6 {
+    font-size: .95rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+}
+.dsr-card-body { padding: 16px 20px; }
+
+/* Breakdown rows */
+.bkd-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f9fafb;
+}
+.bkd-row:last-child { border-bottom: none; }
+.bkd-label {
+    font-size: .875rem;
+    color: #374151;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+.bkd-vals {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+.bkd-count {
+    background: #f3f4f6;
+    color: #374151;
+    padding: 2px 10px;
+    border-radius: 8px;
+    font-size: .8rem;
+    font-weight: 600;
+}
+.bkd-amount {
+    font-size: .875rem;
+    font-weight: 600;
+    color: #059669;
+    min-width: 100px;
+    text-align: right;
+}
+.bkd-bar-bg {
+    height: 6px;
+    background: #f3f4f6;
+    border-radius: 3px;
+    margin-top: 4px;
+    overflow: hidden;
+}
+.bkd-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width .5s ease;
+}
+
+/* Order Table */
+.dsr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .85rem;
+}
+.dsr-table th {
+    padding: 10px 14px;
+    font-size: .75rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border-bottom: 2px solid #e5e7eb;
+    background: #f9fafb;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+.dsr-table td {
+    padding: 10px 14px;
+    color: #374151;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: middle;
+}
+.dsr-table tbody tr:hover { background: #f8fafc; }
+.dsr-table .order-num {
+    font-weight: 600;
+    color: #4f46e5;
+}
+
+/* Status badges */
+.s-badge {
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: .72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.s-badge.paid { background: #d1fae5; color: #065f46; }
+.s-badge.pending { background: #fef3c7; color: #92400e; }
+.s-badge.partial { background: #dbeafe; color: #1e40af; }
+.s-badge.unpaid, .s-badge.cancelled { background: #fee2e2; color: #991b1b; }
+.s-badge.delivered { background: #d1fae5; color: #065f46; }
+.s-badge.processing { background: #dbeafe; color: #1e40af; }
+.s-badge.shipped { background: #e0e7ff; color: #4338ca; }
+
+/* Product table */
+.prod-name { font-weight: 500; color: #1f2937; }
+.prod-variant { font-size: .8rem; color: #9ca3af; }
+.type-tag {
+    font-size: .68rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.type-tag.simple { background: #e0e7ff; color: #4338ca; }
+.type-tag.variable { background: #fef3c7; color: #92400e; }
+.type-tag.custom { background: #fce7f3; color: #9d174d; }
+
+/* Print */
+.btn-print {
+    padding: 7px 18px;
+    border-radius: 8px;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+    color: #374151;
+    font-weight: 500;
+    font-size: .85rem;
+    cursor: pointer;
+    transition: all .2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.btn-print:hover { border-color: #4f46e5; color: #4f46e5; }
+
+/* Clickable rows */
+.clickable-row {
+    cursor: pointer;
+    transition: background .15s;
+}
+.clickable-row:hover { background: #eef2ff !important; }
+.clickable-row.expanded { background: #f0f4ff !important; }
+.clickable-row .row-expand-icon {
+    display: inline-block;
+    width: 16px;
+    font-size: .7rem;
+    color: #9ca3af;
+    transition: transform .2s;
+}
+.clickable-row.expanded .row-expand-icon { transform: rotate(90deg); color: #4f46e5; }
+
+/* Expandable detail row */
+.detail-row td {
+    padding: 0 !important;
+    border-bottom: 2px solid #e0e7ff !important;
+}
+.detail-row .detail-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .3s ease, padding .3s ease;
+    background: #f8faff;
+}
+.detail-row.open .detail-content {
+    max-height: 800px;
+    padding: 16px 20px;
+}
+.detail-inner {
+    font-size: .82rem;
+    color: #374151;
+}
+.detail-inner .detail-section {
+    margin-bottom: 12px;
+}
+.detail-inner .detail-section:last-child { margin-bottom: 0; }
+.detail-inner .detail-section-title {
+    font-weight: 600;
+    font-size: .75rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-bottom: 6px;
+}
+.detail-inner .detail-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .8rem;
+}
+.detail-inner .detail-items-table th {
+    padding: 6px 10px;
+    background: #e0e7ff;
+    color: #4338ca;
+    font-size: .7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    border: none;
+    position: static;
+}
+.detail-inner .detail-items-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #374151;
+}
+.detail-inner .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+}
+.detail-inner .detail-field {
+    display: flex;
+    flex-direction: column;
+}
+.detail-inner .detail-field .field-label {
+    font-size: .7rem;
+    color: #9ca3af;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.detail-inner .detail-field .field-value {
+    font-size: .82rem;
+    color: #1f2937;
+    font-weight: 500;
+}
+
+/* Breakdown clickable */
+.bkd-row-clickable {
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 10px 8px;
+    margin: 0 -8px;
+    transition: background .15s;
+}
+.bkd-row-clickable:hover { background: #eef2ff; }
+.bkd-row-clickable.expanded { background: #f0f4ff; }
+.bkd-row-clickable .bkd-expand-icon {
+    font-size: .65rem;
+    color: #9ca3af;
+    margin-right: 6px;
+    transition: transform .2s;
+    display: inline-block;
+}
+.bkd-row-clickable.expanded .bkd-expand-icon { transform: rotate(90deg); color: #4f46e5; }
+
+/* Breakdown detail panel */
+.bkd-detail {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .3s ease;
+    margin: 0 -8px;
+}
+.bkd-detail.open {
+    max-height: 600px;
+    overflow-y: auto;
+}
+.bkd-detail-inner {
+    background: #f8faff;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 4px 0 8px;
+    font-size: .78rem;
+}
+.bkd-detail-inner table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.bkd-detail-inner table th {
+    padding: 5px 8px;
+    font-size: .68rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+}
+.bkd-detail-inner table td {
+    padding: 5px 8px;
+    color: #374151;
+    border-bottom: 1px solid #f3f4f6;
+}
+.bkd-detail-inner table tr:last-child td { border-bottom: none; }
+
+/* Product detail row */
+.prod-detail-row td {
+    padding: 0 !important;
+    border-bottom: 2px solid #fef3c7 !important;
+}
+.prod-detail-row .prod-detail-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .3s ease;
+    background: #fffbeb;
+}
+.prod-detail-row.open .prod-detail-content {
+    max-height: 400px;
+    padding: 12px 20px;
+    overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+    .dsr-stats { grid-template-columns: repeat(2, 1fr); }
+    .date-nav { flex-direction: column; text-align: center; }
+    .detail-inner .detail-grid { grid-template-columns: 1fr 1fr; }
+}
+@media print {
+    .no-print { display: none !important; }
+    .dsr-page { background: #fff; }
+    .dsr-card, .dsr-stat { box-shadow: none; border: 1px solid #eee; }
+    .dsr-table th { background: #f3f4f6; }
+    .detail-row, .prod-detail-row, .bkd-detail { display: none !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dsr-page">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h3 style="font-weight:700;color:#1f2937;margin-bottom:2px;">
+                <i class="fas fa-calendar-day" style="color:#4f46e5"></i> Daily Sales Report
+            </h3>
+            <p class="text-muted mb-0" style="font-size:.875rem;">Detailed breakdown of all sales activity</p>
+        </div>
+        <div class="d-flex gap-2 no-print">
+            <button class="btn-print" onclick="exportDailyCSV()"><i class="fas fa-file-excel" style="color:#059669"></i> Excel</button>
+            <button class="btn-print" onclick="window.print()"><i class="fas fa-print" style="color:#6b7280"></i> Print</button>
+        </div>
+    </div>
+
+    <!-- Date Navigation -->
+    <div class="date-nav no-print">
+        <div class="date-title">
+            <i class="fas fa-calendar-alt" style="color:#4f46e5;margin-right:6px;"></i>
+            {{ selected_date_display }}
+            {% if is_today %}<span class="today-badge">TODAY</span>{% endif %}
+        </div>
+        <div class="date-nav-btns">
+            <a href="?date={{ prev_date }}" class="nav-btn" title="Previous day"><i class="fas fa-chevron-left"></i></a>
+            <input type="date" value="{{ selected_date }}" class="date-input" id="datePickerInput" onchange="goToDate(this.value)" max="{{ selected_date }}">
+            <a href="{% if next_date %}?date={{ next_date }}{% else %}#{% endif %}" class="nav-btn {% if not next_date %}disabled{% endif %}" title="Next day"><i class="fas fa-chevron-right"></i></a>
+            {% if not is_today %}
+            <a href="{% url 'daily_sales_report' %}" class="nav-btn" title="Go to Today" style="font-size:.75rem;font-weight:700;width:auto;padding:0 12px;">TODAY</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="dsr-stats">
+        <div class="dsr-stat">
+            <div class="dsr-stat-icon purple"><i class="fas fa-rupee-sign"></i></div>
+            <div class="dsr-stat-val">Rs. {{ total_revenue|floatformat:0 }}</div>
+            <div class="dsr-stat-label">Total Revenue</div>
+            {% if revenue_growth != 0 %}
+            <div class="dsr-stat-growth {% if revenue_growth > 0 %}up{% else %}down{% endif %}">
+                <i class="fas fa-arrow-{% if revenue_growth > 0 %}up{% else %}down{% endif %}"></i> {{ revenue_growth }}% vs yesterday
+            </div>
+            {% endif %}
+        </div>
+        <div class="dsr-stat">
+            <div class="dsr-stat-icon blue"><i class="fas fa-shopping-cart"></i></div>
+            <div class="dsr-stat-val">{{ total_orders }}</div>
+            <div class="dsr-stat-label">Total Orders</div>
+            {% if orders_growth != 0 %}
+            <div class="dsr-stat-growth {% if orders_growth > 0 %}up{% else %}down{% endif %}">
+                <i class="fas fa-arrow-{% if orders_growth > 0 %}up{% else %}down{% endif %}"></i> {{ orders_growth }}%
+            </div>
+            {% endif %}
+        </div>
+        <div class="dsr-stat">
+            <div class="dsr-stat-icon green"><i class="fas fa-calculator"></i></div>
+            <div class="dsr-stat-val">Rs. {{ avg_order_value|floatformat:0 }}</div>
+            <div class="dsr-stat-label">Avg Order Value</div>
+        </div>
+        <div class="dsr-stat">
+            <div class="dsr-stat-icon orange"><i class="fas fa-box"></i></div>
+            <div class="dsr-stat-val">{{ total_products_sold }}</div>
+            <div class="dsr-stat-label">Products Sold</div>
+        </div>
+        <div class="dsr-stat">
+            <div class="dsr-stat-icon teal"><i class="fas fa-users"></i></div>
+            <div class="dsr-stat-val">{{ total_unique_customers }}</div>
+            <div class="dsr-stat-label">Unique Customers</div>
+        </div>
+        <div class="dsr-stat">
+            <div class="dsr-stat-icon red"><i class="fas fa-tags"></i></div>
+            <div class="dsr-stat-val">Rs. {{ total_discount|floatformat:0 }}</div>
+            <div class="dsr-stat-label">Total Discounts</div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Left Column -->
+        <div class="col-lg-8">
+            <!-- Hourly Chart -->
+            <div class="dsr-card">
+                <div class="dsr-card-header">
+                    <h6><i class="fas fa-chart-bar" style="color:#4f46e5"></i> Hourly Sales Breakdown</h6>
+                    <span style="font-size:.8rem;color:#9ca3af;">Peak: {{ peak_hour }}</span>
+                </div>
+                <div class="dsr-card-body">
+                    <canvas id="hourlyChart" height="220"></canvas>
+                </div>
+            </div>
+
+            <!-- Top Products Sold Today -->
+            <div class="dsr-card">
+                <div class="dsr-card-header">
+                    <h6><i class="fas fa-trophy" style="color:#d97706"></i> Top Products Sold</h6>
+                    <span style="font-size:.75rem;color:#9ca3af;"><i class="fas fa-mouse-pointer"></i> Click row for details</span>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="dsr-table" id="productsTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Product</th>
+                                <th>Type</th>
+                                <th style="text-align:center;">Qty</th>
+                                <th style="text-align:right;">Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in top_products %}
+                            <tr class="clickable-row" data-product-idx="{{ forloop.counter0 }}">
+                                <td style="color:#9ca3af;"><span class="row-expand-icon"><i class="fas fa-chevron-right"></i></span> {{ forloop.counter }}</td>
+                                <td>
+                                    <span class="prod-name">{{ p.product__name|default:"Unknown" }}</span>
+                                    {% if p.product_variation__variation_name %}
+                                    <br><span class="prod-variant">{{ p.product_variation__variation_name }}</span>
+                                    {% endif %}
+                                </td>
+                                <td><span class="type-tag {{ p.product__product_type|default:'simple' }}">{{ p.product__product_type|default:"simple" }}</span></td>
+                                <td style="text-align:center;font-weight:600;">{{ p.qty }}</td>
+                                <td style="text-align:right;font-weight:600;color:#059669;">Rs. {{ p.revenue|floatformat:0 }}</td>
+                            </tr>
+                            <tr class="prod-detail-row" data-product-detail-idx="{{ forloop.counter0 }}">
+                                <td colspan="5">
+                                    <div class="prod-detail-content">
+                                        <div class="detail-inner" id="prodDetail{{ forloop.counter0 }}"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" style="text-align:center;padding:24px;color:#9ca3af;">No products sold</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- All Orders Table -->
+            <div class="dsr-card">
+                <div class="dsr-card-header">
+                    <h6><i class="fas fa-list-alt" style="color:#2563eb"></i> All Orders ({{ total_orders }})</h6>
+                    <span style="font-size:.75rem;color:#9ca3af;"><i class="fas fa-mouse-pointer"></i> Click row for details</span>
+                </div>
+                <div style="overflow-x:auto;max-height:600px;overflow-y:auto;">
+                    <table class="dsr-table" id="ordersTable">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Time</th>
+                                <th>Order #</th>
+                                <th>Customer</th>
+                                <th>Items</th>
+                                <th>Amount</th>
+                                <th>Payment</th>
+                                <th>Status</th>
+                                <th>Source</th>
+                                <th>Staff</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for o in orders_list %}
+                            <tr class="clickable-row" data-order-idx="{{ forloop.counter0 }}">
+                                <td style="width:20px;"><span class="row-expand-icon"><i class="fas fa-chevron-right"></i></span></td>
+                                <td style="white-space:nowrap;color:#6b7280;">{{ o.time }}</td>
+                                <td><span class="order-num">{{ o.order_number }}</span></td>
+                                <td>
+                                    <div style="font-weight:500;">{{ o.customer_name|truncatewords:3 }}</div>
+                                    <div style="font-size:.75rem;color:#9ca3af;">{{ o.customer_phone }}</div>
+                                </td>
+                                <td>
+                                    <span title="{{ o.items_summary }}">{{ o.items_count }} item{{ o.items_count|pluralize }} ({{ o.total_qty }} pcs)</span>
+                                </td>
+                                <td style="font-weight:600;white-space:nowrap;">Rs. {{ o.total_amount|floatformat:0 }}</td>
+                                <td>
+                                    <span class="s-badge {{ o.payment_status }}">{{ o.payment_status }}</span>
+                                    <div style="font-size:.72rem;color:#9ca3af;margin-top:2px;">{{ o.payment_method }}</div>
+                                </td>
+                                <td><span class="s-badge {{ o.order_status }}">{{ o.order_status }}</span></td>
+                                <td style="font-size:.8rem;color:#6b7280;">{{ o.order_from }}</td>
+                                <td style="font-size:.8rem;color:#6b7280;">{{ o.created_by }}</td>
+                            </tr>
+                            <tr class="detail-row" data-detail-idx="{{ forloop.counter0 }}">
+                                <td colspan="10">
+                                    <div class="detail-content">
+                                        <div class="detail-inner" id="orderDetail{{ forloop.counter0 }}"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="10" style="text-align:center;padding:40px;color:#9ca3af;">No orders for this date</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column - Breakdowns -->
+        <div class="col-lg-4">
+            <!-- Payment Status -->
+            <div class="dsr-card">
+                <div class="dsr-card-header">
+                    <h6><i class="fas fa-credit-card" style="color:#059669"></i> Payment Status</h6>
+                    <span style="font-size:.7rem;color:#9ca3af;"><i class="fas fa-mouse-pointer"></i> Click for orders</span>
+                </div>
+                <div class="dsr-card-body">
+                    {% for ps in payment_breakdown %}
+                    <div class="bkd-row bkd-row-clickable" data-filter-type="payment_status" data-filter-value="{{ ps.payment_status }}">
+                        <span class="bkd-label">
+                            <span class="bkd-expand-icon"><i class="fas fa-chevron-right"></i></span>
+                            <span class="s-badge {{ ps.payment_status }}">{{ ps.payment_status }}</span>
+                        </span>
+                        <div class="bkd-vals">
+                            <span class="bkd-count">{{ ps.count }}</span>
+                            <span class="bkd-amount">Rs. {{ ps.amount|floatformat:0 }}</span>
+                        </div>
+                    </div>
+                    <div class="bkd-detail" data-bkd-filter-type="payment_status" data-bkd-filter-value="{{ ps.payment_status }}">
+                        <div class="bkd-detail-inner"></div>
+                    </div>
+                    {% empty %}
+                    <p style="text-align:center;color:#9ca3af;margin:16px 0;">No data</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Payment Method -->
+            <div class="dsr-card">
+                <div class="dsr-card-header">
+                    <h6><i class="fas fa-wallet" style="color:#4f46e5"></i> Payment Method</h6>
+                    <span style="font-size:.7rem;color:#9ca3af;"><i class="fas fa-mouse-pointer"></i> Click for orders</span>
+                </div>
+                <div class="dsr-card-body">
+                    {% for pm in method_breakdown %}
+                    {% with max_amt=method_breakdown.0.amount %}
+                    <div class="bkd-row bkd-row-clickable" style="flex-direction:column;align-items:stretch;" data-filter-type="payment_method" data-filter-value="{{ pm.payment_method }}">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span class="bkd-label"><span class="bkd-expand-icon"><i class="fas fa-chevron-right"></i></span>{{ pm.payment_method|default:"N/A" }}</span>
+                            <div class="bkd-vals">
+                                <span class="bkd-count">{{ pm.count }}</span>
+                                <span class="bkd-amount">Rs. {{ pm.amount|floatformat:0 }}</span>
+                            </div>
+                        </div>
+                        <div class="bkd-bar-bg">
+                            <div class="bkd-bar" style="width:{% widthratio pm.amount max_amt 100 %}%;background:#4f46e5;"></div>
+                        </div>
+                    </div>
+                    <div class="bkd-detail" data-bkd-filter-type="payment_method" data-bkd-filter-value="{{ pm.payment_method }}">
+                        <div class="bkd-detail-inner"></div>
+                    </div>
+                    {% endwith %}
+                    {% empty %}
+                    <p style="text-align:center;color:#9ca3af;margin:16px 0;">No data</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Order Status -->
+            <div class="dsr-card">
+                <div class="dsr-card-header">
+                    <h6><i class="fas fa-tasks" style="color:#2563eb"></i> Order Status</h6>
+                    <span style="font-size:.7rem;color:#9ca3af;"><i class="fas fa-mouse-pointer"></i> Click for orders</span>
+                </div>
+                <div class="dsr-card-body">
+                    {% for st in status_breakdown %}
+                    <div class="bkd-row bkd-row-clickable" data-filter-type="order_status" data-filter-value="{{ st.order_status }}">
+                        <span class="bkd-label"><span class="bkd-expand-icon"><i class="fas fa-chevron-right"></i></span><span class="s-badge {{ st.order_status }}">{{ st.order_status }}</span></span>
+                        <span class="bkd-count">{{ st.count }}</span>
+                    </div>
+                    <div class="bkd-detail" data-bkd-filter-type="order_status" data-bkd-filter-value="{{ st.order_status }}">
+                        <div class="bkd-detail-inner"></div>
+                    </div>
+                    {% empty %}
+                    <p style="text-align:center;color:#9ca3af;margin:16px 0;">No data</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Order Source -->
+            <div class="dsr-card">
+                <div class="dsr-card-header">
+                    <h6><i class="fas fa-globe" style="color:#d97706"></i> Order Source</h6>
+                    <span style="font-size:.7rem;color:#9ca3af;"><i class="fas fa-mouse-pointer"></i> Click for orders</span>
+                </div>
+                <div class="dsr-card-body">
+                    {% for src in source_breakdown %}
+                    <div class="bkd-row bkd-row-clickable" data-filter-type="order_from" data-filter-value="{{ src.order_from }}">
+                        <span class="bkd-label"><span class="bkd-expand-icon"><i class="fas fa-chevron-right"></i></span>{{ src.order_from|default:"N/A" }}</span>
+                        <div class="bkd-vals">
+                            <span class="bkd-count">{{ src.count }}</span>
+                            <span class="bkd-amount">Rs. {{ src.amount|floatformat:0 }}</span>
+                        </div>
+                    </div>
+                    <div class="bkd-detail" data-bkd-filter-type="order_from" data-bkd-filter-value="{{ src.order_from }}">
+                        <div class="bkd-detail-inner"></div>
+                    </div>
+                    {% empty %}
+                    <p style="text-align:center;color:#9ca3af;margin:16px 0;">No data</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Staff Performance -->
+            <div class="dsr-card">
+                <div class="dsr-card-header">
+                    <h6><i class="fas fa-user-tie" style="color:#7c3aed"></i> Staff Performance</h6>
+                    <span style="font-size:.7rem;color:#9ca3af;"><i class="fas fa-mouse-pointer"></i> Click for orders</span>
+                </div>
+                <div class="dsr-card-body">
+                    {% for s in staff_breakdown %}
+                    <div class="bkd-row bkd-row-clickable" data-filter-type="created_by" data-filter-value="{{ s.created_by__username|default:'Unknown' }}">
+                        <span class="bkd-label"><span class="bkd-expand-icon"><i class="fas fa-chevron-right"></i></span><i class="fas fa-user" style="color:#a5b4fc;margin-right:6px;"></i>{{ s.created_by__username|default:"Unknown" }}</span>
+                        <div class="bkd-vals">
+                            <span class="bkd-count">{{ s.count }} orders</span>
+                            <span class="bkd-amount">Rs. {{ s.amount|floatformat:0 }}</span>
+                        </div>
+                    </div>
+                    <div class="bkd-detail" data-bkd-filter-type="created_by" data-bkd-filter-value="{{ s.created_by__username|default:'Unknown' }}">
+                        <div class="bkd-detail-inner"></div>
+                    </div>
+                    {% empty %}
+                    <p style="text-align:center;color:#9ca3af;margin:16px 0;">No data</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // ── Data ──
+    const ordersData = {{ orders_list_json|safe }};
+    const topProductsData = {{ top_products_json|safe }};
+
+    // ── Hourly Chart ──
+    const hourlyLabels = {{ hourly_labels|safe }};
+    const hourlyCounts = {{ hourly_counts|safe }};
+    const hourlyRevenues = {{ hourly_revenues|safe }};
+
+    const ctx = document.getElementById('hourlyChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: hourlyLabels,
+            datasets: [{
+                label: 'Orders',
+                data: hourlyCounts,
+                backgroundColor: hourlyCounts.map(v => {
+                    const max = Math.max(...hourlyCounts) || 1;
+                    const r = v / max;
+                    if (r > 0.7) return '#4f46e5';
+                    if (r > 0.4) return '#818cf8';
+                    if (r > 0) return '#c7d2fe';
+                    return '#e5e7eb';
+                }),
+                borderRadius: 4,
+                maxBarThickness: 28,
+                yAxisID: 'y'
+            }, {
+                label: 'Revenue (Rs.)',
+                data: hourlyRevenues,
+                type: 'line',
+                borderColor: '#059669',
+                backgroundColor: 'rgba(5,150,105,0.08)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 2,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+                yAxisID: 'y1'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+                legend: { position: 'top', labels: { usePointStyle: true, padding: 14, font: { size: 11 } } },
+                tooltip: {
+                    backgroundColor: '#1f2937',
+                    padding: 10,
+                    cornerRadius: 6,
+                    callbacks: {
+                        label: function(ctx) {
+                            if (ctx.datasetIndex === 0) return 'Orders: ' + ctx.parsed.y;
+                            return 'Revenue: Rs. ' + ctx.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: { position: 'left', grid: { color: '#f3f4f6' }, ticks: { stepSize: 1 } },
+                y1: { position: 'right', grid: { display: false }, ticks: { callback: v => 'Rs.' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v) } },
+                x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0 } }
+            }
+        }
+    });
+
+    // ── Helper: format number ──
+    function fmtNum(n) {
+        return parseFloat(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    }
+
+    // ── Helper: escape HTML ──
+    function esc(str) {
+        const d = document.createElement('div');
+        d.textContent = str || '';
+        return d.innerHTML;
+    }
+
+    // ── Order Row Click → Expand Detail ──
+    document.querySelectorAll('#ordersTable .clickable-row').forEach(function(row) {
+        row.addEventListener('click', function() {
+            const idx = parseInt(this.dataset.orderIdx);
+            const detailRow = document.querySelector('.detail-row[data-detail-idx="' + idx + '"]');
+            const isOpen = detailRow.classList.contains('open');
+
+            // Close all other open details
+            document.querySelectorAll('#ordersTable .detail-row.open').forEach(function(r) { r.classList.remove('open'); });
+            document.querySelectorAll('#ordersTable .clickable-row.expanded').forEach(function(r) { r.classList.remove('expanded'); });
+
+            if (!isOpen) {
+                this.classList.add('expanded');
+                detailRow.classList.add('open');
+                renderOrderDetail(idx);
+            }
+        });
+    });
+
+    function renderOrderDetail(idx) {
+        const o = ordersData[idx];
+        if (!o) return;
+        const container = document.getElementById('orderDetail' + idx);
+        if (container.dataset.rendered) return;
+        container.dataset.rendered = '1';
+
+        let itemsHtml = '<table class="detail-items-table"><thead><tr><th>Product</th><th>Variant</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead><tbody>';
+        (o.items || []).forEach(function(item) {
+            itemsHtml += '<tr><td>' + esc(item.product_name) + '</td><td>' + esc(item.variation_name || '-') + '</td><td style="color:#9ca3af;">' + esc(item.product_sku || '-') + '</td><td style="text-align:center">' + item.quantity + '</td><td style="text-align:right">Rs. ' + fmtNum(item.price) + '</td><td style="text-align:right;font-weight:600;">Rs. ' + fmtNum(item.total) + '</td></tr>';
+        });
+        itemsHtml += '</tbody></table>';
+
+        let html = '<div class="detail-section"><div class="detail-section-title"><i class="fas fa-box" style="margin-right:4px;"></i> Items Ordered</div>' + itemsHtml + '</div>';
+
+        html += '<div class="detail-section"><div class="detail-section-title"><i class="fas fa-user" style="margin-right:4px;"></i> Customer & Shipping</div><div class="detail-grid">';
+        html += '<div class="detail-field"><span class="field-label">Customer</span><span class="field-value">' + esc(o.customer_name) + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Phone</span><span class="field-value">' + esc(o.customer_phone) + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Email</span><span class="field-value">' + esc(o.customer_email || 'N/A') + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Branch / City</span><span class="field-value">' + esc(o.branch_city || 'N/A') + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Shipping Address</span><span class="field-value">' + esc(o.shipping_address || 'N/A') + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Landmark</span><span class="field-value">' + esc(o.landmark || 'N/A') + '</span></div>';
+        html += '</div></div>';
+
+        html += '<div class="detail-section"><div class="detail-section-title"><i class="fas fa-calculator" style="margin-right:4px;"></i> Amount Breakdown</div><div class="detail-grid">';
+        html += '<div class="detail-field"><span class="field-label">Subtotal</span><span class="field-value">Rs. ' + fmtNum(o.subtotal) + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Discount</span><span class="field-value" style="color:#dc2626;">- Rs. ' + fmtNum(o.discount) + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Shipping</span><span class="field-value">Rs. ' + fmtNum(o.shipping) + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Tax %</span><span class="field-value">' + (o.tax_percent || 0) + '%</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Grand Total</span><span class="field-value" style="font-weight:700;color:#059669;">Rs. ' + fmtNum(o.total_amount) + '</span></div>';
+        html += '</div></div>';
+
+        if (o.notes) {
+            html += '<div class="detail-section"><div class="detail-section-title"><i class="fas fa-sticky-note" style="margin-right:4px;"></i> Notes</div><div style="background:#fef3c7;padding:8px 12px;border-radius:6px;font-size:.8rem;color:#92400e;">' + esc(o.notes) + '</div></div>';
+        }
+
+        if (o.logs && o.logs.length > 0) {
+            html += '<div class="detail-section"><div class="detail-section-title"><i class="fas fa-history" style="margin-right:4px;"></i> Activity Logs (' + o.logs.length + ')</div>';
+            html += '<table class="detail-items-table"><thead><tr><th>Time</th><th>Action</th><th>Change</th><th>By</th></tr></thead><tbody>';
+            o.logs.forEach(function(log) {
+                let change = '';
+                if (log.field && log.old_value && log.new_value) {
+                    change = '<span style="color:#9ca3af;text-transform:capitalize;">' + esc(log.field.replace(/_/g, ' ')) + ':</span> <span style="text-decoration:line-through;color:#dc2626;">' + esc(log.old_value) + '</span> <i class="fas fa-arrow-right" style="font-size:.6rem;color:#9ca3af;margin:0 3px;"></i> <span style="color:#059669;font-weight:600;">' + esc(log.new_value) + '</span>';
+                } else if (log.description) {
+                    change = esc(log.description);
+                } else if (log.new_value) {
+                    change = esc(log.new_value);
+                } else {
+                    change = '-';
+                }
+                html += '<tr><td style="white-space:nowrap;color:#6b7280;">' + esc(log.time) + '</td><td><span style="background:#e0e7ff;color:#4338ca;padding:2px 8px;border-radius:6px;font-size:.7rem;font-weight:600;">' + esc(log.action) + '</span></td><td>' + change + '</td><td style="color:#6b7280;">' + esc(log.user) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+
+        container.innerHTML = html;
+    }
+
+    // ── Product Row Click → Expand Detail ──
+    document.querySelectorAll('#productsTable .clickable-row').forEach(function(row) {
+        row.addEventListener('click', function() {
+            const idx = parseInt(this.dataset.productIdx);
+            const detailRow = document.querySelector('.prod-detail-row[data-product-detail-idx="' + idx + '"]');
+            const isOpen = detailRow.classList.contains('open');
+
+            document.querySelectorAll('#productsTable .prod-detail-row.open').forEach(function(r) { r.classList.remove('open'); });
+            document.querySelectorAll('#productsTable .clickable-row.expanded').forEach(function(r) { r.classList.remove('expanded'); });
+
+            if (!isOpen) {
+                this.classList.add('expanded');
+                detailRow.classList.add('open');
+                renderProductDetail(idx);
+            }
+        });
+    });
+
+    function renderProductDetail(idx) {
+        const p = topProductsData[idx];
+        if (!p) return;
+        const container = document.getElementById('prodDetail' + idx);
+        if (container.dataset.rendered) return;
+        container.dataset.rendered = '1';
+
+        const orderNums = p.orders || [];
+        let html = '<div class="detail-section"><div class="detail-section-title"><i class="fas fa-shopping-bag" style="margin-right:4px;"></i> Found in ' + orderNums.length + ' Order(s)</div>';
+
+        if (orderNums.length > 0) {
+            // Find the full order data for each order number
+            const matchingOrders = ordersData.filter(function(o) { return orderNums.indexOf(o.order_number) !== -1; });
+
+            html += '<table class="detail-items-table"><thead><tr><th>Order #</th><th>Time</th><th>Customer</th><th style="text-align:right">Order Total</th><th>Status</th></tr></thead><tbody>';
+            matchingOrders.forEach(function(o) {
+                html += '<tr><td style="font-weight:600;color:#4f46e5;">' + esc(o.order_number) + '</td><td style="color:#6b7280;">' + esc(o.time) + '</td><td>' + esc(o.customer_name) + '</td><td style="text-align:right;font-weight:600;">Rs. ' + fmtNum(o.total_amount) + '</td><td><span class="s-badge ' + esc(o.order_status) + '">' + esc(o.order_status) + '</span></td></tr>';
+            });
+            // If there are order numbers not found in today's orders (shouldn't happen but safety)
+            if (matchingOrders.length === 0) {
+                orderNums.forEach(function(num) {
+                    html += '<tr><td colspan="5" style="color:#4f46e5;font-weight:600;">' + esc(num) + '</td></tr>';
+                });
+            }
+            html += '</tbody></table>';
+        } else {
+            html += '<div style="color:#9ca3af;font-size:.8rem;">No order details available</div>';
+        }
+        html += '</div>';
+
+        container.innerHTML = html;
+    }
+
+    // ── Breakdown Row Click → Show Filtered Orders ──
+    document.querySelectorAll('.bkd-row-clickable').forEach(function(row) {
+        row.addEventListener('click', function() {
+            const filterType = this.dataset.filterType;
+            const filterValue = this.dataset.filterValue;
+            const detailDiv = this.nextElementSibling;
+            const isOpen = detailDiv.classList.contains('open');
+
+            // Close all other open breakdown details in same card
+            const card = this.closest('.dsr-card-body');
+            card.querySelectorAll('.bkd-row-clickable.expanded').forEach(function(r) { r.classList.remove('expanded'); });
+            card.querySelectorAll('.bkd-detail.open').forEach(function(r) { r.classList.remove('open'); });
+
+            if (!isOpen) {
+                this.classList.add('expanded');
+                detailDiv.classList.add('open');
+                renderBreakdownDetail(detailDiv, filterType, filterValue);
+            }
+        });
+    });
+
+    function renderBreakdownDetail(detailDiv, filterType, filterValue) {
+        const innerDiv = detailDiv.querySelector('.bkd-detail-inner');
+        if (innerDiv.dataset.rendered) return;
+        innerDiv.dataset.rendered = '1';
+
+        // Filter orders by the given field
+        const filtered = ordersData.filter(function(o) {
+            const val = o[filterType] || '';
+            return val === filterValue || (filterValue === '' && !val) || (filterValue === 'N/A' && !val);
+        });
+
+        if (filtered.length === 0) {
+            innerDiv.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:8px;">No matching orders</div>';
+            return;
+        }
+
+        let html = '<table><thead><tr><th>Order #</th><th>Time</th><th>Customer</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
+        filtered.forEach(function(o) {
+            html += '<tr><td style="font-weight:600;color:#4f46e5;">' + esc(o.order_number) + '</td><td style="color:#6b7280;">' + esc(o.time) + '</td><td>' + esc(o.customer_name) + '</td><td style="text-align:right;font-weight:600;">Rs. ' + fmtNum(o.total_amount) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+
+        innerDiv.innerHTML = html;
+    }
+});
+
+function goToDate(dateStr) {
+    if (dateStr) window.location.href = '?date=' + dateStr;
+}
+
+function exportDailyCSV() {
+    let csv = 'Time,Order #,Customer,Phone,Items,Qty,Amount,Discount,Shipping,Payment Method,Payment Status,Order Status,Source,Staff\n';
+    const rows = document.querySelectorAll('#ordersTable tbody tr.clickable-row');
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 10) {
+            const time = cells[1].textContent.trim();
+            const orderNum = cells[2].textContent.trim();
+            const customer = cells[3].querySelector('div').textContent.trim();
+            const phone = cells[3].querySelectorAll('div')[1] ? cells[3].querySelectorAll('div')[1].textContent.trim() : '';
+            const items = cells[4].textContent.trim().replace(/,/g, ';');
+            const amount = cells[5].textContent.trim().replace('Rs. ', '').replace(/,/g, '');
+            const payStatus = cells[6].querySelector('.s-badge').textContent.trim();
+            const payMethod = cells[6].querySelectorAll('div')[0] ? cells[6].querySelectorAll('div')[0].textContent.trim() : '';
+            const status = cells[7].textContent.trim();
+            const source = cells[8].textContent.trim();
+            const staff = cells[9].textContent.trim();
+            csv += `"${time}","${orderNum}","${customer}","${phone}","${items}","","${amount}","","","${payMethod}","${payStatus}","${status}","${source}","${staff}"\n`;
+        }
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'daily_sales_{{ selected_date }}.csv';
+    link.click();
+}
+</script>
+{% endblock %}

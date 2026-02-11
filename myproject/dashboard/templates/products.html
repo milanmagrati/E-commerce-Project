@@ -236,7 +236,7 @@
                 </thead>
                 <tbody>
                     {% for product in products %}
-                    <tr class="{% if product.product_type == 'variable' %}expandable-row{% endif %}" {% if product.product_type == 'variable' and product.variations.all %}onclick="toggleVariations(this, event)" style="cursor:pointer;"{% endif %}>
+                    <tr class="{% if product.product_type == 'variable' %}expandable-row{% endif %}" onclick="goToProduct({{ product.id }}, event)" style="cursor:pointer;">
                         <td onclick="event.stopPropagation();">
                             <input type="checkbox" class="form-check-input product-checkbox"
                                    name="product_ids" value="{{ product.id }}"
@@ -260,7 +260,7 @@
                             <br>
                             <small class="text-muted">SKU: {{ product.slug }}</small>
                             {% if product.product_type == 'variable' and product.variations.all %}
-                            <small class="var-count-hint">
+                            <small class="var-count-hint" onclick="event.stopPropagation(); toggleVariations(this.closest('tr'), event);">
                                 <i class="fas fa-chevron-right expand-icon"></i>
                                 {{ product.variations.count }} variation{{ product.variations.count|pluralize }}
                             </small>
@@ -324,9 +324,26 @@
                                     {% for var in product.variations.all %}
                                     <li>
                                         <div class="var-list-item">
+                                            <div class="var-list-image">
+                                                {% if var.image %}
+                                                <img src="{{ var.image.url }}" alt="{{ var.variation_name|default:var.sku }}">
+                                                {% else %}
+                                                <div class="var-img-placeholder"><i class="fas fa-image"></i></div>
+                                                {% endif %}
+                                            </div>
                                             <div class="var-list-info">
                                                 <span class="var-list-name">{{ var.variation_name|default:var.sku }}</span>
                                                 <span class="var-list-sku">SKU: {{ var.sku }}</span>
+                                                {% if var.barcode %}
+                                                <span class="var-list-barcode"><i class="fas fa-barcode"></i> {{ var.barcode }}</span>
+                                                {% endif %}
+                                                {% if var.attribute_values.all %}
+                                                <div class="var-list-attrs">
+                                                    {% for av in var.attribute_values.all %}
+                                                    <span class="var-attr-badge">{{ av.attribute_value.attribute.name }}: {{ av.attribute_value.value }}</span>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
                                             </div>
                                             <div class="var-list-stats">
                                                 <span class="var-list-price">रू {{ var.price|floatformat:2 }}</span>
@@ -668,9 +685,32 @@
     .var-list-item {
         display: flex;
         align-items: center;
-        justify-content: space-between;
         gap: 1rem;
         flex-wrap: wrap;
+    }
+
+    .var-list-image {
+        flex-shrink: 0;
+    }
+
+    .var-list-image img {
+        width: 48px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid rgba(102, 126, 234, 0.2);
+    }
+
+    .var-img-placeholder {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        background: #eef2ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #94a3b8;
+        font-size: 1rem;
     }
 
     .var-list-info {
@@ -678,6 +718,7 @@
         flex-direction: column;
         gap: 0.1rem;
         min-width: 0;
+        flex: 1;
     }
 
     .var-list-name {
@@ -697,6 +738,7 @@
         align-items: center;
         gap: 0.5rem;
         flex-wrap: wrap;
+        flex-shrink: 0;
     }
 
     .var-list-price {
@@ -707,6 +749,30 @@
 
     .var-list-stats .badge {
         font-size: 0.72rem;
+    }
+
+    .var-list-barcode {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+
+    .var-list-attrs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: 0.25rem;
+    }
+
+    .var-attr-badge {
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+        padding: 0.15rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 600;
     }
 
     .p-0 { padding: 0 !important; }
@@ -731,12 +797,17 @@
 </style>
 
 <script>
-// Toggle Variations expand/collapse
-function toggleVariations(row, event) {
-    // Don't toggle if clicking on interactive elements
-    if (event && (event.target.closest('a') || event.target.closest('button') || event.target.closest('input'))) {
+// Navigate to product detail page
+function goToProduct(productId, event) {
+    if (event && (event.target.closest('a') || event.target.closest('button') ||
+        event.target.closest('input') || event.target.closest('.var-count-hint'))) {
         return;
     }
+    window.location.href = '/products/' + productId + '/';
+}
+
+// Toggle Variations expand/collapse
+function toggleVariations(row, event) {
     var nextRow = row.nextElementSibling;
     if (nextRow && nextRow.classList.contains('variation-expand-row')) {
         var isOpen = nextRow.style.display !== 'none';

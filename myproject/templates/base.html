@@ -636,8 +636,11 @@
                     </a>
                     <ul class="collapse list-unstyled" id="reportsMenu">
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_sales_reports %}
-                        <li>
-                            <a href="#">Sales Reports</a>
+                        <li class="{% if request.resolver_match.url_name == 'sales_report' %}active{% endif %}">
+                            <a href="{% url 'sales_report' %}">Sales Reports</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'daily_sales_report' %}active{% endif %}">
+                            <a href="{% url 'daily_sales_report' %}">Daily Sales Report</a>
                         </li>
                         {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_financial_reports %}

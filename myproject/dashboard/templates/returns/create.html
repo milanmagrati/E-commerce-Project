@@ -590,7 +590,7 @@
         }
         
         // Detect if this looks like a complete order number
-        const looksLikeOrderNumber = /^ORD\d{6,}$/i.test(currentValue);
+        const looksLikeOrderNumber = /^(ORD\d+|\d{4,})$/i.test(currentValue);
         
         // Set timer based on input pattern
         const delay = looksLikeOrderNumber ? 200 : TYPING_DELAY;
@@ -600,7 +600,7 @@
             const barcode = this.value.trim();
             
             // Only process if it looks like a valid order number
-            if (barcode && barcode.length >= 8) {
+            if (barcode && barcode.length >= 4) {
                 console.log('🚀 Auto-submitting:', barcode);
                 processScannedBarcode(barcode);
             }
@@ -621,7 +621,7 @@
             
             clearTimeout(scannerTimer);
             scannerTimer = setTimeout(() => {
-                if (scannerBuffer.length >= 8) {
+                if (scannerBuffer.length >= 4) {
                     console.log('📷 Scanner detected:', scannerBuffer);
                     barcodeInput.value = scannerBuffer;
                     processScannedBarcode(scannerBuffer);
@@ -643,7 +643,7 @@
         barcode = barcode.trim().toUpperCase();
         
         // Validate format
-        if (!barcode || barcode.length < 8) {
+        if (!barcode || barcode.length < 4) {
             console.warn('⚠️ Invalid barcode format');
             return;
         }

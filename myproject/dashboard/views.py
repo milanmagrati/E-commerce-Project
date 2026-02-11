@@ -179,7 +179,10 @@ def products_view(request):
     """Products list with search, filters, and date range"""
     products = Product.objects.filter(
         is_deleted=False
-    ).select_related('category').prefetch_related('variations').order_by('-created_at')
+    ).select_related('category').prefetch_related(
+        'variations',
+        'variations__attribute_values__attribute_value__attribute'
+    ).order_by('-created_at')
     # Search functionality
     search_query = request.GET.get("search", "")
     if search_query:
@@ -5394,7 +5397,7 @@ def return_create(request):
                     messages.error(request, 'Order not selected')
                     return redirect('return_create')
                 
-                order = get_object_or_404(Order, id=order_id, order_status__in=['delivered', 'shipped', 'processing'])
+                order = get_object_or_404(Order, id=order_id, is_deleted=False)
                 
                 # Get return details
                 return_reason = request.POST.get('return_reason')
@@ -5470,12 +5473,11 @@ def return_create(request):
     # GET request
     # Get recent delivered, shipped, or processing orders for scanning
     recent_orders = Order.objects.filter(
-        order_status__in=['delivered', 'shipped', 'processing'],
         is_deleted=False
     ).select_related('customer', 'created_by').prefetch_related(
         'items__product',
         'items__product_variation'
-    ).order_by('-delivered_at')[:50]
+    ).order_by('-created_at')[:50]
     
     # If order_id is provided in GET, load that order
     order = None
@@ -5485,7 +5487,7 @@ def return_create(request):
             order = Order.objects.select_related('customer').prefetch_related(
                 'items__product',
                 'items__product_variation'
-            ).get(id=request.GET.get('order_id'), order_status__in=['delivered', 'shipped', 'processing'])
+            ).get(id=request.GET.get('order_id'), is_deleted=False)
             order_items = order.items.all()
         except Order.DoesNotExist:
             messages.error(request, 'Order not found or not in returnable status')
@@ -5528,25 +5530,10 @@ def api_get_order_by_barcode(request):
                     'success': False,
                     'error': f'Order "{barcode}" is in trash'
                 })
-            
-            # Check if order exists but not delivered
-            pending_order = Order.objects.filter(order_number__iexact=barcode, is_deleted=False).exclude(order_status__in=['delivered', 'processing', 'shipped']).first()
-            if pending_order:
-                return JsonResponse({
-                    'success': False,
-                    'error': f'Order "{barcode}" cannot be returned (Status: {pending_order.order_status})'
-                })
-            
+
             return JsonResponse({
                 'success': False,
                 'error': f'Order "{barcode}" not found'
-            })
-        
-        # Check if delivered or processing
-        if order.order_status not in ['delivered', 'processing', 'shipped']:
-            return JsonResponse({
-                'success': False,
-                'error': f'Order "{barcode}" cannot be returned (Status: {order.order_status}). Only delivered, shipped, or processing orders can be returned.'
             })
         
         # Prepare order items
@@ -5708,28 +5695,46 @@ def return_detail(request, return_id):
                 return_request.refunded_at = timezone.now()
                 return_request.save()
                 
-                # Restock items
+                # Restock items only if quality condition is good
+                good_conditions = ['new', 'opened', 'used']
+                should_restock = return_request.condition_received in good_conditions
+                restocked_count = 0
+
                 for item in return_request.items.all():
-                    if item.product_variation:
-                        item.product_variation.stock += item.return_quantity
-                        item.product_variation.save()
-                    else:
-                        item.product.stock += item.return_quantity
-                        item.product.save()
-                    
-                    item.restocked = True
-                    item.restocked_at = timezone.now()
-                    item.restocked_by = request.user
-                    item.save()
+                    if should_restock:
+                        if item.product_variation:
+                            item.product_variation.stock += item.return_quantity
+                            if item.product_variation.stock > 0:
+                                item.product_variation.status = 'active'
+                            item.product_variation.save()
+
+                        if item.product:
+                            item.product.stock += item.return_quantity
+                            if item.product.stock > 0:
+                                if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
+                                    item.product.stock_status = 'low_stock'
+                                else:
+                                    item.product.stock_status = 'in_stock'
+                            item.product.save()
+
+                        item.restocked = True
+                        item.restocked_at = timezone.now()
+                        item.restocked_by = request.user
+                        item.save()
+                        restocked_count += item.return_quantity
                 
+                restock_msg = f' | {restocked_count} items restocked' if should_restock else ' | Items NOT restocked (condition: {})'.format(return_request.condition_received or 'not checked')
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
                     user=request.user,
                     action_type='refunded',
-                    description=f'Refund processed: Rs. {refund_amount} (Restocking fee: Rs. {restocking_fee})'
+                    description=f'Refund processed: Rs. {refund_amount} (Restocking fee: Rs. {restocking_fee}){restock_msg}'
                 )
-                
-                messages.success(request, f'✅ Refund of Rs. {refund_amount} processed successfully!')
+
+                if should_restock:
+                    messages.success(request, f'Refund of Rs. {refund_amount} processed and {restocked_count} items restocked!')
+                else:
+                    messages.success(request, f'Refund of Rs. {refund_amount} processed. Items NOT restocked (condition: {return_request.get_condition_received_display() or "not checked"}).')
                 
             elif action == 'update_notes':
                 admin_notes = request.POST.get('admin_notes', '')
@@ -7793,4 +7798,687 @@ def low_stock_alerts(request):
         'total_alert_count': low_count + out_count + low_var_count + out_var_count,
         'play_sound': low_count > 0 or out_count > 0 or low_var_count > 0 or out_var_count > 0,
     }
-    return render(request, 'low_stock_alerts.html', context)
+
+
+# ==================== SALES REPORT ====================
+
+@login_required
+@permission_required('can_view_sales_reports')
+def sales_report(request):
+    """Comprehensive sales analytics with smart forecasting"""
+    from django.db.models.functions import TruncDate, TruncHour, ExtractHour
+    from collections import defaultdict
+    import math
+
+    now = timezone.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # ── Date Filtering ──
+    period = request.GET.get('period', 'month')
+    date_from_str = request.GET.get('date_from', '')
+    date_to_str = request.GET.get('date_to', '')
+    compare = request.GET.get('compare', '') == 'on'
+
+    if period == 'today':
+        date_from = today_start
+        date_to = now
+    elif period == 'yesterday':
+        date_from = today_start - timedelta(days=1)
+        date_to = today_start
+    elif period == 'week':
+        date_from = today_start - timedelta(days=7)
+        date_to = now
+    elif period == 'custom' and date_from_str and date_to_str:
+        try:
+            date_from = timezone.make_aware(datetime.strptime(date_from_str, '%Y-%m-%d'))
+            date_to = timezone.make_aware(datetime.strptime(date_to_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+        except ValueError:
+            date_from = today_start - timedelta(days=30)
+            date_to = now
+    else:  # month
+        period = 'month'
+        date_from = today_start - timedelta(days=30)
+        date_to = now
+
+    period_days = max((date_to - date_from).days, 1)
+
+    # Previous period for comparison
+    prev_from = date_from - timedelta(days=period_days)
+    prev_to = date_from
+
+    # ── Base Querysets ──
+    orders_qs = Order.objects.filter(
+        is_deleted=False,
+        created_at__gte=date_from,
+        created_at__lte=date_to,
+    )
+    prev_orders_qs = Order.objects.filter(
+        is_deleted=False,
+        created_at__gte=prev_from,
+        created_at__lt=prev_to,
+    )
+
+    # ── 1. Stats Cards ──
+    total_revenue = orders_qs.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+    total_orders = orders_qs.count()
+    avg_order_value = (total_revenue / total_orders) if total_orders > 0 else Decimal('0')
+
+    items_qs = OrderItem.objects.filter(
+        order__is_deleted=False,
+        order__created_at__gte=date_from,
+        order__created_at__lte=date_to,
+    )
+    products_sold = items_qs.aggregate(t=Sum('quantity'))['t'] or 0
+
+    # Previous period stats
+    prev_revenue = prev_orders_qs.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+    prev_orders = prev_orders_qs.count()
+    prev_items = OrderItem.objects.filter(
+        order__is_deleted=False,
+        order__created_at__gte=prev_from,
+        order__created_at__lt=prev_to,
+    ).aggregate(t=Sum('quantity'))['t'] or 0
+
+    def calc_growth(current, previous):
+        if previous and previous > 0:
+            return round(float((current - previous) / previous * 100), 1)
+        return 0
+
+    revenue_growth = calc_growth(total_revenue, prev_revenue)
+    orders_growth = calc_growth(total_orders, prev_orders)
+    products_growth = calc_growth(products_sold, prev_items)
+
+    # ── 2. Daily Sales Trend ──
+    daily_sales_raw = (
+        orders_qs
+        .annotate(day=TruncDate('created_at'))
+        .values('day')
+        .annotate(revenue=Sum('total_amount'), count=Count('id'))
+        .order_by('day')
+    )
+    daily_labels = []
+    daily_revenue_data = []
+    daily_orders_data = []
+    daily_breakdown = []
+    for entry in daily_sales_raw:
+        day_str = entry['day'].strftime('%b %d')
+        daily_labels.append(day_str)
+        daily_revenue_data.append(float(entry['revenue'] or 0))
+        daily_orders_data.append(entry['count'])
+        # Products sold that day
+        day_products = OrderItem.objects.filter(
+            order__is_deleted=False,
+            order__created_at__date=entry['day'],
+        ).aggregate(t=Sum('quantity'))['t'] or 0
+        daily_breakdown.append({
+            'date': entry['day'].strftime('%b %d, %Y'),
+            'orders': entry['count'],
+            'revenue': float(entry['revenue'] or 0),
+            'products': day_products,
+        })
+
+    # Calculate daily growth
+    for i, day in enumerate(daily_breakdown):
+        if i > 0 and daily_breakdown[i - 1]['revenue'] > 0:
+            day['growth'] = round((day['revenue'] - daily_breakdown[i - 1]['revenue']) / daily_breakdown[i - 1]['revenue'] * 100, 1)
+        else:
+            day['growth'] = 0
+
+    # ── 3. Top 10 Products ──
+    top_products_raw = (
+        items_qs
+        .values('product__id', 'product__name', 'product__cost_price', 'product__stock',
+                'product__product_type', 'product_variation__id', 'product_variation__variation_name',
+                'product_variation__stock')
+        .annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('total'),
+        )
+        .order_by('-qty_sold')[:10]
+    )
+    top_product_labels = []
+    top_product_data = []
+    top_products_table = []
+    for p in top_products_raw:
+        label = p['product__name'] or 'Unknown'
+        variant = p['product_variation__variation_name'] or ''
+        if variant:
+            label = f"{label} ({variant})"
+        top_product_labels.append(label[:25])
+        top_product_data.append(float(p['revenue'] or 0))
+
+        cost = float(p['product__cost_price'] or 0)
+        rev = float(p['revenue'] or 0)
+        qty = p['qty_sold'] or 0
+        profit_pct = round((rev - cost * qty) / rev * 100, 1) if rev > 0 else 0
+        stock = p['product_variation__stock'] if p['product_variation__id'] else p['product__stock']
+        stock = stock or 0
+
+        # Days until stockout
+        avg_daily = qty / period_days if period_days > 0 else 0
+        days_left = math.ceil(stock / avg_daily) if avg_daily > 0 else 999
+
+        top_products_table.append({
+            'name': p['product__name'] or 'Unknown',
+            'variant': variant,
+            'product_type': p['product__product_type'] or 'simple',
+            'qty_sold': qty,
+            'revenue': rev,
+            'profit_pct': profit_pct,
+            'stock': stock,
+            'avg_daily': round(avg_daily, 1),
+            'days_left': days_left,
+        })
+
+    # ── 4. Sales by Category ──
+    category_sales = (
+        items_qs
+        .values('product__category__name')
+        .annotate(revenue=Sum('total'))
+        .order_by('-revenue')
+    )
+    category_labels = []
+    category_data = []
+    for c in category_sales:
+        cat_name = c['product__category__name'] or 'Uncategorized'
+        category_labels.append(cat_name)
+        category_data.append(float(c['revenue'] or 0))
+
+    # ── 5. Hourly Sales Pattern ──
+    hourly_raw = (
+        orders_qs
+        .annotate(hour=ExtractHour('created_at'))
+        .values('hour')
+        .annotate(count=Count('id'), revenue=Sum('total_amount'))
+        .order_by('hour')
+    )
+    hourly_map = {h['hour']: {'count': h['count'], 'revenue': float(h['revenue'] or 0)} for h in hourly_raw}
+    hourly_labels = []
+    hourly_data = []
+    for h in range(24):
+        hourly_labels.append(f'{h:02d}:00')
+        hourly_data.append(hourly_map.get(h, {}).get('count', 0))
+
+    # Best selling hour
+    best_hour = max(range(24), key=lambda h: hourly_map.get(h, {}).get('count', 0)) if hourly_map else 14
+    best_hour_end = best_hour + 1 if best_hour < 23 else 23
+
+    # ── 6. AI Predictions & Insights ──
+    # Use last 30 days for prediction baseline
+    last_30_orders = Order.objects.filter(
+        is_deleted=False,
+        created_at__gte=today_start - timedelta(days=30),
+        created_at__lte=now,
+    )
+    last_30_revenue = last_30_orders.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+    last_30_count = last_30_orders.count()
+
+    avg_daily_revenue = float(last_30_revenue) / 30
+    avg_daily_orders = last_30_count / 30
+
+    forecast_7_revenue = round(avg_daily_revenue * 7, 2)
+    forecast_30_revenue = round(avg_daily_revenue * 30, 2)
+
+    # Stock runout alerts — all products with sales in last 30 days
+    stock_alerts = []
+    recent_product_sales = (
+        OrderItem.objects.filter(
+            order__is_deleted=False,
+            order__created_at__gte=today_start - timedelta(days=30),
+        )
+        .values('product__id', 'product__name', 'product__stock', 'product__product_type',
+                'product_variation__id', 'product_variation__variation_name', 'product_variation__stock')
+        .annotate(qty_sold=Sum('quantity'))
+        .order_by('-qty_sold')
+    )
+    for ps in recent_product_sales:
+        stock = ps['product_variation__stock'] if ps['product_variation__id'] else ps['product__stock']
+        stock = stock or 0
+        qty = ps['qty_sold'] or 0
+        avg_daily_sale = qty / 30
+        if avg_daily_sale > 0:
+            days_left = math.ceil(stock / avg_daily_sale)
+            if days_left <= 14:
+                name = ps['product__name'] or 'Unknown'
+                variant = ps['product_variation__variation_name'] or ''
+                display_name = f"{name} ({variant})" if variant else name
+
+                # Smart reorder suggestion
+                reorder_qty = math.ceil(avg_daily_sale * 30)  # 30-day supply
+                reorder_date = (now + timedelta(days=max(days_left - 3, 0))).strftime('%b %d')
+
+                stock_alerts.append({
+                    'name': display_name,
+                    'stock': stock,
+                    'days_left': days_left,
+                    'avg_daily': round(avg_daily_sale, 1),
+                    'reorder_qty': reorder_qty,
+                    'reorder_date': reorder_date,
+                    'severity': 'danger' if days_left <= 5 else 'warning',
+                })
+    stock_alerts.sort(key=lambda x: x['days_left'])
+
+    # Trending products — compare last 7 days vs previous 7 days
+    trending_products = []
+    last_7_start = today_start - timedelta(days=7)
+    prev_7_start = today_start - timedelta(days=14)
+    last_7_sales = (
+        OrderItem.objects.filter(order__is_deleted=False, order__created_at__gte=last_7_start)
+        .values('product__id', 'product__name', 'product_variation__variation_name')
+        .annotate(qty=Sum('quantity'))
+    )
+    prev_7_sales = (
+        OrderItem.objects.filter(order__is_deleted=False, order__created_at__gte=prev_7_start, order__created_at__lt=last_7_start)
+        .values('product__id', 'product__name', 'product_variation__variation_name')
+        .annotate(qty=Sum('quantity'))
+    )
+    prev_7_map = {(p['product__id'], p['product_variation__variation_name']): p['qty'] for p in prev_7_sales}
+    for item in last_7_sales:
+        key = (item['product__id'], item['product_variation__variation_name'])
+        prev_qty = prev_7_map.get(key, 0)
+        curr_qty = item['qty'] or 0
+        if prev_qty > 0:
+            growth = round((curr_qty - prev_qty) / prev_qty * 100, 1)
+        elif curr_qty > 0:
+            growth = 100.0
+        else:
+            growth = 0
+        if growth > 20:
+            name = item['product__name'] or 'Unknown'
+            variant = item['product_variation__variation_name'] or ''
+            trending_products.append({
+                'name': f"{name} ({variant})" if variant else name,
+                'current_qty': curr_qty,
+                'prev_qty': prev_qty,
+                'growth': growth,
+            })
+    trending_products.sort(key=lambda x: x['growth'], reverse=True)
+    trending_products = trending_products[:10]
+
+    # Slow moving products
+    slow_products = []
+    all_active_products = Product.objects.filter(is_deleted=False, is_active=True, stock__gt=0)
+    for product in all_active_products:
+        last_sale = OrderItem.objects.filter(
+            product=product, order__is_deleted=False
+        ).order_by('-order__created_at').first()
+        if last_sale:
+            days_idle = (now - last_sale.order.created_at).days
+        else:
+            days_idle = (now - product.created_at).days
+        if days_idle >= 15:
+            slow_products.append({
+                'name': product.name,
+                'product_type': product.product_type,
+                'last_sold': last_sale.order.created_at.strftime('%b %d, %Y') if last_sale else 'Never',
+                'days_idle': days_idle,
+                'stock': product.stock,
+            })
+    slow_products.sort(key=lambda x: x['days_idle'], reverse=True)
+    slow_products = slow_products[:20]
+
+    # Smart insights
+    insights = []
+
+    # Weekend vs weekday analysis
+    weekend_orders = orders_qs.filter(created_at__week_day__in=[1, 7]).count()
+    weekday_orders = orders_qs.exclude(created_at__week_day__in=[1, 7]).count()
+    total_weekdays_in_range = max(period_days * 5 / 7, 1)
+    total_weekends_in_range = max(period_days * 2 / 7, 1)
+    if total_weekends_in_range > 0 and total_weekdays_in_range > 0:
+        weekend_avg = weekend_orders / total_weekends_in_range
+        weekday_avg = weekday_orders / total_weekdays_in_range
+        if weekend_avg > weekday_avg * 1.1:
+            pct = round((weekend_avg - weekday_avg) / weekday_avg * 100) if weekday_avg > 0 else 0
+            insights.append({
+                'icon': 'calendar-week',
+                'color': 'info',
+                'text': f'Weekend sales are {pct}% higher than weekdays - stock up before Friday',
+            })
+        elif weekday_avg > weekend_avg * 1.1:
+            pct = round((weekday_avg - weekend_avg) / weekend_avg * 100) if weekend_avg > 0 else 0
+            insights.append({
+                'icon': 'briefcase',
+                'color': 'info',
+                'text': f'Weekday sales are {pct}% higher than weekends',
+            })
+
+    # Best selling time
+    if hourly_map:
+        insights.append({
+            'icon': 'clock',
+            'color': 'success',
+            'text': f'Best selling time: {best_hour:02d}:00 - {best_hour_end:02d}:00',
+        })
+
+    # Revenue growth insight
+    if revenue_growth > 0:
+        insights.append({
+            'icon': 'arrow-up',
+            'color': 'success',
+            'text': f'Revenue is up {revenue_growth}% compared to previous period',
+        })
+    elif revenue_growth < 0:
+        insights.append({
+            'icon': 'arrow-down',
+            'color': 'danger',
+            'text': f'Revenue is down {abs(revenue_growth)}% compared to previous period',
+        })
+
+    # Stock alert insight
+    critical_alerts = [a for a in stock_alerts if a['severity'] == 'danger']
+    if critical_alerts:
+        insights.append({
+            'icon': 'exclamation-triangle',
+            'color': 'danger',
+            'text': f'{len(critical_alerts)} product(s) will run out within 5 days!',
+        })
+
+    # ── 7. Forecast data for chart ──
+    forecast_labels = []
+    forecast_data = []
+    for i in range(1, 8):
+        future_date = now + timedelta(days=i)
+        forecast_labels.append(future_date.strftime('%b %d'))
+        forecast_data.append(round(avg_daily_revenue, 2))
+
+    # ── Build Context ──
+    context = {
+        # Filters
+        'period': period,
+        'date_from': date_from.strftime('%Y-%m-%d'),
+        'date_to': date_to.strftime('%Y-%m-%d'),
+        'compare': compare,
+
+        # Stats
+        'total_revenue': float(total_revenue),
+        'total_orders': total_orders,
+        'avg_order_value': round(float(avg_order_value), 2),
+        'products_sold': products_sold,
+        'revenue_growth': revenue_growth,
+        'orders_growth': orders_growth,
+        'products_growth': products_growth,
+
+        # Charts (JSON)
+        'daily_labels': json.dumps(daily_labels),
+        'daily_revenue_data': json.dumps(daily_revenue_data),
+        'daily_orders_data': json.dumps(daily_orders_data),
+        'top_product_labels': json.dumps(top_product_labels),
+        'top_product_data': json.dumps(top_product_data),
+        'category_labels': json.dumps(category_labels),
+        'category_data': json.dumps(category_data),
+        'hourly_labels': json.dumps(hourly_labels),
+        'hourly_data': json.dumps(hourly_data),
+        'forecast_labels': json.dumps(forecast_labels),
+        'forecast_data': json.dumps(forecast_data),
+
+        # Tables
+        'top_products_table': top_products_table,
+        'slow_products': slow_products,
+        'daily_breakdown': daily_breakdown,
+
+        # Predictions
+        'avg_daily_revenue': round(avg_daily_revenue, 2),
+        'avg_daily_orders': round(avg_daily_orders, 1),
+        'forecast_7_revenue': forecast_7_revenue,
+        'forecast_30_revenue': forecast_30_revenue,
+        'stock_alerts': stock_alerts,
+        'trending_products': trending_products,
+        'insights': insights,
+    }
+
+    return render(request, 'sales_report.html', context)
+
+
+# ==================== DAILY SALES REPORT ====================
+
+@login_required
+@permission_required('can_view_sales_reports')
+def daily_sales_report(request):
+    """Daily sales report — detailed breakdown for a specific date"""
+    from django.db.models.functions import ExtractHour
+
+    now = timezone.now()
+    today = now.date()
+
+    # Date selection
+    date_str = request.GET.get('date', '')
+    if date_str:
+        try:
+            selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            selected_date = today
+    else:
+        selected_date = today
+
+    day_start = timezone.make_aware(datetime.combine(selected_date, datetime.min.time()))
+    day_end = timezone.make_aware(datetime.combine(selected_date, datetime.max.time()))
+
+    # Previous day for comparison
+    prev_date = selected_date - timedelta(days=1)
+    prev_start = timezone.make_aware(datetime.combine(prev_date, datetime.min.time()))
+    prev_end = timezone.make_aware(datetime.combine(prev_date, datetime.max.time()))
+
+    # ── Orders for selected date ──
+    orders_qs = Order.objects.filter(
+        is_deleted=False,
+        created_at__gte=day_start,
+        created_at__lte=day_end,
+    ).select_related('customer', 'created_by').prefetch_related('items__product', 'items__product_variation', 'activity_logs__user').order_by('-created_at')
+
+    prev_orders_qs = Order.objects.filter(
+        is_deleted=False,
+        created_at__gte=prev_start,
+        created_at__lte=prev_end,
+    )
+
+    # ── Summary Stats ──
+    total_orders = orders_qs.count()
+    total_revenue = orders_qs.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+    total_discount = orders_qs.aggregate(t=Sum('discount_amount'))['t'] or Decimal('0')
+    total_shipping = orders_qs.aggregate(t=Sum('shipping_charge'))['t'] or Decimal('0')
+
+    items_qs = OrderItem.objects.filter(
+        order__is_deleted=False,
+        order__created_at__gte=day_start,
+        order__created_at__lte=day_end,
+    )
+    total_products_sold = items_qs.aggregate(t=Sum('quantity'))['t'] or 0
+    total_unique_customers = orders_qs.values('customer_phone').distinct().count()
+
+    # Previous day stats
+    prev_revenue = prev_orders_qs.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+    prev_order_count = prev_orders_qs.count()
+
+    def calc_growth(current, previous):
+        if previous and previous > 0:
+            return round(float((current - previous) / previous * 100), 1)
+        return 0
+
+    revenue_growth = calc_growth(total_revenue, prev_revenue)
+    orders_growth = calc_growth(total_orders, prev_order_count)
+
+    avg_order_value = round(float(total_revenue / total_orders), 2) if total_orders > 0 else 0
+
+    # ── Payment Status Breakdown ──
+    payment_breakdown = (
+        orders_qs.values('payment_status')
+        .annotate(count=Count('id'), amount=Sum('total_amount'))
+        .order_by('-count')
+    )
+
+    # ── Payment Method Breakdown ──
+    method_breakdown = (
+        orders_qs.values('payment_method')
+        .annotate(count=Count('id'), amount=Sum('total_amount'))
+        .order_by('-count')
+    )
+
+    # ── Order Status Breakdown ──
+    status_breakdown = (
+        orders_qs.values('order_status')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+
+    # ── Order Source Breakdown ──
+    source_breakdown = (
+        orders_qs.values('order_from')
+        .annotate(count=Count('id'), amount=Sum('total_amount'))
+        .order_by('-count')
+    )
+
+    # ── Staff/Created By Breakdown ──
+    staff_breakdown = (
+        orders_qs.values('created_by__username')
+        .annotate(count=Count('id'), amount=Sum('total_amount'))
+        .order_by('-count')
+    )
+
+    # ── Hourly Breakdown ──
+    hourly_data = (
+        orders_qs.annotate(hour=ExtractHour('created_at'))
+        .values('hour')
+        .annotate(count=Count('id'), revenue=Sum('total_amount'))
+        .order_by('hour')
+    )
+    hourly_map = {h['hour']: {'count': h['count'], 'revenue': float(h['revenue'] or 0)} for h in hourly_data}
+    hourly_labels = [f'{h:02d}:00' for h in range(24)]
+    hourly_counts = [hourly_map.get(h, {}).get('count', 0) for h in range(24)]
+    hourly_revenues = [hourly_map.get(h, {}).get('revenue', 0) for h in range(24)]
+
+    peak_hour = max(range(24), key=lambda h: hourly_map.get(h, {}).get('count', 0)) if hourly_map else 0
+
+    # ── Top Products Sold Today ──
+    top_products = (
+        items_qs
+        .values('product__name', 'product_variation__variation_name', 'product__product_type')
+        .annotate(qty=Sum('quantity'), revenue=Sum('total'))
+        .order_by('-qty')[:15]
+    )
+
+    # ── Orders List for Table ──
+    orders_list = []
+    for order in orders_qs:
+        order_items = []
+        for item in order.items.all():
+            order_items.append({
+                'product_name': item.product_name or 'Unknown',
+                'product_sku': item.product_sku or '',
+                'variation_name': item.variation_name or '',
+                'quantity': item.quantity,
+                'price': float(item.price),
+                'total': float(item.total),
+            })
+        item_names = ', '.join([
+            f"{item.product_name} x{item.quantity}"
+            for item in order.items.all()
+        ])
+
+        subtotal = sum(i['total'] for i in order_items)
+        orders_list.append({
+            'id': order.id,
+            'order_number': order.order_number,
+            'time': order.created_at.strftime('%I:%M %p'),
+            'customer_name': order.customer_name,
+            'customer_phone': order.customer_phone,
+            'customer_email': order.customer_email or '',
+            'shipping_address': order.shipping_address or '',
+            'items_summary': item_names,
+            'items': order_items,
+            'items_count': len(order_items),
+            'total_qty': sum(i['quantity'] for i in order_items),
+            'subtotal': subtotal,
+            'total_amount': float(order.total_amount),
+            'discount': float(order.discount_amount or 0),
+            'shipping': float(order.shipping_charge or 0),
+            'tax_percent': float(order.tax_percent or 0),
+            'payment_method': order.payment_method,
+            'payment_status': order.payment_status,
+            'order_status': order.order_status,
+            'created_by': order.created_by.username if order.created_by else 'N/A',
+            'order_from': order.order_from,
+            'notes': order.notes or '',
+            'branch_city': order.branch_city or '',
+            'landmark': order.landmark or '',
+            'logs': [
+                {
+                    'action': log.get_action_type_display(),
+                    'field': log.field_name or '',
+                    'old_value': log.old_value or '',
+                    'new_value': log.new_value or '',
+                    'description': log.description or '',
+                    'user': log.user.username if log.user else 'System',
+                    'time': log.created_at.strftime('%I:%M %p'),
+                }
+                for log in order.activity_logs.all()
+            ],
+        })
+
+    # Top products with order numbers
+    top_products_enriched = []
+    for tp in top_products:
+        prod_name = tp['product__name'] or 'Unknown'
+        var_name = tp['product_variation__variation_name'] or ''
+        # Find which orders contain this product
+        order_nums = list(
+            items_qs.filter(product__name=prod_name)
+            .filter(
+                **({'product_variation__variation_name': var_name} if var_name else {})
+            )
+            .values_list('order__order_number', flat=True)
+            .distinct()
+        )
+        top_products_enriched.append({
+            'product__name': prod_name,
+            'product_variation__variation_name': var_name,
+            'product__product_type': tp['product__product_type'] or 'simple',
+            'qty': tp['qty'],
+            'revenue': tp['revenue'],
+            'orders': order_nums,
+        })
+
+    context = {
+        'selected_date': selected_date.strftime('%Y-%m-%d'),
+        'selected_date_display': selected_date.strftime('%B %d, %Y'),
+        'is_today': selected_date == today,
+        'prev_date': prev_date.strftime('%Y-%m-%d'),
+        'next_date': (selected_date + timedelta(days=1)).strftime('%Y-%m-%d') if selected_date < today else '',
+
+        # Stats
+        'total_orders': total_orders,
+        'total_revenue': float(total_revenue),
+        'total_discount': float(total_discount),
+        'total_shipping': float(total_shipping),
+        'total_products_sold': total_products_sold,
+        'total_unique_customers': total_unique_customers,
+        'avg_order_value': avg_order_value,
+        'revenue_growth': revenue_growth,
+        'orders_growth': orders_growth,
+
+        # Breakdowns
+        'payment_breakdown': list(payment_breakdown),
+        'method_breakdown': list(method_breakdown),
+        'status_breakdown': list(status_breakdown),
+        'source_breakdown': list(source_breakdown),
+        'staff_breakdown': list(staff_breakdown),
+        'top_products': top_products_enriched,
+
+        # Hourly
+        'hourly_labels': json.dumps(hourly_labels),
+        'hourly_counts': json.dumps(hourly_counts),
+        'hourly_revenues': json.dumps(hourly_revenues),
+        'peak_hour': f'{peak_hour:02d}:00',
+
+        # Orders table
+        'orders_list': orders_list,
+        'orders_list_json': json.dumps(orders_list, default=str),
+        'payment_breakdown_json': json.dumps(list(payment_breakdown), default=str),
+        'method_breakdown_json': json.dumps(list(method_breakdown), default=str),
+        'status_breakdown_json': json.dumps(list(status_breakdown), default=str),
+        'source_breakdown_json': json.dumps(list(source_breakdown), default=str),
+        'staff_breakdown_json': json.dumps(list(staff_breakdown), default=str),
+        'top_products_json': json.dumps(top_products_enriched, default=str),
+    }
+
+    return render(request, 'daily_sales_report.html', context)

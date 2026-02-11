@@ -162,8 +162,12 @@ urlpatterns = [
     # API Endpoint to search customer by phone number
     path('api/search-customer-by-phone/', views.search_customer_by_phone, name='search_customer_by_phone'),
     
-    # add custom product 
+    # add custom product
     path('api/create-custom-product/', views.create_custom_product, name='create_custom_product'),
+
+    # ==================== SALES REPORTS ====================
+    path('reports/sales/', views.sales_report, name='sales_report'),
+    path('reports/daily-sales/', views.daily_sales_report, name='daily_sales_report'),
 
       # ✅ NCM ORDERS MANAGEMENT (already exists in your code)
     path('ncm-orders/', views.ncm_orders_list, name='ncm_orders_list'),
