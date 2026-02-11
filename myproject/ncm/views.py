@@ -107,7 +107,7 @@ def create_ncm_shipment(request, order_id):
             logger.warning(f"Could not fetch branches: {branches_result.get('error')}")
             messages.warning(request, f"Could not validate branches: {branches_result.get('error')}")
         
-        # ✅ VALIDATE CUSTOMER NAME - must not be empty or contain user's name
+        # VALIDATE CUSTOMER NAME - must not be empty or contain user's name
         customer_name = (order.customer_name or '').strip()
         if not customer_name or len(customer_name) < 2:
             messages.error(request, '❌ Customer name is required and must be at least 2 characters')
@@ -118,9 +118,9 @@ def create_ncm_shipment(request, order_id):
         from_branch = order.ncm_from_branch or 'TINKUNE'
         
         # Prepare NCM data - use branch NAME for NCM API (not code)
-        # ⚠️ IMPORTANT: 'name' field is customer/receiver name, NOT admin/staff name
+        # IMPORTANT: 'name' field is customer/receiver name, NOT admin/staff name
         ncm_data = {
-            'name': customer_name,  # ✅ This MUST be the customer's name from order.customer_name
+            'name': customer_name,  # This MUST be the customer's name from order.customer_name
             'phone': order.customer_phone,
             'phone2': '',
             'cod_charge': str(order.total_amount),
@@ -445,16 +445,23 @@ def bulk_sync_ncm_orders(request):
 def _get_package_description(order):
     """Generate package description from order items"""
     try:
-        items = order.items.all()[:3]
+        items = order.items.select_related('product_variation').all()[:3]
         if items:
-            product_names = [item.product_name for item in items]
+            product_names = []
+            for item in items:
+                qty = getattr(item, 'quantity', 1) or 1
+                name = item.product_name or 'Item'
+                var_name = item.variation_name or (item.product_variation.variation_name if item.product_variation else None)
+                if var_name:
+                    name = f"{name} ({var_name})"
+                product_names.append(f"{qty}x {name}")
             description = ', '.join(product_names)
-            
+
             total_items = order.items.count()
             if total_items > 3:
                 description += f' and {total_items - 3} more'
-            
+
             return description
         return 'Products'
-    except:
+    except Exception:
         return 'E-commerce Products'

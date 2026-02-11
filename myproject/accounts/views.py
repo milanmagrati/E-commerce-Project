@@ -13,9 +13,9 @@ from django.core.files.base import ContentFile
 from PIL import Image
 from django.core.files.storage import default_storage
 from io import BytesIO
+import logging
 
-
-
+logger = logging.getLogger(__name__)
 
 
 User = get_user_model()
@@ -196,7 +196,7 @@ def user_create(request):
                 user.can_edit_customers = request.POST.get('can_edit_customers') == 'on'
                 user.can_delete_customers = request.POST.get('can_delete_customers') == 'on'
                 
-                # 🆕 Returns Module
+                # Returns Module
                 user.can_view_returns = request.POST.get('can_view_returns') == 'on'
                 user.can_create_returns = request.POST.get('can_create_returns') == 'on'
                 user.can_edit_returns = request.POST.get('can_edit_returns') == 'on'
@@ -350,7 +350,7 @@ def user_edit(request, user_id):
             edit_user.can_edit_customers = request.POST.get('can_edit_customers') == 'on'
             edit_user.can_delete_customers = request.POST.get('can_delete_customers') == 'on'
             
-            # 🆕 Returns Module
+            # Returns Module
             edit_user.can_view_returns = request.POST.get('can_view_returns') == 'on'
             edit_user.can_create_returns = request.POST.get('can_create_returns') == 'on'
             edit_user.can_edit_returns = request.POST.get('can_edit_returns') == 'on'
@@ -547,8 +547,8 @@ def profile_view(request):
         pass
     except Exception as e:
         # Handle other errors gracefully
-        print(f"Error calculating statistics: {str(e)}")
-    
+        pass
+
     # Recent Activity (last 7 days)
     recent_activity = []
     try:
@@ -737,8 +737,8 @@ def profile_update(request):
                         if default_storage.exists(user.profile_picture.name):
                             default_storage.delete(user.profile_picture.name)
                     except Exception as e:
-                        print(f"Error deleting old profile picture: {e}")
-                
+                        pass
+
                 # Save new profile picture
                 if hasattr(user, 'profile_picture'):
                     user.profile_picture.save(

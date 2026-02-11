@@ -360,6 +360,10 @@
                                         <i class="fas fa-{% if user.can_manage_dispatch %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
                                         <span>Manage Dispatch</span>
                                     </div>
+                                    <div class="mb-2 d-flex align-items-center">
+                                        <i class="fas fa-{% if user.can_delete_dispatch %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
+                                        <span>Delete Dispatch</span>
+                                    </div>
                                     <div class="d-flex align-items-center">
                                         <i class="fas fa-{% if user.can_scan_barcodes %}check-circle text-success{% else %}times-circle text-danger{% endif %} me-2"></i>
                                         <span>Scan Barcodes</span>

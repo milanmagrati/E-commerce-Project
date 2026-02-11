@@ -1,0 +1,341 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Batch {{ bulk_log.batch_number }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="fas fa-clipboard-list"></i> Batch: <span class="text-primary">{{ bulk_log.batch_number }}</span>
+            </h2>
+            <p class="text-muted mb-0">
+                Sent by <strong>{{ bulk_log.created_by.username|default:"System" }}</strong>
+                on {{ bulk_log.created_at|date:"M d, Y h:i A" }}
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'ncm_bulk_logs_list' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Logs
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-2">
+            <div class="detail-stat-card">
+                <div class="detail-stat-value">{{ bulk_log.total_orders }}</div>
+                <div class="detail-stat-label">Total Orders</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="detail-stat-card detail-stat-success">
+                <div class="detail-stat-value">{{ bulk_log.success_count }}</div>
+                <div class="detail-stat-label">Success</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="detail-stat-card detail-stat-danger">
+                <div class="detail-stat-value">{{ bulk_log.failed_count }}</div>
+                <div class="detail-stat-label">Failed</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="detail-stat-card detail-stat-warning">
+                <div class="detail-stat-value">{{ bulk_log.skipped_count }}</div>
+                <div class="detail-stat-label">Skipped</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="detail-stat-card">
+                <div class="detail-stat-value">
+                    {% if bulk_log.status == 'completed' %}
+                    <span class="badge bulk-badge-completed"><i class="fas fa-check-circle"></i> Completed</span>
+                    {% elif bulk_log.status == 'partial' %}
+                    <span class="badge bulk-badge-partial"><i class="fas fa-exclamation-circle"></i> Partial</span>
+                    {% elif bulk_log.status == 'failed' %}
+                    <span class="badge bulk-badge-failed"><i class="fas fa-times-circle"></i> Failed</span>
+                    {% else %}
+                    <span class="badge bulk-badge-processing"><i class="fas fa-spinner fa-spin"></i> Processing</span>
+                    {% endif %}
+                </div>
+                <div class="detail-stat-label">Status</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="detail-stat-card">
+                <div class="detail-stat-value"><span class="badge bg-info">{{ bulk_log.from_branch }}</span></div>
+                <div class="detail-stat-label">Branch</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Orders Table -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-boxes"></i> Orders in this Batch</h5>
+            <span class="badge bg-dark">{{ batch_orders.count }} orders</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>S.N.</th>
+                            <th>Order Number</th>
+                            <th>Receiver</th>
+                            <th>Phone</th>
+                            <th>Address</th>
+                            <th>COD Amount</th>
+                            <th>Branch</th>
+                            <th>NCM ID</th>
+                            <th>Status</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in batch_orders %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td>
+                                {% if order.order %}
+                                <a href="{% url 'order_detail' order.order.id %}" class="text-decoration-none">
+                                    <strong class="text-primary">{{ order.order_number }}</strong>
+                                </a>
+                                {% else %}
+                                <strong>{{ order.order_number }}</strong>
+                                {% endif %}
+                            </td>
+                            <td><strong>{{ order.customer_name }}</strong></td>
+                            <td>{{ order.customer_phone }}</td>
+                            <td><small>{{ order.shipping_address|truncatewords:6 }}</small></td>
+                            <td><strong class="text-success">{{ order.cod_amount|floatformat:2 }}</strong></td>
+                            <td><span class="badge bg-info">{{ order.destination_branch|default:"-" }}</span></td>
+                            <td>
+                                {% if order.ncm_order_id %}
+                                <strong class="text-primary">{{ order.ncm_order_id }}</strong>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if order.status == 'success' %}
+                                <span class="badge bg-success"><i class="fas fa-check"></i> Success</span>
+                                {% elif order.status == 'failed' %}
+                                <span class="badge bg-danger"><i class="fas fa-times"></i> Failed</span>
+                                {% elif order.status == 'skipped' %}
+                                <span class="badge bg-warning text-dark"><i class="fas fa-forward"></i> Skipped</span>
+                                {% endif %}
+                            </td>
+                            <td><small class="text-muted">{{ order.message|truncatewords:8 }}</small></td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center py-4 text-muted">No orders found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Logs -->
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-history"></i> Activity Log</h5>
+        </div>
+        <div class="card-body">
+            {% if log_details %}
+            <div class="log-timeline">
+                {% for detail in log_details %}
+                <div class="log-item">
+                    <div class="log-icon"
+                         data-action="{% if detail.action == 'order_sent' %}success{% elif detail.action == 'order_failed' or detail.action == 'error' %}danger{% elif detail.action == 'order_skipped' %}warning{% else %}info{% endif %}">
+                        {% if detail.action == 'batch_started' %}
+                        <i class="fas fa-play"></i>
+                        {% elif detail.action == 'order_sent' %}
+                        <i class="fas fa-check"></i>
+                        {% elif detail.action == 'order_failed' or detail.action == 'error' %}
+                        <i class="fas fa-times"></i>
+                        {% elif detail.action == 'order_skipped' %}
+                        <i class="fas fa-forward"></i>
+                        {% elif detail.action == 'batch_completed' %}
+                        <i class="fas fa-flag-checkered"></i>
+                        {% elif detail.action == 'status_synced' %}
+                        <i class="fas fa-sync-alt"></i>
+                        {% else %}
+                        <i class="fas fa-info"></i>
+                        {% endif %}
+                    </div>
+                    <div class="log-content">
+                        <div class="log-header">
+                            <span class="log-action-badge">{{ detail.get_action_display }}</span>
+                            {% if detail.order_number %}
+                            <span class="log-order-num">{{ detail.order_number }}</span>
+                            {% endif %}
+                            <span class="log-time">
+                                <i class="fas fa-clock"></i>
+                                {{ detail.timestamp|date:"M d, h:i:s A" }}
+                            </span>
+                        </div>
+                        <div class="log-message">{{ detail.message }}</div>
+                        {% if detail.error_message %}
+                        <div class="log-error">
+                            <i class="fas fa-exclamation-triangle"></i> {{ detail.error_message }}
+                        </div>
+                        {% endif %}
+                        {% if detail.user %}
+                        <div class="log-user">
+                            <i class="fas fa-user"></i> {{ detail.user.username }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                No activity logs
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+    /* ==================== DETAIL STAT CARDS ==================== */
+    .detail-stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 1.25rem;
+        text-align: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        border-left: 4px solid #667eea;
+        transition: transform 0.2s ease;
+    }
+    .detail-stat-card:hover { transform: translateY(-3px); }
+    .detail-stat-success { border-left-color: #10b981; }
+    .detail-stat-danger { border-left-color: #ef4444; }
+    .detail-stat-warning { border-left-color: #f59e0b; }
+
+    .detail-stat-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #1e293b;
+        line-height: 1.2;
+    }
+    .detail-stat-label {
+        font-size: 0.78rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+        margin-top: 0.25rem;
+    }
+
+    /* ==================== STATUS BADGES ==================== */
+    .bulk-badge-completed { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 5px 12px; }
+    .bulk-badge-partial { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 5px 12px; }
+    .bulk-badge-failed { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 5px 12px; }
+    .bulk-badge-processing { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 5px 12px; }
+
+    /* ==================== LOG TIMELINE ==================== */
+    .log-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .log-item {
+        display: flex;
+        gap: 14px;
+        padding: 12px;
+        background: #f9fafb;
+        border-radius: 8px;
+        border-left: 3px solid #e5e7eb;
+        transition: all 0.2s ease;
+    }
+    .log-item:hover {
+        background: #f3f4f6;
+        transform: translateX(4px);
+    }
+    .log-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        flex-shrink: 0;
+        background: #e5e7eb;
+        color: #6b7280;
+    }
+    .log-icon[data-action="success"] { background: #d1fae5; color: #059669; border: 2px solid #059669; }
+    .log-icon[data-action="danger"] { background: #fee2e2; color: #dc2626; border: 2px solid #dc2626; }
+    .log-icon[data-action="warning"] { background: #fef3c7; color: #d97706; border: 2px solid #d97706; }
+    .log-icon[data-action="info"] { background: #dbeafe; color: #2563eb; border: 2px solid #2563eb; }
+
+    .log-content { flex-grow: 1; }
+    .log-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+    }
+    .log-action-badge {
+        background: linear-gradient(135deg, #dbeafe, #e0e7ff);
+        color: #1e40af;
+        padding: 2px 10px;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .log-order-num {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #667eea;
+    }
+    .log-time {
+        font-size: 0.72rem;
+        color: #9ca3af;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: auto;
+    }
+    .log-message {
+        font-size: 0.85rem;
+        color: #374151;
+        line-height: 1.4;
+    }
+    .log-error {
+        font-size: 0.8rem;
+        color: #dc2626;
+        background: #fef2f2;
+        padding: 4px 10px;
+        border-radius: 4px;
+        margin-top: 4px;
+    }
+    .log-user {
+        font-size: 0.72rem;
+        color: #9ca3af;
+        margin-top: 4px;
+    }
+    .log-user i { color: #667eea; }
+
+    /* Table styling */
+    .table thead th {
+        font-weight: 600;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #6c757d;
+    }
+</style>
+{% endblock %}

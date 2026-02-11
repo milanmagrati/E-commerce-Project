@@ -28,7 +28,7 @@ class CustomUserAdmin(admin.ModelAdmin):
         }),
         ('Other Permissions', {
             'fields': ('can_view_customers', 'can_create_customers', 'can_edit_customers', 'can_delete_customers',
-                      'can_view_dispatch', 'can_manage_dispatch', 'can_scan_barcodes',
+                      'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
                       'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
                       'can_view_reports', 'can_view_sales_reports', 'can_view_financial_reports', 'can_export_data',
                       'can_edit_prices', 'can_give_discounts', 'max_discount_percent',

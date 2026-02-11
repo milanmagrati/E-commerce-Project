@@ -177,6 +177,12 @@ urlpatterns = [
     # ✅ NCM API ENDPOINTS
     path('api/ncm-branches/', views.ncm_branches_json, name='ncm_branches_json'),
 
+    # ✅ NCM BULK ORDER LOGS
+    path('ncm-bulk-logs/', views.ncm_bulk_logs_list, name='ncm_bulk_logs_list'),
+    path('ncm-bulk-logs/<int:log_id>/', views.ncm_bulk_log_detail, name='ncm_bulk_log_detail'),
+    path('ncm-bulk-logs/<int:log_id>/trash/', views.ncm_bulk_log_trash, name='ncm_bulk_log_trash'),
+    path('ncm-bulk-logs/bulk-action/', views.ncm_bulk_logs_bulk_action, name='ncm_bulk_logs_bulk_action'),
+
 
 ]
     

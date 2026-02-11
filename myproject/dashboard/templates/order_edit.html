@@ -982,7 +982,7 @@
             <form method="post" id="orderForm">
                 {% csrf_token %}
 
-                <!-- Row 1 -->
+                <!-- Row 1: Customer Info -->
                 <div class="row g-3 mb-3">
                     <div class="col-md-2">
                         <label class="form-label">Search Phone</label>
@@ -994,14 +994,14 @@
                             placeholder="Name" value="{{ order.customer_name }}" required>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Email</label>
-                        <input type="email" name="customer_email" id="customerEmailInput" class="form-control"
-                            placeholder="email@example.com" value="{{ order.customer_email }}">
+                        <label class="form-label">Address *</label>
+                        <input type="text" name="shipping_address" id="customerAddress" class="form-control"
+                            placeholder="Address" value="{{ order.shipping_address }}" required>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Branch/City *</label>
                         <div class="city-search-wrapper" style="position: relative;">
-                            <input type="text" id="citySearchInput" class="form-control" 
+                            <input type="text" id="citySearchInput" class="form-control"
                                    placeholder="Search cities..." autocomplete="off" required value="{{ order.branch_city }}">
                             <div id="cityDropdown" class="city-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #e2e8f0; border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                                 {% for city in cities %}
@@ -1024,9 +1024,60 @@
                         <small class="text-muted">Type to search cities</small>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Address *</label>
-                        <input type="text" name="shipping_address" id="customerAddress" class="form-control"
-                            placeholder="Address" value="{{ order.shipping_address }}" required>
+                        <label class="form-label">Order From *</label>
+                        <select name="order_from" class="form-select" required>
+                            <option value="">Select Source</option>
+                            <option value="website" {% if order.order_from == 'website' %}selected{% endif %}>Website</option>
+                            <option value="facebook" {% if order.order_from == 'facebook' %}selected{% endif %}>Facebook</option>
+                            <option value="instagram" {% if order.order_from == 'instagram' %}selected{% endif %}>Instagram</option>
+                            <option value="phone" {% if order.order_from == 'phone' %}selected{% endif %}>Phone</option>
+                            <option value="walk-in" {% if order.order_from == 'walk-in' %}selected{% endif %}>Walk-in</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Order Note</label>
+                        <textarea name="notes" id="orderNotes" class="form-control" placeholder="Note...">{{ order.notes }}</textarea>
+                    </div>
+                </div>
+
+                <!-- Row 2: Order Settings -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-2">
+                        <label class="form-label">Status</label>
+                        <select name="status_setup" id="statusSetup" class="form-select">
+                            <option value="">Select Order Status</option>
+                            {% for setup in status_setups %}
+                                <option value="{{ setup.id }}" {% if order.status_setup and order.status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Payment Status</label>
+                        <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
+                            <option value="">Select Payment Status</option>
+                            {% for setup in payment_status_setups %}
+                                <option value="{{ setup.id }}" {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Payment</label>
+                        <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
+                            <option value="">Select Payment Method</option>
+                            {% for setup in payment_setups %}
+                                <option value="{{ setup.id }}" {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Phone *</label>
+                        <input type="text" name="customer_phone" id="customerPhone" class="form-control"
+                            placeholder="Phone" value="{{ order.customer_phone }}" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="customer_email" id="customerEmailInput" class="form-control"
+                            placeholder="email@example.com" value="{{ order.customer_email }}">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Landmark</label>
@@ -1035,7 +1086,7 @@
                     </div>
                 </div>
 
-                <!-- Row 2 -->
+                <!-- Row 3: Financial & Actions -->
                 <div class="row g-3 mb-3">
                     <div class="col-md-2">
                         <label class="form-label">Created By *</label>
@@ -1057,57 +1108,6 @@
                         <label class="form-label">Shipping</label>
                         <input type="number" id="shipping" name="shipping_charge" class="form-control" placeholder="0"
                             value="{{ order.shipping_charge|floatformat:2 }}" step="0.01">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Order Note</label>
-                        <textarea name="notes" id="orderNotes" class="form-control" placeholder="Note...">{{ order.notes }}</textarea>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Status</label>
-                        <select name="status_setup" id="statusSetup" class="form-select">
-                            <option value="">Select Order Status</option>
-                            {% for setup in status_setups %}
-                                <option value="{{ setup.id }}" {% if order.status_setup and order.status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Payment Status</label>
-                        <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
-                            <option value="">Select Payment Status</option>
-                            {% for setup in payment_status_setups %}
-                                <option value="{{ setup.id }}" {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Row 3 -->
-                <div class="row g-3 mb-3">
-                    <div class="col-md-2">
-                        <label class="form-label">Phone *</label>
-                        <input type="text" name="customer_phone" id="customerPhone" class="form-control"
-                            placeholder="Phone" value="{{ order.customer_phone }}" required>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Order From *</label>
-                        <select name="order_from" class="form-select" required>
-                            <option value="">Select Source</option>
-                            <option value="website" {% if order.order_from == 'website' %}selected{% endif %}>Website</option>
-                            <option value="facebook" {% if order.order_from == 'facebook' %}selected{% endif %}>Facebook</option>
-                            <option value="instagram" {% if order.order_from == 'instagram' %}selected{% endif %}>Instagram</option>
-                            <option value="phone" {% if order.order_from == 'phone' %}selected{% endif %}>Phone</option>
-                            <option value="walk-in" {% if order.order_from == 'walk-in' %}selected{% endif %}>Walk-in</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Payment</label>
-                        <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
-                            <option value="">Select Payment Method</option>
-                            {% for setup in payment_setups %}
-                                <option value="{{ setup.id }}" {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
-                            {% endfor %}
-                        </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Tax (%)</label>
@@ -1680,7 +1680,7 @@
             <tr id="row-${index}">
                 <td>
                     <strong>${item.name}</strong>
-                    ${item.isCustom ? '<span class="custom-product-badge">Custom</span>' : ''}
+                    ${item.isCustom ? '<span class="custom-product-badge"><i class="fas fa-bolt"></i> CUSTOM</span>' : ''}
                     <br><small class="text-muted">रू ${item.price.toFixed(2)} each</small>
                 </td>
                 <td>
@@ -2529,12 +2529,12 @@
         {% for item in order_items %}
         cart.push({
             id: {{ item.product.id }},
-            varId: {% if item.variation %}{{ item.variation.id }}{% else %}null{% endif %},
+            varId: {% if item.product_variation %}{{ item.product_variation.id }}{% else %}null{% endif %},
             name: "{{ item.product.name|escapejs }}",
-            sku: "{% if item.variation %}{% if item.variation.variation_name %}{{ item.variation.variation_name|escapejs }}{% else %}{{ item.variation.sku|escapejs }}{% endif %}{% elif item.product.sku %}{{ item.product.sku|escapejs }}{% endif %}",
+            sku: "{% if item.product_variation %}{% if item.product_variation.variation_name %}{{ item.product_variation.variation_name|escapejs }}{% else %}{{ item.product_variation.sku|escapejs }}{% endif %}{% elif item.product_sku %}{{ item.product_sku|escapejs }}{% endif %}",
             price: {{ item.price }},
             qty: {{ item.quantity }},
-            isCustom: {{ item.product.is_custom|yesno:'true,false' }},
+            isCustom: {{ item.product.is_custom_product|yesno:'true,false' }},
             category: "{% if item.product.category %}{{ item.product.category.id }}{% endif %}",
             description: "{{ item.product.description|escapejs|default:'' }}"
         });

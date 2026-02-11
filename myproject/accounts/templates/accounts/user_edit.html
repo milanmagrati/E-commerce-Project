@@ -243,6 +243,10 @@
                                                 <label for="can_manage_dispatch">Manage Dispatch</label>
                                             </div>
                                             <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_dispatch" id="can_delete_dispatch" {% if edit_user.can_delete_dispatch %}checked{% endif %}>
+                                                <label for="can_delete_dispatch">Delete Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_scan_barcodes" id="can_scan_barcodes" {% if edit_user.can_scan_barcodes %}checked{% endif %}>
                                                 <label for="can_scan_barcodes">Barcode Scanner</label>
                                             </div>

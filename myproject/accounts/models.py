@@ -57,6 +57,7 @@ class CustomUser(AbstractUser):
     # DISPATCH PERMISSIONS
     can_view_dispatch = models.BooleanField(default=False)
     can_manage_dispatch = models.BooleanField(default=False)
+    can_delete_dispatch = models.BooleanField(default=False)
     can_scan_barcodes = models.BooleanField(default=False)
     
     # INVENTORY PERMISSIONS
@@ -119,6 +120,7 @@ class CustomUser(AbstractUser):
             self.can_edit_orders = True
             self.can_view_dispatch = True
             self.can_manage_dispatch = True
+            self.can_delete_dispatch = True
             self.can_scan_barcodes = True
             self.can_view_inventory = True
             self.can_manage_inventory = True

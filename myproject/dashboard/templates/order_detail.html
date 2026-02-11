@@ -265,13 +265,13 @@
                                 <td>
                                     {% if item.variation_name %}
                                         <span class="variant-badge-column">
-                                            <i class="fas fa-tags"></i> 
+                                            <i class="fas fa-tags"></i>
                                             {{ item.variation_name }}
                                         </span>
                                     {% elif item.product_variation %}
                                         <span class="variant-badge-column">
-                                            <i class="fas fa-tags"></i> 
-                                            {{ item.product_variation.sku }}
+                                            <i class="fas fa-tags"></i>
+                                            {{ item.product_variation.variation_name|default:item.product_variation.sku }}
                                         </span>
                                     {% else %}
                                         <span class="simple-product-label">
@@ -1694,6 +1694,22 @@
     50% {
         opacity: 1;
     }
+}
+
+/* Custom Product Badge */
+.custom-product-badge {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: #1f2937;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    box-shadow: 0 1px 3px rgba(245, 158, 11, 0.3);
 }
 </style>
 

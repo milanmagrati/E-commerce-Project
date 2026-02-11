@@ -269,6 +269,10 @@
                                                 <label for="can_manage_dispatch">Manage Dispatch</label>
                                             </div>
                                             <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_dispatch" id="can_delete_dispatch">
+                                                <label for="can_delete_dispatch">Delete Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_scan_barcodes" id="can_scan_barcodes">
                                                 <label for="can_scan_barcodes">Use Barcode Scanner</label>
                                             </div>
@@ -675,8 +679,8 @@ const roleDefaults = {
     'warehouse': {
         title: '📦 Warehouse Role Selected',
         desc: 'Default permissions loaded. Customize below as needed.',
-        permissions: ['can_view_orders', 'can_edit_orders', 'can_view_products', 'can_view_customers', 
-                     'can_view_dispatch', 'can_manage_dispatch', 'can_scan_barcodes', 
+        permissions: ['can_view_orders', 'can_edit_orders', 'can_view_products', 'can_view_customers',
+                     'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
                      'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
                      'can_view_returns']
     },

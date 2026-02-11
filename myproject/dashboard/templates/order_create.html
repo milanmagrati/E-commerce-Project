@@ -1038,7 +1038,7 @@
             <form method="post" id="orderForm">
                 {% csrf_token %}
 
-                <!-- Row 1 -->
+                <!-- Row 1: Customer Info -->
                 <div class="row g-3 mb-3">
                     <div class="col-md-2">
                         <label class="form-label">Search Phone</label>
@@ -1050,14 +1050,14 @@
                             placeholder="Name" required>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Email</label>
-                        <input type="email" name="customer_email" id="customerEmailInput" class="form-control"
-                            placeholder="email@example.com">
+                        <label class="form-label">Address *</label>
+                        <input type="text" name="shipping_address" id="customerAddress" class="form-control"
+                            placeholder="Address" required>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Branch/City *</label>
                         <div class="city-search-wrapper" style="position: relative;">
-                            <input type="text" id="citySearchInput" class="form-control" 
+                            <input type="text" id="citySearchInput" class="form-control"
                                    placeholder="Search cities..." autocomplete="off" required>
                             <div id="cityDropdown" class="city-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #e2e8f0; border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                                 {% for city in cities %}
@@ -1080,9 +1080,60 @@
                         <small class="text-muted">Type to search cities</small>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Address *</label>
-                        <input type="text" name="shipping_address" id="customerAddress" class="form-control"
-                            placeholder="Address" required>
+                        <label class="form-label">Order From *</label>
+                        <select name="order_from" class="form-select" required>
+                            <option value="">Select Source</option>
+                            <option value="website">Website</option>
+                            <option value="facebook">Facebook</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="phone">Phone</option>
+                            <option value="walk-in">Walk-in</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Order Note</label>
+                        <textarea name="notes" id="orderNotes" class="form-control" placeholder="Note..."></textarea>
+                    </div>
+                </div>
+
+                <!-- Row 2: Order Settings -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-2">
+                        <label class="form-label">Status</label>
+                        <select name="status_setup" id="statusSetup" class="form-select">
+                            <option value="">Select Order Status</option>
+                            {% for setup in status_setups %}
+                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Payment Status</label>
+                        <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
+                            <option value="">Select Payment Status</option>
+                            {% for setup in payment_status_setups %}
+                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Payment</label>
+                        <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
+                            <option value="">Select Payment Method</option>
+                            {% for setup in payment_setups %}
+                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Phone *</label>
+                        <input type="text" name="customer_phone" id="customerPhone" class="form-control"
+                            placeholder="Phone" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="customer_email" id="customerEmailInput" class="form-control"
+                            placeholder="email@example.com">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Landmark</label>
@@ -1091,7 +1142,7 @@
                     </div>
                 </div>
 
-                <!-- Row 2 -->
+                <!-- Row 3: Financial & Actions -->
                 <div class="row g-3 mb-3">
                     <div class="col-md-2">
                         <label class="form-label">Created By *</label>
@@ -1113,57 +1164,6 @@
                         <label class="form-label">Shipping</label>
                         <input type="number" id="shipping" name="shipping_charge" class="form-control" placeholder="0"
                             value="0" step="0.01">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Order Note</label>
-                        <textarea name="notes" id="orderNotes" class="form-control" placeholder="Note..."></textarea>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Status</label>
-                        <select name="status_setup" id="statusSetup" class="form-select">
-                            <option value="">Select Order Status</option>
-                            {% for setup in status_setups %}
-                                <option value="{{ setup.id }}">{{ setup.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Payment Status</label>
-                        <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
-                            <option value="">Select Payment Status</option>
-                            {% for setup in payment_status_setups %}
-                                <option value="{{ setup.id }}">{{ setup.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Row 3 -->
-                <div class="row g-3 mb-3">
-                    <div class="col-md-2">
-                        <label class="form-label">Phone *</label>
-                        <input type="text" name="customer_phone" id="customerPhone" class="form-control"
-                            placeholder="Phone" required>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Order From *</label>
-                        <select name="order_from" class="form-select" required>
-                            <option value="">Select Source</option>
-                            <option value="website">Website</option>
-                            <option value="facebook">Facebook</option>
-                            <option value="instagram">Instagram</option>
-                            <option value="phone">Phone</option>
-                            <option value="walk-in">Walk-in</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Payment</label>
-                        <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
-                            <option value="">Select Payment Method</option>
-                            {% for setup in payment_setups %}
-                                <option value="{{ setup.id }}">{{ setup.name }}</option>
-                            {% endfor %}
-                        </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Tax (%)</label>
@@ -1954,13 +1954,15 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Add to cart immediately
+                // Add to cart with the quantity from the form
                 addToCart(
                     data.product.id,
                     data.product.name,
                     data.product.price,
                     null,
-                    data.product.sku
+                    data.product.sku,
+                    qty,
+                    true
                 );
 
                 // Show success message
@@ -2223,33 +2225,7 @@
             updateTotal();
         });
 
-        // ✅ FIX: Listen on correct paymentSetup element instead of non-existent paymentMethod
-        const paymentSetupDropdown = document.getElementById('paymentSetup');
-        if (paymentSetupDropdown) {
-            paymentSetupDropdown.addEventListener('change', function (e) {
-                // Get the selected option text
-                const selectedOption = this.options[this.selectedIndex];
-                const selectedText = selectedOption.text;
-                
-                // Show modal if payment setup contains "Partial Payment"
-                if (selectedText.includes('Partial Payment')) {
-                    // Modal will be shown by handlePaymentChange() via onchange attribute
-                } else {
-                    // Clear partial payment if user selects another payment method
-                    isPartialPaymentSelected = false;
-                    document.getElementById('isPartialPayment').value = 'false';
-                    document.getElementById('partialAmountPaidHidden').value = '0';
-                    document.getElementById('remainingAmountHidden').value = '0';
-
-                    const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
-                    const infoBox = paymentLabel.querySelector('.payment-info-box');
-                    if (infoBox) {
-                        infoBox.remove();
-                    }
-                    saveFormData();
-                }
-            });
-        }
+        // Payment change is handled by handlePaymentChange() via onchange attribute on #paymentSetup
 
         // ✅ FIX: Direct event listeners for partial amount input
         setTimeout(() => {
@@ -2647,10 +2623,10 @@
         variationModal.hide();
     }
 
-    function addToCart(id, name, price, varId, sku) {
+    function addToCart(id, name, price, varId, sku, qty = 1, isCustom = false) {
         const existing = cart.find(i => i.id === id && i.varId === varId);
-        if (existing) existing.qty++;
-        else cart.push({ id, varId, name, sku, price, qty: 1 });
+        if (existing) existing.qty += qty;
+        else cart.push({ id, varId, name, sku, price, qty, isCustom });
         updateCart();
         saveFormData();
     }
@@ -2669,8 +2645,9 @@
 
         let html = '';
         cart.forEach((item, i) => {
+            const customBadge = item.isCustom ? ' <span class="badge bg-warning text-dark" style="font-size:0.65rem;"><i class="fas fa-bolt"></i> CUSTOM</span>' : '';
             html += `<tr id="row-${i}">
-      <td><strong>${escapeHtml(item.name)}</strong><br><small class="text-muted">रू ${item.price} each</small></td>
+      <td><strong>${escapeHtml(item.name)}</strong>${customBadge}<br><small class="text-muted">रू ${item.price} each</small></td>
       <td>${item.varId ? (item.sku ? `<span class="badge bg-secondary">${escapeHtml(item.sku)}</span>` : '-') : '-'}</td>
       <td>
         <div class="qty-control">
@@ -2809,30 +2786,60 @@
     function handlePaymentChange() {
         const paymentDropdown = document.getElementById('paymentSetup');
         if (!paymentDropdown) return;
-        
+
         const selectedOption = paymentDropdown.options[paymentDropdown.selectedIndex];
         const selectedText = selectedOption.text;
-        
+
         console.log('Payment changed to:', selectedText);
-        
+
         // Show partial payment modal when "Partial Payment" is selected
         if (selectedText.includes('Partial Payment')) {
             console.log('Showing partial payment modal');
-            
-            // Update total in modal
+
             const totalAmount = parseFloat(document.getElementById('totalInput').value) || 0;
-            document.getElementById('totalOrderAmount').value = '₹ ' + totalAmount.toFixed(2);
-            document.getElementById('partialAmountPaid').value = '';
-            document.getElementById('remainingAmount').value = '';
-            
+
+            if (totalAmount <= 0) {
+                showToastNotification('Please add products first to calculate total amount', 'warning');
+                paymentDropdown.value = '';
+                return;
+            }
+
+            document.getElementById('totalOrderAmount').value = `रू ${totalAmount.toFixed(2)}`;
+
+            // Pre-fill with existing partial amount if any
+            const currentPaid = parseFloat(document.getElementById('partialAmountPaidHidden').value) || 0;
+            if (currentPaid > 0) {
+                document.getElementById('partialAmountPaid').value = currentPaid.toFixed(2);
+            } else {
+                document.getElementById('partialAmountPaid').value = '';
+            }
+
+            calculateRemainingAmount();
+
             // Show the modal
             setTimeout(() => {
                 if (partialPaymentModal) {
                     partialPaymentModal.show();
+                    setTimeout(() => {
+                        document.getElementById('partialAmountPaid').focus();
+                    }, 300);
                 } else {
                     console.error('partialPaymentModal not initialized');
                 }
             }, 100);
+        } else {
+            // Clear partial payment state when non-partial payment is selected
+            isPartialPaymentSelected = false;
+            document.getElementById('isPartialPayment').value = 'false';
+            document.getElementById('partialAmountPaidHidden').value = '0';
+            document.getElementById('remainingAmountHidden').value = '0';
+
+            const paymentLabel = paymentDropdown.closest('.col-md-2');
+            if (paymentLabel) {
+                const infoBox = paymentLabel.querySelector('.payment-info-box');
+                if (infoBox) infoBox.remove();
+            }
+            saveFormData();
         }
     }
 

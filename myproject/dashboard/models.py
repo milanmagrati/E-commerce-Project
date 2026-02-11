@@ -87,7 +87,7 @@ class Customer(models.Model):
     ]
     
     name = models.CharField(max_length=255)
-    phone = models.CharField(max_length=20, unique=True)
+    phone = models.CharField(max_length=20, blank=True, db_index=True)
     alternate_phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True, null=True)
     city = models.CharField(max_length=100)

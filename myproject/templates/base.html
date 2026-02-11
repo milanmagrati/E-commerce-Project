@@ -419,6 +419,9 @@
                         <li class="{% if request.resolver_match.url_name == 'ncm_orders_list' %}active{% endif %}">
                             <a href="{% url 'ncm_orders_list' %}">NCM Orders</a>
                         </li>
+                        <li class="{% if request.resolver_match.url_name == 'ncm_bulk_logs_list' or request.resolver_match.url_name == 'ncm_bulk_log_detail' %}active{% endif %}">
+                            <a href="{% url 'ncm_bulk_logs_list' %}">Bulk Logs</a>
+                        </li>
                         <li class="{% if request.resolver_match.url_name == 'ncm_orders_trash' %}active{% endif %}">
                             <a href="{% url 'ncm_orders_trash' %}">NCM Trash</a>
                         </li>
@@ -558,59 +561,153 @@
                         <i class="fas fa-bars"></i>
                     </button>
 
-                    <!-- Breadcrumb -->
-                    <nav aria-label="breadcrumb" class="d-none d-md-block ms-3">
-                        <ol class="breadcrumb mb-0">
-                            <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Home</a></li>
-                            {% block breadcrumb %}{% endblock %}
-                        </ol>
-                    </nav>
+                    <!-- Quick Access Shortcuts (Left Side - Desktop) -->
+                    <div class="nav-quick-access d-none d-xl-flex align-items-center ms-3">
+                        <!-- Dashboard Home -->
+                        <a href="{% url 'dashboard' %}" class="nav-box nav-box-indigo" title="Dashboard">
+                            <div class="nav-box-icon"><i class="fas fa-tachometer-alt"></i></div>
+                            <span>Dashboard</span>
+                        </a>
 
-                    <div class="ms-auto d-flex align-items-center">
-                        <span class="me-3 d-none d-lg-block">
+                        <div class="nav-shortcut-divider"></div>
+
+                        <a href="{% url 'order_create' %}" class="nav-box nav-box-blue" title="Create Order">
+                            <div class="nav-box-icon"><i class="fas fa-cash-register"></i></div>
+                            <span>POS</span>
+                        </a>
+                        <a href="{% url 'orders_list' %}" class="nav-box nav-box-indigo" title="All Orders">
+                            <div class="nav-box-icon"><i class="fas fa-shopping-cart"></i></div>
+                            <span>Orders</span>
+                        </a>
+                        <a href="{% url 'products' %}" class="nav-box nav-box-emerald" title="Products">
+                            <div class="nav-box-icon"><i class="fas fa-box"></i></div>
+                            <span>Products</span>
+                        </a>
+                        <a href="{% url 'customers_list' %}" class="nav-box nav-box-cyan" title="Customers">
+                            <div class="nav-box-icon"><i class="fas fa-users"></i></div>
+                            <span>Customers</span>
+                        </a>
+                        <a href="{% url 'dispatch_management' %}" class="nav-box nav-box-orange" title="Dispatch">
+                            <div class="nav-box-icon"><i class="fas fa-shipping-fast"></i></div>
+                            <span>Dispatch</span>
+                        </a>
+
+                        <div class="nav-shortcut-divider"></div>
+
+                        <!-- Quick Create Dropdown -->
+                        <div class="dropdown">
+                            <button class="nav-box nav-box-create" type="button" data-bs-toggle="dropdown" title="Quick Create">
+                                <div class="nav-box-icon"><i class="fas fa-plus"></i></div>
+                                <span>New</span>
+                            </button>
+                            <ul class="dropdown-menu nav-quick-dropdown">
+                                <li class="nav-qd-header"><i class="fas fa-bolt"></i> Quick Create</li>
+                                <li><a class="dropdown-item" href="{% url 'order_create' %}"><i class="fas fa-receipt nav-di-blue"></i> New Order</a></li>
+                                <li><a class="dropdown-item" href="{% url 'product_add' %}"><i class="fas fa-box nav-di-green"></i> New Product</a></li>
+                                <li><a class="dropdown-item" href="{% url 'customer_add' %}"><i class="fas fa-user-plus nav-di-cyan"></i> New Customer</a></li>
+                                <li><a class="dropdown-item" href="{% url 'return_create' %}"><i class="fas fa-undo-alt nav-di-amber"></i> New Return</a></li>
+                                <li><a class="dropdown-item" href="{% url 'stock_in_create' %}"><i class="fas fa-warehouse nav-di-purple"></i> Stock In</a></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Right Side -->
+                    <div class="d-flex align-items-center gap-2 ms-auto ms-md-0">
+                        <!-- Quick Access (Mobile / Tablet) -->
+                        <div class="dropdown d-xl-none">
+                            <button class="nav-icon-btn" type="button" data-bs-toggle="dropdown" title="Quick Access">
+                                <i class="fas fa-th"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end nav-quick-dropdown nav-mobile-grid">
+                                <li class="nav-qd-header"><i class="fas fa-bolt"></i> Quick Access</li>
+                                <li>
+                                    <div class="nav-mobile-shortcuts">
+                                        <a href="{% url 'order_create' %}" class="nav-mobile-shortcut-item nav-mi-blue">
+                                            <i class="fas fa-cash-register"></i>
+                                            <small>POS</small>
+                                        </a>
+                                        <a href="{% url 'orders_list' %}" class="nav-mobile-shortcut-item nav-mi-indigo">
+                                            <i class="fas fa-shopping-cart"></i>
+                                            <small>Orders</small>
+                                        </a>
+                                        <a href="{% url 'products' %}" class="nav-mobile-shortcut-item nav-mi-green">
+                                            <i class="fas fa-box"></i>
+                                            <small>Products</small>
+                                        </a>
+                                        <a href="{% url 'customers_list' %}" class="nav-mobile-shortcut-item nav-mi-cyan">
+                                            <i class="fas fa-users"></i>
+                                            <small>Customers</small>
+                                        </a>
+                                        <a href="{% url 'dispatch_management' %}" class="nav-mobile-shortcut-item nav-mi-orange">
+                                            <i class="fas fa-shipping-fast"></i>
+                                            <small>Dispatch</small>
+                                        </a>
+                                        <a href="{% url 'product_add' %}" class="nav-mobile-shortcut-item nav-mi-emerald">
+                                            <i class="fas fa-plus-circle"></i>
+                                            <small>Add New</small>
+                                        </a>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- User Info -->
+                        <span class="d-none d-lg-flex align-items-center gap-2 nav-user-info">
                             <strong>{{ user.get_full_name|default:user.username }}</strong>
-                            <span class="badge bg-{% if user.is_superuser %}danger{% elif user.role == 'administrator' %}primary{% elif user.role == 'sales' %}success{% elif user.role == 'warehouse' %}warning{% else %}secondary{% endif %} ms-1">
+                            <span class="badge bg-{% if user.is_superuser %}danger{% elif user.role == 'administrator' %}primary{% elif user.role == 'sales' %}success{% elif user.role == 'warehouse' %}warning{% else %}secondary{% endif %}">
                                 {{ user.get_role_display }}
                             </span>
                             {% if user.can_give_discounts and user.max_discount_percent > 0 %}
-                            <span class="badge bg-info ms-1" title="Maximum Discount">
+                            <span class="badge bg-info" title="Maximum Discount">
                                 <i class="fas fa-percent"></i> {{ user.max_discount_percent }}%
                             </span>
                             {% endif %}
                         </span>
 
+                        <!-- User Dropdown -->
                         <div class="dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <i class="fas fa-user-circle fa-2x text-primary"></i>
+                            <a class="nav-link dropdown-toggle p-0" href="#" role="button" data-bs-toggle="dropdown">
+                                <div class="nav-user-avatar">
+                                    <i class="fas fa-user"></i>
+                                </div>
                             </a>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li class="px-3 py-2 border-bottom">
-                                    <strong>{{ user.username }}</strong><br>
-                                    <small class="text-muted">{{ user.email }}</small><br>
-                                    <span class="badge bg-primary mt-1">{{ user.get_role_display }}</span>
+                            <ul class="dropdown-menu dropdown-menu-end nav-quick-dropdown nav-user-dropdown">
+                                <li class="nav-user-header">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="nav-user-avatar nav-user-avatar-lg">
+                                            <i class="fas fa-user"></i>
+                                        </div>
+                                        <div>
+                                            <strong class="d-block">{{ user.get_full_name|default:user.username }}</strong>
+                                            <small class="text-muted">{{ user.email }}</small>
+                                            <div class="mt-1"><span class="badge bg-primary">{{ user.get_role_display }}</span></div>
+                                        </div>
+                                    </div>
                                 </li>
-                                <li><a class="dropdown-item" href="{% url 'profile' %}"><i class="fas fa-user"></i> My Profile</a></li>
-                                <li><a class="dropdown-item" href="#"><i class="fas fa-cog"></i> Settings</a></li>
-                                <li>
-                                    <hr class="dropdown-divider">
-                                </li>
-                                <li class="px-3 py-1">
-                                    <small class="text-muted d-block mb-1"><strong>Your Permissions:</strong></small>
+                                <li><a class="dropdown-item" href="{% url 'profile' %}"><i class="fas fa-user nav-di-blue"></i> My Profile</a></li>
+                                {% if user.is_superuser or user.role == 'administrator' %}
+                                <li><hr class="dropdown-divider"></li>
+                                <li class="nav-qd-header"><i class="fas fa-cog"></i> Administration</li>
+                                <li><a class="dropdown-item" href="{% url 'setup_management' %}"><i class="fas fa-sliders-h nav-di-purple"></i> Setup</a></li>
+                                <li><a class="dropdown-item" href="{% url 'city_management' %}"><i class="fas fa-city nav-di-cyan"></i> Cities</a></li>
+                                <li><a class="dropdown-item" href="{% url 'user_list' %}"><i class="fas fa-user-friends nav-di-green"></i> Team</a></li>
+                                {% endif %}
+                                <li><hr class="dropdown-divider"></li>
+                                <li class="px-3 py-2">
+                                    <small class="text-muted d-block mb-1"><strong>Permissions</strong></small>
                                     {% if user.is_superuser or user.role == 'administrator' %}
-                                    <small class="text-success"><i class="fas fa-check-circle"></i> Full Access</small>
+                                    <span class="badge bg-success"><i class="fas fa-shield-alt"></i> Full Access</span>
                                     {% else %}
-                                    <small class="d-block">
-                                        {% if user.can_view_products %}<i class="fas fa-check text-success"></i> Products {% endif %}
-                                        {% if user.can_view_orders %}<i class="fas fa-check text-success"></i> Orders {% endif %}
-                                        {% if user.can_view_customers %}<i class="fas fa-check text-success"></i> Customers {% endif %}
-                                    </small>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        {% if user.can_view_products %}<span class="badge bg-light text-dark"><i class="fas fa-check text-success"></i> Products</span>{% endif %}
+                                        {% if user.can_view_orders %}<span class="badge bg-light text-dark"><i class="fas fa-check text-success"></i> Orders</span>{% endif %}
+                                        {% if user.can_view_customers %}<span class="badge bg-light text-dark"><i class="fas fa-check text-success"></i> Customers</span>{% endif %}
+                                    </div>
                                     {% endif %}
                                 </li>
+                                <li><hr class="dropdown-divider"></li>
                                 <li>
-                                    <hr class="dropdown-divider">
-                                </li>
-                                <li>
-                                    <a class="dropdown-item text-danger" href="{% url 'logout' %}"
+                                    <a class="dropdown-item nav-logout-item" href="{% url 'logout' %}"
                                         onclick="return confirm('Are you sure you want to logout?')">
                                         <i class="fas fa-sign-out-alt"></i> Logout
                                     </a>

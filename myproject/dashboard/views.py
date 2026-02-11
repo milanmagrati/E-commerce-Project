@@ -22,16 +22,20 @@ from django.db import IntegrityError, transaction, connection
 from django.utils import timezone
 import traceback
 import uuid, os
+import logging
+
+logger = logging.getLogger(__name__)
+
 from django.core.files.storage import default_storage
 from django.core.files.base import File
 from django.conf import settings
 from django.utils.text import slugify
 from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem
 
-# ✅ IMPORT DECORATORS
+# IMPORT DECORATORS
 from accounts.decorators import permission_required, admin_only
 
-# ✅ GET CUSTOM USER MODEL
+# GET CUSTOM USER MODEL
 User = get_user_model()
 
 
@@ -46,7 +50,7 @@ def fix_order_decimals(order):
     if order.total_amount is None:
         order.total_amount = Decimal("0")
     
-    # ✅ ENHANCED PARTIAL PAYMENT DECIMAL FIXES
+    # ENHANCED PARTIAL PAYMENT DECIMAL FIXES
     if order.partial_amount_paid is None:
         order.partial_amount_paid = Decimal("0")
     if order.remaining_amount is None:
@@ -58,7 +62,7 @@ def fix_order_decimals(order):
         else:
             order.remaining_amount = Decimal("0")
     
-    # ✅ ENSURE is_partial_payment IS SYNCED WITH PAYMENT_STATUS
+    # ENSURE is_partial_payment IS SYNCED WITH PAYMENT_STATUS
     if order.payment_status == 'partial' and not order.is_partial_payment:
         order.is_partial_payment = True
     elif order.payment_status != 'partial' and order.is_partial_payment:
@@ -279,7 +283,7 @@ def products_bulk_action(request):
             return redirect('products')
         
         try:
-            # ✅ UPDATED: Remove user filter - show all products
+            # UPDATED: Remove user filter - show all products
             products = Product.objects.filter(
                 id__in=product_ids,
                 is_deleted=False
@@ -403,7 +407,7 @@ def product_add(request):
                                 # store in session so it can be reused across requests
                                 request.session['temp_product_image'] = temp_path
                     except Exception as e:
-                        print('Temp image save failed:', e)
+                        pass
 
                     product.delete()
                     messages.error(request, 'Error in product variations. Please check the form.')
@@ -452,7 +456,6 @@ def product_add(request):
             except Exception as e:
                 temp_path = None
                 temp_url = None
-                print('Temp save error:', e)
 
             messages.error(request, 'Please correct the errors below.')
             return render(request, 'product_form.html', {
@@ -553,7 +556,7 @@ def product_edit(request, product_id):
                             option_values=size_options
                         )
                 
-                # ✅ FIXED: Always try to save formset if it's valid
+                # FIXED: Always try to save formset if it's valid
                 if formset.is_valid():
                     formset.save()
                     messages.success(request, f'Product "{product.name}" updated successfully!')
@@ -593,9 +596,9 @@ def product_edit(request, product_id):
                     temp_path = default_storage.save(temp_name, uploaded)
                     request.session['temp_product_image'] = temp_path
             except Exception as e:
-                print('Temp save error on edit:', e)
+                pass
     else:
-        # ✅ FIXED: Get completely fresh product from database
+        # FIXED: Get completely fresh product from database
         # Re-query to avoid any cached instances
         product = Product.objects.get(pk=product_id)
         
@@ -608,7 +611,7 @@ def product_edit(request, product_id):
             'size_options': size_option.option_values if size_option else ''
         })
         
-        # ✅ FIXED: Get completely fresh variations from database
+        # FIXED: Get completely fresh variations from database
         # Use raw database query to bypass any Django ORM caching
         variations_qs = ProductVariation.objects.filter(product_id=product_id).order_by('created_at')
         
@@ -644,9 +647,9 @@ def product_edit(request, product_id):
 @login_required
 @permission_required('can_view_products')
 def product_detail(request, product_id):
-    # ✅ FIXED: Use same filter as product_edit for consistency
+    # FIXED: Use same filter as product_edit for consistency
     product = get_object_or_404(Product, pk=product_id, is_deleted=False)
-    # ✅ FIXED: Refresh from database to get latest changes
+    # FIXED: Refresh from database to get latest changes
     product.refresh_from_db()
     
     try:
@@ -726,7 +729,7 @@ def product_detail(request, product_id):
     product_images = product.images.all()
     order_items = product.orderitem_set.all()[:10]
     
-    # ✅ FIXED: Explicitly fetch fresh variations from database
+    # FIXED: Explicitly fetch fresh variations from database
     # Clear any cached relations to ensure fresh data
     if hasattr(product, '_prefetched_objects_cache'):
         product._prefetched_objects_cache.clear()
@@ -740,7 +743,7 @@ def product_detail(request, product_id):
     
     context = {
         'product': product,
-        'variations': variations,  # ✅ ADDED: Explicitly pass variations
+        'variations': variations,  # ADDED: Explicitly pass variations
         'product_images': product_images,
         'order_items': order_items,
         'profit_margin': profit_margin,
@@ -1079,7 +1082,7 @@ def customer_detail(request, customer_id):
     """View customer details"""
     customer = get_object_or_404(Customer, id=customer_id)
     
-    # ✅ CORRECT: Query orders by customer email and phone
+    # CORRECT: Query orders by customer email and phone
     customer_orders = Order.objects.filter(
         Q(customer_email=customer.email) | Q(customer_phone=customer.phone)
     ).order_by('-created_at')
@@ -1383,7 +1386,6 @@ def customer_add(request):
             return redirect('customers_list')
         else:
             # Print form errors for debugging
-            print("Form Errors:", form.errors)
             messages.error(request, 'Please correct the errors below.')
     else:
         form = CustomerForm()
@@ -1472,7 +1474,7 @@ def orders_list(request):
     payment_filter = request.GET.get('payment', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
-    logistics_filter = request.GET.get('logistics_status', '')  # ✅ NEW: Logistics filter
+    logistics_filter = request.GET.get('logistics_status', '')  # NEW: Logistics filter
     
     # Search filter
     if search_query:
@@ -1491,7 +1493,7 @@ def orders_list(request):
     if payment_filter:
         orders = orders.filter(payment_status=payment_filter)
     
-    # ✅ FIXED: LOGISTICS STATUS FILTER
+    # FIXED: LOGISTICS STATUS FILTER
     if logistics_filter == 'sent':
         # Show only orders successfully sent to NCM (must have an NCM ID)
         orders = orders.filter(ncm_order_id__isnull=False)
@@ -1613,11 +1615,11 @@ def order_create(request):
                 customer_name = (request.POST.get("customer_name") or "").strip()
                 customer_phone = (request.POST.get("customer_phone") or "").strip()
                 customer_email = (request.POST.get("customer_email") or "").strip()
-                # ✅ UPDATED: Get city from City model
+                # UPDATED: Get city from City model
                 branch_city_name = (request.POST.get("branch_city") or "").strip()
                 shipping_address = (request.POST.get("shipping_address") or "").strip()
                 landmark = (request.POST.get("landmark") or "").strip()
-                # ✅ Get in_out field from form (auto-detected)
+                # Get in_out field from form (auto-detected)
                 in_out = (request.POST.get("in_out") or "in").strip()
 
                 created_by_id = request.POST.get("created_by")
@@ -1626,7 +1628,7 @@ def order_create(request):
                 payment_method = request.POST.get("payment_method") or ""
                 payment_status = request.POST.get("payment_status") or "pending"
 
-                # ✅ NEW: Get payment_setup, status_setup, and payment_status_setup from POST
+                # NEW: Get payment_setup, status_setup, and payment_status_setup from POST
                 payment_setup_id = request.POST.get("payment_setup")
                 status_setup_id = request.POST.get("status_setup")
                 payment_status_setup_id = request.POST.get("payment_status_setup")
@@ -1664,19 +1666,19 @@ def order_create(request):
                 total_amount = Decimal(request.POST.get("total_amount") or "0")
                 notes = request.POST.get("notes") or ""
 
-                # ✅ GET PARTIAL PAYMENT DATA
+                # GET PARTIAL PAYMENT DATA
                 is_partial_payment = request.POST.get("is_partial_payment") == "true"
                 partial_amount_paid = Decimal(request.POST.get("partial_amount_paid") or "0")
                 remaining_amount = Decimal(request.POST.get("remaining_amount") or "0")
 
-                # ✅ UPDATED: Added in_out to required fields check
+                # UPDATED: Added in_out to required fields check
                 if not (customer_name and customer_phone and branch_city_name and shipping_address and created_by_id and in_out):
                     messages.error(request, "Please fill all required fields.")
                     return redirect("order_create")
 
                 created_by = get_object_or_404(User, id=created_by_id)
 
-                # ✅ Get or create city from City model
+                # Get or create city from City model
                 city, city_created = City.objects.get_or_create(
                     name=branch_city_name,
                     defaults={
@@ -1710,15 +1712,15 @@ def order_create(request):
                 customer.landmark = landmark
                 customer.save()
 
-                last_order = Order.objects.order_by("-id").first()
-                if last_order and last_order.order_number.startswith("ORD"):
+                last_order = Order.objects.filter(order_number__startswith="T").order_by("-id").first()
+                if last_order:
                     try:
-                        n = int(last_order.order_number.replace("ORD", ""))
+                        n = int(last_order.order_number.replace("T", ""))
                     except ValueError:
                         n = last_order.id
-                    order_number = f"ORD{n+1:06d}"
+                    order_number = f"T{n+1:03d}"
                 else:
-                    order_number = "ORD000001"
+                    order_number = "T001"
 
                 order_items_json = request.POST.get("order_items") or "[]"
                 cart = json.loads(order_items_json)
@@ -1727,11 +1729,11 @@ def order_create(request):
                     messages.error(request, "No products in cart.")
                     return redirect("order_create")
 
-                # ✅ SET PAYMENT STATUS BASED ON PARTIAL PAYMENT
+                # SET PAYMENT STATUS BASED ON PARTIAL PAYMENT
                 if is_partial_payment:
                     payment_status = "partial"
 
-                # ✅ UPDATED: Use branch_city from City model, added in_out field, and Setup fields
+                # UPDATED: Use branch_city from City model, added in_out field, and Setup fields
                 order = Order.objects.create(
                     order_number=order_number,
                     created_by=created_by,
@@ -1755,7 +1757,7 @@ def order_create(request):
                     tax_percent=tax_percent,
                     total_amount=total_amount,
                     notes=notes,
-                    # ✅ ADD PARTIAL PAYMENT FIELDS
+                    # ADD PARTIAL PAYMENT FIELDS
                     is_partial_payment=is_partial_payment,
                     partial_amount_paid=partial_amount_paid if is_partial_payment else None,
                     remaining_amount=remaining_amount if is_partial_payment else None,
@@ -1790,7 +1792,7 @@ def order_create(request):
                         total=price * qty,
                     )
 
-                # ✅ ADD CITY DETECTION LOG (Order creation is logged via signals.py)
+                # ADD CITY DETECTION LOG (Order creation is logged via signals.py)
                 valley_status = "Valley" if in_out.lower() == 'in' else "Out Valley"
                 OrderActivityLog.objects.create(
                     order=order,
@@ -1812,17 +1814,17 @@ def order_create(request):
             messages.error(request, f"Error creating order: {str(e)}")
             return redirect("order_create")
 
-    # ✅ GET REQUEST - SHOW FORM
+    # GET REQUEST - SHOW FORM
     users = User.objects.filter(is_active=True).order_by("username")
     recent_orders = Order.objects.filter(is_deleted=False).order_by("-created_at")[:6]
     
-    # ✅ GET CITIES FROM DATABASE
+    # GET CITIES FROM DATABASE
     cities = City.objects.filter(is_active=True).order_by('name')
     
-    # ✅ GET CATEGORIES FOR CUSTOM PRODUCT MODAL
+    # GET CATEGORIES FOR CUSTOM PRODUCT MODAL
     categories = Category.objects.all().order_by('name')
     
-    # ✅ NEW: GET PAYMENT AND STATUS SETUPS
+    # NEW: GET PAYMENT AND STATUS SETUPS
     from .models import Setup
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
@@ -1848,7 +1850,7 @@ def order_detail(request, order_id):
     order = get_object_or_404(Order, id=order_id)
     order = fix_order_decimals(order)
     
-    # ✅ ENSURE PARTIAL PAYMENT FIELDS ARE PROPERLY SET
+    # ENSURE PARTIAL PAYMENT FIELDS ARE PROPERLY SET
     if order.payment_status == 'partial' and not order.is_partial_payment:
         order.is_partial_payment = True
         if order.partial_amount_paid is None:
@@ -1870,7 +1872,7 @@ def order_detail(request, order_id):
                 old_payment_status = order.payment_status
                 old_tracking = order.tracking_number or ''
                 old_admin_notes = order.admin_notes or ''
-                old_logistics = order.logistics or ''  # ✅ NEW: Track logistics changes
+                old_logistics = order.logistics or ''  # NEW: Track logistics changes
                 old_status_setup = order.status_setup
                 old_payment_setup = order.payment_setup
                 old_payment_status_setup = order.payment_status_setup
@@ -1878,9 +1880,9 @@ def order_detail(request, order_id):
                 # Get new values from form
                 new_tracking = request.POST.get('tracking_number', '').strip()
                 new_admin_notes = request.POST.get('admin_notes', '').strip()
-                new_logistics = request.POST.get('logistics', '').strip()  # ✅ NEW: Get logistics value
+                new_logistics = request.POST.get('logistics', '').strip()  # NEW: Get logistics value
 
-                # ✅ Get status_setup, payment_setup, and payment_status_setup from POST
+                # Get status_setup, payment_setup, and payment_status_setup from POST
                 from .models import Setup
                 status_setup_id = request.POST.get('status_setup')
                 payment_setup_id = request.POST.get('payment_setup')
@@ -1919,7 +1921,7 @@ def order_detail(request, order_id):
                 else:
                     order.payment_status_setup = None
                 
-                # ✅ ENHANCED PARTIAL PAYMENT HANDLING
+                # ENHANCED PARTIAL PAYMENT HANDLING
                 # Check if the payment setup name contains "partial"
                 is_new_partial = 'partial' in new_payment_status.lower()
                 was_old_partial = 'partial' in old_payment_status.lower()
@@ -1968,9 +1970,9 @@ def order_detail(request, order_id):
                     order.payment_status = new_payment_status or order.payment_status or 'pending'
                 order.tracking_number = new_tracking
                 order.admin_notes = new_admin_notes
-                order.logistics = new_logistics  # ✅ NEW: Update logistics field
+                order.logistics = new_logistics  # NEW: Update logistics field
                 
-                # ✅ ADD IN/OUT FIELD UPDATE SUPPORT (if provided)
+                # ADD IN/OUT FIELD UPDATE SUPPORT (if provided)
                 new_in_out = request.POST.get('in_out')
                 if new_in_out and new_in_out in ['in', 'out'] and order.in_out != new_in_out:
                     OrderActivityLog.objects.create(
@@ -2019,7 +2021,7 @@ def order_detail(request, order_id):
                     )
                     changes_made.append('Payment Status')
                 
-                # ✅ NEW: Logistics changed
+                # NEW: Logistics changed
                 if old_logistics != new_logistics:
                     logistics_display = {
                         'ncm': 'NCM',
@@ -2119,7 +2121,7 @@ def order_detail(request, order_id):
     after_discount = subtotal - (order.discount_amount or Decimal('0'))
     tax_amount = (after_discount * (order.tax_percent or Decimal('0'))) / 100
     
-    # ✅ CALCULATE PARTIAL PAYMENT INFO
+    # CALCULATE PARTIAL PAYMENT INFO
     is_partial_payment = order.is_partial_payment or order.payment_status == 'partial'
     partial_amount_paid = order.partial_amount_paid or Decimal('0.00')
     
@@ -2139,15 +2141,15 @@ def order_detail(request, order_id):
         'after_discount': after_discount,
         'tax_amount': tax_amount,
         
-        # ✅ ENHANCED PARTIAL PAYMENT INFO
+        # ENHANCED PARTIAL PAYMENT INFO
         'is_partial_payment': is_partial_payment,
         'partial_amount_paid': partial_amount_paid,
         'remaining_amount': remaining_amount,
         
-        # ✅ CALCULATE PARTIAL PAYMENT PERCENTAGE FOR PROGRESS BAR
+        # CALCULATE PARTIAL PAYMENT PERCENTAGE FOR PROGRESS BAR
         'partial_payment_percentage': 0,
 
-        # ✅ Setup dropdowns
+        # Setup dropdowns
         'status_setups': status_setups,
         'payment_setups': payment_setups,
         'payment_status_setups': payment_status_setups,
@@ -2185,9 +2187,9 @@ def order_edit(request, order_id):
                 order.customer_name = request.POST.get("customer_name", "").strip()
                 order.customer_phone = request.POST.get("customer_phone", "").strip()
                 order.customer_email = request.POST.get("customer_email", "").strip()
-                # ✅ UPDATED: Get city from City model
+                # UPDATED: Get city from City model
                 branch_city_name = request.POST.get("branch_city", "").strip()
-                # ✅ Get in_out field from form (auto-detected)
+                # Get in_out field from form (auto-detected)
                 in_out = request.POST.get("in_out", "in").strip()
                 order.shipping_address = request.POST.get("shipping_address", "").strip()
                 order.landmark = request.POST.get("landmark", "").strip()
@@ -2197,7 +2199,7 @@ def order_edit(request, order_id):
                 
                 order.order_from = request.POST.get("order_from")
 
-                # ✅ NEW: Get payment_setup, status_setup, and payment_status_setup from POST
+                # NEW: Get payment_setup, status_setup, and payment_status_setup from POST
                 from .models import Setup
                 payment_setup_id = request.POST.get("payment_setup")
                 status_setup_id = request.POST.get("status_setup")
@@ -2243,7 +2245,7 @@ def order_edit(request, order_id):
                 order.total_amount = Decimal(request.POST.get("total_amount") or "0")
                 order.notes = request.POST.get("notes", "")
 
-                # ✅ UPDATE PARTIAL PAYMENT DATA
+                # UPDATE PARTIAL PAYMENT DATA
                 is_partial_payment = request.POST.get("is_partial_payment") == "true"
                 partial_amount_paid = Decimal(request.POST.get("partial_amount_paid") or "0")
                 remaining_amount = Decimal(request.POST.get("remaining_amount") or "0")
@@ -2252,7 +2254,7 @@ def order_edit(request, order_id):
                 order.partial_amount_paid = partial_amount_paid if is_partial_payment else None
                 order.remaining_amount = remaining_amount if is_partial_payment else None
                 
-                # ✅ UPDATE PAYMENT STATUS BASED ON PARTIAL PAYMENT
+                # UPDATE PAYMENT STATUS BASED ON PARTIAL PAYMENT
                 if is_partial_payment:
                     if partial_amount_paid >= order.total_amount:
                         order.payment_status = "paid"
@@ -2261,7 +2263,7 @@ def order_edit(request, order_id):
                     else:
                         order.payment_status = "pending"
 
-                # ✅ Get or create city from City model
+                # Get or create city from City model
                 if branch_city_name:
                     city, city_created = City.objects.get_or_create(
                         name=branch_city_name,
@@ -2332,7 +2334,7 @@ def order_edit(request, order_id):
 
                 order.save()
 
-                # ✅ CREATE ACTIVITY LOG FOR PARTIAL PAYMENT CHANGES
+                # CREATE ACTIVITY LOG FOR PARTIAL PAYMENT CHANGES
                 description = f"Order #{order.order_number} was updated"
                 
                 # Check if partial payment changed
@@ -2373,7 +2375,6 @@ def order_edit(request, order_id):
             return redirect("order_edit", order_id=order.id)
         except Exception as e:
             messages.error(request, f"Error updating order: {str(e)}")
-            print(f"Order update error: {e}")
             import traceback
             traceback.print_exc()
             return redirect("order_edit", order_id=order.id)
@@ -2398,10 +2399,10 @@ def order_edit(request, order_id):
             })
     initial_items_json = json.dumps(initial_items_list)
 
-    # ✅ Get active cities for Branch/City select (from City management)
+    # Get active cities for Branch/City select (from City management)
     cities = City.objects.filter(is_active=True).order_by('name')
     
-    # ✅ NEW: GET PAYMENT AND STATUS SETUPS
+    # NEW: GET PAYMENT AND STATUS SETUPS
     from .models import Setup
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
@@ -2432,7 +2433,7 @@ def order_delete(request, order_id):
     if request.method == "POST":
         order_number = order.order_number
 
-        # ❌ REMOVED STOCK RESTORATION - Stock was never reduced during order creation
+        # REMOVED STOCK RESTORATION - Stock was never reduced during order creation
         # Only orders with status="dispatched" have reduced stock
         # If you want to restore stock for dispatched orders, check status:
         
@@ -2461,7 +2462,7 @@ def order_delete(request, order_id):
 @permission_required('can_view_orders')
 def orders_trash(request):
     """View trashed orders"""
-    # ✅ Show all trashed orders (removed user filter)
+    # Show all trashed orders (removed user filter)
     trashed_orders = Order.objects.filter(
         is_deleted=True
     ).order_by('-deleted_at')
@@ -2493,7 +2494,7 @@ def orders_trash(request):
 @permission_required('can_delete_orders')
 def order_move_to_trash(request, order_id):
     """Move order to trash (soft delete)"""
-    # ✅ Removed user filter
+    # Removed user filter
     order = get_object_or_404(Order, id=order_id, is_deleted=False)
     
     if request.method == 'POST':
@@ -2520,7 +2521,7 @@ def order_move_to_trash(request, order_id):
 @permission_required('can_delete_orders')
 def order_restore(request, order_id):
     """Restore order from trash"""
-    # ✅ Removed user filter
+    # Removed user filter
     order = get_object_or_404(Order, id=order_id, is_deleted=True)
     
     if request.method == 'POST':
@@ -2547,7 +2548,7 @@ def order_restore(request, order_id):
 @permission_required('can_delete_orders')
 def order_permanent_delete(request, order_id):
     """Permanently delete order"""
-    # ✅ Removed user filter
+    # Removed user filter
     order = get_object_or_404(Order, id=order_id, is_deleted=True)
     
     if request.method == 'POST':
@@ -2573,7 +2574,7 @@ def orders_trash_bulk_action(request):
             return redirect('orders_trash')
         
         try:
-            # ✅ Removed user filter
+            # Removed user filter
             orders = Order.objects.filter(
                 id__in=order_ids,
                 is_deleted=True
@@ -2587,7 +2588,7 @@ def orders_trash_bulk_action(request):
             if action == "restore":
                 orders.update(is_deleted=False, deleted_at=None)
                 
-                # ✅ Log activity for each restored order
+                # Log activity for each restored order
                 for order in orders:
                     OrderActivityLog.objects.create(
                         order=order,
@@ -2616,7 +2617,7 @@ def orders_trash_bulk_action(request):
 def empty_orders_trash(request):
     """Empty all trashed orders"""
     if request.method == 'POST':
-        # ✅ Removed user filter - empty ALL trashed orders
+        # Removed user filter - empty ALL trashed orders
         trashed_orders = Order.objects.filter(is_deleted=True)
         count = trashed_orders.count()
         
@@ -2659,7 +2660,7 @@ def api_get_customer(request, customer_id):
     })
 
 
-# ✅ SINGLE PRODUCT API (used by order edit/create modals)
+# SINGLE PRODUCT API (used by order edit/create modals)
 @login_required
 @require_http_methods(["GET"])
 def api_get_product(request, product_id):
@@ -2676,7 +2677,7 @@ def api_get_product(request, product_id):
             'name': product.name,
             'sku': product.sku if getattr(product, 'sku', None) else getattr(product, 'slug', ''),
             'price': str(product.price) if getattr(product, 'price', None) is not None else '0',
-            'is_custom': bool(getattr(product, 'is_custom', False)),
+            'is_custom': bool(getattr(product, 'is_custom_product', False)),
             'category': {
                 'id': product.category.id,
                 'name': product.category.name
@@ -2693,7 +2694,6 @@ def api_get_product(request, product_id):
         return JsonResponse({'success': False, 'message': 'Product not found'}, status=404)
     except Exception as e:
         import traceback
-        print(f"❌ Error in api_get_product: {str(e)}")
         traceback.print_exc()
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
@@ -2720,13 +2720,13 @@ def api_search_products(request):
 
         data = []
         for p in qs:
-            # ✅ Get stock - try different field names
+            # Get stock - try different field names
             try:
                 stock = p.stock_quantity if hasattr(p, 'stock_quantity') else (p.stock if hasattr(p, 'stock') else 0)
             except AttributeError:
                 stock = 0
             
-            # ✅ Get SKU - try sku field first, then slug as fallback
+            # Get SKU - try sku field first, then slug as fallback
             try:
                 sku = p.sku if hasattr(p, 'sku') and p.sku else p.slug
             except AttributeError:
@@ -2750,7 +2750,6 @@ def api_search_products(request):
     
     except Exception as e:
         import traceback
-        print(f"❌ Error in api_search_products: {str(e)}")
         traceback.print_exc()
         
         return JsonResponse({
@@ -2783,7 +2782,7 @@ def api_get_product_variations(request, product_id):
                 "variations": []
             })
 
-        # ✅ GET ALL ACTIVE VARIATIONS (ignore status field, only check is_active and stock)
+        # GET ALL ACTIVE VARIATIONS (ignore status field, only check is_active and stock)
         variations = (
             product.variations
             .filter(is_active=True)  # Only check is_active, ignore status
@@ -2801,11 +2800,11 @@ def api_get_product_variations(request, product_id):
         # Build response
         out = []
         for v in variations:
-            # ✅ ONLY SHOW VARIATIONS WITH STOCK > 0
+            # ONLY SHOW VARIATIONS WITH STOCK > 0
             if v.stock <= 0:
                 continue
             
-            # ✅ Get variation display name (prefer explicit variation_name, then name, then SKU)
+            # Get variation display name (prefer explicit variation_name, then name, then SKU)
             if hasattr(v, 'variation_name') and v.variation_name:
                 variation_display = v.variation_name
             elif hasattr(v, 'name') and v.name:
@@ -2816,7 +2815,7 @@ def api_get_product_variations(request, product_id):
             out.append({
                 "id": v.id,
                 "sku": v.sku,
-                "variation_name": variation_display,  # ✅ Added variation_name
+                "variation_name": variation_display,  # Added variation_name
                 "price": str(v.price),
                 "stock": v.stock,
                 "is_active": v.is_active,
@@ -2835,7 +2834,6 @@ def api_get_product_variations(request, product_id):
         
     except Exception as e:
         import traceback
-        print(f"❌ Error in api_get_product_variations: {str(e)}")
         traceback.print_exc()
         
         return JsonResponse({
@@ -2856,7 +2854,6 @@ def export_selected_orders_excel(request):
         # Get selected order IDs from POST
         order_ids = request.POST.getlist('order_ids')
         
-        print(f"\n\nDEBUG: Received order_ids from POST: {order_ids}", file=sys.stderr)
         
         if not order_ids:
             return HttpResponse("No orders selected", status=400)
@@ -2864,18 +2861,14 @@ def export_selected_orders_excel(request):
         # Convert to integers
         try:
             order_ids = [int(id) for id in order_ids]
-            print(f"DEBUG: Converted order_ids to integers: {order_ids}", file=sys.stderr)
         except (ValueError, TypeError):
             return HttpResponse("Invalid order IDs", status=400)
         
         # Get orders - use same filter as orders_list view (all orders, not just user's)
         orders = Order.objects.filter(id__in=order_ids, is_deleted=False).order_by('-created_at')
         
-        print(f"DEBUG: Found {orders.count()} orders to export", file=sys.stderr)
-        print(f"DEBUG: Current user: {request.user.id} ({request.user.username})", file=sys.stderr)
         
         if not orders.exists():
-            print(f"DEBUG: No orders found with IDs: {order_ids}", file=sys.stderr)
             return HttpResponse("No orders found", status=404)
         
         # Create workbook
@@ -2911,7 +2904,7 @@ def export_selected_orders_excel(request):
             cell.alignment = center_alignment
             cell.border = border
         
-        # ✅ Get order items using RAW SQL
+        # Get order items using RAW SQL
         with connection.cursor() as cursor:
             placeholders = ','.join(['%s'] * len(order_ids))
             cursor.execute(f"""
@@ -3010,7 +3003,6 @@ def export_selected_orders_excel(request):
         return response
         
     except Exception as e:
-        print(f"Error exporting selected orders: {str(e)}")
         import traceback
         traceback.print_exc()
         return HttpResponse(f"Error exporting orders: {str(e)}", status=500)
@@ -3042,7 +3034,7 @@ def export_order_details(request, order_id):
         headers = [
             'Order ID', 'Order Number', 'Order Date', 'Order Status', 'Payment Status', 
             'Payment Method', 'Customer Name', 'Phone Number', 'Email Address', 
-            'Shipping Address', 'Branch/City', 'Landmark', 'IN/OUT',  # ✅ UPDATED HEADERS
+            'Shipping Address', 'Branch/City', 'Landmark', 'IN/OUT',  # UPDATED HEADERS
             'Product #', 'SKU', 'Product Name', 'Quantity', 'Unit Price', 'Total Price',
             'Grand Total'
         ]
@@ -3055,7 +3047,7 @@ def export_order_details(request, order_id):
             cell.alignment = center_alignment
             cell.border = border
         
-        # ✅ Get items using RAW SQL
+        # Get items using RAW SQL
         from django.db import connection
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -3075,7 +3067,7 @@ def export_order_details(request, order_id):
             price = float(item[3]) if item[3] else 0.00
             total_price = quantity * price
             
-            # All data in one row - ✅ UPDATED FIELDS
+            # All data in one row - UPDATED FIELDS
             row_data = [
                 order.id,                                          # Order ID
                 order.order_number,                               # Order Number
@@ -3087,9 +3079,9 @@ def export_order_details(request, order_id):
                 order.customer_phone or "N/A",                    # Phone Number
                 order.customer_email or "N/A",                    # Email Address
                 order.shipping_address or "N/A",                  # Shipping Address
-                order.branch_city or "N/A",                       # ✅ UPDATED: Branch/City
+                order.branch_city or "N/A",                       # UPDATED: Branch/City
                 order.landmark or "N/A",                          # Landmark
-                order.in_out.upper() if order.in_out else "IN",  # ✅ ADDED: IN/OUT
+                order.in_out.upper() if order.in_out else "IN",  # ADDED: IN/OUT
                 idx,                                              # Product #
                 product_sku,                                      # SKU
                 product_name,                                     # Product Name
@@ -3105,13 +3097,13 @@ def export_order_details(request, order_id):
                 cell.border = border
                 cell.alignment = center_alignment
                 
-                # Format price columns - ✅ ADJUSTED COLUMN NUMBERS
+                # Format price columns - ADJUSTED COLUMN NUMBERS
                 if col_num in [18, 19, 20]:  # Unit Price, Total Price, Grand Total (adjusted for new columns)
                     cell.number_format = '"रू "#,##0.00'
             
             current_row += 1
         
-        # Adjust column widths - ✅ ADDED ONE MORE COLUMN FOR IN/OUT
+        # Adjust column widths - ADDED ONE MORE COLUMN FOR IN/OUT
         column_widths = [10, 15, 18, 12, 12, 12, 18, 15, 15, 20, 12, 15, 8, 8, 10, 20, 10, 12, 12, 12]
         for col_num, width in enumerate(column_widths, 1):
             ws.column_dimensions[chr(64 + col_num)].width = width
@@ -3127,7 +3119,6 @@ def export_order_details(request, order_id):
         return response
         
     except Exception as e:
-        print(f"Error exporting order: {str(e)}")
         import traceback
         traceback.print_exc()
         return HttpResponse(f"Error exporting order: {str(e)}", status=500)
@@ -3268,7 +3259,7 @@ def orders_bulk_action(request):
             return redirect('orders_list')
         
         try:
-            # ✅ Removed user filter - show all orders
+            # Removed user filter - show all orders
             orders = Order.objects.filter(
                 id__in=order_ids, 
                 is_deleted=False
@@ -3279,12 +3270,12 @@ def orders_bulk_action(request):
                 messages.error(request, "No valid orders found!")
                 return redirect('orders_list')
             
-            # ✅ NEW: HANDLE SEND TO NCM ACTION
+            # NEW: HANDLE SEND TO NCM ACTION
             if action == 'send_to_ncm':
                 return orders_bulk_ncm_send(request, orders)
             
             elif action == 'delete':
-                # ✅ SOFT DELETE - Move to trash instead of permanent delete
+                # SOFT DELETE - Move to trash instead of permanent delete
                 # Only restore stock for dispatched orders
                 for order in orders:
                     if order.order_status == 'dispatched':
@@ -3308,7 +3299,7 @@ def orders_bulk_action(request):
                         description=f'Order moved to trash by {request.user.username}'
                     )
                 
-                # ✅ Soft delete instead of permanent delete
+                # Soft delete instead of permanent delete
                 orders.update(is_deleted=True, deleted_at=timezone.now())
                 messages.success(request, f'✅ {count} order(s) moved to trash successfully!')
                 
@@ -3515,11 +3506,25 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         api_url = f"{base_url}/order/create"
 
         # 2. Prepare Data
-        # Ensure product name isn't None
+        # Build package description with variant names
         product_name = "General Item"
-        first_item = order.items.first()
-        if first_item:
-            product_name = first_item.product_name or "General Item"
+        try:
+            items = order.items.select_related('product_variation').all()[:3]
+            if items:
+                parts = []
+                for item in items:
+                    qty = getattr(item, 'quantity', 1) or 1
+                    name = item.product_name or 'Item'
+                    var_name = item.variation_name or (item.product_variation.variation_name if item.product_variation else None)
+                    if var_name:
+                        name = f"{name} ({var_name})"
+                    parts.append(f"{qty}x {name}")
+                product_name = ', '.join(parts)
+                total_items = order.items.count()
+                if total_items > 3:
+                    product_name += f' and {total_items - 3} more'
+        except Exception:
+            pass
 
         # Calculate Weight
         weight = default_weight
@@ -3530,7 +3535,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         # Clean phone number (remove non-digits)
         phone = ''.join(filter(str.isdigit, str(order.customer_phone or "")))
         
-        # ✅ FIXED: Generate Vendor Reference ID - Use order ID directly
+        # FIXED: Generate Vendor Reference ID - Use order ID directly
         # NCM requires vrefid field to be populated with order reference
         vendor_ref_id = str(order.id)  # Start with order ID (guaranteed to exist)
         
@@ -3577,25 +3582,6 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         }
 
         response = requests.post(api_url, json=payload, headers=headers, timeout=15)
-        
-        # ✅ ENHANCED DEBUG LOGGING FOR BULK SEND FIX
-        print(f"\n" + "="*80)
-        print(f"🔵 NCM BULK SEND DEBUG - Order: {order.id}")
-        print(f"="*80)
-        print(f"Order ID: {order.id}")
-        print(f"Order Number: {order.order_number or 'NOT SET'}")
-        print(f"Created By: {order.created_by.username if order.created_by else 'None'}")
-        print(f"Final Vendor Ref ID: {payload.get('vref_id')}")
-        print(f"\nPayload being sent to NCM:")
-        for key, value in payload.items():
-            if key == 'address':
-                print(f"  {key}: {value[:50]}..." if len(str(value)) > 50 else f"  {key}: {value}")
-            else:
-                print(f"  {key}: {value}")
-        print(f"\nHTTP Response Status: {response.status_code}")
-        if response.status_code != 200:
-            print(f"❌ ERROR Response: {response.text}")
-        print(f"="*80 + "\n")
 
         # 4. Handle Response
         if response.status_code == 200:
@@ -3625,7 +3611,6 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         elif response.status_code == 404:
             # 404 means the URL is wrong OR the Resource ID is wrong. 
             # Since we are creating, it's likely the URL.
-            print(f"DEBUG: NCM 404 Error. Attempted URL: {api_url}")
             return {'status': 'error', 'message': f'API Endpoint 404. Checked URL: {api_url}'}
             
         else:
@@ -4165,7 +4150,7 @@ def inventory_dashboard(request):
             created_by=request.user
         ).order_by('-dispatch_date')[:10]
         
-        # ✅ Category-wise Stock Distribution WITH CHART DATA
+        # Category-wise Stock Distribution WITH CHART DATA
         categories = Category.objects.all()
         category_stock = []
         category_labels = []
@@ -4196,7 +4181,7 @@ def inventory_dashboard(request):
             else:
                 cat['percentage'] = 0
         
-        # ✅ Stock Movement Data (Last 30 Days)
+        # Stock Movement Data (Last 30 Days)
         today = timezone.now().date()
         movement_labels = []
         stock_in_data = []
@@ -4235,12 +4220,12 @@ def inventory_dashboard(request):
             stock_in_data.append(stock_ins_day)
             stock_out_data.append(stock_out_day)
         
-        # ✅ Stock Turnover Rate
+        # Stock Turnover Rate
         total_sold_30days = sum(stock_out_data)
         avg_inventory = total_stock_units if total_stock_units > 0 else 1
         stock_turnover_rate = (total_sold_30days / avg_inventory) if avg_inventory > 0 else 0
         
-        # ✅ Dead Stock (No movement in 90 days)
+        # Dead Stock (No movement in 90 days)
         ninety_days_ago = today - timedelta(days=90)
         try:
             dead_stock_count = products.filter(
@@ -4250,7 +4235,7 @@ def inventory_dashboard(request):
         except:
             dead_stock_count = 0
         
-        # ✅ SAFE QUERY - Get Recent Stock In Transactions
+        # SAFE QUERY - Get Recent Stock In Transactions
         recent_stock_ins = []
         try:
             stock_ins_qs = StockIn.objects.filter(
@@ -4278,11 +4263,9 @@ def inventory_dashboard(request):
                         'items_count': stock_in.items.count(),
                     })
                 except Exception as e:
-                    print(f"⚠️ Skipping bad stock_in {stock_in.id}: {e}")
                     continue
                     
         except Exception as e:
-            print(f"⚠️ Error loading stock ins: {e}")
             recent_stock_ins = []
         
         # Stock Status Distribution for Charts
@@ -4323,7 +4306,7 @@ def inventory_dashboard(request):
             # Stock In Transactions
             'recent_stock_ins': recent_stock_ins,
             
-            # ✅ Chart Data (JSON encoded for JavaScript)
+            # Chart Data (JSON encoded for JavaScript)
             'stock_chart_data': json.dumps(stock_chart_data),
             'category_labels': json.dumps(category_labels),
             'category_data': json.dumps(category_data),
@@ -4335,7 +4318,6 @@ def inventory_dashboard(request):
         return render(request, 'inventory_dashboard.html', context)
         
     except Exception as e:
-        print(f"❌ Error in inventory_dashboard: {e}")
         import traceback
         traceback.print_exc()
         messages.error(request, f'Error loading inventory dashboard: {str(e)}')
@@ -4355,7 +4337,6 @@ def stock_in_create(request):
             notes = request.POST.get('notes', '').strip()
             items_json = request.POST.get('items', '[]')
             
-            print(f"📦 Items JSON: {items_json}")
             
             # Parse items
             items = json.loads(items_json)
@@ -4374,7 +4355,6 @@ def stock_in_create(request):
                 total_cost=0
             )
             
-            print(f"✅ Created StockIn: {stock_in.reference_number}")
             
             total_qty = 0
             total_cost = 0.0
@@ -4385,7 +4365,7 @@ def stock_in_create(request):
                     product_id = int(item.get('product_id', 0))
                     quantity = int(item.get('quantity', 0))
                     
-                    # ✅ Parse unit_cost as FLOAT first
+                    # Parse unit_cost as FLOAT first
                     unit_cost_str = str(item.get('unit_cost', '0')).strip()
                     try:
                         unit_cost_float = float(unit_cost_str)
@@ -4433,10 +4413,8 @@ def stock_in_create(request):
                     total_qty += quantity
                     total_cost += item_total
                     
-                    print(f"  ✅ Item {idx}: {product.name} x{quantity} @ {unit_cost_float}")
                     
                 except Exception as e:
-                    print(f"  ⚠️ Item {idx} error: {e}")
                     continue
             
             # Update totals
@@ -4455,7 +4433,6 @@ def stock_in_create(request):
         except json.JSONDecodeError:
             messages.error(request, 'Invalid data format')
         except Exception as e:
-            print(f"❌ Error: {e}")
             import traceback
             traceback.print_exc()
             messages.error(request, f'Error: {str(e)}')
@@ -4473,7 +4450,7 @@ def stock_in_detail(request, stock_in_id):
         from django.db import connection
         from django.contrib.auth.models import User
         
-        # ✅ Get Stock In basic data using RAW SQL
+        # Get Stock In basic data using RAW SQL
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT 
@@ -4519,7 +4496,7 @@ def stock_in_detail(request, stock_in_id):
             except User.DoesNotExist:
                 stock_in.created_by = type('obj', (object,), {'username': 'Unknown'})()
         
-        # ✅ Get items using RAW SQL with product info
+        # Get items using RAW SQL with product info
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT 
@@ -4553,7 +4530,7 @@ def stock_in_detail(request, stock_in_id):
             product_slug = row[6]
             product_image = row[7]
             
-            # ✅ Get SAFE costs using RAW SQL
+            # Get SAFE costs using RAW SQL
             with connection.cursor() as cursor2:
                 cursor2.execute("""
                     SELECT unit_cost, total_cost
@@ -4577,7 +4554,7 @@ def stock_in_detail(request, stock_in_id):
                     safe_unit_cost = 0.0
                     safe_total_cost = 0.0
             
-            # ✅ Get variation name if exists
+            # Get variation name if exists
             variation_name = None
             if variation_id:
                 try:
@@ -4600,10 +4577,9 @@ def stock_in_detail(request, stock_in_id):
                 except ProductVariation.DoesNotExist:
                     variation_name = f"Variation #{variation_id}"
                 except Exception as e:
-                    print(f"⚠️ Error getting variation {variation_id}: {e}")
                     variation_name = f"Variation #{variation_id}"
             
-            # ✅ Create clean item object
+            # Create clean item object
             class ItemData:
                 def __init__(self):
                     self.id = item_id
@@ -4641,7 +4617,7 @@ def stock_in_detail(request, stock_in_id):
                 'safe_total_cost': safe_total_cost,
             })
         
-        # ✅ Get safe total cost from StockIn table
+        # Get safe total cost from StockIn table
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT total_cost
@@ -4668,7 +4644,6 @@ def stock_in_detail(request, stock_in_id):
         return render(request, 'stock_in_detail.html', context)
         
     except Exception as e:
-        print(f"❌ Error in stock_in_detail: {e}")
         import traceback
         traceback.print_exc()
         messages.error(request, f'Error loading stock in details: {str(e)}')
@@ -5149,7 +5124,6 @@ def get_valley_status(request):
             })
             
     except Exception as e:
-        print(f"Error in get_valley_status: {e}")
         return JsonResponse({
             'success': False,
             'message': f'Error detecting valley status: {str(e)}'
@@ -5384,7 +5358,6 @@ def return_create(request):
                 
         except Exception as e:
             messages.error(request, f'Error creating return: {str(e)}')
-            print(f"Error: {str(e)}")
             import traceback
             traceback.print_exc()
             return redirect('return_create')
@@ -5548,7 +5521,7 @@ def return_detail(request, return_id):
             'order', 'customer', 'created_by', 'approved_by', 'quality_checked_by'
         ).prefetch_related('items', 'activity_logs'),
         id=return_id,
-        is_deleted=False  # ✅ Only show non-deleted returns
+        is_deleted=False  # Only show non-deleted returns
     )
     
     if request.method == 'POST':
@@ -5686,7 +5659,7 @@ def return_detail(request, return_id):
     return render(request, 'returns/detail.html', context)
 
 
-# ✅ TRASH MANAGEMENT VIEWS
+# TRASH MANAGEMENT VIEWS
 
 @login_required
 @permission_required('can_delete_returns')
@@ -5800,7 +5773,7 @@ def returns_empty_trash(request):
     return render(request, 'returns/empty_trash_confirm.html', context)
 
 
-# ✅ BULK ACTIONS
+# BULK ACTIONS
 
 @login_required
 @permission_required('can_delete_returns')
@@ -6035,7 +6008,7 @@ def create_custom_product(request):
             is_active=True,
             is_deleted=False,
             user=request.user,
-            is_custom_product=True,  # ✅ Mark as custom product
+            is_custom_product=True,  # Mark as custom product
         )
         
         # Handle image upload
@@ -6158,7 +6131,7 @@ def ncm_orders_list(request):
         except:
             order_products[order.id] = "No products"
     
-    # ✅ GET ACTIVITY LOGS FOR PAGINATED ORDERS
+    # GET ACTIVITY LOGS FOR PAGINATED ORDERS
     activity_logs = {}
     try:
         from dashboard.models import OrderActivityLog
@@ -6178,7 +6151,6 @@ def ncm_orders_list(request):
         for order_id in activity_logs:
             activity_logs[order_id] = activity_logs[order_id][:10]
     except Exception as e:
-        print(f"Error loading activity logs: {e}")
         activity_logs = {}
     
     context = {
@@ -6223,8 +6195,8 @@ def ncm_order_detail(request, order_id):
             order=order
         ).select_related('user').order_by('-created_at')[:50]
     except Exception as e:
-        print(f"Error loading activity logs: {e}")
-    
+        pass
+
     context = {
         'order': order,
         'order_items': order_items,
@@ -6259,11 +6231,6 @@ def ncm_track_order(request, order_id):
         # Build API URL
         api_url = f"{base_url.rstrip('/')}/orderstatus"
         
-        print(f"\n{'='*70}")
-        print(f"🔍 Tracking NCM Order: {order.order_number}")
-        print(f"📍 NCM Order ID: {order.ncm_order_id}")
-        print(f"🌐 API URL: {api_url}")
-        print(f"{'='*70}\n")
         
         # Call NCM tracking API
         response = requests.get(
@@ -6276,8 +6243,6 @@ def ncm_track_order(request, order_id):
             timeout=15
         )
         
-        print(f"📥 Response Status: {response.status_code}")
-        print(f"📄 Response Body: {response.text}\n")
         
         if response.status_code == 200:
             try:
@@ -6288,7 +6253,6 @@ def ncm_track_order(request, order_id):
                     latest_status = data[0]
                     new_status = latest_status.get('status', '')
                     
-                    print(f"✅ Latest Status: {new_status}\n")
                     
                     if new_status:
                         old_status = order.ncm_status
@@ -6311,8 +6275,8 @@ def ncm_track_order(request, order_id):
                                     new_value=new_status
                                 )
                             except Exception as e:
-                                print(f"⚠️ Error logging activity: {e}")
-                            
+                                pass
+
                             messages.success(request, f'✅ Status updated to: {new_status}')
                         else:
                             messages.info(request, f'ℹ️ Current status: {new_status} (No change)')
@@ -6323,7 +6287,6 @@ def ncm_track_order(request, order_id):
                     
             except ValueError as e:
                 messages.error(request, f'❌ Invalid JSON response from NCM API')
-                print(f"❌ JSON Parse Error: {e}\n")
         
         elif response.status_code == 404:
             messages.error(request, f'❌ NCM Order ID {order.ncm_order_id} not found in NCM system')
@@ -6342,7 +6305,6 @@ def ncm_track_order(request, order_id):
     
     except Exception as e:
         messages.error(request, f'❌ Error: {str(e)}')
-        print(f"💥 Exception: {e}\n")
         import traceback
         traceback.print_exc()
     
@@ -6593,7 +6555,7 @@ def ncm_branches_json(request):
         return JsonResponse({'branches': branches})
     
     # Otherwise return HTML page
-    # ✅ Ensure districts is always a safe iterable for the template
+    # Ensure districts is always a safe iterable for the template
     safe_districts = sorted(list(districts)) if districts else []
     
     context = {
@@ -6751,14 +6713,25 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 'message': f'Missing required fields: {", ".join(missing)}'
             }
         
-        # Get product name
+        # Get product name with variant info
         product_name = 'General Items'
         try:
             if hasattr(order, 'items'):
-                first_item = order.items.first()
-                if first_item and hasattr(first_item, 'product_name'):
-                    product_name = first_item.product_name
-        except:
+                items = order.items.select_related('product_variation').all()[:3]
+                if items:
+                    parts = []
+                    for item in items:
+                        qty = getattr(item, 'quantity', 1) or 1
+                        name = item.product_name or 'Item'
+                        var_name = item.variation_name or (item.product_variation.variation_name if item.product_variation else None)
+                        if var_name:
+                            name = f"{name} ({var_name})"
+                        parts.append(f"{qty}x {name}")
+                    product_name = ', '.join(parts)
+                    total_items = order.items.count()
+                    if total_items > 3:
+                        product_name += f' and {total_items - 3} more'
+        except Exception:
             pass
         
         # Get weight
@@ -6804,12 +6777,6 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             "weight": weight
         }
         
-        print(f"\n{'='*70}")
-        print(f"🚀 Sending {order.order_number} to NCM")
-        print(f"{'='*70}")
-        print(f"📍 URL: {api_url}")
-        print(f"📦 Payload: {payload}")
-        print(f"{'='*70}\n")
         
         # Call NCM API
         response = requests.post(
@@ -6822,8 +6789,6 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             timeout=30
         )
         
-        print(f"📥 Response Status: {response.status_code}")
-        print(f"📄 Response Body: {response.text}\n")
         
         # Handle response
         if response.status_code == 200:
@@ -6854,7 +6819,6 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 order.ncm_destination_branch = destination_branch
                 order.save()
                 
-                print(f"✅ SUCCESS! NCM Order ID: {ncm_id}\n")
                 
                 # Log activity
                 try:
@@ -6866,8 +6830,8 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                         description=f'Sent to NCM Logistics (ID: {ncm_id}, Branch: {from_branch})'
                     )
                 except Exception as e:
-                    print(f"⚠️ Log error: {e}")
-                
+                    pass
+
                 return {
                     'status': 'success',
                     'message': f'Sent to NCM (ID: {ncm_id})'
@@ -6927,7 +6891,6 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         }
     
     except Exception as e:
-        print(f"💥 Exception: {str(e)}\n")
         import traceback
         traceback.print_exc()
         return {
@@ -7204,7 +7167,7 @@ def ncm_orders_empty_trash(request):
     return redirect('ncm_orders_trash')
 
 
-# ✅ NEW: SETUP MANAGEMENT VIEWS
+# NEW: SETUP MANAGEMENT VIEWS
 @login_required
 @permission_required('can_view_orders')
 def setup_management(request):
@@ -7313,5 +7276,163 @@ def setup_delete(request, setup_id):
         messages.success(request, f'✅ {setup_name} setup deleted successfully!')
     except Exception as e:
         messages.error(request, f'❌ Error deleting setup: {str(e)}')
-    
+
     return redirect('setup_management')
+
+
+# ==================== NCM BULK ORDER LOG VIEWS ====================
+
+@login_required
+@permission_required('can_view_orders')
+def ncm_bulk_logs_list(request):
+    """List all NCM bulk send logs with filtering and AJAX expand"""
+    from ncm.models import NCMBulkLog, NCMBulkLogOrder
+
+    # Handle AJAX request for expandable order rows
+    ajax_batch_id = request.GET.get('ajax_batch_orders')
+    if ajax_batch_id:
+        try:
+            batch_orders = NCMBulkLogOrder.objects.filter(batch_id=ajax_batch_id)
+            orders_data = []
+            for o in batch_orders:
+                orders_data.append({
+                    'order_number': o.order_number,
+                    'customer_name': o.customer_name,
+                    'customer_phone': o.customer_phone,
+                    'address': o.shipping_address[:80] if o.shipping_address else '',
+                    'cod_amount': str(o.cod_amount),
+                    'branch': o.destination_branch or '-',
+                    'ncm_order_id': o.ncm_order_id,
+                    'status': o.status,
+                    'status_display': o.get_status_display(),
+                })
+            return JsonResponse({'orders': orders_data})
+        except Exception:
+            return JsonResponse({'orders': []})
+
+    # Filters
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    logs = NCMBulkLog.objects.filter(is_deleted=False)
+
+    if search_query:
+        logs = logs.filter(
+            Q(batch_number__icontains=search_query) |
+            Q(orders__order_number__icontains=search_query) |
+            Q(orders__customer_name__icontains=search_query)
+        ).distinct()
+
+    if branch_filter:
+        logs = logs.filter(from_branch=branch_filter)
+
+    if status_filter:
+        logs = logs.filter(status=status_filter)
+
+    if date_from:
+        try:
+            logs = logs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+
+    if date_to:
+        try:
+            logs = logs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+
+    # Statistics
+    all_logs = NCMBulkLog.objects.filter(is_deleted=False)
+    total_batches = all_logs.count()
+    total_orders_sent = all_logs.aggregate(t=Sum('total_orders'))['t'] or 0
+    total_success = all_logs.aggregate(t=Sum('success_count'))['t'] or 0
+    total_failed = all_logs.aggregate(t=Sum('failed_count'))['t'] or 0
+
+    # Branches for filter dropdown
+    branches = list(
+        NCMBulkLog.objects.filter(is_deleted=False)
+        .values_list('from_branch', flat=True)
+        .distinct()
+        .order_by('from_branch')
+    )
+
+    # Pagination
+    paginator = Paginator(logs, 20)
+    page = request.GET.get('page', 1)
+    logs = paginator.get_page(page)
+
+    context = {
+        'logs': logs,
+        'total_batches': total_batches,
+        'total_orders_sent': total_orders_sent,
+        'total_success': total_success,
+        'total_failed': total_failed,
+        'branches': branches,
+        'search_query': search_query,
+        'branch_filter': branch_filter,
+        'status_filter': status_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+    }
+    return render(request, 'dashboard/ncm_bulk_logs.html', context)
+
+
+@login_required
+@permission_required('can_view_orders')
+def ncm_bulk_log_detail(request, log_id):
+    """View details of a single NCM bulk send batch"""
+    from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
+
+    bulk_log = get_object_or_404(NCMBulkLog, id=log_id, is_deleted=False)
+    batch_orders = NCMBulkLogOrder.objects.filter(batch=bulk_log)
+    log_details = NCMBulkLogDetail.objects.filter(batch=bulk_log).order_by('timestamp')
+
+    context = {
+        'bulk_log': bulk_log,
+        'batch_orders': batch_orders,
+        'log_details': log_details,
+    }
+    return render(request, 'dashboard/ncm_bulk_log_detail.html', context)
+
+
+@login_required
+@permission_required('can_delete_orders')
+def ncm_bulk_log_trash(request, log_id):
+    """Move a bulk log to trash (soft delete)"""
+    from ncm.models import NCMBulkLog
+
+    if request.method == 'POST':
+        bulk_log = get_object_or_404(NCMBulkLog, id=log_id, is_deleted=False)
+        bulk_log.is_deleted = True
+        bulk_log.deleted_at = timezone.now()
+        bulk_log.save()
+        messages.success(request, f'Batch "{bulk_log.batch_number}" moved to trash.')
+
+    return redirect('ncm_bulk_logs_list')
+
+
+@login_required
+@permission_required('can_delete_orders')
+def ncm_bulk_logs_bulk_action(request):
+    """Handle bulk actions on NCM bulk logs"""
+    from ncm.models import NCMBulkLog
+
+    if request.method == 'POST':
+        action = request.POST.get('bulk_action')
+        log_ids = request.POST.getlist('log_ids')
+
+        if not log_ids:
+            messages.warning(request, 'No batches selected.')
+            return redirect('ncm_bulk_logs_list')
+
+        if action == 'move_to_trash':
+            count = NCMBulkLog.objects.filter(id__in=log_ids, is_deleted=False).update(
+                is_deleted=True,
+                deleted_at=timezone.now()
+            )
+            messages.success(request, f'{count} batch(es) moved to trash.')
+
+    return redirect('ncm_bulk_logs_list')
