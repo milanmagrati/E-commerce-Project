@@ -15,6 +15,7 @@ urlpatterns = [
     path('products/trash/bulk-action/', views.products_trash_bulk_action, name='products_trash_bulk_action'),
     path('products/trash/empty/', views.empty_trash, name='empty_trash'),    
     path('products/bulk-action/', views.products_bulk_action, name='products_bulk_action'),
+    path('products/export-excel/', views.export_products_excel, name='export_products_excel'),
     path('products/add/', views.product_add, name='product_add'),
     path('products/<int:product_id>/', views.product_detail, name='product_detail'),
     path('products/<int:product_id>/edit/', views.product_edit, name='product_edit'),

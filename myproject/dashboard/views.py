@@ -370,6 +370,410 @@ def products_bulk_action(request):
     
     return redirect('products')
 
+
+@login_required
+def export_products_excel(request):
+    """Export selected or all products to Excel with variation details"""
+    product_ids = request.POST.getlist('product_ids')
+
+    if product_ids:
+        try:
+            product_ids = [int(pid) for pid in product_ids]
+        except (ValueError, TypeError):
+            return HttpResponse("Invalid product IDs", status=400)
+        products_qs = Product.objects.filter(id__in=product_ids, is_deleted=False)
+    else:
+        products_qs = Product.objects.filter(is_deleted=False)
+
+    products_qs = products_qs.select_related('category').prefetch_related(
+        'variations'
+    ).order_by('-created_at')
+
+    if not products_qs.exists():
+        return HttpResponse("No products found", status=404)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Products"
+
+    # ── Styles ──
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+
+    thin_border = Border(
+        left=Side(style='thin', color='D1D5DB'),
+        right=Side(style='thin', color='D1D5DB'),
+        top=Side(style='thin', color='D1D5DB'),
+        bottom=Side(style='thin', color='D1D5DB'),
+    )
+    header_border = Border(
+        left=Side(style='thin', color='3B5998'),
+        right=Side(style='thin', color='3B5998'),
+        top=Side(style='medium', color='3B5998'),
+        bottom=Side(style='medium', color='3B5998'),
+    )
+
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    right_align = Alignment(horizontal='right', vertical='center', wrap_text=True)
+
+    money_font = Font(bold=True, color="059669", size=10)
+    cost_font = Font(color="6B7280", size=10)
+
+    product_fill = PatternFill(start_color="EEF2FF", end_color="EEF2FF", fill_type="solid")
+    product_name_font = Font(bold=True, size=10, color="1F2937")
+
+    var_fill = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid")
+    var_name_font = Font(size=10, color="4B5563")
+
+    # Status/stock conditional fills
+    active_fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+    active_font = Font(bold=True, color="065F46", size=9)
+    inactive_fill = PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid")
+    inactive_font = Font(bold=True, color="6B7280", size=9)
+
+    in_stock_font = Font(bold=True, color="059669", size=10)
+    low_stock_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+    low_stock_font = Font(bold=True, color="92400E", size=10)
+    out_stock_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+    out_stock_font = Font(bold=True, color="991B1B", size=10)
+
+    # ── Headers (row 1) ──
+    headers = [
+        'S.N.', 'Product Name', 'Type', 'Category', 'SKU / Slug',
+        'Variation Name', 'Variation SKU',
+        'Price', 'Cost Price', 'Stock', 'Stock Status',
+        'Status', 'Low Stock Threshold', 'Created Date',
+    ]
+    header_row = 1
+    ws.row_dimensions[header_row].height = 28
+
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_align
+        cell.border = header_border
+
+    # ── Data Rows ──
+    row_num = 2
+    sn = 1
+    total_products = 0
+    total_variations = 0
+    total_stock = 0
+
+    for product in products_qs:
+        total_products += 1
+
+        if product.product_type == 'simple':
+            stock_val = product.stock
+            total_stock += stock_val
+            is_active = product.is_active
+
+            row_data = [
+                sn,
+                product.name,
+                'Simple',
+                product.category.name if product.category else 'Uncategorized',
+                product.slug,
+                '-',
+                '-',
+                float(product.price),
+                float(product.cost_price),
+                stock_val,
+                product.stock_status.replace('_', ' ').title(),
+                'Active' if is_active else 'Inactive',
+                product.low_stock_threshold,
+                product.created_at.strftime('%Y-%m-%d %I:%M %p'),
+            ]
+
+            ws.row_dimensions[row_num].height = 22
+            for col_idx, val in enumerate(row_data, 1):
+                cell = ws.cell(row=row_num, column=col_idx, value=val)
+                cell.border = thin_border
+
+                # Column-specific formatting
+                if col_idx == 1:  # S.N.
+                    cell.alignment = center_align
+                    cell.font = Font(bold=True, color="6B7280", size=10)
+                elif col_idx == 2:  # Product Name
+                    cell.alignment = left_align
+                    cell.font = product_name_font
+                elif col_idx == 3:  # Type
+                    cell.alignment = center_align
+                    cell.font = Font(size=9, color="4338CA", bold=True)
+                    cell.fill = PatternFill(start_color="E0E7FF", end_color="E0E7FF", fill_type="solid")
+                elif col_idx == 4:  # Category
+                    cell.alignment = left_align
+                elif col_idx in (5, 7):  # SKU, Var SKU
+                    cell.alignment = left_align
+                    cell.font = Font(size=9, color="6B7280")
+                elif col_idx == 6:  # Variation Name
+                    cell.alignment = center_align
+                    cell.font = Font(size=9, color="9CA3AF")
+                elif col_idx == 8:  # Price
+                    cell.alignment = right_align
+                    cell.font = money_font
+                    cell.number_format = '#,##0.00'
+                elif col_idx == 9:  # Cost Price
+                    cell.alignment = right_align
+                    cell.font = cost_font
+                    cell.number_format = '#,##0.00'
+                elif col_idx == 10:  # Stock
+                    cell.alignment = center_align
+                    if stock_val == 0:
+                        cell.font = out_stock_font
+                        cell.fill = out_stock_fill
+                    elif stock_val <= (product.low_stock_threshold or 10):
+                        cell.font = low_stock_font
+                        cell.fill = low_stock_fill
+                    else:
+                        cell.font = in_stock_font
+                elif col_idx == 11:  # Stock Status
+                    cell.alignment = center_align
+                    cell.font = Font(size=9)
+                elif col_idx == 12:  # Status
+                    cell.alignment = center_align
+                    if is_active:
+                        cell.fill = active_fill
+                        cell.font = active_font
+                    else:
+                        cell.fill = inactive_fill
+                        cell.font = inactive_font
+                elif col_idx == 13:  # Low Stock Threshold
+                    cell.alignment = center_align
+                elif col_idx == 14:  # Created Date
+                    cell.alignment = center_align
+                    cell.font = Font(size=9, color="6B7280")
+
+            row_num += 1
+            sn += 1
+
+        else:
+            # Variable product
+            variations = list(product.variations.all())
+            if not variations:
+                total_stock += product.stock
+                is_active = product.is_active
+                stock_val = product.stock
+                row_data = [
+                    sn,
+                    product.name,
+                    'Variable',
+                    product.category.name if product.category else 'Uncategorized',
+                    product.slug,
+                    '(no variations)',
+                    '-',
+                    float(product.price),
+                    float(product.cost_price),
+                    stock_val,
+                    product.stock_status.replace('_', ' ').title(),
+                    'Active' if is_active else 'Inactive',
+                    product.low_stock_threshold,
+                    product.created_at.strftime('%Y-%m-%d %I:%M %p'),
+                ]
+                ws.row_dimensions[row_num].height = 22
+                for col_idx, val in enumerate(row_data, 1):
+                    cell = ws.cell(row=row_num, column=col_idx, value=val)
+                    cell.border = thin_border
+                    cell.fill = product_fill
+                    if col_idx == 1:
+                        cell.alignment = center_align
+                        cell.font = Font(bold=True, color="6B7280", size=10)
+                    elif col_idx == 2:
+                        cell.alignment = left_align
+                        cell.font = product_name_font
+                    elif col_idx == 3:
+                        cell.alignment = center_align
+                        cell.font = Font(size=9, color="92400E", bold=True)
+                        cell.fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+                    elif col_idx in (8, 9):
+                        cell.alignment = right_align
+                        cell.font = money_font if col_idx == 8 else cost_font
+                        cell.number_format = '#,##0.00'
+                    elif col_idx == 10:
+                        cell.alignment = center_align
+                        if stock_val == 0:
+                            cell.font = out_stock_font
+                            cell.fill = out_stock_fill
+                        elif stock_val <= (product.low_stock_threshold or 10):
+                            cell.font = low_stock_font
+                            cell.fill = low_stock_fill
+                        else:
+                            cell.font = in_stock_font
+                    elif col_idx == 12:
+                        cell.alignment = center_align
+                        if is_active:
+                            cell.fill = active_fill
+                            cell.font = active_font
+                        else:
+                            cell.fill = inactive_fill
+                            cell.font = inactive_font
+                    else:
+                        cell.alignment = center_align if col_idx in (6, 11, 13) else left_align
+                        cell.font = Font(size=9, color="6B7280") if col_idx in (5, 7, 14) else Font(size=10)
+                row_num += 1
+                sn += 1
+            else:
+                for var_idx, var in enumerate(variations):
+                    total_variations += 1
+                    var_stock = var.stock
+                    total_stock += var_stock
+                    var_active = var.is_active
+
+                    is_first = var_idx == 0
+                    is_var_row = not is_first
+
+                    row_data = [
+                        sn if is_first else '',
+                        product.name if is_first else '',
+                        'Variable' if is_first else '',
+                        (product.category.name if product.category else 'Uncategorized') if is_first else '',
+                        product.slug if is_first else '',
+                        var.variation_name or var.sku,
+                        var.sku,
+                        float(var.price),
+                        float(product.cost_price) if is_first else '',
+                        var_stock,
+                        'In Stock' if var_stock > 0 else 'Out of Stock',
+                        'Active' if var_active else 'Inactive',
+                        var.low_stock_threshold,
+                        var.created_at.strftime('%Y-%m-%d %I:%M %p'),
+                    ]
+
+                    ws.row_dimensions[row_num].height = 22 if is_first else 20
+                    for col_idx, val in enumerate(row_data, 1):
+                        cell = ws.cell(row=row_num, column=col_idx, value=val)
+                        cell.border = thin_border
+
+                        if is_first:
+                            # First row of variable product - highlighted
+                            if col_idx <= 5:
+                                cell.fill = product_fill
+                            if col_idx == 1:
+                                cell.alignment = center_align
+                                cell.font = Font(bold=True, color="6B7280", size=10)
+                            elif col_idx == 2:
+                                cell.alignment = left_align
+                                cell.font = product_name_font
+                            elif col_idx == 3:
+                                cell.alignment = center_align
+                                cell.font = Font(size=9, color="92400E", bold=True)
+                                cell.fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+                            elif col_idx == 4:
+                                cell.alignment = left_align
+                            elif col_idx == 5:
+                                cell.alignment = left_align
+                                cell.font = Font(size=9, color="6B7280")
+                            elif col_idx == 6:
+                                cell.alignment = left_align
+                                cell.font = Font(size=10, color="4338CA", bold=True)
+                            elif col_idx == 7:
+                                cell.alignment = left_align
+                                cell.font = Font(size=9, color="6B7280")
+                            elif col_idx == 8:
+                                cell.alignment = right_align
+                                cell.font = money_font
+                                cell.number_format = '#,##0.00'
+                            elif col_idx == 9:
+                                cell.alignment = right_align
+                                cell.font = cost_font
+                                cell.number_format = '#,##0.00'
+                            elif col_idx == 10:
+                                cell.alignment = center_align
+                                if var_stock == 0:
+                                    cell.font = out_stock_font
+                                    cell.fill = out_stock_fill
+                                elif var_stock <= (var.low_stock_threshold or 10):
+                                    cell.font = low_stock_font
+                                    cell.fill = low_stock_fill
+                                else:
+                                    cell.font = in_stock_font
+                            elif col_idx == 11:
+                                cell.alignment = center_align
+                                cell.font = Font(size=9)
+                            elif col_idx == 12:
+                                cell.alignment = center_align
+                                if var_active:
+                                    cell.fill = active_fill
+                                    cell.font = active_font
+                                else:
+                                    cell.fill = inactive_fill
+                                    cell.font = inactive_font
+                            elif col_idx == 13:
+                                cell.alignment = center_align
+                            elif col_idx == 14:
+                                cell.alignment = center_align
+                                cell.font = Font(size=9, color="6B7280")
+                        else:
+                            # Subsequent variation rows - subtle styling
+                            cell.fill = var_fill
+                            if col_idx in (1, 2, 3, 4, 5):
+                                cell.alignment = center_align
+                                cell.font = Font(size=9, color="D1D5DB")
+                            elif col_idx == 6:
+                                cell.alignment = left_align
+                                cell.font = Font(size=10, color="4338CA")
+                            elif col_idx == 7:
+                                cell.alignment = left_align
+                                cell.font = Font(size=9, color="6B7280")
+                            elif col_idx == 8:
+                                cell.alignment = right_align
+                                cell.font = money_font
+                                cell.number_format = '#,##0.00'
+                            elif col_idx == 9:
+                                cell.alignment = right_align
+                                cell.font = cost_font
+                            elif col_idx == 10:
+                                cell.alignment = center_align
+                                if var_stock == 0:
+                                    cell.font = out_stock_font
+                                    cell.fill = out_stock_fill
+                                elif var_stock <= (var.low_stock_threshold or 10):
+                                    cell.font = low_stock_font
+                                    cell.fill = low_stock_fill
+                                else:
+                                    cell.font = in_stock_font
+                            elif col_idx == 11:
+                                cell.alignment = center_align
+                                cell.font = Font(size=9)
+                            elif col_idx == 12:
+                                cell.alignment = center_align
+                                if var_active:
+                                    cell.fill = active_fill
+                                    cell.font = active_font
+                                else:
+                                    cell.fill = inactive_fill
+                                    cell.font = inactive_font
+                            elif col_idx == 13:
+                                cell.alignment = center_align
+                            elif col_idx == 14:
+                                cell.alignment = center_align
+                                cell.font = Font(size=9, color="6B7280")
+
+                    row_num += 1
+                sn += 1
+
+    # ── Column Widths ──
+    col_widths = {
+        'A': 6, 'B': 32, 'C': 12, 'D': 16, 'E': 20,
+        'F': 24, 'G': 18, 'H': 14, 'I': 14,
+        'J': 8, 'K': 14, 'L': 10, 'M': 16, 'N': 20,
+    }
+    for col_letter, width in col_widths.items():
+        ws.column_dimensions[col_letter].width = width
+
+    ws.auto_filter.ref = f"A{header_row}:N{header_row}"
+    ws.freeze_panes = f'A{header_row + 1}'
+    ws.sheet_properties.tabColor = "4472C4"
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    filename = f'products_export_{timezone.now().strftime("%Y%m%d_%H%M")}.xlsx'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
+
 @login_required
 @permission_required('can_create_products')
 

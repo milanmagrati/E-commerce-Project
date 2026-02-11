@@ -17,6 +17,9 @@
     <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h2><i class="fas fa-box"></i> Products Management</h2>
         <div class="d-flex gap-2">
+            <button type="button" class="btn btn-success btn-lg" onclick="exportAllProductsExcel()">
+                <i class="fas fa-file-excel"></i> Export Excel
+            </button>
             <a href="{% url 'products_trash' %}" class="btn btn-danger btn-lg">
                 <i class="fas fa-trash-alt"></i> Trash
                 {% if trash_count > 0 %}
@@ -170,6 +173,7 @@
                 <div class="col-md-3">
                     <select name="bulk_action" class="form-select form-select-sm" id="bulkActionSelect" onchange="togglePercentageInput()" required>
                         <option value="">Select Action</option>
+                        <option value="export_excel">Export to Excel</option>
                         <option value="delete">Move to Trash</option>
                         <option value="activate">Activate Selected</option>
                         <option value="deactivate">Deactivate Selected</option>
@@ -433,6 +437,11 @@
 
 <!-- Hidden forms for trash actions -->
 <div id="trashForms"></div>
+
+<!-- Hidden form for Excel export -->
+<form id="exportExcelForm" method="POST" action="{% url 'export_products_excel' %}" style="display:none;">
+    {% csrf_token %}
+</form>
 
 <style>
     .bg-gradient-primary {
@@ -900,12 +909,18 @@ function clearSelection() {
 function confirmBulkAction() {
     const action = document.querySelector('[name="bulk_action"]').value;
     const count = document.querySelectorAll('.product-checkbox:checked').length;
-    
+
     if (!action) {
         alert('Please select an action!');
         return false;
     }
-    
+
+    // Handle export_excel separately - submit to export URL instead
+    if (action === 'export_excel') {
+        exportSelectedProductsExcel();
+        return false;
+    }
+
     if (action === 'increase_price' || action === 'decrease_price') {
         const percentage = document.querySelector('[name="percentage"]').value;
         if (!percentage || percentage <= 0) {
@@ -913,7 +928,7 @@ function confirmBulkAction() {
             return false;
         }
     }
-    
+
     let message = '';
     if (action === 'delete') {
         message = 'Are you sure you want to move ' + count + ' product(s) to trash?';
@@ -928,8 +943,37 @@ function confirmBulkAction() {
         const percentage = document.querySelector('[name="percentage"]').value;
         message = 'Decrease price of ' + count + ' product(s) by ' + percentage + '%?';
     }
-    
+
     return confirm(message);
+}
+
+// Export selected products to Excel
+function exportSelectedProductsExcel() {
+    const checked = document.querySelectorAll('.product-checkbox:checked');
+    if (checked.length === 0) {
+        alert('No products selected!');
+        return;
+    }
+    const form = document.getElementById('exportExcelForm');
+    // Remove old product_ids inputs
+    form.querySelectorAll('input[name="product_ids"]').forEach(function(el) { el.remove(); });
+    // Add selected product IDs
+    checked.forEach(function(cb) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'product_ids';
+        input.value = cb.value;
+        form.appendChild(input);
+    });
+    form.submit();
+}
+
+// Export ALL products to Excel
+function exportAllProductsExcel() {
+    var form = document.getElementById('exportExcelForm');
+    // Remove any old product_ids inputs (export all when none specified)
+    form.querySelectorAll('input[name="product_ids"]').forEach(function(el) { el.remove(); });
+    form.submit();
 }
 
 // ✅ NEW: Move single product to trash
