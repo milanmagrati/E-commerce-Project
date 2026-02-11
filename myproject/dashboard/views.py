@@ -7377,7 +7377,7 @@ def ncm_bulk_logs_list(request):
         'date_from': date_from,
         'date_to': date_to,
     }
-    return render(request, 'dashboard/ncm_bulk_logs.html', context)
+    return render(request, 'ncm_bulk_logs.html', context)
 
 
 @login_required
@@ -7395,7 +7395,7 @@ def ncm_bulk_log_detail(request, log_id):
         'batch_orders': batch_orders,
         'log_details': log_details,
     }
-    return render(request, 'dashboard/ncm_bulk_log_detail.html', context)
+    return render(request, 'ncm_bulk_log_detail.html', context)
 
 
 @login_required
