@@ -148,8 +148,14 @@
 
     <div class="col-xl-4">
         <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Low Stock Alert</h5>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    Low Stock Alert
+                    {% if low_stock_alert_count > 0 %}
+                    <span class="badge bg-danger ms-2">{{ low_stock_alert_count }}</span>
+                    {% endif %}
+                </h5>
+                <a href="{% url 'low_stock_alerts' %}" class="btn btn-sm btn-outline-danger">View All</a>
             </div>
             <div class="card-body">
                 <div class="list-group list-group-flush">
@@ -159,8 +165,11 @@
                             <div>
                                 <h6 class="mb-1">{{ product.name }}</h6>
                                 <small class="text-danger">
-                                    <i class="fas fa-exclamation-triangle"></i> 
+                                    <i class="fas fa-exclamation-triangle"></i>
                                     Only {{ product.stock }} left
+                                    {% if product.low_stock_threshold > 0 %}
+                                    <span class="text-muted">(threshold: {{ product.low_stock_threshold }})</span>
+                                    {% endif %}
                                 </small>
                             </div>
                             <span class="badge bg-danger">Low</span>

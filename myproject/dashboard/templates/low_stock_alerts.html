@@ -1,0 +1,847 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Low Stock Alerts{% endblock %}
+
+{% block content %}
+<div class="low-stock-alerts">
+    <!-- Header -->
+    <div class="page-header mb-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h1 class="header-title">
+                    <i class="fas fa-exclamation-triangle pulse-warning"></i>
+                    Low Stock Alerts
+                </h1>
+                <p class="header-subtitle">
+                    {% if total_alert_count > 0 %}
+                        {{ total_alert_count }} product{{ total_alert_count|pluralize }} need{{ total_alert_count|pluralize:",s" }} attention
+                    {% else %}
+                        All products are sufficiently stocked
+                    {% endif %}
+                </p>
+            </div>
+            <div class="header-actions">
+                <a href="{% url 'low_stock_settings' %}" class="action-btn btn-settings">
+                    <i class="fas fa-cog"></i> Alert Settings
+                </a>
+                <a href="{% url 'stock_in_create' %}" class="action-btn btn-stock-in">
+                    <i class="fas fa-box-open"></i> Stock In
+                </a>
+                <a href="{% url 'inventory_dashboard' %}" class="action-btn btn-back">
+                    <i class="fas fa-arrow-left"></i> Inventory
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Summary -->
+    <div class="alert-summary-grid">
+        <div class="alert-summary-card warning-card">
+            <div class="alert-summary-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="alert-summary-info">
+                <h2>{{ low_count }}</h2>
+                <p>Low Stock</p>
+                <small>Below threshold</small>
+            </div>
+        </div>
+        <div class="alert-summary-card danger-card">
+            <div class="alert-summary-icon">
+                <i class="fas fa-times-circle"></i>
+            </div>
+            <div class="alert-summary-info">
+                <h2>{{ out_count }}</h2>
+                <p>Out of Stock</p>
+                <small>Zero inventory</small>
+            </div>
+        </div>
+        <div class="alert-summary-card total-card">
+            <div class="alert-summary-icon">
+                <i class="fas fa-bell"></i>
+            </div>
+            <div class="alert-summary-info">
+                <h2>{{ total_alert_count }}</h2>
+                <p>Total Alerts</p>
+                <small>Needs attention</small>
+            </div>
+        </div>
+    </div>
+
+    {% if low_stock_products %}
+    <!-- Low Stock Products Table -->
+    <div class="alert-table-container mb-4">
+        <div class="alert-table-header warning-header">
+            <h5>
+                <i class="fas fa-exclamation-triangle"></i>
+                Low Stock Products
+                <span class="count-badge warning-badge">{{ low_count }}</span>
+            </h5>
+        </div>
+        <div class="table-responsive">
+            <table class="alert-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th class="text-center">Current Stock</th>
+                        <th class="text-center">Threshold</th>
+                        <th class="text-center">Deficit</th>
+                        <th class="text-center">Urgency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in low_stock_products %}
+                    <tr>
+                        <td class="text-muted">{{ forloop.counter }}</td>
+                        <td>
+                            <div class="product-info">
+                                {% if product.image %}
+                                <img src="{{ product.image.url }}" alt="{{ product.name }}" class="product-thumb">
+                                {% else %}
+                                <div class="product-thumb-placeholder"><i class="fas fa-box"></i></div>
+                                {% endif %}
+                                <div>
+                                    <span class="product-name">{{ product.name }}</span>
+                                    {% if product.barcode %}
+                                    <small class="product-barcode">{{ product.barcode }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="category-badge">{{ product.category.name|default:"Uncategorized" }}</span></td>
+                        <td class="text-center">
+                            <span class="stock-count stock-low">{{ product.stock }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="threshold-val">{{ product.low_stock_threshold }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="deficit-badge">
+                                <i class="fas fa-arrow-down"></i>
+                                {{ product.deficit }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            {% if product.stock <= 5 %}
+                            <span class="urgency-badge urgency-critical">
+                                <i class="fas fa-fire"></i> Critical
+                            </span>
+                            {% elif product.stock <= product.low_stock_threshold|floatformat:"0" %}
+                            <span class="urgency-badge urgency-warning">
+                                <i class="fas fa-exclamation"></i> Warning
+                            </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if out_of_stock_products %}
+    <!-- Out of Stock Products Table -->
+    <div class="alert-table-container">
+        <div class="alert-table-header danger-header">
+            <h5>
+                <i class="fas fa-times-circle"></i>
+                Out of Stock Products
+                <span class="count-badge danger-badge">{{ out_count }}</span>
+            </h5>
+        </div>
+        <div class="table-responsive">
+            <table class="alert-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th class="text-center">Current Stock</th>
+                        <th class="text-center">Threshold</th>
+                        <th class="text-center">Need to Order</th>
+                        <th class="text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in out_of_stock_products %}
+                    <tr>
+                        <td class="text-muted">{{ forloop.counter }}</td>
+                        <td>
+                            <div class="product-info">
+                                {% if product.image %}
+                                <img src="{{ product.image.url }}" alt="{{ product.name }}" class="product-thumb">
+                                {% else %}
+                                <div class="product-thumb-placeholder"><i class="fas fa-box"></i></div>
+                                {% endif %}
+                                <div>
+                                    <span class="product-name">{{ product.name }}</span>
+                                    {% if product.barcode %}
+                                    <small class="product-barcode">{{ product.barcode }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="category-badge">{{ product.category.name|default:"Uncategorized" }}</span></td>
+                        <td class="text-center">
+                            <span class="stock-count stock-zero">0</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="threshold-val">{{ product.low_stock_threshold }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="order-badge">{{ product.low_stock_threshold }} units</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="urgency-badge urgency-critical">
+                                <i class="fas fa-ban"></i> Empty
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if low_stock_variations %}
+    <!-- Low Stock Variations Table -->
+    <div class="alert-table-container mb-4">
+        <div class="alert-table-header variation-warning-header">
+            <h5>
+                <i class="fas fa-layer-group"></i>
+                Low Stock Variations
+                <span class="count-badge warning-badge">{{ low_var_count }}</span>
+            </h5>
+        </div>
+        <div class="table-responsive">
+            <table class="alert-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Product / Variation</th>
+                        <th>Category</th>
+                        <th class="text-center">Current Stock</th>
+                        <th class="text-center">Threshold</th>
+                        <th class="text-center">Deficit</th>
+                        <th class="text-center">Urgency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for var in low_stock_variations %}
+                    <tr>
+                        <td class="text-muted">{{ forloop.counter }}</td>
+                        <td>
+                            <div class="product-info">
+                                {% if var.image %}
+                                <img src="{{ var.image.url }}" alt="{{ var.variation_name }}" class="product-thumb">
+                                {% elif var.product.image %}
+                                <img src="{{ var.product.image.url }}" alt="{{ var.product.name }}" class="product-thumb">
+                                {% else %}
+                                <div class="product-thumb-placeholder"><i class="fas fa-cube"></i></div>
+                                {% endif %}
+                                <div>
+                                    <span class="product-name">{{ var.product.name }}</span>
+                                    <small class="variation-detail">
+                                        <span class="variation-tag"><i class="fas fa-cube"></i> {{ var.variation_name|default:var.sku }}</span>
+                                        <span class="product-barcode">SKU: {{ var.sku }}</span>
+                                    </small>
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="category-badge">{{ var.product.category.name|default:"Uncategorized" }}</span></td>
+                        <td class="text-center">
+                            <span class="stock-count stock-low">{{ var.stock }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="threshold-val">{{ var.low_stock_threshold }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="deficit-badge">
+                                <i class="fas fa-arrow-down"></i>
+                                {{ var.deficit }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            {% if var.stock <= 5 %}
+                            <span class="urgency-badge urgency-critical">
+                                <i class="fas fa-fire"></i> Critical
+                            </span>
+                            {% else %}
+                            <span class="urgency-badge urgency-warning">
+                                <i class="fas fa-exclamation"></i> Warning
+                            </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if out_of_stock_variations %}
+    <!-- Out of Stock Variations Table -->
+    <div class="alert-table-container mb-4">
+        <div class="alert-table-header variation-danger-header">
+            <h5>
+                <i class="fas fa-layer-group"></i>
+                Out of Stock Variations
+                <span class="count-badge danger-badge">{{ out_var_count }}</span>
+            </h5>
+        </div>
+        <div class="table-responsive">
+            <table class="alert-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Product / Variation</th>
+                        <th>Category</th>
+                        <th class="text-center">Current Stock</th>
+                        <th class="text-center">Threshold</th>
+                        <th class="text-center">Need to Order</th>
+                        <th class="text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for var in out_of_stock_variations %}
+                    <tr>
+                        <td class="text-muted">{{ forloop.counter }}</td>
+                        <td>
+                            <div class="product-info">
+                                {% if var.image %}
+                                <img src="{{ var.image.url }}" alt="{{ var.variation_name }}" class="product-thumb">
+                                {% elif var.product.image %}
+                                <img src="{{ var.product.image.url }}" alt="{{ var.product.name }}" class="product-thumb">
+                                {% else %}
+                                <div class="product-thumb-placeholder"><i class="fas fa-cube"></i></div>
+                                {% endif %}
+                                <div>
+                                    <span class="product-name">{{ var.product.name }}</span>
+                                    <small class="variation-detail">
+                                        <span class="variation-tag"><i class="fas fa-cube"></i> {{ var.variation_name|default:var.sku }}</span>
+                                        <span class="product-barcode">SKU: {{ var.sku }}</span>
+                                    </small>
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="category-badge">{{ var.product.category.name|default:"Uncategorized" }}</span></td>
+                        <td class="text-center">
+                            <span class="stock-count stock-zero">0</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="threshold-val">{{ var.low_stock_threshold }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="order-badge">{{ var.low_stock_threshold }} units</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="urgency-badge urgency-critical">
+                                <i class="fas fa-ban"></i> Empty
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not low_stock_products and not out_of_stock_products and not low_stock_variations and not out_of_stock_variations %}
+    <div class="empty-state">
+        <i class="fas fa-check-circle"></i>
+        <h3>All Clear!</h3>
+        <p>No products are below their low stock threshold.</p>
+        <a href="{% url 'low_stock_settings' %}" class="action-btn btn-settings mt-3">
+            <i class="fas fa-cog"></i> Configure Thresholds
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Audio Alert -->
+{% if play_sound %}
+<audio id="alertSound" preload="auto">
+    <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgkKqsi2A1N2STrq2NYjk3Y5OssI5hNjdkkauuj2E3N2WRrKyOYDc3ZZGsrI5gNzdjkqysjmA3N2ORrKyOYDc3Y5GtrI9gNjdikaysjl83N2SSrq6OXzY3ZJKtr45eODdlka2vjl44N2OTra+PXTg3ZZOvr49dNzdjk6+wj104N2WTr6+PXTc3Y5Ovr49dODdlk6+vj103N2OTr6+PXTg3ZZOvr49dNzdjk6+vj183OGWUrq6PXzg4ZZSur49fODhllK6vjmA4OGaUrq+NYDg4ZZStr45gNzhmla2vj2E4OGSUra+QYTc4ZZWtr5BhODhllayukGE4OGaVrK+QYTg4ZpWsr5FhODhllayukWE4OGaVra+QYjg4Y5WxspNoPjtkjaSslWtDPmGHnqKRaEc/Y4OZnY1mSD9jgpaailxGQGV/koSEe1BHW3p+gYJ8Wk1OZHZ4enhqWFJUYG9zcm5mXllXXGhubm1raGBcW19nb25samhiX11gZ2xsamlmZGFfYmhramloZmRjYmRnamlnZ2ZlY2RjZmhpZ2ZnZWRkZWdoaGdmZmZlZmZnaGdmZ2ZlZmZnZ2dnZmZmZmdnZ2dnZ2dmZ2doZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnaGdnZ2dnZ2dnZ2dnZ2doZ2dnZ2dnZ2dnaGhoZ2dnZ2dnaGhoaGdnZ2doaGhoZ2dnZ2doaGhoaGdnZ2doaGhoZ2dnZ2dnZ2doZ2doZ2dmZ2ZnZ2doaGdmZmVlZWZnZ2doZ2ZlZWRlZmZnaGdmZWRjZGVmZ2hmZWRjYmNlZmdnZWRjYmJkZ2hmZGNiYWJkZmhmZGJhYGFkZmhmZGFgX2BjZWhmYmFfXl9jZmhlYWBfXWBjZmhlYF9eXWFkZ2hkYF5eXGBkZ2hjX15dXGBkZ2djX11cW19kZmdjXl1cXF9lZ2diXl1cW15kZmdjXl1cXGBkZ2djX11cXF9kaGdkX11cXF9kZ2dlYF1cXGBkZ2dlYF5dXGBkZ2hlYF5dXGBkZ2hmYV5dXWBlZ2hmYV5eXWFlZ2hmYl5eXmJmaGhmYl9fX2JmaGhmY19fX2NnaWlnZGBgYGRoampnZGFhYWVpampnZWJhYWVpampoZWJiYmZqamppZmJiY2dqamtqZ2NjZGhrbGtqZ2RkZWlsbGtrZ2VlZmpsbG1raGZlZ2ttbm1raGdmaGxub25raGdna2xvb25raGhnbG1vb29saWhobW5vcG5saWhpbm9wcG5taWlqb3BxcG9tamlqb3Fxc3BuamlrcHFyc3BuamtscHJ0c3Fuam1tcnN0c3JwbGxudHV1dHJwbW1vdHV2dXNxbm5wdXZ2dnRxb29xdnh3d3VycHBydnl5eHZzc3F0eHp6eXd1c3R2eXt7end1dHV4en18end2dXh6fn17e3h3d3p8fn59e3l4eHt+f399e3p5en1/gIB+fHt7fH6AgYGAf316fX+BgoKBgH98foGCg4OCgYB+f4GDhISDgoGAgYKEhIWEg4KBgoOEhYaFhIOCg4OFhoaGhYSEhISFhoaHhoWFhIWGh4eHhoaFhYWGh4iIh4eGhoaHiImJiIiHh4eHiImKiomIiIiIiYqKioqJiYmJiYqLi4uKiomJioqLi4uLi4qKioqLjIyMi4uLi4uLjIyNjIuLi4uMjI2NjYyMjIyMjY2NjY2NjIyNjY2Ojo6NjY2NjY6Ojo6OjY2Ojo6Oj4+Ojo6Ojo+Pj4+Pj4+Pj4+Pj4+Qj4+Pj4+Pj5CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkZGRkZGRkZGRkZGRkZGR" type="audio/wav">
+</audio>
+<script>
+    // Play alert sound on page load
+    window.addEventListener('load', function() {
+        const sound = document.getElementById('alertSound');
+        if (sound) {
+            sound.volume = 0.3;
+            sound.play().catch(() => {
+                // Autoplay blocked, show a click-to-play banner
+                const banner = document.createElement('div');
+                banner.className = 'sound-banner';
+                banner.innerHTML = '<i class="fas fa-volume-up"></i> Click to play alert sound';
+                banner.onclick = function() {
+                    sound.play();
+                    banner.remove();
+                };
+                document.querySelector('.low-stock-alerts').prepend(banner);
+            });
+        }
+    });
+</script>
+{% endif %}
+
+<style>
+:root {
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --card-shadow: 0 2px 12px rgba(102, 126, 234, 0.08);
+    --card-shadow-hover: 0 8px 25px rgba(102, 126, 234, 0.15);
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
+    --primary: #667eea;
+    --primary-dark: #5a6fd6;
+    --secondary: #764ba2;
+    --accent-green: #10b981;
+    --accent-green-bg: #ecfdf5;
+    --accent-orange: #f59e0b;
+    --accent-orange-bg: #fffbeb;
+    --accent-red: #ef4444;
+    --accent-red-bg: #fef2f2;
+    --accent-blue: #3b82f6;
+    --accent-blue-bg: #eff6ff;
+    --accent-purple: #667eea;
+    --accent-purple-bg: #eef2ff;
+    --table-header-bg: #f8fafc;
+    --table-row-hover: #f1f5f9;
+    --table-border: #e2e8f0;
+}
+
+.low-stock-alerts {
+    padding: 1.5rem 2rem;
+    color: var(--text-primary);
+}
+
+/* Sound Banner */
+.sound-banner {
+    background: var(--accent-orange-bg);
+    border: 1px solid #fcd34d;
+    color: #b45309;
+    padding: 0.65rem 1.1rem;
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    transition: all 0.25s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.sound-banner:hover {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+
+/* Header */
+.page-header { animation: slideDown 0.5s ease; }
+
+.header-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.header-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0.4rem 0 0 0;
+}
+
+.header-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+.action-btn {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    color: var(--text-primary);
+    padding: 0.55rem 1.1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--card-shadow);
+    text-decoration: none;
+}
+
+.btn-settings {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.btn-settings:hover {
+    background: var(--accent-purple-bg);
+    color: var(--primary-dark);
+}
+
+.btn-stock-in {
+    border-color: var(--accent-green);
+    color: #059669;
+}
+.btn-stock-in:hover {
+    background: var(--accent-green-bg);
+    color: #047857;
+}
+
+.btn-back {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.btn-back:hover {
+    background: var(--accent-purple-bg);
+    color: var(--primary-dark);
+}
+
+/* Pulse Warning */
+.pulse-warning {
+    color: var(--accent-orange);
+    animation: pulseWarn 1.5s infinite;
+}
+
+@keyframes pulseWarn {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+/* Alert Summary Cards */
+.alert-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 1.75rem;
+}
+
+.alert-summary-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: all 0.25s ease;
+    box-shadow: var(--card-shadow);
+}
+
+.alert-summary-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--card-shadow-hover);
+}
+
+.warning-card { border-left: 4px solid var(--accent-orange); }
+.danger-card { border-left: 4px solid var(--accent-red); }
+.total-card { border-left: 4px solid var(--primary); }
+
+.alert-summary-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+}
+
+.warning-card .alert-summary-icon { background: var(--accent-orange-bg); color: #d97706; }
+.danger-card .alert-summary-icon { background: var(--accent-red-bg); color: #dc2626; }
+.total-card .alert-summary-icon { background: var(--accent-purple-bg); color: var(--primary); }
+
+.alert-summary-info h2 {
+    font-size: 1.85rem;
+    font-weight: 800;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.alert-summary-info p {
+    margin: 0.2rem 0 0 0;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.alert-summary-info small {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+/* Alert Table */
+.alert-table-container {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--card-shadow);
+    animation: fadeInUp 0.5s ease;
+}
+
+.alert-table-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--table-border);
+    background: var(--card-bg);
+}
+
+.alert-table-header h5 {
+    margin: 0;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.warning-header { border-left: 4px solid var(--accent-orange); }
+.warning-header h5 { color: #b45309; }
+
+.danger-header { border-left: 4px solid var(--accent-red); }
+.danger-header h5 { color: #dc2626; }
+
+.count-badge {
+    padding: 0.15rem 0.55rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-left: 0.5rem;
+}
+
+.warning-badge { background: var(--accent-orange-bg); color: #d97706; }
+.danger-badge { background: var(--accent-red-bg); color: #dc2626; }
+
+.alert-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.alert-table thead th {
+    background: var(--table-header-bg);
+    color: var(--text-secondary);
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 2px solid var(--table-border);
+}
+
+.alert-table tbody tr {
+    border-bottom: 1px solid var(--table-border);
+    transition: background 0.2s ease;
+}
+
+.alert-table tbody tr:hover { background: var(--table-row-hover); }
+
+.alert-table tbody td {
+    padding: 0.75rem 1.25rem;
+    vertical-align: middle;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+/* Product Info */
+.product-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.product-thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 1px solid var(--card-border);
+}
+
+.product-thumb-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: var(--table-header-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.product-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    display: block;
+}
+
+.product-barcode {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    display: block;
+}
+
+.category-badge {
+    background: var(--accent-purple-bg);
+    color: var(--primary);
+    padding: 0.25rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.stock-count {
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.stock-low { color: #d97706; background: var(--accent-orange-bg); }
+.stock-zero { color: #dc2626; background: var(--accent-red-bg); }
+
+.threshold-val {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.deficit-badge {
+    color: #dc2626;
+    font-weight: 700;
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: var(--accent-red-bg);
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+}
+
+.order-badge {
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 0.85rem;
+    background: var(--accent-purple-bg);
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+}
+
+/* Urgency Badges */
+.urgency-badge {
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.urgency-critical {
+    background: var(--accent-red-bg);
+    color: #dc2626;
+    animation: blink 1.5s infinite;
+}
+
+.urgency-warning {
+    background: var(--accent-orange-bg);
+    color: #d97706;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    box-shadow: var(--card-shadow);
+}
+
+.empty-state i {
+    font-size: 3.5rem;
+    color: var(--accent-green);
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    font-weight: 800;
+    color: var(--text-primary);
+    margin: 0.5rem 0;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Variation Headers */
+.variation-warning-header { border-left: 4px solid var(--primary); }
+.variation-warning-header h5 { color: var(--primary); }
+
+.variation-danger-header { border-left: 4px solid #dc2626; }
+.variation-danger-header h5 { color: #dc2626; }
+
+.variation-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.variation-tag {
+    display: inline-block;
+    background: var(--accent-purple-bg);
+    color: var(--primary);
+    padding: 0.1rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+/* Text muted */
+.text-muted { color: var(--text-muted) !important; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    .low-stock-alerts { padding: 1rem; }
+    .header-title { font-size: 1.35rem; }
+    .alert-summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}

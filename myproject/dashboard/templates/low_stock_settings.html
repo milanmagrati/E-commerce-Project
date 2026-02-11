@@ -1,0 +1,895 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Low Stock Alert Settings{% endblock %}
+
+{% block content %}
+<div class="low-stock-settings">
+    <!-- Header -->
+    <div class="page-header mb-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h1 class="header-title">
+                    <i class="fas fa-bell pulse-icon"></i>
+                    Low Stock Alert Settings
+                </h1>
+                <p class="header-subtitle">Configure stock thresholds for each product to receive low stock alerts</p>
+            </div>
+            <div class="header-actions">
+                <a href="{% url 'low_stock_alerts' %}" class="action-btn btn-alerts">
+                    <i class="fas fa-exclamation-triangle"></i> View Alerts
+                    {% if low_stock_count > 0 %}
+                    <span class="alert-badge">{{ low_stock_count }}</span>
+                    {% endif %}
+                </a>
+                <a href="{% url 'inventory_dashboard' %}" class="action-btn btn-back">
+                    <i class="fas fa-arrow-left"></i> Inventory
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="summary-grid">
+        <div class="summary-card">
+            <div class="summary-icon bg-purple"><i class="fas fa-boxes"></i></div>
+            <div class="summary-info">
+                <h3>{{ total_products }}</h3>
+                <p>Total Products</p>
+            </div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-icon bg-orange"><i class="fas fa-exclamation-triangle"></i></div>
+            <div class="summary-info">
+                <h3>{{ low_stock_count }}</h3>
+                <p>Low Stock Items</p>
+            </div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-icon bg-red"><i class="fas fa-times-circle"></i></div>
+            <div class="summary-info">
+                <h3>{{ out_of_stock_count }}</h3>
+                <p>Out of Stock</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+        <form method="get" class="d-flex gap-3 flex-wrap align-items-end w-100">
+            <div class="filter-group flex-grow-1">
+                <label>Search Products</label>
+                <input type="text" name="search" value="{{ search }}" placeholder="Search by name or barcode..." class="filter-input">
+            </div>
+            <div class="filter-group">
+                <label>Category</label>
+                <select name="category" class="filter-select">
+                    <option value="">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if category_filter|slugify == cat.id|slugify %}selected{% endif %}>{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Status</label>
+                <select name="status" class="filter-select">
+                    <option value="">All Status</option>
+                    <option value="low" {% if status_filter == 'low' %}selected{% endif %}>Low Stock</option>
+                    <option value="ok" {% if status_filter == 'ok' %}selected{% endif %}>OK</option>
+                    <option value="out" {% if status_filter == 'out' %}selected{% endif %}>Out of Stock</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <button type="submit" class="action-btn btn-filter">
+                    <i class="fas fa-search"></i> Filter
+                </button>
+            </div>
+            {% if search or category_filter or status_filter %}
+            <div class="filter-group">
+                <a href="{% url 'low_stock_settings' %}" class="action-btn btn-clear">
+                    <i class="fas fa-times"></i> Clear
+                </a>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Products Table -->
+    <form method="post" action="{% url 'save_low_stock_thresholds' %}">
+        {% csrf_token %}
+        <div class="table-container">
+            <div class="table-header">
+                <h5><i class="fas fa-sliders-h"></i> Threshold Settings</h5>
+                <button type="submit" class="save-btn" id="saveBtn">
+                    <i class="fas fa-save"></i> Save All Settings
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="stock-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Product Name</th>
+                            <th>Category</th>
+                            <th class="text-center">Current Stock</th>
+                            <th class="text-center">Low Stock Threshold</th>
+                            <th class="text-center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in products %}
+                        <tr class="{% if product.product_type == 'variable' %}expandable-row{% endif %} {% if product.stock == 0 %}row-out-of-stock{% elif product.low_stock_threshold > 0 and product.stock <= product.low_stock_threshold %}row-low-stock{% endif %}" {% if product.product_type == 'variable' %}data-toggle="variations-{{ product.id }}" style="cursor:pointer"{% endif %}>
+                            <td class="text-muted">{{ forloop.counter }}</td>
+                            <td>
+                                <div class="product-info">
+                                    {% if product.image %}
+                                    <img src="{{ product.image.url }}" alt="{{ product.name }}" class="product-thumb">
+                                    {% else %}
+                                    <div class="product-thumb-placeholder"><i class="fas fa-box"></i></div>
+                                    {% endif %}
+                                    <div>
+                                        <span class="product-name">
+                                            {{ product.name }}
+                                            {% if product.product_type == 'variable' %}
+                                            <i class="fas fa-chevron-right expand-icon" id="icon-{{ product.id }}"></i>
+                                            <span class="variant-count-badge">{{ product.variations.count }} variants</span>
+                                            {% endif %}
+                                        </span>
+                                        {% if product.barcode %}
+                                        <small class="product-barcode">{{ product.barcode }}</small>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td><span class="category-badge">{{ product.category.name|default:"Uncategorized" }}</span></td>
+                            <td class="text-center">
+                                <span class="stock-count {% if product.stock == 0 %}stock-zero{% elif product.low_stock_threshold > 0 and product.stock <= product.low_stock_threshold %}stock-low{% else %}stock-ok{% endif %}">
+                                    {{ product.stock }}
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <input type="number"
+                                       name="threshold_{{ product.id }}"
+                                       value="{{ product.low_stock_threshold }}"
+                                       min="0"
+                                       class="threshold-input"
+                                       data-original="{{ product.low_stock_threshold }}"
+                                       onclick="event.stopPropagation()">
+                            </td>
+                            <td class="text-center">
+                                {% if product.stock == 0 %}
+                                    <span class="status-badge status-out">
+                                        <i class="fas fa-times-circle"></i> Out of Stock
+                                    </span>
+                                {% elif product.low_stock_threshold > 0 and product.stock <= product.low_stock_threshold %}
+                                    <span class="status-badge status-low">
+                                        <i class="fas fa-exclamation-triangle"></i> Low Stock
+                                    </span>
+                                {% elif product.low_stock_threshold == 0 %}
+                                    <span class="status-badge status-unset">
+                                        <i class="fas fa-minus-circle"></i> Not Set
+                                    </span>
+                                {% else %}
+                                    <span class="status-badge status-ok">
+                                        <i class="fas fa-check-circle"></i> OK
+                                    </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if product.product_type == 'variable' %}
+                            {% for variation in product.variations.all %}
+                            <tr class="variation-row variations-{{ product.id }}" style="display:none">
+                                <td class="text-muted variation-num-cell">{{ forloop.counter }}</td>
+                                <td>
+                                    <div class="product-info variation-indent">
+                                        <div class="variation-connector"></div>
+                                        {% if variation.image %}
+                                        <img src="{{ variation.image.url }}" alt="{{ variation.variation_name }}" class="product-thumb product-thumb-sm">
+                                        {% else %}
+                                        <div class="product-thumb-placeholder product-thumb-sm"><i class="fas fa-cube"></i></div>
+                                        {% endif %}
+                                        <div>
+                                            <span class="variation-name">{{ variation.variation_name|default:variation.sku }}</span>
+                                            <small class="product-barcode">SKU: {{ variation.sku }}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><span class="variation-label">Variant</span></td>
+                                <td class="text-center">
+                                    <span class="stock-count {% if variation.stock == 0 %}stock-zero{% elif variation.low_stock_threshold > 0 and variation.stock <= variation.low_stock_threshold %}stock-low{% else %}stock-ok{% endif %}">
+                                        {{ variation.stock }}
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <input type="number"
+                                           name="var_threshold_{{ variation.id }}"
+                                           value="{{ variation.low_stock_threshold }}"
+                                           min="0"
+                                           class="threshold-input threshold-input-var"
+                                           data-original="{{ variation.low_stock_threshold }}"
+                                           onclick="event.stopPropagation()">
+                                </td>
+                                <td class="text-center">
+                                    {% if variation.stock == 0 %}
+                                        <span class="status-badge status-out">
+                                            <i class="fas fa-times-circle"></i> Out
+                                        </span>
+                                    {% elif variation.low_stock_threshold > 0 and variation.stock <= variation.low_stock_threshold %}
+                                        <span class="status-badge status-low">
+                                            <i class="fas fa-exclamation-triangle"></i> Low
+                                        </span>
+                                    {% elif variation.low_stock_threshold == 0 %}
+                                        <span class="status-badge status-unset">
+                                            <i class="fas fa-minus-circle"></i> Not Set
+                                        </span>
+                                    {% else %}
+                                        <span class="status-badge status-ok">
+                                            <i class="fas fa-check-circle"></i> OK
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% endif %}
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4">
+                                <i class="fas fa-box-open fa-2x mb-3 text-muted d-block"></i>
+                                <p class="text-muted mb-0">No products found</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if products.has_other_pages %}
+            <div class="pagination-container">
+                <nav>
+                    <ul class="pagination-dark">
+                        {% if products.has_previous %}
+                        <li><a href="?page={{ products.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}"><i class="fas fa-chevron-left"></i></a></li>
+                        {% endif %}
+                        {% for num in products.paginator.page_range %}
+                            {% if products.number == num %}
+                            <li class="active"><span>{{ num }}</span></li>
+                            {% elif num > products.number|add:'-3' and num < products.number|add:'3' %}
+                            <li><a href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">{{ num }}</a></li>
+                            {% endif %}
+                        {% endfor %}
+                        {% if products.has_next %}
+                        <li><a href="?page={{ products.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}"><i class="fas fa-chevron-right"></i></a></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<style>
+:root {
+    --bg-body: #f4f6fb;
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --card-shadow: 0 2px 12px rgba(102, 126, 234, 0.08);
+    --card-shadow-hover: 0 8px 25px rgba(102, 126, 234, 0.15);
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
+    --primary: #667eea;
+    --primary-dark: #5a6fd6;
+    --secondary: #764ba2;
+    --accent-green: #10b981;
+    --accent-green-bg: #ecfdf5;
+    --accent-orange: #f59e0b;
+    --accent-orange-bg: #fffbeb;
+    --accent-red: #ef4444;
+    --accent-red-bg: #fef2f2;
+    --accent-blue: #3b82f6;
+    --accent-blue-bg: #eff6ff;
+    --accent-purple: #667eea;
+    --accent-purple-bg: #eef2ff;
+    --input-bg: #f8fafc;
+    --input-border: #cbd5e1;
+    --table-header-bg: #f8fafc;
+    --table-row-hover: #f1f5f9;
+    --table-border: #e2e8f0;
+}
+
+.low-stock-settings {
+    padding: 1.5rem 2rem;
+    color: var(--text-primary);
+}
+
+/* Header */
+.page-header { animation: slideDown 0.5s ease; }
+
+.header-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.header-title i {
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.header-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0.4rem 0 0 0;
+}
+
+.header-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+.action-btn {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    color: var(--text-primary);
+    padding: 0.55rem 1.1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--card-shadow);
+    text-decoration: none;
+}
+
+.btn-alerts {
+    border-color: var(--accent-orange);
+    color: var(--accent-orange);
+}
+.btn-alerts:hover {
+    background: var(--accent-orange-bg);
+    color: #d97706;
+}
+
+.btn-back {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.btn-back:hover {
+    background: var(--accent-purple-bg);
+    color: var(--primary-dark);
+}
+
+.btn-filter {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    border-color: var(--primary);
+    color: #fff;
+}
+.btn-filter:hover {
+    background: linear-gradient(135deg, var(--primary-dark), var(--secondary));
+    color: #fff;
+}
+
+.btn-clear {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+.btn-clear:hover {
+    background: var(--accent-red-bg);
+    color: #dc2626;
+}
+
+.alert-badge {
+    background: var(--accent-red);
+    color: white;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-left: 0.25rem;
+}
+
+/* Summary Cards */
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.summary-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: all 0.25s ease;
+    box-shadow: var(--card-shadow);
+}
+
+.summary-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--card-shadow-hover);
+}
+
+.summary-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+}
+
+.bg-purple { background: var(--accent-purple-bg); color: var(--primary); }
+.bg-orange { background: var(--accent-orange-bg); color: var(--accent-orange); }
+.bg-red { background: var(--accent-red-bg); color: var(--accent-red); }
+
+.summary-info h3 {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.summary-info p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+/* Filter Bar */
+.filter-bar {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--card-shadow);
+}
+
+.filter-group { display: flex; flex-direction: column; gap: 0.35rem; }
+.filter-group label {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.filter-input, .filter-select {
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text-primary);
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.filter-input:focus, .filter-select:focus {
+    border-color: var(--primary);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.filter-select option { background: var(--card-bg); }
+
+/* Table */
+.table-container {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--card-shadow);
+}
+
+.table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--table-border);
+    background: var(--card-bg);
+}
+
+.table-header h5 {
+    margin: 0;
+    color: var(--text-primary);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+}
+
+.table-header h5 i {
+    color: var(--primary);
+}
+
+.save-btn {
+    background: linear-gradient(135deg, var(--accent-green), #059669);
+    border: none;
+    color: white;
+    padding: 0.6rem 1.4rem;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.save-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);
+}
+
+.stock-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.stock-table thead th {
+    background: var(--table-header-bg);
+    color: var(--text-secondary);
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 2px solid var(--table-border);
+}
+
+.stock-table tbody tr {
+    border-bottom: 1px solid var(--table-border);
+    transition: background 0.2s ease;
+}
+
+.stock-table tbody tr:hover { background: var(--table-row-hover); }
+
+.stock-table tbody td {
+    padding: 0.75rem 1.25rem;
+    vertical-align: middle;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.row-low-stock { background: rgba(245, 158, 11, 0.04) !important; }
+.row-out-of-stock { background: rgba(239, 68, 68, 0.04) !important; }
+
+/* Product Info */
+.product-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.product-thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 1px solid var(--card-border);
+}
+
+.product-thumb-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: var(--table-header-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.product-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    display: block;
+}
+
+.product-barcode {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    display: block;
+}
+
+.category-badge {
+    background: var(--accent-purple-bg);
+    color: var(--primary);
+    padding: 0.25rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+/* Stock Count */
+.stock-count {
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.stock-ok { color: #059669; background: var(--accent-green-bg); }
+.stock-low { color: #d97706; background: var(--accent-orange-bg); }
+.stock-zero { color: #dc2626; background: var(--accent-red-bg); }
+
+/* Threshold Input */
+.threshold-input {
+    background: var(--input-bg);
+    border: 2px solid var(--input-border);
+    color: var(--text-primary);
+    padding: 0.45rem 0.6rem;
+    border-radius: 8px;
+    width: 100px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+    transition: all 0.25s ease;
+}
+
+.threshold-input:focus {
+    border-color: var(--primary);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.threshold-input.changed {
+    border-color: var(--accent-orange);
+    background: var(--accent-orange-bg);
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    white-space: nowrap;
+}
+
+.status-ok { background: var(--accent-green-bg); color: #059669; }
+.status-low { background: var(--accent-orange-bg); color: #d97706; }
+.status-out { background: var(--accent-red-bg); color: #dc2626; }
+.status-unset { background: #f1f5f9; color: var(--text-muted); }
+
+/* Pagination */
+.pagination-container {
+    padding: 1rem 1.25rem;
+    display: flex;
+    justify-content: center;
+    border-top: 1px solid var(--table-border);
+}
+
+.pagination-dark {
+    list-style: none;
+    display: flex;
+    gap: 0.35rem;
+    padding: 0;
+    margin: 0;
+}
+
+.pagination-dark li a,
+.pagination-dark li span {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    color: var(--text-primary);
+    padding: 0.45rem 0.8rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    display: inline-block;
+}
+
+.pagination-dark li a:hover {
+    background: var(--accent-purple-bg);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.pagination-dark li.active span {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    border-color: var(--primary);
+    color: #fff;
+}
+
+/* Pulse Icon */
+.pulse-icon {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Variation Rows */
+.variation-row {
+    background: #faf8ff !important;
+}
+
+.variation-row:hover {
+    background: #f3efff !important;
+}
+
+/* Expandable row */
+.expandable-row {
+    transition: background 0.2s;
+}
+
+.expandable-row:hover {
+    background: var(--accent-purple-bg) !important;
+}
+
+.expand-icon {
+    font-size: 0.65rem;
+    color: var(--primary);
+    margin-left: 0.4rem;
+    transition: transform 0.3s ease;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.expand-icon.rotated {
+    transform: rotate(90deg);
+}
+
+.variant-count-badge {
+    display: inline-block;
+    background: var(--accent-purple-bg);
+    color: var(--primary);
+    padding: 0.1rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+}
+
+.variation-num-cell {
+    font-size: 0.78rem;
+    padding-left: 2rem !important;
+    color: var(--primary) !important;
+    font-weight: 600;
+}
+
+.variation-indent {
+    padding-left: 1.5rem;
+    position: relative;
+}
+
+.variation-connector {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    width: 12px;
+    height: 1px;
+    background: #d4d0e8;
+}
+
+.variation-connector::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: -15px;
+    width: 1px;
+    height: 30px;
+    background: #d4d0e8;
+}
+
+.variation-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    display: block;
+    font-size: 0.85rem;
+}
+
+.variation-label {
+    background: var(--accent-purple-bg);
+    color: var(--primary);
+    padding: 0.18rem 0.55rem;
+    border-radius: 5px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.product-thumb-sm {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 6px !important;
+    font-size: 0.8rem;
+}
+
+.threshold-input-var {
+    width: 90px;
+    font-size: 0.88rem;
+    border-style: dashed;
+}
+
+/* Text muted helper */
+.text-muted { color: var(--text-muted) !important; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    .low-stock-settings { padding: 1rem; }
+    .header-title { font-size: 1.35rem; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .threshold-input { width: 80px; }
+    .table-header { flex-direction: column; gap: 0.75rem; }
+}
+</style>
+
+<script>
+// Highlight changed threshold inputs
+document.querySelectorAll('.threshold-input').forEach(input => {
+    input.addEventListener('input', function() {
+        if (this.value !== this.dataset.original) {
+            this.classList.add('changed');
+        } else {
+            this.classList.remove('changed');
+        }
+    });
+});
+
+// Confirm before saving
+document.getElementById('saveBtn').addEventListener('click', function(e) {
+    const changed = document.querySelectorAll('.threshold-input.changed');
+    if (changed.length === 0) {
+        e.preventDefault();
+        alert('No changes detected. Modify at least one threshold value before saving.');
+    }
+});
+
+// Expand/Collapse variation rows
+document.querySelectorAll('.expandable-row').forEach(row => {
+    row.addEventListener('click', function() {
+        const toggleId = this.dataset.toggle;
+        if (!toggleId) return;
+        const variationRows = document.querySelectorAll('.' + toggleId);
+        const icon = document.getElementById('icon-' + toggleId.replace('variations-', ''));
+        const isExpanded = icon && icon.classList.contains('rotated');
+
+        variationRows.forEach(vRow => {
+            vRow.style.display = isExpanded ? 'none' : 'table-row';
+        });
+
+        if (icon) {
+            icon.classList.toggle('rotated');
+        }
+    });
+});
+</script>
+{% endblock %}

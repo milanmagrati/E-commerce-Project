@@ -254,6 +254,166 @@
             background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
             border-left-color: #764ba2;
         }
+
+        /* ==================== LOW STOCK NOTIFICATION ==================== */
+        .low-stock-notification {
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+            border: 1px solid #fcd34d;
+            border-left: 4px solid #f59e0b;
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.25rem;
+            animation: lsnSlideDown 0.4s ease;
+        }
+
+        .lsn-content {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .lsn-icon {
+            width: 42px;
+            height: 42px;
+            background: rgba(245, 158, 11, 0.15);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #b45309;
+            font-size: 1.15rem;
+            flex-shrink: 0;
+        }
+
+        .lsn-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .lsn-title {
+            color: #92400e;
+            font-size: 0.95rem;
+            margin-right: 0.5rem;
+        }
+
+        .lsn-count-badge {
+            background: #f59e0b;
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.15rem 0.55rem;
+            border-radius: 10px;
+            vertical-align: middle;
+        }
+
+        .lsn-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-top: 0.4rem;
+        }
+
+        .lsn-item {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: #78350f;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .lsn-stock {
+            background: #fbbf24;
+            color: #78350f;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.05rem 0.4rem;
+            border-radius: 4px;
+        }
+
+        .lsn-more {
+            color: #b45309;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+        }
+
+        .lsn-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        .lsn-view-btn {
+            background: #f59e0b;
+            color: #fff;
+            padding: 0.4rem 1rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .lsn-view-btn:hover {
+            background: #d97706;
+            color: #fff;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+        }
+
+        .lsn-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            background: transparent;
+            color: #b45309;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.85rem;
+        }
+
+        .lsn-close:hover {
+            background: rgba(220, 38, 38, 0.1);
+            border-color: rgba(220, 38, 38, 0.3);
+            color: #dc2626;
+        }
+
+        @keyframes lsnSlideDown {
+            from { opacity: 0; transform: translateY(-12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .lsn-hide {
+            animation: lsnSlideUp 0.3s ease forwards;
+        }
+
+        @keyframes lsnSlideUp {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-12px); }
+        }
+
+        @media (max-width: 768px) {
+            .lsn-content {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .lsn-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -457,6 +617,12 @@
                             <a href="#">Stock Adjustments</a>
                         </li>
                         {% endif %}
+                        <li class="{% if request.resolver_match.url_name == 'low_stock_settings' %}active{% endif %}">
+                            <a href="{% url 'low_stock_settings' %}">Low Stock Settings</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'low_stock_alerts' %}active{% endif %}">
+                            <a href="{% url 'low_stock_alerts' %}">Low Stock Alerts</a>
+                        </li>
                     </ul>
                 </li>
                 {% endif %}
@@ -742,6 +908,37 @@
                 </div>
                 {% endif %}
 
+                {% if low_stock_notification_count > 0 %}
+                <div class="low-stock-notification" id="lowStockNotification">
+                    <div class="lsn-content">
+                        <div class="lsn-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="lsn-body">
+                            <strong class="lsn-title">Low Stock Alert</strong>
+                            <span class="lsn-count-badge">{{ low_stock_notification_count }}</span>
+                            <div class="lsn-items">
+                                {% for product in low_stock_notification_products|slice:":5" %}
+                                <span class="lsn-item">
+                                    {{ product.name|truncatewords:3 }}
+                                    <span class="lsn-stock">{{ product.stock }} left</span>
+                                </span>
+                                {% endfor %}
+                                {% if low_stock_notification_count > 5 %}
+                                <span class="lsn-more">+{{ low_stock_notification_count|add:"-5" }} more</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="lsn-actions">
+                            <a href="{% url 'low_stock_alerts' %}" class="lsn-view-btn">View All</a>
+                            <button class="lsn-close" onclick="dismissLowStockNotification()" title="Dismiss">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% block content %}{% endblock %}
             </div>
 
@@ -875,6 +1072,59 @@
                     }
                 }, 250);
             });
+        });
+    </script>
+    <script>
+        function dismissLowStockNotification() {
+            var el = document.getElementById('lowStockNotification');
+            if (el) {
+                el.classList.add('lsn-hide');
+                setTimeout(function() { el.remove(); }, 300);
+                sessionStorage.setItem('lsn_dismissed', '1');
+            }
+        }
+
+        function playLowStockSound() {
+            try {
+                var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                var t = ctx.currentTime;
+
+                // Two-chime alert pattern (~3 seconds total)
+                var pattern = [
+                    // First chime: C5 → E5 → G5 (ascending)
+                    { freq: 523.25, start: 0,    dur: 0.35 },
+                    { freq: 659.25, start: 0.2,  dur: 0.35 },
+                    { freq: 783.99, start: 0.4,  dur: 0.5  },
+                    // Brief pause, then second chime: G5 → C6 (resolve)
+                    { freq: 783.99, start: 1.2,  dur: 0.3  },
+                    { freq: 1046.5, start: 1.4,  dur: 0.7  },
+                ];
+
+                pattern.forEach(function(note) {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = note.freq;
+                    // Smooth fade in and out
+                    gain.gain.setValueAtTime(0, t + note.start);
+                    gain.gain.linearRampToValueAtTime(0.12, t + note.start + 0.06);
+                    gain.gain.setValueAtTime(0.12, t + note.start + note.dur - 0.1);
+                    gain.gain.linearRampToValueAtTime(0, t + note.start + note.dur);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(t + note.start);
+                    osc.stop(t + note.start + note.dur + 0.05);
+                });
+            } catch(e) {}
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (sessionStorage.getItem('lsn_dismissed') === '1') {
+                var el = document.getElementById('lowStockNotification');
+                if (el) el.remove();
+            } else if (document.getElementById('lowStockNotification')) {
+                setTimeout(playLowStockSound, 500);
+            }
         });
     </script>
     {% block extra_js %}{% endblock %}

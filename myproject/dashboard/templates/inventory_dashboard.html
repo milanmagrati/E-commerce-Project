@@ -180,17 +180,17 @@
                 </div>
                 <div class="chart-legend-custom">
                     <div class="legend-item-custom">
-                        <span class="legend-dot" style="background: #10b981;"></span>
+                        <span class="legend-dot" style="background: #059669;"></span>
                         <span class="legend-label-custom">In Stock</span>
                         <span class="legend-value-custom">{{ in_stock }}</span>
                     </div>
                     <div class="legend-item-custom">
-                        <span class="legend-dot" style="background: #f59e0b;"></span>
+                        <span class="legend-dot" style="background: #d97706;"></span>
                         <span class="legend-label-custom">Low Stock</span>
                         <span class="legend-value-custom">{{ low_stock }}</span>
                     </div>
                     <div class="legend-item-custom">
-                        <span class="legend-dot" style="background: #ef4444;"></span>
+                        <span class="legend-dot" style="background: #dc2626;"></span>
                         <span class="legend-label-custom">Out of Stock</span>
                         <span class="legend-value-custom">{{ out_of_stock }}</span>
                     </div>
@@ -632,17 +632,17 @@
 <style>
 /* Root Variables */
 :root {
-    --dark-bg: #0f172a;
-    --dark-card: #1e293b;
-    --dark-card-hover: #2d3748;
-    --dark-border: #334155;
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --accent-purple: #8b5cf6;
-    --accent-green: #10b981;
-    --accent-orange: #f59e0b;
-    --accent-red: #ef4444;
-    --accent-blue: #3b82f6;
+    --dark-bg: #f5f7fa;
+    --dark-card: #ffffff;
+    --dark-card-hover: #f0f1f3;
+    --dark-border: #e5e7eb;
+    --text-primary: #1f2937;
+    --text-secondary: #6b7280;
+    --accent-purple: #4f46e5;
+    --accent-green: #059669;
+    --accent-orange: #d97706;
+    --accent-red: #dc2626;
+    --accent-blue: #2563eb;
 }
 
 .inventory-dashboard {
@@ -695,13 +695,13 @@
 
 .action-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
 }
 
 .btn-stock-in:hover { 
     border-color: var(--accent-green); 
     color: var(--accent-green); 
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(5, 150, 105, 0.1);
 }
 
 /* Stats Grid */
@@ -719,12 +719,13 @@
     position: relative;
     overflow: hidden;
     border: 1px solid var(--dark-border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .stat-card:hover {
     transform: translateY(-8px) scale(1.02);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
 }
 
 .gradient-purple { border-left: 4px solid var(--accent-purple); }
@@ -743,7 +744,7 @@
     width: 50px;
     height: 50px;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.04);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -761,17 +762,17 @@
 }
 
 .stat-trend.positive {
-    background: rgba(16, 185, 129, 0.15);
+    background: rgba(5, 150, 105, 0.15);
     color: var(--accent-green);
 }
 
 .stat-trend.negative {
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(217, 119, 6, 0.15);
     color: var(--accent-orange);
 }
 
 .stat-trend.critical {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(220, 38, 38, 0.15);
     color: var(--accent-red);
 }
 
@@ -800,22 +801,22 @@
 }
 
 .detail-badge.success {
-    background: rgba(16, 185, 129, 0.15);
+    background: rgba(5, 150, 105, 0.15);
     color: var(--accent-green);
 }
 
 .detail-badge.info {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(37, 99, 235, 0.15);
     color: var(--accent-blue);
 }
 
 .detail-badge.warning {
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(217, 119, 6, 0.15);
     color: var(--accent-orange);
 }
 
 .detail-badge.danger {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(220, 38, 38, 0.15);
     color: var(--accent-red);
 }
 
@@ -832,11 +833,12 @@
     border: 1px solid var(--dark-border);
     border-radius: 16px;
     overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .card-header-dark {
     padding: 1.5rem;
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(0, 0, 0, 0.02);
     border-bottom: 1px solid var(--dark-border);
     display: flex;
     justify-content: space-between;
@@ -862,7 +864,7 @@
     width: 36px;
     height: 36px;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.04);
     border: 1px solid var(--dark-border);
     color: var(--text-secondary);
     display: flex;
@@ -972,7 +974,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem;
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(0, 0, 0, 0.03);
     border-radius: 8px;
 }
 
@@ -1015,7 +1017,7 @@
     cursor: pointer;
     transition: all 0.3s;
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23f1f5f9' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231f2937' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.75rem center;
     background-size: 12px;
@@ -1029,7 +1031,7 @@
 .select-dark:focus {
     outline: none;
     border-color: var(--accent-purple);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .select-dark option {
@@ -1100,7 +1102,7 @@
 
 .date-modal-close:hover {
     color: var(--accent-red);
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(220, 38, 38, 0.1);
 }
 
 .date-modal-body {
@@ -1135,11 +1137,11 @@
 .date-input-dark:focus {
     outline: none;
     border-color: var(--accent-purple);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .date-input-dark::-webkit-calendar-picker-indicator {
-    filter: invert(1);
+    filter: invert(0);
     cursor: pointer;
 }
 
@@ -1174,7 +1176,7 @@
 .btn-modal-cancel:hover {
     border-color: var(--accent-red);
     color: var(--accent-red);
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(220, 38, 38, 0.1);
 }
 
 .btn-modal-apply {
@@ -1184,9 +1186,9 @@
 }
 
 .btn-modal-apply:hover {
-    background: #7c3aed;
+    background: #3730a3;
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
 }
 
 /* Stock In Section */
@@ -1195,13 +1197,13 @@
 }
 
 .stock-in-highlight {
-    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.2) !important;
-    border: 2px solid rgba(16, 185, 129, 0.3) !important;
+    box-shadow: 0 8px 24px rgba(5, 150, 105, 0.2) !important;
+    border: 2px solid rgba(5, 150, 105, 0.3) !important;
 }
 
 .alert-success {
     border-bottom: 3px solid var(--accent-green);
-    background: linear-gradient(to right, rgba(16, 185, 129, 0.08), transparent);
+    background: linear-gradient(to right, rgba(5, 150, 105, 0.08), transparent);
 }
 
 .header-right {
@@ -1218,28 +1220,28 @@
 }
 
 .count-badge.success { 
-    background: rgba(16, 185, 129, 0.25); 
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.5);
+    background: rgba(5, 150, 105, 0.25); 
+    color: #059669;
+    border: 1px solid rgba(5, 150, 105, 0.5);
 }
 
 .count-badge.warning { 
-    background: rgba(245, 158, 11, 0.2); 
+    background: rgba(217, 119, 6, 0.2); 
     color: var(--accent-orange); 
 }
 
 .count-badge.danger { 
-    background: rgba(239, 68, 68, 0.2); 
+    background: rgba(220, 38, 38, 0.2); 
     color: var(--accent-red); 
 }
 
 .count-badge.info {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(37, 99, 235, 0.2);
     color: var(--accent-blue);
 }
 
 .btn-sm-success {
-    background: rgba(16, 185, 129, 0.2);
+    background: rgba(5, 150, 105, 0.2);
     color: var(--accent-green);
     padding: 0.5rem 1rem;
     border-radius: 8px;
@@ -1249,12 +1251,12 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    border: 1px solid rgba(5, 150, 105, 0.3);
     transition: all 0.3s;
 }
 
 .btn-sm-success:hover {
-    background: rgba(16, 185, 129, 0.3);
+    background: rgba(5, 150, 105, 0.3);
     transform: translateY(-2px);
 }
 
@@ -1272,10 +1274,16 @@
     width: 100%;
     color: var(--text-primary);
     border-collapse: collapse;
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--text-primary);
+    --bs-table-border-color: var(--dark-border);
+    --bs-table-striped-bg: transparent;
+    --bs-table-hover-bg: rgba(79, 70, 229, 0.04);
+    background-color: transparent;
 }
 
 .table-dark thead {
-    background: rgba(139, 92, 246, 0.08);
+    background: rgba(79, 70, 229, 0.08);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -1285,15 +1293,15 @@
     padding: 1.25rem 1rem;
     font-weight: 700;
     font-size: 0.85rem;
-    color: #e2e8f0;
+    color: #4b5563;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 2px solid rgba(139, 92, 246, 0.2);
+    border-bottom: 2px solid rgba(79, 70, 229, 0.2);
 }
 
 .table-dark td {
     padding: 1.25rem 1rem;
-    border-top: 1px solid rgba(51, 65, 85, 0.5);
+    border-top: 1px solid rgba(229, 231, 235, 0.5);
     font-size: 0.95rem;
     vertical-align: middle;
 }
@@ -1303,21 +1311,21 @@
 }
 
 .table-row-hover:hover {
-    background: rgba(139, 92, 246, 0.08);
+    background: rgba(79, 70, 229, 0.08);
     border-left: 3px solid var(--accent-purple);
     transform: scale(1.005);
 }
 
 /* Badges */
 .sku-badge-stockin {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(79, 70, 229, 0.15);
     padding: 0.35rem 0.85rem;
     border-radius: 6px;
     font-size: 0.8rem;
     font-family: 'Courier New', monospace;
-    color: #a78bfa;
+    color: #4338ca;
     font-weight: 700;
-    border: 1px solid rgba(139, 92, 246, 0.3);
+    border: 1px solid rgba(79, 70, 229, 0.3);
 }
 
 .type-badge {
@@ -1331,19 +1339,19 @@
     letter-spacing: 0.3px;
 }
 
-.type-purchase { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-color: rgba(59, 130, 246, 0.5); }
-.type-return { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.5); }
-.type-adjustment { background: rgba(139, 92, 246, 0.2); color: #a78bfa; border-color: rgba(139, 92, 246, 0.5); }
-.type-transfer { background: rgba(16, 185, 129, 0.2); color: #34d399; border-color: rgba(16, 185, 129, 0.5); }
-.type-other { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.5); }
+.type-purchase { background: rgba(37, 99, 235, 0.2); color: #2563eb; border-color: rgba(37, 99, 235, 0.5); }
+.type-return { background: rgba(217, 119, 6, 0.2); color: #d97706; border-color: rgba(217, 119, 6, 0.5); }
+.type-adjustment { background: rgba(79, 70, 229, 0.2); color: #4338ca; border-color: rgba(79, 70, 229, 0.5); }
+.type-transfer { background: rgba(5, 150, 105, 0.2); color: #059669; border-color: rgba(5, 150, 105, 0.5); }
+.type-other { background: rgba(107, 114, 128, 0.2); color: #6b7280; border-color: rgba(107, 114, 128, 0.5); }
 
 .supplier-name {
-    color: #f1f5f9;
+    color: #1f2937;
     font-weight: 600;
 }
 
 .items-count {
-    color: #e2e8f0;
+    color: #4b5563;
     font-weight: 700;
     display: inline-flex;
     align-items: center;
@@ -1358,25 +1366,25 @@
 }
 
 .stock-badge.success {
-    background: rgba(16, 185, 129, 0.25);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.5);
+    background: rgba(5, 150, 105, 0.25);
+    color: #059669;
+    border: 1px solid rgba(5, 150, 105, 0.5);
 }
 
 .stock-badge.warning {
-    background: rgba(245, 158, 11, 0.2);
+    background: rgba(217, 119, 6, 0.2);
     color: var(--accent-orange);
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    border: 1px solid rgba(217, 119, 6, 0.3);
 }
 
 .stock-badge.danger {
-    background: rgba(239, 68, 68, 0.2);
+    background: rgba(220, 38, 38, 0.2);
     color: var(--accent-red);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    border: 1px solid rgba(220, 38, 38, 0.3);
 }
 
 .total-cost-text {
-    color: #34d399 !important;
+    color: #059669 !important;
     font-weight: 800 !important;
     font-size: 1.05rem !important;
 }
@@ -1388,7 +1396,7 @@
 }
 
 .date-main {
-    color: #e2e8f0;
+    color: #4b5563;
     font-weight: 700;
     font-size: 0.9rem;
     display: inline-flex;
@@ -1398,7 +1406,7 @@
 
 .date-time {
     font-size: 0.75rem;
-    color: #cbd5e1;
+    color: #6b7280;
     font-weight: 600;
     padding-left: 1.5rem;
 }
@@ -1417,35 +1425,35 @@
 }
 
 .btn-action.success {
-    background: rgba(16, 185, 129, 0.2);
-    color: #34d399;
-    border-color: rgba(16, 185, 129, 0.5);
+    background: rgba(5, 150, 105, 0.2);
+    color: #059669;
+    border-color: rgba(5, 150, 105, 0.5);
 }
 
 .btn-action.success:hover {
-    background: rgba(16, 185, 129, 0.35);
-    border-color: #34d399;
+    background: rgba(5, 150, 105, 0.35);
+    border-color: #059669;
     transform: translateX(-3px);
 }
 
 .btn-action.warning {
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(217, 119, 6, 0.15);
     color: var(--accent-orange);
-    border-color: rgba(245, 158, 11, 0.3);
+    border-color: rgba(217, 119, 6, 0.3);
 }
 
 .btn-action.danger {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(220, 38, 38, 0.15);
     color: var(--accent-red);
-    border-color: rgba(239, 68, 68, 0.3);
+    border-color: rgba(220, 38, 38, 0.3);
 }
 
 .empty-icon {
-    color: #64748b !important;
+    color: #9ca3af !important;
 }
 
 .empty-text {
-    color: #cbd5e1 !important;
+    color: #6b7280 !important;
     font-weight: 600;
     font-size: 1.1rem;
 }
@@ -1471,6 +1479,7 @@
     border-radius: 16px;
     border: 1px solid var(--dark-border);
     overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .alert-warning {
@@ -1497,7 +1506,7 @@
 .product-img-placeholder {
     width: 40px;
     height: 40px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.04);
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -1511,7 +1520,7 @@
 }
 
 .sku-badge {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.04);
     padding: 0.25rem 0.75rem;
     border-radius: 6px;
     font-size: 0.75rem;
@@ -1525,7 +1534,7 @@
 }
 
 .text-muted {
-    color: #94a3b8 !important;
+    color: #6b7280 !important;
 }
 
 .py-5 {
@@ -1575,7 +1584,7 @@
 }
 
 .order-badge {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(79, 70, 229, 0.15);
     padding: 0.35rem 0.75rem;
     border-radius: 6px;
     font-size: 0.85rem;
@@ -1593,7 +1602,7 @@
 }
 
 .qty-badge {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(37, 99, 235, 0.2);
     color: var(--accent-blue);
     padding: 0.35rem 0.75rem;
     border-radius: 12px;
@@ -1601,7 +1610,7 @@
 }
 
 .category-name-badge {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(79, 70, 229, 0.15);
     padding: 0.35rem 0.85rem;
     border-radius: 8px;
     color: var(--accent-purple);
@@ -1619,7 +1628,7 @@
 
 .progress-bar-custom {
     height: 30px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.04);
     border-radius: 8px;
     position: relative;
     overflow: hidden;
@@ -1898,7 +1907,7 @@ function initializeCharts() {
                 labels: ['In Stock', 'Low Stock', 'Out of Stock'],
                 datasets: [{
                     data: [{{ in_stock }}, {{ low_stock }}, {{ out_of_stock }}],
-                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                    backgroundColor: ['#059669', '#d97706', '#dc2626'],
                     borderWidth: 0
                 }]
             },
@@ -1925,7 +1934,7 @@ function initializeCharts() {
                 datasets: [{
                     label: 'Stock',
                     data: {{ category_data|safe }},
-                    backgroundColor: '#8b5cf6',
+                    backgroundColor: '#4f46e5',
                     borderRadius: 8
                 }]
             },
@@ -1936,10 +1945,10 @@ function initializeCharts() {
                     y: {
                         beginAtZero: true,
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.06)'
                         },
                         ticks: {
-                            color: '#94a3b8'
+                            color: '#6b7280'
                         }
                     },
                     x: {
@@ -1947,7 +1956,7 @@ function initializeCharts() {
                             display: false
                         },
                         ticks: {
-                            color: '#94a3b8'
+                            color: '#6b7280'
                         }
                     }
                 },
@@ -1970,15 +1979,15 @@ function initializeCharts() {
                 datasets: [{
                     label: 'Stock In',
                     data: {{ stock_in_data|safe }},
-                    borderColor: '#10b981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    borderColor: '#059669',
+                    backgroundColor: 'rgba(5, 150, 105, 0.1)',
                     fill: true,
                     tension: 0.4
                 }, {
                     label: 'Stock Out',
                     data: {{ stock_out_data|safe }},
-                    borderColor: '#ef4444',
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    borderColor: '#dc2626',
+                    backgroundColor: 'rgba(220, 38, 38, 0.1)',
                     fill: true,
                     tension: 0.4
                 }]
@@ -1990,10 +1999,10 @@ function initializeCharts() {
                     y: {
                         beginAtZero: true,
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.06)'
                         },
                         ticks: {
-                            color: '#94a3b8'
+                            color: '#6b7280'
                         }
                     },
                     x: {
@@ -2001,14 +2010,14 @@ function initializeCharts() {
                             display: false
                         },
                         ticks: {
-                            color: '#94a3b8'
+                            color: '#6b7280'
                         }
                     }
                 },
                 plugins: {
                     legend: {
                         labels: {
-                            color: '#f1f5f9'
+                            color: '#1f2937'
                         }
                     }
                 }

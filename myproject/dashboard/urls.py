@@ -115,6 +115,11 @@ urlpatterns = [
     path('inventory/stock-in/create/', views.stock_in_create, name='stock_in_create'),
     path('inventory/stock-in/<int:stock_in_id>/', views.stock_in_detail, name='stock_in_detail'),       # API for Stock In
     path('api/product/<int:product_id>/stock-in/', views.api_get_product_for_stockin, name='api_get_product_for_stockin'),
+
+    # Low Stock Alert Settings
+    path('inventory/low-stock-settings/', views.low_stock_settings, name='low_stock_settings'),
+    path('inventory/low-stock-settings/save/', views.save_low_stock_thresholds, name='save_low_stock_thresholds'),
+    path('inventory/low-stock-alerts/', views.low_stock_alerts, name='low_stock_alerts'),
     
     
      # City Management URLs

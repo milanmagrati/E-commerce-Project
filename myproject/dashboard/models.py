@@ -53,6 +53,7 @@ class Product(models.Model):
     # Inventory
     stock = models.IntegerField(default=0)
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS, default='in_stock')
+    low_stock_threshold = models.IntegerField(default=0, help_text="Alert when stock falls to or below this value")
     
     # Media
     image = models.ImageField(upload_to='products/', blank=True, null=True)
@@ -293,6 +294,7 @@ class ProductVariation(models.Model):
     sku = models.CharField(max_length=100, unique=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.IntegerField(default=0)
+    low_stock_threshold = models.IntegerField(default=0, help_text="Alert when variation stock falls to or below this value")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     is_active = models.BooleanField(default=True, null=True, blank=True)
     image = models.ImageField(upload_to='variations/', blank=True, null=True)

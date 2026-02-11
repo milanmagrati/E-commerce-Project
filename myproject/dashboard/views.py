@@ -115,8 +115,21 @@ def dashboard_view(request):
     # Recent orders
     recent_orders = orders.order_by('-created_at')[:5]
     
-    # Low stock products
-    low_stock_products = products.filter(stock__lte=10, stock__gt=0).order_by('stock')[:5]
+    # Low stock products (use custom thresholds if set, fallback to stock <= 10)
+    low_stock_products = products.filter(
+        low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+    ).order_by('stock')[:5]
+    if not low_stock_products.exists():
+        low_stock_products = products.filter(stock__lte=10, stock__gt=0).order_by('stock')[:5]
+
+    low_stock_alert_count = products.filter(
+        low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+    ).count()
+    # Include variation alerts in count
+    low_stock_alert_count += ProductVariation.objects.filter(
+        product__is_deleted=False,
+        low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+    ).count()
     
     # Monthly sales data for chart (last 6 months)
     monthly_sales = []
@@ -151,6 +164,7 @@ def dashboard_view(request):
         'total_revenue': total_revenue,
         'recent_orders': recent_orders,
         'low_stock_products': low_stock_products,
+        'low_stock_alert_count': low_stock_alert_count,
         'monthly_sales': json.dumps(monthly_sales),
     }
     
@@ -4188,24 +4202,32 @@ def inventory_dashboard(request):
         # Stock Statistics
         total_products = products.count()
         in_stock = products.filter(stock__gt=10).count()
-        low_stock = products.filter(stock__lte=10, stock__gt=0).count()
+        low_stock = products.filter(
+            low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+        ).count() or products.filter(stock__lte=10, stock__gt=0).count()
         out_of_stock = products.filter(stock=0).count()
-        
+
         # Product Variations Stock
         variations = ProductVariation.objects.filter(product__user=request.user)
         total_variations = variations.count()
         variations_in_stock = variations.filter(stock__gt=10).count()
-        variations_low_stock = variations.filter(stock__lte=10, stock__gt=0).count()
+        variations_low_stock = variations.filter(
+            low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+        ).count() or variations.filter(stock__lte=10, stock__gt=0).count()
         variations_out_of_stock = variations.filter(stock=0).count()
-        
+
         # Calculate Total Stock Value
         total_stock_value = sum(p.stock * p.price for p in products if p.stock > 0)
-        
+
         # Total Stock Units
         total_stock_units = sum(p.stock for p in products)
-        
-        # Low Stock Products (for alerts table)
-        low_stock_products = products.filter(stock__lte=10, stock__gt=0).order_by('stock')[:10]
+
+        # Low Stock Products (use custom thresholds if set)
+        low_stock_products = products.filter(
+            low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+        ).order_by('stock')[:10]
+        if not low_stock_products.exists():
+            low_stock_products = products.filter(stock__lte=10, stock__gt=0).order_by('stock')[:10]
         
         # Out of Stock Products
         out_of_stock_products = products.filter(stock=0).order_by('name')[:10]
@@ -7574,3 +7596,151 @@ def ncm_bulk_logs_bulk_action(request):
             messages.success(request, f'{count} batch(es) moved to trash.')
 
     return redirect('ncm_bulk_logs_list')
+
+
+# ==================== LOW STOCK ALERT SETTINGS ====================
+@login_required
+def low_stock_settings(request):
+    """Display all products (with variations) with editable low stock threshold inputs"""
+    products = Product.objects.filter(user=request.user, is_deleted=False).prefetch_related('variations').order_by('name')
+
+    search = request.GET.get('search', '')
+    if search:
+        products = products.filter(
+            Q(name__icontains=search) | Q(barcode__icontains=search) |
+            Q(variations__sku__icontains=search) | Q(variations__variation_name__icontains=search)
+        ).distinct()
+
+    category_filter = request.GET.get('category', '')
+    if category_filter:
+        products = products.filter(category_id=category_filter)
+
+    status_filter = request.GET.get('status', '')
+    if status_filter == 'low':
+        products = products.filter(
+            Q(stock__gt=0, stock__lte=F('low_stock_threshold')) |
+            Q(variations__stock__gt=0, variations__stock__lte=F('variations__low_stock_threshold'), variations__low_stock_threshold__gt=0)
+        ).distinct()
+    elif status_filter == 'ok':
+        products = products.filter(
+            Q(stock__gt=F('low_stock_threshold')) | Q(low_stock_threshold=0)
+        )
+    elif status_filter == 'out':
+        products = products.filter(Q(stock=0) | Q(variations__stock=0)).distinct()
+
+    categories = Category.objects.all()
+
+    # Counts for summary (products + variations)
+    all_products = Product.objects.filter(user=request.user, is_deleted=False)
+    all_variations = ProductVariation.objects.filter(product__user=request.user, product__is_deleted=False)
+    total = all_products.count()
+    total_variations = all_variations.count()
+    low_count = all_products.filter(
+        low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+    ).count()
+    low_variation_count = all_variations.filter(
+        low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+    ).count()
+    out_count = all_products.filter(stock=0).count()
+
+    paginator = Paginator(products, 50)
+    page = request.GET.get('page', 1)
+    products_page = paginator.get_page(page)
+
+    context = {
+        'products': products_page,
+        'categories': categories,
+        'search': search,
+        'category_filter': category_filter,
+        'status_filter': status_filter,
+        'total_products': total,
+        'total_variations': total_variations,
+        'low_stock_count': low_count + low_variation_count,
+        'out_of_stock_count': out_count,
+    }
+    return render(request, 'low_stock_settings.html', context)
+
+
+@login_required
+@require_POST
+def save_low_stock_thresholds(request):
+    """Bulk save low stock threshold values for all products and variations"""
+    updated = 0
+    for key, value in request.POST.items():
+        if key.startswith('threshold_'):
+            product_id = key.replace('threshold_', '')
+            try:
+                product = Product.objects.get(id=product_id, user=request.user)
+                threshold = int(value) if value else 0
+                if threshold < 0:
+                    threshold = 0
+                if product.low_stock_threshold != threshold:
+                    product.low_stock_threshold = threshold
+                    product.save(update_fields=['low_stock_threshold'])
+                    updated += 1
+            except (Product.DoesNotExist, ValueError):
+                continue
+        elif key.startswith('var_threshold_'):
+            variation_id = key.replace('var_threshold_', '')
+            try:
+                variation = ProductVariation.objects.get(id=variation_id, product__user=request.user)
+                threshold = int(value) if value else 0
+                if threshold < 0:
+                    threshold = 0
+                if variation.low_stock_threshold != threshold:
+                    variation.low_stock_threshold = threshold
+                    variation.save(update_fields=['low_stock_threshold'])
+                    updated += 1
+            except (ProductVariation.DoesNotExist, ValueError):
+                continue
+
+    messages.success(request, f'Thresholds updated for {updated} item(s).')
+    return redirect('low_stock_settings')
+
+
+@login_required
+def low_stock_alerts(request):
+    """Display all products and variations that are currently below their low stock threshold"""
+    low_stock_products = Product.objects.filter(
+        user=request.user, is_deleted=False,
+        low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+    ).annotate(
+        deficit=F('low_stock_threshold') - F('stock')
+    ).order_by('stock')
+
+    out_of_stock_products = Product.objects.filter(
+        user=request.user, is_deleted=False, stock=0,
+        low_stock_threshold__gt=0
+    ).order_by('name')
+
+    # Variation alerts
+    low_stock_variations = ProductVariation.objects.filter(
+        product__user=request.user, product__is_deleted=False,
+        low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+    ).annotate(
+        deficit=F('low_stock_threshold') - F('stock')
+    ).select_related('product', 'product__category').order_by('stock')
+
+    out_of_stock_variations = ProductVariation.objects.filter(
+        product__user=request.user, product__is_deleted=False, stock=0,
+        low_stock_threshold__gt=0
+    ).select_related('product', 'product__category').order_by('product__name')
+
+    low_count = low_stock_products.count()
+    out_count = out_of_stock_products.count()
+    low_var_count = low_stock_variations.count()
+    out_var_count = out_of_stock_variations.count()
+
+    context = {
+        'low_stock_products': low_stock_products,
+        'out_of_stock_products': out_of_stock_products,
+        'low_stock_variations': low_stock_variations,
+        'out_of_stock_variations': out_of_stock_variations,
+        'low_count': low_count,
+        'out_count': out_count,
+        'low_var_count': low_var_count,
+        'out_var_count': out_var_count,
+        'total_alert_count': low_count + out_count + low_var_count + out_var_count,
+        'play_sound': low_count > 0 or out_count > 0 or low_var_count > 0 or out_var_count > 0,
+    }
+    return render(request, 'low_stock_alerts.html', context)
