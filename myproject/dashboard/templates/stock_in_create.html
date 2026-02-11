@@ -239,23 +239,25 @@
 
 <style>
 :root {
-    --primary: #8b5cf6;
+    --primary: #667eea;
+    --primary-dark: #5a6fd6;
     --success: #10b981;
     --danger: #ef4444;
     --warning: #f59e0b;
     --info: #3b82f6;
-    --dark: #0f172a;
-    --dark-card: #1e293b;
-    --border: #334155;
-    --text-light: #f1f5f9;
+    --bg: #f5f7fa;
+    --card-bg: #ffffff;
+    --border: #e2e8f0;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
     --text-muted: #94a3b8;
 }
 
 .stock-in-create-page {
-    background: var(--dark);
+    background: var(--bg);
     min-height: 100vh;
     padding: 2rem;
-    color: var(--text-light);
+    color: var(--text-primary);
 }
 
 .page-header-custom {
@@ -269,7 +271,7 @@
 .page-header-custom h1 {
     font-size: 2rem;
     font-weight: 800;
-    color: var(--text-light);
+    color: var(--text-primary);
     margin: 0;
     display: flex;
     align-items: center;
@@ -277,14 +279,14 @@
 }
 
 .page-subtitle {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0.5rem 0 0 0;
     font-size: 0.95rem;
 }
 
 .btn-back-custom {
-    background: var(--dark-card);
-    color: var(--text-light);
+    background: var(--card-bg);
+    color: var(--text-primary);
     padding: 0.75rem 1.5rem;
     border-radius: 10px;
     border: 1px solid var(--border);
@@ -294,26 +296,29 @@
     align-items: center;
     gap: 0.5rem;
     transition: all 0.3s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .btn-back-custom:hover {
     border-color: var(--primary);
     color: var(--primary);
     transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
 }
 
 .form-card-custom {
-    background: var(--dark-card);
+    background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 2rem;
     margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .card-title-custom {
     font-size: 1.25rem;
     font-weight: 700;
-    color: var(--text-light);
+    color: var(--text-primary);
     margin-bottom: 1.5rem;
     display: flex;
     align-items: center;
@@ -341,17 +346,17 @@
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 600;
-    color: var(--text-light);
+    color: var(--text-primary);
     font-size: 0.9rem;
 }
 
 .form-control-custom {
     width: 100%;
     padding: 0.75rem 1rem;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--card-bg);
     border: 2px solid var(--border);
     border-radius: 8px;
-    color: var(--text-light);
+    color: var(--text-primary);
     font-size: 0.95rem;
     transition: all 0.3s;
 }
@@ -359,19 +364,19 @@
 .form-control-custom:focus {
     outline: none;
     border-color: var(--primary);
-    background: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    background: var(--card-bg);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-/* SELECT DROPDOWN - DARK THEME */
+/* SELECT DROPDOWN - LIGHT THEME */
 .form-control-custom select,
 select.form-control-custom {
     width: 100%;
     padding: 0.75rem 1rem;
-    background: #1e293b;
+    background: var(--card-bg);
     border: 2px solid var(--border);
     border-radius: 8px;
-    color: var(--text-light);
+    color: var(--text-primary);
     font-size: 0.95rem;
     font-weight: 600;
     transition: all 0.3s;
@@ -379,7 +384,7 @@ select.form-control-custom {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23f1f5f9' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231e293b' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 1rem center;
     background-size: 12px;
@@ -388,8 +393,8 @@ select.form-control-custom {
 
 .form-control-custom select option,
 select.form-control-custom option {
-    background: #1e293b;
-    color: #f1f5f9;
+    background: var(--card-bg);
+    color: var(--text-primary);
     padding: 0.75rem 1rem;
     font-weight: 600;
     font-size: 0.95rem;
@@ -397,13 +402,13 @@ select.form-control-custom option {
 
 .form-control-custom select option:hover,
 select.form-control-custom option:hover {
-    background: rgba(139, 92, 246, 0.3);
-    color: white;
+    background: rgba(102, 126, 234, 0.1);
+    color: var(--primary);
 }
 
 .form-control-custom select option:checked,
 select.form-control-custom option:checked {
-    background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     font-weight: 800;
 }
@@ -412,8 +417,8 @@ select.form-control-custom option:checked {
 select.form-control-custom:focus {
     outline: none;
     border-color: var(--primary);
-    background: #1e293b;
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+    background: var(--card-bg);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .btn-add-product-custom {
@@ -449,14 +454,14 @@ select.form-control-custom:focus {
 }
 
 .items-table-custom thead {
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(102, 126, 234, 0.06);
 }
 
 .items-table-custom th {
     padding: 1rem;
     text-align: left;
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -466,7 +471,7 @@ select.form-control-custom:focus {
 .items-table-custom td {
     padding: 1rem;
     border-bottom: 1px solid var(--border);
-    color: var(--text-light);
+    color: var(--text-primary);
 }
 
 .empty-state-row td {
@@ -499,7 +504,7 @@ select.form-control-custom:focus {
 }
 
 .item-row:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(102, 126, 234, 0.04);
 }
 
 .item-number {
@@ -515,11 +520,11 @@ select.form-control-custom:focus {
 
 .product-name-cell {
     font-weight: 600;
-    color: var(--text-light);
+    color: var(--text-primary);
 }
 
 .variation-badge {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(102, 126, 234, 0.1);
     color: var(--primary);
     padding: 0.25rem 0.75rem;
     border-radius: 6px;
@@ -529,8 +534,8 @@ select.form-control-custom:focus {
 }
 
 .simple-badge {
-    background: rgba(148, 163, 184, 0.15);
-    color: var(--text-muted);
+    background: rgba(100, 116, 139, 0.1);
+    color: var(--text-secondary);
     padding: 0.25rem 0.75rem;
     border-radius: 6px;
     font-size: 0.85rem;
@@ -562,8 +567,8 @@ select.form-control-custom:focus {
 }
 
 .totals-box {
-    background: rgba(139, 92, 246, 0.08);
-    border: 2px solid rgba(139, 92, 246, 0.2);
+    background: rgba(102, 126, 234, 0.05);
+    border: 2px solid rgba(102, 126, 234, 0.15);
     border-radius: 12px;
     padding: 1.5rem;
     display: grid;
@@ -587,7 +592,7 @@ select.form-control-custom:focus {
     display: block;
     font-size: 1.75rem;
     font-weight: 800;
-    color: var(--text-light);
+    color: var(--text-primary);
 }
 
 .total-highlight {
@@ -601,7 +606,7 @@ select.form-control-custom:focus {
 }
 
 .btn-submit-custom {
-    background: linear-gradient(135deg, var(--primary) 0%, #a78bfa 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%);
     color: white;
     padding: 1rem 2.5rem;
     border: none;
@@ -613,12 +618,12 @@ select.form-control-custom:focus {
     align-items: center;
     gap: 0.5rem;
     transition: all 0.3s;
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .btn-submit-custom:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
+    box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
 }
 
 .btn-cancel-custom {
@@ -650,7 +655,7 @@ select.form-control-custom:focus {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.5);
     z-index: 9999;
     animation: fadeIn 0.3s ease;
 }
@@ -673,10 +678,11 @@ select.form-control-custom:focus {
 }
 
 .modal-content-custom {
-    background: var(--dark-card);
+    background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 16px;
     animation: slideUp 0.3s ease;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
 }
 
 .modal-header-custom {
@@ -691,7 +697,7 @@ select.form-control-custom:focus {
     margin: 0;
     font-size: 1.25rem;
     font-weight: 700;
-    color: var(--text-light);
+    color: var(--text-primary);
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -737,17 +743,17 @@ select.form-control-custom:focus {
 .search-input-custom {
     width: 100%;
     padding: 0.75rem 1rem 0.75rem 3rem;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--bg);
     border: 2px solid var(--border);
     border-radius: 10px;
-    color: var(--text-light);
+    color: var(--text-primary);
     font-size: 0.95rem;
 }
 
 .search-input-custom:focus {
     outline: none;
     border-color: var(--primary);
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--card-bg);
 }
 
 .products-grid {
@@ -759,7 +765,7 @@ select.form-control-custom:focus {
 }
 
 .product-card-modal {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--card-bg);
     border: 2px solid var(--border);
     border-radius: 12px;
     padding: 1rem;
@@ -769,13 +775,14 @@ select.form-control-custom:focus {
     flex-direction: column;
     gap: 0.75rem;
     position: relative;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .product-card-modal:hover {
     border-color: var(--primary);
-    background: rgba(139, 92, 246, 0.08);
+    background: rgba(102, 126, 234, 0.04);
     transform: translateY(-3px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 16px rgba(102, 126, 234, 0.12);
 }
 
 .product-image-wrapper {
@@ -795,7 +802,7 @@ select.form-control-custom:focus {
 .product-placeholder-img {
     width: 100%;
     height: 100%;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--bg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -820,7 +827,7 @@ select.form-control-custom:focus {
 }
 
 .badge-variable {
-    background: rgba(139, 92, 246, 0.9);
+    background: rgba(102, 126, 234, 0.9);
     color: white;
 }
 
@@ -830,7 +837,7 @@ select.form-control-custom:focus {
 
 .product-name-modal {
     font-weight: 700;
-    color: var(--text-light);
+    color: var(--text-primary);
     font-size: 1rem;
     margin-bottom: 0.5rem;
 }
@@ -855,7 +862,7 @@ select.form-control-custom:focus {
 }
 
 .variation-card {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--card-bg);
     border: 2px solid var(--border);
     border-radius: 10px;
     padding: 1rem;
@@ -868,7 +875,7 @@ select.form-control-custom:focus {
 
 .variation-card:hover {
     border-color: var(--primary);
-    background: rgba(139, 92, 246, 0.08);
+    background: rgba(102, 126, 234, 0.04);
     transform: translateX(5px);
 }
 
@@ -878,7 +885,7 @@ select.form-control-custom:focus {
 
 .variation-sku {
     font-weight: 700;
-    color: var(--text-light);
+    color: var(--text-primary);
     font-size: 1rem;
     margin-bottom: 0.5rem;
 }
@@ -891,7 +898,7 @@ select.form-control-custom:focus {
 }
 
 .attr-badge {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(102, 126, 234, 0.1);
     color: var(--primary);
     padding: 0.25rem 0.75rem;
     border-radius: 6px;
@@ -910,8 +917,8 @@ select.form-control-custom:focus {
 }
 
 .selected-product-info {
-    background: rgba(139, 92, 246, 0.08);
-    border: 1px solid rgba(139, 92, 246, 0.2);
+    background: rgba(102, 126, 234, 0.05);
+    border: 1px solid rgba(102, 126, 234, 0.15);
     border-radius: 8px;
     padding: 1rem;
     margin-bottom: 1.5rem;
@@ -921,7 +928,7 @@ select.form-control-custom:focus {
     display: flex;
     justify-content: space-between;
     padding: 0.5rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--border);
 }
 
 .info-row:last-child {
@@ -929,12 +936,12 @@ select.form-control-custom:focus {
 }
 
 .info-row strong {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 0.9rem;
 }
 
 .info-row span {
-    color: var(--text-light);
+    color: var(--text-primary);
     font-weight: 600;
 }
 
@@ -981,7 +988,7 @@ select.form-control-custom:focus {
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--dark);
+    background: var(--bg);
 }
 
 ::-webkit-scrollbar-thumb {

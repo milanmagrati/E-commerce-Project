@@ -3818,25 +3818,29 @@ def dispatch_management(request):
                                         product.stock_status = 'out_of_stock'
                                         product.save()
                         
-                        # Update order fields
+                        # Capture old values BEFORE modification
+                        old_order_status = order.order_status
+
+                        # Update order fields - clear status_setup so template shows order_status
+                        order.status_setup = None
                         order.order_status = set_status
-                        order.logistics_provider = logistics
+                        order.logistics = logistics
                         order.dispatch_date = timezone.now()
                         order.save()
-                        
+
                         # Link dispatch item to order
                         DispatchItem.objects.filter(
                             dispatch=dispatch,
                             scanned_order_id=order_id
                         ).update(order=order)
-                        
+
                         # Create activity log
                         OrderActivityLog.objects.create(
                             order=order,
                             action_type='status_changed',
                             user=request.user,
                             field_name='order_status',
-                            old_value=order.order_status,
+                            old_value=old_order_status,
                             new_value=set_status,
                             description=f'Order dispatched via batch {batch_number} with {logistics}'
                         )
