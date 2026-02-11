@@ -264,7 +264,14 @@ def products_view(request):
     out_of_stock_count = all_products.filter(stock=0).count()
     
     categories = Category.objects.all()
-    
+    trash_count = Product.objects.filter(is_deleted=True).count()
+
+    # Pagination
+    total_count = products.count()
+    paginator = Paginator(products, 25)
+    page_number = request.GET.get('page')
+    products = paginator.get_page(page_number)
+
     context = {
         "products": products,
         "categories": categories,
@@ -278,9 +285,11 @@ def products_view(request):
         "active_count": active_count,
         "low_stock_count": low_stock_count,
         "out_of_stock_count": out_of_stock_count,
+        "total_count": total_count,
+        "trash_count": trash_count,
         "clear_product_draft": getattr(request, 'clear_product_draft', False),
     }
-    
+
     return render(request, "products.html", context)
 
 
