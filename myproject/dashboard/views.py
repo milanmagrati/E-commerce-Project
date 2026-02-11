@@ -3402,18 +3402,20 @@ def orders_bulk_ncm_send(request):
     """
     Handle Bulk Sending to NCM Logistics
     """
+    from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
+
     if request.method != 'POST':
         messages.error(request, '❌ Invalid request method')
         return redirect('orders_list')
-    
+
     # 1. Get Form Data
     order_ids = request.POST.getlist('order_ids')
     from_branch = request.POST.get('from_branch', 'TINKUNE')
     delivery_type = request.POST.get('delivery_type', 'Door2Door')
-    
+
     # Handle auto_set_logistics checkbox
     auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
-    
+
     # Handle weight (default to 1.0 if invalid)
     try:
         default_weight = float(request.POST.get('default_weight', '1.0'))
@@ -3436,6 +3438,22 @@ def orders_bulk_ncm_send(request):
     if auto_set_logistics:
         orders.update(logistics='ncm')
 
+    # Create NCM Bulk Log
+    bulk_log = NCMBulkLog.objects.create(
+        batch_number=NCMBulkLog.generate_batch_number(),
+        total_orders=count,
+        status='processing',
+        from_branch=from_branch,
+        delivery_type=delivery_type,
+        created_by=request.user,
+    )
+    NCMBulkLogDetail.objects.create(
+        batch=bulk_log,
+        action='batch_started',
+        message=f'Bulk send started with {count} order(s) from {from_branch}',
+        user=request.user,
+    )
+
     # 4. Processing Variables
     success_count = 0
     skip_count = 0
@@ -3445,30 +3463,82 @@ def orders_bulk_ncm_send(request):
     # 5. Iterate and Send
     for order in orders:
         result = send_single_order_to_ncm(
-            request=request, 
-            order=order, 
-            from_branch=from_branch, 
-            delivery_type=delivery_type, 
+            request=request,
+            order=order,
+            from_branch=from_branch,
+            delivery_type=delivery_type,
             default_weight=default_weight
         )
 
         if result['status'] == 'success':
             success_count += 1
+            log_status = 'success'
+            log_action = 'order_sent'
         elif result['status'] == 'skipped':
             skip_count += 1
+            log_status = 'skipped'
+            log_action = 'order_skipped'
         else:
             error_count += 1
-            # Capture the specific error message for the first few failures
-            if len(error_details) < 3: 
+            log_status = 'failed'
+            log_action = 'order_failed'
+            if len(error_details) < 3:
                 error_details.append(f"{order.order_number}: {result['message']}")
+
+        # Create log entry for this order
+        order.refresh_from_db()
+        NCMBulkLogOrder.objects.create(
+            batch=bulk_log,
+            order=order,
+            order_number=order.order_number or '',
+            customer_name=order.customer_name or '',
+            customer_phone=order.customer_phone or '',
+            shipping_address=order.shipping_address or '',
+            cod_amount=order.total_amount or 0,
+            destination_branch=order.branch_city or '',
+            ncm_order_id=order.ncm_order_id,
+            status=log_status,
+            message=result.get('message', ''),
+        )
+        NCMBulkLogDetail.objects.create(
+            batch=bulk_log,
+            action=log_action,
+            order_number=order.order_number or '',
+            message=result.get('message', ''),
+            user=request.user,
+        )
+
+    # Update bulk log with final counts and status
+    if error_count == count:
+        final_status = 'failed'
+    elif success_count == count:
+        final_status = 'completed'
+    elif success_count > 0:
+        final_status = 'partial'
+    else:
+        final_status = 'failed'
+
+    bulk_log.success_count = success_count
+    bulk_log.failed_count = error_count
+    bulk_log.skipped_count = skip_count
+    bulk_log.status = final_status
+    bulk_log.completed_at = timezone.now()
+    bulk_log.save()
+
+    NCMBulkLogDetail.objects.create(
+        batch=bulk_log,
+        action='batch_completed',
+        message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
+        user=request.user,
+    )
 
     # 6. Final Feedback
     if success_count > 0:
         messages.success(request, f'✅ Successfully sent {success_count} order(s) to NCM.')
-    
+
     if skip_count > 0:
         messages.warning(request, f'⚠️ Skipped {skip_count} order(s) (Already sent or missing info).')
-        
+
     if error_count > 0:
         messages.error(request, f'❌ Failed to send {error_count} order(s).')
         # Show specific API errors
@@ -6573,10 +6643,12 @@ def orders_bulk_ncm_send(request):
     """
     Bulk send multiple orders to NCM logistics
     """
+    from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
+
     if request.method != 'POST':
         messages.error(request, '❌ Invalid request method')
         return redirect('orders_list')
-    
+
     try:
         # Get form data
         order_ids = request.POST.getlist('order_ids')
@@ -6584,73 +6656,139 @@ def orders_bulk_ncm_send(request):
         delivery_type = request.POST.get('delivery_type', 'Door2Door')
         default_weight = float(request.POST.get('default_weight', 1.0))
         auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
-        
+
         if not order_ids:
             messages.error(request, '❌ No orders selected')
             return redirect('orders_list')
-        
+
         # Get orders
         orders = Order.objects.filter(id__in=order_ids, is_deleted=False)
-        
+
         if not orders.exists():
             messages.error(request, '❌ No valid orders found')
             return redirect('orders_list')
-        
+
+        count = orders.count()
+
+        # Create NCM Bulk Log
+        bulk_log = NCMBulkLog.objects.create(
+            batch_number=NCMBulkLog.generate_batch_number(),
+            total_orders=count,
+            status='processing',
+            from_branch=from_branch,
+            delivery_type=delivery_type,
+            created_by=request.user,
+        )
+        NCMBulkLogDetail.objects.create(
+            batch=bulk_log,
+            action='batch_started',
+            message=f'Bulk send started with {count} order(s) from {from_branch}',
+            user=request.user,
+        )
+
         # Track results
-        results = {
-            'success': [],
-            'skipped': [],
-            'failed': [],
-        }
-        
+        success_count = 0
+        skip_count = 0
+        error_count = 0
+
         # Process each order
         for order in orders:
             result = send_single_order_to_ncm(
-                request, 
-                order, 
+                request,
+                order,
                 from_branch=from_branch,
                 delivery_type=delivery_type,
                 default_weight=default_weight
             )
-            
+
             if result['status'] == 'success':
-                results['success'].append(order.order_number)
-                
+                success_count += 1
+                log_status = 'success'
+                log_action = 'order_sent'
                 # Auto-set logistics if enabled
                 if auto_set_logistics and order.logistics != 'ncm':
                     order.logistics = 'ncm'
                     order.save()
-            
             elif result['status'] == 'skipped':
-                results['skipped'].append(f"{order.order_number}: {result['message']}")
-            
+                skip_count += 1
+                log_status = 'skipped'
+                log_action = 'order_skipped'
             else:
-                results['failed'].append(f"{order.order_number}: {result['message']}")
-        
-        # Show results
-        if results['success']:
-            messages.success(
-                request, 
-                f"✅ Successfully sent {len(results['success'])} order(s) to NCM: {', '.join(results['success'])}"
+                error_count += 1
+                log_status = 'failed'
+                log_action = 'order_failed'
+
+            # Create log entry for this order
+            order.refresh_from_db()
+            NCMBulkLogOrder.objects.create(
+                batch=bulk_log,
+                order=order,
+                order_number=order.order_number or '',
+                customer_name=order.customer_name or '',
+                customer_phone=order.customer_phone or '',
+                shipping_address=order.shipping_address or '',
+                cod_amount=order.total_amount or 0,
+                destination_branch=order.branch_city or '',
+                ncm_order_id=order.ncm_order_id,
+                status=log_status,
+                message=result.get('message', ''),
             )
-        
-        if results['skipped']:
+            NCMBulkLogDetail.objects.create(
+                batch=bulk_log,
+                action=log_action,
+                order_number=order.order_number or '',
+                message=result.get('message', ''),
+                user=request.user,
+            )
+
+        # Update bulk log with final counts and status
+        if error_count == count:
+            final_status = 'failed'
+        elif success_count == count:
+            final_status = 'completed'
+        elif success_count > 0:
+            final_status = 'partial'
+        else:
+            final_status = 'failed'
+
+        bulk_log.success_count = success_count
+        bulk_log.failed_count = error_count
+        bulk_log.skipped_count = skip_count
+        bulk_log.status = final_status
+        bulk_log.completed_at = timezone.now()
+        bulk_log.save()
+
+        NCMBulkLogDetail.objects.create(
+            batch=bulk_log,
+            action='batch_completed',
+            message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
+            user=request.user,
+        )
+
+        # Show results
+        if success_count > 0:
+            messages.success(
+                request,
+                f"✅ Successfully sent {success_count} order(s) to NCM."
+            )
+
+        if skip_count > 0:
             messages.warning(
                 request,
-                f"⚠️ Skipped {len(results['skipped'])} order(s): {'; '.join(results['skipped'][:3])}"
+                f"⚠️ Skipped {skip_count} order(s) (Already sent or missing info)."
             )
-        
-        if results['failed']:
+
+        if error_count > 0:
             messages.error(
                 request,
-                f"❌ Failed {len(results['failed'])} order(s): {'; '.join(results['failed'][:3])}"
+                f"❌ Failed {error_count} order(s)."
             )
-        
+
     except Exception as e:
         messages.error(request, f'❌ Bulk send error: {str(e)}')
         import traceback
         traceback.print_exc()
-    
+
     return redirect('orders_list')
 
 
