@@ -1513,18 +1513,30 @@ def reorder_product_images(request, product_id):
 @permission_required('can_view_orders')
 def orders_view(request):
     orders = Order.objects.filter(user=request.user)
-    
+
     # Filter by status
     status_filter = request.GET.get('status', '')
     if status_filter:
         orders = orders.filter(order_status=status_filter)
-    
+
+    # Filter by date_range
+    date_range = request.GET.get('date_range', '')
+    if date_range == 'last_2_days':
+        now = timezone.now()
+        start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_yesterday = start_of_today - timedelta(days=1)
+        end_of_today = start_of_today + timedelta(days=1) - timedelta(microseconds=1)
+        filtered_orders = orders.filter(created_at__gte=start_of_yesterday, created_at__lte=end_of_today)
+        orders = filtered_orders
+    # If 'All Time' or empty, do not filter by date
+
     context = {
         'orders': orders,
         'status_filter': status_filter,
+        'date_filter': date_range,
     }
-    
-    return render(request, 'orders.html', context)
+
+    return render(request, 'orders_list.html', context)
 
 
 
@@ -1984,8 +1996,8 @@ def orders_list(request):
         is_deleted=False
     ).order_by('-created_at')
     
-    # GET FILTER PARAMETERS - DEFAULT TO 'last_24_hours'
-    date_filter = request.GET.get('date_range', 'last_24_hours')
+    # GET FILTER PARAMETERS - DEFAULT TO 'last_2_days'
+    date_filter = request.GET.get('date_range', 'last_2_days')
     search_query = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
     payment_filter = request.GET.get('payment', '')
@@ -2022,33 +2034,45 @@ def orders_list(request):
         orders = orders.filter(ncm_order_id__isnull=True)
     
     # DATE RANGE FILTER
-    today = timezone.now().date()
-    now = timezone.now()
+    # Use Nepali timezone for date calculations
+    import pytz
+    nepali_tz = pytz.timezone('Asia/Kathmandu')
+    now_nepal = timezone.now().astimezone(nepali_tz)
+    today_nepal = now_nepal.date()
     
     if date_filter == 'last_24_hours':
-        # Orders from the last 24 hours (past 24 hours from now)
-        last_24_hours = now - timedelta(hours=24)
+        last_24_hours = now_nepal - timedelta(hours=24)
         orders = orders.filter(created_at__gte=last_24_hours)
     elif date_filter == 'today':
-        orders = orders.filter(created_at__date=today)
+        orders = orders.filter(created_at__date=today_nepal)
     elif date_filter == 'yesterday':
-        yesterday = today - timedelta(days=1)
+        yesterday = today_nepal - timedelta(days=1)
         orders = orders.filter(created_at__date=yesterday)
+    elif date_filter == 'last_2_days':
+        # Start of yesterday 00:00:00 to end of today 23:59:59 in Nepali time
+        start_of_yesterday = datetime.combine(today_nepal - timedelta(days=1), datetime.min.time())
+        end_of_today = datetime.combine(today_nepal, datetime.max.time())
+        start_of_yesterday = nepali_tz.localize(start_of_yesterday)
+        end_of_today = nepali_tz.localize(end_of_today)
+        # Convert to UTC for DB filtering
+        start_of_yesterday_utc = start_of_yesterday.astimezone(pytz.UTC)
+        end_of_today_utc = end_of_today.astimezone(pytz.UTC)
+        orders = orders.filter(created_at__gte=start_of_yesterday_utc, created_at__lte=end_of_today_utc)
     elif date_filter == 'last_7_days':
-        start = today - timedelta(days=7)
-        orders = orders.filter(created_at__date__gte=start, created_at__date__lte=today)
+        start = today_nepal - timedelta(days=7)
+        orders = orders.filter(created_at__date__gte=start, created_at__date__lte=today_nepal)
     elif date_filter == 'last_30_days':
-        start = today - timedelta(days=30)
-        orders = orders.filter(created_at__date__gte=start, created_at__date__lte=today)
+        start = today_nepal - timedelta(days=30)
+        orders = orders.filter(created_at__date__gte=start, created_at__date__lte=today_nepal)
     elif date_filter == 'this_month':
-        orders = orders.filter(created_at__year=today.year, created_at__month=today.month)
+        orders = orders.filter(created_at__year=today_nepal.year, created_at__month=today_nepal.month)
     elif date_filter == 'last_month':
-        first_day_this_month = today.replace(day=1)
+        first_day_this_month = today_nepal.replace(day=1)
         last_day_last_month = first_day_this_month - timedelta(days=1)
         first_day_last_month = last_day_last_month.replace(day=1)
         orders = orders.filter(created_at__date__gte=first_day_last_month, created_at__date__lte=last_day_last_month)
     elif date_filter == 'this_year':
-        orders = orders.filter(created_at__year=today.year)
+        orders = orders.filter(created_at__year=today_nepal.year)
     elif date_filter == 'custom' and start_date and end_date:
         orders = orders.filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
     elif date_filter == 'all':
@@ -2082,10 +2106,10 @@ def orders_list(request):
     confirmed_orders = len([o for o in orders_list if o.order_status == 'confirmed'])
     dispatched_orders = len([o for o in orders_list if o.order_status == 'dispatched'])
     
-    # Delivered today
+    # Delivered today (Nepali time)
     delivered_today = Order.objects.filter(
         order_status='delivered',
-        delivered_at__date=today
+        delivered_at__date=today_nepal
     ).count()
     
     # Get first product name for each order
