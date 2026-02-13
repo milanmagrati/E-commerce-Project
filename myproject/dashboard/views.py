@@ -7,10 +7,11 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib import messages
 from django.db.models import Sum, Count, Q, F, Prefetch
+from django.db.models.functions import TruncDate
 from django.http import JsonResponse, HttpResponse, Http404
 from django.core.paginator import Paginator
 from datetime import datetime, timedelta
-
+import pytz
 import requests
 from .models import (Product, Order, OrderItem, Category, Customer, 
                      ProductVariation, ProductImage, ProductVariantOption,
@@ -9193,3 +9194,188 @@ def daily_sales_report(request):
     }
 
     return render(request, 'daily_sales_report.html', context)
+
+
+# Financial Report View
+@login_required
+@permission_required('can_view_financial_reports')
+@login_required
+def financial_report(request):
+    """
+    Render the financial report page for NCM delivered orders with delivery charges and all required stats, charts, and tables.
+    Data for charts/tables should be loaded via AJAX endpoints (to be implemented separately).
+    """
+    return render(request, 'financial_report.html')
+
+@login_required
+def financial_report_data(request):
+    """
+    Returns JSON data for the financial report page, filtered by period or custom date range.
+    """
+    from decimal import Decimal
+    
+    # Get filter params
+    period = request.GET.get('period', 'today')
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    tz = pytz.timezone('Asia/Kathmandu')
+    now = datetime.now(tz)
+
+    # Date range logic
+    if period == 'today':
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    elif period == 'week':
+        start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    elif period == 'month':
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    elif period == 'custom' and start_date and end_date:
+        start = tz.localize(datetime.strptime(start_date, '%Y-%m-%d'))
+        end = tz.localize(datetime.strptime(end_date, '%Y-%m-%d')).replace(hour=23, minute=59, second=59, microsecond=999999)
+    else:
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    # Only NCM delivered orders OR any delivered orders (relaxed for testing)
+    from .models import Order
+    orders = Order.objects.filter(
+        delivered_at__isnull=False,
+        delivered_at__range=(start, end)
+    )
+
+    # Helper function to convert Decimal to float
+    def to_float(value):
+        if isinstance(value, Decimal):
+            return float(value)
+        return value or 0
+
+    # Stats
+    total_revenue = orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    orders_delivered = orders.count()
+    cod_collected = orders.filter(payment_method='cod', payment_status='paid').aggregate(total=Sum('cod_collected'))['total'] or Decimal('0')
+    pending_payments = orders.filter(payment_status__in=['pending', 'partial']).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    ncm_delivery_charges = orders.aggregate(total=Sum('delivery_charge'))['total'] or Decimal('0')
+    expenses = orders.aggregate(total=Sum('expense_amount'))['total'] or Decimal('0')
+    net_profit = total_revenue - ncm_delivery_charges - expenses
+
+    # Key metrics
+    avg_order_value = total_revenue / orders_delivered if orders_delivered else Decimal('0')
+    profit_margin = (net_profit / total_revenue * 100) if total_revenue else Decimal('0')
+    cod_collection_rate = (cod_collected / total_revenue * 100) if total_revenue else Decimal('0')
+
+    # Payment status breakdown
+    paid_amt = orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    unpaid_amt = orders.filter(payment_status='pending').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    partial_amt = orders.filter(payment_status='partial').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    total_amt = paid_amt + unpaid_amt + partial_amt
+    payment_status = [
+        {"status": "Paid", "amount": to_float(paid_amt), "percent": to_float((paid_amt/total_amt*100) if total_amt else 0)},
+        {"status": "Unpaid", "amount": to_float(unpaid_amt), "percent": to_float((unpaid_amt/total_amt*100) if total_amt else 0)},
+        {"status": "Partial", "amount": to_float(partial_amt), "percent": to_float((partial_amt/total_amt*100) if total_amt else 0)},
+    ]
+
+    # Branch-wise summary
+    branch_summary = list(
+        orders.filter(branch__isnull=False).values('branch__name').annotate(
+            orders=Count('id'),
+            revenue=Sum('total_amount'),
+            ncm_charges=Sum('delivery_charge'),
+            profit=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
+        ).order_by('branch__name')
+    )
+    
+    # Convert Decimals in branch_summary
+    for branch in branch_summary:
+        branch['revenue'] = to_float(branch['revenue'])
+        branch['ncm_charges'] = to_float(branch['ncm_charges'])
+        branch['profit'] = to_float(branch['profit'])
+
+    # Daily summary
+    daily_summary = list(
+        orders.annotate(date=TruncDate('delivered_at')).values('date').annotate(
+            orders=Count('id'),
+            revenue=Sum('total_amount'),
+            cod=Sum('total_amount', filter=Q(payment_method='cod', payment_status='paid')),
+            ncm_charges=Sum('delivery_charge'),
+            expenses=Sum('expense_amount'),
+            net_profit=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
+        ).order_by('date')
+    )
+    
+    # Convert Decimals in daily_summary
+    for day in daily_summary:
+        day['revenue'] = to_float(day['revenue'])
+        day['cod'] = to_float(day['cod'])
+        day['ncm_charges'] = to_float(day['ncm_charges'])
+        day['expenses'] = to_float(day['expenses'])
+        day['net_profit'] = to_float(day['net_profit'])
+
+    # NCM Delivery Revenue Table
+    ncm_revenue = list(
+        orders.values(
+            'delivered_at', 'id', 'order_number', 'customer__name', 'ncm_status',
+            'total_amount', 'delivery_charge', 'payment_status', 'payment_method', 'cod_collected'
+        ).order_by('-delivered_at')
+    )
+    
+    # Convert Decimals in ncm_revenue
+    for order in ncm_revenue:
+        order['total_amount'] = to_float(order['total_amount'])
+        order['delivery_charge'] = to_float(order['delivery_charge'])
+        order['cod_collected'] = to_float(order['cod_collected'])
+        if order['delivered_at']:
+            order['delivered_at'] = order['delivered_at'].isoformat()
+
+    # Payment method pie chart
+    payment_methods = list(
+        orders.values('payment_method').annotate(amount=Sum('total_amount')).order_by('-amount')
+    )
+    
+    # Convert Decimals in payment_methods
+    for method in payment_methods:
+        method['amount'] = to_float(method['amount'])
+
+    # Daily revenue line chart
+    daily_revenue = list(
+        orders.annotate(date=TruncDate('delivered_at')).values('date').annotate(amount=Sum('total_amount')).order_by('date')
+    )
+    
+    # Convert Decimals in daily_revenue
+    for day in daily_revenue:
+        day['amount'] = to_float(day['amount'])
+        if day['date']:
+            day['date'] = day['date'].isoformat()
+
+    # Revenue vs Expenses bar chart
+    revenue_vs_expenses = [
+        {"label": "Revenue", "amount": to_float(total_revenue)},
+        {"label": "NCM Charges", "amount": to_float(ncm_delivery_charges)},
+        {"label": "Expenses", "amount": to_float(expenses)},
+        {"label": "Net Profit", "amount": to_float(net_profit)},
+    ]
+
+    return JsonResponse({
+        "stats": {
+            "total_revenue": to_float(total_revenue),
+            "orders_delivered": orders_delivered,
+            "cod_collected": to_float(cod_collected),
+            "pending_payments": to_float(pending_payments),
+            "net_profit": to_float(net_profit),
+            "ncm_delivery_charges": to_float(ncm_delivery_charges),
+        },
+        "key_metrics": {
+            "avg_order_value": to_float(avg_order_value),
+            "total_ncm_charges": to_float(ncm_delivery_charges),
+            "profit_margin": float(profit_margin),
+            "cod_collection_rate": float(cod_collection_rate),
+        },
+        "payment_status": payment_status,
+        "branch_summary": branch_summary,
+        "daily_summary": daily_summary,
+        "ncm_revenue": ncm_revenue,
+        "payment_methods": payment_methods,
+        "daily_revenue": daily_revenue,
+        "revenue_vs_expenses": revenue_vs_expenses,
+    })

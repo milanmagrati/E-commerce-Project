@@ -1,5 +1,7 @@
+
 from django.urls import path
 from . import views
+
 
 urlpatterns = [
     path('', views.dashboard_view, name='dashboard'),
@@ -193,6 +195,8 @@ urlpatterns = [
     path('ncm-bulk-logs/<int:log_id>/trash/', views.ncm_bulk_log_trash, name='ncm_bulk_log_trash'),
     path('ncm-bulk-logs/bulk-action/', views.ncm_bulk_logs_bulk_action, name='ncm_bulk_logs_bulk_action'),
 
-
+    # Financial Report
+    path('financial-report/', views.financial_report, name='financial_report'),
+    path('financial-report/data/', views.financial_report_data, name='financial_report_data'),
 ]
     

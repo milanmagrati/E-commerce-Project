@@ -644,8 +644,8 @@
                         </li>
                         {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_financial_reports %}
-                        <li>
-                            <a href="#">Financial Reports</a>
+                        <li class="{% if request.resolver_match.url_name == 'financial_report' %}active{% endif %}">
+                            <a href="{% url 'financial_report' %}">Financial Report</a>
                         </li>
                         {% endif %}
                     </ul>

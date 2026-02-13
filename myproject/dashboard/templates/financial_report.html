@@ -1,0 +1,652 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Financial Report - NCM Revenue{% endblock %}
+
+{% block content %}
+<div class="container-fluid financial-report-container">
+    <h2 class="mb-4 report-title"><i class="fas fa-chart-line"></i> Financial Report - NCM Delivered Orders</h2>
+
+    <!-- Stats Cards -->
+    <div class="row g-3 mb-4 stat-row-flex">
+        <div class="col-md-2 stat-col-flex">
+            <div class="stat-card bg-soft-blue">
+                <div class="stat-icon"><i class="fas fa-coins"></i></div>
+                <div class="stat-content">
+                    <h3 id="totalRevenue">0</h3>
+                    <p>Total Revenue</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 stat-col-flex">
+            <div class="stat-card bg-soft-green">
+                <div class="stat-icon"><i class="fas fa-truck"></i></div>
+                <div class="stat-content">
+                    <h3 id="ordersDelivered">0</h3>
+                    <p>Orders Delivered</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 stat-col-flex">
+            <div class="stat-card bg-soft-yellow">
+                <div class="stat-icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="stat-content">
+                    <h3 id="codCollected">0</h3>
+                    <p>COD Collected</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 stat-col-flex">
+            <div class="stat-card bg-soft-pink">
+                <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
+                <div class="stat-content">
+                    <h3 id="pendingPayments">0</h3>
+                    <p>Pending Payments</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 stat-col-flex">
+            <div class="stat-card bg-soft-cyan">
+                <div class="stat-icon"><i class="fas fa-chart-pie"></i></div>
+                <div class="stat-content">
+                    <h3 id="netProfit">0</h3>
+                    <p>Net Profit</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 stat-col-flex">
+            <div class="stat-card bg-gradient-ncm">
+                <div class="stat-icon"><i class="fas fa-shipping-fast"></i></div>
+                <div class="stat-content">
+                    <h3 id="ncmDeliveryCharges">0</h3>
+                    <p>NCM Delivery Charges</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <form class="row g-3 mb-4" id="reportFilterForm">
+        <div class="col-md-2">
+            <select class="form-select" name="period" id="periodSelect">
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="custom">Custom</option>
+            </select>
+        </div>
+        <div class="col-md-2" id="customStartDiv" style="display:none;">
+            <input type="date" class="form-control" name="start_date" id="startDateInput">
+        </div>
+        <div class="col-md-2" id="customEndDiv" style="display:none;">
+            <input type="date" class="form-control" name="end_date" id="endDateInput">
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary"><i class="fas fa-filter"></i> Filter</button>
+        </div>
+        <div class="col-md-2">
+            <button type="button" class="btn btn-outline-secondary" id="compareBtn"><i class="fas fa-exchange-alt"></i> Compare Periods</button>
+        </div>
+        <div class="col-md-2 text-end">
+            <div class="btn-group">
+                <button type="button" class="btn btn-outline-success" onclick="exportTable('excel')"><i class="fas fa-file-excel"></i> Excel</button>
+                <button type="button" class="btn btn-outline-danger" onclick="exportTable('pdf')"><i class="fas fa-file-pdf"></i> PDF</button>
+                <button type="button" class="btn btn-outline-dark" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Charts -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-chart-line"></i> Daily Revenue</div>
+                <div class="card-body"><canvas id="dailyRevenueChart"></canvas></div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-chart-pie"></i> Payment Methods</div>
+                <div class="card-body"><canvas id="paymentMethodChart"></canvas></div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-header bg-gradient-success text-white"><i class="fas fa-chart-bar"></i> Revenue vs Expenses</div>
+                <div class="card-body"><canvas id="revenueVsExpensesChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tables -->
+    <div class="row mb-4">
+        <div class="col-12 mb-3">
+            <div class="card">
+                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-table"></i> NCM Delivery Revenue</div>
+                <div class="card-body table-responsive">
+                    <table class="table table-bordered table-hover" id="ncmRevenueTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>NCM Status</th>
+                                <th>Amount</th>
+                                <th>Delivery Charge</th>
+                                <th>Payment Status</th>
+                                <th>COD Collected</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data will be loaded via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 mb-3">
+            <div class="card">
+                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-table"></i> Daily Summary</div>
+                <div class="card-body table-responsive">
+                    <table class="table table-bordered table-hover" id="dailySummaryTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Orders</th>
+                                <th>Revenue</th>
+                                <th>COD</th>
+                                <th>NCM Charges</th>
+                                <th>Expenses</th>
+                                <th>Net Profit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data will be loaded via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 mb-3">
+            <div class="card">
+                <div class="card-header bg-gradient-warning text-white"><i class="fas fa-table"></i> Payment Status</div>
+                <div class="card-body table-responsive">
+                    <table class="table table-bordered table-hover" id="paymentStatusTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Status</th>
+                                <th>Amount</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data will be loaded via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 mb-3">
+            <div class="card">
+                <div class="card-header bg-gradient-info text-white"><i class="fas fa-table"></i> Branch-wise Summary</div>
+                <div class="card-body table-responsive">
+                    <table class="table table-bordered table-hover" id="branchSummaryTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Branch</th>
+                                <th>Orders</th>
+                                <th>Revenue</th>
+                                <th>Total NCM Charges</th>
+                                <th>Profit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data will be loaded via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5>Average Order Value</h5>
+                    <h3 id="avgOrderValue">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5>Total NCM Charges</h5>
+                    <h3 id="totalNcmCharges">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5>Profit Margin</h5>
+                    <h3 id="profitMargin">0%</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5>COD Collection Rate</h5>
+                    <h3 id="codCollectionRate">0%</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.financial-report-container {
+    background: #f8fafc;
+    border-radius: 18px;
+    padding: 32px 24px 24px 24px;
+    box-shadow: 0 4px 32px rgba(102, 126, 234, 0.08);
+    margin-bottom: 32px;
+}
+.report-title {
+    font-weight: 700;
+    color: #4f46e5;
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 8px rgba(102, 126, 234, 0.08);
+}
+.stat-row-flex {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 0.75rem;
+}
+.stat-col-flex {
+    display: flex;
+    flex: 1 1 0%;
+    min-width: 180px;
+    max-width: 100%;
+}
+/* Restore pastel backgrounds and text color for stat cards */
+.stat-card.bg-soft-blue {
+    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%) !important;
+    color: #3730a3 !important;
+    border: none !important;
+}
+.stat-card.bg-soft-green {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%) !important;
+    color: #065f46 !important;
+    border: none !important;
+}
+.stat-card.bg-soft-yellow {
+    background: linear-gradient(135deg, #fef9c3 0%, #fde68a 100%) !important;
+    color: #b45309 !important;
+    border: none !important;
+}
+.stat-card.bg-soft-pink {
+    background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%) !important;
+    color: #be185d !important;
+    border: none !important;
+}
+.stat-card.bg-soft-cyan {
+    background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%) !important;
+    color: #0e7490 !important;
+    border: none !important;
+}
+.stat-card {
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(102, 126, 234, 0.07);
+    padding: 22px 16px 18px 16px;
+    display: flex;
+    align-items: center;
+    transition: box-shadow 0.2s, transform 0.2s, background 0.2s;
+    min-height: 110px;
+    margin-bottom: 0;
+    width: 100%;
+    background: linear-gradient(120deg, #f4f6fb 60%, #e9eaf7 100%);
+    color: #232946;
+    border: 1px solid #e5e7eb;
+    position: relative;
+    overflow: hidden;
+    z-index: 1;
+}
+.stat-card .stat-icon {
+    font-size: 2.3rem;
+    margin-right: 18px;
+    color: inherit;
+    opacity: 0.95;
+    min-width: 2.3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+.stat-card .stat-content h3 {
+    margin: 0;
+    font-size: 2.1rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: inherit;
+    transition: color 0.2s;
+}
+.stat-card .stat-content p {
+    margin: 0;
+    font-size: 1.05rem;
+    opacity: 0.85;
+    font-weight: 500;
+    color: inherit;
+    transition: color 0.2s;
+}
+.stat-card:hover {
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.18);
+    transform: translateY(-3px) scale(1.035);
+    z-index: 2;
+}
+/* Gradient cards: keep white text and icons, remove border, add shadow */
+.stat-card.bg-primary-gradient,
+.stat-card.bg-success-gradient,
+.stat-card.bg-info-gradient,
+.stat-card.bg-warning-gradient,
+.stat-card.bg-purple-gradient,
+.stat-card.bg-gradient-ncm {
+    color: #fff !important;
+    border: none;
+    background: unset;
+    box-shadow: 0 4px 24px rgba(102, 126, 234, 0.18);
+}
+.stat-card.bg-primary-gradient .stat-icon,
+.stat-card.bg-success-gradient .stat-icon,
+.stat-card.bg-info-gradient .stat-icon,
+.stat-card.bg-warning-gradient .stat-icon,
+.stat-card.bg-purple-gradient .stat-icon,
+.stat-card.bg-gradient-ncm .stat-icon {
+    color: #fff !important;
+    opacity: 1;
+}
+.bg-gradient-ncm {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+}
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%) !important;
+}
+.bg-gradient-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+}
+.bg-gradient-info {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+}
+.bg-gradient-warning {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+}
+.bg-purple-gradient {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+}
+
+/* Filter form */
+#reportFilterForm {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.06);
+    padding: 18px 12px 6px 12px;
+    margin-bottom: 32px;
+}
+#reportFilterForm .form-select, #reportFilterForm .form-control {
+    border-radius: 8px;
+    font-size: 1rem;
+}
+#reportFilterForm .btn {
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+}
+#reportFilterForm .btn-group .btn {
+    font-size: 0.98rem;
+}
+
+/* Card and Table Styling */
+.card {
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(102, 126, 234, 0.07);
+    border: none;
+    margin-bottom: 18px;
+}
+.card-header {
+    border-radius: 14px 14px 0 0;
+    font-weight: 600;
+    font-size: 1.1rem;
+    letter-spacing: 0.2px;
+}
+.table {
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+    margin-bottom: 0;
+}
+.table thead {
+    background: #f3f4f6;
+    font-weight: 600;
+    font-size: 1.01rem;
+}
+.table-bordered th, .table-bordered td {
+    border: 1px solid #e5e7eb !important;
+}
+.table-hover tbody tr:hover {
+    background: #f1f5f9;
+}
+
+/* Key Metrics */
+.card-body.text-center h5 {
+    color: #6366f1;
+    font-size: 1.08rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+.card-body.text-center h3 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+/* Chart.js canvas */
+canvas {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(102, 126, 234, 0.04);
+    padding: 8px;
+}
+
+/* Responsive Tweaks */
+@media (max-width: 1200px) {
+    .stat-card { flex-direction: column; align-items: flex-start; min-height: 120px; }
+    .stat-icon { margin-bottom: 8px; margin-right: 0; }
+}
+@media (max-width: 768px) {
+    .financial-report-container { padding: 12px 2px 2px 2px; }
+    .stat-card { padding: 16px 8px; }
+    .card { margin-bottom: 12px; }
+    .report-title { font-size: 1.3rem; }
+}
+@media (max-width: 576px) {
+    .stat-card { min-height: 90px; }
+    .card-header { font-size: 1rem; }
+    .card-body.text-center h3 { font-size: 1.2rem; }
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+<script>
+// Helper function to get CSRF token from cookie
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function fetchFinancialReportData(params = {}) {
+    const url = new URL(window.location.origin + '/financial-report/data/');
+    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+    
+    const csrftoken = getCookie('csrftoken');
+    const headers = {
+        'X-CSRFToken': csrftoken,
+        'Content-Type': 'application/json'
+    };
+    
+    return fetch(url, { 
+        credentials: 'same-origin',
+        headers: headers
+    })
+        .then(res => {
+            if (!res.ok) {
+                console.error('API Error:', res.status, res.statusText);
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+            return res.json();
+        })
+        .catch(error => {
+            console.error('Fetch error:', error);
+            alert('Error loading financial report data: ' + error.message);
+            throw error;
+        });
+}
+
+function renderStats(stats) {
+    const formatNumber = (val) => {
+        if (val === null || val === undefined) return '0';
+        if (typeof val === 'number') return val.toFixed(2);
+        return val;
+    };
+    document.getElementById('totalRevenue').textContent = formatNumber(stats.total_revenue);
+    document.getElementById('ordersDelivered').textContent = stats.orders_delivered || '0';
+    document.getElementById('codCollected').textContent = formatNumber(stats.cod_collected);
+    document.getElementById('pendingPayments').textContent = formatNumber(stats.pending_payments);
+    document.getElementById('netProfit').textContent = formatNumber(stats.net_profit);
+    document.getElementById('ncmDeliveryCharges').textContent = formatNumber(stats.ncm_delivery_charges);
+}
+
+function renderKeyMetrics(metrics) {
+    const formatNumber = (val) => {
+        if (val === null || val === undefined) return '0';
+        return val.toFixed(2);
+    };
+    document.getElementById('avgOrderValue').textContent = formatNumber(metrics.avg_order_value);
+    document.getElementById('totalNcmCharges').textContent = formatNumber(metrics.total_ncm_charges);
+    document.getElementById('profitMargin').textContent = formatNumber(metrics.profit_margin) + '%';
+    document.getElementById('codCollectionRate').textContent = formatNumber(metrics.cod_collection_rate) + '%';
+}
+
+function renderTable(tableId, rows, columns) {
+    const tbody = document.getElementById(tableId).querySelector('tbody');
+    tbody.innerHTML = '';
+    rows.forEach(row => {
+        const tr = document.createElement('tr');
+        columns.forEach(col => {
+            const td = document.createElement('td');
+            td.textContent = row[col] !== undefined && row[col] !== null ? row[col] : '';
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+}
+
+function renderPaymentStatusTable(data) {
+    renderTable('paymentStatusTable', data, ['status', 'amount', 'percent']);
+}
+function renderBranchSummaryTable(data) {
+    renderTable('branchSummaryTable', data, ['branch__name', 'orders', 'revenue', 'ncm_charges', 'profit']);
+}
+function renderDailySummaryTable(data) {
+    renderTable('dailySummaryTable', data, ['date', 'orders', 'revenue', 'cod', 'ncm_charges', 'expenses', 'net_profit']);
+}
+function renderNcmRevenueTable(data) {
+    renderTable('ncmRevenueTable', data, ['delivered_at', 'order_number', 'customer__name', 'ncm_status', 'total_amount', 'delivery_charge', 'payment_status', 'cod_collected']);
+}
+
+let dailyRevenueChart, paymentMethodChart, revenueVsExpensesChart;
+function renderCharts(data) {
+    // Daily Revenue Line Chart
+    const drLabels = data.daily_revenue.map(x => x.date ? x.date.split('T')[0] : '');
+    const drData = data.daily_revenue.map(x => x.amount);
+    if (dailyRevenueChart) dailyRevenueChart.destroy();
+    dailyRevenueChart = new Chart(document.getElementById('dailyRevenueChart'), {
+        type: 'line',
+        data: { labels: drLabels, datasets: [{ label: 'Revenue', data: drData, borderColor: '#667eea', backgroundColor: 'rgba(102,126,234,0.1)' }] },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+    });
+    // Payment Method Pie Chart
+    const pmLabels = data.payment_methods.map(x => x.payment_method);
+    const pmData = data.payment_methods.map(x => x.amount);
+    if (paymentMethodChart) paymentMethodChart.destroy();
+    paymentMethodChart = new Chart(document.getElementById('paymentMethodChart'), {
+        type: 'pie',
+        data: { labels: pmLabels, datasets: [{ data: pmData, backgroundColor: ['#667eea', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#3b82f6'] }] },
+        options: { responsive: true }
+    });
+    // Revenue vs Expenses Bar Chart
+    const reLabels = data.revenue_vs_expenses.map(x => x.label);
+    const reData = data.revenue_vs_expenses.map(x => x.amount);
+    if (revenueVsExpensesChart) revenueVsExpensesChart.destroy();
+    revenueVsExpensesChart = new Chart(document.getElementById('revenueVsExpensesChart'), {
+        type: 'bar',
+        data: { labels: reLabels, datasets: [{ label: 'Amount', data: reData, backgroundColor: ['#667eea', '#f59e0b', '#ef4444', '#10b981'] }] },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+    });
+}
+
+function loadReport(params = {}) {
+    console.log('Loading report with params:', params);
+    fetchFinancialReportData(params).then(data => {
+        console.log('Report data received:', data);
+        renderStats(data.stats);
+        renderKeyMetrics(data.key_metrics);
+        renderPaymentStatusTable(data.payment_status);
+        renderBranchSummaryTable(data.branch_summary);
+        renderDailySummaryTable(data.daily_summary);
+        renderNcmRevenueTable(data.ncm_revenue);
+        renderCharts(data);
+    }).catch(error => {
+        console.error('Error loading report:', error);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Filter form logic
+    const form = document.getElementById('reportFilterForm');
+    const periodSelect = document.getElementById('periodSelect');
+    const customStartDiv = document.getElementById('customStartDiv');
+    const customEndDiv = document.getElementById('customEndDiv');
+    periodSelect.addEventListener('change', function() {
+        if (this.value === 'custom') {
+            customStartDiv.style.display = 'block';
+            customEndDiv.style.display = 'block';
+        } else {
+            customStartDiv.style.display = 'none';
+            customEndDiv.style.display = 'none';
+        }
+    });
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const params = {
+            period: periodSelect.value,
+            start_date: document.getElementById('startDateInput').value,
+            end_date: document.getElementById('endDateInput').value
+        };
+        loadReport(params);
+    });
+    // Initial load
+    loadReport();
+});
+</script>
+{% endblock %}

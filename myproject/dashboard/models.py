@@ -21,6 +21,24 @@ class Category(models.Model):
         verbose_name_plural = "Categories"
 
 
+class Branch(models.Model):
+    """Business branch/location model"""
+    name = models.CharField(max_length=200, unique=True)
+    city = models.CharField(max_length=100)
+    address = models.TextField(blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.name} - {self.city}"
+    
+    class Meta:
+        ordering = ['name']
+        verbose_name_plural = "Branches"
+
+
 class Product(models.Model):
     
     PRODUCT_TYPE = (
@@ -137,6 +155,7 @@ class Order(models.Model):
     # ✅ FIXED: Changed User to settings.AUTH_USER_MODEL
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_orders')
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
+    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     customer_name = models.CharField(max_length=255)
     customer_phone = models.CharField(max_length=20)
     customer_email = models.EmailField(blank=True)
@@ -178,8 +197,13 @@ class Order(models.Model):
         limit_choices_to={'setup_type': 'status'}
     )
     
+    # ✅ NEW: COD Collected amount
+    cod_collected = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Amount collected as COD")
+    
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     shipping_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    delivery_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="NCM delivery charge or logistics charge")
+    expense_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Other operational expenses")
     tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=13)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     notes = models.TextField(blank=True)
