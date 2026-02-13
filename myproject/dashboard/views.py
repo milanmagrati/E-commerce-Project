@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 import requests
 from .models import (Product, Order, OrderItem, Category, Customer, 
                      ProductVariation, ProductImage, ProductVariantOption,
-                     OrderActivityLog, StockIn, City, StockInItem)
+                     OrderActivityLog, StockIn, City, StockInItem, Setup)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -70,6 +70,93 @@ def fix_order_decimals(order):
     
     return order
 
+
+def sync_order_status_setup(order):
+    """
+    Bidirectional sync between string fields and FK Setup records.
+    Ensures order.order_status matches order.status_setup,
+    order.payment_method matches order.payment_setup, etc.
+    """
+    from .models import Setup
+    
+    needs_save = False
+    
+    # ====== SYNC ORDER STATUS ======
+    if order.order_status:
+        if order.status_setup:
+            # Both exist - ensure they match
+            expected = order.status_setup.name.lower().replace(' ', '_')
+            if order.order_status != expected:
+                order.order_status = expected
+                needs_save = True
+        else:
+            # No FK - create/lookup Setup matching the string
+            try:
+                setup_name = order.order_status.replace('_', ' ').title()
+                setup, _ = Setup.objects.get_or_create(
+                    setup_type='status',
+                    name=setup_name,
+                    defaults={'is_active': True}
+                )
+                order.status_setup = setup
+                needs_save = True
+            except Exception:
+                pass
+    
+    # ====== SYNC PAYMENT STATUS ======
+    if order.payment_status:
+        if order.payment_status_setup:
+            # Both exist - ensure they match
+            expected = order.payment_status_setup.name.lower().replace(' ', '_')
+            if order.payment_status != expected:
+                order.payment_status = expected
+                needs_save = True
+        else:
+            # No FK - create/lookup Setup matching the string
+            try:
+                setup_name = order.payment_status.replace('_', ' ').title()
+                setup, _ = Setup.objects.get_or_create(
+                    setup_type='payment_status',
+                    name=setup_name,
+                    defaults={'is_active': True}
+                )
+                order.payment_status_setup = setup
+                needs_save = True
+            except Exception:
+                pass
+    
+    # ====== SYNC PAYMENT METHOD ======
+    if order.payment_method:
+        if order.payment_setup:
+            # Both exist - ensure they match
+            expected = order.payment_setup.name.lower().replace(' ', '_')
+            if order.payment_method != expected:
+                order.payment_method = expected
+                needs_save = True
+        else:
+            # No FK - create/lookup Setup matching the string
+            try:
+                setup_name = order.payment_method.replace('_', ' ').title()
+                setup, _ = Setup.objects.get_or_create(
+                    setup_type='payment',
+                    name=setup_name,
+                    defaults={'is_active': True}
+                )
+                order.payment_setup = setup
+                needs_save = True
+            except Exception:
+                pass
+    
+    # Save if changes made
+    if needs_save:
+        try:
+            order.save()
+        except Exception:
+            pass
+    
+    return order
+    
+    return order
 
 
 def login_view(request):
@@ -1970,6 +2057,9 @@ def orders_list(request):
     # FIX: Convert queryset to list and fix decimals
     orders_list = list(orders)
     for order in orders_list:
+        # SYNC STATUS WITH SETUP
+        order = sync_order_status_setup(order)
+        
         try:
             order.discount_amount = order.discount_amount if order.discount_amount is not None else Decimal('0.00')
             order.shipping_charge = order.shipping_charge if order.shipping_charge is not None else Decimal('0.00')
@@ -2277,7 +2367,18 @@ def order_create(request):
 @permission_required('can_view_orders')
 def order_detail(request, order_id):
     """View order details with partial payment info and status updates"""
-    order = get_object_or_404(Order, id=order_id)
+    # CRITICAL: Always fetch fresh data from database - do NOT use cached objects
+    # Use select_related to get ForeignKey relationships efficiently
+    order = get_object_or_404(
+        Order.objects.select_related(
+            'status_setup',
+            'payment_setup',
+            'payment_status_setup',
+            'customer',
+            'created_by'
+        ),
+        id=order_id
+    )
     order = fix_order_decimals(order)
     
     # ENSURE PARTIAL PAYMENT FIELDS ARE PROPERLY SET
@@ -2298,134 +2399,148 @@ def order_detail(request, order_id):
         
         if action == 'update_status':
             try:
+                # Store old values for activity log
                 old_order_status = order.order_status
                 old_payment_status = order.payment_status
+                old_payment_method = order.payment_method
                 old_tracking = order.tracking_number or ''
                 old_admin_notes = order.admin_notes or ''
-                old_logistics = order.logistics or ''  # NEW: Track logistics changes
+                old_logistics = order.logistics or ''
                 old_status_setup = order.status_setup
                 old_payment_setup = order.payment_setup
                 old_payment_status_setup = order.payment_status_setup
 
                 # Get new values from form
+                status_setup_id = request.POST.get('status_setup', '').strip()
+                payment_setup_id = request.POST.get('payment_setup', '').strip()
+                payment_status_setup_id = request.POST.get('payment_status_setup', '').strip()
                 new_tracking = request.POST.get('tracking_number', '').strip()
                 new_admin_notes = request.POST.get('admin_notes', '').strip()
-                new_logistics = request.POST.get('logistics', '').strip()  # NEW: Get logistics value
+                new_logistics_input = request.POST.get('logistics', '').strip()
 
-                # Get status_setup, payment_setup, and payment_status_setup from POST
                 from .models import Setup
-                status_setup_id = request.POST.get('status_setup')
-                payment_setup_id = request.POST.get('payment_setup')
-                payment_status_setup_id = request.POST.get('payment_status_setup')
+                changes_made = []
 
-                new_order_status = old_order_status
-                new_payment_status = old_payment_status
-
+                # ====== UPDATE ORDER STATUS ======
                 if status_setup_id:
                     try:
                         status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
-                        order.status_setup = status_setup
-                        new_order_status = status_setup.name.lower().replace(' ', '_')
+                        if order.status_setup != status_setup:
+                            order.status_setup = status_setup
+                            # Also update the string field
+                            order.order_status = status_setup.name.lower().replace(' ', '_')
+                            changes_made.append('Order Status')
                     except Setup.DoesNotExist:
-                        pass
-                else:
-                    order.status_setup = None
-
+                        messages.warning(request, 'Selected status not found.')
+                
+                # ====== UPDATE PAYMENT STATUS ======
+                if payment_status_setup_id:
+                    try:
+                        payment_status_setup = Setup.objects.get(id=payment_status_setup_id, setup_type='payment_status')
+                        if order.payment_status_setup != payment_status_setup:
+                            order.payment_status_setup = payment_status_setup
+                            # Also update the string field
+                            new_payment_status = payment_status_setup.name.lower().replace(' ', '_')
+                            
+                            # Handle partial payment logic
+                            is_new_partial = 'partial' in new_payment_status.lower()
+                            was_old_partial = 'partial' in (order.payment_status or '').lower()
+                            
+                            if not was_old_partial and is_new_partial:
+                                order.is_partial_payment = True
+                                if order.partial_amount_paid is None:
+                                    order.partial_amount_paid = Decimal('0.00')
+                                if order.remaining_amount is None:
+                                    order.remaining_amount = order.total_amount
+                            elif was_old_partial and not is_new_partial:
+                                order.is_partial_payment = False
+                            
+                            order.payment_status = new_payment_status
+                            changes_made.append('Payment Status')
+                    except Setup.DoesNotExist:
+                        messages.warning(request, 'Selected payment status not found.')
+                
+                # ====== UPDATE PAYMENT METHOD ======
                 if payment_setup_id:
                     try:
                         payment_setup = Setup.objects.get(id=payment_setup_id, setup_type='payment')
-                        order.payment_setup = payment_setup
-                        order.payment_method = payment_setup.name.lower().replace(' ', '_')
+                        if order.payment_setup != payment_setup:
+                            order.payment_setup = payment_setup
+                            order.payment_method = payment_setup.name.lower().replace(' ', '_')
+                            changes_made.append('Payment Method')
                     except Setup.DoesNotExist:
-                        pass
-                else:
-                    order.payment_setup = None
-
-                if payment_status_setup_id:
-                    try:
-                        ps_setup = Setup.objects.get(id=payment_status_setup_id, setup_type='payment_status')
-                        order.payment_status_setup = ps_setup
-                        new_payment_status = ps_setup.name.lower().replace(' ', '_')
-                    except Setup.DoesNotExist:
-                        pass
-                else:
-                    order.payment_status_setup = None
+                        messages.warning(request, 'Selected payment method not found.')
                 
-                # ENHANCED PARTIAL PAYMENT HANDLING
-                # Check if the payment setup name contains "partial"
-                is_new_partial = 'partial' in new_payment_status.lower()
-                was_old_partial = 'partial' in old_payment_status.lower()
-
-                # If changing TO partial payment status
-                if not was_old_partial and is_new_partial:
-                    order.is_partial_payment = True
-                    # Initialize partial payment amounts if not set
-                    if order.partial_amount_paid is None:
-                        order.partial_amount_paid = Decimal('0.00')
-                    if order.remaining_amount is None:
-                        order.remaining_amount = order.total_amount
-                    
-                    # Create activity log for enabling partial payment
-                    OrderActivityLog.objects.create(
-                        order=order,
-                        action_type='payment_changed',
-                        user=request.user,
-                        field_name='partial_payment_enabled',
-                        old_value=old_payment_status,
-                        new_value='partial',
-                        description=f'Partial payment enabled. Payment status changed from "{old_payment_status}" to "partial"'
-                    )
+                # ====== UPDATE TRACKING NUMBER ======
+                if new_tracking != old_tracking:
+                    order.tracking_number = new_tracking
+                    if new_tracking:
+                        changes_made.append('Tracking Number')
                 
-                # If changing FROM partial payment status
-                elif was_old_partial and not is_new_partial:
-                    order.is_partial_payment = False
-                    
-                    # Create activity log for clearing partial payment
-                    OrderActivityLog.objects.create(
-                        order=order,
-                        action_type='payment_changed',
-                        user=request.user,
-                        field_name='partial_payment_cleared',
-                        old_value='partial',
-                        new_value=new_payment_status,
-                        description=f'Partial payment cleared. Payment status changed from "partial" to "{new_payment_status}"'
-                    )
+                # ====== UPDATE ADMIN NOTES ======
+                if new_admin_notes != old_admin_notes:
+                    order.admin_notes = new_admin_notes
+                    if new_admin_notes:
+                        changes_made.append('Admin Notes')
                 
-                # Update order fields
-                order.order_status = new_order_status or order.order_status or 'processing'
-                # Set payment_status: if partial, use 'partial', otherwise use derived name
-                if is_new_partial:
-                    order.payment_status = 'partial'
-                else:
-                    order.payment_status = new_payment_status or order.payment_status or 'pending'
-                order.tracking_number = new_tracking
-                order.admin_notes = new_admin_notes
-                order.logistics = new_logistics  # NEW: Update logistics field
+                # ====== UPDATE LOGISTICS (only if explicitly selected) ======
+                if new_logistics_input and new_logistics_input != old_logistics:
+                    order.logistics = new_logistics_input
+                    changes_made.append('Logistics Provider')
                 
-                # ADD IN/OUT FIELD UPDATE SUPPORT (if provided)
-                new_in_out = request.POST.get('in_out')
-                if new_in_out and new_in_out in ['in', 'out'] and order.in_out != new_in_out:
-                    OrderActivityLog.objects.create(
-                        order=order,
-                        action_type='updated',
-                        user=request.user,
-                        field_name='in_out',
-                        old_value=order.in_out,
-                        new_value=new_in_out,
-                        description=f'IN/OUT status changed from "{order.in_out}" to "{new_in_out}"'
-                    )
-                    order.in_out = new_in_out
-                
-                # Set delivered_at timestamp if status changed to delivered
+                # ====== SET DELIVERED TIMESTAMP ======
                 if order.order_status == 'delivered' and old_order_status != 'delivered':
                     order.delivered_at = timezone.now()
                 
+                # Save the order
                 order.save()
                 
-                # Create activity logs for changes
-                changes_made = []
+                # CRITICAL: Ensure FK relationships are synced and setup records exist
+                # Re-fetch the order to apply any FK sync changes
+                order = Order.objects.select_related(
+                    'status_setup',
+                    'payment_setup',
+                    'payment_status_setup'
+                ).get(id=order.id)
                 
-                # Order status changed
+                # Sync any missing FK relationships
+                if not order.status_setup and order.order_status:
+                    try:
+                        setup_name = order.order_status.replace('_', ' ').title()
+                        order.status_setup, _ = Setup.objects.get_or_create(
+                            setup_type='status',
+                            name=setup_name,
+                            defaults={'is_active': True}
+                        )
+                        order.save(update_fields=['status_setup'])
+                    except:
+                        pass
+                
+                if not order.payment_setup and order.payment_method:
+                    try:
+                        setup_name = order.payment_method.replace('_', ' ').title()
+                        order.payment_setup, _ = Setup.objects.get_or_create(
+                            setup_type='payment',
+                            name=setup_name,
+                            defaults={'is_active': True}
+                        )
+                        order.save(update_fields=['payment_setup'])
+                    except:
+                        pass
+                
+                if not order.payment_status_setup and order.payment_status:
+                    try:
+                        setup_name = order.payment_status.replace('_', ' ').title()
+                        order.payment_status_setup, _ = Setup.objects.get_or_create(
+                            setup_type='payment_status',
+                            name=setup_name,
+                            defaults={'is_active': True}
+                        )
+                        order.save(update_fields=['payment_status_setup'])
+                    except:
+                        pass
+                
+                # ====== CREATE ACTIVITY LOGS ======
                 if old_order_status != order.order_status:
                     OrderActivityLog.objects.create(
                         order=order,
@@ -2436,9 +2551,7 @@ def order_detail(request, order_id):
                         new_value=order.order_status,
                         description=f'Order status changed from "{old_order_status}" to "{order.order_status}"'
                     )
-                    changes_made.append('Order Status')
                 
-                # Payment status changed
                 if old_payment_status != order.payment_status:
                     OrderActivityLog.objects.create(
                         order=order,
@@ -2449,10 +2562,19 @@ def order_detail(request, order_id):
                         new_value=order.payment_status,
                         description=f'Payment status changed from "{old_payment_status}" to "{order.payment_status}"'
                     )
-                    changes_made.append('Payment Status')
                 
-                # NEW: Logistics changed
-                if old_logistics != new_logistics:
+                if old_payment_method != order.payment_method:
+                    OrderActivityLog.objects.create(
+                        order=order,
+                        action_type='payment_changed',
+                        user=request.user,
+                        field_name='payment_method',
+                        old_value=old_payment_method,
+                        new_value=order.payment_method,
+                        description=f'Payment method changed from "{old_payment_method}" to "{order.payment_method}"'
+                    )
+                
+                if new_logistics_input and old_logistics != new_logistics_input:
                     logistics_display = {
                         'ncm': 'NCM',
                         'sundarijal': 'Sundarijal',
@@ -2462,7 +2584,7 @@ def order_detail(request, order_id):
                         '': 'None'
                     }
                     old_display = logistics_display.get(old_logistics, old_logistics or 'None')
-                    new_display = logistics_display.get(new_logistics, new_logistics or 'None')
+                    new_display = logistics_display.get(new_logistics_input, new_logistics_input or 'None')
                     
                     OrderActivityLog.objects.create(
                         order=order,
@@ -2470,76 +2592,71 @@ def order_detail(request, order_id):
                         user=request.user,
                         field_name='logistics',
                         old_value=old_logistics,
-                        new_value=new_logistics,
+                        new_value=new_logistics_input,
                         description=f'Logistics provider changed from "{old_display}" to "{new_display}"'
                     )
-                    changes_made.append('Logistics Provider')
-                
-                # Tracking number added or updated
-                if old_tracking != new_tracking:
-                    if old_tracking == '':
-                        OrderActivityLog.objects.create(
-                            order=order,
-                            action_type='tracking_added',
-                            user=request.user,
-                            field_name='tracking_number',
-                            new_value=new_tracking,
-                            description=f'Tracking number added: {new_tracking}'
-                        )
-                        changes_made.append('Tracking Number Added')
-                    else:
-                        OrderActivityLog.objects.create(
-                            order=order,
-                            action_type='tracking_updated',
-                            user=request.user,
-                            field_name='tracking_number',
-                            old_value=old_tracking,
-                            new_value=new_tracking,
-                            description=f'Tracking number updated from "{old_tracking}" to "{new_tracking}"'
-                        )
-                        changes_made.append('Tracking Number Updated')
-                
-                # Admin notes added or updated
-                if old_admin_notes != new_admin_notes:
-                    if old_admin_notes == '':
-                        OrderActivityLog.objects.create(
-                            order=order,
-                            action_type='notes_added',
-                            user=request.user,
-                            field_name='admin_notes',
-                            new_value=new_admin_notes[:100],
-                            description='Admin notes added'
-                        )
-                        changes_made.append('Admin Notes Added')
-                    else:
-                        OrderActivityLog.objects.create(
-                            order=order,
-                            action_type='notes_updated',
-                            user=request.user,
-                            field_name='admin_notes',
-                            old_value=old_admin_notes[:100],
-                            new_value=new_admin_notes[:100],
-                            description='Admin notes updated'
-                        )
-                        changes_made.append('Admin Notes Updated')
                 
                 if changes_made:
-                    messages.success(request, f"✅ Order updated successfully! Changed: {', '.join(changes_made)}")
+                    messages.success(request, f"✅ Order updated! Changed: {', '.join(changes_made)}")
                 else:
                     messages.info(request, "ℹ️ No changes were made to the order.")
+                
+                # CRITICAL: Clear QuerySet cache and redirect to fetch fresh data
+                # This ensures edit_order will see the latest data from database
+                from django.core.cache import cache
+                cache.delete(f'order_{order.id}')  # Clear any order cache
                 
                 return redirect('order_detail', order_id=order.id)
                 
             except Exception as e:
+                logger.error(f"Error updating order {order_id}: {str(e)}")
                 messages.error(request, f"❌ Error updating order: {str(e)}")
                 return redirect('order_detail', order_id=order.id)
     
     # GET request - display order details
+    # CRITICAL: Always fetch fresh data to ensure sync with order_edit page
+    # SYNCHRONIZE ORDER STATUS WITH SETUP USING HELPER FUNCTION
+    from .models import Setup
+    order = sync_order_status_setup(order)
+    # Force sync FK and string after every update
+    if order.order_status and (not order.status_setup or order.order_status != order.status_setup.name.lower().replace(' ', '_')):
+        try:
+            setup_name = order.order_status.replace('_', ' ').title()
+            order.status_setup, _ = Setup.objects.get_or_create(
+                setup_type='status',
+                name=setup_name,
+                defaults={'is_active': True}
+            )
+            order.save(update_fields=['status_setup'])
+        except Exception as e:
+            logger.warning(f"Could not force sync status_setup for order {order_id}: {str(e)}")
+
+    if order.payment_method and (not order.payment_setup or order.payment_method != order.payment_setup.name.lower().replace(' ', '_')):
+        try:
+            setup_name = order.payment_method.replace('_', ' ').title()
+            order.payment_setup, _ = Setup.objects.get_or_create(
+                setup_type='payment',
+                name=setup_name,
+                defaults={'is_active': True}
+            )
+            order.save(update_fields=['payment_setup'])
+        except Exception as e:
+            logger.warning(f"Could not force sync payment_setup for order {order_id}: {str(e)}")
+    
+    # CRITICAL: Re-fetch from database to get fresh FK relationships after sync
+    order = Order.objects.select_related(
+        'status_setup', 
+        'payment_setup', 
+        'payment_status_setup',
+        'customer',
+        'created_by'
+    ).get(id=order_id)
+    
+    # Now get order items and activity logs from fresh order instance
     order_items = order.items.select_related('product', 'product_variation').all()
     activity_logs = order.activity_logs.select_related('user').order_by('-created_at')[:20]
-
+    
     # Get Setup options for dropdowns
-    from .models import Setup
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
     payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
@@ -2598,10 +2715,23 @@ def order_detail(request, order_id):
 @login_required
 @permission_required('can_edit_orders')
 def order_edit(request, order_id):
-    """Edit an existing order with city management integration"""
-    order = get_object_or_404(Order, id=order_id)
-    order_items = order.items.all()
-
+    """Edit an existing order with city management integration and two-way sync"""
+    # CRITICAL: Always fetch fresh data from database
+    # Use select_related to load all ForeignKey relationships at once
+    order = get_object_or_404(
+        Order.objects.select_related(
+            'status_setup', 
+            'payment_setup', 
+            'payment_status_setup',
+            'customer',
+            'created_by'
+        ),
+        id=order_id
+    )
+    
+    # Synchronize status with setup records before processing
+    order = sync_order_status_setup(order)
+    
     if request.method == "POST":
         try:
             with transaction.atomic():
@@ -2612,15 +2742,18 @@ def order_edit(request, order_id):
                 old_remaining = order.remaining_amount or Decimal('0')
                 old_city = order.branch_city
                 old_in_out = order.in_out
+                old_order_status = order.order_status
+                old_payment_status = order.payment_status
                 
                 # Update basic fields
                 order.customer_name = request.POST.get("customer_name", "").strip()
                 order.customer_phone = request.POST.get("customer_phone", "").strip()
                 order.customer_email = request.POST.get("customer_email", "").strip()
-                # UPDATED: Get city from City model
+                
+                # Get city and in_out field
                 branch_city_name = request.POST.get("branch_city", "").strip()
-                # Get in_out field from form (auto-detected)
                 in_out = request.POST.get("in_out", "in").strip()
+                
                 order.shipping_address = request.POST.get("shipping_address", "").strip()
                 order.landmark = request.POST.get("landmark", "").strip()
                 
@@ -2629,12 +2762,13 @@ def order_edit(request, order_id):
                 
                 order.order_from = request.POST.get("order_from")
 
-                # NEW: Get payment_setup, status_setup, and payment_status_setup from POST
+                # CRITICAL: Get payment_setup, status_setup, and payment_status_setup from POST
                 from .models import Setup
                 payment_setup_id = request.POST.get("payment_setup")
                 status_setup_id = request.POST.get("status_setup")
                 payment_status_setup_id = request.POST.get("payment_status_setup")
 
+                # Update status_setup and sync order_status
                 if status_setup_id:
                     try:
                         status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
@@ -2646,7 +2780,19 @@ def order_edit(request, order_id):
                 else:
                     # Keep existing order_status if no status_setup is selected
                     order.order_status = order.order_status or 'processing'
+                    # But ensure FK is synced if string value exists
+                    if order.order_status and not order.status_setup:
+                        try:
+                            setup_name = order.order_status.replace('_', ' ').title()
+                            order.status_setup, _ = Setup.objects.get_or_create(
+                                setup_type='status',
+                                name=setup_name,
+                                defaults={'is_active': True}
+                            )
+                        except:
+                            pass
 
+                # Update payment_setup and sync payment_method
                 if payment_setup_id:
                     try:
                         payment_setup = Setup.objects.get(id=payment_setup_id, setup_type='payment')
@@ -2657,8 +2803,18 @@ def order_edit(request, order_id):
                         order.payment_setup = None
                 else:
                     # Keep existing payment_method if no payment_setup is selected
-                    order.payment_setup = None
+                    if order.payment_method and not order.payment_setup:
+                        try:
+                            setup_name = order.payment_method.replace('_', ' ').title()
+                            order.payment_setup, _ = Setup.objects.get_or_create(
+                                setup_type='payment',
+                                name=setup_name,
+                                defaults={'is_active': True}
+                            )
+                        except:
+                            pass
 
+                # Update payment_status_setup and sync payment_status
                 if payment_status_setup_id:
                     try:
                         ps_setup = Setup.objects.get(id=payment_status_setup_id, setup_type='payment_status')
@@ -2668,6 +2824,17 @@ def order_edit(request, order_id):
                         order.payment_status_setup = None
                 else:
                     order.payment_status = order.payment_status or 'pending'
+                    # But ensure FK is synced if string value exists
+                    if order.payment_status and not order.payment_status_setup:
+                        try:
+                            setup_name = order.payment_status.replace('_', ' ').title()
+                            order.payment_status_setup, _ = Setup.objects.get_or_create(
+                                setup_type='payment_status',
+                                name=setup_name,
+                                defaults={'is_active': True}
+                            )
+                        except:
+                            pass
                 
                 order.discount_amount = Decimal(request.POST.get("discount") or "0")
                 order.shipping_charge = Decimal(request.POST.get("shipping_charge") or "0")
@@ -2764,26 +2931,42 @@ def order_edit(request, order_id):
 
                 order.save()
 
-                # CREATE ACTIVITY LOG FOR PARTIAL PAYMENT CHANGES
+                # CREATE ACTIVITY LOG FOR CHANGES
                 description = f"Order #{order.order_number} was updated"
+                changes = []
+                
+                # Check status change
+                if old_order_status != order.order_status:
+                    changes.append(f"Status: {old_order_status} → {order.order_status}")
+                
+                # Check payment method change
+                if old_payment_method != order.payment_method:
+                    changes.append(f"Payment Method: {old_payment_method} → {order.payment_method}")
+                
+                # Check payment status change
+                if old_payment_status != order.payment_status:
+                    changes.append(f"Payment Status: {old_payment_status} → {order.payment_status}")
                 
                 # Check if partial payment changed
                 if is_partial_payment != old_is_partial:
                     if is_partial_payment:
-                        description += f" | Changed to Partial Payment: रू {partial_amount_paid} paid, रू {remaining_amount} remaining"
+                        changes.append(f"Changed to Partial Payment: रू {partial_amount_paid} paid, रू {remaining_amount} remaining")
                     else:
-                        description += f" | Changed from Partial Payment to {order.payment_method.upper()}"
+                        changes.append(f"Changed from Partial Payment to {order.payment_method.upper()}")
                 elif is_partial_payment:
                     if partial_amount_paid != old_partial_paid:
-                        description += f" | Partial Payment Updated: रू {partial_amount_paid} paid, रू {remaining_amount} remaining"
+                        changes.append(f"Partial Payment Updated: रू {partial_amount_paid} paid, रू {remaining_amount} remaining")
                 
                 # Check if city changed
                 if old_city != branch_city_name:
-                    description += f" | City changed from {old_city} to {branch_city_name}"
+                    changes.append(f"City: {old_city} → {branch_city_name}")
                 
                 # Check if IN/OUT changed
                 if old_in_out != in_out:
-                    description += f" | IN/OUT changed from {old_in_out.upper()} to {in_out.upper()}"
+                    changes.append(f"IN/OUT: {old_in_out.upper()} → {in_out.upper()}")
+                
+                if changes:
+                    description += " | " + " | ".join(changes)
                 
                 OrderActivityLog.objects.create(
                     order=order,
@@ -2798,6 +2981,12 @@ def order_edit(request, order_id):
                     success_msg += f" | Partial payment: रू {partial_amount_paid} paid"
                 
                 messages.success(request, success_msg)
+                
+                # CRITICAL: Clear any cache and redirect to order_detail to ensure fresh data
+                # This ensures order_detail will fetch the latest data from database
+                from django.core.cache import cache
+                cache.delete(f'order_{order.id}')
+                
                 return redirect("order_detail", order_id=order.id)
 
         except json.JSONDecodeError:
@@ -2809,7 +2998,73 @@ def order_edit(request, order_id):
             traceback.print_exc()
             return redirect("order_edit", order_id=order.id)
 
-    # GET request - show form
+    # GET request - show form with fresh data
+    # CRITICAL: Fetch fresh order data from database
+    order = Order.objects.select_related(
+        'status_setup', 
+        'payment_setup', 
+        'payment_status_setup',
+        'customer',
+        'created_by'
+    ).get(id=order_id)
+    
+    # CRITICAL: Ensure all FK relationships are properly synced and setup records exist
+    # This ensures dropdowns show selected values correctly
+    from .models import Setup
+    
+    # Sync status with setup
+    order = sync_order_status_setup(order)
+    
+    # Ensure status_setup FK exists and is synced with order_status
+    if not order.status_setup and order.order_status:
+        try:
+            setup_name = order.order_status.replace('_', ' ').title()
+            order.status_setup, _ = Setup.objects.get_or_create(
+                setup_type='status',
+                name=setup_name,
+                defaults={'is_active': True}
+            )
+            order.save(update_fields=['status_setup'])
+        except Exception as e:
+            logger.warning(f"Could not create status_setup for order {order_id}: {str(e)}")
+    
+    # Ensure payment_setup FK exists and is synced with payment_method
+    if not order.payment_setup and order.payment_method:
+        try:
+            setup_name = order.payment_method.replace('_', ' ').title()
+            order.payment_setup, _ = Setup.objects.get_or_create(
+                setup_type='payment',
+                name=setup_name,
+                defaults={'is_active': True}
+            )
+            order.save(update_fields=['payment_setup'])
+        except Exception as e:
+            logger.warning(f"Could not create payment_setup for order {order_id}: {str(e)}")
+    
+    # Ensure payment_status_setup FK exists and is synced with payment_status
+    if not order.payment_status_setup and order.payment_status:
+        try:
+            setup_name = order.payment_status.replace('_', ' ').title()
+            order.payment_status_setup, _ = Setup.objects.get_or_create(
+                setup_type='payment_status',
+                name=setup_name,
+                defaults={'is_active': True}
+            )
+            order.save(update_fields=['payment_status_setup'])
+        except Exception as e:
+            logger.warning(f"Could not create payment_status_setup for order {order_id}: {str(e)}")
+    
+    # Reload fresh FK relationships after all syncs
+    order = Order.objects.select_related(
+        'status_setup', 
+        'payment_setup', 
+        'payment_status_setup',
+        'customer',
+        'created_by'
+    ).get(id=order_id)
+    
+    order_items = order.items.select_related('product', 'product_variation').all()
+    
     users = User.objects.filter(is_active=True).order_by("username")
     statuses = ["processing", "confirmed", "shipped", "delivered", "cancelled"]
     order_sources = ["website", "facebook", "instagram", "phone", "walk-in"]
@@ -2832,7 +3087,8 @@ def order_edit(request, order_id):
     # Get active cities for Branch/City select (from City management)
     cities = City.objects.filter(is_active=True).order_by('name')
     
-    # NEW: GET PAYMENT AND STATUS SETUPS
+    # CRITICAL: GET PAYMENT AND STATUS SETUPS FROM DATABASE
+    # These must be fresh to ensure synchronization with order_detail
     from .models import Setup
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
@@ -4228,9 +4484,26 @@ def dispatch_management(request):
                         # Capture old values BEFORE modification
                         old_order_status = order.order_status
 
-                        # Update order fields - clear status_setup so template shows order_status
-                        order.status_setup = None
-                        order.order_status = set_status
+                        # Update order fields - find matching status_setup by name
+                        status_setup = Setup.objects.filter(
+                            setup_type='status',
+                            name__iexact=set_status,
+                            is_active=True
+                        ).first()
+                        # If not found and set_status is 'dispatched', create it
+                        if not status_setup and set_status.lower() == 'dispatched':
+                            status_setup = Setup.objects.create(
+                                setup_type='status',
+                                name='Dispatched',
+                                is_active=True
+                            )
+                        if status_setup:
+                            order.status_setup = status_setup
+                            order.order_status = status_setup.name.lower().replace(' ', '_')
+                        else:
+                            order.status_setup = None
+                            order.order_status = set_status
+                        
                         order.logistics = logistics
                         order.dispatch_date = timezone.now()
                         order.save()
@@ -4283,7 +4556,14 @@ def dispatch_management(request):
             traceback.print_exc()
             return redirect('dispatch_management')
     
-    return render(request, 'dispatch_management.html')
+    # Get status setups for the dropdown
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    
+    context = {
+        'status_setups': status_setups,
+    }
+    
+    return render(request, 'dispatch_management.html', context)
 
 
 @login_required
@@ -8202,6 +8482,9 @@ def low_stock_alerts(request):
         'total_alert_count': low_count + out_count + low_var_count + out_var_count,
         'play_sound': low_count > 0 or out_count > 0 or low_var_count > 0 or out_var_count > 0,
     }
+
+    from django.shortcuts import render
+    return render(request, "low_stock_alerts.html", context)
 
 
 # ==================== SALES REPORT ====================

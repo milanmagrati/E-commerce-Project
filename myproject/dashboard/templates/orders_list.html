@@ -1642,8 +1642,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function moveOrderToTrash(orderId, orderNumber) {
     if (confirm(`Are you sure you want to move order ${orderNumber} to trash?`)) {
-        // Construct the URL manually or use a JS variable if available
-        window.location.href = `/orders/delete/${orderId}/`; 
+        // Create a form and submit it as POST to the move-to-trash endpoint
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/orders/${orderId}/move-to-trash/`;
+        
+        // Add CSRF token
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
+        
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 

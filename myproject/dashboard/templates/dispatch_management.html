@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load replace_filter %}
 {% block title %}Dispatch Management{% endblock %}
 
 {% block content %}
@@ -63,14 +64,9 @@
                                 <label for="setStatus" class="form-label fw-bold">Set Status To</label>
                                 <select class="form-select" id="setStatus" name="set_status" required>
                                     <option value="">-- Select Status --</option>
-                                    <option value="pending">Pending payment</option>
-                                    <option value="processing">Processing</option>
-                                    <option value="confirmed">Confirmed</option>
-                                    <option value="packed">Packed</option>
-                                    <option value="shipped">Shipped</option>
-                                    <option value="delivered">Delivered</option>
-                                    <option value="cancelled">Cancelled</option>
-                                    <option value="dispatched" selected>Dispatched</option>
+                                    {% for setup in status_setups %}
+                                        <option value="{{ setup.name|lower|replace:" ,_" }}" {% if setup.name|lower == 'dispatched' %}selected{% endif %}>{{ setup.name }}</option>
+                                    {% endfor %}
                                 </select>
                             </div>
 

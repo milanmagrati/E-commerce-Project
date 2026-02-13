@@ -351,39 +351,49 @@
                 <h5 class="mb-0"><i class="fas fa-edit"></i> Update Order Status</h5>
             </div>
             <div class="card-body">
-                <form method="post">
+                <form method="post" action="{% url 'order_detail' order.id %}" id="statusUpdateForm" class="status-update-form">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="update_status">
-                    
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Order Status</label>
-                            <select name="status_setup" class="form-select form-select-lg">
-                                <option value="">Select Order Status</option>
-                                {% for setup in status_setups %}
-                                    <option value="{{ setup.id }}" {% if order.status_setup and order.status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
-                                {% endfor %}
+                            <select name="status_setup" class="form-select form-select-lg" id="statusSetupSelect">
+                                <option value="">-- Select Order Status --</option>
+                                {% if status_setups %}
+                                    {% for setup in status_setups %}
+                                        <option value="{{ setup.id }}" {% if order.status_setup and order.status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                    {% endfor %}
+                                {% else %}
+                                    <option value="" disabled>No statuses available</option>
+                                {% endif %}
                             </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Payment Status</label>
-                            <select name="payment_status_setup" class="form-select form-select-lg">
-                                <option value="">Select Payment Status</option>
-                                {% for setup in payment_status_setups %}
-                                    <option value="{{ setup.id }}" {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
-                                {% endfor %}
+                            <select name="payment_status_setup" class="form-select form-select-lg" id="paymentStatusSetupSelect">
+                                <option value="">-- Select Payment Status --</option>
+                                {% if payment_status_setups %}
+                                    {% for setup in payment_status_setups %}
+                                        <option value="{{ setup.id }}" {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                    {% endfor %}
+                                {% else %}
+                                    <option value="" disabled>No payment statuses available</option>
+                                {% endif %}
                             </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Payment Method</label>
-                            <select name="payment_setup" class="form-select form-select-lg">
-                                <option value="">Select Payment Method</option>
-                                {% for setup in payment_setups %}
-                                    <option value="{{ setup.id }}" {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
-                                {% endfor %}
+                            <select name="payment_setup" class="form-select form-select-lg" id="paymentSetupSelect">
+                                <option value="">-- Select Payment Method --</option>
+                                {% if payment_setups %}
+                                    {% for setup in payment_setups %}
+                                        <option value="{{ setup.id }}" {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                    {% endfor %}
+                                {% else %}
+                                    <option value="" disabled>No payment methods available</option>
+                                {% endif %}
                             </select>
                         </div>
-                        
                         <!-- ✅✅✅ NEW: LOGISTICS FIELD ✅✅✅ -->
                         <div class="col-md-6">
                             <label class="form-label fw-bold">
@@ -401,24 +411,48 @@
                                 <i class="fas fa-info-circle"></i> Select <strong>NCM</strong> to enable NCM Logistics integration below
                             </small>
                         </div>
-                        
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Tracking Number</label>
-                            <input type="text" name="tracking_number" class="form-control form-control-lg" 
+                            <input type="text" name="tracking_number" class="form-control form-control-lg" id="trackingNumberInput"
                                    value="{{ order.tracking_number|default:'' }}" placeholder="Enter tracking number">
                         </div>
                         <div class="col-md-12">
                             <label class="form-label fw-bold">Admin Notes</label>
-                            <textarea name="admin_notes" class="form-control" rows="3" 
+                            <textarea name="admin_notes" class="form-control" rows="3" id="adminNotesInput"
                                       placeholder="Internal notes...">{{ order.admin_notes|default:'' }}</textarea>
                         </div>
                         <div class="col-12">
-                            <button type="submit" class="btn btn-success btn-lg w-100">
+                            <button type="submit" class="btn btn-success btn-lg w-100" id="statusUpdateBtn">
                                 <i class="fas fa-save"></i> Update Order
                             </button>
                         </div>
                     </div>
                 </form>
+            {% block extra_js %}
+            {{ block.super }}
+            <script>
+            // Form submission for status updates
+            document.addEventListener('DOMContentLoaded', function() {
+                const form = document.getElementById('statusUpdateForm');
+                
+                if (form) {
+                    form.addEventListener('submit', function(e) {
+                        const btn = document.getElementById('statusUpdateBtn');
+                        
+                        // Show loading state
+                        btn.disabled = true;
+                        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+                        
+                        // Log for debugging
+                        console.log('Form submitting with action: update_status');
+                        
+                        // Form will submit naturally after this
+                        // No preventDefault() needed - we want the default submission
+                    });
+                }
+            });
+            </script>
+            {% endblock %}
             </div>
         </div>
 

@@ -970,6 +970,12 @@
         </div>
 
         <div class="pos-body">
+
+            <!-- Top cart alert for JS toggling -->
+            <div id="cartTopAlert" class="alert alert-info" style="display: none;">
+                <i class="fas fa-info-circle"></i> No products in cart.
+            </div>
+
             {% if messages %}
             {% for message in messages %}
             <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
@@ -1047,8 +1053,14 @@
                         <select name="status_setup" id="statusSetup" class="form-select">
                             <option value="">Select Order Status</option>
                             {% for setup in status_setups %}
-                                <option value="{{ setup.id }}" {% if order.status_setup and order.status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                <option value="{{ setup.id }}" data-status-name="{{ setup.name|lower }}"
+                                    {% if order.status_setup and order.status_setup.id == setup.id %}selected{% elif not order.status_setup and order.order_status and order.order_status == setup.name|lower|cut:' ' %}selected{% endif %}>
+                                    {{ setup.name }}
+                                </option>
                             {% endfor %}
+                            {% if not order.status_setup and order.order_status %}
+                                <option value="" selected>{{ order.order_status|title|cut:'_' }}</option>
+                            {% endif %}
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -1056,8 +1068,14 @@
                         <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
                             <option value="">Select Payment Status</option>
                             {% for setup in payment_status_setups %}
-                                <option value="{{ setup.id }}" {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                <option value="{{ setup.id }}"
+                                    {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% elif not order.payment_status_setup and order.payment_status and order.payment_status == setup.name|lower|cut:' ' %}selected{% endif %}>
+                                    {{ setup.name }}
+                                </option>
                             {% endfor %}
+                            {% if not order.payment_status_setup and order.payment_status %}
+                                <option value="" selected>{{ order.payment_status|title|cut:'_' }}</option>
+                            {% endif %}
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -1065,8 +1083,14 @@
                         <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
                             <option value="">Select Payment Method</option>
                             {% for setup in payment_setups %}
-                                <option value="{{ setup.id }}" {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                <option value="{{ setup.id }}"
+                                    {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% elif not order.payment_setup and order.payment_method and order.payment_method == setup.name|lower|cut:' ' %}selected{% endif %}>
+                                    {{ setup.name }}
+                                </option>
                             {% endfor %}
+                            {% if not order.payment_setup and order.payment_method %}
+                                <option value="" selected>{{ order.payment_method|title|cut:'_' }}</option>
+                            {% endif %}
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -1668,6 +1692,11 @@
     function updateCart() {
         const tbody = document.getElementById('cartBody');
         const emptyRow = document.getElementById('emptyRow');
+        // Toggle top cart alert if present
+        const cartAlert = document.getElementById('cartTopAlert');
+        if (cartAlert) {
+            cartAlert.style.display = (cart.length === 0) ? '' : 'none';
+        }
 
         if (cart.length === 0) {
             if (emptyRow) emptyRow.style.display = 'table-row';
@@ -2028,7 +2057,10 @@
                 isPartialPayment: isPartialPaymentSelected,
                 partialAmountPaid: document.getElementById('partialAmountPaidHidden').value,
                 remainingAmount: document.getElementById('remainingAmountHidden').value,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                // Store backend order status and updated_at for draft validation
+                backendStatus: '{{ order.status|escapejs }}',
+                backendUpdatedAt: '{{ order.updated_at|date:"c"|escapejs }}'
             };
 
             const payload = JSON.stringify(formData);
@@ -2054,114 +2086,103 @@
     function loadFormData() {
         try {
             let stored = localStorage.getItem(STORAGE_KEY);
-
             // If primary key missing, check backup and restore it
             if (!stored) {
                 const backup = localStorage.getItem(`${STORAGE_KEY}_backup`);
                 if (backup) {
-                    console.warn('Primary draft missing — restoring from backup');
-                    try {
-                        localStorage.setItem(STORAGE_KEY, backup);
-                        stored = backup;
-                    } catch (e) {
-                        console.error('Failed to restore primary draft from backup:', e);
-                        // proceed with backup in memory
-                        stored = backup;
-                    }
+                    localStorage.setItem(STORAGE_KEY, backup);
+                    stored = backup;
                 } else {
-                    // If no primary or backup, check session storage (survives same-tab navigation)
                     const sessionDraft = sessionStorage.getItem(SESSION_KEY);
                     if (sessionDraft) {
-                        console.warn('Primary/backup missing — restoring draft from sessionStorage');
-                        try {
-                            // Restore into localStorage for consistency
-                            localStorage.setItem(STORAGE_KEY, sessionDraft);
-                            localStorage.setItem(`${STORAGE_KEY}_backup`, sessionDraft);
-                        } catch(e) {
-                            console.error('Failed to restore draft from sessionStorage into localStorage:', e);
-                        }
+                        localStorage.setItem(STORAGE_KEY, sessionDraft);
+                        localStorage.setItem(`${STORAGE_KEY}_backup`, sessionDraft);
                         stored = sessionDraft;
                     } else {
-                        return false;
+                        stored = null;
                     }
                 }
             }
 
-            const formData = JSON.parse(stored);
-
-            // Validate timestamp
-            const hoursSinceSaved = (Date.now() - formData.timestamp) / (1000 * 60 * 60);
-            if (hoursSinceSaved > 24) {
-                localStorage.removeItem(STORAGE_KEY);
-                localStorage.removeItem(`${STORAGE_KEY}_backup`);
-                return false;
-            }
-
-            document.getElementById('customerName').value = formData.customerName || '';
-            document.getElementById('customerEmailInput').value = formData.customerEmail || '';
-            document.getElementById('branchCity').value = formData.branchCity || '';
-            // Also sync the visible city search input
-            const cityInput = document.getElementById('citySearchInput');
-            if (cityInput) {
-                cityInput.value = formData.branchCity || '';
-            }
-            document.getElementById('customerAddress').value = formData.customerAddress || '';
-            document.getElementById('customerLandmark').value = formData.customerLandmark || '';
-            document.getElementById('createdBy').value = formData.createdBy || '';
-            document.getElementById('discount').value = formData.discount || '0';
-            document.getElementById('shipping').value = formData.shipping || '0';
-            document.getElementById('orderNotes').value = formData.orderNotes || '';
-            document.getElementById('customerPhone').value = formData.customerPhone || '';
-            document.getElementById('paymentSetup').value = formData.paymentSetup || '';
-            document.getElementById('taxPercent').value = formData.taxPercent || '13';
-            document.getElementById('inOutSelect').value = formData.inOut || 'in';
-            
-            if (formData.orderFrom) {
-                document.querySelector('select[name="order_from"]').value = formData.orderFrom;
-            }
-            if (formData.orderStatus) {
-                const statusEl = document.getElementById('statusSetup');
-                if (statusEl) statusEl.value = formData.orderStatus;
-            }
-
-            // Ensure cart is array
-            cart = Array.isArray(formData.cart) ? formData.cart : [];
-            updateCart();
-
-            if (formData.isPartialPayment) {
-                isPartialPaymentSelected = true;
-                document.getElementById('isPartialPayment').value = 'true';
-                document.getElementById('partialAmountPaidHidden').value = formData.partialAmountPaid;
-                document.getElementById('remainingAmountHidden').value = formData.remainingAmount;
-
-                const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
-                let infoBox = paymentLabel.querySelector('.payment-info-box');
-
-                if (!infoBox) {
-                    infoBox = document.createElement('div');
-                    infoBox.className = 'payment-info-box';
-                    paymentLabel.appendChild(infoBox);
+            // Get backend order status and updated_at
+            const backendStatus = '{{ order.status|escapejs }}';
+            const backendUpdatedAt = '{{ order.updated_at|date:"c"|escapejs }}';
+            let useDraft = false;
+            let formData = null;
+            if (stored) {
+                formData = JSON.parse(stored);
+                // Compare backendStatus/backendUpdatedAt in draft to backend values
+                if (
+                    (formData.backendStatus && formData.backendStatus !== backendStatus)
+                    || (formData.backendUpdatedAt && formData.backendUpdatedAt !== backendUpdatedAt)
+                ) {
+                    // Draft is stale, clear it
+                    clearFormData();
+                    formData = null;
+                } else {
+                    // Validate timestamp
+                    const hoursSinceSaved = (Date.now() - formData.timestamp) / (1000 * 60 * 60);
+                    if (hoursSinceSaved > 24) {
+                        clearFormData();
+                        formData = null;
+                    } else {
+                        useDraft = true;
+                    }
                 }
-
-                infoBox.innerHTML = `
-                    <small>
-                        <strong>Paid:</strong> रू ${parseFloat(formData.partialAmountPaid).toFixed(2)}<br>
-                        <strong>Remaining:</strong> रू ${parseFloat(formData.remainingAmount).toFixed(2)}
-                    </small>
-                `;
             }
 
-            if (formData.branchCity) {
-                detectValleyStatusFromCity();
+            if (useDraft && formData) {
+                document.getElementById('customerName').value = formData.customerName || '';
+                document.getElementById('customerEmailInput').value = formData.customerEmail || '';
+                document.getElementById('branchCity').value = formData.branchCity || '';
+                const cityInput = document.getElementById('citySearchInput');
+                if (cityInput) cityInput.value = formData.branchCity || '';
+                document.getElementById('customerAddress').value = formData.customerAddress || '';
+                document.getElementById('customerLandmark').value = formData.customerLandmark || '';
+                document.getElementById('createdBy').value = formData.createdBy || '';
+                document.getElementById('discount').value = formData.discount || '0';
+                document.getElementById('shipping').value = formData.shipping || '0';
+                document.getElementById('orderNotes').value = formData.orderNotes || '';
+                document.getElementById('customerPhone').value = formData.customerPhone || '';
+                document.getElementById('paymentSetup').value = formData.paymentSetup || '';
+                document.getElementById('taxPercent').value = formData.taxPercent || '13';
+                document.getElementById('inOutSelect').value = formData.inOut || 'in';
+                if (formData.orderFrom) document.querySelector('select[name="order_from"]').value = formData.orderFrom;
+                if (formData.orderStatus) {
+                    const statusEl = document.getElementById('statusSetup');
+                    if (statusEl) statusEl.value = formData.orderStatus;
+                }
+                cart = Array.isArray(formData.cart) ? formData.cart : [];
+                updateCart();
+                if (formData.isPartialPayment) {
+                    isPartialPaymentSelected = true;
+                    document.getElementById('isPartialPayment').value = 'true';
+                    document.getElementById('partialAmountPaidHidden').value = formData.partialAmountPaid;
+                    document.getElementById('remainingAmountHidden').value = formData.remainingAmount;
+                    const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
+                    let infoBox = paymentLabel.querySelector('.payment-info-box');
+                    if (!infoBox) {
+                        infoBox = document.createElement('div');
+                        infoBox.className = 'payment-info-box';
+                        paymentLabel.appendChild(infoBox);
+                    }
+                    infoBox.innerHTML = `
+                        <small>
+                            <strong>Paid:</strong> रू ${parseFloat(formData.partialAmountPaid).toFixed(2)}<br>
+                            <strong>Remaining:</strong> रू ${parseFloat(formData.remainingAmount).toFixed(2)}
+                        </small>
+                    `;
+                }
+                if (formData.branchCity) detectValleyStatusFromCity();
+                showToastNotification('Previous draft restored', 'info');
+                showFloatingButton();
+                return true;
             }
-
-            showToastNotification('Previous draft restored', 'info');
-            showFloatingButton();
-            return true;
-
+            // If no valid draft, just use backend data (default behavior)
+            hideFloatingButton();
+            return false;
         } catch (err) {
             console.error('Error loading form data:', err);
-            // Do not aggressively clear backup — keep it for diagnostics, but remove primary to avoid broken state
             try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
             hideFloatingButton();
             return false;
@@ -2384,6 +2405,25 @@
         variationModal = new bootstrap.Modal(document.getElementById('variationModal'));
         partialPaymentModal = new bootstrap.Modal(document.getElementById('partialPaymentModal'));
         customProductModal = new bootstrap.Modal(document.getElementById('customProductModal'));
+
+        // ✅ HANDLE STATUS SELECTION FOR DISPATCHED ORDERS
+        // If status_setup is null but order_status has a value (e.g., from dispatch management)
+        const statusSetup = document.getElementById('statusSetup');
+        const orderStatus = '{{ order.order_status|escapejs }}';
+        const hasStatusSetup = {% if order.status_setup %}true{% else %}false{% endif %};
+        
+        if (statusSetup && !hasStatusSetup && orderStatus) {
+            // Find matching option by comparing status names
+            const options = statusSetup.options;
+            for (let i = 0; i < options.length; i++) {
+                const optionName = options[i].getAttribute('data-status-name');
+                // Compare: "dispatched" with "dispatched", or "in transit" with "in_transit"
+                if (optionName && optionName.replace(/\s+/g, '_') === orderStatus.replace(/\s+/g, '_')) {
+                    options[i].selected = true;
+                    break;
+                }
+            }
+        }
 
         // ==================== CITY SEARCH FUNCTIONALITY ====================
         const citySearchInput = document.getElementById('citySearchInput');
@@ -2664,8 +2704,8 @@
                 return false;
             }
 
-            // Clear draft on successful submission
-            clearFormData();
+            // Do NOT clear draft on successful submission (keep cart in localStorage)
+            // clearFormData();
             hideFloatingButton();
             
             return true;
