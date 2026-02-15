@@ -7009,7 +7009,7 @@ def ncm_order_detail(request, order_id):
             api_key = getattr(settings, 'NCM_API_KEY', None)
             
             if base_url and api_key:
-                api_url = f"{base_url.rstrip('/')}/orderstatus"
+                api_url = f"{base_url.rstrip('/')}/order/status"
                 response = requests.get(
                     api_url,
                     params={'id': order.ncm_order_id},
@@ -7023,15 +7023,21 @@ def ncm_order_detail(request, order_id):
                 if response.status_code == 404:
                     ncm_order_found = False
                     ncm_validation_error = f'Order ID {order.ncm_order_id} not found in NCM system'
-                    messages.error(request, f'❌ {ncm_validation_error}. You can attempt to resend or clear this ID.')
+                    messages.error(request, f'❌ NCM Order ID {order.ncm_order_id} not found in NCM system')
+                    messages.warning(request, f'⚠️ This order may have been deleted from NCM or the ID is invalid. Options: 1) Resend order to NCM, 2) Clear NCM ID and retry, 3) Check order details')
                 elif response.status_code != 200:
                     ncm_validation_error = f'Unable to verify order status (HTTP {response.status_code})'
+            else:
+                ncm_validation_error = 'NCM API credentials not configured'
         except requests.exceptions.Timeout:
-            ncm_validation_error = 'NCM validation timeout'
+            ncm_validation_error = 'NCM validation timeout - server is not responding'
+            logger.warning(f"NCM validation timeout for order {order.id}")
         except requests.exceptions.ConnectionError:
-            ncm_validation_error = 'Cannot connect to NCM server'
+            ncm_validation_error = 'Cannot connect to NCM server - check your internet connection'
+            logger.warning(f"NCM connection error for order {order.id}")
         except Exception as e:
-            ncm_validation_error = f'Validation error: {str(e)[:50]}'
+            ncm_validation_error = f'Validation error: {str(e)[:100]}'
+            logger.error(f"NCM validation error for order {order.id}: {str(e)}", exc_info=True)
     else:
         messages.warning(request, f'⚠️ Order {order.order_number} has not been sent to NCM yet.')
     
@@ -7085,7 +7091,7 @@ def ncm_track_order(request, order_id):
             return redirect('ncm_order_detail', order_id=order_id)
         
         # Build API URL
-        api_url = f"{base_url.rstrip('/')}/orderstatus"
+        api_url = f"{base_url.rstrip('/')}/order/status"
         
         
         # Call NCM tracking API
@@ -7201,7 +7207,7 @@ def ncm_sync_all_statuses(request):
                 if not base_url or not api_key:
                     continue
                 
-                api_url = f"{base_url.rstrip('/')}/orderstatus"
+                api_url = f"{base_url.rstrip('/')}/order/status"
                 
                 response = requests.get(
                     api_url,
