@@ -128,3 +128,43 @@ class NCMBulkLogDetail(models.Model):
 
     def __str__(self):
         return f"{self.action} - {self.order_number or self.batch.batch_number}"
+
+
+class WebhookLog(models.Model):
+    """Track webhook events for debugging and idempotency"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    
+    webhook_id = models.CharField(max_length=100, unique=True, db_index=True)  # External webhook ID
+    event = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    
+    # Webhook payload and response
+    payload = models.JSONField()
+    response_data = models.JSONField(null=True, blank=True)
+    
+    # Update counts
+    updated_orders_count = models.IntegerField(default=0)
+    failed_orders_count = models.IntegerField(default=0)
+    
+    # Error tracking
+    error_message = models.TextField(blank=True)
+    
+    # IP and identification
+    source_ip = models.GenericIPAddressField(null=True, blank=True)
+    signature = models.CharField(max_length=255, blank=True)  # Webhook signature verification
+    
+    received_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-received_at']
+        verbose_name = 'Webhook Log'
+        verbose_name_plural = 'Webhook Logs'
+    
+    def __str__(self):
+        return f"{self.webhook_id} - {self.status}"

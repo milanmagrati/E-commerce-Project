@@ -6994,10 +6994,45 @@ def ncm_order_detail(request, order_id):
     """
     View detailed information about NCM order with activity logs
     """
+    import requests
+    from django.conf import settings
+    
     order = get_object_or_404(Order, id=order_id, is_deleted=False)
     
-    # Check if order has NCM ID
-    if not order.ncm_order_id:
+    ncm_order_found = True
+    ncm_validation_error = None
+    
+    # Check if order has NCM ID and validate it exists in NCM system
+    if order.ncm_order_id:
+        try:
+            base_url = getattr(settings, 'NCM_API_BASE_URL', None)
+            api_key = getattr(settings, 'NCM_API_KEY', None)
+            
+            if base_url and api_key:
+                api_url = f"{base_url.rstrip('/')}/orderstatus"
+                response = requests.get(
+                    api_url,
+                    params={'id': order.ncm_order_id},
+                    headers={
+                        'Authorization': f'Token {api_key}',
+                        'Content-Type': 'application/json'
+                    },
+                    timeout=5  # Short timeout for validation
+                )
+                
+                if response.status_code == 404:
+                    ncm_order_found = False
+                    ncm_validation_error = f'Order ID {order.ncm_order_id} not found in NCM system'
+                    messages.error(request, f'❌ {ncm_validation_error}. You can attempt to resend or clear this ID.')
+                elif response.status_code != 200:
+                    ncm_validation_error = f'Unable to verify order status (HTTP {response.status_code})'
+        except requests.exceptions.Timeout:
+            ncm_validation_error = 'NCM validation timeout'
+        except requests.exceptions.ConnectionError:
+            ncm_validation_error = 'Cannot connect to NCM server'
+        except Exception as e:
+            ncm_validation_error = f'Validation error: {str(e)[:50]}'
+    else:
         messages.warning(request, f'⚠️ Order {order.order_number} has not been sent to NCM yet.')
     
     # Get order items
@@ -7021,6 +7056,8 @@ def ncm_order_detail(request, order_id):
         'order_items': order_items,
         'activity_logs': activity_logs,
         'subtotal': subtotal,
+        'ncm_order_found': ncm_order_found,
+        'ncm_validation_error': ncm_validation_error,
     }
     
     return render(request, 'ncm_order_detail.html', context)
@@ -7108,7 +7145,9 @@ def ncm_track_order(request, order_id):
                 messages.error(request, f'❌ Invalid JSON response from NCM API')
         
         elif response.status_code == 404:
+            # Order not found in NCM - provide recovery options
             messages.error(request, f'❌ NCM Order ID {order.ncm_order_id} not found in NCM system')
+            messages.info(request, f'⚠️ This order may have been deleted from NCM or the ID is invalid. Options: 1) Resend order to NCM, 2) Clear NCM ID and retry, 3) Check order details')
         
         elif response.status_code == 401:
             messages.error(request, '❌ Authentication failed. Check NCM API key.')

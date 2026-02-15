@@ -5,6 +5,7 @@ URL configuration for NCM integration
 
 from django.urls import path
 from . import views
+from . import order_recovery
 
 app_name = 'ncm'
 
@@ -41,6 +42,13 @@ urlpatterns = [
          views.ncm_webhook, 
          name='webhook'),
     
+    # Order Recovery & Troubleshooting
+    path('orders/<int:order_id>/clear-ncm-id/', 
+         order_recovery.clear_ncm_order_id, 
+         name='clear_ncm_id'),
     
+    path('orders/<int:order_id>/verify-ncm/', 
+         order_recovery.verify_ncm_order, 
+         name='verify_ncm'),
     
 ]
