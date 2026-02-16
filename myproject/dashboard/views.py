@@ -9256,171 +9256,292 @@ def financial_report(request):
 def financial_report_data(request):
     """
     Returns JSON data for the financial report page, filtered by period or custom date range.
+    Now includes:
+    - Orders with NCM data (ncm_order_id not null)
+    - Orders created within date range (using created_at or ncm_created_at)
+    - Better error handling and logging
     """
-    from decimal import Decimal
+    try:
+        from decimal import Decimal
+        
+        # Get filter params
+        period = request.GET.get('period', 'all')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        tz = pytz.timezone('Asia/Kathmandu')
+        now = datetime.now(tz)
+
+        # Date range logic
+        start = None
+        end = None
+        if period == 'all':
+            # No date restriction — show every NCM order
+            pass
+        elif period == 'today':
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        elif period == 'week':
+            # Get start of this week (Monday at 00:00)
+            days_since_monday = now.weekday()
+            week_start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+            # Get end of this week (Sunday at 23:59:59) - 6 days after Monday
+            week_end = (week_start + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=999999)
+            start = week_start
+            end = week_end
+            logger.info(f"Week period: today={now}, weekday={now.weekday()}, week_start={week_start}, week_end={week_end}")
+        elif period == 'month':
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        elif period == 'custom' and start_date and end_date:
+            try:
+                start = tz.localize(datetime.strptime(start_date, '%Y-%m-%d'))
+                end = tz.localize(datetime.strptime(end_date, '%Y-%m-%d')).replace(hour=23, minute=59, second=59, microsecond=999999)
+            except ValueError as e:
+                logger.error(f"Date parsing error: {str(e)}")
+                start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        else:
+            # Fallback to today
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        from .models import Order
+        from django.db.models import Q
+        
+        logger.info(f"=== FINANCIAL REPORT: Period={period} ===")
+        logger.info(f"Current time NOW: {now}")
+        logger.info(f"Current weekday (0=Mon, 6=Sun): {now.weekday()}")
+        
+        # Debug: Show ALL orders regardless of NCM status
+        all_orders_unfiltered = Order.objects.all().exclude(is_deleted=True)
+        logger.info(f"Total orders in DB (not deleted): {all_orders_unfiltered.count()}")
+        
+        # Show recent orders
+        recent_orders = all_orders_unfiltered.order_by('-created_at').values(
+            'id', 'order_number', 'ncm_order_id', 'ncm_status', 'created_at', 'updated_at'
+        )[:10]
+        logger.info(f"Recent 10 orders: {list(recent_orders)}")
+        
+        # Base query: ONLY orders that have been SENT to NCM (must have ncm_order_id)
+        # Filter to show only orders with actual NCM tracking numbers
+        base_query = Q(ncm_order_id__isnull=False)
+        all_orders = Order.objects.filter(base_query).exclude(is_deleted=True)
+        
+        logger.info(f"Total NCM orders in DB (ncm_order_id or ncm_status): {all_orders.count()}")
+        if all_orders.count() > 0:
+            logger.info(f"Sample NCM orders: {list(all_orders.values('id', 'order_number', 'ncm_status', 'created_at', 'updated_at')[:5])}")
+        
+        # Apply period filter
+        if period == 'all':
+            # Show ALL NCM-related orders, no date restriction
+            orders = all_orders
+            logger.info(f"Period 'all': showing all {orders.count()} NCM orders")
+        else:
+            # Apply date range filter
+            logger.info(f"Date range: START={start} to END={end}")
+            
+            # Filter by created_at ONLY - show only orders created in this period
+            orders = all_orders.filter(created_at__range=(start, end))
+
+        logger.info(f"FINAL: {orders.count()} orders to display")
+
+
+
+        # Helper function to convert Decimal to float
+        def to_float(value):
+            if isinstance(value, Decimal):
+                return float(value)
+            return float(value) if value else 0
+
+        # Stats - calculate based on all NCM orders in range
+        total_revenue = orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        orders_delivered = orders.filter(ncm_status__icontains='delivered').count()
+        orders_in_transit = orders.filter(ncm_status__icontains='transit').count()
+        orders_pending = orders.filter(ncm_status__isnull=True) | orders.filter(ncm_status='')
+        
+        cod_collected = orders.filter(payment_method='cod', payment_status='paid').aggregate(total=Sum('cod_collected'))['total'] or Decimal('0')
+        pending_payments = orders.filter(payment_status__in=['pending', 'partial']).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        ncm_delivery_charges = orders.filter(delivery_charge__isnull=False).aggregate(total=Sum('delivery_charge'))['total'] or Decimal('0')
+        expenses = orders.aggregate(total=Sum('expense_amount'))['total'] or Decimal('0')
+        net_profit = total_revenue - ncm_delivery_charges - expenses
+
+        # Key metrics
+        avg_order_value = total_revenue / orders.count() if orders.count() else Decimal('0')
+        profit_margin = (net_profit / total_revenue * 100) if total_revenue else Decimal('0')
+        cod_collection_rate = (cod_collected / total_revenue * 100) if total_revenue else Decimal('0')
+
+        # Payment status breakdown
+        paid_amt = orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        unpaid_amt = orders.filter(payment_status='pending').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        partial_amt = orders.filter(payment_status='partial').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        total_amt = paid_amt + unpaid_amt + partial_amt
+        payment_status = [
+            {"status": "Paid", "amount": to_float(paid_amt), "percent": to_float((paid_amt/total_amt*100) if total_amt else 0)},
+            {"status": "Unpaid", "amount": to_float(unpaid_amt), "percent": to_float((unpaid_amt/total_amt*100) if total_amt else 0)},
+            {"status": "Partial", "amount": to_float(partial_amt), "percent": to_float((partial_amt/total_amt*100) if total_amt else 0)},
+        ]
+
+        # Branch-wise summary - group by NCM destination branch
+        # Get orders with destination branch
+        branch_with_summary = list(
+            orders.filter(ncm_destination_branch__isnull=False, ncm_destination_branch__gt='').values('ncm_destination_branch').annotate(
+                orders=Count('id'),
+                revenue=Sum('total_amount'),
+                ncm_charges=Sum('delivery_charge'),
+                profit=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
+            ).order_by('-revenue')
+        )
+        
+        logger.info(f"Branch-wise orders (by ncm_destination_branch): {branch_with_summary}")
+        
+        # Get orders without destination branch
+        orders_without_branch_count = orders.filter(Q(ncm_destination_branch__isnull=True) | Q(ncm_destination_branch='')).count()
+        if orders_without_branch_count > 0:
+            no_branch_revenue = orders.filter(Q(ncm_destination_branch__isnull=True) | Q(ncm_destination_branch='')).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+            no_branch_charges = orders.filter(Q(ncm_destination_branch__isnull=True) | Q(ncm_destination_branch='')).aggregate(total=Sum('delivery_charge'))['total'] or Decimal('0')
+            no_branch_profit = orders.filter(Q(ncm_destination_branch__isnull=True) | Q(ncm_destination_branch='')).aggregate(
+                total=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
+            )['total'] or Decimal('0')
+            
+            no_branch_summary = {
+                'ncm_destination_branch': 'Not Assigned',
+                'orders': orders_without_branch_count,
+                'revenue': no_branch_revenue,
+                'ncm_charges': no_branch_charges,
+                'profit': no_branch_profit
+            }
+            branch_with_summary.append(no_branch_summary)
+        
+        branch_summary = branch_with_summary
+        logger.info(f"Final branch_summary: {branch_summary}")
+        
+        # Convert Decimals in branch_summary
+        for branch in branch_summary:
+            branch['revenue'] = to_float(branch['revenue'])
+            branch['ncm_charges'] = to_float(branch['ncm_charges'])
+            branch['profit'] = to_float(branch['profit'])
+
+        # Daily summary - use created_at instead of delivered_at
+        daily_summary = list(
+            orders.annotate(date=TruncDate('created_at')).values('date').annotate(
+                orders=Count('id'),
+                revenue=Sum('total_amount'),
+                cod=Sum('total_amount', filter=Q(payment_method='cod', payment_status='paid')),
+                ncm_charges=Sum('delivery_charge'),
+                expenses=Sum('expense_amount'),
+                net_profit=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
+            ).order_by('-date')
+        )
+        
+        # Convert Decimals in daily_summary
+        for day in daily_summary:
+            day['revenue'] = to_float(day['revenue'])
+            day['cod'] = to_float(day['cod'])
+            day['ncm_charges'] = to_float(day['ncm_charges'])
+            day['expenses'] = to_float(day['expenses'])
+            day['net_profit'] = to_float(day['net_profit'])
+            if day['date']:
+                day['date'] = str(day['date'])
+
+        # NCM Delivery Revenue Table - show all NCM orders with status
+        ncm_revenue_list = list(
+            orders.values(
+                'delivered_at', 'id', 'order_number', 'customer__name', 'ncm_order_id', 'ncm_status',
+                'total_amount', 'delivery_charge', 'payment_status', 'payment_method', 'cod_collected', 'created_at'
+            )
+        )
+        
+        # Sort: put delivered orders first (non-null delivered_at), then pending (null delivered_at)
+        # Within each group, sort by date descending
+        def sort_key(order):
+            is_pending = order['delivered_at'] is None
+            if is_pending:
+                # Pending orders sorted by created_at descending
+                return (1, -order['created_at'].timestamp() if order['created_at'] else 0)
+            else:
+                # Delivered orders sorted by delivered_at descending
+                return (0, -order['delivered_at'].timestamp())
+        
+        ncm_revenue = sorted(ncm_revenue_list, key=sort_key)
+        
+        # Convert Decimals and format dates in ncm_revenue
+        for order in ncm_revenue:
+            order['total_amount'] = to_float(order['total_amount'])
+            order['delivery_charge'] = to_float(order['delivery_charge'])
+            order['cod_collected'] = to_float(order['cod_collected'])
+            # Handle delivered_at — fall back to created_at for undelivered orders
+            if order['delivered_at'] is not None:
+                order['delivered_at'] = order['delivered_at'].isoformat()
+            elif order['created_at'] is not None:
+                order['delivered_at'] = order['created_at'].isoformat()
+            else:
+                order['delivered_at'] = None
+            # Always convert created_at to string for JSON serialization
+            if order['created_at'] is not None:
+                order['created_at'] = order['created_at'].isoformat()
+            else:
+                order['created_at'] = None
+
+        # Payment method pie chart
+        payment_methods = list(
+            orders.values('payment_method').annotate(amount=Sum('total_amount')).order_by('-amount')
+        )
+        
+        # Convert Decimals in payment_methods
+        for method in payment_methods:
+            method['amount'] = to_float(method['amount'])
+            if not method['payment_method']:
+                method['payment_method'] = 'Unknown'
+
+        # Daily revenue line chart - use created_at
+        daily_revenue = list(
+            orders.annotate(date=TruncDate('created_at')).values('date').annotate(amount=Sum('total_amount')).order_by('date')
+        )
+        
+        # Convert Decimals in daily_revenue
+        for day in daily_revenue:
+            day['amount'] = to_float(day['amount'])
+            if day['date']:
+                day['date'] = str(day['date'])
+
+        # Revenue vs Expenses bar chart
+        revenue_vs_expenses = [
+            {"label": "Revenue", "amount": to_float(total_revenue)},
+            {"label": "NCM Charges", "amount": to_float(ncm_delivery_charges)},
+            {"label": "Expenses", "amount": to_float(expenses)},
+            {"label": "Net Profit", "amount": to_float(net_profit)},
+        ]
+
+        return JsonResponse({
+            "success": True,
+            "stats": {
+                "total_revenue": to_float(total_revenue),
+                "orders_delivered": orders_delivered,
+                "orders_in_transit": orders_in_transit,
+                "cod_collected": to_float(cod_collected),
+                "pending_payments": to_float(pending_payments),
+                "net_profit": to_float(net_profit),
+                "ncm_delivery_charges": to_float(ncm_delivery_charges),
+            },
+            "key_metrics": {
+                "avg_order_value": to_float(avg_order_value),
+                "total_ncm_charges": to_float(ncm_delivery_charges),
+                "profit_margin": float(profit_margin),
+                "cod_collection_rate": float(cod_collection_rate),
+            },
+            "payment_status": payment_status,
+            "branch_summary": branch_summary,
+            "daily_summary": daily_summary,
+            "ncm_revenue": ncm_revenue,
+            "payment_methods": payment_methods,
+            "daily_revenue": daily_revenue,
+            "revenue_vs_expenses": revenue_vs_expenses,
+        })
     
-    # Get filter params
-    period = request.GET.get('period', 'today')
-    start_date = request.GET.get('start_date')
-    end_date = request.GET.get('end_date')
-    tz = pytz.timezone('Asia/Kathmandu')
-    now = datetime.now(tz)
-
-    # Date range logic
-    if period == 'today':
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-    elif period == 'week':
-        start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-    elif period == 'month':
-        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-    elif period == 'custom' and start_date and end_date:
-        start = tz.localize(datetime.strptime(start_date, '%Y-%m-%d'))
-        end = tz.localize(datetime.strptime(end_date, '%Y-%m-%d')).replace(hour=23, minute=59, second=59, microsecond=999999)
-    else:
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-    # Only NCM delivered orders OR any delivered orders (relaxed for testing)
-    from .models import Order
-    orders = Order.objects.filter(
-        delivered_at__isnull=False,
-        delivered_at__range=(start, end)
-    )
-
-    # Helper function to convert Decimal to float
-    def to_float(value):
-        if isinstance(value, Decimal):
-            return float(value)
-        return value or 0
-
-    # Stats
-    total_revenue = orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-    orders_delivered = orders.count()
-    cod_collected = orders.filter(payment_method='cod', payment_status='paid').aggregate(total=Sum('cod_collected'))['total'] or Decimal('0')
-    pending_payments = orders.filter(payment_status__in=['pending', 'partial']).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-    ncm_delivery_charges = orders.aggregate(total=Sum('delivery_charge'))['total'] or Decimal('0')
-    expenses = orders.aggregate(total=Sum('expense_amount'))['total'] or Decimal('0')
-    net_profit = total_revenue - ncm_delivery_charges - expenses
-
-    # Key metrics
-    avg_order_value = total_revenue / orders_delivered if orders_delivered else Decimal('0')
-    profit_margin = (net_profit / total_revenue * 100) if total_revenue else Decimal('0')
-    cod_collection_rate = (cod_collected / total_revenue * 100) if total_revenue else Decimal('0')
-
-    # Payment status breakdown
-    paid_amt = orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-    unpaid_amt = orders.filter(payment_status='pending').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-    partial_amt = orders.filter(payment_status='partial').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-    total_amt = paid_amt + unpaid_amt + partial_amt
-    payment_status = [
-        {"status": "Paid", "amount": to_float(paid_amt), "percent": to_float((paid_amt/total_amt*100) if total_amt else 0)},
-        {"status": "Unpaid", "amount": to_float(unpaid_amt), "percent": to_float((unpaid_amt/total_amt*100) if total_amt else 0)},
-        {"status": "Partial", "amount": to_float(partial_amt), "percent": to_float((partial_amt/total_amt*100) if total_amt else 0)},
-    ]
-
-    # Branch-wise summary
-    branch_summary = list(
-        orders.filter(branch__isnull=False).values('branch__name').annotate(
-            orders=Count('id'),
-            revenue=Sum('total_amount'),
-            ncm_charges=Sum('delivery_charge'),
-            profit=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
-        ).order_by('branch__name')
-    )
-    
-    # Convert Decimals in branch_summary
-    for branch in branch_summary:
-        branch['revenue'] = to_float(branch['revenue'])
-        branch['ncm_charges'] = to_float(branch['ncm_charges'])
-        branch['profit'] = to_float(branch['profit'])
-
-    # Daily summary
-    daily_summary = list(
-        orders.annotate(date=TruncDate('delivered_at')).values('date').annotate(
-            orders=Count('id'),
-            revenue=Sum('total_amount'),
-            cod=Sum('total_amount', filter=Q(payment_method='cod', payment_status='paid')),
-            ncm_charges=Sum('delivery_charge'),
-            expenses=Sum('expense_amount'),
-            net_profit=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
-        ).order_by('date')
-    )
-    
-    # Convert Decimals in daily_summary
-    for day in daily_summary:
-        day['revenue'] = to_float(day['revenue'])
-        day['cod'] = to_float(day['cod'])
-        day['ncm_charges'] = to_float(day['ncm_charges'])
-        day['expenses'] = to_float(day['expenses'])
-        day['net_profit'] = to_float(day['net_profit'])
-
-    # NCM Delivery Revenue Table
-    ncm_revenue = list(
-        orders.values(
-            'delivered_at', 'id', 'order_number', 'customer__name', 'ncm_status',
-            'total_amount', 'delivery_charge', 'payment_status', 'payment_method', 'cod_collected'
-        ).order_by('-delivered_at')
-    )
-    
-    # Convert Decimals in ncm_revenue
-    for order in ncm_revenue:
-        order['total_amount'] = to_float(order['total_amount'])
-        order['delivery_charge'] = to_float(order['delivery_charge'])
-        order['cod_collected'] = to_float(order['cod_collected'])
-        if order['delivered_at']:
-            order['delivered_at'] = order['delivered_at'].isoformat()
-
-    # Payment method pie chart
-    payment_methods = list(
-        orders.values('payment_method').annotate(amount=Sum('total_amount')).order_by('-amount')
-    )
-    
-    # Convert Decimals in payment_methods
-    for method in payment_methods:
-        method['amount'] = to_float(method['amount'])
-
-    # Daily revenue line chart
-    daily_revenue = list(
-        orders.annotate(date=TruncDate('delivered_at')).values('date').annotate(amount=Sum('total_amount')).order_by('date')
-    )
-    
-    # Convert Decimals in daily_revenue
-    for day in daily_revenue:
-        day['amount'] = to_float(day['amount'])
-        if day['date']:
-            day['date'] = day['date'].isoformat()
-
-    # Revenue vs Expenses bar chart
-    revenue_vs_expenses = [
-        {"label": "Revenue", "amount": to_float(total_revenue)},
-        {"label": "NCM Charges", "amount": to_float(ncm_delivery_charges)},
-        {"label": "Expenses", "amount": to_float(expenses)},
-        {"label": "Net Profit", "amount": to_float(net_profit)},
-    ]
-
-    return JsonResponse({
-        "stats": {
-            "total_revenue": to_float(total_revenue),
-            "orders_delivered": orders_delivered,
-            "cod_collected": to_float(cod_collected),
-            "pending_payments": to_float(pending_payments),
-            "net_profit": to_float(net_profit),
-            "ncm_delivery_charges": to_float(ncm_delivery_charges),
-        },
-        "key_metrics": {
-            "avg_order_value": to_float(avg_order_value),
-            "total_ncm_charges": to_float(ncm_delivery_charges),
-            "profit_margin": float(profit_margin),
-            "cod_collection_rate": float(cod_collection_rate),
-        },
-        "payment_status": payment_status,
-        "branch_summary": branch_summary,
-        "daily_summary": daily_summary,
-        "ncm_revenue": ncm_revenue,
-        "payment_methods": payment_methods,
-        "daily_revenue": daily_revenue,
-        "revenue_vs_expenses": revenue_vs_expenses,
-    })
+    except Exception as e:
+        logger.error(f"Error in financial_report_data: {str(e)}", exc_info=True)
+        return JsonResponse({
+            "success": False,
+            "error": str(e),
+            "message": "Failed to load financial report data. Please try again later."
+        }, status=500)

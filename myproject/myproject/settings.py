@@ -154,32 +154,101 @@ PASSWORD_RESET_TIMEOUT = 3600  # 1 hour
 # uuqw cnwz ybnt wvut
 
 
-# NCM API Configuration
+# ======================== NCM API Configuration ========================
 NCM_API_KEY = config('NCM_API_KEY')
 NCM_API_BASE_URL = config('NCM_API_BASE_URL')
 NCM_API_BASE_URL_V2 = config('NCM_API_BASE_URL_V2')
 
+# ===================== Webhook Configuration =====================
+# Webhook Security: Set this in your .env file
+NCM_WEBHOOK_SECRET = config('NCM_WEBHOOK_SECRET', default=None)
 
-# Logging
+# ===================== SMS Configuration =====================
+# SMS Provider: 'console', 'twilio', 'sparrow', 'atuha'
+SMS_PROVIDER = config('SMS_PROVIDER', default='console')
+SMS_ENABLED = config('SMS_ENABLED', default=False, cast=bool)
+SMS_API_KEY = config('SMS_API_KEY', default=None)
+SMS_SENDER_ID = config('SMS_SENDER_ID', default='EcommerceAdmin')
+
+# Twilio configuration (if using Twilio)
+TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default=None)
+TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default=None)
+TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default=None)
+
+# ===================== Real-time Configuration =====================
+# Auto-sync polling interval (seconds)
+ORDER_AUTO_SYNC_INTERVAL = config('ORDER_AUTO_SYNC_INTERVAL', default=60, cast=int)
+
+# Check for pending updates every X minutes
+WEBHOOK_PENDING_CHECK_INTERVAL = config('WEBHOOK_PENDING_CHECK_INTERVAL', default=30, cast=int)
+
+# ======================== Logging Configuration ========================
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_integration.log'),
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} {module}.{funcName}:{lineno} {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
         },
+        'simple': {
+            'format': '[{levelname}] {asctime} {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
         'console': {
-            'level': 'INFO',
             'class': 'logging.StreamHandler',
+            'level': 'INFO',
+            'formatter': 'simple',
+        },
+        'ncm_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_integration.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'ncm_webhook_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_webhooks.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'ncm_sms_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_sms.log'),
+            'maxBytes': 1024 * 1024 * 5,  # 5 MB
+            'backupCount': 3,
+            'formatter': 'verbose',
         },
     },
     'loggers': {
         'ncm': {
-            'handlers': ['file', 'console'],
-            'level': 'INFO',
+            'handlers': ['console', 'ncm_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'webhook': {
+            'handlers': ['console', 'ncm_webhook_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'sms': {
+            'handlers': ['console', 'ncm_sms_file'],
+            'level': 'DEBUG',
             'propagate': False,
         },
     },
 }
+
+# Ensure logs directory exists
+LOG_DIR = os.path.join(BASE_DIR, 'logs')
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)

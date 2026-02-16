@@ -6,6 +6,7 @@ URL configuration for NCM integration
 from django.urls import path
 from . import views
 from . import order_recovery
+from . import realtime_api
 
 app_name = 'ncm'
 
@@ -41,6 +42,27 @@ urlpatterns = [
     path('webhook/', 
          views.ncm_webhook, 
          name='webhook'),
+    
+    # Real-time API endpoints for auto-sync
+    path('api/order/<int:order_id>/status/', 
+         realtime_api.api_get_order_status, 
+         name='api_order_status'),
+    
+    path('api/order/<int:order_id>/sync/', 
+         realtime_api.api_sync_order_status, 
+         name='api_sync_status'),
+    
+    path('api/orders/batch-status/', 
+         realtime_api.api_get_orders_status_batch, 
+         name='api_batch_status'),
+    
+    path('api/order/<int:order_id>/activity/', 
+         realtime_api.api_get_order_activity_log, 
+         name='api_activity_log'),
+    
+    path('api/check-pending-updates/', 
+         realtime_api.api_check_pending_ncm_updates, 
+         name='api_pending_updates'),
     
     # Order Recovery & Troubleshooting
     path('orders/<int:order_id>/clear-ncm-id/', 

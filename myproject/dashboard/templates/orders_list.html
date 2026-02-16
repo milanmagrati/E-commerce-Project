@@ -1826,4 +1826,217 @@ function syncAllOrdersFAB() {
     <span class="fab-badge" id="fabOrderCount">{{ orders.count }}</span>
 </button>
 
+<script>
+// ============================================================
+// 🔄 REAL-TIME ORDER LIST AUTO-SYNC
+// ============================================================
+
+// Auto-sync configuration
+let ordersListAutoSyncTimer = null;
+let ordersListAutoSyncInterval = {{ ORDER_AUTO_SYNC_INTERVAL|default:60 }} * 1000;
+let pendingOrderIds = [];
+
+/**
+ * Collect all NCM order IDs from the current page
+ */
+function collectOrderIds() {
+    const orderIds = [];
+    const tableRows = document.querySelectorAll('table tbody tr');
+    
+    tableRows.forEach(row => {
+        const ncmIdCell = row.querySelector('[data-ncm-order-id]');
+        if (ncmIdCell && ncmIdCell.textContent.trim() && ncmIdCell.textContent !== 'N/A') {
+            orderIds.push(row.getAttribute('data-order-id'));
+        }
+    });
+    
+    return orderIds;
+}
+
+/**
+ * Fetch batch status for all orders on the page
+ */
+function fetchOrdersListStatus() {
+    const orderIds = collectOrderIds();
+    
+    if (orderIds.length === 0) {
+        console.log('No NCM orders to sync');
+        return;
+    }
+    
+    const batchUrl = `/ncm/api/orders/batch-status/?order_ids=${orderIds.join(',')}`;
+    
+    fetch(batchUrl)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateOrdersListRows(data.orders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching order statuses:', error);
+        });
+}
+
+/**
+ * Update table rows with new status data
+ */
+function updateOrdersListRows(ordersData) {
+    ordersData.forEach(orderData => {
+        const row = document.querySelector(`tr[data-order-id="${orderData.id}"]`);
+        if (!row) return;
+        
+        // Update status cell
+        const statusCell = row.querySelector('[data-field="status"]');
+        if (statusCell) {
+            const oldStatus = statusCell.textContent.trim();
+            
+            if (oldStatus !== orderData.status) {
+                statusCell.textContent = orderData.status.toUpperCase();
+                statusCell.classList.add('flash-update');
+                
+                // Show notification
+                notifyStatusUpdateInList(
+                    orderData.order_number,
+                    oldStatus,
+                    orderData.status
+                );
+                
+                // Remove flash effect after animation
+                setTimeout(() => {
+                    statusCell.classList.remove('flash-update');
+                }, 1000);
+            }
+        }
+        
+        // Update NCM status cell
+        const ncmStatusCell = row.querySelector('[data-field="ncm_status"]');
+        if (ncmStatusCell && orderData.ncm_status) {
+            ncmStatusCell.textContent = orderData.ncm_status;
+        }
+        
+        // Update payment status cell
+        const paymentCell = row.querySelector('[data-field="payment_status"]');
+        if (paymentCell) {
+            paymentCell.textContent = orderData.payment_status.toUpperCase();
+        }
+        
+        // Update last updated timestamp
+        const updatedCell = row.querySelector('[data-field="updated_at"]');
+        if (updatedCell && orderData.updated_at) {
+            const date = new Date(orderData.updated_at);
+            updatedCell.textContent = date.toLocaleString();
+        }
+    });
+}
+
+/**
+ * Show notification for status change in list
+ */
+function notifyStatusUpdateInList(orderNumber, oldStatus, newStatus) {
+    const statusMessages = {
+        'in_transit': `📍 ${orderNumber}: In Transit`,
+        'delivered': `✅ ${orderNumber}: Delivered!`,
+        'returned': `↩️ ${orderNumber}: Returned`,
+        'processing': `⏳ ${orderNumber}: Processing`,
+        'shipped': `📦 ${orderNumber}: Shipped`
+    };
+    
+    const message = statusMessages[newStatus] || `${orderNumber}: ${oldStatus} → ${newStatus}`;
+    
+    if (typeof alertify !== 'undefined') {
+        if (newStatus === 'delivered') {
+            alertify.success(message);
+        } else if (newStatus === 'returned') {
+            alertify.error(message);
+        } else {
+            alertify.notify(message, 'info', 3);
+        }
+    }
+}
+
+/**
+ * Start auto-sync for orders list
+ */
+function startOrdersListAutoSync() {
+    // Initial fetch
+    fetchOrdersListStatus();
+    
+    // Set interval for periodic checking
+    ordersListAutoSyncTimer = setInterval(() => {
+        fetchOrdersListStatus();
+    }, ordersListAutoSyncInterval);
+    
+    console.log('✅ Orders list auto-sync started');
+}
+
+/**
+ * Stop auto-sync for orders list
+ */
+function stopOrdersListAutoSync() {
+    if (ordersListAutoSyncTimer) {
+        clearInterval(ordersListAutoSyncTimer);
+        ordersListAutoSyncTimer = null;
+        console.log('⏹️ Orders list auto-sync stopped');
+    }
+}
+
+/**
+ * Sync all orders manually (via FAB button)
+ */
+function syncAllOrdersFAB() {
+    const btn = document.getElementById('fabSyncAllOrders');
+    btn.classList.add('loading');
+    
+    fetchOrdersListStatus();
+    
+    setTimeout(() => {
+        btn.classList.remove('loading');
+        alertify.success('✓ Orders synchronized');
+    }, 2000);
+}
+
+// CSS for flash update effect
+const style = document.createElement('style');
+style.textContent = `
+@keyframes flashUpdate {
+    0% { background-color: #fff3cd; }
+    50% { background-color: #ffc107; }
+    100% { background-color: transparent; }
+}
+
+.flash-update {
+    animation: flashUpdate 0.6s ease-in-out;
+}
+`;
+document.head.appendChild(style);
+
+// Start auto-sync when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Only sync if there are NCM orders
+    const ncmOrders = document.querySelectorAll('[data-ncm-order-id]:not([data-ncm-order-id=""])').length;
+    if (ncmOrders > 0) {
+        startOrdersListAutoSync();
+    }
+    
+    // Stop on page unload
+    window.addEventListener('beforeunload', function() {
+        stopOrdersListAutoSync();
+    });
+});
+
+// Allow Ctrl+Shift+R to toggle auto-sync
+document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyR') {
+        if (ordersListAutoSyncTimer) {
+            stopOrdersListAutoSync();
+            alertify.notify('⏹️ Auto-sync disabled', 'warning', 3);
+        } else {
+            startOrdersListAutoSync();
+            alertify.notify('✅ Auto-sync enabled', 'success', 3);
+        }
+    }
+});
+</script>
+
 {% endblock %}

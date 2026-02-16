@@ -16,6 +16,7 @@ from django.conf import settings
 
 # Import NCM service from services folder
 from services.ncm_service import NCMService
+from ncm.webhook_handler import NCMWebhookHandler
 
 # Import models from accounts app
 from dashboard.models import Order, OrderActivityLog
@@ -30,6 +31,7 @@ from decimal import Decimal
 
 logger = logging.getLogger('ncm')
 ncm_service = NCMService()
+webhook_handler = NCMWebhookHandler()
 
 
 # ===================== WEBHOOK SECURITY UTILITIES =====================
@@ -323,211 +325,71 @@ def sync_ncm_status(request, order_id):
 @require_POST
 def ncm_webhook(request):
     """
-    Receive and process webhook from NCM when status changes.
+    Enhanced NCM Webhook Endpoint
     
-    Enhanced with:
-    - Signature verification
-    - Idempotency (prevents duplicate processing)
+    Receives POST requests from NCM with order status updates
+    Features:
+    - CSRF exemption for external webhooks
+    - Signature verification using X-NCM-Signature header
+    - HMAC-SHA256 validation
+    - Idempotency checking (prevents duplicate processing)
     - Transaction safety (atomic updates)
-    - Order state validation
-    - Comprehensive audit logging
+    - Comprehensive error handling and logging
+    - SMS notifications to customers
+    - Real-time status updates
+    
+    Payload format:
+    {
+        'webhook_id': 'unique_identifier',
+        'event': 'order_status_update',
+        'order_id': ncm_order_id or 'order_ids': [list],
+        'status': 'Delivered|In Transit|Returned|COD Collected',
+        'delivery_date': '2024-02-16',
+        'cod_amount': 1500.00,
+        'timestamp': '2024-02-16T10:30:00Z',
+        'test': False
+    }
     """
     payload_bytes = request.body
-    webhook_log = None
     
     try:
-        # 1. VERIFY WEBHOOK SIGNATURE
+        logger.info("=" * 70)
+        logger.info("🔔 NCM WEBHOOK RECEIVED")
+        logger.info("=" * 70)
+        logger.info(f"Client IP: {get_client_ip(request)}")
+        logger.info(f"Headers: {dict(request.META)}")
+        
+        # 1. VERIFY SIGNATURE
         if not verify_ncm_webhook_signature(request, payload_bytes):
-            logger.error("❌ Webhook signature verification failed")
+            logger.error("❌ Webhook signature verification FAILED")
             return JsonResponse({
                 'success': False,
-                'message': 'Signature verification failed'
+                'message': 'Signature verification failed',
+                'error_code': 'INVALID_SIGNATURE'
             }, status=401)
         
-        # 2. PARSE JSON
+        logger.info("✓ Webhook signature verified successfully")
+        
+        # 2. PARSE JSON PAYLOAD
         payload = json.loads(payload_bytes)
-        logger.info(f"=== NCM Webhook Received ===")
         logger.info(f"Payload: {json.dumps(payload, indent=2)}")
         
-        # 3. EXTRACT KEY FIELDS
-        event = payload.get('event', 'unknown')
-        timestamp_str = payload.get('timestamp')
-        status = payload.get('status')
-        webhook_id = payload.get('webhook_id', payload.get('id', 'unknown'))
+        # 3. PROCESS WEBHOOK USING HANDLER
+        response = webhook_handler.process_webhook(payload, request)
         
-        # Parse timestamp
-        try:
-            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        except (TypeError, ValueError):
-            timestamp = timezone.now()
+        logger.info("=" * 70)
+        logger.info(f"✅ Webhook processing completed: {response.get('message')}")
+        logger.info("=" * 70)
         
-        # 4. HANDLE TEST WEBHOOKS
-        if payload.get('test'):
-            logger.info("✓ Test webhook received and processed")
-            return JsonResponse({
-                'success': True,
-                'message': 'Test webhook received',
-                'webhook_id': webhook_id
-            })
-        
-        # 5. CHECK FOR DUPLICATE WEBHOOKS (IDEMPOTENCY)
-        webhook_log, created = WebhookLog.objects.get_or_create(
-            webhook_id=webhook_id,
-            defaults={
-                'event': event,
-                'payload': payload,
-                'status': 'processing',
-                'source_ip': get_client_ip(request),
-                'signature': request.META.get('HTTP_X_NCM_SIGNATURE', ''),
-            }
-        )
-        
-        if not created:
-            # Webhook already processed
-            logger.info(f"⚠️  Duplicate webhook detected: {webhook_id} (already processed)")
-            return JsonResponse({
-                'success': True,
-                'message': 'Webhook already processed',
-                'webhook_id': webhook_id,
-                'processed_at': webhook_log.processed_at.isoformat() if webhook_log.processed_at else None,
-                'status': 'duplicate'
-            }, status=200)
-        
-        # 6. VALIDATE REQUIRED FIELDS
-        order_ids = []
-        if 'order_id' in payload:
-            order_ids = [payload['order_id']]
-        elif 'order_ids' in payload:
-            order_ids = payload['order_ids']
-        
-        if not order_ids or not status:
-            webhook_log.status = 'failed'
-            webhook_log.error_message = 'Missing order_id(s) or status field'
-            webhook_log.save()
-            
-            logger.error("❌ Missing required fields: order_ids or status")
-            return JsonResponse({
-                'success': False,
-                'message': 'Missing required fields: order_id(s) or status',
-                'webhook_id': webhook_id
-            }, status=400)
-        
-        # 7. PROCESS UPDATES WITH TRANSACTION SAFETY
-        updated_orders = []
-        not_found_orders = []
-        failed_orders = []
-        system_user = get_or_create_system_user()
-        
-        with transaction.atomic():
-            for ncm_order_id in order_ids:
-                try:
-                    # Get order with select_for_update to prevent race conditions
-                    order = Order.objects.select_for_update().get(
-                        ncm_order_id=ncm_order_id,
-                        is_deleted=False
-                    )
-                    
-                    # Validate order is eligible for status update
-                    if not is_order_eligible_for_status_update(order):
-                        failed_orders.append({
-                            'ncm_order_id': ncm_order_id,
-                            'order_number': order.order_number,
-                            'reason': f'Order not eligible (current status: {order.status})'
-                        })
-                        continue
-                    
-                    # Map NCM status to system status
-                    old_ncm_status = order.ncm_status
-                    try:
-                        system_status = ncm_service.map_ncm_status_to_system(status)
-                    except Exception as e:
-                        logger.error(f"Error mapping NCM status '{status}': {str(e)}")
-                        failed_orders.append({
-                            'ncm_order_id': ncm_order_id,
-                            'order_number': order.order_number,
-                            'reason': f'Status mapping failed: {str(e)}'
-                        })
-                        continue
-                    
-                    # Update order status
-                    order.ncm_status = status
-                    order.status = system_status
-                    order.save(update_fields=['ncm_status', 'status', 'updated_at'])
-                    
-                    # Create activity log with system user
-                    OrderActivityLog.objects.create(
-                        order=order,
-                        action_type='status_changed',
-                        user=system_user,  # System user for webhooks
-                        field_name='ncm_status',
-                        old_value=old_ncm_status or 'None',
-                        new_value=status,
-                        description=f'NCM Webhook: {event} -> {status}'
-                    )
-                    
-                    logger.info(f"✓ Updated: {order.order_number} ({ncm_order_id}) -> {status}")
-                    updated_orders.append({
-                        'order_number': order.order_number,
-                        'ncm_order_id': ncm_order_id,
-                        'old_status': old_ncm_status,
-                        'new_status': status
-                    })
-                    
-                except Order.DoesNotExist:
-                    logger.warning(f"✗ Order not found: NCM ID {ncm_order_id}")
-                    not_found_orders.append(ncm_order_id)
-                
-                except Exception as e:
-                    logger.error(f"Error processing order {ncm_order_id}: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-                    failed_orders.append({
-                        'ncm_order_id': ncm_order_id,
-                        'reason': str(e)
-                    })
-        
-        # 8. UPDATE WEBHOOK LOG
-        webhook_log.status = 'completed'
-        webhook_log.updated_orders_count = len(updated_orders)
-        webhook_log.failed_orders_count = len(not_found_orders) + len(failed_orders)
-        webhook_log.processed_at = timezone.now()
-        webhook_log.response_data = {
-            'updated_count': len(updated_orders),
-            'not_found_count': len(not_found_orders),
-            'failed_count': len(failed_orders)
-        }
-        webhook_log.save()
-        
-        # 9. RETURN RESPONSE
-        response_data = {
-            'success': True,
-            'message': 'Webhook processed successfully',
-            'webhook_id': webhook_id,
-            'event': event,
-            'ncm_status': status,
-            'updated_count': len(updated_orders),
-            'updated_orders': updated_orders,
-            'not_found_count': len(not_found_orders),
-            'not_found_orders': not_found_orders,
-            'failed_count': len(failed_orders),
-            'failed_orders': failed_orders
-        }
-        
-        logger.info(f"✅ Webhook completed: {len(updated_orders)} updated, "
-                   f"{len(not_found_orders)} not found, {len(failed_orders)} failed")
-        
-        return JsonResponse(response_data, status=200)
+        return JsonResponse(response, status=200)
         
     except json.JSONDecodeError as e:
-        logger.error(f"❌ Invalid JSON received: {str(e)}")
-        if webhook_log:
-            webhook_log.status = 'failed'
-            webhook_log.error_message = f'Invalid JSON: {str(e)}'
-            webhook_log.save()
-        
+        logger.error(f"❌ Invalid JSON in webhook payload: {str(e)}")
         return JsonResponse({
             'success': False,
-            'message': 'Invalid JSON payload'
+            'message': 'Invalid JSON payload',
+            'error_code': 'INVALID_JSON',
+            'error': str(e)
         }, status=400)
     
     except Exception as e:
@@ -535,14 +397,11 @@ def ncm_webhook(request):
         import traceback
         traceback.print_exc()
         
-        if webhook_log:
-            webhook_log.status = 'failed'
-            webhook_log.error_message = str(e)
-            webhook_log.save()
-        
         return JsonResponse({
             'success': False,
-            'message': str(e)
+            'message': 'Internal server error',
+            'error_code': 'INTERNAL_ERROR',
+            'error': str(e)
         }, status=500)
 
 

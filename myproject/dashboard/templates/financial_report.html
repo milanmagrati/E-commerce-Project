@@ -68,6 +68,7 @@
     <form class="row g-3 mb-4" id="reportFilterForm">
         <div class="col-md-2">
             <select class="form-select" name="period" id="periodSelect">
+                <option value="all" selected>All Time</option>
                 <option value="today">Today</option>
                 <option value="week">This Week</option>
                 <option value="month">This Month</option>
@@ -84,13 +85,17 @@
             <button type="submit" class="btn btn-primary"><i class="fas fa-filter"></i> Filter</button>
         </div>
         <div class="col-md-2">
-            <button type="button" class="btn btn-outline-secondary" id="compareBtn"><i class="fas fa-exchange-alt"></i> Compare Periods</button>
+            <button type="button" class="btn btn-outline-secondary" id="compareBtn"><i class="fas fa-exchange-alt"></i>
+                Compare Periods</button>
         </div>
         <div class="col-md-2 text-end">
             <div class="btn-group">
-                <button type="button" class="btn btn-outline-success" onclick="exportTable('excel')"><i class="fas fa-file-excel"></i> Excel</button>
-                <button type="button" class="btn btn-outline-danger" onclick="exportTable('pdf')"><i class="fas fa-file-pdf"></i> PDF</button>
-                <button type="button" class="btn btn-outline-dark" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+                <button type="button" class="btn btn-outline-success" onclick="exportTable('excel')"><i
+                        class="fas fa-file-excel"></i> Excel</button>
+                <button type="button" class="btn btn-outline-danger" onclick="exportTable('pdf')"><i
+                        class="fas fa-file-pdf"></i> PDF</button>
+                <button type="button" class="btn btn-outline-dark" onclick="window.print()"><i class="fas fa-print"></i>
+                    Print</button>
             </div>
         </div>
     </form>
@@ -99,19 +104,22 @@
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-chart-line"></i> Daily Revenue</div>
+                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-chart-line"></i> Daily Revenue
+                </div>
                 <div class="card-body"><canvas id="dailyRevenueChart"></canvas></div>
             </div>
         </div>
         <div class="col-md-3 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-chart-pie"></i> Payment Methods</div>
+                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-chart-pie"></i> Payment Methods
+                </div>
                 <div class="card-body"><canvas id="paymentMethodChart"></canvas></div>
             </div>
         </div>
         <div class="col-md-3 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-success text-white"><i class="fas fa-chart-bar"></i> Revenue vs Expenses</div>
+                <div class="card-header bg-gradient-success text-white"><i class="fas fa-chart-bar"></i> Revenue vs
+                    Expenses</div>
                 <div class="card-body"><canvas id="revenueVsExpensesChart"></canvas></div>
             </div>
         </div>
@@ -121,7 +129,8 @@
     <div class="row mb-4">
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-table"></i> NCM Delivery Revenue</div>
+                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-table"></i> NCM Delivery Revenue
+                </div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="ncmRevenueTable">
                         <thead class="table-light">
@@ -168,7 +177,8 @@
         </div>
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-warning text-white"><i class="fas fa-table"></i> Payment Status</div>
+                <div class="card-header bg-gradient-warning text-white"><i class="fas fa-table"></i> Payment Status
+                </div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="paymentStatusTable">
                         <thead class="table-light">
@@ -187,7 +197,8 @@
         </div>
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-info text-white"><i class="fas fa-table"></i> Branch-wise Summary</div>
+                <div class="card-header bg-gradient-info text-white"><i class="fas fa-table"></i> Branch-wise Summary
+                </div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="branchSummaryTable">
                         <thead class="table-light">
@@ -246,407 +257,886 @@
 </div>
 
 <style>
-.financial-report-container {
-    background: #f8fafc;
-    border-radius: 18px;
-    padding: 32px 24px 24px 24px;
-    box-shadow: 0 4px 32px rgba(102, 126, 234, 0.08);
-    margin-bottom: 32px;
-}
-.report-title {
-    font-weight: 700;
-    color: #4f46e5;
-    letter-spacing: 0.5px;
-    text-shadow: 0 2px 8px rgba(102, 126, 234, 0.08);
-}
-.stat-row-flex {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem 0.75rem;
-}
-.stat-col-flex {
-    display: flex;
-    flex: 1 1 0%;
-    min-width: 180px;
-    max-width: 100%;
-}
-/* Restore pastel backgrounds and text color for stat cards */
-.stat-card.bg-soft-blue {
-    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%) !important;
-    color: #3730a3 !important;
-    border: none !important;
-}
-.stat-card.bg-soft-green {
-    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%) !important;
-    color: #065f46 !important;
-    border: none !important;
-}
-.stat-card.bg-soft-yellow {
-    background: linear-gradient(135deg, #fef9c3 0%, #fde68a 100%) !important;
-    color: #b45309 !important;
-    border: none !important;
-}
-.stat-card.bg-soft-pink {
-    background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%) !important;
-    color: #be185d !important;
-    border: none !important;
-}
-.stat-card.bg-soft-cyan {
-    background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%) !important;
-    color: #0e7490 !important;
-    border: none !important;
-}
-.stat-card {
-    border-radius: 16px;
-    box-shadow: 0 2px 12px rgba(102, 126, 234, 0.07);
-    padding: 22px 16px 18px 16px;
-    display: flex;
-    align-items: center;
-    transition: box-shadow 0.2s, transform 0.2s, background 0.2s;
-    min-height: 110px;
-    margin-bottom: 0;
-    width: 100%;
-    background: linear-gradient(120deg, #f4f6fb 60%, #e9eaf7 100%);
-    color: #232946;
-    border: 1px solid #e5e7eb;
-    position: relative;
-    overflow: hidden;
-    z-index: 1;
-}
-.stat-card .stat-icon {
-    font-size: 2.3rem;
-    margin-right: 18px;
-    color: inherit;
-    opacity: 0.95;
-    min-width: 2.3rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.2s;
-}
-.stat-card .stat-content h3 {
-    margin: 0;
-    font-size: 2.1rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    color: inherit;
-    transition: color 0.2s;
-}
-.stat-card .stat-content p {
-    margin: 0;
-    font-size: 1.05rem;
-    opacity: 0.85;
-    font-weight: 500;
-    color: inherit;
-    transition: color 0.2s;
-}
-.stat-card:hover {
-    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.18);
-    transform: translateY(-3px) scale(1.035);
-    z-index: 2;
-}
-/* Gradient cards: keep white text and icons, remove border, add shadow */
-.stat-card.bg-primary-gradient,
-.stat-card.bg-success-gradient,
-.stat-card.bg-info-gradient,
-.stat-card.bg-warning-gradient,
-.stat-card.bg-purple-gradient,
-.stat-card.bg-gradient-ncm {
-    color: #fff !important;
-    border: none;
-    background: unset;
-    box-shadow: 0 4px 24px rgba(102, 126, 234, 0.18);
-}
-.stat-card.bg-primary-gradient .stat-icon,
-.stat-card.bg-success-gradient .stat-icon,
-.stat-card.bg-info-gradient .stat-icon,
-.stat-card.bg-warning-gradient .stat-icon,
-.stat-card.bg-purple-gradient .stat-icon,
-.stat-card.bg-gradient-ncm .stat-icon {
-    color: #fff !important;
-    opacity: 1;
-}
-.bg-gradient-ncm {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-}
-.bg-gradient-primary {
-    background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%) !important;
-}
-.bg-gradient-success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-}
-.bg-gradient-info {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
-}
-.bg-gradient-warning {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
-}
-.bg-purple-gradient {
-    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
-}
+    .financial-report-container {
+        background: #f8fafc;
+        border-radius: 18px;
+        padding: 32px 24px 24px 24px;
+        box-shadow: 0 4px 32px rgba(102, 126, 234, 0.08);
+        margin-bottom: 32px;
+    }
 
-/* Filter form */
-#reportFilterForm {
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.06);
-    padding: 18px 12px 6px 12px;
-    margin-bottom: 32px;
-}
-#reportFilterForm .form-select, #reportFilterForm .form-control {
-    border-radius: 8px;
-    font-size: 1rem;
-}
-#reportFilterForm .btn {
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 1rem;
-}
-#reportFilterForm .btn-group .btn {
-    font-size: 0.98rem;
-}
+    .loading-indicator {
+        animation: pulse 1.5s ease-in-out infinite;
+        border-left: 4px solid #667eea !important;
+    }
 
-/* Card and Table Styling */
-.card {
-    border-radius: 14px;
-    box-shadow: 0 2px 12px rgba(102, 126, 234, 0.07);
-    border: none;
-    margin-bottom: 18px;
-}
-.card-header {
-    border-radius: 14px 14px 0 0;
-    font-weight: 600;
-    font-size: 1.1rem;
-    letter-spacing: 0.2px;
-}
-.table {
-    border-radius: 10px;
-    overflow: hidden;
-    background: #fff;
-    margin-bottom: 0;
-}
-.table thead {
-    background: #f3f4f6;
-    font-weight: 600;
-    font-size: 1.01rem;
-}
-.table-bordered th, .table-bordered td {
-    border: 1px solid #e5e7eb !important;
-}
-.table-hover tbody tr:hover {
-    background: #f1f5f9;
-}
+    @keyframes pulse {
 
-/* Key Metrics */
-.card-body.text-center h5 {
-    color: #6366f1;
-    font-size: 1.08rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-}
-.card-body.text-center h3 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #1e293b;
-}
+        0%,
+        100% {
+            opacity: 0.8;
+        }
 
-/* Chart.js canvas */
-canvas {
-    background: #fff;
-    border-radius: 10px;
-    box-shadow: 0 1px 4px rgba(102, 126, 234, 0.04);
-    padding: 8px;
-}
+        50% {
+            opacity: 1;
+        }
+    }
 
-/* Responsive Tweaks */
-@media (max-width: 1200px) {
-    .stat-card { flex-direction: column; align-items: flex-start; min-height: 120px; }
-    .stat-icon { margin-bottom: 8px; margin-right: 0; }
-}
-@media (max-width: 768px) {
-    .financial-report-container { padding: 12px 2px 2px 2px; }
-    .stat-card { padding: 16px 8px; }
-    .card { margin-bottom: 12px; }
-    .report-title { font-size: 1.3rem; }
-}
-@media (max-width: 576px) {
-    .stat-card { min-height: 90px; }
-    .card-header { font-size: 1rem; }
-    .card-body.text-center h3 { font-size: 1.2rem; }
-}
+    .report-title {
+        font-weight: 700;
+        color: #4f46e5;
+        letter-spacing: 0.5px;
+        text-shadow: 0 2px 8px rgba(102, 126, 234, 0.08);
+    }
+
+    .stat-row-flex {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem 0.75rem;
+    }
+
+    .stat-col-flex {
+        display: flex;
+        flex: 1 1 0%;
+        min-width: 180px;
+        max-width: 100%;
+    }
+
+    /* Restore pastel backgrounds and text color for stat cards */
+    .stat-card.bg-soft-blue {
+        background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%) !important;
+        color: #3730a3 !important;
+        border: none !important;
+    }
+
+    .stat-card.bg-soft-green {
+        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%) !important;
+        color: #065f46 !important;
+        border: none !important;
+    }
+
+    .stat-card.bg-soft-yellow {
+        background: linear-gradient(135deg, #fef9c3 0%, #fde68a 100%) !important;
+        color: #b45309 !important;
+        border: none !important;
+    }
+
+    .stat-card.bg-soft-pink {
+        background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%) !important;
+        color: #be185d !important;
+        border: none !important;
+    }
+
+    .stat-card.bg-soft-cyan {
+        background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%) !important;
+        color: #0e7490 !important;
+        border: none !important;
+    }
+
+    .stat-card {
+        border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(102, 126, 234, 0.07);
+        padding: 22px 16px 18px 16px;
+        display: flex;
+        align-items: center;
+        transition: box-shadow 0.2s, transform 0.2s, background 0.2s;
+        min-height: 110px;
+        margin-bottom: 0;
+        width: 100%;
+        background: linear-gradient(120deg, #f4f6fb 60%, #e9eaf7 100%);
+        color: #232946;
+        border: 1px solid #e5e7eb;
+        position: relative;
+        overflow: hidden;
+        z-index: 1;
+    }
+
+    .stat-card .stat-icon {
+        font-size: 2.3rem;
+        margin-right: 18px;
+        color: inherit;
+        opacity: 0.95;
+        min-width: 2.3rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.2s;
+    }
+
+    .stat-card .stat-content h3 {
+        margin: 0;
+        font-size: 2.1rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: inherit;
+        transition: color 0.2s;
+    }
+
+    .stat-card .stat-content p {
+        margin: 0;
+        font-size: 1.05rem;
+        opacity: 0.85;
+        font-weight: 500;
+        color: inherit;
+        transition: color 0.2s;
+    }
+
+    .stat-card:hover {
+        box-shadow: 0 8px 32px rgba(102, 126, 234, 0.18);
+        transform: translateY(-3px) scale(1.035);
+        z-index: 2;
+    }
+
+    /* Gradient cards: keep white text and icons, remove border, add shadow */
+    .stat-card.bg-primary-gradient,
+    .stat-card.bg-success-gradient,
+    .stat-card.bg-info-gradient,
+    .stat-card.bg-warning-gradient,
+    .stat-card.bg-purple-gradient,
+    .stat-card.bg-gradient-ncm {
+        color: #fff !important;
+        border: none;
+        background: unset;
+        box-shadow: 0 4px 24px rgba(102, 126, 234, 0.18);
+    }
+
+    .stat-card.bg-primary-gradient .stat-icon,
+    .stat-card.bg-success-gradient .stat-icon,
+    .stat-card.bg-info-gradient .stat-icon,
+    .stat-card.bg-warning-gradient .stat-icon,
+    .stat-card.bg-purple-gradient .stat-icon,
+    .stat-card.bg-gradient-ncm .stat-icon {
+        color: #fff !important;
+        opacity: 1;
+    }
+
+    .bg-gradient-ncm {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    }
+
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%) !important;
+    }
+
+    .bg-gradient-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    }
+
+    .bg-gradient-info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+    }
+
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+    }
+
+    .bg-purple-gradient {
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+    }
+
+    /* Filter form */
+    #reportFilterForm {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.06);
+        padding: 18px 12px 6px 12px;
+        margin-bottom: 32px;
+    }
+
+    #reportFilterForm .form-select,
+    #reportFilterForm .form-control {
+        border-radius: 8px;
+        font-size: 1rem;
+    }
+
+    #reportFilterForm .btn {
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 1rem;
+    }
+
+    #reportFilterForm .btn-group .btn {
+        font-size: 0.98rem;
+    }
+
+    /* Card and Table Styling */
+    .card {
+        border-radius: 14px;
+        box-shadow: 0 2px 12px rgba(102, 126, 234, 0.07);
+        border: none;
+        margin-bottom: 18px;
+    }
+
+    .card-header {
+        border-radius: 14px 14px 0 0;
+        font-weight: 600;
+        font-size: 1.1rem;
+        letter-spacing: 0.2px;
+    }
+
+    .table {
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+        margin-bottom: 0;
+    }
+
+    .table thead {
+        background: #f3f4f6;
+        font-weight: 600;
+        font-size: 1.01rem;
+    }
+
+    .table-bordered th,
+    .table-bordered td {
+        border: 1px solid #e5e7eb !important;
+    }
+
+    .table-hover tbody tr:hover {
+        background: #f1f5f9;
+    }
+
+    /* Key Metrics */
+    .card-body.text-center h5 {
+        color: #6366f1;
+        font-size: 1.08rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .card-body.text-center h3 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    /* Chart.js canvas */
+    canvas {
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 1px 4px rgba(102, 126, 234, 0.04);
+        padding: 8px;
+    }
+
+    /* Responsive Tweaks */
+    @media (max-width: 1200px) {
+        .stat-card {
+            flex-direction: column;
+            align-items: flex-start;
+            min-height: 120px;
+        }
+
+        .stat-icon {
+            margin-bottom: 8px;
+            margin-right: 0;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .financial-report-container {
+            padding: 12px 2px 2px 2px;
+        }
+
+        .stat-card {
+            padding: 16px 8px;
+        }
+
+        .card {
+            margin-bottom: 12px;
+        }
+
+        .report-title {
+            font-size: 1.3rem;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .stat-card {
+            min-height: 90px;
+        }
+
+        .card-header {
+            font-size: 1rem;
+        }
+
+        .card-body.text-center h3 {
+            font-size: 1.2rem;
+        }
+    }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
 <script>
-// Helper function to get CSRF token from cookie
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
+    // Helper function to get CSRF token from cookie
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
             }
+        }
+        return cookieValue;
+    }
+
+    function fetchFinancialReportData(params = {}) {
+        const url = new URL(window.location.origin + '/financial-report/data/');
+        Object.keys(params).forEach(key => {
+            if (params[key]) {
+                url.searchParams.append(key, params[key]);
+            }
+        });
+
+        const csrftoken = getCookie('csrftoken');
+        const headers = {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json'
+        };
+
+        console.log('🔄 Fetching financial report data from:', url.toString());
+
+        return fetch(url, {
+            credentials: 'same-origin',
+            headers: headers
+        })
+            .then(res => {
+                console.log('📊 Response status:', res.status);
+                if (!res.ok) {
+                    console.error('❌ API Error:', res.status, res.statusText);
+                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                }
+                return res.text().then(text => {
+                    if (!text) {
+                        throw new Error('Empty response from server');
+                    }
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        console.error('❌ JSON parse error:', e, 'Response:', text);
+                        throw new Error('Invalid JSON response from server');
+                    }
+                }).then(data => {
+                    if (!data.success && data.error) {
+                        console.error('❌ API returned error:', data.error);
+                        throw new Error(data.message || data.error);
+                    }
+                    console.log('✅ Data received successfully with', data.ncm_revenue?.length || 0, 'orders');
+                    return data;
+                });
+            })
+            .catch(error => {
+                console.error('❌ Fetch error:', error);
+                showErrorAlert('Error loading financial report: ' + error.message);
+                throw error;
+            });
+    }
+
+    // Improved error display function
+    function showErrorAlert(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger alert-dismissible fade show';
+        errorDiv.role = 'alert';
+        errorDiv.innerHTML = `
+        <strong><i class="fas fa-exclamation-circle"></i> Error:</strong> ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+
+        const container = document.querySelector('.financial-report-container');
+        if (container) {
+            container.insertBefore(errorDiv, container.firstChild);
+        } else {
+            // Fallback to alert if container not found
+            alert('Error: ' + message);
         }
     }
-    return cookieValue;
-}
 
-function fetchFinancialReportData(params = {}) {
-    const url = new URL(window.location.origin + '/financial-report/data/');
-    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
-    
-    const csrftoken = getCookie('csrftoken');
-    const headers = {
-        'X-CSRFToken': csrftoken,
-        'Content-Type': 'application/json'
-    };
-    
-    return fetch(url, { 
-        credentials: 'same-origin',
-        headers: headers
-    })
-        .then(res => {
-            if (!res.ok) {
-                console.error('API Error:', res.status, res.statusText);
-                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    function renderStats(stats) {
+        const formatNumber = (val, decimals = 2) => {
+            if (val === null || val === undefined) return '0' + (decimals > 0 ? '.' + '0'.repeat(decimals) : '');
+            try {
+                const num = typeof val === 'number' ? val : parseFloat(val);
+                return isNaN(num) ? '0' + (decimals > 0 ? '.' + '0'.repeat(decimals) : '') : num.toFixed(decimals);
+            } catch (e) {
+                console.error('Error formatting number:', val, e);
+                return '0' + (decimals > 0 ? '.' + '0'.repeat(decimals) : '');
             }
-            return res.json();
-        })
-        .catch(error => {
-            console.error('Fetch error:', error);
-            alert('Error loading financial report data: ' + error.message);
-            throw error;
-        });
-}
-
-function renderStats(stats) {
-    const formatNumber = (val) => {
-        if (val === null || val === undefined) return '0';
-        if (typeof val === 'number') return val.toFixed(2);
-        return val;
-    };
-    document.getElementById('totalRevenue').textContent = formatNumber(stats.total_revenue);
-    document.getElementById('ordersDelivered').textContent = stats.orders_delivered || '0';
-    document.getElementById('codCollected').textContent = formatNumber(stats.cod_collected);
-    document.getElementById('pendingPayments').textContent = formatNumber(stats.pending_payments);
-    document.getElementById('netProfit').textContent = formatNumber(stats.net_profit);
-    document.getElementById('ncmDeliveryCharges').textContent = formatNumber(stats.ncm_delivery_charges);
-}
-
-function renderKeyMetrics(metrics) {
-    const formatNumber = (val) => {
-        if (val === null || val === undefined) return '0';
-        return val.toFixed(2);
-    };
-    document.getElementById('avgOrderValue').textContent = formatNumber(metrics.avg_order_value);
-    document.getElementById('totalNcmCharges').textContent = formatNumber(metrics.total_ncm_charges);
-    document.getElementById('profitMargin').textContent = formatNumber(metrics.profit_margin) + '%';
-    document.getElementById('codCollectionRate').textContent = formatNumber(metrics.cod_collection_rate) + '%';
-}
-
-function renderTable(tableId, rows, columns) {
-    const tbody = document.getElementById(tableId).querySelector('tbody');
-    tbody.innerHTML = '';
-    rows.forEach(row => {
-        const tr = document.createElement('tr');
-        columns.forEach(col => {
-            const td = document.createElement('td');
-            td.textContent = row[col] !== undefined && row[col] !== null ? row[col] : '';
-            tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-    });
-}
-
-function renderPaymentStatusTable(data) {
-    renderTable('paymentStatusTable', data, ['status', 'amount', 'percent']);
-}
-function renderBranchSummaryTable(data) {
-    renderTable('branchSummaryTable', data, ['branch__name', 'orders', 'revenue', 'ncm_charges', 'profit']);
-}
-function renderDailySummaryTable(data) {
-    renderTable('dailySummaryTable', data, ['date', 'orders', 'revenue', 'cod', 'ncm_charges', 'expenses', 'net_profit']);
-}
-function renderNcmRevenueTable(data) {
-    renderTable('ncmRevenueTable', data, ['delivered_at', 'order_number', 'customer__name', 'ncm_status', 'total_amount', 'delivery_charge', 'payment_status', 'cod_collected']);
-}
-
-let dailyRevenueChart, paymentMethodChart, revenueVsExpensesChart;
-function renderCharts(data) {
-    // Daily Revenue Line Chart
-    const drLabels = data.daily_revenue.map(x => x.date ? x.date.split('T')[0] : '');
-    const drData = data.daily_revenue.map(x => x.amount);
-    if (dailyRevenueChart) dailyRevenueChart.destroy();
-    dailyRevenueChart = new Chart(document.getElementById('dailyRevenueChart'), {
-        type: 'line',
-        data: { labels: drLabels, datasets: [{ label: 'Revenue', data: drData, borderColor: '#667eea', backgroundColor: 'rgba(102,126,234,0.1)' }] },
-        options: { responsive: true, plugins: { legend: { display: false } } }
-    });
-    // Payment Method Pie Chart
-    const pmLabels = data.payment_methods.map(x => x.payment_method);
-    const pmData = data.payment_methods.map(x => x.amount);
-    if (paymentMethodChart) paymentMethodChart.destroy();
-    paymentMethodChart = new Chart(document.getElementById('paymentMethodChart'), {
-        type: 'pie',
-        data: { labels: pmLabels, datasets: [{ data: pmData, backgroundColor: ['#667eea', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#3b82f6'] }] },
-        options: { responsive: true }
-    });
-    // Revenue vs Expenses Bar Chart
-    const reLabels = data.revenue_vs_expenses.map(x => x.label);
-    const reData = data.revenue_vs_expenses.map(x => x.amount);
-    if (revenueVsExpensesChart) revenueVsExpensesChart.destroy();
-    revenueVsExpensesChart = new Chart(document.getElementById('revenueVsExpensesChart'), {
-        type: 'bar',
-        data: { labels: reLabels, datasets: [{ label: 'Amount', data: reData, backgroundColor: ['#667eea', '#f59e0b', '#ef4444', '#10b981'] }] },
-        options: { responsive: true, plugins: { legend: { display: false } } }
-    });
-}
-
-function loadReport(params = {}) {
-    console.log('Loading report with params:', params);
-    fetchFinancialReportData(params).then(data => {
-        console.log('Report data received:', data);
-        renderStats(data.stats);
-        renderKeyMetrics(data.key_metrics);
-        renderPaymentStatusTable(data.payment_status);
-        renderBranchSummaryTable(data.branch_summary);
-        renderDailySummaryTable(data.daily_summary);
-        renderNcmRevenueTable(data.ncm_revenue);
-        renderCharts(data);
-    }).catch(error => {
-        console.error('Error loading report:', error);
-    });
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Filter form logic
-    const form = document.getElementById('reportFilterForm');
-    const periodSelect = document.getElementById('periodSelect');
-    const customStartDiv = document.getElementById('customStartDiv');
-    const customEndDiv = document.getElementById('customEndDiv');
-    periodSelect.addEventListener('change', function() {
-        if (this.value === 'custom') {
-            customStartDiv.style.display = 'block';
-            customEndDiv.style.display = 'block';
-        } else {
-            customStartDiv.style.display = 'none';
-            customEndDiv.style.display = 'none';
-        }
-    });
-    form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        const params = {
-            period: periodSelect.value,
-            start_date: document.getElementById('startDateInput').value,
-            end_date: document.getElementById('endDateInput').value
         };
-        loadReport(params);
+
+        console.log('💰 Rendering stats:', stats);
+
+        try {
+            document.getElementById('totalRevenue').textContent = formatNumber(stats.total_revenue, 2);
+            document.getElementById('ordersDelivered').textContent = stats.orders_delivered || '0';
+            document.getElementById('codCollected').textContent = formatNumber(stats.cod_collected, 2);
+            document.getElementById('pendingPayments').textContent = formatNumber(stats.pending_payments, 2);
+            document.getElementById('netProfit').textContent = formatNumber(stats.net_profit, 2);
+            document.getElementById('ncmDeliveryCharges').textContent = formatNumber(stats.ncm_delivery_charges, 2);
+        } catch (error) {
+            console.error('Error rendering stats:', error);
+            showErrorAlert('Error rendering statistics: ' + error.message);
+        }
+    }
+
+    function renderKeyMetrics(metrics) {
+        const formatNumber = (val, decimals = 2) => {
+            if (val === null || val === undefined) return '0' + (decimals > 0 ? '.' + '0'.repeat(decimals) : '');
+            try {
+                const num = typeof val === 'number' ? val : parseFloat(val);
+                return isNaN(num) ? '0' + (decimals > 0 ? '.' + '0'.repeat(decimals) : '') : num.toFixed(decimals);
+            } catch (e) {
+                console.error('Error formatting number:', val, e);
+                return '0' + (decimals > 0 ? '.' + '0'.repeat(decimals) : '');
+            }
+        };
+
+        try {
+            document.getElementById('avgOrderValue').textContent = formatNumber(metrics.avg_order_value, 2);
+            document.getElementById('totalNcmCharges').textContent = formatNumber(metrics.total_ncm_charges, 2);
+            document.getElementById('profitMargin').textContent = formatNumber(metrics.profit_margin, 2) + '%';
+            document.getElementById('codCollectionRate').textContent = formatNumber(metrics.cod_collection_rate, 2) + '%';
+        } catch (error) {
+            console.error('Error rendering key metrics:', error);
+        }
+    }
+
+    function renderTable(tableId, rows, columns) {
+        const table = document.getElementById(tableId);
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
+
+        if (!rows || rows.length === 0) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="${columns.length}" class="text-center text-muted py-4">
+            <i class="fas fa-inbox fa-2x mb-2"></i><br>
+            No data available for this period
+        </td>`;
+            tbody.appendChild(tr);
+            return;
+        }
+
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            columns.forEach(col => {
+                const td = document.createElement('td');
+                let value = row[col];
+
+                // Format numbers if they look like money values
+                if ((col.includes('amount') || col.includes('revenue') || col.includes('charge') || col.includes('profit') || col.includes('collected'))
+                    && typeof value === 'number') {
+                    value = value.toFixed(2);
+                }
+
+                td.textContent = value !== undefined && value !== null ? value : '-';
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderPaymentStatusTable(data) {
+        const table = document.getElementById('paymentStatusTable');
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="3" class="text-center text-muted py-4">No payment data available</td>`;
+            tbody.appendChild(tr);
+            return;
+        }
+
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+
+            const statusCell = document.createElement('td');
+            statusCell.textContent = row.status || '-';
+
+            const amountCell = document.createElement('td');
+            amountCell.textContent = row.amount ? parseFloat(row.amount).toFixed(2) : '0.00';
+
+            const percentCell = document.createElement('td');
+            percentCell.textContent = row.percent ? parseFloat(row.percent).toFixed(2) + '%' : '0.00%';
+
+            tr.appendChild(statusCell);
+            tr.appendChild(amountCell);
+            tr.appendChild(percentCell);
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderBranchSummaryTable(data) {
+        const table = document.getElementById('branchSummaryTable');
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="5" class="text-center text-muted py-4">No branch data available</td>`;
+            tbody.appendChild(tr);
+            return;
+        }
+
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+
+            const branchCell = document.createElement('td');
+            branchCell.textContent = row.ncm_destination_branch || row.branch__name || '-';
+
+            const ordersCell = document.createElement('td');
+            ordersCell.textContent = row.orders || '0';
+
+            const revenueCell = document.createElement('td');
+            revenueCell.textContent = row.revenue ? parseFloat(row.revenue).toFixed(2) : '0.00';
+
+            const chargesCell = document.createElement('td');
+            chargesCell.textContent = row.ncm_charges ? parseFloat(row.ncm_charges).toFixed(2) : '0.00';
+
+            const profitCell = document.createElement('td');
+            profitCell.textContent = row.profit ? parseFloat(row.profit).toFixed(2) : '0.00';
+
+            tr.appendChild(branchCell);
+            tr.appendChild(ordersCell);
+            tr.appendChild(revenueCell);
+            tr.appendChild(chargesCell);
+            tr.appendChild(profitCell);
+            tbody.appendChild(tr);
+        });
+    }
+    function renderDailySummaryTable(data) {
+        const table = document.getElementById('dailySummaryTable');
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="7" class="text-center text-muted py-4">
+            No summary data available
+        </td>`;
+            tbody.appendChild(tr);
+            return;
+        }
+
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+
+            // Date
+            const dateCell = document.createElement('td');
+            if (row.date) {
+                const date = new Date(row.date);
+                dateCell.textContent = date.toLocaleDateString();
+            } else {
+                dateCell.textContent = '-';
+            }
+
+            // Orders count
+            const ordersCell = document.createElement('td');
+            ordersCell.textContent = row.orders || '0';
+
+            // Revenue
+            const revenueCell = document.createElement('td');
+            revenueCell.textContent = row.revenue ? parseFloat(row.revenue).toFixed(2) : '0.00';
+
+            // COD
+            const codCell = document.createElement('td');
+            codCell.textContent = row.cod ? parseFloat(row.cod).toFixed(2) : '0.00';
+
+            // NCM Charges
+            const chargesCell = document.createElement('td');
+            chargesCell.textContent = row.ncm_charges ? parseFloat(row.ncm_charges).toFixed(2) : '0.00';
+
+            // Expenses
+            const expensesCell = document.createElement('td');
+            expensesCell.textContent = row.expenses ? parseFloat(row.expenses).toFixed(2) : '0.00';
+
+            // Net Profit
+            const profitCell = document.createElement('td');
+            profitCell.textContent = row.net_profit ? parseFloat(row.net_profit).toFixed(2) : '0.00';
+
+            tr.appendChild(dateCell);
+            tr.appendChild(ordersCell);
+            tr.appendChild(revenueCell);
+            tr.appendChild(codCell);
+            tr.appendChild(chargesCell);
+            tr.appendChild(expensesCell);
+            tr.appendChild(profitCell);
+
+            tbody.appendChild(tr);
+        });
+    }
+    function renderNcmRevenueTable(data) {
+        const table = document.getElementById('ncmRevenueTable');
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="8" class="text-center text-muted py-4">
+            <i class="fas fa-inbox fa-2x mb-2"></i><br>
+            No NCM orders for this period
+        </td>`;
+            tbody.appendChild(tr);
+            return;
+        }
+
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+
+            // Format delivered_at date (falls back to created_at from backend)
+            const dateCell = document.createElement('td');
+            const rawDate = row.delivered_at || row.created_at;
+            if (rawDate) {
+                // Ensure ISO format for cross-browser compat
+                const dateStr = rawDate.includes('T') ? rawDate : rawDate.replace(' ', 'T');
+                const date = new Date(dateStr);
+                if (!isNaN(date.getTime())) {
+                    dateCell.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                } else {
+                    dateCell.textContent = rawDate;
+                }
+            } else {
+                dateCell.textContent = '-';
+            }
+
+            // Order number
+            const orderCell = document.createElement('td');
+            orderCell.textContent = row.order_number || '-';
+
+            // Customer name
+            const customerCell = document.createElement('td');
+            customerCell.textContent = row.customer__name || '-';
+
+            // NCM Status
+            const statusCell = document.createElement('td');
+            statusCell.textContent = row.ncm_status || 'Pending';
+
+            // Amount
+            const amountCell = document.createElement('td');
+            amountCell.textContent = row.total_amount ? parseFloat(row.total_amount).toFixed(2) : '0.00';
+
+            // Delivery Charge
+            const chargeCell = document.createElement('td');
+            chargeCell.textContent = row.delivery_charge ? parseFloat(row.delivery_charge).toFixed(2) : '0.00';
+
+            // Payment Status
+            const paymentCell = document.createElement('td');
+            paymentCell.textContent = row.payment_status || '-';
+
+            // COD Collected
+            const codCell = document.createElement('td');
+            codCell.textContent = row.cod_collected ? parseFloat(row.cod_collected).toFixed(2) : '0.00';
+
+            tr.appendChild(dateCell);
+            tr.appendChild(orderCell);
+            tr.appendChild(customerCell);
+            tr.appendChild(statusCell);
+            tr.appendChild(amountCell);
+            tr.appendChild(chargeCell);
+            tr.appendChild(paymentCell);
+            tr.appendChild(codCell);
+
+            tbody.appendChild(tr);
+        });
+    }
+
+    let dailyRevenueChart, paymentMethodChart, revenueVsExpensesChart;
+    function renderCharts(data) {
+        console.log('📊 Rendering charts with data:', {
+            dailyRevenueCount: data.daily_revenue?.length || 0,
+            paymentMethodsCount: data.payment_methods?.length || 0,
+            revenueVsExpensesCount: data.revenue_vs_expenses?.length || 0
+        });
+
+        // Daily Revenue Line Chart
+        const drLabels = (data.daily_revenue || []).map(x => {
+            if (x.date) {
+                const d = new Date(x.date);
+                return d.toLocaleDateString();
+            }
+            return '';
+        });
+        const drData = (data.daily_revenue || []).map(x => x.amount || 0);
+
+        if (dailyRevenueChart) dailyRevenueChart.destroy();
+        const drCanvas = document.getElementById('dailyRevenueChart');
+        if (drCanvas) {
+            dailyRevenueChart = new Chart(drCanvas, {
+                type: 'line',
+                data: {
+                    labels: drLabels.length ? drLabels : ['No data'],
+                    datasets: [{
+                        label: 'Revenue',
+                        data: drData.length ? drData : [0],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102,126,234,0.1)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        // Payment Method Pie Chart
+        const pmLabels = (data.payment_methods || []).map(x => x.payment_method || 'Unknown').filter(x => x);
+        const pmData = (data.payment_methods || []).map(x => x.amount || 0);
+
+        if (paymentMethodChart) paymentMethodChart.destroy();
+        const pmCanvas = document.getElementById('paymentMethodChart');
+        if (pmCanvas) {
+            paymentMethodChart = new Chart(pmCanvas, {
+                type: 'pie',
+                data: {
+                    labels: pmLabels.length ? pmLabels : ['No data'],
+                    datasets: [{
+                        data: pmData.length ? pmData : [0],
+                        backgroundColor: ['#667eea', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#3b82f6']
+                    }]
+                },
+                options: { responsive: true }
+            });
+        }
+
+        // Revenue vs Expenses Bar Chart
+        const reLabels = (data.revenue_vs_expenses || []).map(x => x.label || '');
+        const reData = (data.revenue_vs_expenses || []).map(x => x.amount || 0);
+
+        if (revenueVsExpensesChart) revenueVsExpensesChart.destroy();
+        const reCanvas = document.getElementById('revenueVsExpensesChart');
+        if (reCanvas) {
+            revenueVsExpensesChart = new Chart(reCanvas, {
+                type: 'bar',
+                data: {
+                    labels: reLabels.length ? reLabels : ['No data'],
+                    datasets: [{
+                        label: 'Amount',
+                        data: reData.length ? reData : [0],
+                        backgroundColor: ['#667eea', '#f59e0b', '#ef4444', '#10b981']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+    }
+
+    function loadReport(params = {}) {
+        console.log('📈 Loading report with params:', params);
+
+        // Show loading state
+        const container = document.querySelector('.financial-report-container');
+        let loadingDiv = container?.querySelector('.loading-indicator');
+        if (!loadingDiv) {
+            loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading-indicator alert alert-info';
+            loadingDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading financial data...';
+            if (container) container.insertBefore(loadingDiv, container.firstChild);
+        } else {
+            loadingDiv.style.display = 'block';
+        }
+
+        fetchFinancialReportData(params)
+            .then(data => {
+                // Validate response structure
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Invalid response structure from server');
+                }
+
+                console.log('✅ Full response data:', data);
+                console.log('📊 NCM Revenue orders count:', data.ncm_revenue?.length || 0);
+
+                // Remove loading indicator
+                const loading = document.querySelector('.loading-indicator');
+                if (loading) loading.remove();
+
+                console.log('✅ Rendering data...');
+
+                // Render each component with error handling
+                try {
+                    if (data.stats) {
+                        console.log('📊 Rendering stats:', data.stats);
+                        renderStats(data.stats);
+                    }
+                    if (data.key_metrics) renderKeyMetrics(data.key_metrics);
+                    if (data.payment_status) renderPaymentStatusTable(data.payment_status);
+                    if (data.branch_summary) renderBranchSummaryTable(data.branch_summary);
+                    if (data.daily_summary) renderDailySummaryTable(data.daily_summary);
+                    if (data.ncm_revenue) {
+                        console.log(`📊 Rendering ${data.ncm_revenue.length} NCM revenue rows`);
+                        console.log('First row:', data.ncm_revenue[0]);
+                        renderNcmRevenueTable(data.ncm_revenue);
+                    }
+                    renderCharts(data);
+                } catch (renderError) {
+                    console.error('❌ Error rendering component:', renderError);
+                    showErrorAlert('Error rendering report components: ' + renderError.message);
+                }
+
+                console.log('✅ Report loaded successfully!');
+            })
+            .catch(error => {
+                console.error('❌ Error loading report:', error);
+                // Remove loading indicator
+                const loading = document.querySelector('.loading-indicator');
+                if (loading) loading.remove();
+                showErrorAlert('Failed to load financial report. Please check the console for details.');
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Filter form logic
+        const form = document.getElementById('reportFilterForm');
+        const periodSelect = document.getElementById('periodSelect');
+        const customStartDiv = document.getElementById('customStartDiv');
+        const customEndDiv = document.getElementById('customEndDiv');
+        
+        periodSelect.addEventListener('change', function () {
+            if (this.value === 'custom') {
+                customStartDiv.style.display = 'block';
+                customEndDiv.style.display = 'block';
+            } else {
+                customStartDiv.style.display = 'none';
+                customEndDiv.style.display = 'none';
+                
+                // Auto-load report when non-custom period is selected
+                console.log('📊 Period changed to:', this.value);
+                const params = {
+                    period: this.value,
+                    start_date: '',
+                    end_date: ''
+                };
+                loadReport(params);
+            }
+        });
+        
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const params = {
+                period: periodSelect.value,
+                start_date: document.getElementById('startDateInput').value,
+                end_date: document.getElementById('endDateInput').value
+            };
+            console.log('📊 Filter button clicked with params:', params);
+            loadReport(params);
+        });
+        
+        // Initial load — pass the currently selected period
+        console.log('📊 Initial load with period:', periodSelect.value);
+        loadReport({ period: periodSelect.value });
     });
-    // Initial load
-    loadReport();
-});
 </script>
 {% endblock %}

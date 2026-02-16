@@ -1955,6 +1955,182 @@ if (logisticsSelect) {
         }
     });
 }
+
+// ============================================================
+// 🔄 REAL-TIME AUTO-SYNC WITH ALERTIFY NOTIFICATIONS
+// ============================================================
+
+// Load alertify.js if not already loaded
+if (typeof alertify === 'undefined') {
+    const alertifyLink = document.createElement('link');
+    alertifyLink.rel = 'stylesheet';
+    alertifyLink.href = 'https://cdn.jsdelivr.net/npm/alertifyjs@1.13.1/build/css/alertify.min.css';
+    document.head.appendChild(alertifyLink);
+    
+    const alertifyScript = document.createElement('script');
+    alertifyScript.src = 'https://cdn.jsdelivr.net/npm/alertifyjs@1.13.1/build/alertify.min.js';
+    document.head.appendChild(alertifyScript);
+}
+
+// Store current order state for change detection
+let lastOrderState = {
+    status: '{{ order.status }}',
+    ncm_status: '{{ order.ncm_status }}',
+    payment_status: '{{ order.payment_status }}',
+    delivered_at: '{{ order.delivered_at|date:"Y-m-d H:i" }}',
+    cod_collected: {{ order.cod_collected|default:0 }}
+};
+
+// Auto-sync interval (in milliseconds)
+let autoSyncInterval = {{ AUTO_SYNC_INTERVAL|default:60 }} * 1000;
+let autoSyncTimer = null;
+
+/**
+ * Fetch latest order status from API
+ */
+function fetchOrderStatus() {
+    const orderId = '{{ order.id }}';
+    const apiUrl = `/ncm/api/order/${orderId}/status/`;
+    
+    fetch(apiUrl)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                checkOrderChanges(data);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching order status:', error);
+        });
+}
+
+/**
+ * Check if order status has changed and notify user
+ */
+function checkOrderChanges(data) {
+    const currentState = {
+        status: data.status,
+        ncm_status: data.ncm_status,
+        payment_status: data.payment_status,
+        delivered_at: data.delivered_at,
+        cod_collected: data.cod_collected
+    };
+    
+    // Check for status changes
+    if (lastOrderState.status !== currentState.status) {
+        notifyStatusChange('Order Status', lastOrderState.status, currentState.status);
+        lastOrderState.status = currentState.status;
+    }
+    
+    if (lastOrderState.ncm_status !== currentState.ncm_status) {
+        notifyStatusChange('NCM Delivery Status', lastOrderState.ncm_status, currentState.ncm_status);
+        lastOrderState.ncm_status = currentState.ncm_status;
+    }
+    
+    if (lastOrderState.payment_status !== currentState.payment_status) {
+        notifyStatusChange('Payment Status', lastOrderState.payment_status, currentState.payment_status, 'info');
+        lastOrderState.payment_status = currentState.payment_status;
+    }
+    
+    if (lastOrderState.delivered_at !== currentState.delivered_at && currentState.delivered_at) {
+        alertify.success(`📦 Order Delivered! Delivery Date: ${currentState.delivered_at}`);
+        lastOrderState.delivered_at = currentState.delivered_at;
+    }
+    
+    if (lastOrderState.cod_collected !== currentState.cod_collected && currentState.cod_collected > 0) {
+        alertify.notify(`✅ COD Amount Collected: रू ${currentState.cod_collected}`, 'success', 5);
+        lastOrderState.cod_collected = currentState.cod_collected;
+    }
+}
+
+/**
+ * Notify user about status changes with alertify
+ */
+function notifyStatusChange(fieldName, oldValue, newValue, type = 'success') {
+    const statusMessages = {
+        'in_transit': '📍 In Transit - Order is on the way to delivery',
+        'delivered': '✅ Delivered - Order has been successfully delivered',
+        'returned': '↩️ Returned - Order has been returned',
+        'return_initiated': '↩️ Return Initiated - Return process started',
+        'processing': '⏳ Processing - Order is being processed',
+        'pending': '⏸️ Pending - Awaiting confirmation',
+        'shipped': '📦 Shipped - Order has been shipped',
+        'completed': '✨ Completed - Order is complete'
+    };
+    
+    let message = `${fieldName}: ${oldValue || 'N/A'} → ${newValue || 'N/A'}`;
+    
+    if (statusMessages[newValue]) {
+        message = statusMessages[newValue];
+    }
+    
+    // Use alertify for notification
+    if (type === 'success') {
+        alertify.success(message);
+    } else if (type === 'error') {
+        alertify.error(message);
+    } else {
+        alertify.notify(message, 'info', 5);
+    }
+    
+    // Reload the page after short delay for status to update in UI
+    setTimeout(() => {
+        location.reload();
+    }, 2000);
+}
+
+/**
+ * Start auto-sync process
+ */
+function startAutoSync() {
+    // Initial fetch
+    fetchOrderStatus();
+    
+    // Set interval for periodic fetching
+    autoSyncTimer = setInterval(() => {
+        fetchOrderStatus();
+    }, autoSyncInterval);
+    
+    console.log('✅ Auto-sync started. Checking for updates every', autoSyncInterval / 1000, 'seconds');
+}
+
+/**
+ * Stop auto-sync process
+ */
+function stopAutoSync() {
+    if (autoSyncTimer) {
+        clearInterval(autoSyncTimer);
+        autoSyncTimer = null;
+        console.log('⏹️ Auto-sync stopped');
+    }
+}
+
+// Start auto-sync when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Only auto-sync if order has NCM details
+    {% if order.ncm_order_id %}
+        startAutoSync();
+    {% endif %}
+    
+    // Stop auto-sync when user logs out or page is unloaded
+    window.addEventListener('beforeunload', function() {
+        stopAutoSync();
+    });
+});
+
+// Allow user to manually start/stop auto-sync
+document.addEventListener('keydown', function(e) {
+    // Press Ctrl+Shift+R to toggle auto-sync
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyR') {
+        if (autoSyncTimer) {
+            stopAutoSync();
+            alertify.notify('⏹️ Auto-sync disabled', 'warning', 3);
+        } else {
+            startAutoSync();
+            alertify.notify('✅ Auto-sync enabled', 'success', 3);
+        }
+    }
+});
 </script>
 
 {% endblock %}
