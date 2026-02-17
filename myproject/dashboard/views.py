@@ -9472,7 +9472,9 @@ def financial_report_data(request):
             orders = all_orders.filter(created_at__range=(start, end))
 
         logger.info(f"FINAL: {orders.count()} orders to display")
-
+        
+        # Prefetch related items and products for all orders (optimization)
+        orders = orders.prefetch_related('items__product')
 
 
         # Helper function to convert Decimal to float
@@ -9490,7 +9492,14 @@ def financial_report_data(request):
         cod_collected = orders.filter(payment_method='cod', payment_status='paid').aggregate(total=Sum('cod_collected'))['total'] or Decimal('0')
         pending_payments = orders.filter(payment_status__in=['pending', 'partial']).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
         ncm_delivery_charges = orders.filter(delivery_charge__isnull=False).aggregate(total=Sum('delivery_charge'))['total'] or Decimal('0')
-        expenses = orders.aggregate(total=Sum('expense_amount'))['total'] or Decimal('0')
+        
+        # Calculate total expenses from product cost_price
+        expenses = Decimal('0')
+        for order in orders:
+            for item in order.items.all():
+                if item.product and item.product.cost_price:
+                    expenses += (item.product.cost_price * item.quantity)
+        
         net_profit = total_revenue - ncm_delivery_charges - expenses
 
         # Key metrics
@@ -9509,36 +9518,39 @@ def financial_report_data(request):
             {"status": "Partial", "amount": to_float(partial_amt), "percent": to_float((partial_amt/total_amt*100) if total_amt else 0)},
         ]
 
-        # Branch-wise summary - group by NCM destination branch
-        # Get orders with destination branch
-        branch_with_summary = list(
-            orders.filter(ncm_destination_branch__isnull=False, ncm_destination_branch__gt='').values('ncm_destination_branch').annotate(
-                orders=Count('id'),
-                revenue=Sum('total_amount'),
-                ncm_charges=Sum('delivery_charge'),
-                profit=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
-            ).order_by('-revenue')
-        )
+        # Branch-wise summary - calculate with proper expense calculation
+        branch_data = {}
+        
+        for order in orders:
+            branch = order.ncm_destination_branch or 'Not Assigned'
+            
+            # Calculate cost for this order
+            order_cost = Decimal('0')
+            for item in order.items.all():
+                if item.product and item.product.cost_price:
+                    order_cost += (item.product.cost_price * item.quantity)
+            
+            if branch not in branch_data:
+                branch_data[branch] = {
+                    'ncm_destination_branch': branch,
+                    'orders': 0,
+                    'revenue': Decimal('0'),
+                    'ncm_charges': Decimal('0'),
+                    'expenses': Decimal('0'),
+                }
+            
+            branch_data[branch]['orders'] += 1
+            branch_data[branch]['revenue'] += order.total_amount or Decimal('0')
+            branch_data[branch]['ncm_charges'] += order.delivery_charge or Decimal('0')
+            branch_data[branch]['expenses'] += order_cost
+        
+        # Calculate profit for each branch and convert to list
+        branch_with_summary = []
+        for branch, data in sorted(branch_data.items(), key=lambda x: x[1]['revenue'], reverse=True):
+            data['profit'] = data['revenue'] - data['ncm_charges'] - data['expenses']
+            branch_with_summary.append(data)
         
         logger.info(f"Branch-wise orders (by ncm_destination_branch): {branch_with_summary}")
-        
-        # Get orders without destination branch
-        orders_without_branch_count = orders.filter(Q(ncm_destination_branch__isnull=True) | Q(ncm_destination_branch='')).count()
-        if orders_without_branch_count > 0:
-            no_branch_revenue = orders.filter(Q(ncm_destination_branch__isnull=True) | Q(ncm_destination_branch='')).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-            no_branch_charges = orders.filter(Q(ncm_destination_branch__isnull=True) | Q(ncm_destination_branch='')).aggregate(total=Sum('delivery_charge'))['total'] or Decimal('0')
-            no_branch_profit = orders.filter(Q(ncm_destination_branch__isnull=True) | Q(ncm_destination_branch='')).aggregate(
-                total=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
-            )['total'] or Decimal('0')
-            
-            no_branch_summary = {
-                'ncm_destination_branch': 'Not Assigned',
-                'orders': orders_without_branch_count,
-                'revenue': no_branch_revenue,
-                'ncm_charges': no_branch_charges,
-                'profit': no_branch_profit
-            }
-            branch_with_summary.append(no_branch_summary)
         
         branch_summary = branch_with_summary
         logger.info(f"Final branch_summary: {branch_summary}")
@@ -9547,24 +9559,48 @@ def financial_report_data(request):
         for branch in branch_summary:
             branch['revenue'] = to_float(branch['revenue'])
             branch['ncm_charges'] = to_float(branch['ncm_charges'])
+            branch['expenses'] = to_float(branch['expenses'])
             branch['profit'] = to_float(branch['profit'])
 
-        # Daily summary - use created_at instead of delivered_at
-        daily_summary = list(
-            orders.annotate(date=TruncDate('created_at')).values('date').annotate(
-                orders=Count('id'),
-                revenue=Sum('total_amount'),
-                cod=Sum('total_amount', filter=Q(payment_method='cod', payment_status='paid')),
-                ncm_charges=Sum('delivery_charge'),
-                expenses=Sum('expense_amount'),
-                net_profit=Sum(F('total_amount') - F('delivery_charge') - F('expense_amount'))
-            ).order_by('-date')
-        )
+        # Daily summary - calculate expenses from product cost_price
+        # Group by date and calculate sum of (product_cost_price * quantity) for all items in each order
+        from django.db.models import DecimalField
+        from django.db.models.functions import Coalesce
+        
+        daily_data = {}
+        
+        for order in orders:
+            order_date = order.created_at.date()
+            
+            # Calculate total cost for this order (cost of all items)
+            order_cost = Decimal('0')
+            for item in order.items.all():
+                if item.product and item.product.cost_price:
+                    order_cost += (item.product.cost_price * item.quantity)
+            
+            if order_date not in daily_data:
+                daily_data[order_date] = {
+                    'date': order_date,
+                    'orders': 0,
+                    'revenue': Decimal('0'),
+                    'ncm_charges': Decimal('0'),
+                    'expenses': Decimal('0'),
+                }
+            
+            daily_data[order_date]['orders'] += 1
+            daily_data[order_date]['revenue'] += order.total_amount or Decimal('0')
+            daily_data[order_date]['ncm_charges'] += order.delivery_charge or Decimal('0')
+            daily_data[order_date]['expenses'] += order_cost
+        
+        # Convert to list and calculate net_profit, then convert Decimals to float
+        daily_summary = []
+        for date, data in sorted(daily_data.items(), reverse=True):
+            data['net_profit'] = data['revenue'] - data['ncm_charges'] - data['expenses']
+            daily_summary.append(data)
         
         # Convert Decimals in daily_summary
         for day in daily_summary:
             day['revenue'] = to_float(day['revenue'])
-            day['cod'] = to_float(day['cod'])
             day['ncm_charges'] = to_float(day['ncm_charges'])
             day['expenses'] = to_float(day['expenses'])
             day['net_profit'] = to_float(day['net_profit'])

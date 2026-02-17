@@ -152,7 +152,6 @@
                                 <th>Date</th>
                                 <th>Orders</th>
                                 <th>Revenue</th>
-                                <th>COD</th>
                                 <th>NCM Charges</th>
                                 <th>Expenses</th>
                                 <th>Net Profit</th>
@@ -1089,7 +1088,7 @@
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
-            tr.innerHTML = `<td colspan="7" class="text-center text-muted py-4">
+            tr.innerHTML = `<td colspan="6" class="text-center text-muted py-4">
             No summary data available
         </td>`;
             tbody.appendChild(tr);
@@ -1116,10 +1115,6 @@
             const revenueCell = document.createElement('td');
             revenueCell.textContent = row.revenue ? parseFloat(row.revenue).toFixed(2) : '0.00';
 
-            // COD
-            const codCell = document.createElement('td');
-            codCell.textContent = row.cod ? parseFloat(row.cod).toFixed(2) : '0.00';
-
             // NCM Charges
             const chargesCell = document.createElement('td');
             chargesCell.textContent = row.ncm_charges ? parseFloat(row.ncm_charges).toFixed(2) : '0.00';
@@ -1135,7 +1130,6 @@
             tr.appendChild(dateCell);
             tr.appendChild(ordersCell);
             tr.appendChild(revenueCell);
-            tr.appendChild(codCell);
             tr.appendChild(chargesCell);
             tr.appendChild(expensesCell);
             tr.appendChild(profitCell);
