@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
+{% load static %}
 {% block title %}Create Order - POS{% endblock %}
 
 {% block extra_css %}
@@ -21,6 +22,7 @@
         max-width: 1600px;
         margin: 0 auto;
         padding: 1.5rem;
+        margin-right: 340px;
     }
 
     .pos-card {
@@ -39,6 +41,18 @@
         to {
             opacity: 1;
             transform: translateY(0);
+        }
+    }
+
+    @keyframes shake {
+        0%, 100% {
+            transform: translateX(0);
+        }
+        25% {
+            transform: translateX(-5px);
+        }
+        75% {
+            transform: translateX(5px);
         }
     }
 
@@ -487,10 +501,56 @@
     .product-card {
         border: 2px solid #e2e8f0;
         border-radius: 8px;
-        overflow: hidden;
+        overflow: visible;
         cursor: pointer;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         height: 100%;
+        position: relative;
+    }
+
+    .product-type-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        padding: 0.5rem 0.9rem;
+        border-radius: 20px;
+        margin: 0;
+        width: 100%;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        animation: slideInDown 0.3s ease-out;
+        white-space: nowrap;
+        min-height: 24px;
+    }
+
+    .product-type-badge i {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+    }
+
+    .product-type-badge.simple {
+        background: #10b981;
+        color: white;
+    }
+
+    .product-type-badge.variable {
+        background: #3b82f6;
+        color: white;
+    }
+
+    @keyframes slideInDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 
     .product-card:hover {
@@ -514,6 +574,10 @@
         padding: 0.75rem;
         background: white;
         transition: background 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        min-height: fit-content;
     }
 
     .product-card:hover .product-card-body {
@@ -980,8 +1044,475 @@
         color: #ef4444 !important;
     }
 
+    /* ✨ BEST-SELLING PRODUCTS SIDEBAR STYLES */
+    .bestselling-sidebar {
+        position: fixed;
+        right: 0;
+        top: 0;
+        width: 320px;
+        height: 100vh;
+        background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%);
+        border-left: 2px solid #e2e8f0;
+        box-shadow: -4px 0 20px rgba(0, 0, 0, 0.08);
+        z-index: 999;
+        overflow-y: auto;
+        animation: slideInFromRight 0.5s ease-out;
+        padding-top: 20px;
+    }
+
+    .bestselling-sidebar::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .bestselling-sidebar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .bestselling-sidebar::-webkit-scrollbar-thumb {
+        background: var(--primary);
+        border-radius: 3px;
+    }
+
+    .bestselling-header {
+        padding: 0 15px 15px;
+        border-bottom: 2px solid #e2e8f0;
+        margin-bottom: 15px;
+    }
+
+    .bestselling-header h6 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .trending-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        animation: pulse-badge 2s ease-in-out infinite;
+    }
+
+    .bestselling-products-list {
+        padding: 0 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .bestselling-product-item {
+        background: white;
+        border: 2px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 12px;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+        animation: fadeInUp 0.4s ease-out;
+    }
+
+    .bestselling-product-item::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+        transition: left 0.5s;
+    }
+
+    .bestselling-product-item:hover {
+        border-color: var(--primary);
+        transform: translateY(-4px);
+        box-shadow: 0 12px 20px rgba(102, 126, 234, 0.2);
+    }
+
+    .bestselling-product-item:hover::before {
+        left: 100%;
+    }
+
+    .bestselling-product-img {
+        width: 100%;
+        height: 120px;
+        object-fit: cover;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        transition: transform 0.4s ease;
+    }
+
+    .bestselling-product-item:hover .bestselling-product-img {
+        transform: scale(1.08);
+    }
+
+    .bestselling-product-type-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.3rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 0.35rem 0.65rem;
+        border-radius: 16px;
+        margin-bottom: 6px;
+        width: 100%;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        animation: slideInDown 0.3s ease-out;
+        white-space: nowrap;
+        min-height: 20px;
+    }
+
+    .bestselling-product-type-badge i {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+    }
+
+    .bestselling-product-type-badge.simple {
+        background: #10b981;
+        color: white;
+    }
+
+    .bestselling-product-type-badge.variable {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .bestselling-product-name {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 6px;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .bestselling-product-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .bestselling-product-price {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: var(--primary);
+    }
+
+    .bestselling-product-badge {
+        background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+
+    .bestselling-product-sold {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        margin-bottom: 8px;
+    }
+
+    .bestselling-product-stock {
+        background: #f0fdf4;
+        color: #059669;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .bestselling-product-stock.low-stock {
+        background: #fef3c7;
+        color: #f59e0b;
+    }
+
+    .bestselling-product-stock.out-stock {
+        background: #fee2e2;
+        color: #ef4444;
+    }
+
+    .bestselling-loading {
+        text-align: center;
+        padding: 20px 10px;
+        color: #94a3b8;
+    }
+
+    .bestselling-loading i {
+        font-size: 2rem;
+        margin-bottom: 10px;
+        animation: spin 1s linear infinite;
+    }
+
+    .bestselling-empty {
+        text-align: center;
+        padding: 20px 10px;
+        color: #94a3b8;
+    }
+
+    .bestselling-empty i {
+        font-size: 2.5rem;
+        margin-bottom: 10px;
+        opacity: 0.5;
+    }
+
+    /* BEST-SELLING PRODUCT DETAIL MODAL */
+    #bestsellingProductDetailModal .modal-header {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: white;
+        border: none;
+    }
+
+    #bestsellingProductDetailModal .modal-title {
+        font-weight: 700;
+        font-size: 1.1rem;
+    }
+
+    #bestsellingProductDetailModal .btn-close {
+        filter: brightness(0) invert(1);
+    }
+
+    /* ✨ COMPACT MODAL STYLES */
+    #bestsellingProductDetailModal .modal-dialog {
+        max-width: 420px;
+    }
+
+    #bestsellingProductDetailModal .modal-content {
+        border-radius: 12px;
+        border: none;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    #bestsellingProductDetailModal .modal-body {
+        padding: 1rem;
+    }
+
+    .product-detail-image {
+        width: 100%;
+        max-height: 200px;
+        object-fit: cover;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        border: 1px solid #e2e8f0;
+        display: block;
+    }
+
+    .product-detail-info {
+        background: #f8f9fa;
+        padding: 10px 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+
+    .product-detail-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+        font-size: 0.85rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .product-detail-row:last-child {
+        border-bottom: none;
+    }
+
+    .product-detail-label {
+        color: #64748b;
+        font-weight: 700;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .product-detail-value {
+        color: #1f2937;
+        font-weight: 600;
+        font-size: 0.85rem;
+        text-align: right;
+    }
+
+    #bestsellingProductDetailModal .modal-footer {
+        padding: 0.75rem 1rem;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    #bestsellingProductDetailModal .modal-footer .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+    }
+
+    /* ✨ MODAL VARIANT SELECTION STYLES */
+    .modal-variant-item {
+        background: white;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .modal-variant-item:hover {
+        border-color: var(--primary);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        background: #f8f9ff;
+    }
+
+    .modal-variant-item.selected {
+        border-color: var(--primary);
+        background: linear-gradient(to right, #f0f4ff, white);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+    }
+
+    .modal-variant-check {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #e2e8f0;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+    }
+
+    .modal-variant-item.selected .modal-variant-check {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: white;
+    }
+
+    .modal-variant-content {
+        flex: 1;
+    }
+
+    .modal-variant-name {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 2px;
+    }
+
+    .modal-variant-details {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.75rem;
+    }
+
+    .modal-variant-price {
+        color: var(--primary);
+        font-weight: 700;
+    }
+
+    .modal-variant-stock {
+        color: #64748b;
+    }
+
+    /* ✨ ENHANCED QUANTITY SELECTOR */
+    .qty-btn {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+    }
+
+    .qty-btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+    }
+
+    .qty-input {
+        width: 60px !important;
+        text-align: center;
+        font-weight: 600;
+        padding: 0.4rem 0.5rem !important;
+        height: 32px !important;
+        border-radius: 6px !important;
+    }
+
+    .qty-input:focus {
+        border-color: var(--primary) !important;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+    }
+
+    /* ✨ VARIANT SELECTION GRID */
+    #productDetailVariationsContainer {
+        margin-top: 12px;
+        margin-bottom: 12px;
+    }
+
+    .variants-grid-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        color: #64748b;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 10px;
+    }
+
+    .variants-selection-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 200px;
+        overflow-y: auto;
+        padding-right: 4px;
+    }
+
+    .variants-selection-container::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .variants-selection-container::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 3px;
+    }
+
+    .variants-selection-container::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+    }
+
+    .variants-selection-container::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
+
     /* Mobile responsive */
     @media (max-width: 768px) {
+        .pos-wrapper {
+            margin-right: 0;
+        }
+
+        .bestselling-sidebar {
+            display: none !important;
+        }
+
         .floating-clear-btn {
             width: 50px;
             height: 50px;
@@ -1294,6 +1825,25 @@
         <i class="fas fa-eraser"></i>
         <span class="draft-badge" id="draftBadge">Draft</span>
     </button>
+
+    <!-- ✨ BEST-SELLING PRODUCTS SIDEBAR -->
+    <div class="bestselling-sidebar" id="bestsellingProductsSidebar">
+        <div class="bestselling-header">
+            <h6>
+                <i class="fas fa-fire" style="color: #f59e0b;"></i>
+                Trending
+                <span class="trending-badge">TOP</span>
+            </h6>
+            <small class="text-muted d-block mt-1">Most selling products</small>
+        </div>
+        
+        <div class="bestselling-products-list" id="bestsellingProductsList">
+            <div class="bestselling-loading">
+                <i class="fas fa-spinner"></i>
+                <small>Loading best-sellers...</small>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Product Modal -->
@@ -1492,14 +2042,158 @@
     </div>
 </div>
 
+<!-- ✨ BEST-SELLING PRODUCT DETAIL MODAL -->
+<div class="modal fade" id="bestsellingProductDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-info-circle"></i> Product Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Product Image -->
+                <img id="productDetailImage" src="" alt="Product" class="product-detail-image">
+                
+                <!-- Product Information -->
+                <div class="product-detail-info">
+                    <div class="product-detail-row">
+                        <span class="product-detail-label">Product Name</span>
+                        <span class="product-detail-value" id="productDetailName">-</span>
+                    </div>
+                    <div class="product-detail-row">
+                        <span class="product-detail-label">Category</span>
+                        <span class="product-detail-value" id="productDetailCategory">-</span>
+                    </div>
+                    <div class="product-detail-row">
+                        <span class="product-detail-label">SKU</span>
+                        <span class="product-detail-value" id="productDetailSKU">-</span>
+                    </div>
+                    <div class="product-detail-row">
+                        <span class="product-detail-label">Price</span>
+                        <span class="product-detail-value" id="productDetailPrice" style="color: var(--primary); font-weight: 700;">-</span>
+                    </div>
+                    <div class="product-detail-row">
+                        <span class="product-detail-label">Stock</span>
+                        <span class="product-detail-value" id="productDetailStock">-</span>
+                    </div>
+                    <div class="product-detail-row">
+                        <span class="product-detail-label">Total Sold</span>
+                        <span class="product-detail-value" id="productDetailSold" style="color: #f59e0b; font-weight: 700;">-</span>
+                    </div>
+                    <div class="product-detail-row">
+                        <span class="product-detail-label">Type</span>
+                        <span class="product-detail-value">
+                            <span class="badge bg-info" id="productDetailType">Simple</span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Variants Container -->
+                <div id="productDetailVariationsContainer"></div>
+
+                <!-- Quantity Selector Section -->
+                <div id="detailQuantitySelectorSection" style="display: none; margin-top: 16px; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                    <div class="product-detail-row" style="flex-direction: column; gap: 8px;">
+                        <div class="product-detail-label" style="margin: 0;">
+                            <i class="fas fa-box"></i> Quantity
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <button type="button" class="qty-btn btn btn-sm btn-outline-primary" onclick="decreaseDetailQty()">
+                                <i class="fas fa-minus"></i>
+                            </button>
+                            <input type="number" id="detailProductQty" value="1" min="1" max="999" onchange="validateDetailQty(this)" class="qty-input form-control">
+                            <button type="button" class="qty-btn btn btn-sm btn-outline-primary" onclick="increaseDetailQty()">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                        <div id="detailStockWarning" style="color: #64748b; font-size: 0.75rem; margin-top: 4px;"></div>
+                    </div>
+                </div>
+
+                <!-- Selected Variant Summary -->
+                <div id="detailSelectedVariantSummary" style="display: none; margin-top: 12px; padding: 10px; background: #f0f4ff; border-left: 4px solid var(--primary); border-radius: 6px;">
+                    <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px; text-transform: uppercase; font-weight: 700;">
+                        <i class="fas fa-check-circle"></i> Selected
+                    </div>
+                    <div id="detailSelectedVariantName" style="font-weight: 600; color: #1f2937; font-size: 0.9rem;"></div>
+                    <div id="detailSelectedVariantPrice" style="color: var(--primary); font-weight: 700; font-size: 0.95rem; margin-top: 4px;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Close
+                </button>
+                <button type="button" class="btn btn-success" id="addToCartFromDetailBtn" onclick="addBestsellingProductToCart()" disabled>
+                    <i class="fas fa-cart-plus"></i> Add to Cart
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     let cart = [];
-    let productModal, variationModal, partialPaymentModal, customProductModal;
+    let productModal, variationModal, partialPaymentModal, customProductModal, bestsellingProductDetailModal;
     let isPartialPaymentSelected = false;
     let currentCityDetectionInProgress = false;
     let isProductLoading = false;
     let selectedVariationId = null;
     let customProductImageFile = null;
+    let currentBestsellingProduct = null;
+    let bestsellingProducts = [];
+
+    // SVG generator for beautiful product shape with random color
+    function getRandomProductSVG() {
+        const colors = ["#667eea", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#a855f7", "#f472b6", "#22d3ee"];
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        // Shopping bag SVG
+        return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' rx='16' fill='${color}'/%3E%3Cpath d='M30 40v20a10 10 0 0 0 10 10h20a10 10 0 0 0 10-10V40' fill='white'/%3E%3Crect x='35' y='40' width='30' height='30' rx='6' fill='white'/%3E%3Cpath d='M50 40v-8a8 8 0 0 1 16 0v8' stroke='${color}' stroke-width='2' fill='none'/%3E%3Ccircle cx='50' cy='40' r='3' fill='${color}'/%3E%3C/svg%3E`;
+    }
+
+    // ✨ BEAUTIFUL SOUND EFFECT FOR PRODUCT CLICKS
+    function playProductClickSound() {
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Create oscillator nodes for a pleasant chime effect
+            const now = audioContext.currentTime;
+            const duration = 0.3;
+            
+            // First note - high frequency
+            const osc1 = audioContext.createOscillator();
+            const gain1 = audioContext.createGain();
+            osc1.connect(gain1);
+            gain1.connect(audioContext.destination);
+            
+            osc1.frequency.value = 800; // High note
+            osc1.type = 'sine';
+            gain1.gain.setValueAtTime(0.3, now);
+            gain1.gain.exponentialRampToValueAtTime(0.01, now + duration * 0.7);
+            
+            osc1.start(now);
+            osc1.stop(now + duration);
+            
+            // Second note - medium frequency (slightly delayed)
+            const osc2 = audioContext.createOscillator();
+            const gain2 = audioContext.createGain();
+            osc2.connect(gain2);
+            gain2.connect(audioContext.destination);
+            
+            osc2.frequency.value = 600; // Medium note
+            osc2.type = 'sine';
+            gain2.gain.setValueAtTime(0.25, now + 0.05);
+            gain2.gain.exponentialRampToValueAtTime(0.01, now + duration);
+            
+            osc2.start(now + 0.05);
+            osc2.stop(now + duration);
+            
+        } catch (e) {
+            // Fallback if audio context not supported
+            console.log('Audio context not available');
+        }
+    }
 
     // ✅ LOCAL STORAGE CONFIGURATION
     const STORAGE_KEY = 'pos_order_data';
@@ -1524,7 +2218,446 @@
         }
     }
 
-    // ✅ SAVE FORM DATA TO LOCAL STORAGE
+    // ✨ ========== BEST-SELLING PRODUCTS FUNCTIONS ==========
+
+    // Load best-selling products from API
+    function loadBestsellingProducts() {
+        try {
+            fetch('/api/bestselling-products/?limit=8&days=30')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.products && data.products.length > 0) {
+                        bestsellingProducts = data.products;
+                        displayBestsellingProducts(data.products);
+                    } else {
+                        showBestsellingEmpty();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading best-selling products:', error);
+                    showBestsellingEmpty();
+                });
+        } catch (error) {
+            console.error('Error:', error);
+            showBestsellingEmpty();
+        }
+    }
+
+    // Display best-selling products in sidebar
+    function displayBestsellingProducts(products) {
+        const container = document.getElementById('bestsellingProductsList');
+        if (!container) return;
+
+        if (!products || products.length === 0) {
+            showBestsellingEmpty();
+            return;
+        }
+
+        container.innerHTML = '';
+        
+        products.forEach((product, index) => {
+            const stockStatus = product.stock > 10 ? 'in stock' : product.stock > 0 ? 'low stock' : 'out of stock';
+            const stockClass = product.stock > 10 ? '' : product.stock > 0 ? 'low-stock' : 'out-stock';
+            
+            const productEl = document.createElement('div');
+            productEl.className = 'bestselling-product-item';
+            
+            // Handle click differently based on product type
+            if (product.product_type === 'simple') {
+                // Direct add to cart for simple products
+                productEl.onclick = () => {
+                    playProductClickSound();
+                    addToCart(product.id, product.name, product.price, null, product.sku, 1, false);
+                    showToastNotification(`✅ ${product.name} added to cart!`, 'success');
+                };
+            } else {
+                // Show modal for variable products
+                productEl.onclick = () => {
+                    playProductClickSound();
+                    showBestsellingProductDetail(product);
+                };
+            }
+            
+            const soldText = product.total_sold > 0 ? `${product.total_sold} ${product.total_sold === 1 ? 'sold' : 'sold'}` : 'New';
+            // Always render <img> tag, use fixed SVG for missing images
+            const fixedSVG = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Crect width=%22120%22 height=%22120%22 rx=%2216%22 fill=%22%23667eea%22/%3E%3Cpath d=%22M30 40v20a10 10 0 0 0 10 10h40a10 10 0 0 0 10-10V40%22 fill=%22white%22/%3E%3Crect x=%2235%22 y=%2240%22 width=%2250%22 height=%2250%22 rx=%226%22 fill=%22white%22/%3E%3Cpath d=%22M60 40v-8a8 8 0 0 1 16 0v8%22 stroke=%22%23667eea%22 stroke-width=%222%22 fill=%22none%22/%3E%3Ccircle cx=%2260%22 cy=%2240%22 r=%223%22 fill=%22%23667eea%22/%3E%3C/svg%3E';
+            
+            // Determine product type badge
+            const isVariable = product.product_type === 'variable';
+            const badgeClass = isVariable ? 'variable' : 'simple';
+            const badgeText = isVariable ? 'Variable' : 'Simple';
+            const badgeIcon = isVariable ? 'fa-sitemap' : 'fa-cube';
+            
+            productEl.innerHTML = `
+                <img src="${product.image ? product.image : fixedSVG}" alt="${product.name}" class="bestselling-product-img" onerror="if (!this.src.includes('svg+xml')) this.src='${fixedSVG}';">
+                <div class="bestselling-product-type-badge ${badgeClass}">
+                    <i class="fas ${badgeIcon}"></i> ${badgeText}
+                </div>
+                <div class="bestselling-product-name">${product.name}</div>
+                <div class="bestselling-product-meta">
+                    <div class="bestselling-product-price">रू ${parseFloat(product.price).toFixed(2)}</div>
+                    <div class="bestselling-product-badge">#${index + 1}</div>
+                </div>
+                <div class="bestselling-product-sold">⭐ ${soldText}</div>
+                <div class="bestselling-product-stock ${stockClass}">${stockStatus}</div>
+            `;
+            
+            container.appendChild(productEl);
+        });
+    }
+
+    // Show product detail in modal
+    function showBestsellingProductDetail(product) {
+        // Reset modal state
+        window.selectedDetailVariant = null;
+        document.getElementById('detailProductQty').value = 1;
+        document.getElementById('detailQuantitySelectorSection').style.display = 'none';
+        document.getElementById('detailSelectedVariantSummary').style.display = 'none';
+        
+        currentBestsellingProduct = product;
+        
+        // Set basic info
+        document.getElementById('productDetailName').textContent = product.name;
+        document.getElementById('productDetailCategory').textContent = product.category || 'Uncategorized';
+        document.getElementById('productDetailSKU').textContent = product.sku;
+        document.getElementById('productDetailPrice').textContent = `रू ${parseFloat(product.price).toFixed(2)}`;
+        document.getElementById('productDetailSold').textContent = `${product.total_sold} ${product.total_sold === 1 ? 'sale' : 'sales'}`;
+        
+        // Set stock status
+        let stockText = '';
+        let stockColor = '#10b981';
+        if (product.stock > 10) {
+            stockText = `${product.stock} in stock`;
+            stockColor = '#10b981';
+        } else if (product.stock > 0) {
+            stockText = `Only ${product.stock} left`;
+            stockColor = '#f59e0b';
+        } else {
+            stockText = 'Out of stock';
+            stockColor = '#ef4444';
+        }
+        const stockEl = document.getElementById('productDetailStock');
+        stockEl.textContent = stockText;
+        stockEl.style.color = stockColor;
+        stockEl.style.fontWeight = product.stock > 0 ? '600' : '700';
+        
+        // Set type badge
+        const typeEl = document.getElementById('productDetailType');
+        if (product.product_type === 'simple') {
+            typeEl.textContent = 'Simple Product';
+            typeEl.className = 'badge bg-info';
+        } else {
+            typeEl.textContent = 'Variable Product';
+            typeEl.className = 'badge bg-warning text-dark';
+        }
+        
+        // Set image
+        const imageUrl = product.image || getRandomProductSVG();
+        const imgEl = document.getElementById('productDetailImage');
+        imgEl.src = imageUrl;
+        imgEl.onerror = function() { this.src = getRandomProductSVG(); };
+        
+        // Load variations if variable product
+        const variationsContainer = document.getElementById('productDetailVariationsContainer');
+        const addBtn = document.getElementById('addToCartFromDetailBtn');
+        
+        if (product.product_type === 'variable') {
+            addBtn.disabled = true; // Disable until variant is selected
+            loadProductVariationsForDetail(product.id, variationsContainer);
+        } else {
+            // Simple product - enable button and show quantity selector immediately
+            addBtn.disabled = false;
+            variationsContainer.innerHTML = '';
+            document.getElementById('detailQuantitySelectorSection').style.display = 'block';
+            document.getElementById('detailSelectedVariantSummary').style.display = 'none';
+        }
+        
+        // Show modal
+        bestsellingProductDetailModal.show();
+    }
+
+    // Load variations for detail view
+    function loadProductVariationsForDetail(productId, container) {
+        fetch(`/api/product/${productId}/variations/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.variations && data.variations.length > 0) {
+                    let variantHTML = `
+                        <div>
+                            <div class="variants-grid-label">
+                                <i class="fas fa-layer-group"></i> Select Variant
+                            </div>
+                            <div class="variants-selection-container">
+                                ${data.variations.map((v, index) => {
+                                    const stockStatus = v.stock > 10 ? 'In Stock' : 
+                                                       v.stock > 0 ? 'Low Stock' : 
+                                                       'Out of Stock';
+                                    const stockClass = v.stock > 10 ? 'in-stock' : 
+                                                      v.stock > 0 ? 'low-stock' : 
+                                                      'out-stock';
+                                    const disabled = v.stock === 0 ? 'disabled' : '';
+                                    
+                                    return `
+                                        <div class="modal-variant-item ${index === 0 ? 'selected' : ''}" 
+                                             data-variant-id="${v.id}"
+                                             data-price="${v.price}"
+                                             data-stock="${v.stock}"
+                                             data-sku="${v.sku}"
+                                             data-name="${v.variation_name}"
+                                             onclick="${v.stock > 0 ? 'selectVariantInModal(this)' : ''}"
+                                             style="${v.stock === 0 ? 'opacity: 0.5; cursor: not-allowed; pointer-events: none;' : 'cursor: pointer;'}">
+                                            <div class="modal-variant-check">
+                                                <i class="fas fa-check" style="display: ${index === 0 ? 'block' : 'none'};"></i>
+                                            </div>
+                                            <div class="modal-variant-content">
+                                                <div class="modal-variant-name">${v.variation_name}</div>
+                                                <div class="modal-variant-details">
+                                                    <span class="modal-variant-price">रू ${parseFloat(v.price).toFixed(2)}</span>
+                                                    <span class="modal-variant-stock" style="color: ${v.stock > 10 ? '#10b981' : v.stock > 0 ? '#f59e0b' : '#ef4444'}; font-weight: 600;">
+                                                        ${stockStatus}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = variantHTML;
+                    
+                    // Select first available variant by default
+                    setTimeout(() => {
+                        const firstVariant = container.querySelector('.modal-variant-item[data-stock]:not([data-stock="0"])');
+                        if (firstVariant) {
+                            selectVariantInModal(firstVariant);
+                        } else {
+                            // All out of stock - select first anyway to show info
+                            const firstItem = container.querySelector('.modal-variant-item');
+                            if (firstItem) {
+                                updateDetailSelectedVariantSummary(firstItem, true);
+                            }
+                        }
+                    }, 100);
+                } else {
+                    container.innerHTML = '';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading variations:', error);
+                container.innerHTML = '';
+            });
+    }
+
+    // Select variant in modal with enhanced feedback
+    function selectVariantInModal(element) {
+        // Don't allow selection if out of stock
+        if (element.hasAttribute('disabled') || element.getAttribute('data-stock') == 0) {
+            return;
+        }
+        
+        // Remove selected from all variants
+        document.querySelectorAll('.modal-variant-item').forEach(item => {
+            item.classList.remove('selected');
+            const checkIcon = item.querySelector('.modal-variant-check i');
+            if (checkIcon) {
+                checkIcon.style.display = 'none';
+            }
+        });
+        
+        // Add selected to clicked
+        element.classList.add('selected');
+        const checkIcon = element.querySelector('.modal-variant-check i');
+        if (checkIcon) {
+            checkIcon.style.display = 'block';
+        }
+        
+        // Store selected variant data globally
+        window.selectedDetailVariant = {
+            id: element.getAttribute('data-variant-id'),
+            price: element.getAttribute('data-price'),
+            stock: parseInt(element.getAttribute('data-stock')),
+            sku: element.getAttribute('data-sku'),
+            name: element.getAttribute('data-name')
+        };
+        
+        // Update UI
+        updateDetailSelectedVariantSummary(element, false);
+        
+        // Show quantity selector
+        const qtySelector = document.getElementById('detailQuantitySelectorSection');
+        if (qtySelector) {
+            qtySelector.style.display = 'block';
+            document.getElementById('detailProductQty').value = 1;
+            updateDetailStockWarning();
+        }
+        
+        // Enable add button
+        const addBtn = document.getElementById('addToCartFromDetailBtn');
+        if (addBtn) {
+            addBtn.disabled = false;
+        }
+    }
+
+    // Update selected variant summary display
+    function updateDetailSelectedVariantSummary(element, isOutOfStock) {
+        const summaryDiv = document.getElementById('detailSelectedVariantSummary');
+        const nameEl = document.getElementById('detailSelectedVariantName');
+        const priceEl = document.getElementById('detailSelectedVariantPrice');
+        
+        if (nameEl) {
+            nameEl.textContent = element.getAttribute('data-name');
+        }
+        if (priceEl) {
+            const price = parseFloat(element.getAttribute('data-price'));
+            priceEl.textContent = `रू ${price.toFixed(2)}`;
+        }
+        
+        if (summaryDiv) {
+            summaryDiv.style.display = 'block';
+        }
+    }
+
+    // Update stock warning in quantity selector
+    function updateDetailStockWarning() {
+        const warningEl = document.getElementById('detailStockWarning');
+        if (!warningEl || !window.selectedDetailVariant) return;
+        
+        const stock = window.selectedDetailVariant.stock;
+        const qty = parseInt(document.getElementById('detailProductQty').value) || 1;
+        
+        if (qty > stock) {
+            warningEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Only ${stock} available`;
+            warningEl.style.color = '#ef4444';
+        } else if (stock <= 5 && stock > 0) {
+            warningEl.innerHTML = `<i class="fas fa-info-circle"></i> Only ${stock} left in stock`;
+            warningEl.style.color = '#f59e0b';
+        } else if (stock === 0) {
+            warningEl.innerHTML = `<i class="fas fa-times-circle"></i> Out of stock`;
+            warningEl.style.color = '#ef4444';
+        } else {
+            warningEl.innerHTML = '';
+        }
+    }
+
+    // Quantity control functions for detail modal
+    function increaseDetailQty() {
+        const input = document.getElementById('detailProductQty');
+        const currentValue = parseInt(input.value || 1);
+        const maxStock = window.selectedDetailVariant ? window.selectedDetailVariant.stock : 999;
+        
+        if (currentValue < maxStock) {
+            input.value = currentValue + 1;
+            updateDetailStockWarning();
+        } else {
+            // Shake effect to indicate max reached
+            input.style.animation = 'none';
+            setTimeout(() => {
+                input.style.animation = 'shake 0.3s ease';
+            }, 10);
+            setTimeout(() => {
+                input.style.animation = 'none';
+            }, 310);
+        }
+    }
+
+    function decreaseDetailQty() {
+        const input = document.getElementById('detailProductQty');
+        const current = parseInt(input.value || 1);
+        if (current > 1) {
+            input.value = current - 1;
+            updateDetailStockWarning();
+        }
+    }
+
+    function validateDetailQty(input) {
+        let value = parseInt(input.value);
+        const maxStock = window.selectedDetailVariant ? window.selectedDetailVariant.stock : 999;
+        
+        if (isNaN(value) || value < 1) {
+            input.value = 1;
+        } else if (value > maxStock) {
+            input.value = maxStock;
+        }
+        
+        updateDetailStockWarning();
+    }
+
+    // Add best-selling product to cart
+    function addBestsellingProductToCart() {
+        if (!currentBestsellingProduct) return;
+        
+        const product = currentBestsellingProduct;
+        const quantityInput = document.getElementById('detailProductQty');
+        const quantity = parseInt(quantityInput.value) || 1;
+        
+        // Check if product type is variable
+        if (product.product_type === 'variable') {
+            // Variable product - check if variant is selected
+            if (!window.selectedDetailVariant) {
+                showToastNotification('Please select a variant', 'warning');
+                return;
+            }
+            
+            // Add variant to cart
+            const variant = window.selectedDetailVariant;
+            addToCart(
+                product.id,
+                product.name,
+                variant.price,
+                variant.id,
+                variant.sku,
+                quantity,
+                false,
+                variant.name || variant.variation_name || variant.sku
+            );
+            
+            showToastNotification(
+                `✅ ${product.name} (${variant.name}) added to cart!`,
+                'success'
+            );
+        } else {
+            // Simple product - add directly with quantity
+            addToCart(
+                product.id,
+                product.name,
+                product.price,
+                null,
+                product.sku,
+                quantity
+            );
+            
+            showToastNotification(
+                `✅ ${product.name} added to cart!`,
+                'success'
+            );
+        }
+        
+        // Reset modal state
+        window.selectedDetailVariant = null;
+        document.getElementById('detailProductQty').value = 1;
+        document.getElementById('detailQuantitySelectorSection').style.display = 'none';
+        document.getElementById('detailSelectedVariantSummary').style.display = 'none';
+        
+        // Close modal
+        bestsellingProductDetailModal.hide();
+    }
+
+    // Show empty state
+    function showBestsellingEmpty() {
+        const container = document.getElementById('bestsellingProductsList');
+        if (container) {
+            container.innerHTML = `
+                <div class="bestselling-empty">
+                    <i class="fas fa-box-open"></i>
+                    <small>No best-sellers yet</small>
+                </div>
+            `;
+        }
+    }
+
+    // ✅ HIDE FLOATING BUTTON
+
     function saveFormData() {
         try {
             // Safe element getter with fallback
@@ -1996,6 +3129,10 @@
         variationModal = new bootstrap.Modal(document.getElementById('variationModal'));
         partialPaymentModal = new bootstrap.Modal(document.getElementById('partialPaymentModal'));
         customProductModal = new bootstrap.Modal(document.getElementById('customProductModal'));
+        bestsellingProductDetailModal = new bootstrap.Modal(document.getElementById('bestsellingProductDetailModal'));
+
+        // ✨ Load best-selling products on page load
+        loadBestsellingProducts();
 
         // ==================== CITY SEARCH FUNCTIONALITY ====================
         const citySearchInput = document.getElementById('citySearchInput');
@@ -2197,7 +3334,10 @@
             const type = card.dataset.type;
             const sku = card.dataset.sku || '';
 
+            console.log('🎯 Product Clicked:', { id, name, type, price, sku });
+
             if (type === 'variable') {
+                console.log('📦 Variable product - showing variations modal');
                 loadVariationsDropdown(id, name);
                 productModal.hide();
                 
@@ -2205,7 +3345,12 @@
                     variationModal.show();
                 }, 300);
             } else {
-                addToCart(id, name, price, null, sku);
+                // Simple product - add directly to cart and close modal
+                console.log('✅ Simple product - adding to cart directly');
+                addToCart(id, name, price, null, sku, 1, false);
+                showToastNotification(`✅ ${name} added to cart!`, 'success');
+                
+                // Close modal immediately after adding simple product
                 productModal.hide();
             }
         });
@@ -2456,11 +3601,21 @@
     }
 
     function renderProductCard(p) {
+        window.getRandomProductSVG = function() {
+            const colors = ["#667eea", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#a855f7", "#f472b6", "#22d3ee"];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' rx='16' fill='${color}'/%3E%3Cpath d='M30 40v20a10 10 0 0 0 10 10h20a10 10 0 0 0 10-10V40' fill='white'/%3E%3Crect x='35' y='40' width='30' height='30' rx='6' fill='white'/%3E%3Cpath d='M50 40v-8a8 8 0 0 1 16 0v8' stroke='${color}' stroke-width='2' fill='none'/%3E%3Ccircle cx='50' cy='40' r='3' fill='${color}'/%3E%3C/svg%3E`;
+        };
         const img = p.image
-            ? `<img src="${p.image}" class="product-img">`
-            : `<div class="bg-light d-flex align-items-center justify-content-center" style="height: 180px;">
-         <i class="fas fa-image fa-3x text-muted"></i>
-       </div>`;
+            ? `<img src="${p.image}" class="product-img" onerror="this.src=window.getRandomProductSVG()">`
+            : `<img src="${window.getRandomProductSVG()}" class="product-img">`;
+
+        const isVariable = p.product_type === 'variable';
+        const badgeClass = isVariable ? 'variable' : 'simple';
+        const badgeText = isVariable ? 'Variable' : 'Simple';
+        const badgeIcon = isVariable ? 'fa-sitemap' : 'fa-cube';
+
+        console.log(`🏷️  Product: ${p.name} | Type: ${p.product_type} (isVariable: ${isVariable})`);
 
         return `
     <div class="col-md-3 product-item">
@@ -2469,16 +3624,23 @@
            data-name="${escapeHtml(p.name)}"
            data-price="${p.price}"
            data-type="${p.product_type}"
-           data-sku="${escapeHtml(p.sku || '')}">
+           data-sku="${escapeHtml(p.sku || '')}"
+           style="cursor: pointer;" 
+           title="${isVariable ? 'Click to select variation' : 'Direct add to cart'}">
+        
         ${img}
         <div class="product-card-body">
+          <!-- ✨ PROMINENT PRODUCT TYPE BADGE -->
+          <div class="product-type-badge ${badgeClass}">
+            <i class="fas ${badgeIcon}"></i> ${badgeText}
+          </div>
+          
           <h6 class="mb-1 small fw-bold">${escapeHtml(p.name)}</h6>
           <p class="text-muted mb-2" style="font-size: 0.7rem;">${escapeHtml(p.sku || '')}</p>
           <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
             <span class="fw-bold text-success">रू ${p.price}</span>
             <div>
               ${p.stock > 0 ? `<span class="badge bg-success">In Stock: ${p.stock}</span>` : '<span class="badge bg-danger">Out of Stock</span>'}
-              ${p.product_type === 'variable' ? '<span class="badge bg-info ms-1">Has Variations</span>' : ''}
             </div>
           </div>
         </div>
@@ -2534,7 +3696,8 @@
                             const stockText = v.stock > 10 ? `${v.stock} In Stock` : 
                                              v.stock > 0 ? `Only ${v.stock} left` : 'Out of Stock';
                             
-                            const imageSrc = v.image || 'https://via.placeholder.com/80x80?text=No+Image';
+const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22%3E%3Crect fill=%22%23e2e8f0%22 width=%2280%22 height=%2280%22/%3E%3C/svg%3E';
+                            const imageSrc = v.image || placeholderImg;
                             const displayName = v.variation_name || v.sku;
                             
                             return `
@@ -2551,7 +3714,7 @@
                                     
                                     <div class="variation-image-box">
                                         <img src="${imageSrc}" alt="${escapeHtml(displayName)}" 
-                                             onerror="this.src='https://via.placeholder.com/80x80?text=No+Image'">
+                                             onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22%3E%3Crect fill=%22%23e2e8f0%22 width=%2280%22 height=%2280%22/%3E%3C/svg%3E'">
                                     </div>
                                     
                                     <div class="variation-info">
@@ -2617,16 +3780,17 @@
         
         const varId = parseInt(selectedItem.dataset.variationId);
         const price = parseFloat(selectedItem.dataset.price) || 0;
-        const variantName = selectedItem.dataset.varname || selectedItem.dataset.sku || '';
+        const sku = selectedItem.dataset.sku || '';
+        const variantName = selectedItem.dataset.varname || '';
         
-        addToCart(productId, productName, price, varId, variantName);
+        addToCart(productId, productName, price, varId, sku, 1, false, variantName);
         variationModal.hide();
     }
 
-    function addToCart(id, name, price, varId, sku, qty = 1, isCustom = false) {
+    function addToCart(id, name, price, varId, sku, qty = 1, isCustom = false, variantName = '') {
         const existing = cart.find(i => i.id === id && i.varId === varId);
         if (existing) existing.qty += qty;
-        else cart.push({ id, varId, name, sku, price, qty, isCustom });
+        else cart.push({ id, varId, name, sku, price, qty, isCustom, variantName });
         updateCart();
         saveFormData();
     }
@@ -2646,9 +3810,10 @@
         let html = '';
         cart.forEach((item, i) => {
             const customBadge = item.isCustom ? ' <span class="badge bg-warning text-dark" style="font-size:0.65rem;"><i class="fas fa-bolt"></i> CUSTOM</span>' : '';
+            const variantDisplay = item.varId ? (item.variantName ? `<span class="badge bg-info">${escapeHtml(item.variantName)}</span>` : (item.sku ? `<span class="badge bg-secondary">${escapeHtml(item.sku)}</span>` : '-')) : '-';
             html += `<tr id="row-${i}">
       <td><strong>${escapeHtml(item.name)}</strong>${customBadge}<br><small class="text-muted">रू ${item.price} each</small></td>
-      <td>${item.varId ? (item.sku ? `<span class="badge bg-secondary">${escapeHtml(item.sku)}</span>` : '-') : '-'}</td>
+      <td>${variantDisplay}</td>
       <td>
         <div class="qty-control">
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="changeQty(${i}, -1)"><i class="fas fa-minus"></i></button>

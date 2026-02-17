@@ -4,6 +4,8 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 import random
 import string
+from decimal import Decimal
+from .decimal_utils import safe_decimal, validate_decimal_fields
 
 # ✅ Remove this line:
 # from django.contrib.auth.models import User
@@ -128,6 +130,34 @@ class Customer(models.Model):
         ordering = ['-created_at']
 
 
+class OrderQuerySet(models.QuerySet):
+    """Custom QuerySet for Order model to handle decimal field issues gracefully"""
+    
+    def safe_recent(self, limit=6):
+        """
+        Safely load recent orders, deferring decimal fields to prevent
+        decimal.InvalidOperation errors from corrupted database values.
+        """
+        decimal_fields_to_defer = [
+            'discount_amount', 'shipping_charge', 'delivery_charge', 
+            'expense_amount', 'tax_percent', 'total_amount',
+            'partial_amount_paid', 'remaining_amount', 'cod_collected', 
+            'package_weight'
+        ]
+        return self.defer(*decimal_fields_to_defer).order_by('-created_at')[:limit]
+
+
+class OrderManager(models.Manager):
+    """Custom manager for Order model"""
+    
+    def get_queryset(self):
+        return OrderQuerySet(self.model, using=self._db)
+    
+    def safe_recent(self, limit=6):
+        """Get recent orders safely without decimal conversion issues"""
+        return self.get_queryset().safe_recent(limit)
+
+
 class Order(models.Model):
     LOGISTICS_CHOICES = [
         ('ncm', 'NCM'),
@@ -143,6 +173,10 @@ class Order(models.Model):
         ('in', 'IN'),
         ('out', 'OUT'),
     ]
+    
+    # ✅ CUSTOM MANAGER: Use for safe decimal field handling
+    objects = OrderManager()
+    
     in_out = models.CharField(max_length=3, choices=IN_OUT_CHOICES, default='in')
     
     logistics = models.CharField(max_length=50, choices=LOGISTICS_CHOICES, blank=True, null=True)
@@ -255,6 +289,12 @@ class Order(models.Model):
         tax_amount = (after_discount * self.tax_percent) / 100
         self.total_amount = after_discount + tax_amount + self.shipping_charge
     
+    def save(self, *args, **kwargs):
+        """Validate and sanitize decimal fields before saving."""
+        # Validate all decimal fields to prevent InvalidOperation errors
+        self, _ = validate_decimal_fields(self)
+        super().save(*args, **kwargs)
+    
     class Meta:
         ordering = ['-created_at']
 
@@ -279,6 +319,9 @@ class OrderItem(models.Model):
 
     def save(self, *args, **kwargs):
         self.total = self.price * self.quantity
+        # Validate all decimal fields to prevent InvalidOperation errors
+        from .decimal_utils import validate_order_item_decimal_fields
+        self, _ = validate_order_item_decimal_fields(self)
         super().save(*args, **kwargs)
 
 

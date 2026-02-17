@@ -77,6 +77,7 @@ urlpatterns = [
     path('api/search-products/', views.api_search_products, name='api_search_products'),
     path('api/product/<int:product_id>/', views.api_get_product, name='api_get_product'),
     path('api/product/<int:product_id>/variations/', views.api_get_product_variations, name='api_get_product_variations'),
+    path('api/bestselling-products/', views.api_bestselling_products, name='api_bestselling_products'),
      # Export URLs
     path('orders/export/selected/', views.export_selected_orders_excel, name='export_selected_orders_excel'),
     path('orders/<int:order_id>/export/', views.export_order_details, name='export_order_details'),

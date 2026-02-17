@@ -19,6 +19,7 @@ from .models import (Product, Order, OrderItem, Category, Customer,
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
+from .decimal_utils import safe_decimal, validate_decimal_fields
 from django.db import IntegrityError, transaction, connection
 from django.utils import timezone
 import traceback
@@ -201,7 +202,26 @@ def dashboard_view(request):
         total=Sum('total_amount'))['total'] or 0
     
     # Recent orders
-    recent_orders = orders.order_by('-created_at')[:5]
+    from decimal import Decimal, InvalidOperation
+    import logging
+    try:
+        recent_orders = list(orders.order_by('-created_at')[:5])
+        # Defensive: sanitize decimals to avoid InvalidOperation in template
+        for order in recent_orders:
+            for field in [
+                'total_amount', 'discount_amount', 'shipping_charge', 'tax_percent',
+                'partial_amount_paid', 'remaining_amount', 'cod_collected', 'delivery_charge', 'expense_amount']:
+                val = getattr(order, field, None)
+                try:
+                    if val is None or val == '' or (isinstance(val, str) and not val.strip()):
+                        setattr(order, field, Decimal('0'))
+                    else:
+                        setattr(order, field, Decimal(str(val)))
+                except (InvalidOperation, ValueError, TypeError):
+                    setattr(order, field, Decimal('0'))
+    except Exception as e:
+        logging.error(f"Error fetching recent orders: {e}")
+        recent_orders = []
     
     # Low stock products (use custom thresholds if set, fallback to stock <= 10)
     low_stock_products = products.filter(
@@ -255,7 +275,6 @@ def dashboard_view(request):
         'low_stock_alert_count': low_stock_alert_count,
         'monthly_sales': json.dumps(monthly_sales),
     }
-    
     return render(request, 'dashboard.html', context)
 @login_required
 @permission_required('can_view_products')
@@ -1986,16 +2005,20 @@ from django.db.models import Prefetch
 @login_required
 @permission_required('can_view_orders')
 def orders_list(request):
-    """Display list of orders with filters and statistics"""
+    """Display list of orders with filters and statistics - using pure ORM queries"""
     from datetime import timedelta
     from django.utils import timezone
     from django.db.models import Q, Sum
-    from decimal import Decimal, InvalidOperation
+    from decimal import Decimal
+    import pytz
     
-    # Get all orders initially
-    orders = Order.objects.select_related('customer', 'created_by', 'status_setup', 'payment_setup', 'payment_status_setup').filter(
+    # ✅ FIXED: Use pure ORM queries with select_related for performance
+    orders = Order.objects.filter(
         is_deleted=False
-    ).order_by('-created_at')
+    ).select_related(
+        'customer', 'created_by', 'status_setup', 
+        'payment_setup', 'payment_status_setup'
+    ).prefetch_related('items').order_by('-created_at')
     
     # GET FILTER PARAMETERS - DEFAULT TO 'last_2_days'
     date_filter = request.GET.get('date_range', 'last_2_days')
@@ -2004,8 +2027,9 @@ def orders_list(request):
     payment_filter = request.GET.get('payment', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
-    logistics_filter = request.GET.get('logistics_status', '')  # NEW: Logistics filter
+    logistics_filter = request.GET.get('logistics_status', '')
     
+    # ✅ FIXED: Apply filters using ORM (much more efficient than Python list filtering)
     # Search filter
     if search_query:
         orders = orders.filter(
@@ -2023,20 +2047,13 @@ def orders_list(request):
     if payment_filter:
         orders = orders.filter(payment_status=payment_filter)
     
-    # FIXED: LOGISTICS STATUS FILTER
+    # Logistics filter
     if logistics_filter == 'sent':
-        # Show only orders successfully sent to NCM (must have an NCM ID)
-        orders = orders.filter(ncm_order_id__isnull=False)
-        
+        orders = orders.exclude(ncm_order_id__isnull=True)
     elif logistics_filter == 'not_sent':
-        # Show ALL orders that haven't been sent to NCM yet
-        # REMOVED: Q(logistics='ncm') requirement
-        # This now includes orders with logistics=NULL or no NCM ID
         orders = orders.filter(ncm_order_id__isnull=True)
     
-    # DATE RANGE FILTER
-    # Use Nepali timezone for date calculations
-    import pytz
+    # DATE RANGE FILTER using ORM
     nepali_tz = pytz.timezone('Asia/Kathmandu')
     now_nepal = timezone.now().astimezone(nepali_tz)
     today_nepal = now_nepal.date()
@@ -2050,84 +2067,55 @@ def orders_list(request):
         yesterday = today_nepal - timedelta(days=1)
         orders = orders.filter(created_at__date=yesterday)
     elif date_filter == 'last_2_days':
-        # Start of yesterday 00:00:00 to end of today 23:59:59 in Nepali time
-        start_of_yesterday = datetime.combine(today_nepal - timedelta(days=1), datetime.min.time())
-        end_of_today = datetime.combine(today_nepal, datetime.max.time())
-        start_of_yesterday = nepali_tz.localize(start_of_yesterday)
-        end_of_today = nepali_tz.localize(end_of_today)
-        # Convert to UTC for DB filtering
-        start_of_yesterday_utc = start_of_yesterday.astimezone(pytz.UTC)
-        end_of_today_utc = end_of_today.astimezone(pytz.UTC)
-        orders = orders.filter(created_at__gte=start_of_yesterday_utc, created_at__lte=end_of_today_utc)
+        start = today_nepal - timedelta(days=1)
+        orders = orders.filter(created_at__date__gte=start)
     elif date_filter == 'last_7_days':
         start = today_nepal - timedelta(days=7)
-        orders = orders.filter(created_at__date__gte=start, created_at__date__lte=today_nepal)
+        orders = orders.filter(created_at__date__gte=start)
     elif date_filter == 'last_30_days':
         start = today_nepal - timedelta(days=30)
-        orders = orders.filter(created_at__date__gte=start, created_at__date__lte=today_nepal)
+        orders = orders.filter(created_at__date__gte=start)
     elif date_filter == 'this_month':
-        orders = orders.filter(created_at__year=today_nepal.year, created_at__month=today_nepal.month)
+        orders = orders.filter(
+            created_at__year=today_nepal.year,
+            created_at__month=today_nepal.month
+        )
     elif date_filter == 'last_month':
         first_day_this_month = today_nepal.replace(day=1)
         last_day_last_month = first_day_this_month - timedelta(days=1)
         first_day_last_month = last_day_last_month.replace(day=1)
-        orders = orders.filter(created_at__date__gte=first_day_last_month, created_at__date__lte=last_day_last_month)
+        orders = orders.filter(
+            created_at__date__gte=first_day_last_month,
+            created_at__date__lte=last_day_last_month
+        )
     elif date_filter == 'this_year':
         orders = orders.filter(created_at__year=today_nepal.year)
     elif date_filter == 'custom' and start_date and end_date:
-        orders = orders.filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
-    elif date_filter == 'all':
-        pass
-    
-    # FIX: Convert queryset to list and fix decimals
-    orders_list = list(orders)
-    for order in orders_list:
-        # SYNC STATUS WITH SETUP
-        order = sync_order_status_setup(order)
-        
         try:
-            order.discount_amount = order.discount_amount if order.discount_amount is not None else Decimal('0.00')
-            order.shipping_charge = order.shipping_charge if order.shipping_charge is not None else Decimal('0.00')
-            order.tax_percent = order.tax_percent if order.tax_percent is not None else Decimal('0.00')
-            order.total_amount = order.total_amount if order.total_amount is not None else Decimal('0.00')
-            order.partial_amount_paid = order.partial_amount_paid if order.partial_amount_paid is not None else Decimal('0.00')
-            order.remaining_amount = order.remaining_amount if order.remaining_amount is not None else Decimal('0.00')
-        except (InvalidOperation, ValueError, TypeError):
-            order.discount_amount = Decimal('0.00')
-            order.shipping_charge = Decimal('0.00')
-            order.tax_percent = Decimal('0.00')
-            order.total_amount = Decimal('0.00')
-            order.partial_amount_paid = Decimal('0.00')
-            order.remaining_amount = Decimal('0.00')
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+        except ValueError:
+            pass
+    elif date_filter == 'all':
+        pass  # No date filter
     
-    # Statistics
-    total_orders = len(orders_list)
-    total_revenue = sum(o.total_amount for o in orders_list)
-    pending_orders = len([o for o in orders_list if o.order_status == 'pending'])
-    confirmed_orders = len([o for o in orders_list if o.order_status == 'confirmed'])
-    dispatched_orders = len([o for o in orders_list if o.order_status == 'dispatched'])
+    # ✅ FIXED: Calculate statistics using ORM aggregations (no decimal issues)
+    total_orders = orders.count()
+    total_revenue = orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    pending_orders = orders.filter(order_status='pending').count()
+    confirmed_orders = orders.filter(order_status='confirmed').count()
+    dispatched_orders = orders.filter(order_status='dispatched').count()
     
-    # Delivered today (Nepali time)
-    delivered_today = Order.objects.filter(
+    # Delivered today (using date filter)
+    delivered_today = orders.filter(
         order_status='delivered',
         delivered_at__date=today_nepal
     ).count()
     
-    # Get first product name for each order
-    order_products = {}
-    for order in orders_list:
-        try:
-            first_item = order.items.first()
-            if first_item:
-                order_products[order.id] = first_item.product_name
-            else:
-                order_products[order.id] = "No products"
-        except:
-            order_products[order.id] = "No products"
-    
     # Pagination
     from django.core.paginator import Paginator
-    paginator = Paginator(orders_list, 25)
+    paginator = Paginator(orders, 25)
     page_number = request.GET.get('page')
     orders_page = paginator.get_page(page_number)
     
@@ -2146,7 +2134,6 @@ def orders_list(request):
         'start_date': start_date,
         'end_date': end_date,
         'logistics_filter': logistics_filter,
-        'order_products': order_products,
     }
     
     return render(request, 'orders_list.html', context)
@@ -2257,14 +2244,23 @@ def order_create(request):
                 customer.landmark = landmark
                 customer.save()
 
-                last_order = Order.objects.filter(order_number__startswith="T").order_by("-id").first()
-                if last_order:
-                    try:
-                        n = int(last_order.order_number.replace("T", ""))
-                    except ValueError:
-                        n = last_order.id
-                    order_number = f"T{n+1:03d}"
-                else:
+                # ✅ FIXED: Generate order number using ORM (no raw SQL)
+                from .decimal_utils import safe_decimal
+                try:
+                    last_order = Order.objects.filter(
+                        order_number__startswith='T'
+                    ).order_by('-id').first()
+                    
+                    if last_order:
+                        try:
+                            n = int(last_order.order_number.replace("T", ""))
+                            order_number = f"T{n+1:03d}"
+                        except (ValueError, AttributeError):
+                            order_number = "T001"
+                    else:
+                        order_number = "T001"
+                except Exception as e:
+                    logger.error(f"Error generating order number: {str(e)}")
                     order_number = "T001"
 
                 order_items_json = request.POST.get("order_items") or "[]"
@@ -2274,9 +2270,17 @@ def order_create(request):
                     messages.error(request, "No products in cart.")
                     return redirect("order_create")
 
+                # ✅ FIXED: Use safe_decimal for all external numeric input
+                discount_amount_safe = safe_decimal(discount_amount, max_digits=10, decimal_places=2)
+                shipping_charge_safe = safe_decimal(shipping_charge, max_digits=10, decimal_places=2)
+                tax_percent_safe = safe_decimal(tax_percent, max_digits=5, decimal_places=2)
+                total_amount_safe = safe_decimal(total_amount, max_digits=10, decimal_places=2)
+                
                 # SET PAYMENT STATUS BASED ON PARTIAL PAYMENT
                 if is_partial_payment:
                     payment_status = "partial"
+                    partial_amount_paid = safe_decimal(partial_amount_paid, max_digits=10, decimal_places=2)
+                    remaining_amount = safe_decimal(remaining_amount, max_digits=10, decimal_places=2)
 
                 # UPDATED: Use branch_city from City model, added in_out field, and Setup fields
                 order = Order.objects.create(
@@ -2297,10 +2301,10 @@ def order_create(request):
                     payment_setup=payment_setup,
                     status_setup=status_setup,
                     payment_status_setup=payment_status_setup,
-                    discount_amount=discount_amount,
-                    shipping_charge=shipping_charge,
-                    tax_percent=tax_percent,
-                    total_amount=total_amount,
+                    discount_amount=discount_amount_safe,
+                    shipping_charge=shipping_charge_safe,
+                    tax_percent=tax_percent_safe,
+                    total_amount=total_amount_safe,
                     notes=notes,
                     # ADD PARTIAL PAYMENT FIELDS
                     is_partial_payment=is_partial_payment,
@@ -2361,7 +2365,24 @@ def order_create(request):
 
     # GET REQUEST - SHOW FORM
     users = User.objects.filter(is_active=True).order_by("username")
-    recent_orders = Order.objects.filter(is_deleted=False).order_by("-created_at")[:6]
+    
+    # FIX: Handle decimal conversion errors in recent orders
+    try:
+        # Convert queryset to list and fix any invalid decimals
+        recent_orders_qs = Order.objects.filter(is_deleted=False).order_by("-created_at")[:6]
+        recent_orders = []
+        for order in recent_orders_qs:
+            try:
+                order = fix_order_decimals(order)
+                recent_orders.append(order)
+            except (InvalidOperation, ValueError, TypeError) as e:
+                # Log the error but continue with other orders
+                logger.error(f"Error fetching recent orders: {e}")
+                continue
+    except Exception as e:
+        # If all else fails, use an empty list
+        logger.error(f"Error fetching recent orders: {e}")
+        recent_orders = []
     
     # GET CITIES FROM DATABASE
     cities = City.objects.filter(is_active=True).order_by('name')
@@ -3119,6 +3140,25 @@ def order_edit(request, order_id):
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
     payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
 
+    # ✅ SAFE: Handle decimal InvalidOperation errors by deferring problematic decimal fields
+    # Some orders have corrupted decimal values in total_amount and other fields
+    decimal_fields_to_defer = [
+        'discount_amount', 'shipping_charge', 'delivery_charge', 
+        'expense_amount', 'tax_percent', 'total_amount',
+        'partial_amount_paid', 'remaining_amount', 'cod_collected', 
+        'package_weight'
+    ]
+    
+    try:
+        recent_orders = Order.objects.defer(
+            *decimal_fields_to_defer
+        ).order_by("-created_at")[:6]
+        # Ensure the queryset is evaluated
+        list(recent_orders)
+    except Exception as e:
+        logger.error(f"Error fetching recent orders even with defer: {e}")
+        recent_orders = []
+
     context = {
         "order": order,
         "order_items": order_items,
@@ -3127,7 +3167,7 @@ def order_edit(request, order_id):
         "statuses": statuses,
         "order_sources": order_sources,
         "payment_methods": payment_methods,
-        "recent_orders": Order.objects.all().order_by("-created_at")[:6],
+        "recent_orders": recent_orders,
         "cities": cities,
         "payment_setups": payment_setups,
         "status_setups": status_setups,
@@ -3553,6 +3593,97 @@ def api_get_product_variations(request, product_id):
             "variations": []
         }, status=500)
 
+
+@login_required
+@require_http_methods(["GET"])
+def api_bestselling_products(request):
+    """
+    Returns best-selling products based on order items.
+    Parameters:
+    - limit: Number of products to return (default: 8)
+    - days: Days back to consider for best-sellers (default: 30)
+    """
+    try:
+        limit = int(request.GET.get("limit", 8))
+        days = int(request.GET.get("days", 30))
+        
+        # Calculate date range
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        days_ago = timezone.now() - timedelta(days=days)
+        
+        # Get best-selling products based on order items
+        bestselling_products = (
+            Product.objects
+            .filter(is_active=True, is_deleted=False, orderitem__order__created_at__gte=days_ago)
+            .annotate(total_sold=Count('orderitem'))
+            .order_by('-total_sold')[:limit]
+        )
+        
+        # If not enough results, add popular products by stock/price
+        if bestselling_products.count() < limit:
+            remaining_count = limit - bestselling_products.count()
+            product_ids = list(bestselling_products.values_list('id', flat=True))
+            
+            additional_products = (
+                Product.objects
+                .filter(is_active=True, is_deleted=False)
+                .exclude(id__in=product_ids)
+                .order_by('-stock_quantity')[:remaining_count]
+            )
+            
+            bestselling_products = list(bestselling_products) + list(additional_products)
+        
+        data = []
+        for p in bestselling_products:
+            # Get stock
+            try:
+                stock = p.stock_quantity if hasattr(p, 'stock_quantity') else (p.stock if hasattr(p, 'stock') else 0)
+            except AttributeError:
+                stock = 0
+            
+            # Get SKU
+            try:
+                sku = p.sku if hasattr(p, 'sku') and p.sku else p.slug
+            except AttributeError:
+                sku = p.slug
+            
+            # Get total sold count
+            try:
+                total_sold = p.total_sold if hasattr(p, 'total_sold') else 0
+            except:
+                total_sold = 0
+            
+            data.append({
+                "id": p.id,
+                "name": p.name,
+                "price": str(p.price) if p.price else "0",
+                "stock": stock,
+                "product_type": p.product_type,
+                "image": p.image.url if p.image else None,
+                "sku": sku,
+                "total_sold": total_sold,
+                "category": p.category.name if p.category else "Uncategorized"
+            })
+        
+        return JsonResponse({
+            "success": True,
+            "products": data,
+            "count": len(data)
+        })
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        
+        return JsonResponse({
+            "success": False,
+            "error": str(e),
+            "products": []
+        }, status=500)
+
+
 @login_required
 @permission_required('can_export_data')
 @require_http_methods(["POST"])
@@ -3615,25 +3746,24 @@ def export_selected_orders_excel(request):
             cell.alignment = center_alignment
             cell.border = border
         
-        # Get order items using RAW SQL
-        with connection.cursor() as cursor:
-            placeholders = ','.join(['%s'] * len(order_ids))
-            cursor.execute(f"""
-                SELECT order_id, product_sku, product_name, quantity, price
-                FROM dashboard_orderitem
-                WHERE order_id IN ({placeholders})
-                ORDER BY order_id, id
-            """, order_ids)
-            
-            all_items = cursor.fetchall()
+        # ✅ FIXED: Get order items using ORM instead of raw SQL
+        from django.db.models import Prefetch
+        order_items_qs = OrderItem.objects.filter(
+            order_id__in=order_ids
+        ).select_related('order').order_by('order_id', 'id')
         
         # Group items by order_id
         items_by_order = {}
-        for item in all_items:
-            order_id = item[0]
+        for item in order_items_qs:
+            order_id = item.order_id
             if order_id not in items_by_order:
                 items_by_order[order_id] = []
-            items_by_order[order_id].append(item)
+            items_by_order[order_id].append({
+                'product_sku': item.product_sku,
+                'product_name': item.product_name,
+                'quantity': item.quantity,
+                'price': item.price,
+            })
         
         # ============= WRITE ALL ROWS - ONE ROW PER ORDER =============
         current_row = 2
@@ -3649,10 +3779,10 @@ def export_selected_orders_excel(request):
                 total_prices = []
                 
                 for item in order_items:
-                    product_sku = item[1] or "N/A"
-                    product_name = item[2] or "N/A"
-                    quantity = item[3] or 0
-                    price = float(item[4]) if item[4] else 0.00
+                    product_sku = item['product_sku'] or "N/A"
+                    product_name = item['product_name'] or "N/A"
+                    quantity = item['quantity'] or 0
+                    price = float(item['price']) if item['price'] else 0.00
                     total_price = quantity * price
                     
                     product_names.append(f"{product_name} (Qty: {quantity})")
@@ -3758,24 +3888,16 @@ def export_order_details(request, order_id):
             cell.alignment = center_alignment
             cell.border = border
         
-        # Get items using RAW SQL
-        from django.db import connection
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT product_sku, product_name, quantity, price
-                FROM dashboard_orderitem
-                WHERE order_id = %s
-            """, [order.id])
-            
-            items = cursor.fetchall()
+        # ✅ FIXED: Get items using ORM instead of raw SQL
+        items = order.items.all()
         
         # ============= ROWS 2+: ONE ROW PER ITEM (WITH ALL DATA) =============
         current_row = 2
         for idx, item in enumerate(items, 1):
-            product_sku = item[0] or "N/A"
-            product_name = item[1] or "N/A"
-            quantity = item[2] or 0
-            price = float(item[3]) if item[3] else 0.00
+            product_sku = item.product_sku or "N/A"
+            product_name = item.product_name or "N/A"
+            quantity = item.quantity or 0
+            price = float(item.price) if item.price else 0.00
             total_price = quantity * price
             
             # All data in one row - UPDATED FIELDS
@@ -9280,6 +9402,12 @@ def financial_report_data(request):
         elif period == 'today':
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        elif period == 'yesterday':
+            # Get yesterday's date range
+            yesterday = now - timedelta(days=1)
+            start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+            logger.info(f"Yesterday period: {start} to {end}")
         elif period == 'week':
             # Get start of this week (Monday at 00:00)
             days_since_monday = now.weekday()

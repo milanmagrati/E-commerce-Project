@@ -65,40 +65,30 @@
     </div>
 
     <!-- Filters -->
-    <form class="row g-3 mb-4" id="reportFilterForm">
-        <div class="col-md-2">
-            <select class="form-select" name="period" id="periodSelect">
-                <option value="all" selected>All Time</option>
-                <option value="today">Today</option>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-                <option value="custom">Custom</option>
-            </select>
-        </div>
-        <div class="col-md-2" id="customStartDiv" style="display:none;">
-            <input type="date" class="form-control" name="start_date" id="startDateInput">
-        </div>
-        <div class="col-md-2" id="customEndDiv" style="display:none;">
-            <input type="date" class="form-control" name="end_date" id="endDateInput">
-        </div>
-        <div class="col-md-2">
-            <button type="submit" class="btn btn-primary"><i class="fas fa-filter"></i> Filter</button>
-        </div>
-        <div class="col-md-2">
-            <button type="button" class="btn btn-outline-secondary" id="compareBtn"><i class="fas fa-exchange-alt"></i>
-                Compare Periods</button>
-        </div>
-        <div class="col-md-2 text-end">
-            <div class="btn-group">
-                <button type="button" class="btn btn-outline-success" onclick="exportTable('excel')"><i
-                        class="fas fa-file-excel"></i> Excel</button>
-                <button type="button" class="btn btn-outline-danger" onclick="exportTable('pdf')"><i
-                        class="fas fa-file-pdf"></i> PDF</button>
-                <button type="button" class="btn btn-outline-dark" onclick="window.print()"><i class="fas fa-print"></i>
-                    Print</button>
+    <div class="filter-container mb-4">
+        <div class="filter-bar">
+            <div class="quick-filters">
+                <button type="button" class="filter-btn" data-period="today">Today</button>
+                <button type="button" class="filter-btn" data-period="yesterday">Yesterday</button>
+                <button type="button" class="filter-btn" data-period="week">Last 7 Days</button>
+                <button type="button" class="filter-btn active" data-period="month">Last 30 Days</button>
             </div>
+            <div class="custom-date-range">
+                <input type="date" class="date-input" id="startDateInput" placeholder="Start Date">
+                <span class="date-separator">to</span>
+                <input type="date" class="date-input" id="endDateInput" placeholder="End Date">
+            </div>
+            <button type="button" class="btn-apply" id="applyFilterBtn">Apply</button>
         </div>
-    </form>
+        <div class="export-buttons">
+            <button type="button" class="btn btn-outline-success btn-sm" onclick="exportTable('excel')"><i
+                    class="fas fa-file-excel"></i> Excel</button>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="exportTable('pdf')"><i
+                    class="fas fa-file-pdf"></i> PDF</button>
+            <button type="button" class="btn btn-outline-dark btn-sm" onclick="window.print()"><i class="fas fa-print"></i>
+                Print</button>
+        </div>
+    </div>
 
     <!-- Charts -->
     <div class="row mb-4">
@@ -129,7 +119,7 @@
     <div class="row mb-4">
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-table"></i> NCM Delivery Revenue
+                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-table"></i> NCM Delivery Revenue <span class="table-badge" id="ncmRevenueCount">0</span>
                 </div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="ncmRevenueTable">
@@ -154,7 +144,7 @@
         </div>
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-table"></i> Daily Summary</div>
+                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-table"></i> Daily Summary <span class="table-badge" id="dailySummaryCount">0</span></div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="dailySummaryTable">
                         <thead class="table-light">
@@ -177,7 +167,7 @@
         </div>
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-warning text-white"><i class="fas fa-table"></i> Payment Status
+                <div class="card-header bg-gradient-warning text-white"><i class="fas fa-table"></i> Payment Status <span class="table-badge" id="paymentStatusCount">0</span>
                 </div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="paymentStatusTable">
@@ -197,7 +187,7 @@
         </div>
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-info text-white"><i class="fas fa-table"></i> Branch-wise Summary
+                <div class="card-header bg-gradient-info text-white"><i class="fas fa-table"></i> Branch-wise Summary <span class="table-badge" id="branchSummaryCount">0</span>
                 </div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="branchSummaryTable">
@@ -435,28 +425,192 @@
     }
 
     /* Filter form */
-    #reportFilterForm {
+    .filter-container {
         background: #fff;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.06);
-        padding: 18px 12px 6px 12px;
+        border-radius: 14px;
+        box-shadow: 0 2px 12px rgba(102, 126, 234, 0.08);
+        padding: 20px 24px;
         margin-bottom: 32px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 20px;
     }
 
-    #reportFilterForm .form-select,
-    #reportFilterForm .form-control {
+    .filter-bar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex: 1;
+        flex-wrap: wrap;
+    }
+
+    .quick-filters {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .filter-btn {
+        padding: 8px 18px;
+        border: 2px solid #e5e7eb;
+        background: #f9fafb;
+        color: #6b7280;
+        border-radius: 24px;
+        font-weight: 500;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        white-space: nowrap;
+        min-width: fit-content;
+    }
+
+    .filter-btn:hover {
+        border-color: #667eea;
+        background: #f3f4f6;
+        color: #667eea;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    }
+
+    .filter-btn.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #fff;
+        border-color: #667eea;
+        box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+    }
+
+    .filter-btn.active:hover {
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        transform: translateY(-3px);
+    }
+
+    .custom-date-range {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .date-input {
+        padding: 8px 14px;
+        border: 2px solid #e5e7eb;
         border-radius: 8px;
-        font-size: 1rem;
+        font-size: 0.95rem;
+        color: #4b5563;
+        background: #f9fafb;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        min-width: 140px;
     }
 
-    #reportFilterForm .btn {
+    .date-input:focus {
+        outline: none;
+        border-color: #667eea;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .date-input::placeholder {
+        color: #9ca3af;
+    }
+
+    .date-separator {
+        color: #9ca3af;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+
+    .btn-apply {
+        padding: 9px 28px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #fff;
+        border: none;
+        border-radius: 24px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+        white-space: nowrap;
+    }
+
+    .btn-apply:hover {
+        box-shadow: 0 6px 24px rgba(102, 126, 234, 0.4);
+        transform: translateY(-2px);
+    }
+
+    .btn-apply:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    .export-buttons {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .export-buttons .btn {
         border-radius: 8px;
         font-weight: 600;
-        font-size: 1rem;
+        font-size: 0.95rem;
+        padding: 8px 14px;
     }
 
-    #reportFilterForm .btn-group .btn {
-        font-size: 0.98rem;
+    @media (max-width: 1024px) {
+        .filter-container {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 16px;
+        }
+
+        .filter-bar {
+            width: 100%;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .custom-date-range {
+            width: 100%;
+        }
+
+        .export-buttons {
+            width: 100%;
+            justify-content: flex-start;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .filter-container {
+            padding: 16px 12px;
+        }
+
+        .quick-filters {
+            gap: 8px;
+        }
+
+        .filter-btn {
+            padding: 6px 14px;
+            font-size: 0.9rem;
+        }
+
+        .date-input {
+            min-width: 120px;
+            padding: 6px 10px;
+            font-size: 0.9rem;
+        }
+
+        .btn-apply {
+            padding: 6px 20px;
+            font-size: 0.9rem;
+        }
+
+        .export-buttons .btn {
+            padding: 6px 10px;
+            font-size: 0.85rem;
+        }
     }
 
     /* Card and Table Styling */
@@ -472,6 +626,95 @@
         font-weight: 600;
         font-size: 1.1rem;
         letter-spacing: 0.2px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+    }
+
+    /* Table row count badge */
+    .table-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.95);
+        color: #667eea;
+        padding: 6px 16px;
+        border-radius: 25px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        margin-left: auto;
+        border: 2px solid rgba(255, 255, 255, 0.5);
+        min-width: 60px;
+        height: 34px;
+        text-align: center;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        letter-spacing: 0.5px;
+        animation: badgePulse 0.6s ease-in-out;
+    }
+
+    @keyframes badgePulse {
+        0% {
+            transform: scale(0.85);
+            opacity: 0.7;
+        }
+        50% {
+            transform: scale(1.05);
+        }
+        100% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    .table-badge::before {
+        content: '';
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background: #10b981;
+        border-radius: 50%;
+        margin-right: 8px;
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+        animation: badgeDot 2s ease-in-out infinite;
+    }
+
+    @keyframes badgeDot {
+        0%, 100% {
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+        }
+        50% {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 1);
+        }
+    }
+
+    /* Color-specific badges */
+    .bg-gradient-ncm ~ .table-badge,
+    .card-header.bg-gradient-ncm .table-badge {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(240, 245, 255, 1) 100%);
+        color: #667eea;
+        border: 2px solid rgba(102, 126, 234, 0.3);
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.25);
+    }
+
+    .card-header.bg-gradient-primary .table-badge {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(240, 245, 255, 1) 100%);
+        color: #667eea;
+        border: 2px solid rgba(102, 126, 234, 0.3);
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.25);
+    }
+
+    .card-header.bg-gradient-warning .table-badge {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(255, 250, 240, 1) 100%);
+        color: #f59e0b;
+        border: 2px solid rgba(245, 158, 11, 0.3);
+        box-shadow: 0 4px 20px rgba(245, 158, 11, 0.25);
+    }
+
+    .card-header.bg-gradient-info .table-badge {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(240, 250, 255, 1) 100%);
+        color: #3b82f6;
+        border: 2px solid rgba(59, 130, 246, 0.3);
+        box-shadow: 0 4px 20px rgba(59, 130, 246, 0.25);
     }
 
     .table {
@@ -557,6 +800,27 @@
 
         .card-header {
             font-size: 1rem;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .card-header i {
+            margin-right: 8px;
+        }
+
+        .table-badge {
+            margin-left: auto;
+            width: auto;
+            height: 32px;
+            font-size: 0.9rem;
+            padding: 4px 14px;
+            min-width: 56px;
+        }
+
+        .table-badge::before {
+            width: 6px;
+            height: 6px;
+            margin-right: 6px;
         }
 
         .card-body.text-center h3 {
@@ -742,6 +1006,10 @@
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = '';
 
+        // Update badge count
+        const badgeEl = document.getElementById('paymentStatusCount');
+        if (badgeEl) badgeEl.textContent = data && data.length > 0 ? data.length : '0';
+
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
             tr.innerHTML = `<td colspan="3" class="text-center text-muted py-4">No payment data available</td>`;
@@ -772,6 +1040,10 @@
         const table = document.getElementById('branchSummaryTable');
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = '';
+
+        // Update badge count
+        const badgeEl = document.getElementById('branchSummaryCount');
+        if (badgeEl) badgeEl.textContent = data && data.length > 0 ? data.length : '0';
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
@@ -810,6 +1082,10 @@
         const table = document.getElementById('dailySummaryTable');
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = '';
+
+        // Update badge count
+        const badgeEl = document.getElementById('dailySummaryCount');
+        if (badgeEl) badgeEl.textContent = data && data.length > 0 ? data.length : '0';
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
@@ -871,6 +1147,10 @@
         const table = document.getElementById('ncmRevenueTable');
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = '';
+
+        // Update badge count
+        const badgeEl = document.getElementById('ncmRevenueCount');
+        if (badgeEl) badgeEl.textContent = data && data.length > 0 ? data.length : '0';
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
@@ -1098,45 +1378,66 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        // Filter form logic
-        const form = document.getElementById('reportFilterForm');
-        const periodSelect = document.getElementById('periodSelect');
-        const customStartDiv = document.getElementById('customStartDiv');
-        const customEndDiv = document.getElementById('customEndDiv');
-        
-        periodSelect.addEventListener('change', function () {
-            if (this.value === 'custom') {
-                customStartDiv.style.display = 'block';
-                customEndDiv.style.display = 'block';
+        // Filter button logic
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        const applyBtn = document.getElementById('applyFilterBtn');
+        const startDateInput = document.getElementById('startDateInput');
+        const endDateInput = document.getElementById('endDateInput');
+
+        // Handle quick filter button clicks
+        filterButtons.forEach(btn => {
+            btn.addEventListener('click', function () {
+                // Remove active class from all buttons
+                filterButtons.forEach(b => b.classList.remove('active'));
+                // Add active class to clicked button
+                this.classList.add('active');
+
+                const period = this.getAttribute('data-period');
+                console.log('📊 Filter button clicked:', period);
+
+                // Clear date inputs when quick filter is selected
+                startDateInput.value = '';
+                endDateInput.value = '';
+
+                // Load report with selected period
+                loadReport({ period: period });
+            });
+        });
+
+        // Handle Apply button click
+        applyBtn.addEventListener('click', function () {
+            const startDate = startDateInput.value;
+            const endDate = endDateInput.value;
+
+            if (startDate && endDate) {
+                // Remove active class from all quick filter buttons when using custom range
+                filterButtons.forEach(b => b.classList.remove('active'));
+
+                console.log('📊 Apply custom date range:', { startDate, endDate });
+
+                // Load report with custom date range
+                loadReport({
+                    period: 'custom',
+                    start_date: startDate,
+                    end_date: endDate
+                });
             } else {
-                customStartDiv.style.display = 'none';
-                customEndDiv.style.display = 'none';
-                
-                // Auto-load report when non-custom period is selected
-                console.log('📊 Period changed to:', this.value);
-                const params = {
-                    period: this.value,
-                    start_date: '',
-                    end_date: ''
-                };
-                loadReport(params);
+                showErrorAlert('Please select both start and end dates');
             }
         });
-        
-        form.addEventListener('submit', function (e) {
-            e.preventDefault();
-            const params = {
-                period: periodSelect.value,
-                start_date: document.getElementById('startDateInput').value,
-                end_date: document.getElementById('endDateInput').value
-            };
-            console.log('📊 Filter button clicked with params:', params);
-            loadReport(params);
+
+        // Allow Enter key to apply custom date filter
+        [startDateInput, endDateInput].forEach(input => {
+            input.addEventListener('keypress', function (e) {
+                if (e.key === 'Enter' && startDateInput.value && endDateInput.value) {
+                    applyBtn.click();
+                }
+            });
         });
-        
-        // Initial load — pass the currently selected period
-        console.log('📊 Initial load with period:', periodSelect.value);
-        loadReport({ period: periodSelect.value });
+
+        // Initial load with default "Last 30 Days" period
+        console.log('📊 Initial load with default period');
+        loadReport({ period: 'month' });
     });
 </script>
 {% endblock %}
