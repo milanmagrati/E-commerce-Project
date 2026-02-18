@@ -1885,27 +1885,33 @@
                     <div class="col-md-2">
                         <label class="form-label">Status</label>
                         <select name="status_setup" id="statusSetup" class="form-select">
-                            <option value="">Select Order Status</option>
                             {% for setup in status_setups %}
-                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                                <option value="{{ setup.id }}" 
+                                    {% if setup.name|lower == 'confirmed' %}selected data-default="true"{% endif %}>
+                                    {{ setup.name }}
+                                </option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Payment Status</label>
                         <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
-                            <option value="">Select Payment Status</option>
                             {% for setup in payment_status_setups %}
-                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                                <option value="{{ setup.id }}"
+                                    {% if setup.name|lower == 'pending' %}selected data-default="true"{% endif %}>
+                                    {{ setup.name }}
+                                </option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Payment</label>
                         <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
-                            <option value="">Select Payment Method</option>
                             {% for setup in payment_setups %}
-                                <option value="{{ setup.id }}">{{ setup.name }}</option>
+                                <option value="{{ setup.id }}"
+                                    {% if setup.name|lower == 'cash on delivery' %}selected data-default="true"{% endif %}>
+                                    {{ setup.name }}
+                                </option>
                             {% endfor %}
                         </select>
                     </div>
@@ -2940,6 +2946,8 @@
                 orderNotes: getValueSafe('orderNotes'),
                 customerPhone: getValueSafe('customerPhone'),
                 paymentSetup: getValueSafe('paymentSetup'),
+                statusSetup: getValueSafe('statusSetup'),
+                paymentStatusSetup: getValueSafe('paymentStatusSetup'),
                 taxPercent: getValueSafe('taxPercent') || '0',
                 inOut: getValueSafe('inOutSelect'),
                 orderFrom: getQueryValueSafe('select[name="order_from"]'),
@@ -3002,6 +3010,8 @@
             setValueSafe('orderNotes', formData.orderNotes);
             setValueSafe('customerPhone', formData.customerPhone);
             setValueSafe('paymentSetup', formData.paymentSetup);
+            setValueSafe('statusSetup', formData.statusSetup);
+            setValueSafe('paymentStatusSetup', formData.paymentStatusSetup);
             setValueSafe('taxPercent', formData.taxPercent || '0');
             setValueSafe('inOutSelect', formData.inOut || 'in');
             
@@ -3379,6 +3389,39 @@
         });
     }
 
+    // ✅ INITIALIZE DEFAULT VALUES FOR ORDER FORM
+    function initializeDefaultValues() {
+        const statusSetup = document.getElementById('statusSetup');
+        const paymentStatusSetup = document.getElementById('paymentStatusSetup');
+        const paymentSetup = document.getElementById('paymentSetup');
+
+        // Find and select the default option for Status: "confirmed"
+        const confirmedOption = Array.from(statusSetup.options).find(opt => 
+            opt.dataset.default === 'true' || opt.textContent.toLowerCase().includes('confirmed')
+        );
+        if (confirmedOption) {
+            statusSetup.value = confirmedOption.value;
+        }
+
+        // Find and select the default option for Payment Status: "pending"
+        const pendingOption = Array.from(paymentStatusSetup.options).find(opt => 
+            opt.dataset.default === 'true' || opt.textContent.toLowerCase().includes('pending')
+        );
+        if (pendingOption) {
+            paymentStatusSetup.value = pendingOption.value;
+        }
+
+        // Find and select the default option for Payment Method: "cash on delivery"
+        const cashOption = Array.from(paymentSetup.options).find(opt => 
+            opt.dataset.default === 'true' || opt.textContent.toLowerCase().includes('cash on delivery')
+        );
+        if (cashOption) {
+            paymentSetup.value = cashOption.value;
+            // Trigger payment change handler if exists
+            handlePaymentChange();
+        }
+    }
+
     // ✅ DOM CONTENT LOADED
     document.addEventListener('DOMContentLoaded', function () {
         productModal = new bootstrap.Modal(document.getElementById('productModal'));
@@ -3536,6 +3579,8 @@
             showFloatingButton();
         } else {
             hideFloatingButton();
+            // ✅ INITIALIZE DEFAULT VALUES WHEN NO DRAFT EXISTS
+            initializeDefaultValues();
         }
 
         setupAutoSave();

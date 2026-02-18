@@ -42,7 +42,7 @@ User = get_user_model()
 
 
 def fix_order_decimals(order):
-    """Fix any NULL decimal values in order"""
+    """Fix any NULL decimal values in order and recalculate totals"""
     if order.discount_amount is None:
         order.discount_amount = Decimal("0")
     if order.shipping_charge is None:
@@ -51,6 +51,24 @@ def fix_order_decimals(order):
         order.tax_percent = Decimal("0")
     if order.total_amount is None:
         order.total_amount = Decimal("0")
+    
+    # ✅ RECALCULATE TOTAL AMOUNT FROM ITEMS
+    try:
+        subtotal = sum(item.total for item in order.items.all()) or Decimal('0.00')
+        after_discount = subtotal - (order.discount_amount or Decimal('0'))
+        tax_amount = (after_discount * (order.tax_percent or Decimal('0'))) / 100
+        calculated_total = after_discount + tax_amount + (order.shipping_charge or Decimal('0'))
+        
+        # Update total_amount if it was capped or incorrect
+        if order.total_amount != calculated_total:
+            order.total_amount = calculated_total
+            order.save()  # Save the corrected total
+    except Exception as e:
+        # If calculation fails, at least set to zero instead of capped value
+        import logging
+        logging.error(f"Error recalculating order {order.id} totals: {e}")
+        if order.total_amount > Decimal('99999999.99'):
+            order.total_amount = Decimal('0')
     
     # ENHANCED PARTIAL PAYMENT DECIMAL FIXES
     if order.partial_amount_paid is None:
@@ -2119,6 +2137,15 @@ def orders_list(request):
     page_number = request.GET.get('page')
     orders_page = paginator.get_page(page_number)
     
+    # ✅ FIX DECIMAL CORRUPTION IN ORDERS BEFORE DISPLAY
+    # This ensures amounts are always correct without needing to visit detail page
+    for order in orders_page.object_list:
+        try:
+            fix_order_decimals(order)
+        except Exception as e:
+            import logging
+            logging.error(f"Error fixing decimals for order {order.id}: {e}")
+    
     context = {
         'orders': orders_page,
         'total_orders': total_orders,
@@ -2714,13 +2741,21 @@ def order_detail(request, order_id):
     after_discount = subtotal - (order.discount_amount or Decimal('0'))
     tax_amount = (after_discount * (order.tax_percent or Decimal('0'))) / 100
     
+    # ✅ RECALCULATE TOTAL CORRECTLY
+    calculated_total = after_discount + tax_amount + (order.shipping_charge or Decimal('0'))
+    
+    # If stored total is wrong (capped at 99999999.99), use calculated value
+    if order.total_amount != calculated_total:
+        order.total_amount = calculated_total
+        order.save()
+    
     # CALCULATE PARTIAL PAYMENT INFO
     is_partial_payment = order.is_partial_payment or order.payment_status == 'partial'
     partial_amount_paid = order.partial_amount_paid or Decimal('0.00')
     
     # Auto-calculate remaining amount if not set
     if is_partial_payment and order.remaining_amount is None:
-        remaining_amount = (order.total_amount or Decimal('0.00')) - partial_amount_paid
+        remaining_amount = (calculated_total or Decimal('0.00')) - partial_amount_paid
         if remaining_amount < 0:
             remaining_amount = Decimal('0.00')
     else:
@@ -2733,6 +2768,7 @@ def order_detail(request, order_id):
         'subtotal': subtotal,
         'after_discount': after_discount,
         'tax_amount': tax_amount,
+        'calculated_total': calculated_total,  # ✅ Use recalculated total
         
         # ENHANCED PARTIAL PAYMENT INFO
         'is_partial_payment': is_partial_payment,
@@ -2749,9 +2785,9 @@ def order_detail(request, order_id):
     }
     
     # Calculate percentage for progress bar
-    if is_partial_payment and order.total_amount and order.total_amount > 0:
+    if is_partial_payment and calculated_total and calculated_total > 0:
         try:
-            percentage = (partial_amount_paid / order.total_amount) * 100
+            percentage = (partial_amount_paid / calculated_total) * 100
             context['partial_payment_percentage'] = min(100, max(0, float(percentage)))
         except:
             context['partial_payment_percentage'] = 0
@@ -9709,3 +9745,252 @@ def financial_report_data(request):
             "error": str(e),
             "message": "Failed to load financial report data. Please try again later."
         }, status=500)
+
+
+# ==================== STAFF PERFORMANCE ANALYTICS ====================
+
+@login_required(login_url='login')
+def staff_performance_analytics(request):
+    """Staff Performance Analytics Dashboard"""
+    
+    # Get filter params from query string
+    period = request.GET.get('period', 'this_month')
+    staff_filter = request.GET.get('staff_filter', 'all')
+    
+    # Calculate date range based on period
+    today = timezone.now().date()
+    
+    if period == 'today':
+        start_date = today
+        end_date = today
+        date_range_text = f"Today ({today.strftime('%d %b %Y')})"
+    elif period == 'last_30_days':
+        start_date = today - timedelta(days=30)
+        end_date = today
+        date_range_text = f"{start_date.strftime('%d %b')} - {end_date.strftime('%d %b %Y')}"
+    elif period == 'ytd':
+        start_date = today.replace(month=1, day=1)
+        end_date = today
+        current_year = today.year
+        date_range_text = f"YTD {current_year} ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b %Y')})"
+    else:  # this_month
+        start_date = today.replace(day=1)
+        end_date = today
+        date_range_text = start_date.strftime('%B %Y')
+    
+    # Base queryset for orders in date range
+    orders_qs = Order.objects.filter(
+        created_at__date__gte=start_date,
+        created_at__date__lte=end_date,
+        is_deleted=False
+    )
+    
+    # Filter by staff if specified
+    if staff_filter != 'all':
+        try:
+            staff_id = int(staff_filter)
+            orders_qs = orders_qs.filter(created_by_id=staff_id)
+        except (ValueError, TypeError):
+            pass
+    
+    # ========== KPI CALCULATIONS ==========
+    total_orders = orders_qs.count()
+    
+    # Successful deliveries
+    successful_orders = orders_qs.filter(
+        Q(status='delivered') | Q(order_status='delivered')
+    ).count()
+    success_rate = (successful_orders / total_orders * 100) if total_orders > 0 else 0
+    
+    # Returns
+    return_requests = ReturnRequest.objects.filter(
+        order__created_at__date__gte=start_date,
+        order__created_at__date__lte=end_date,
+        is_deleted=False
+    )
+    if staff_filter != 'all':
+        try:
+            staff_id = int(staff_filter)
+            return_requests = return_requests.filter(order__created_by_id=staff_id)
+        except (ValueError, TypeError):
+            pass
+    
+    returns_count = return_requests.count()
+    return_rate = (returns_count / total_orders * 100) if total_orders > 0 else 0
+    
+    # Revenue - use aggregation with larger max_digits for aggregated totals
+    revenue_result = orders_qs.aggregate(Sum('total_amount'))
+    total_revenue = safe_decimal(
+        revenue_result.get('total_amount__sum') or 0,
+        max_digits=12,  # Allow aggregated sums to exceed single order limit
+        decimal_places=2
+    )
+    
+    # Products sold
+    total_products_sold = OrderItem.objects.filter(
+        order__in=orders_qs
+    ).count()
+    
+    # Active staff count
+    active_staff = User.objects.filter(
+        is_active=True,
+        is_deleted=False,
+        role__in=['sales', 'warehouse']
+    ).count()
+    
+    # ========== STAFF PERFORMANCE DATA ==========
+    staff_members = User.objects.filter(
+        is_active=True,
+        is_deleted=False,
+        role__in=['sales', 'warehouse']
+    ).order_by('first_name')
+    
+    staff_performance_data = []
+    
+    for staff in staff_members:
+        staff_orders = orders_qs.filter(created_by=staff)
+        staff_delivered = staff_orders.filter(
+            Q(status='delivered') | Q(order_status='delivered')
+        ).count()
+        staff_returns = return_requests.filter(order__created_by=staff).count()
+        
+        # Use aggregation for revenue instead of loop
+        staff_revenue_result = staff_orders.aggregate(Sum('total_amount'))
+        staff_revenue = safe_decimal(
+            staff_revenue_result.get('total_amount__sum') or 0,
+            max_digits=12,  # Allow aggregated sums to exceed single order limit
+            decimal_places=2
+        )
+        
+        staff_success_rate = (staff_delivered / staff_orders.count() * 100) if staff_orders.count() > 0 else 0
+        
+        staff_performance_data.append({
+            'id': staff.id,
+            'name': staff.get_full_name() or staff.username,
+            'role': staff.get_role_display(),
+            'total_orders': staff_orders.count(),
+            'successful_orders': staff_delivered,
+            'return_count': staff_returns,
+            'revenue': staff_revenue,
+            'success_rate': round(staff_success_rate, 2),
+        })
+    
+    # Sort by success rate descending
+    staff_performance_data.sort(key=lambda x: x['success_rate'], reverse=True)
+    
+    # ========== TOP PERFORMING PRODUCTS ==========
+    top_products_data = OrderItem.objects.filter(
+        order__in=orders_qs
+    ).values('product__name').annotate(
+        units_sold=Count('id'),
+        total_revenue=Sum('total')
+    ).order_by('-total_revenue')[:5]
+    
+    top_products = []
+    for i, item in enumerate(top_products_data, 1):
+        # Use safe_decimal on aggregated value with larger max_digits
+        revenue = safe_decimal(
+            item['total_revenue'] or 0,
+            max_digits=12,  # Allow aggregated sums to exceed single order limit
+            decimal_places=2
+        )
+        
+        top_products.append({
+            'rank': i,
+            'name': item['product__name'],
+            'units': item['units_sold'],
+            'revenue': revenue,
+        })
+    
+    # ========== PERFORMANCE TRENDS OVER TIME ==========
+    daily_data = Order.objects.filter(
+        created_at__date__gte=start_date,
+        created_at__date__lte=end_date,
+        is_deleted=False
+    ).values('created_at__date').annotate(
+        daily_orders=Count('id'),
+        daily_delivered=Count('id', filter=Q(status='delivered') | Q(order_status='delivered')),
+        daily_revenue=Sum('total_amount')
+    ).order_by('created_at__date')
+    
+    if staff_filter != 'all':
+        try:
+            staff_id = int(staff_filter)
+            daily_data = daily_data.filter(created_by_id=staff_id)
+        except (ValueError, TypeError):
+            pass
+    
+    performance_trends = []
+    for entry in daily_data:
+        date = entry['created_at__date']
+        orders = entry['daily_orders'] or 0
+        delivered = entry['daily_delivered'] or 0
+        # Use data directly from aggregation with larger max_digits for daily totals
+        revenue = safe_decimal(
+            entry['daily_revenue'] or 0,
+            max_digits=12,  # Allow aggregated sums to exceed single order limit
+            decimal_places=2
+        )
+        returns = return_requests.filter(
+            order__created_at__date=date
+        ).count()
+        success_rate_daily = (delivered / orders * 100) if orders > 0 else 0
+        
+        performance_trends.append({
+            'date': date.strftime('%d %b'),
+            'orders': orders,
+            'delivered': delivered,
+            'returns': returns,
+            'revenue': float(revenue),
+            'success_rate': round(success_rate_daily, 2)
+        })
+    
+    # Convert to JSON for chart
+    performance_trends_json = json.dumps(performance_trends)
+    
+    # ========== ORDER STATUS BREAKDOWN ==========
+    order_statuses = orders_qs.values('status').annotate(count=Count('id')).order_by('-count')
+    status_breakdown = {
+        'delivered': 0,
+        'pending': 0,
+        'returns': 0,
+        'other': 0
+    }
+    
+    for status_item in order_statuses:
+        status = status_item['status'] or 'unknown'
+        count = status_item['count']
+        if status.lower() in ['delivered', 'completed']:
+            status_breakdown['delivered'] += count
+        elif status.lower() in ['returned', 'return']:
+            status_breakdown['returns'] += count
+        elif status.lower() in ['pending', 'processing']:
+            status_breakdown['pending'] += count
+        else:
+            status_breakdown['other'] += count
+    
+    # Ensure status_breakdown has all keys for chart
+    status_breakdown_json = json.dumps(status_breakdown)
+    
+    # ========== CONTEXT ==========
+    context = {
+        'total_orders': total_orders,
+        'successful_deliveries': successful_orders,
+        'success_rate': round(success_rate, 2),
+        'returns': returns_count,
+        'return_rate': round(return_rate, 2),
+        'total_revenue': total_revenue,
+        'total_products_sold': total_products_sold,
+        'active_staff_count': active_staff,
+        'staff_performance_data': staff_performance_data,
+        'top_products': top_products,
+        'performance_trends': performance_trends_json,
+        'staff_members': staff_members,
+        'selected_period': period,
+        'selected_staff': staff_filter,
+        'date_range': date_range_text,
+        'status_breakdown': status_breakdown_json,
+    }
+    
+    return render(request, 'staff_performance.html', context)
+

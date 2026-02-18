@@ -199,5 +199,8 @@ urlpatterns = [
     # Financial Report
     path('financial-report/', views.financial_report, name='financial_report'),
     path('financial-report/data/', views.financial_report_data, name='financial_report_data'),
+    
+    # Staff Performance
+    path('staff-performance/', views.staff_performance_analytics, name='staff_performance_analytics'),
 ]
     

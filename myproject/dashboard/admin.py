@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Product, Order, OrderItem, Category, Customer, Branch
+from .models import Product, Order, OrderItem, Category, Customer, Branch, StaffPerformance
 from .models import ProductAttribute, ProductAttributeValue, ProductVariation, VariationAttributeValue
 
 
@@ -51,3 +51,27 @@ class ProductVariationAdmin(admin.ModelAdmin):
     list_display = ['sku', 'product', 'price', 'stock']
     list_filter = ['product']
     search_fields = ['sku', 'product__name']
+
+
+@admin.register(StaffPerformance)
+class StaffPerformanceAdmin(admin.ModelAdmin):
+    list_display = ['staff_member', 'total_orders', 'successful_orders', 'success_rate', 'total_revenue', 'return_count']
+    list_filter = ['success_rate', 'created_at']
+    search_fields = ['staff_member__username', 'staff_member__first_name', 'staff_member__last_name']
+    readonly_fields = ['total_orders', 'successful_orders', 'success_rate', 'total_revenue', 'return_count', 'created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Staff Member', {
+            'fields': ('staff_member',)
+        }),
+        ('Performance Metrics', {
+            'fields': ('total_orders', 'successful_orders', 'return_count', 'success_rate', 'total_revenue')
+        }),
+        ('Period', {
+            'fields': ('period_start', 'period_end')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )

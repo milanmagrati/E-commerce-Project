@@ -119,6 +119,49 @@
     <div class="row mb-4">
         <div class="col-12 mb-3">
             <div class="card">
+                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-table"></i> Daily Summary <span class="table-badge" id="dailySummaryCount">0</span></div>
+                <div class="card-body table-responsive">
+                    <table class="table table-bordered table-hover" id="dailySummaryTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Orders</th>
+                                <th>Revenue</th>
+                                <th>NCM Charges</th>
+                                <th>Expenses</th>
+                                <th>Net Profit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data will be loaded via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination-container">
+                    <div class="pagination-info">
+                        <span id="dailySummaryInfo">Showing 0 of 0</span>
+                    </div>
+                    <div class="pagination-controls">
+                        <div class="page-size-selector">
+                            <label for="dailySummaryPageSize" style="margin: 0; font-size: 0.9rem; color: #6b7280;">Rows per page:</label>
+                            <select id="dailySummaryPageSize" onchange="changePageSize('dailySummary', this.value)">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="pagination-btn" onclick="previousPage('dailySummary')" id="dailySummaryPrevBtn">← Prev</button>
+                            <span id="dailySummaryPageNumbers" style="display: flex; gap: 4px;"></span>
+                            <button class="pagination-btn" onclick="nextPage('dailySummary')" id="dailySummaryNextBtn">Next →</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 mb-3">
+            <div class="card">
                 <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-table"></i> NCM Delivery Revenue <span class="table-badge" id="ncmRevenueCount">0</span>
                 </div>
                 <div class="card-body table-responsive">
@@ -140,27 +183,26 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
-        </div>
-        <div class="col-12 mb-3">
-            <div class="card">
-                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-table"></i> Daily Summary <span class="table-badge" id="dailySummaryCount">0</span></div>
-                <div class="card-body table-responsive">
-                    <table class="table table-bordered table-hover" id="dailySummaryTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Date</th>
-                                <th>Orders</th>
-                                <th>Revenue</th>
-                                <th>NCM Charges</th>
-                                <th>Expenses</th>
-                                <th>Net Profit</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Data will be loaded via AJAX -->
-                        </tbody>
-                    </table>
+                <div class="pagination-container">
+                    <div class="pagination-info">
+                        <span id="ncmRevenueInfo">Showing 0 of 0</span>
+                    </div>
+                    <div class="pagination-controls">
+                        <div class="page-size-selector">
+                            <label for="ncmRevenuePageSize" style="margin: 0; font-size: 0.9rem; color: #6b7280;">Rows per page:</label>
+                            <select id="ncmRevenuePageSize" onchange="changePageSize('ncmRevenue', this.value)">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="pagination-btn" onclick="previousPage('ncmRevenue')" id="ncmRevenuePrevBtn">← Prev</button>
+                            <span id="ncmRevenuePageNumbers" style="display: flex; gap: 4px;"></span>
+                            <button class="pagination-btn" onclick="nextPage('ncmRevenue')" id="ncmRevenueNextBtn">Next →</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -181,6 +223,27 @@
                             <!-- Data will be loaded via AJAX -->
                         </tbody>
                     </table>
+                </div>
+                <div class="pagination-container">
+                    <div class="pagination-info">
+                        <span id="paymentStatusInfo">Showing 0 of 0</span>
+                    </div>
+                    <div class="pagination-controls">
+                        <div class="page-size-selector">
+                            <label for="paymentStatusPageSize" style="margin: 0; font-size: 0.9rem; color: #6b7280;">Rows per page:</label>
+                            <select id="paymentStatusPageSize" onchange="changePageSize('paymentStatus', this.value)">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="pagination-btn" onclick="previousPage('paymentStatus')" id="paymentStatusPrevBtn">← Prev</button>
+                            <span id="paymentStatusPageNumbers" style="display: flex; gap: 4px;"></span>
+                            <button class="pagination-btn" onclick="nextPage('paymentStatus')" id="paymentStatusNextBtn">Next →</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -203,6 +266,27 @@
                             <!-- Data will be loaded via AJAX -->
                         </tbody>
                     </table>
+                </div>
+                <div class="pagination-container">
+                    <div class="pagination-info">
+                        <span id="branchSummaryInfo">Showing 0 of 0</span>
+                    </div>
+                    <div class="pagination-controls">
+                        <div class="page-size-selector">
+                            <label for="branchSummaryPageSize" style="margin: 0; font-size: 0.9rem; color: #6b7280;">Rows per page:</label>
+                            <select id="branchSummaryPageSize" onchange="changePageSize('branchSummary', this.value)">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="pagination-btn" onclick="previousPage('branchSummary')" id="branchSummaryPrevBtn">← Prev</button>
+                            <span id="branchSummaryPageNumbers" style="display: flex; gap: 4px;"></span>
+                            <button class="pagination-btn" onclick="nextPage('branchSummary')" id="branchSummaryNextBtn">Next →</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -826,10 +910,291 @@
             font-size: 1.2rem;
         }
     }
+
+    /* Pagination Styles */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        background: #f9fafb;
+        border-top: 1px solid #e5e7eb;
+        border-radius: 0 0 10px 10px;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .pagination-info {
+        font-size: 0.95rem;
+        color: #6b7280;
+        font-weight: 500;
+    }
+
+    .pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .page-size-selector {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .page-size-selector select {
+        padding: 6px 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        background: #fff;
+        color: #4b5563;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+    }
+
+    .page-size-selector select:hover {
+        border-color: #667eea;
+        background: #f9fafb;
+    }
+
+    .page-size-selector select:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .pagination-buttons {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .pagination-btn {
+        padding: 6px 12px;
+        border: 1px solid #e5e7eb;
+        background: #fff;
+        color: #667eea;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        min-width: 40px;
+        text-align: center;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+        background: #f3f4f6;
+        border-color: #667eea;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+    }
+
+    .pagination-btn:active:not(:disabled) {
+        background: #667eea;
+        color: #fff;
+        transform: scale(0.98);
+    }
+
+    .pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        color: #9ca3af;
+        border-color: #e5e7eb;
+    }
+
+    .pagination-btn.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #fff;
+        border-color: #667eea;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .pagination-btn.active:hover {
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+    }
+
+    @media (max-width: 768px) {
+        .pagination-container {
+            padding: 12px 16px;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .pagination-info {
+            font-size: 0.85rem;
+        }
+
+        .pagination-buttons {
+            width: 100%;
+            justify-content: flex-start;
+        }
+    }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
 <script>
+    // Pagination state management
+    const paginationState = {
+        ncmRevenue: { currentPage: 1, pageSize: 25, totalRows: 0, data: [] },
+        dailySummary: { currentPage: 1, pageSize: 25, totalRows: 0, data: [] },
+        paymentStatus: { currentPage: 1, pageSize: 25, totalRows: 0, data: [] },
+        branchSummary: { currentPage: 1, pageSize: 25, totalRows: 0, data: [] }
+    };
+
+    // Pagination helper functions
+    function getPaginatedData(tableKey) {
+        const state = paginationState[tableKey];
+        const start = (state.currentPage - 1) * state.pageSize;
+        const end = start + state.pageSize;
+        return state.data.slice(start, end);
+    }
+
+    function getTotalPages(tableKey) {
+        const state = paginationState[tableKey];
+        return Math.ceil(state.totalRows / state.pageSize);
+    }
+
+    function renderPaginationControls(tableKey) {
+        const state = paginationState[tableKey];
+        const totalPages = getTotalPages(tableKey);
+        const start = (state.currentPage - 1) * state.pageSize + 1;
+        const end = Math.min(state.currentPage * state.pageSize, state.totalRows);
+
+        // Update info text
+        const infoEl = document.getElementById(`${tableKey}Info`);
+        if (infoEl) {
+            infoEl.textContent = state.totalRows > 0 
+                ? `Showing ${start} to ${end} of ${state.totalRows} rows`
+                : 'Showing 0 of 0 rows';
+        }
+
+        // Update prev button
+        const prevBtn = document.getElementById(`${tableKey}PrevBtn`);
+        if (prevBtn) {
+            prevBtn.disabled = state.currentPage === 1;
+        }
+
+        // Update next button
+        const nextBtn = document.getElementById(`${tableKey}NextBtn`);
+        if (nextBtn) {
+            nextBtn.disabled = state.currentPage === totalPages || totalPages === 0;
+        }
+
+        // Generate page numbers
+        const pageNumbersEl = document.getElementById(`${tableKey}PageNumbers`);
+        if (pageNumbersEl) {
+            pageNumbersEl.innerHTML = '';
+            
+            const maxPageButtons = 5;
+            let startPage = Math.max(1, state.currentPage - Math.floor(maxPageButtons / 2));
+            let endPage = Math.min(totalPages, startPage + maxPageButtons - 1);
+            
+            if (endPage - startPage < maxPageButtons - 1) {
+                startPage = Math.max(1, endPage - maxPageButtons + 1);
+            }
+
+            if (startPage > 1) {
+                const btn = document.createElement('button');
+                btn.className = 'pagination-btn';
+                btn.textContent = '1';
+                btn.onclick = () => goToPage(tableKey, 1);
+                pageNumbersEl.appendChild(btn);
+                
+                if (startPage > 2) {
+                    const dots = document.createElement('span');
+                    dots.textContent = '...';
+                    dots.style.padding = '6px 4px';
+                    dots.style.color = '#9ca3af';
+                    pageNumbersEl.appendChild(dots);
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'pagination-btn';
+                if (i === state.currentPage) {
+                    btn.classList.add('active');
+                }
+                btn.textContent = i;
+                btn.onclick = () => goToPage(tableKey, i);
+                pageNumbersEl.appendChild(btn);
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    const dots = document.createElement('span');
+                    dots.textContent = '...';
+                    dots.style.padding = '6px 4px';
+                    dots.style.color = '#9ca3af';
+                    pageNumbersEl.appendChild(dots);
+                }
+                
+                const btn = document.createElement('button');
+                btn.className = 'pagination-btn';
+                btn.textContent = totalPages;
+                btn.onclick = () => goToPage(tableKey, totalPages);
+                pageNumbersEl.appendChild(btn);
+            }
+        }
+    }
+
+    function goToPage(tableKey, pageNum) {
+        const state = paginationState[tableKey];
+        const totalPages = getTotalPages(tableKey);
+        
+        if (pageNum < 1 || pageNum > totalPages) return;
+        
+        state.currentPage = pageNum;
+        renderTableWithPagination(tableKey);
+    }
+
+    function previousPage(tableKey) {
+        const state = paginationState[tableKey];
+        if (state.currentPage > 1) {
+            state.currentPage--;
+            renderTableWithPagination(tableKey);
+        }
+    }
+
+    function nextPage(tableKey) {
+        const state = paginationState[tableKey];
+        const totalPages = getTotalPages(tableKey);
+        if (state.currentPage < totalPages) {
+            state.currentPage++;
+            renderTableWithPagination(tableKey);
+        }
+    }
+
+    function changePageSize(tableKey, newSize) {
+        const state = paginationState[tableKey];
+        state.pageSize = parseInt(newSize);
+        state.currentPage = 1;
+        renderTableWithPagination(tableKey);
+    }
+
+    function renderTableWithPagination(tableKey) {
+        const paginatedRows = getPaginatedData(tableKey);
+        
+        switch (tableKey) {
+            case 'ncmRevenue':
+                renderNcmRevenueTablePaginated(paginatedRows);
+                break;
+            case 'dailySummary':
+                renderDailySummaryTablePaginated(paginatedRows);
+                break;
+            case 'paymentStatus':
+                renderPaymentStatusTablePaginated(paginatedRows);
+                break;
+            case 'branchSummary':
+                renderBranchSummaryTablePaginated(paginatedRows);
+                break;
+        }
+        
+        renderPaginationControls(tableKey);
+    }
+
     // Helper function to get CSRF token from cookie
     function getCookie(name) {
         let cookieValue = null;
@@ -966,48 +1331,10 @@
         }
     }
 
-    function renderTable(tableId, rows, columns) {
-        const table = document.getElementById(tableId);
-        const tbody = table.querySelector('tbody');
-        tbody.innerHTML = '';
-
-        if (!rows || rows.length === 0) {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td colspan="${columns.length}" class="text-center text-muted py-4">
-            <i class="fas fa-inbox fa-2x mb-2"></i><br>
-            No data available for this period
-        </td>`;
-            tbody.appendChild(tr);
-            return;
-        }
-
-        rows.forEach(row => {
-            const tr = document.createElement('tr');
-            columns.forEach(col => {
-                const td = document.createElement('td');
-                let value = row[col];
-
-                // Format numbers if they look like money values
-                if ((col.includes('amount') || col.includes('revenue') || col.includes('charge') || col.includes('profit') || col.includes('collected'))
-                    && typeof value === 'number') {
-                    value = value.toFixed(2);
-                }
-
-                td.textContent = value !== undefined && value !== null ? value : '-';
-                tr.appendChild(td);
-            });
-            tbody.appendChild(tr);
-        });
-    }
-
-    function renderPaymentStatusTable(data) {
+    function renderPaymentStatusTablePaginated(data) {
         const table = document.getElementById('paymentStatusTable');
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = '';
-
-        // Update badge count
-        const badgeEl = document.getElementById('paymentStatusCount');
-        if (badgeEl) badgeEl.textContent = data && data.length > 0 ? data.length : '0';
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
@@ -1035,14 +1362,24 @@
         });
     }
 
-    function renderBranchSummaryTable(data) {
+    function renderPaymentStatusTable(data) {
+        // Store full data in pagination state
+        paginationState.paymentStatus.data = data || [];
+        paginationState.paymentStatus.totalRows = data ? data.length : 0;
+        paginationState.paymentStatus.currentPage = 1;
+
+        // Update badge count
+        const badgeEl = document.getElementById('paymentStatusCount');
+        if (badgeEl) badgeEl.textContent = paginationState.paymentStatus.totalRows;
+
+        // Render first page
+        renderTableWithPagination('paymentStatus');
+    }
+
+    function renderBranchSummaryTablePaginated(data) {
         const table = document.getElementById('branchSummaryTable');
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = '';
-
-        // Update badge count
-        const badgeEl = document.getElementById('branchSummaryCount');
-        if (badgeEl) badgeEl.textContent = data && data.length > 0 ? data.length : '0';
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
@@ -1077,14 +1414,25 @@
             tbody.appendChild(tr);
         });
     }
-    function renderDailySummaryTable(data) {
+
+    function renderBranchSummaryTable(data) {
+        // Store full data in pagination state
+        paginationState.branchSummary.data = data || [];
+        paginationState.branchSummary.totalRows = data ? data.length : 0;
+        paginationState.branchSummary.currentPage = 1;
+
+        // Update badge count
+        const badgeEl = document.getElementById('branchSummaryCount');
+        if (badgeEl) badgeEl.textContent = paginationState.branchSummary.totalRows;
+
+        // Render first page
+        renderTableWithPagination('branchSummary');
+    }
+
+    function renderDailySummaryTablePaginated(data) {
         const table = document.getElementById('dailySummaryTable');
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = '';
-
-        // Update badge count
-        const badgeEl = document.getElementById('dailySummaryCount');
-        if (badgeEl) badgeEl.textContent = data && data.length > 0 ? data.length : '0';
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
@@ -1137,14 +1485,25 @@
             tbody.appendChild(tr);
         });
     }
-    function renderNcmRevenueTable(data) {
+
+    function renderDailySummaryTable(data) {
+        // Store full data in pagination state
+        paginationState.dailySummary.data = data || [];
+        paginationState.dailySummary.totalRows = data ? data.length : 0;
+        paginationState.dailySummary.currentPage = 1;
+
+        // Update badge count
+        const badgeEl = document.getElementById('dailySummaryCount');
+        if (badgeEl) badgeEl.textContent = paginationState.dailySummary.totalRows;
+
+        // Render first page
+        renderTableWithPagination('dailySummary');
+    }
+
+    function renderNcmRevenueTablePaginated(data) {
         const table = document.getElementById('ncmRevenueTable');
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = '';
-
-        // Update badge count
-        const badgeEl = document.getElementById('ncmRevenueCount');
-        if (badgeEl) badgeEl.textContent = data && data.length > 0 ? data.length : '0';
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
@@ -1214,6 +1573,22 @@
 
             tbody.appendChild(tr);
         });
+    }
+
+    function renderNcmRevenueTable(data) {
+        // Store full data in pagination state
+        paginationState.ncmRevenue.data = data || [];
+        paginationState.ncmRevenue.totalRows = data ? data.length : 0;
+        paginationState.ncmRevenue.currentPage = 1;
+
+        // Update badge count
+        const badgeEl = document.getElementById('ncmRevenueCount');
+        if (badgeEl) badgeEl.textContent = paginationState.ncmRevenue.totalRows;
+
+        console.log(`📊 Rendering ${paginationState.ncmRevenue.totalRows} NCM revenue rows`);
+        
+        // Render first page
+        renderTableWithPagination('ncmRevenue');
     }
 
     let dailyRevenueChart, paymentMethodChart, revenueVsExpensesChart;

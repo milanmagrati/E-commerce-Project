@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q, Sum
 from django.conf import settings  # ✅ Add this import
 from django.utils import timezone
 from django.contrib.auth import get_user_model
@@ -232,14 +233,14 @@ class Order(models.Model):
     )
     
     # ✅ NEW: COD Collected amount
-    cod_collected = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Amount collected as COD")
+    cod_collected = models.DecimalField(max_digits=18, decimal_places=2, default=0, help_text="Amount collected as COD")
     
-    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    shipping_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    delivery_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="NCM delivery charge or logistics charge")
-    expense_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Other operational expenses")
+    discount_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    shipping_charge = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    delivery_charge = models.DecimalField(max_digits=18, decimal_places=2, default=0, help_text="NCM delivery charge or logistics charge")
+    expense_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0, help_text="Other operational expenses")
     tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=13)
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    total_amount = models.DecimalField(max_digits=18, decimal_places=2)
     notes = models.TextField(blank=True)
     
     tracking_number = models.CharField(max_length=100, blank=True, null=True)
@@ -250,8 +251,8 @@ class Order(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     is_partial_payment = models.BooleanField(default=False)
-    partial_amount_paid = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    remaining_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    partial_amount_paid = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    remaining_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -277,7 +278,7 @@ class Order(models.Model):
     ncm_delivery_type = models.CharField(max_length=20, choices=NCM_DELIVERY_TYPES, default='Door2Door')
     
     # Weight for shipping calculation
-    package_weight = models.DecimalField(max_digits=5, decimal_places=2, default=1.0, help_text="Weight in kg")
+    package_weight = models.DecimalField(max_digits=8, decimal_places=2, default=1.0, help_text="Weight in kg")
     
     
     def calculate_totals(self):
@@ -309,8 +310,8 @@ class OrderItem(models.Model):
     product_sku = models.CharField(max_length=100, blank=True, null=True)
     variation_name = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    price = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -923,3 +924,64 @@ class Setup(models.Model):
     
     def __str__(self):
         return f"{self.get_setup_type_display()} - {self.name}"
+
+
+class StaffPerformance(models.Model):
+    """Track staff member performance metrics"""
+    staff_member = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='staff_performance')
+    
+    # Metrics
+    total_orders = models.IntegerField(default=0)
+    successful_orders = models.IntegerField(default=0)
+    return_count = models.IntegerField(default=0)
+    total_revenue = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    success_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Percentage 0-100")
+    
+    # Period tracking
+    period_start = models.DateField(auto_now_add=True)
+    period_end = models.DateField(null=True, blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def calculate_metrics(self):
+        """Calculate performance metrics based on orders created by this staff member"""
+        from decimal import Decimal
+        
+        orders = Order.objects.filter(created_by=self.staff_member, is_deleted=False)
+        self.total_orders = orders.count()
+        
+        # Successful = delivered orders
+        self.successful_orders = orders.filter(
+            Q(order_status='delivered') | Q(status='delivered')
+        ).count()
+        
+        # Calculate success rate
+        if self.total_orders > 0:
+            self.success_rate = Decimal(str((self.successful_orders / self.total_orders) * 100)).quantize(
+                Decimal('0.01')
+            )
+        else:
+            self.success_rate = Decimal('0')
+        
+        # Calculate total revenue from paid orders
+        revenue_data = orders.filter(payment_status='paid').aggregate(
+            total=Sum('total_amount')
+        )
+        self.total_revenue = revenue_data['total'] or Decimal('0')
+        
+        # Count returns
+        self.return_count = ReturnRequest.objects.filter(
+            order__created_by=self.staff_member
+        ).count()
+        
+        self.save()
+    
+    def __str__(self):
+        return f"{self.staff_member.get_full_name() or self.staff_member.username} - {self.success_rate}%"
+    
+    class Meta:
+        verbose_name = 'Staff Performance'
+        verbose_name_plural = 'Staff Performance Metrics'
+        ordering = ['-success_rate', '-total_revenue']

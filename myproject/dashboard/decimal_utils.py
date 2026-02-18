@@ -113,16 +113,16 @@ def validate_decimal_fields(order):
         tuple: (order, list of fixed field names)
     """
     decimal_fields = {
-        'discount_amount': (10, 2),
-        'shipping_charge': (10, 2),
-        'delivery_charge': (10, 2),
-        'expense_amount': (10, 2),
+        'discount_amount': (18, 2),
+        'shipping_charge': (18, 2),
+        'delivery_charge': (18, 2),
+        'expense_amount': (18, 2),
         'tax_percent': (5, 2),
-        'total_amount': (10, 2),
-        'partial_amount_paid': (10, 2),
-        'remaining_amount': (10, 2),
-        'cod_collected': (10, 2),
-        'package_weight': (5, 2),
+        'total_amount': (18, 2),
+        'partial_amount_paid': (18, 2),
+        'remaining_amount': (18, 2),
+        'cod_collected': (18, 2),
+        'package_weight': (8, 2),
     }
     
     fixed_fields = []
@@ -166,8 +166,8 @@ def validate_order_item_decimal_fields(item):
         tuple: (item, list of fixed field names)
     """
     decimal_fields = {
-        'price': (10, 2),
-        'total': (10, 2),
+        'price': (18, 2),
+        'total': (18, 2),
     }
     
     fixed_fields = []

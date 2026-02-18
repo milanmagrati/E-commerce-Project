@@ -294,14 +294,14 @@
                         <tfoot class="table-light">
                             <tr>
                                 <td colspan="5" class="text-end"><strong>Subtotal:</strong></td>
-                                <td><strong>रू {{ subtotal|floatformat:2 }}</strong></td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;"><strong>रू {{ subtotal|floatformat:2 }}</strong></td>
                             </tr>
                             {% if order.discount_amount > 0 %}
                             <tr>
                                 <td colspan="5" class="text-end">
                                     <i class="fas fa-tag text-danger"></i> Discount:
                                 </td>
-                                <td class="text-danger">- रू {{ order.discount_amount|floatformat:2 }}</td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;" class="text-danger">- रू {{ order.discount_amount|floatformat:2 }}</td>
                             </tr>
                             {% endif %}
                             {% if order.shipping_charge > 0 %}
@@ -309,7 +309,7 @@
                                 <td colspan="5" class="text-end">
                                     <i class="fas fa-truck text-info"></i> Shipping:
                                 </td>
-                                <td>रू {{ order.shipping_charge|floatformat:2 }}</td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;">रू {{ order.shipping_charge|floatformat:2 }}</td>
                             </tr>
                             {% endif %}
                             {% if tax_amount > 0 %}
@@ -317,12 +317,12 @@
                                 <td colspan="5" class="text-end">
                                     <i class="fas fa-receipt text-warning"></i> Tax ({{ order.tax_percent }}%):
                                 </td>
-                                <td>रू {{ tax_amount|floatformat:2 }}</td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;">रू {{ tax_amount|floatformat:2 }}</td>
                             </tr>
                             {% endif %}
                             <tr class="table-success">
-                                <td colspan="5" class="text-end"><strong><i class="fas fa-money-bill-wave"></i> Total:</strong></td>
-                                <td><strong class="text-success fs-5">रू {{ order.total_amount|floatformat:2 }}</strong></td>
+                                <td colspan="4" class="text-end"><strong><i class="fas fa-money-bill-wave"></i> Total:</strong></td>
+                                <td colspan="2" style="word-break: break-word; overflow-wrap: break-word; padding: 12px 15px;"><strong class="text-success fs-5">रू {{ calculated_total|floatformat:2 }}</strong></td>
                             </tr>
                             
                             {% if order.is_partial_payment %}
@@ -330,13 +330,13 @@
                                 <td colspan="5" class="text-end">
                                     <i class="fas fa-check-circle text-success"></i> <strong>Amount Paid:</strong>
                                 </td>
-                                <td><strong class="text-success">रू {{ order.partial_amount_paid|floatformat:2 }}</strong></td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;"><strong class="text-success">रू {{ order.partial_amount_paid|floatformat:2 }}</strong></td>
                             </tr>
                             <tr class="table-warning">
                                 <td colspan="5" class="text-end">
                                     <i class="fas fa-hourglass-half text-danger"></i> <strong>Remaining Amount:</strong>
                                 </td>
-                                <td><strong class="text-danger">रू {{ order.remaining_amount|floatformat:2 }}</strong></td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;"><strong class="text-danger">रू {{ order.remaining_amount|floatformat:2 }}</strong></td>
                             </tr>
                             {% endif %}
                         </tfoot>
@@ -838,6 +838,60 @@
 /* ==================== EXISTING STYLES (keeping all your existing styles) ==================== */
 .bg-gradient-primary {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* ✅ FIX FOR LARGE ORDER AMOUNTS */
+.table-success td strong.text-success.fs-5,
+tfoot td strong.text-success,
+tfoot td strong.text-danger {
+    display: block;
+    word-wrap: break-word;
+    word-break: break-all;
+    overflow-wrap: break-word;
+    line-height: 1.6;
+    min-height: 2em;
+    max-width: 180px;
+}
+
+/* Table footer cells with proper wrapping */
+.table-light tfoot td {
+    padding: 12px !important;
+    vertical-align: middle;
+}
+
+.table-light tfoot td strong {
+    display: block;
+}
+
+/* Responsive font for large numbers */
+@media (max-width: 992px) {
+    .table-success td strong.text-success.fs-5,
+    tfoot td strong.text-success,
+    tfoot td strong.text-danger {
+        font-size: 0.95rem !important;
+        max-width: 160px;
+    }
+    
+    .table-light tfoot td {
+        padding: 10px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .table-success td strong.text-success.fs-5,
+    tfoot td strong.text-success,
+    tfoot td strong.text-danger {
+        font-size: 0.85rem !important;
+        max-width: 140px;
+    }
+    
+    .table-light tfoot td {
+        padding: 8px !important;
+    }
+    
+    .table-responsive {
+        font-size: 0.9rem;
+    }
 }
 
 .status-card {

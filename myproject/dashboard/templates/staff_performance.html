@@ -1,0 +1,1281 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Staff Performance Analytics | Admin Dashboard{% endblock %}
+
+{% block content %}
+<style>
+    :root {
+        --sp-primary-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        --sp-success-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        --sp-danger-gradient: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        --sp-blue-gradient: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        --sp-orange-gradient: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+        --sp-gold-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        --sp-teal-gradient: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+        --sp-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        --sp-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+        background: #f5f5f5;
+    }
+
+    #content {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        min-height: auto;
+    }
+
+    .sp-page-header {
+        background: var(--sp-primary-gradient);
+        color: white;
+        padding: 3rem 2rem;
+        border-radius: 0 0 20px 20px;
+        margin-bottom: 2rem;
+        box-shadow: var(--sp-shadow);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .sp-page-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 500px;
+        height: 500px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 50%;
+    }
+
+    .sp-page-header .sp-header-content {
+        position: relative;
+        z-index: 1;
+    }
+
+    .sp-page-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .sp-page-header .sp-subtitle {
+        font-size: 1.1rem;
+        opacity: 0.95;
+        margin-bottom: 1.5rem;
+    }
+
+    .sp-filters-container {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        margin-bottom: 1rem;
+    }
+
+    .sp-filter-group {
+        flex: 1;
+        min-width: 200px;
+    }
+
+    .sp-filter-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        font-size: 0.95rem;
+    }
+
+    .sp-filter-group select {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.95);
+        color: #333;
+        font-size: 0.95rem;
+        font-weight: 500;
+        transition: var(--sp-transition);
+        cursor: pointer;
+    }
+
+    .sp-filter-group select:hover {
+        border-color: rgba(255, 255, 255, 0.5);
+        background: white;
+    }
+
+    .sp-filter-group select:focus {
+        outline: none;
+        border-color: white;
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+    }
+
+    .sp-filter-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 0.75rem 2rem;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: var(--sp-transition);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .sp-filter-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+        border-color: white;
+        transform: translateY(-2px);
+    }
+
+    .sp-date-range {
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 0.95rem;
+        padding: 0.5rem 1rem;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 6px;
+        display: inline-block;
+        margin-top: 0.5rem;
+    }
+
+    /* ========== CONTAINER ========== */
+    .container-fluid {
+        width: 100%;
+        padding-right: 1rem;
+        padding-left: 1rem;
+        margin-right: auto;
+        margin-left: auto;
+        display: block;
+        min-height: auto;
+    }
+
+    .px-3 {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        display: block;
+    }
+
+    .px-lg-4 {
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+    }
+
+    /* ========== KPI CARDS ========== */
+    .sp-kpi-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+        width: 100%;
+    }
+
+    .sp-kpi-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.75rem;
+        box-shadow: var(--sp-shadow);
+        transition: var(--sp-transition);
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .sp-kpi-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: var(--gradient);
+    }
+
+    .sp-kpi-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .sp-kpi-card.sp-primary::before {
+        background: var(--sp-primary-gradient);
+    }
+
+    .sp-kpi-card.sp-success::before {
+        background: var(--sp-success-gradient);
+    }
+
+    .sp-kpi-card.sp-danger::before {
+        background: var(--sp-danger-gradient);
+    }
+
+    .sp-kpi-card.sp-blue::before {
+        background: var(--sp-blue-gradient);
+    }
+
+    .sp-kpi-card.sp-orange::before {
+        background: var(--sp-orange-gradient);
+    }
+
+    .sp-kpi-card.sp-gold::before {
+        background: var(--sp-gold-gradient);
+    }
+
+    .sp-kpi-card.sp-teal::before {
+        background: var(--sp-teal-gradient);
+    }
+
+    .sp-kpi-label {
+        font-size: 0.9rem;
+        color: #666;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .sp-kpi-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-bottom: 0.5rem;
+    }
+
+    .sp-kpi-badge {
+        display: inline-block;
+        padding: 0.35rem 0.85rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .sp-badge-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+
+    .sp-badge-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+
+    .sp-badge-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+
+    .sp-kpi-subtitle {
+        font-size: 0.85rem;
+        color: #999;
+        margin-top: 0.75rem;
+    }
+
+    /* ========== CHARTS ========== */
+    .sp-charts-container {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+        width: 100%;
+    }
+
+    .sp-chart-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.75rem;
+        box-shadow: var(--sp-shadow);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        animation: sp-fade-in 0.5s ease;
+        margin-bottom: 2rem;
+        width: 100%;
+    }
+
+    @keyframes sp-fade-in {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .sp-chart-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .sp-chart-title img,
+    .sp-chart-title i {
+        width: 24px;
+        height: 24px;
+    }
+
+    .sp-chart-toggle {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .sp-toggle-btn {
+        padding: 0.5rem 1rem;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+        background: white;
+        color: #666;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: var(--sp-transition);
+    }
+
+    .sp-toggle-btn.active {
+        background: var(--sp-primary-gradient);
+        color: white;
+        border-color: transparent;
+    }
+
+    .sp-toggle-btn:hover {
+        transform: translateY(-2px);
+    }
+
+    .sp-chart-wrapper {
+        position: relative;
+        height: 350px;
+    }
+
+    canvas {
+        max-height: 350px;
+    }
+
+    /* ========== RESPONSIVE GRID ========== */
+    @media (max-width: 1024px) {
+        .sp-charts-container {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .sp-kpi-container {
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+
+        .sp-kpi-card {
+            padding: 1.25rem;
+        }
+
+        .sp-kpi-value {
+            font-size: 1.5rem;
+        }
+
+        .sp-page-header h1 {
+            font-size: 1.75rem;
+        }
+
+        .sp-filters-container {
+            gap: 1rem;
+        }
+
+        .sp-filter-group {
+            min-width: 150px;
+        }
+    }
+
+    /* ========== TABLES ========== */
+    .sp-tables-container {
+        display: grid;
+        gap: 1.5rem;
+        width: 100%;
+        margin-bottom: 2rem;
+    }
+
+    .sp-table-card {
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: var(--sp-shadow);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .sp-table-header {
+        background: var(--sp-primary-gradient);
+        color: white;
+        padding: 1.5rem;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .sp-table-header h3 {
+        font-size: 1.2rem;
+        font-weight: 700;
+        margin: 0;
+    }
+
+    .sp-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .sp-table thead {
+        background: #f8f9fa;
+    }
+
+    .sp-table thead th {
+        padding: 1rem;
+        text-align: left;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #e0e0e0;
+    }
+
+    .sp-table tbody tr {
+        border-bottom: 1px solid #e8e8e8;
+        transition: var(--sp-transition);
+    }
+
+    .sp-table tbody tr:hover {
+        background: #f8f9fa;
+    }
+
+    .sp-table tbody td {
+        padding: 1rem;
+        font-size: 0.95rem;
+        color: #333;
+    }
+
+    .sp-rank-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: white;
+    }
+
+    .sp-rank-1 {
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    }
+
+    .sp-rank-2 {
+        background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+        color: #333;
+    }
+
+    .sp-rank-3 {
+        background: linear-gradient(135deg, #d4a373 0%, #b8860b 100%);
+    }
+
+    .sp-product-chip {
+        display: inline-block;
+        background: #f0f0f0;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        color: #333;
+        font-weight: 500;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sp-staff-avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--sp-primary-gradient);
+        color: white;
+        font-weight: 700;
+        font-size: 1rem;
+        margin-right: 0.75rem;
+    }
+
+    .sp-staff-info {
+        display: flex;
+        align-items: center;
+    }
+
+    .sp-staff-details {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sp-staff-name {
+        font-weight: 600;
+        color: #1a1a1a;
+    }
+
+    .sp-staff-role {
+        font-size: 0.8rem;
+        color: #999;
+    }
+
+    .sp-success-pill {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .sp-success-high {
+        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+        color: #065f46;
+    }
+
+    .sp-success-medium {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        color: #92400e;
+    }
+
+    .sp-success-low {
+        background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+        color: #7f1d1d;
+    }
+
+    .sp-progress-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .sp-progress-bar {
+        flex: 1;
+        height: 6px;
+        background: #e0e0e0;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .sp-progress-fill {
+        height: 100%;
+        background: var(--sp-success-gradient);
+        transition: width 0.3s ease;
+    }
+
+    .sp-progress-text {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #666;
+        min-width: 40px;
+        text-align: right;
+    }
+
+    /* ========== BADGES ========== */
+    .sp-badge {
+        display: inline-block;
+        padding: 0.35rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .sp-badge-delivered {
+        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+        color: #065f46;
+    }
+
+    .sp-badge-returned {
+        background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+        color: #7f1d1d;
+    }
+
+    /* ========== CURRENCY ========== */
+    .sp-currency {
+        color: #666;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    /* ========== SCROLL FADE IN ========== */
+    .sp-fade-in {
+        opacity: 1;
+        animation: sp-fade-in 0.6s ease forwards;
+    }
+
+    .sp-fade-in.visible {
+        animation: sp-fade-in 0.6s ease forwards;
+    }
+
+    /* ========== NO DATA ========== */
+    .sp-no-data {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: #999;
+    }
+
+    .sp-no-data i {
+        font-size: 3rem;
+        opacity: 0.3;
+        margin-bottom: 1rem;
+    }
+</style>
+
+<!-- Page Header with Filters -->
+<div class="sp-page-header">
+    <div class="sp-header-content">
+        <h1><i class="fas fa-chart-line me-3"></i>Staff Performance Analytics</h1>
+        <p class="sp-subtitle">Real-time performance metrics and team productivity analysis</p>
+
+        <div class="sp-filters-container">
+            <div class="sp-filter-group">
+                <label for="periodFilter">Time Period</label>
+                <form method="get" id="filterForm" style="display: none;">
+                    <input type="hidden" id="periodInput" name="period" value="{{ selected_period }}">
+                    <input type="hidden" id="staffInput" name="staff_filter" value="{{ selected_staff }}">
+                </form>
+                <select id="periodFilter" onchange="updateFilters()">
+                    <option value="today" {% if selected_period == 'today' %}selected{% endif %}>Today</option>
+                    <option value="this_month" {% if selected_period == 'this_month' %}selected{% endif %}>This Month</option>
+                    <option value="last_30_days" {% if selected_period == 'last_30_days' %}selected{% endif %}>Last 30 Days</option>
+                    <option value="ytd" {% if selected_period == 'ytd' %}selected{% endif %}>Year to Date</option>
+                </select>
+            </div>
+
+            <div class="sp-filter-group">
+                <label for="staffFilter">Team Member</label>
+                <select id="staffFilter" onchange="updateFilters()">
+                    <option value="all" {% if selected_staff == 'all' %}selected{% endif %}>All Team</option>
+                    {% for staff in staff_members %}
+                    <option value="{{ staff.id }}" {% if selected_staff == staff.id|stringformat:"d" %}selected{% endif %}>
+                        {{ staff.get_full_name|default:staff.username }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="sp-filter-group" style="flex: 0 0 auto;">
+                <button type="button" class="sp-filter-btn" onclick="resetFilters()">
+                    <i class="fas fa-redo"></i> Reset
+                </button>
+            </div>
+        </div>
+
+        <div class="sp-date-range">
+            📅 {{ date_range }}
+        </div>
+    </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="container-fluid px-3 px-lg-4">
+    <div class="sp-kpi-container sp-fade-in">
+        <!-- Total Orders -->
+        <div class="sp-kpi-card sp-primary">
+            <div class="sp-kpi-label">
+                <span><i class="fas fa-shopping-cart me-2"></i>Total Orders</span>
+            </div>
+            <div class="sp-kpi-value">{{ total_orders }}</div>
+            <div class="sp-kpi-subtitle">Orders processed</div>
+        </div>
+
+        <!-- Successful Deliveries -->
+        <div class="sp-kpi-card sp-success">
+            <div class="sp-kpi-label">
+                <span><i class="fas fa-check-circle me-2"></i>Successful Deliveries</span>
+                <span class="sp-kpi-badge sp-badge-success">{{ success_rate }}%</span>
+            </div>
+            <div class="sp-kpi-value">{{ successful_deliveries }}</div>
+            <div class="sp-kpi-subtitle">Completed successfully</div>
+        </div>
+
+        <!-- Returns -->
+        <div class="sp-kpi-card sp-danger">
+            <div class="sp-kpi-label">
+                <span><i class="fas fa-undo me-2"></i>Total Returns</span>
+                <span class="sp-kpi-badge sp-badge-danger">{{ return_rate }}%</span>
+            </div>
+            <div class="sp-kpi-value">{{ returns }}</div>
+            <div class="sp-kpi-subtitle">Return requests</div>
+        </div>
+
+        <!-- Total Revenue -->
+        <div class="sp-kpi-card sp-blue">
+            <div class="sp-kpi-label">
+                <span><i class="fas fa-rupee-sign me-2"></i>Total Revenue</span>
+            </div>
+            <div class="sp-kpi-value">Rs. {{ total_revenue|floatformat:0 }}</div>
+            <div class="sp-kpi-subtitle">Net revenue</div>
+        </div>
+
+        <!-- Products Sold -->
+        <div class="sp-kpi-card sp-orange">
+            <div class="sp-kpi-label">
+                <span><i class="fas fa-box me-2"></i>Products Sold</span>
+            </div>
+            <div class="sp-kpi-value">{{ total_products_sold }}</div>
+            <div class="sp-kpi-subtitle">Units sold</div>
+        </div>
+
+        <!-- Avg Success Rate -->
+        <div class="sp-kpi-card sp-gold">
+            <div class="sp-kpi-label">
+                <span><i class="fas fa-chart-pie me-2"></i>Avg Team Success</span>
+            </div>
+            <div class="sp-kpi-value">{{ success_rate }}%</div>
+            <div class="sp-kpi-subtitle">Team average</div>
+        </div>
+
+        <!-- Active Staff -->
+        <div class="sp-kpi-card sp-teal">
+            <div class="sp-kpi-label">
+                <span><i class="fas fa-users me-2"></i>Active Staff</span>
+            </div>
+            <div class="sp-kpi-value">{{ active_staff_count }}</div>
+            <div class="sp-kpi-subtitle">Team members</div>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="sp-charts-container sp-fade-in">
+        <!-- Line Chart: Performance Trends -->
+        <div class="sp-chart-card">
+            <div class="sp-chart-title">
+                <i class="fas fa-chart-line" style="color: #6366f1;"></i>
+                Performance Trends Over Time
+            </div>
+
+            <div class="sp-chart-toggle">
+                <button class="sp-toggle-btn active" onclick="toggleChart('all')">All</button>
+                <button class="sp-toggle-btn" onclick="toggleChart('orders')">Orders</button>
+                <button class="sp-toggle-btn" onclick="toggleChart('revenue')">Revenue</button>
+                <button class="sp-toggle-btn" onclick="toggleChart('returns')">Returns</button>
+            </div>
+
+            <div class="sp-chart-wrapper">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Donut Chart: Order Status -->
+        <div class="sp-chart-card">
+            <div class="sp-chart-title">
+                <i class="fas fa-chart-pie" style="color: #10b981;"></i>
+                Order Status Breakdown
+            </div>
+            <div class="sp-chart-wrapper">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bar Chart: Daily Activity -->
+    <div class="sp-chart-card sp-fade-in">
+        <div class="sp-chart-title">
+            <i class="fas fa-bars" style="color: #f97316;"></i>
+            Daily Order Activity
+        </div>
+        <div class="sp-chart-wrapper" style="height: 300px;">
+            <canvas id="dailyChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Tables Section -->
+    <div class="sp-tables-container sp-fade-in">
+        <!-- Top Performing Products -->
+        <div class="sp-table-card">
+            <div class="sp-table-header">
+                <h3><i class="fas fa-star me-2"></i>Top Performing Products</h3>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="sp-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 10%;">Rank</th>
+                            <th style="width: 50%;">Product Name</th>
+                            <th style="width: 20%;">Units Sold</th>
+                            <th style="width: 20%;">Revenue (Rs.)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in top_products %}
+                        <tr>
+                            <td>
+                                <span class="sp-rank-badge sp-rank-{{ product.rank }}">{{ product.rank }}</span>
+                            </td>
+                            <td>
+                                <span class="sp-product-chip">{{ product.name }}</span>
+                            </td>
+                            <td><strong>{{ product.units }}</strong></td>
+                            <td><span class="sp-currency">Rs.</span> <strong>{{ product.revenue|floatformat:0 }}</strong></td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="sp-no-data">
+                                <i class="fas fa-inbox"></i>
+                                <div>No product data available</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Staff Performance Ranking -->
+        <div class="sp-table-card">
+            <div class="sp-table-header">
+                <h3><i class="fas fa-trophy me-2"></i>Staff Performance Ranking</h3>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="sp-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 8%;">Rank</th>
+                            <th style="width: 25%;">Staff Name</th>
+                            <th style="width: 20%;">Total Orders</th>
+                            <th style="width: 20%;">Success Rate</th>
+                            <th style="width: 27%;">Returns</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for staff in staff_performance_data %}
+                        <tr>
+                            <td>
+                                {% if forloop.counter <= 3 %}
+                                <span class="sp-rank-badge sp-rank-{{ forloop.counter }}">{{ forloop.counter }}</span>
+                                {% else %}
+                                <span class="sp-rank-badge" style="background: #e5e7eb; color: #333;">{{ forloop.counter }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="sp-staff-info">
+                                    <span class="sp-staff-avatar">{{ staff.name|first|upper }}</span>
+                                    <div class="sp-staff-details">
+                                        <span class="sp-staff-name">{{ staff.name }}</span>
+                                        <span class="sp-staff-role">{{ staff.role }}</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><strong>{{ staff.total_orders }}</strong></td>
+                            <td>
+                                {% if staff.success_rate >= 90 %}
+                                <span class="sp-success-pill sp-success-high">✓ {{ staff.success_rate }}%</span>
+                                {% elif staff.success_rate >= 70 %}
+                                <span class="sp-success-pill sp-success-medium">⚠ {{ staff.success_rate }}%</span>
+                                {% else %}
+                                <span class="sp-success-pill sp-success-low">✗ {{ staff.success_rate }}%</span>
+                                {% endif %}
+                            </td>
+                            <td><span class="sp-badge sp-badge-returned">{{ staff.return_count }} Returns</span></td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="sp-no-data">
+                                <i class="fas fa-users-slash"></i>
+                                <div>No staff data available</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Detailed Staff Metrics -->
+        <div class="sp-table-card">
+            <div class="sp-table-header">
+                <h3><i class="fas fa-user-chart me-2"></i>Detailed Staff Metrics</h3>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="sp-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">Staff Member</th>
+                            <th style="width: 12%;">Orders</th>
+                            <th style="width: 12%;">Delivered</th>
+                            <th style="width: 12%;">Returns</th>
+                            <th style="width: 20%;">Success Rate</th>
+                            <th style="width: 19%;">Revenue (Rs.)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for staff in staff_performance_data %}
+                        <tr>
+                            <td>
+                                <div class="sp-staff-info">
+                                    <span class="sp-staff-avatar">{{ staff.name|first|upper }}</span>
+                                    <div class="sp-staff-details">
+                                        <span class="sp-staff-name">{{ staff.name }}</span>
+                                        <span class="sp-staff-role">{{ staff.role }}</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><strong>{{ staff.total_orders }}</strong></td>
+                            <td><span class="sp-badge sp-badge-delivered">{{ staff.successful_orders }}</span></td>
+                            <td><span class="sp-badge sp-badge-returned">{{ staff.return_count }}</span></td>
+                            <td>
+                                <div class="sp-progress-wrapper">
+                                    <div class="sp-progress-bar">
+                                        <div class="sp-progress-fill" style="width: {{ staff.success_rate }}%;"></div>
+                                    </div>
+                                    <span class="sp-progress-text">{{ staff.success_rate }}%</span>
+                                </div>
+                            </td>
+                            <td><strong>Rs. {{ staff.revenue|floatformat:0 }}</strong></td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="sp-no-data">
+                                <i class="fas fa-chart-bar"></i>
+                                <div>No detailed metrics available</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+
+<script>
+    // Parse performance trends data
+    const performanceTrendsData = {{ performance_trends|safe }};
+    const statusBreakdown = {{ status_breakdown|safe }};
+
+    // Global chart instances
+    let trendChart = null;
+    let statusChart = null;
+    let dailyChart = null;
+    let currentDataset = 'all';
+
+    // Fallback demo data if empty
+    const demoTrends = [
+        { date: '01 Feb', orders: 12, delivered: 10, returns: 1, revenue: 24000, success_rate: 83 },
+        { date: '02 Feb', orders: 15, delivered: 13, returns: 2, revenue: 31500, success_rate: 87 },
+        { date: '03 Feb', orders: 18, delivered: 16, returns: 1, revenue: 38000, success_rate: 89 },
+        { date: '04 Feb', orders: 14, delivered: 12, returns: 2, revenue: 29000, success_rate: 86 },
+        { date: '05 Feb', orders: 20, delivered: 18, returns: 2, revenue: 42000, success_rate: 90 },
+    ];
+
+    const trends = performanceTrendsData && performanceTrendsData.length > 0 ? performanceTrendsData : demoTrends;
+    const labels = trends.map(t => t.date);
+
+    // Initialize Charts
+    function initCharts() {
+        // 1. Trend Chart (Line Chart with Dual Y-axis)
+        const ctxTrend = document.getElementById('trendChart').getContext('2d');
+        trendChart = new Chart(ctxTrend, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Total Orders',
+                        data: trends.map(t => t.orders),
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        yAxisID: 'y',
+                        pointRadius: 5,
+                        pointBackgroundColor: '#6366f1',
+                        pointBorderColor: 'white',
+                        pointBorderWidth: 2,
+                        pointHoverRadius: 7,
+                    },
+                    {
+                        label: 'Revenue (Rs. K)',
+                        data: trends.map(t => t.revenue / 1000),
+                        borderColor: '#f97316',
+                        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        yAxisID: 'y1',
+                        pointRadius: 5,
+                        pointBackgroundColor: '#f97316',
+                        pointBorderColor: 'white',
+                        pointBorderWidth: 2,
+                        pointHoverRadius: 7,
+                    },
+                    {
+                        label: 'Returns',
+                        data: trends.map(t => t.returns),
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        yAxisID: 'y',
+                        pointRadius: 5,
+                        pointBackgroundColor: '#ef4444',
+                        pointBorderColor: 'white',
+                        pointBorderWidth: 2,
+                        pointHoverRadius: 7,
+                    },
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            padding: 20,
+                            font: { size: 12, weight: '600' },
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                        padding: 12,
+                        titleFont: { size: 13, weight: 'bold' },
+                        bodyFont: { size: 12 },
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label && context.parsed.y !== null) {
+                                    if (label.includes('Revenue')) {
+                                        label += ': Rs. ' + context.parsed.y.toFixed(0) + 'K';
+                                    } else {
+                                        label += ': ' + context.parsed.y;
+                                    }
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Orders / Returns', font: { weight: '600' } },
+                        ticks: { font: { size: 11 } },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Revenue (Rs. K)', font: { weight: '600' } },
+                        ticks: { font: { size: 11 } },
+                        grid: { drawOnChartArea: false },
+                    }
+                }
+            }
+        });
+
+        // 2. Status Donut Chart
+        const ctxStatus = document.getElementById('statusChart').getContext('2d');
+        const statusLabels = Object.keys(statusBreakdown).map(k => k.charAt(0).toUpperCase() + k.slice(1));
+        const statusData = Object.values(statusBreakdown);
+
+        statusChart = new Chart(ctxStatus, {
+            type: 'doughnut',
+            data: {
+                labels: statusLabels,
+                datasets: [{
+                    data: statusData,
+                    backgroundColor: [
+                        '#10b981',
+                        '#ef4444',
+                        '#f59e0b',
+                        '#6366f1',
+                        '#14b8a6',
+                    ],
+                    borderColor: 'white',
+                    borderWidth: 3,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 15,
+                            font: { size: 12, weight: '600' },
+                            usePointStyle: true,
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return label + ': ' + context.parsed + ' (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // 3. Daily Activity Bar Chart
+        const ctxDaily = document.getElementById('dailyChart').getContext('2d');
+        dailyChart = new Chart(ctxDaily, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Orders',
+                        data: trends.map(t => t.orders),
+                        backgroundColor: 'rgba(99, 102, 241, 0.7)',
+                        borderColor: '#6366f1',
+                        borderWidth: 2,
+                        borderRadius: 6,
+                        hoverBackgroundColor: 'rgba(99, 102, 241, 1)',
+                    },
+                    {
+                        label: 'Returns',
+                        data: trends.map(t => t.returns),
+                        backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                        borderColor: '#ef4444',
+                        borderWidth: 2,
+                        borderRadius: 6,
+                        hoverBackgroundColor: 'rgba(239, 68, 68, 1)',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        stacked: false,
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            padding: 15,
+                            font: { size: 12, weight: '600' },
+                            usePointStyle: true,
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Toggle Chart Datasets
+    function toggleChart(dataset) {
+        currentDataset = dataset;
+        
+        // Update button active state
+        document.querySelectorAll('.sp-toggle-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+
+        // Update dataset visibility
+        if (trendChart) {
+            const datasets = trendChart.data.datasets;
+            
+            datasets.forEach((ds, index) => {
+                if (dataset === 'all') {
+                    ds.hidden = false;
+                    ds.borderWidth = 3;
+                } else if (dataset === 'orders' && index !== 0) {
+                    ds.hidden = true;
+                    ds.borderWidth = 0;
+                } else if (dataset === 'revenue' && index !== 1) {
+                    ds.hidden = true;
+                    ds.borderWidth = 0;
+                } else if (dataset === 'returns' && index !== 2) {
+                    ds.hidden = true;
+                    ds.borderWidth = 0;
+                } else {
+                    ds.hidden = false;
+                    ds.borderWidth = 3;
+                }
+            });
+
+            trendChart.update('none');
+        }
+    }
+
+    // Scroll Fade-In Animation
+    function setupScrollObserver() {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.01 });
+
+        document.querySelectorAll('.sp-fade-in').forEach(el => {
+            observer.observe(el);
+            // Also make immediately visible
+            el.classList.add('visible');
+        });
+    }
+
+    // Filter Management
+    function updateFilters() {
+        const period = document.getElementById('periodFilter').value;
+        const staffFilter = document.getElementById('staffFilter').value;
+        
+        const params = new URLSearchParams();
+        params.append('period', period);
+        params.append('staff_filter', staffFilter);
+        
+        window.location.href = window.location.pathname + '?' + params.toString();
+    }
+
+    function resetFilters() {
+        document.getElementById('periodFilter').value = 'this_month';
+        document.getElementById('staffFilter').value = 'all';
+        updateFilters();
+    }
+
+    // Initialize on Page Load
+    document.addEventListener('DOMContentLoaded', function() {
+        initCharts();
+        setupScrollObserver();
+    });
+</script>
+{% endblock %}
