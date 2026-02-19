@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 def safe_decimal(value, max_digits=10, decimal_places=2, default='0'):
     """
     Safely convert a value to Decimal, ensuring it fits the field constraints.
+    Also detects and corrects corrupted/extreme values.
     
     Args:
         value: Any value to convert (str, int, float, Decimal)
@@ -44,8 +45,17 @@ def safe_decimal(value, max_digits=10, decimal_places=2, default='0'):
         else:
             result = Decimal(str(value).strip())
         
-        # Validate max_digits and decimal_places constraints
+        # Detect corrupted extreme values (over 12 decimal places)
+        # These are typically database corruption issues
         if max_digits and decimal_places:
+            # Check for extreme values that exceed reasonable business limits
+            max_integer_digits = max_digits - decimal_places
+            max_reasonable_value = Decimal(10) ** max_integer_digits
+            
+            if abs(result) > max_reasonable_value * 100:  # 100x the max for single field
+                logger.warning(f"Corrupted decimal value detected: {result}. Resetting to 0.")
+                return Decimal(default)
+            
             result = clamp_decimal(result, max_digits, decimal_places)
         
         return result

@@ -101,6 +101,58 @@
     </div>
 </div>
 
+<!-- Order Sources Row -->
+<div class="row g-4 mb-4">
+    <div class="col-xl-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                    <h5 class="mb-0">Orders by Source</h5>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <!-- Preset Filters -->
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn active" data-days="7">Last 7 Days</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn" data-days="14">Last 14 Days</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn" data-days="30">Last 30 Days</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn" data-days="60">Last 60 Days</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn" data-days="90">Last 90 Days</button>
+                        </div>
+                        
+                        <!-- Custom Date Range Toggle -->
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="customRangeToggle" data-bs-toggle="collapse" data-bs-target="#customRangeForm">
+                            <i class="fas fa-calendar"></i> Custom Range
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Custom Date Range Picker (Collapsed by default) -->
+                <div class="collapse mt-3" id="customRangeForm">
+                    <div class="card card-body bg-light">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label for="customFromDate" class="form-label">From Date</label>
+                                <input type="date" class="form-control form-control-sm" id="customFromDate">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="customToDate" class="form-label">To Date</label>
+                                <input type="date" class="form-control form-control-sm" id="customToDate">
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button type="button" class="btn btn-sm btn-primary w-100" id="applyCustomRange">
+                                    <i class="fas fa-filter"></i> Apply Filter
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <canvas id="orderSourceChart" height="50"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Recent Orders and Low Stock -->
 <div class="row g-4">
     <div class="col-xl-8">
@@ -279,6 +331,185 @@
                     position: 'bottom'
                 }
             }
+        }
+    });
+
+    // Order Source by Date - Line Chart with Filter
+    let sourceChart = null;
+    
+    function updateOrderSourceChart(days = 7, customFrom = null, customTo = null) {
+        // Show loading state
+        const chartContainer = document.getElementById('orderSourceChart');
+        
+        // Build URL with parameters
+        let url = `/api/order-sources-data/?`;
+        if (customFrom && customTo) {
+            url += `custom_from=${customFrom}&custom_to=${customTo}`;
+        } else {
+            url += `days=${days}`;
+        }
+        
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                const dates = data.dates;
+                const sources = data.sources;
+                const sourceData = data.data;
+                
+                // Generate colors for each source
+                const sourceColors = [
+                    'rgb(255, 99, 132)',
+                    'rgb(54, 162, 235)',
+                    'rgb(75, 192, 192)',
+                    'rgb(255, 206, 86)',
+                    'rgb(153, 102, 255)',
+                    'rgb(255, 159, 64)',
+                    'rgb(120, 192, 100)',
+                    'rgb(200, 100, 200)',
+                    'rgb(100, 150, 200)',
+                    'rgb(200, 150, 100)'
+                ];
+                
+                // Build datasets for each source
+                const datasets = sources.map((source, index) => ({
+                    label: source,
+                    data: sourceData[source],
+                    borderColor: sourceColors[index % sourceColors.length],
+                    backgroundColor: sourceColors[index % sourceColors.length].replace('rgb', 'rgba').replace(')', ', 0.1)'),
+                    tension: 0.4,
+                    fill: false,
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }));
+                
+                const sourceCtx = document.getElementById('orderSourceChart').getContext('2d');
+                
+                // Destroy previous chart if it exists
+                if (sourceChart) {
+                    sourceChart.destroy();
+                }
+                
+                // Create new chart
+                sourceChart = new Chart(sourceCtx, {
+                    type: 'line',
+                    data: {
+                        labels: dates,
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                maxHeight: 100
+                            },
+                            title: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {
+                                    display: true,
+                                    text: 'Number of Orders'
+                                },
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching order sources data:', error);
+            });
+    }
+    
+    // Set default dates for custom range (today and 30 days ago)
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    document.getElementById('customFromDate').value = thirtyDaysAgo.toISOString().split('T')[0];
+    document.getElementById('customToDate').value = today.toISOString().split('T')[0];
+    
+    // Initialize chart with default 7 days
+    updateOrderSourceChart(7);
+    
+    // Handle preset filter button clicks
+    document.querySelectorAll('.source-filter-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const days = this.getAttribute('data-days');
+            
+            // Update active button
+            document.querySelectorAll('.source-filter-btn').forEach(b => {
+                b.classList.remove('active');
+            });
+            this.classList.add('active');
+            
+            // Collapse custom date range if open
+            const customRangeCollapse = document.getElementById('customRangeForm');
+            if (customRangeCollapse && customRangeCollapse.classList.contains('show')) {
+                const bsCollapse = new bootstrap.Collapse(customRangeCollapse, {toggle: true});
+                bsCollapse.hide();
+            }
+            
+            // Update chart
+            updateOrderSourceChart(days);
+        });
+    });
+    
+    // Handle custom date range applying
+    document.getElementById('applyCustomRange').addEventListener('click', function() {
+        const fromDate = document.getElementById('customFromDate').value;
+        const toDate = document.getElementById('customToDate').value;
+        
+        if (!fromDate || !toDate) {
+            alert('Please select both start and end dates');
+            return;
+        }
+        
+        // Validate dates
+        const fromDateObj = new Date(fromDate);
+        const toDateObj = new Date(toDate);
+        
+        if (fromDateObj > toDateObj) {
+            alert('Start date must be before end date');
+            return;
+        }
+        
+        // Remove active state from all preset buttons
+        document.querySelectorAll('.source-filter-btn').forEach(b => {
+            b.classList.remove('active');
+        });
+        
+        // Update chart with custom range
+        updateOrderSourceChart(null, fromDate, toDate);
+    });
+    
+    // Allow Enter key to apply custom range
+    document.getElementById('customToDate').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            document.getElementById('applyCustomRange').click();
         }
     });
 </script>

@@ -115,14 +115,68 @@
                 <strong class="order-source-text">
                     {% if order.order_from == 'website' %}
                         <i class="fas fa-globe"></i> Website
+                    {% elif order.order_from == 'mobile_app' %}
+                        <i class="fas fa-mobile-alt"></i> Mobile App
+                    {% elif order.order_from == 'email' %}
+                        <i class="fas fa-envelope"></i> Email
                     {% elif order.order_from == 'facebook' %}
                         <i class="fab fa-facebook"></i> Facebook
                     {% elif order.order_from == 'instagram' %}
                         <i class="fab fa-instagram"></i> Instagram
+                    {% elif order.order_from == 'whatsapp' %}
+                        <i class="fab fa-whatsapp"></i> WhatsApp
+                    {% elif order.order_from == 'telegram' %}
+                        <i class="fab fa-telegram"></i> Telegram
+                    {% elif order.order_from == 'tiktok' %}
+                        <i class="fab fa-tiktok"></i> TikTok
+                    {% elif order.order_from == 'youtube' %}
+                        <i class="fab fa-youtube"></i> YouTube
+                    {% elif order.order_from == 'linkedin' %}
+                        <i class="fab fa-linkedin"></i> LinkedIn
+                    {% elif order.order_from == 'twitter' %}
+                        <i class="fab fa-twitter"></i> Twitter/X
+                    {% elif order.order_from == 'snapchat' %}
+                        <i class="fab fa-snapchat"></i> Snapchat
+                    {% elif order.order_from == 'amazon' %}
+                        <i class="fab fa-amazon"></i> Amazon
+                    {% elif order.order_from == 'ebay' %}
+                        <i class="fab fa-ebay"></i> eBay
+                    {% elif order.order_from == 'shopee' %}
+                        <i class="fas fa-shopping-bag"></i> Shopee
+                    {% elif order.order_from == 'lazada' %}
+                        <i class="fas fa-shopping-cart"></i> Lazada
+                    {% elif order.order_from == 'aliexpress' %}
+                        <i class="fas fa-shopping-cart"></i> AliExpress
+                    {% elif order.order_from == 'etsy' %}
+                        <i class="fab fa-etsy"></i> Etsy
                     {% elif order.order_from == 'phone' %}
-                        <i class="fas fa-phone"></i> Phone
+                        <i class="fas fa-phone"></i> Phone Call
+                    {% elif order.order_from == 'sms' %}
+                        <i class="fas fa-comment-dots"></i> SMS
                     {% elif order.order_from == 'walk-in' %}
                         <i class="fas fa-walking"></i> Walk-in
+                    {% elif order.order_from == 'in-store' %}
+                        <i class="fas fa-store"></i> In-Store
+                    {% elif order.order_from == 'google_maps' %}
+                        <i class="fab fa-google"></i> Google Maps
+                    {% elif order.order_from == 'google_search' %}
+                        <i class="fab fa-google"></i> Google Search
+                    {% elif order.order_from == 'maps' %}
+                        <i class="fas fa-map"></i> Apple Maps
+                    {% elif order.order_from == 'referral' %}
+                        <i class="fas fa-handshake"></i> Referral
+                    {% elif order.order_from == 'qr_code' %}
+                        <i class="fas fa-qrcode"></i> QR Code
+                    {% elif order.order_from == 'event' %}
+                        <i class="fas fa-calendar-star"></i> Event/Promotion
+                    {% elif order.order_from == 'partnership' %}
+                        <i class="fas fa-handshake"></i> Partnership
+                    {% elif order.order_from == 'wholesale' %}
+                        <i class="fas fa-boxes"></i> Wholesale
+                    {% elif order.order_from == 'b2b' %}
+                        <i class="fas fa-briefcase"></i> B2B
+                    {% elif order.order_from == 'contract_order' %}
+                        <i class="fas fa-file-contract"></i> Contract Order
                     {% else %}
                         <i class="fas fa-question-circle"></i> {{ order.order_from|default:"Unknown"|title }}
                     {% endif %}

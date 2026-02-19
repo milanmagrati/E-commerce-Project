@@ -1558,9 +1558,16 @@
             const paymentCell = document.createElement('td');
             paymentCell.textContent = row.payment_status || '-';
 
-            // COD Collected
+            // COD Collected - use total_amount if payment status is paid
             const codCell = document.createElement('td');
-            codCell.textContent = row.cod_collected ? parseFloat(row.cod_collected).toFixed(2) : '0.00';
+            let codAmount = '0.00';
+            // If payment status is 'paid', assume that amount was collected
+            if (row.payment_status && row.payment_status.toLowerCase() === 'paid') {
+                codAmount = row.total_amount ? parseFloat(row.total_amount).toFixed(2) : '0.00';
+            } else if (row.cod_collected) {
+                codAmount = parseFloat(row.cod_collected).toFixed(2);
+            }
+            codCell.textContent = codAmount;
 
             tr.appendChild(dateCell);
             tr.appendChild(orderCell);

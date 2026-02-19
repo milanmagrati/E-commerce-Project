@@ -30,6 +30,7 @@ urlpatterns = [
     
     # API
     path('api/chart-data/', views.chart_data, name='chart_data'),
+    path('api/order-sources-data/', views.order_sources_data, name='order_sources_data'),
     
     # Category URLs
     path('categories/', views.category_list, name='category_list'),

@@ -1787,6 +1787,145 @@
             padding: 6px 0;
         }
     }
+
+    /* ✅ CUSTOM SEARCHABLE DROPDOWN STYLES */
+    .searchable-select-wrapper {
+        position: relative;
+        width: 100%;
+        display: inline-block;
+    }
+
+    .searchable-select-input {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        height: 38px;
+        background: white;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .searchable-select-input:hover {
+        border-color: #cbd5e0;
+    }
+
+    .searchable-select-input:focus,
+    .searchable-select-input.active {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        outline: none;
+    }
+
+    .search-input-field {
+        border: none;
+        background: white;
+        flex: 1;
+        font-size: 0.875rem;
+        outline: none;
+        padding: 0;
+        font-family: inherit;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+    }
+
+    .search-input-field::placeholder {
+        color: #a0aec0;
+    }
+
+    .searchable-select-dropdown {
+        position: absolute;
+        top: 40px;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0 0 6px 6px;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 2000;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        display: none;
+        min-width: 100%;
+    }
+
+    .searchable-select-dropdown.show {
+        display: block;
+    }
+
+    .select-optgroup {
+        background: #f7fafc;
+        padding: 8px 10px 4px 10px;
+        margin-top: 0;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .select-optgroup:first-child {
+        margin-top: 0;
+    }
+
+    .select-option {
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 0.875rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .select-option:hover {
+        background: #f0f4ff;
+    }
+
+    .select-option.selected {
+        background: #e6ecff;
+        color: #667eea;
+        font-weight: 600;
+    }
+
+    .select-option.hidden {
+        display: none !important;
+    }
+
+    .select-no-results {
+        padding: 12px;
+        text-align: center;
+        color: #a0aec0;
+        font-size: 0.875rem;
+    }
+
+    .search-clear-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1rem;
+        color: #cbd5e0;
+        padding: 0 4px;
+        transition: color 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 30px;
+        height: 100%;
+    }
+
+    .search-clear-btn:hover {
+        color: #667eea;
+    }
 </style>
 {% endblock %}
 
@@ -1861,17 +2000,68 @@
                             <option value="">No cities found</option>
                             {% endfor %}
                         </select>
-                        <small class="text-muted">Type to search cities</small>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Order From *</label>
                         <select name="order_from" class="form-select" required>
                             <option value="">Select Source</option>
-                            <option value="website">Website</option>
-                            <option value="facebook">Facebook</option>
-                            <option value="instagram">Instagram</option>
-                            <option value="phone">Phone</option>
-                            <option value="walk-in">Walk-in</option>
+                            
+                            <!-- Website & Online -->
+                            <optgroup label="Website & Online">
+                                <option value="website">Website</option>
+                                <option value="mobile_app">Mobile App</option>
+                                <option value="email">Email</option>
+                            </optgroup>
+                            
+                            <!-- Social Media -->
+                            <optgroup label="Social Media">
+                                <option value="facebook">Facebook</option>
+                                <option value="instagram">Instagram</option>
+                                <option value="whatsapp">WhatsApp</option>
+                                <option value="telegram">Telegram</option>
+                                <option value="tiktok">TikTok</option>
+                                <option value="youtube">YouTube</option>
+                                <option value="linkedin">LinkedIn</option>
+                                <option value="twitter">Twitter/X</option>
+                                <option value="snapchat">Snapchat</option>
+                            </optgroup>
+                            
+                            <!-- Marketplaces -->
+                            <optgroup label="Marketplaces">
+                                <option value="amazon">Amazon</option>
+                                <option value="ebay">eBay</option>
+                                <option value="shopee">Shopee</option>
+                                <option value="lazada">Lazada</option>
+                                <option value="aliexpress">AliExpress</option>
+                                <option value="etsy">Etsy</option>
+                            </optgroup>
+                            
+                            <!-- Direct Contact -->
+                            <optgroup label="Direct Contact">
+                                <option value="phone">Phone Call</option>
+                                <option value="sms">SMS</option>
+                                <option value="walk-in">Walk-in</option>
+                                <option value="in-store">In-Store</option>
+                            </optgroup>
+                            
+                            <!-- Maps & Search -->
+                            <optgroup label="Maps & Search">
+                                <option value="google_maps">Google Maps</option>
+                                <option value="google_search">Google Search</option>
+                                <option value="maps">Apple Maps</option>
+                            </optgroup>
+                            
+                            <!-- Other Channels -->
+                            <optgroup label="Other Channels">
+                                <option value="referral">Referral</option>
+                                <option value="qr_code">QR Code</option>
+                                <option value="event">Event/Promotion</option>
+                                <option value="partnership">Partnership</option>
+                                <option value="wholesale">Wholesale</option>
+                                <option value="b2b">B2B</option>
+                                <option value="contract_order">Contract Order</option>
+                                <option value="other">Other</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -2455,6 +2645,238 @@
             // Fallback if audio context not supported
             console.log('Audio context not available');
         }
+    }
+
+    // ✅ CUSTOM SEARCHABLE SELECT INITIALIZATION
+    function initializeSearchableSelect(selector) {
+        const selectElement = document.querySelector(selector);
+        if (!selectElement) return;
+
+        const parentDiv = selectElement.parentElement;
+        
+        // Create wrapper
+        const wrapper = document.createElement('div');
+        wrapper.className = 'searchable-select-wrapper';
+        
+        // Create input area
+        const inputDiv = document.createElement('div');
+        inputDiv.className = 'searchable-select-input';
+        
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'search-input-field';
+        searchInput.placeholder = 'Search order source...';
+        
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'search-clear-btn';
+        clearBtn.innerHTML = '<i class="fas fa-times"></i>';
+        clearBtn.style.display = 'none';
+
+        inputDiv.appendChild(searchInput);
+        inputDiv.appendChild(clearBtn);
+        wrapper.appendChild(inputDiv);
+        
+        // Create dropdown
+        const dropdown = document.createElement('div');
+        dropdown.className = 'searchable-select-dropdown';
+        
+        // Build options from select element
+        const optionsData = [];
+        let currentGroup = '';
+        
+        for (const option of selectElement.options) {
+            if (option.value === '') continue;
+            
+            const optgroup = option.parentElement.tagName === 'OPTGROUP' ? option.parentElement.label : '';
+            if (currentGroup !== optgroup && optgroup) {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'select-optgroup';
+                groupDiv.textContent = optgroup;
+                dropdown.appendChild(groupDiv);
+                currentGroup = optgroup;
+            }
+            
+            optionsData.push({
+                value: option.value,
+                text: option.textContent,
+                element: null
+            });
+            
+            const optDiv = document.createElement('div');
+            optDiv.className = 'select-option';
+            optDiv.textContent = option.textContent;
+            optDiv.dataset.value = option.value;
+            dropdown.appendChild(optDiv);
+            
+            // Store reference
+            optionsData[optionsData.length - 1].element = optDiv;
+        }
+        
+        const noResults = document.createElement('div');
+        noResults.className = 'select-no-results';
+        noResults.textContent = 'No results found';
+        noResults.style.display = 'none';
+        dropdown.appendChild(noResults);
+        
+        wrapper.appendChild(dropdown);
+        selectElement.style.display = 'none';
+        parentDiv.appendChild(wrapper);
+        
+        // ===== EVENT HANDLERS =====
+        
+        // Handle option click - USING EVENT DELEGATION for reliability
+        dropdown.addEventListener('click', (e) => {
+            if (e.target.classList.contains('select-option')) {
+                const value = e.target.dataset.value;
+                const text = e.target.textContent;
+                
+                // Update select element
+                selectElement.value = value;
+                
+                // Update display
+                searchInput.value = text;
+                
+                // Update UI
+                dropdown.querySelectorAll('.select-option').forEach(o => o.style.backgroundColor = '');
+                e.target.style.backgroundColor = '#f0f4ff';
+                dropdown.classList.remove('show');
+                clearBtn.style.display = 'inline-flex';
+                
+                // Trigger change and save
+                selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+                saveFormData();
+                
+                setTimeout(() => searchInput.blur(), 100);
+            }
+        });
+        
+        // Hover effects on options
+        dropdown.addEventListener('mouseenter', (e) => {
+            if (e.target.classList.contains('select-option')) {
+                dropdown.querySelectorAll('.select-option').forEach(o => o.style.backgroundColor = '');
+                e.target.style.backgroundColor = '#f0f4ff';
+            }
+        }, true);
+        
+        dropdown.addEventListener('mouseleave', (e) => {
+            if (e.target.classList.contains('select-option')) {
+                e.target.style.backgroundColor = '';
+            }
+        }, true);
+        
+        // Input focus
+        inputDiv.addEventListener('click', (e) => {
+            if (e.target !== clearBtn) {
+                dropdown.classList.add('show');
+                searchInput.focus();
+            }
+        });
+        
+        searchInput.addEventListener('focus', () => {
+            dropdown.classList.add('show');
+        });
+        
+        // Search functionality
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            const allOptionElements = Array.from(dropdown.querySelectorAll('.select-option'));
+            let visibleCount = 0;
+            
+            if (query.length > 0) {
+                // Filter options
+                const filtered = allOptionElements.filter(opt => 
+                    opt.textContent.toLowerCase().includes(query)
+                );
+                
+                visibleCount = filtered.length;
+                
+                // Sort for best match first
+                filtered.sort((a, b) => {
+                    const aText = a.textContent.toLowerCase();
+                    const bText = b.textContent.toLowerCase();
+                    
+                    // Exact match
+                    if (aText === query) return -1;
+                    if (bText === query) return 1;
+                    
+                    // Starts with
+                    if (aText.startsWith(query) && !bText.startsWith(query)) return -1;
+                    if (bText.startsWith(query) && !aText.startsWith(query)) return 1;
+                    
+                    return aText.localeCompare(bText);
+                });
+                
+                // Hide all, show filtered
+                allOptionElements.forEach(opt => opt.style.display = 'none');
+                dropdown.querySelectorAll('.select-optgroup').forEach(og => og.style.display = 'none');
+                
+                // Show filtered in correct order
+                filtered.forEach((opt, idx) => {
+                    opt.style.display = '';
+                    opt.style.backgroundColor = idx === 0 ? '#f0f4ff' : '';
+                });
+                
+                noResults.style.display = 'none';
+            } else {
+                // Show all
+                allOptionElements.forEach(opt => {
+                    opt.style.display = '';
+                    opt.style.backgroundColor = '';
+                });
+                dropdown.querySelectorAll('.select-optgroup').forEach(og => og.style.display = '');
+                noResults.style.display = 'none';
+            }
+            
+            dropdown.classList.add('show');
+            noResults.style.display = visibleCount === 0 && query.length > 0 ? 'block' : 'none';
+        });
+        
+        // Keyboard navigation
+        searchInput.addEventListener('keydown', (e) => {
+            const visibles = Array.from(dropdown.querySelectorAll('.select-option')).filter(o => o.style.display !== 'none');
+            
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const highlighted = visibles.find(o => o.style.backgroundColor === '#f0f4ff');
+                if (highlighted) highlighted.click();
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const current = visibles.findIndex(o => o.style.backgroundColor === '#f0f4ff');
+                const next = (current + 1) % visibles.length;
+                visibles.forEach(o => o.style.backgroundColor = '');
+                visibles[next].style.backgroundColor = '#f0f4ff';
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const current = visibles.findIndex(o => o.style.backgroundColor === '#f0f4ff');
+                const prev = current <= 0 ? visibles.length - 1 : current - 1;
+                visibles.forEach(o => o.style.backgroundColor = '');
+                visibles[prev].style.backgroundColor = '#f0f4ff';
+            }
+        });
+        
+        // Clear button
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            searchInput.value = '';
+            selectElement.value = '';
+            dropdown.querySelectorAll('.select-option').forEach(o => {
+                o.style.display = '';
+                o.style.backgroundColor = '';
+            });
+            dropdown.querySelectorAll('.select-optgroup').forEach(og => og.style.display = '');
+            clearBtn.style.display = 'none';
+            selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+            saveFormData();
+            searchInput.focus();
+        });
+        
+        // Close on outside click
+        document.addEventListener('click', (e) => {
+            if (!wrapper.contains(e.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
     }
 
     // ✅ LOCAL STORAGE CONFIGURATION
@@ -3430,6 +3852,9 @@
         customProductModal = new bootstrap.Modal(document.getElementById('customProductModal'));
         bestsellingProductDetailModal = new bootstrap.Modal(document.getElementById('bestsellingProductDetailModal'));
 
+        // ✅ INITIALIZE CUSTOM SEARCHABLE DROPDOWN FOR ORDER FROM
+        initializeSearchableSelect('select[name="order_from"]');
+
         // ✨ Load best-selling products on page load
         loadBestsellingProducts();
 
@@ -3506,11 +3931,13 @@
             function filterCities(searchValue) {
                 currentIndex = -1;
                 let hasVisible = false;
+                const visibleOptions = [];
 
                 cityOptions.forEach(option => {
                     const cityName = option.dataset.city.toLowerCase();
                     if (cityName.includes(searchValue)) {
                         option.style.display = '';
+                        visibleOptions.push(option);
                         hasVisible = true;
                     } else {
                         option.style.display = 'none';
@@ -3518,28 +3945,28 @@
                 });
 
                 // Sort visible - exact match first, then starts with, then contains
-                if (searchValue) {
-                    const visible = Array.from(cityOptions)
-                        .filter(opt => opt.style.display !== 'none')
-                        .sort((a, b) => {
-                            const aName = a.dataset.city.toLowerCase();
-                            const bName = b.dataset.city.toLowerCase();
-                            
-                            const aExact = aName === searchValue ? 0 : 1;
-                            const bExact = bName === searchValue ? 0 : 1;
-                            if (aExact !== bExact) return aExact - bExact;
-                            
-                            const aStarts = aName.startsWith(searchValue) ? 0 : 1;
-                            const bStarts = bName.startsWith(searchValue) ? 0 : 1;
-                            if (aStarts !== bStarts) return aStarts - bStarts;
-                            
-                            return aName.localeCompare(bName);
-                        });
+                if (searchValue && visibleOptions.length > 0) {
+                    visibleOptions.sort((a, b) => {
+                        const aName = a.dataset.city.toLowerCase();
+                        const bName = b.dataset.city.toLowerCase();
+                        
+                        // Exact match priority
+                        const aExact = aName === searchValue ? 0 : 1;
+                        const bExact = bName === searchValue ? 0 : 1;
+                        if (aExact !== bExact) return aExact - bExact;
+                        
+                        // Starts with priority
+                        const aStarts = aName.startsWith(searchValue) ? 0 : 1;
+                        const bStarts = bName.startsWith(searchValue) ? 0 : 1;
+                        if (aStarts !== bStarts) return aStarts - bStarts;
+                        
+                        // Alphabetical fallback
+                        return aName.localeCompare(bName);
+                    });
 
-                    // Reorder in DOM
-                    const container = cityDropdown.querySelector('div:not(.city-option)') || cityDropdown;
-                    visible.forEach((option, index) => {
-                        option.style.order = index;
+                    // Reorder in DOM - move sorted options to top
+                    visibleOptions.forEach((option) => {
+                        cityDropdown.appendChild(option);
                     });
                 }
             }

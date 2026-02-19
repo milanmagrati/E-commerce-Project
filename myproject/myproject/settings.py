@@ -139,6 +139,15 @@ LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'login'
 
+# ========== SESSION CONFIGURATION ==========
+# Session settings for 1-hour persistence (staff performance page filters)
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Store sessions in database
+SESSION_COOKIE_AGE = 3600  # 1 hour in seconds
+SESSION_COOKIE_HTTPONLY = True  # Prevent JS access for security
+SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session even after browser closes
+SESSION_SAVE_EVERY_REQUEST = False  # Only save when session data changes (performance)
 
 default_auto_field = 'django.db.models.BigAutoField'
 

@@ -548,3 +548,26 @@ Created system user for webhook operations
 [ERROR] 2026-02-16 14:19:02 ncm_service.create_order:95   Data sent: {'name': 'Molly Winters', 'phone': '9855648965', 'phone2': '', 'cod_charge': '-23.20', 'address': 'Officia cillum qui c', 'fbranch': 'TINKUNE', 'branch': 'BUTWAL', 'package': '2x Sawyer Moody', 'vref_id': 'T013', 'instruction': 'In enim enim ut est ', 'delivery_type': 'Door2Door', 'weight': '1.00'}
 [ERROR] 2026-02-16 14:19:02 views.create_ncm_shipment:257 Failed to create NCM order: {'Message': {}, 'Error': {'cod_charge': 'Invalid/Empty COD Amount'}}
 [ERROR] 2026-02-16 14:19:02 views.create_ncm_shipment:258 NCM Data sent: {'name': 'Molly Winters', 'phone': '9855648965', 'phone2': '', 'cod_charge': '-23.20', 'address': 'Officia cillum qui c', 'fbranch': 'TINKUNE', 'branch': 'BUTWAL', 'package': '2x Sawyer Moody', 'vref_id': 'T013', 'instruction': 'In enim enim ut est ', 'delivery_type': 'Door2Door', 'weight': '1.00'}
+[INFO] 2026-02-19 13:51:58 views.ncm_branches_list:418 Fetched 561 branches
+[ERROR] 2026-02-19 15:58:45 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514290
+[ERROR] 2026-02-19 15:58:45 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514291
+[ERROR] 2026-02-19 15:58:46 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514293
+[ERROR] 2026-02-19 15:58:46 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514294
+[ERROR] 2026-02-19 15:58:47 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514295
+[ERROR] 2026-02-19 15:58:47 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514296
+[ERROR] 2026-02-19 15:58:47 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514298
+[ERROR] 2026-02-19 15:58:48 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514300
+[ERROR] 2026-02-19 15:58:48 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514302
+[ERROR] 2026-02-19 15:58:49 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514304
+[ERROR] 2026-02-19 15:58:49 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18510873
+[ERROR] 2026-02-19 16:57:08 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514290
+[ERROR] 2026-02-19 16:57:09 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514291
+[ERROR] 2026-02-19 16:57:09 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514293
+[ERROR] 2026-02-19 16:57:10 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514294
+[ERROR] 2026-02-19 16:57:10 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514295
+[ERROR] 2026-02-19 16:57:11 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514296
+[ERROR] 2026-02-19 16:57:11 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514298
+[ERROR] 2026-02-19 16:57:12 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514300
+[ERROR] 2026-02-19 16:57:12 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514302
+[ERROR] 2026-02-19 16:57:13 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514304
+[ERROR] 2026-02-19 16:57:13 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18510873

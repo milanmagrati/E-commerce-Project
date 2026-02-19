@@ -272,10 +272,20 @@
                             <small class="text-muted">{{ order.created_at|nepali_time }}</small>
                         </td>
                         <td>
-                            {% with product_name=order_products|get_item:order.id %}
-                            <span class="badge bg-light text-dark" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block;" title="{{ product_name }}">
-                                <i class="fas fa-box"></i> {{ product_name|default:"No products" }}
-                            </span>
+                            {% with products=order.items.all %}
+                                {% if products %}
+                                    {% for item in products %}
+                                        <span class="badge bg-light text-dark" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; margin-right: 4px;" title="{{ item.product_name }} {% if item.variation_name %}({{ item.variation_name }}){% endif %} x{{ item.quantity }}">
+                                            <i class="fas fa-box"></i> {{ item.product_name }}
+                                            {% if item.variation_name %}
+                                                <small>({{ item.variation_name }})</small>
+                                            {% endif %}
+                                            <small class="ms-1">x{{ item.quantity }}</small>
+                                        </span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted">No products</span>
+                                {% endif %}
                             {% endwith %}
                         </td>
                         <td>

@@ -924,6 +924,139 @@
         margin-left: 0.5rem;
     }
 
+    /* ✅ CUSTOM SEARCHABLE DROPDOWN STYLES */
+    .searchable-select-wrapper {
+        position: relative;
+        width: 100%;
+    }
+
+    .searchable-select-input {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        height: 38px;
+        background: white;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative;
+    }
+
+    .searchable-select-input:hover {
+        border-color: var(--primary);
+    }
+
+    .searchable-select-input:focus,
+    .searchable-select-input.active {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .search-input-field {
+        border: none;
+        outline: none;
+        flex: 1;
+        font-size: 0.875rem;
+        background: transparent;
+        min-width: 100px;
+    }
+
+    .search-input-field::placeholder {
+        color: #cbd5e1;
+    }
+
+    .searchable-select-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-top: none;
+        border-radius: 0 0 6px 6px;
+        max-height: 0;
+        overflow: hidden;
+        opacity: 0;
+        transition: all 0.3s ease;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .searchable-select-dropdown.show {
+        max-height: 300px;
+        opacity: 1;
+        overflow-y: auto;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .select-optgroup {
+        padding: 0.5rem 0.75rem;
+        background: #f8fafc;
+        color: #64748b;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+        border-bottom: 1px solid #e2e8f0;
+        margin-top: 0.5rem;
+    }
+
+    .select-optgroup:first-child {
+        margin-top: 0;
+    }
+
+    .select-option {
+        padding: 0.75rem 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.875rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .select-option:hover {
+        background: #f0f4ff;
+    }
+
+    .select-option.selected {
+        background: #f0f4ff;
+        color: var(--primary);
+        font-weight: 600;
+    }
+
+    .select-option.hidden {
+        display: none;
+    }
+
+    .select-no-results {
+        padding: 1rem 0.75rem;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 0.875rem;
+    }
+
+    .search-clear-btn {
+        background: none;
+        border: none;
+        color: #94a3b8;
+        cursor: pointer;
+        padding: 0;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+    }
+
+    .search-clear-btn:hover {
+        color: var(--primary);
+        transform: rotate(90deg);
+    }
+
     /* Mobile responsive */
     @media (max-width: 768px) {
         .floating-clear-btn {
@@ -1033,11 +1166,36 @@
                         <label class="form-label">Order From *</label>
                         <select name="order_from" class="form-select" required>
                             <option value="">Select Source</option>
-                            <option value="website" {% if order.order_from == 'website' %}selected{% endif %}>Website</option>
-                            <option value="facebook" {% if order.order_from == 'facebook' %}selected{% endif %}>Facebook</option>
-                            <option value="instagram" {% if order.order_from == 'instagram' %}selected{% endif %}>Instagram</option>
-                            <option value="phone" {% if order.order_from == 'phone' %}selected{% endif %}>Phone</option>
-                            <option value="walk-in" {% if order.order_from == 'walk-in' %}selected{% endif %}>Walk-in</option>
+                            
+                            <!-- Website & Online -->
+                            <optgroup label="Website & Online">
+                                <option value="website" {% if order.order_from == 'website' %}selected{% endif %}>Website</option>
+                                <option value="mobile_app" {% if order.order_from == 'mobile_app' %}selected{% endif %}>Mobile App</option>
+                                <option value="email" {% if order.order_from == 'email' %}selected{% endif %}>Email</option>
+                            </optgroup>
+                            
+                            <!-- Social Media -->
+                            <optgroup label="Social Media">
+                                <option value="facebook" {% if order.order_from == 'facebook' %}selected{% endif %}>Facebook</option>
+                                <option value="instagram" {% if order.order_from == 'instagram' %}selected{% endif %}>Instagram</option>
+                                <option value="whatsapp" {% if order.order_from == 'whatsapp' %}selected{% endif %}>WhatsApp</option>
+                                <option value="telegram" {% if order.order_from == 'telegram' %}selected{% endif %}>Telegram</option>
+                                <option value="tiktok" {% if order.order_from == 'tiktok' %}selected{% endif %}>TikTok</option>
+                                <option value="youtube" {% if order.order_from == 'youtube' %}selected{% endif %}>YouTube</option>
+                                <option value="linkedin" {% if order.order_from == 'linkedin' %}selected{% endif %}>LinkedIn</option>
+                            </optgroup>
+                            
+                            <!-- Communication -->
+                            <optgroup label="Communication">
+                                <option value="phone" {% if order.order_from == 'phone' %}selected{% endif %}>Phone</option>
+                                <option value="sms" {% if order.order_from == 'sms' %}selected{% endif %}>SMS</option>
+                            </optgroup>
+                            
+                            <!-- In Person -->
+                            <optgroup label="In Person">
+                                <option value="walk-in" {% if order.order_from == 'walk-in' %}selected{% endif %}>Walk-in</option>
+                                <option value="showroom" {% if order.order_from == 'showroom' %}selected{% endif %}>Showroom</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -2399,12 +2557,247 @@
         showToastNotification(`✅ Custom product "${name}" added to cart!`, 'success');
     }
 
+    // ✅ INITIALIZE SEARCHABLE SELECT FUNCTION
+    function initializeSearchableSelect(selector) {
+        const selectElement = document.querySelector(selector);
+        if (!selectElement) return;
+
+        const parentDiv = selectElement.parentElement;
+        
+        // Create wrapper
+        const wrapper = document.createElement('div');
+        wrapper.className = 'searchable-select-wrapper';
+        
+        // Create input area
+        const inputDiv = document.createElement('div');
+        inputDiv.className = 'searchable-select-input';
+        
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'search-input-field';
+        searchInput.placeholder = 'Search or select order source...';
+        
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'search-clear-btn';
+        clearBtn.innerHTML = '<i class="fas fa-times"></i>';
+        clearBtn.style.display = 'none';
+
+        inputDiv.appendChild(searchInput);
+        inputDiv.appendChild(clearBtn);
+        wrapper.appendChild(inputDiv);
+        
+        // Create dropdown
+        const dropdown = document.createElement('div');
+        dropdown.className = 'searchable-select-dropdown';
+        
+        // Build options from select element
+        const optionsData = [];
+        let currentGroup = '';
+        
+        for (const option of selectElement.options) {
+            if (option.value === '') continue;
+            
+            const optgroup = option.parentElement.tagName === 'OPTGROUP' ? option.parentElement.label : '';
+            if (currentGroup !== optgroup && optgroup) {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'select-optgroup';
+                groupDiv.textContent = optgroup;
+                dropdown.appendChild(groupDiv);
+                currentGroup = optgroup;
+            }
+            
+            optionsData.push({
+                value: option.value,
+                text: option.textContent,
+                element: null
+            });
+            
+            const optDiv = document.createElement('div');
+            optDiv.className = 'select-option';
+            optDiv.textContent = option.textContent;
+            optDiv.dataset.value = option.value;
+            dropdown.appendChild(optDiv);
+            
+            // Store reference
+            optionsData[optionsData.length - 1].element = optDiv;
+        }
+        
+        const noResults = document.createElement('div');
+        noResults.className = 'select-no-results';
+        noResults.textContent = 'No results found';
+        noResults.style.display = 'none';
+        dropdown.appendChild(noResults);
+        
+        wrapper.appendChild(dropdown);
+        selectElement.style.display = 'none';
+        parentDiv.appendChild(wrapper);
+        
+        // ===== EVENT HANDLERS =====
+        
+        // Handle option click - USING EVENT DELEGATION for reliability
+        dropdown.addEventListener('click', (e) => {
+            if (e.target.classList.contains('select-option')) {
+                const value = e.target.dataset.value;
+                const text = e.target.textContent;
+                
+                // Update select element
+                selectElement.value = value;
+                
+                // Update display
+                searchInput.value = text;
+                
+                // Update UI
+                dropdown.querySelectorAll('.select-option').forEach(o => o.style.backgroundColor = '');
+                e.target.style.backgroundColor = '#f0f4ff';
+                dropdown.classList.remove('show');
+                clearBtn.style.display = 'inline-flex';
+                
+                // Trigger change and save
+                selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+                saveFormData();
+                
+                setTimeout(() => searchInput.blur(), 100);
+            }
+        });
+        
+        // Hover effects on options
+        dropdown.addEventListener('mouseenter', (e) => {
+            if (e.target.classList.contains('select-option')) {
+                dropdown.querySelectorAll('.select-option').forEach(o => o.style.backgroundColor = '');
+                e.target.style.backgroundColor = '#f0f4ff';
+            }
+        }, true);
+        
+        dropdown.addEventListener('mouseleave', (e) => {
+            if (e.target.classList.contains('select-option')) {
+                e.target.style.backgroundColor = '';
+            }
+        }, true);
+        
+        // Input focus
+        inputDiv.addEventListener('click', (e) => {
+            if (e.target !== clearBtn) {
+                dropdown.classList.add('show');
+                searchInput.focus();
+            }
+        });
+        
+        searchInput.addEventListener('focus', () => {
+            dropdown.classList.add('show');
+        });
+        
+        // Search functionality
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            const allOptionElements = Array.from(dropdown.querySelectorAll('.select-option'));
+            let visibleCount = 0;
+            
+            if (query.length > 0) {
+                // Filter options
+                const filtered = allOptionElements.filter(opt => 
+                    opt.textContent.toLowerCase().includes(query)
+                );
+                
+                visibleCount = filtered.length;
+                
+                // Sort for best match first
+                filtered.sort((a, b) => {
+                    const aText = a.textContent.toLowerCase();
+                    const bText = b.textContent.toLowerCase();
+                    
+                    // Exact match
+                    if (aText === query) return -1;
+                    if (bText === query) return 1;
+                    
+                    // Starts with
+                    if (aText.startsWith(query) && !bText.startsWith(query)) return -1;
+                    if (bText.startsWith(query) && !aText.startsWith(query)) return 1;
+                    
+                    return aText.localeCompare(bText);
+                });
+                
+                // Hide all, show filtered
+                allOptionElements.forEach(opt => opt.style.display = 'none');
+                dropdown.querySelectorAll('.select-optgroup').forEach(og => og.style.display = 'none');
+                
+                // Show filtered in correct order
+                filtered.forEach((opt, idx) => {
+                    opt.style.display = '';
+                    opt.style.backgroundColor = idx === 0 ? '#f0f4ff' : '';
+                });
+                
+                noResults.style.display = 'none';
+            } else {
+                // Show all
+                allOptionElements.forEach(opt => {
+                    opt.style.display = '';
+                    opt.style.backgroundColor = '';
+                });
+                dropdown.querySelectorAll('.select-optgroup').forEach(og => og.style.display = '');
+                noResults.style.display = 'none';
+            }
+            
+            dropdown.classList.add('show');
+            noResults.style.display = visibleCount === 0 && query.length > 0 ? 'block' : 'none';
+        });
+        
+        // Keyboard navigation
+        searchInput.addEventListener('keydown', (e) => {
+            const visibles = Array.from(dropdown.querySelectorAll('.select-option')).filter(o => o.style.display !== 'none');
+            
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const highlighted = visibles.find(o => o.style.backgroundColor === '#f0f4ff');
+                if (highlighted) highlighted.click();
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const current = visibles.findIndex(o => o.style.backgroundColor === '#f0f4ff');
+                const next = (current + 1) % visibles.length;
+                visibles.forEach(o => o.style.backgroundColor = '');
+                visibles[next].style.backgroundColor = '#f0f4ff';
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const current = visibles.findIndex(o => o.style.backgroundColor === '#f0f4ff');
+                const prev = current <= 0 ? visibles.length - 1 : current - 1;
+                visibles.forEach(o => o.style.backgroundColor = '');
+                visibles[prev].style.backgroundColor = '#f0f4ff';
+            }
+        });
+        
+        // Clear button
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            searchInput.value = '';
+            selectElement.value = '';
+            dropdown.querySelectorAll('.select-option').forEach(o => {
+                o.style.display = '';
+                o.style.backgroundColor = '';
+            });
+            dropdown.querySelectorAll('.select-optgroup').forEach(og => og.style.display = '');
+            clearBtn.style.display = 'none';
+            selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+            saveFormData();
+            searchInput.focus();
+        });
+        
+        // Close on outside click
+        document.addEventListener('click', (e) => {
+            if (!wrapper.contains(e.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+    }
+
     // ✅ INITIALIZE
     document.addEventListener('DOMContentLoaded', function() {
         productModal = new bootstrap.Modal(document.getElementById('productModal'));
         variationModal = new bootstrap.Modal(document.getElementById('variationModal'));
         partialPaymentModal = new bootstrap.Modal(document.getElementById('partialPaymentModal'));
         customProductModal = new bootstrap.Modal(document.getElementById('customProductModal'));
+        
+        // ✅ INITIALIZE CUSTOM SEARCHABLE DROPDOWN FOR ORDER FROM
+        initializeSearchableSelect('select[name="order_from"]');
 
         // ✅ HANDLE STATUS SELECTION FOR DISPATCHED ORDERS
         // If status_setup is null but order_status has a value (e.g., from dispatch management)

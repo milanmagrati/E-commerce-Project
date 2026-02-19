@@ -252,6 +252,7 @@ class NCMWebhookHandler:
             old_status = order.status
             old_ncm_status = order.ncm_status
             old_payment_status = order.payment_status
+            old_delivery_charge = order.delivery_charge
             
             # Map NCM status to system status
             system_status = self.STATUS_MAPPING.get(status, 'processing')
@@ -269,7 +270,25 @@ class NCMWebhookHandler:
                 order.cod_collected = Decimal(str(cod_amount))
                 order.payment_status = 'paid'
             
-            order.save(update_fields=['ncm_status', 'status', 'payment_status', 'delivered_at', 'cod_collected', 'updated_at'])
+            # ✅ Extract and save delivery charge from webhook payload
+            if payload:
+                # Try multiple possible field names for delivery charge (common in logistics APIs)
+                delivery_charge = (payload.get('chargeDetail') or 
+                                 payload.get('deliveryCharge') or 
+                                 payload.get('delivery_charge') or 
+                                 payload.get('chargedetail') or 
+                                 payload.get('shippingCharge') or 
+                                 payload.get('shipping_charge') or 
+                                 payload.get('charge') or 
+                                 payload.get('amount'))
+                if delivery_charge and float(delivery_charge) > 0:
+                    try:
+                        order.delivery_charge = Decimal(str(delivery_charge))
+                        logger.info(f"✓ Updated delivery charge: {delivery_charge} for order {order.order_number}")
+                    except Exception as e:
+                        logger.warning(f"Could not parse delivery_charge {delivery_charge}: {str(e)}")
+            
+            order.save(update_fields=['ncm_status', 'status', 'payment_status', 'delivered_at', 'cod_collected', 'delivery_charge', 'updated_at'])
             
             # Create activity log
             OrderActivityLog.objects.create(

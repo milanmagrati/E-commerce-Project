@@ -27,10 +27,61 @@ class OrderItemInline(admin.TabularInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ['order_number', 'customer_name', 'total_amount', 'order_status', 'payment_status', 'created_at']
-    list_filter = ['order_status', 'payment_status', 'created_at']
-    search_fields = ['order_number', 'customer_name', 'customer_email']
+    list_display = ['order_number', 'customer_name', 'total_amount', 'order_status', 'payment_status', 'created_at', 'ncm_order_id', 'delivery_charge']
+    list_filter = ['order_status', 'payment_status', 'created_at', 'ncm_order_id']
+    search_fields = ['order_number', 'customer_name', 'customer_email', 'ncm_order_id']
     inlines = [OrderItemInline]
+    actions = ['fetch_delivery_charges']
+    readonly_fields = ['ncm_order_id', 'ncm_status', 'delivery_charge']
+
+    def fetch_delivery_charges(self, request, queryset):
+        """Admin action to fetch delivery charges from NCM API for selected orders"""
+        from services.ncm_service import NCMService
+        from decimal import Decimal
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        ncm_service = NCMService()
+        
+        updated = 0
+        failed = 0
+        
+        for order in queryset.filter(ncm_order_id__isnull=False):
+            try:
+                details_result = ncm_service.get_order_details(order.ncm_order_id)
+                
+                if details_result.get('success'):
+                    details_data = details_result.get('data', {})
+                    
+                    # Try multiple possible field names for delivery charge
+                    delivery_charge = (
+                        details_data.get('chargeDetail') or 
+                        details_data.get('deliveryCharge') or 
+                        details_data.get('deliverycharge') or 
+                        details_data.get('delivery_charge') or 
+                        details_data.get('chargedetail') or 
+                        details_data.get('shippingCharge') or 
+                        details_data.get('shipping_charge') or 
+                        details_data.get('charge') or 
+                        details_data.get('amount') or 
+                        0
+                    )
+                    
+                    if delivery_charge and float(delivery_charge) > 0:
+                        order.delivery_charge = Decimal(str(delivery_charge))
+                        order.save(update_fields=['delivery_charge'])
+                        updated += 1
+                        logger.info(f"✅ Updated delivery charge for {order.order_number}: Rs. {delivery_charge}")
+                else:
+                    failed += 1
+                    logger.error(f"Failed to fetch details for {order.order_number}: {details_result.get('error')}")
+            except Exception as e:
+                failed += 1
+                logger.error(f"Error fetching delivery charge for {order.order_number}: {str(e)}")
+        
+        self.message_user(request, f'✅ Updated {updated} orders with delivery charges. Failed: {failed}')
+    
+    fetch_delivery_charges.short_description = "Fetch delivery charges from NCM API"
 
 @admin.register(Customer)
 class CustomerAdmin(admin.ModelAdmin):

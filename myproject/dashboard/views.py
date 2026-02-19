@@ -280,6 +280,57 @@ def dashboard_view(request):
             'sales': float(sales)
         })
     
+    # Order source data by dates (last 7 days - default)
+    from django.db.models.functions import TruncDate
+    
+    # Get all sources first
+    all_sources = set()
+    source_dates_data = orders.annotate(
+        order_date=TruncDate('created_at')
+    ).values('order_date', 'order_from').annotate(
+        count=Count('id')
+    ).order_by('order_date', 'order_from')
+    
+    for entry in source_dates_data:
+        source_name = entry['order_from'] if entry['order_from'] else 'Direct'
+        all_sources.add(source_name)
+    
+    # Generate last 7 days of dates (default view)
+    dates_list = []
+    for i in range(6, -1, -1):
+        date = (timezone.now() - timedelta(days=i)).date()
+        dates_list.append(date)
+    
+    # Build data structure: {date: {source: count}}
+    order_sources_by_date = {date: {} for date in dates_list}
+    
+    for source_name in all_sources:
+        source_data = orders.filter(
+            order_from=source_name if source_name != 'Direct' else ''
+        ).annotate(
+            order_date=TruncDate('created_at')
+        ).values('order_date').annotate(
+            count=Count('id')
+        ).order_by('order_date')
+        
+        for entry in source_data:
+            if entry['order_date'] in order_sources_by_date:
+                order_sources_by_date[entry['order_date']][source_name] = entry['count']
+    
+    # Format for JSON: prepare chart data
+    order_sources = {
+        'dates': [date.strftime('%b %d') for date in dates_list],
+        'sources': sorted(list(all_sources)),
+        'data': {}
+    }
+    
+    for source in order_sources['sources']:
+        counts = []
+        for date in dates_list:
+            count = order_sources_by_date.get(date, {}).get(source, 0)
+            counts.append(count)
+        order_sources['data'][source] = counts
+    
     context = {
         'total_products': total_products,
         'total_orders': total_orders,
@@ -292,6 +343,7 @@ def dashboard_view(request):
         'low_stock_products': low_stock_products,
         'low_stock_alert_count': low_stock_alert_count,
         'monthly_sales': json.dumps(monthly_sales),
+        'order_sources': json.dumps(order_sources),
     }
     return render(request, 'dashboard.html', context)
 @login_required
@@ -1605,6 +1657,98 @@ def chart_data(request):
 
 
 @login_required
+def order_sources_data(request):
+    """API endpoint to get order sources data with date range filtering"""
+    # Check if custom date range is provided
+    custom_from = request.GET.get('custom_from')
+    custom_to = request.GET.get('custom_to')
+    
+    if custom_from and custom_to:
+        try:
+            from datetime import datetime
+            start_date = datetime.strptime(custom_from, '%Y-%m-%d').date()
+            end_date = datetime.strptime(custom_to, '%Y-%m-%d').date()
+            
+            # Validate date range
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+            
+            # Generate dates list based on custom range
+            dates_list = []
+            current = start_date
+            while current <= end_date:
+                dates_list.append(current)
+                current += timedelta(days=1)
+        except (ValueError, TypeError):
+            # Default to last 7 days if invalid dates
+            dates_list = []
+            for i in range(6, -1, -1):
+                date = (timezone.now() - timedelta(days=i)).date()
+                dates_list.append(date)
+    else:
+        # Use preset days parameter
+        days = request.GET.get('days', 14)
+        try:
+            days = int(days)
+            if days not in [7, 14, 30, 60, 90]:
+                days = 14
+        except (ValueError, TypeError):
+            days = 14
+        
+        # Generate dates list based on days parameter
+        dates_list = []
+        for i in range(days - 1, -1, -1):
+            date = (timezone.now() - timedelta(days=i)).date()
+            dates_list.append(date)
+    
+    orders = Order.objects.all()
+    
+    # Get all sources first
+    all_sources = set()
+    source_dates_data = orders.annotate(
+        order_date=TruncDate('created_at')
+    ).values('order_date', 'order_from').annotate(
+        count=Count('id')
+    ).order_by('order_date', 'order_from')
+    
+    for entry in source_dates_data:
+        source_name = entry['order_from'] if entry['order_from'] else 'Direct'
+        all_sources.add(source_name)
+    
+    # Build data structure: {date: {source: count}}
+    order_sources_by_date = {date: {} for date in dates_list}
+    
+    for source_name in all_sources:
+        source_data = orders.filter(
+            order_from=source_name if source_name != 'Direct' else ''
+        ).annotate(
+            order_date=TruncDate('created_at')
+        ).values('order_date').annotate(
+            count=Count('id')
+        ).order_by('order_date')
+        
+        for entry in source_data:
+            if entry['order_date'] in order_sources_by_date:
+                order_sources_by_date[entry['order_date']][source_name] = entry['count']
+    
+    # Format for JSON: prepare chart data
+    order_sources = {
+        'dates': [date.strftime('%b %d') for date in dates_list],
+        'sources': sorted(list(all_sources)),
+        'data': {}
+    }
+    
+    for source in order_sources['sources']:
+        counts = []
+        for date in dates_list:
+            count = order_sources_by_date.get(date, {}).get(source, 0)
+            counts.append(count)
+        order_sources['data'][source] = counts
+    
+    return JsonResponse(order_sources)
+
+
+@login_required
 @permission_required('can_view_customers')
 def customers_view(request):
     customers = Customer.objects.all().order_by('-created_at')
@@ -2139,15 +2283,31 @@ def orders_list(request):
     
     # ✅ FIX DECIMAL CORRUPTION IN ORDERS BEFORE DISPLAY
     # This ensures amounts are always correct without needing to visit detail page
+    order_products = {}
     for order in orders_page.object_list:
         try:
             fix_order_decimals(order)
+            # Build product names dictionary for template
+            items = order.items.all()
+            if items.exists():
+                product_names = []
+                for item in items:
+                    if item.product_name:
+                        if item.variation_name:
+                            product_names.append(f"{item.product_name} ({item.variation_name})")
+                        else:
+                            product_names.append(item.product_name)
+                order_products[order.id] = ", ".join(product_names)
+            else:
+                order_products[order.id] = "No products"
         except Exception as e:
             import logging
             logging.error(f"Error fixing decimals for order {order.id}: {e}")
+            order_products[order.id] = "No products"
     
     context = {
         'orders': orders_page,
+        'order_products': order_products,
         'total_orders': total_orders,
         'total_revenue': total_revenue,
         'pending_orders': pending_orders,
@@ -4534,6 +4694,44 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                     order.ncm_order_id = int(ncm_id)
                 order.logistics = 'ncm' # Ensure logistics is set
                 order.save()
+
+                # ✅ FETCH DELIVERY CHARGE FROM NCM API
+                try:
+                    # Import ncm_service here to avoid circular imports
+                    from services.ncm_service import NCMService
+                    ncm_service = NCMService()
+                    details_result = ncm_service.get_order_details(order.ncm_order_id)
+                    
+                    logger.info(f"NCM API response details: {details_result}")
+                    
+                    if details_result.get('success'):
+                        details_data = details_result.get('data', {})
+                        logger.info(f"Extracted data from NCM response: {details_data}")
+                        
+                        # Extract delivery_charge from NCM response - try multiple field names
+                        delivery_charge = (details_data.get('chargeDetail') or 
+                                         details_data.get('deliveryCharge') or 
+                                         details_data.get('deliverycharge') or 
+                                         details_data.get('delivery_charge') or 
+                                         details_data.get('chargedetail') or 
+                                         details_data.get('shippingCharge') or 
+                                         details_data.get('shipping_charge') or 
+                                         details_data.get('charge') or 
+                                         details_data.get('amount') or
+                                         0)
+                        
+                        logger.info(f"Extracted delivery_charge: {delivery_charge} from data keys: {list(details_data.keys())}")
+                        
+                        if delivery_charge and float(delivery_charge) > 0:
+                            order.delivery_charge = Decimal(str(delivery_charge))
+                            order.save(update_fields=['delivery_charge'])
+                            logger.info(f"✅ Fetched and saved delivery charge: {delivery_charge} for NCM order {order.ncm_order_id}")
+                        else:
+                            logger.warning(f"⚠️ No delivery charge found in NCM response for order {order.ncm_order_id}. Response data: {details_data}")
+                    else:
+                        logger.warning(f"⚠️ Failed to fetch order details from NCM: {details_result.get('error', 'Unknown error')}")
+                except Exception as e:
+                    logger.error(f"Error fetching delivery charge from NCM: {str(e)}", exc_info=True)
 
                 # Log Activity
                 OrderActivityLog.objects.create(
@@ -7337,13 +7535,18 @@ def ncm_track_order(request, order_id):
 @login_required
 def ncm_sync_all_statuses(request):
     """
-    Sync status for all NCM orders (admin function)
+    Sync status and delivery charges for all NCM orders (admin function)
     """
     if not request.user.is_staff:
         messages.error(request, '❌ Admin access required')
         return redirect('ncm_orders_list')
     
     try:
+        from services.ncm_service import NCMService
+        from decimal import Decimal
+        
+        ncm_service = NCMService()
+        
         # Get all NCM orders
         ncm_orders = Order.objects.filter(
             is_deleted=False,
@@ -7354,6 +7557,7 @@ def ncm_sync_all_statuses(request):
         
         total = ncm_orders.count()
         updated = 0
+        charges_updated = 0
         errors = 0
         
         for order in ncm_orders:
@@ -7385,16 +7589,47 @@ def ncm_sync_all_statuses(request):
                         
                         if new_status and new_status != order.ncm_status:
                             order.ncm_status = new_status
-                            order.save()
+                            order.save(update_fields=['ncm_status', 'updated_at'])
                             updated += 1
-            except:
+                
+                # ✅ Fetch and update delivery charge from NCM
+                if not order.delivery_charge or order.delivery_charge == 0:
+                    try:
+                        details_result = ncm_service.get_order_details(order.ncm_order_id)
+                        if details_result.get('success'):
+                            details_data = details_result.get('data', {})
+                            # Try multiple possible field names for delivery charge
+                            delivery_charge = (details_data.get('chargeDetail') or 
+                                             details_data.get('deliveryCharge') or 
+                                             details_data.get('deliverycharge') or 
+                                             details_data.get('delivery_charge') or 
+                                             details_data.get('chargedetail') or 
+                                             details_data.get('shippingCharge') or 
+                                             details_data.get('shipping_charge') or 
+                                             details_data.get('charge') or 
+                                             details_data.get('amount') or 
+                                             0)
+                            
+                            if delivery_charge and float(delivery_charge) > 0:
+                                order.delivery_charge = Decimal(str(delivery_charge))
+                                order.save(update_fields=['delivery_charge', 'updated_at'])
+                                charges_updated += 1
+                                logger.info(f"✅ Updated delivery charge for {order.order_number}: {delivery_charge}")
+                    except Exception as e:
+                        logger.warning(f"Could not fetch delivery charge for order {order.ncm_order_id}: {str(e)}")
+                        # Don't fail the whole sync, just log and continue
+                        pass
+                        
+            except Exception as e:
+                logger.error(f"Error syncing order {order.ncm_order_id}: {str(e)}")
                 errors += 1
                 continue
         
-        messages.success(request, f'✅ Synced {updated} orders out of {total}. Errors: {errors}')
+        messages.success(request, f'✅ Synced {updated} statuses, {charges_updated} delivery charges out of {total} orders. Errors: {errors}')
     
     except Exception as e:
         messages.error(request, f'❌ Sync failed: {str(e)}')
+        logger.error(f"Error in ncm_sync_all_statuses: {str(e)}")
     
     return redirect('ncm_orders_list')
 
@@ -9647,7 +9882,7 @@ def financial_report_data(request):
         ncm_revenue_list = list(
             orders.values(
                 'delivered_at', 'id', 'order_number', 'customer__name', 'ncm_order_id', 'ncm_status',
-                'total_amount', 'delivery_charge', 'payment_status', 'payment_method', 'cod_collected', 'created_at'
+                'total_amount', 'shipping_charge', 'delivery_charge', 'payment_status', 'payment_method', 'cod_collected', 'created_at'
             )
         )
         
@@ -9667,6 +9902,7 @@ def financial_report_data(request):
         # Convert Decimals and format dates in ncm_revenue
         for order in ncm_revenue:
             order['total_amount'] = to_float(order['total_amount'])
+            order['shipping_charge'] = to_float(order['shipping_charge'])
             order['delivery_charge'] = to_float(order['delivery_charge'])
             order['cod_collected'] = to_float(order['cod_collected'])
             # Handle delivered_at — fall back to created_at for undelivered orders
@@ -9751,11 +9987,36 @@ def financial_report_data(request):
 
 @login_required(login_url='login')
 def staff_performance_analytics(request):
-    """Staff Performance Analytics Dashboard"""
+    """Staff Performance Analytics Dashboard with Session Persistence"""
     
-    # Get filter params from query string
-    period = request.GET.get('period', 'this_month')
-    staff_filter = request.GET.get('staff_filter', 'all')
+    # ========== SESSION PERSISTENCE LOGIC ==========
+    # Check if user wants to clear filters
+    clear_filters = request.GET.get('clear_filters', 'false') == 'true'
+    
+    if clear_filters:
+        # Clear the session filters
+        if 'staff_performance_period' in request.session:
+            del request.session['staff_performance_period']
+        if 'staff_performance_filter' in request.session:
+            del request.session['staff_performance_filter']
+        request.session.modified = True
+        # Redirect without the clear_filters param
+        return redirect('staff_performance_analytics')
+    
+    # Get filter params from query string (prioritize GET over session)
+    period = request.GET.get('period', None)
+    staff_filter = request.GET.get('staff_filter', None)
+    
+    # Fall back to session if not in GET params
+    if period is None:
+        period = request.session.get('staff_performance_period', 'this_month')
+    if staff_filter is None:
+        staff_filter = request.session.get('staff_performance_filter', 'all')
+    
+    # Save current filters to session for future visits (1-hour timeout configured in settings)
+    request.session['staff_performance_period'] = period
+    request.session['staff_performance_filter'] = staff_filter
+    request.session.modified = True  # Ensure session is saved
     
     # Calculate date range based on period
     today = timezone.now().date()
@@ -9845,9 +10106,19 @@ def staff_performance_analytics(request):
         role__in=['sales', 'warehouse']
     ).order_by('first_name')
     
+    # ✅ Create a separate list for filtering based on selected staff
+    staff_to_show = staff_members
+    if staff_filter != 'all':
+        try:
+            staff_id = int(staff_filter)
+            # Only include the selected staff member
+            staff_to_show = staff_members.filter(id=staff_id)
+        except (ValueError, TypeError):
+            pass
+    
     staff_performance_data = []
     
-    for staff in staff_members:
+    for staff in staff_to_show:
         staff_orders = orders_qs.filter(created_by=staff)
         staff_delivered = staff_orders.filter(
             Q(status='delivered') | Q(order_status='delivered')
@@ -9875,32 +10146,124 @@ def staff_performance_analytics(request):
             'success_rate': round(staff_success_rate, 2),
         })
     
-    # Sort by success rate descending
-    staff_performance_data.sort(key=lambda x: x['success_rate'], reverse=True)
+    # Sort by success rate descending (only when showing all staff)
+    if staff_filter == 'all':
+        staff_performance_data.sort(key=lambda x: x['success_rate'], reverse=True)
     
     # ========== TOP PERFORMING PRODUCTS ==========
-    top_products_data = OrderItem.objects.filter(
-        order__in=orders_qs
-    ).values('product__name').annotate(
-        units_sold=Count('id'),
-        total_revenue=Sum('total')
-    ).order_by('-total_revenue')[:5]
+    # Build product revenue with proportional order totals
+    from django.db.models import F, Case, When, Value, DecimalField
+    
+    product_revenues = {}
+    
+    # Get all order items and their parent order totals
+    order_items = OrderItem.objects.filter(
+        order__in=orders_qs,
+        product__isnull=False
+    ).select_related('product', 'order').values_list(
+        'product_id', 'product__name', 'product__product_type', 
+        'order_id', 'order__total_amount', 'quantity', 'total'
+    )
+    
+    for product_id, product_name, product_type, order_id, order_total, qty, item_total in order_items:
+        if product_id not in product_revenues:
+            product_revenues[product_id] = {
+                'product__name': product_name,
+                'product__product_type': product_type,
+                'units_sold': 0,
+                'total_revenue': Decimal('0'),
+                'order_totals': {}  # Track orders to avoid double-counting
+            }
+        
+        product_revenues[product_id]['units_sold'] += qty
+        
+        # Calculate this item's proportional share of the order total
+        # Use SafeDecimal to handle the calculation
+        if order_id not in product_revenues[product_id]['order_totals']:
+            product_revenues[product_id]['order_totals'][order_id] = safe_decimal(order_total, max_digits=12, decimal_places=2)
+            product_revenues[product_id]['total_revenue'] += safe_decimal(order_total, max_digits=12, decimal_places=2)
+    
+    # Convert to list format expected by the rest of the code
+    top_products_data = []
+    for product_id, info in product_revenues.items():
+        top_products_data.append({
+            'product_id': product_id,
+            'product__name': info['product__name'],
+            'product__product_type': info['product__product_type'],
+            'units_sold': info['units_sold'],
+            'total_revenue': info['total_revenue']
+        })
+    
+    # Sort by revenue descending and take top 5
+    top_products_data.sort(key=lambda x: x['total_revenue'], reverse=True)
+    top_products_data = top_products_data[:5]
     
     top_products = []
     for i, item in enumerate(top_products_data, 1):
         # Use safe_decimal on aggregated value with larger max_digits
+        revenue_raw = item['total_revenue'] or Decimal('0')
         revenue = safe_decimal(
-            item['total_revenue'] or 0,
+            revenue_raw,
             max_digits=12,  # Allow aggregated sums to exceed single order limit
             decimal_places=2
         )
         
-        top_products.append({
+        # Determine if product is simple or variable
+        product_type = item.get('product__product_type', 'simple')
+        product_name = item['product__name'] or 'Unknown Product'
+        units_sold = item['units_sold'] or 0
+        product_id = item['product_id']
+        
+        product_data = {
             'rank': i,
-            'name': item['product__name'],
-            'units': item['units_sold'],
+            'name': product_name,
+            'product_id': product_id,
+            'product_type': product_type,
+            'units': units_sold,
             'revenue': revenue,
-        })
+            'variants': []
+        }
+        
+        # ✅ FETCH VARIANT DETAILS FOR VARIABLE PRODUCTS
+        if product_type == 'variable':
+            variants_data = OrderItem.objects.filter(
+                order__in=orders_qs,
+                product_id=product_id,
+                product_variation__isnull=False
+            ).values(
+                'product_variation_id',
+                'product_variation__variation_name',
+                'product_name'
+            ).annotate(
+                variant_units=Sum('quantity'),
+                variant_revenue=Sum('total')
+            ).order_by('-variant_revenue')
+            
+            # ✅ COLLECT VARIANT DATA AND SUM VARIANT UNITS (but NOT revenue)
+            total_variant_units = 0
+            
+            for variant in variants_data:
+                variant_revenue = safe_decimal(
+                    variant['variant_revenue'] or Decimal('0'),
+                    max_digits=12,
+                    decimal_places=2
+                )
+                variant_units = variant['variant_units'] or 0
+                
+                # Sum units for main product totals
+                total_variant_units += variant_units
+                
+                product_data['variants'].append({
+                    'name': variant['product_variation__variation_name'] or variant['product_name'],
+                    'units': variant_units,
+                    'revenue': variant_revenue,  # Variant row shows OrderItem.total
+                })
+            
+            # ✅ UPDATE MAIN PRODUCT UNITS (from variant sum) BUT KEEP REVENUE FROM Order.total_amount
+            product_data['units'] = total_variant_units
+            # NOTE: product_data['revenue'] was already set to Order.total_amount sum above - do NOT override it
+        
+        top_products.append(product_data)
     
     # ========== PERFORMANCE TRENDS OVER TIME ==========
     daily_data = Order.objects.filter(

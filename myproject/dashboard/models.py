@@ -5,8 +5,11 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 import random
 import string
+import logging
 from decimal import Decimal
 from .decimal_utils import safe_decimal, validate_decimal_fields
+
+logger = logging.getLogger(__name__)
 
 # ✅ Remove this line:
 # from django.contrib.auth.models import User
@@ -319,9 +322,28 @@ class OrderItem(models.Model):
         return f"{self.product_name} x {self.quantity}"
 
     def save(self, *args, **kwargs):
-        self.total = self.price * self.quantity
+        # Calculate total with proper decimal handling
+        from .decimal_utils import validate_order_item_decimal_fields, safe_decimal
+        
+        # Ensure price and quantity are valid
+        if self.price is None:
+            self.price = Decimal('0')
+        if self.quantity is None:
+            self.quantity = 0
+        
+        # Calculate total safely
+        try:
+            self.total = safe_decimal(
+                Decimal(str(self.price)) * self.quantity,
+                max_digits=18,
+                decimal_places=2,
+                default='0'
+            )
+        except Exception as e:
+            logger.error(f"Error calculating OrderItem total: {e}")
+            self.total = Decimal('0')
+        
         # Validate all decimal fields to prevent InvalidOperation errors
-        from .decimal_utils import validate_order_item_decimal_fields
         self, _ = validate_order_item_decimal_fields(self)
         super().save(*args, **kwargs)
 
