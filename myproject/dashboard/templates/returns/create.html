@@ -811,8 +811,8 @@
                     </h6>
                     
                     <div class="form-check mb-3">
-                        <input type="checkbox" class="form-check-input" id="selectAll-${orderNumber}" 
-                               onchange="toggleAllItems('${orderNumber}')">
+                        <input type="checkbox" class="form-check-input" id="selectAll-${orderNumber}"
+                               onchange="toggleAllItems('${orderNumber}')" checked>
                         <label class="form-check-label fw-bold" for="selectAll-${orderNumber}">
                             Select All Items
                         </label>
@@ -823,37 +823,64 @@
         
         orderData.items.forEach((item, index) => {
             html += `
-                <div class="item-selection-card">
+                <div class="item-selection-card selected">
                     <div class="row align-items-center">
                         <div class="col-md-1">
-                            <input type="checkbox" 
-                                   class="form-check-input item-checkbox" 
+                            <input type="checkbox"
+                                   class="form-check-input item-checkbox"
                                    data-order="${orderNumber}"
-                                   data-item-id="${item.id}" 
-                                   data-price="${item.price}" 
-                                   data-qty="${item.quantity}"
+                                   data-item-id="${item.id}"
+                                   data-price="${item.price}"
+                                   data-qty="${item.returnable_qty}"
                                    id="item-${orderNumber}-${index}"
-                                   onchange="updateReturnSummary('${orderNumber}')">
+                                   onchange="updateReturnSummary('${orderNumber}')"
+                                   checked>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <strong>${item.product_name}</strong>
                             ${item.product_variation ? `<br><small class="text-muted">${item.product_variation}</small>` : ''}
                         </div>
                         <div class="col-md-2 text-center">
                             <span class="badge bg-secondary">Qty: ${item.quantity}</span>
+                            ${item.already_returned > 0 ? `<br><small class="text-warning">Returned: ${item.already_returned}</small>` : ''}
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-5">
                             <div class="mb-1"><strong>रू ${item.price}</strong></div>
-                            <input type="number" 
-                                   class="form-control form-control-sm return-qty text-center" 
-                                   min="1" 
-                                   max="${item.quantity}" 
-                                   value="1" 
-                                   data-order="${orderNumber}"
-                                   data-item-id="${item.id}" 
-                                   onchange="updateReturnSummary('${orderNumber}')"
-                                   disabled>
-                            <small class="text-muted">Return Qty</small>
+                            <div class="row g-1">
+                                <div class="col-4">
+                                    <input type="number"
+                                           class="form-control form-control-sm return-qty text-center"
+                                           min="1"
+                                           max="${item.returnable_qty}"
+                                           value="${item.returnable_qty}"
+                                           data-order="${orderNumber}"
+                                           data-item-id="${item.id}"
+                                           onchange="syncQtyFields(this, '${orderNumber}'); updateReturnSummary('${orderNumber}')">
+                                    <small class="text-muted">Return Qty</small>
+                                </div>
+                                <div class="col-4">
+                                    <input type="number"
+                                           class="form-control form-control-sm good-qty text-center"
+                                           min="0"
+                                           max="${item.returnable_qty}"
+                                           value="${item.returnable_qty}"
+                                           data-order="${orderNumber}"
+                                           data-item-id="${item.id}"
+                                           onchange="validateGoodDamagedQty(this, '${orderNumber}')">
+                                    <small class="text-success">Good Qty</small>
+                                </div>
+                                <div class="col-4">
+                                    <input type="number"
+                                           class="form-control form-control-sm damaged-qty text-center"
+                                           min="0"
+                                           max="${item.returnable_qty}"
+                                           value="0"
+                                           data-order="${orderNumber}"
+                                           data-item-id="${item.id}"
+                                           onchange="validateGoodDamagedQty(this, '${orderNumber}')">
+                                    <small class="text-danger">Damaged Qty</small>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -898,6 +925,14 @@
                         <span>Total Quantity:</span>
                         <strong class="total-qty">0</strong>
                     </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span><i class="fas fa-check-circle"></i> Good Qty:</span>
+                        <strong class="total-good-qty">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span><i class="fas fa-times-circle"></i> Damaged Qty:</span>
+                        <strong class="total-damaged-qty">0</strong>
+                    </div>
                     <hr class="bg-white opacity-50">
                     <div class="d-flex justify-content-between">
                         <strong>Refund Amount:</strong>
@@ -912,21 +947,70 @@
         `;
         
         container.innerHTML = html;
+
+        // Update summary since items are checked by default
+        updateReturnSummary(orderNumber);
     }
+
+    // Sync good/damaged qty when return qty changes
+    window.syncQtyFields = function(input, orderNumber) {
+        const itemId = input.getAttribute('data-item-id');
+        const returnQty = parseInt(input.value) || 0;
+        const card = input.closest('.item-selection-card');
+        const goodQtyInput = card.querySelector('.good-qty');
+        const damagedQtyInput = card.querySelector('.damaged-qty');
+
+        // Reset good/damaged if they exceed new return qty
+        const currentGood = parseInt(goodQtyInput.value) || 0;
+        const currentDamaged = parseInt(damagedQtyInput.value) || 0;
+        if ((currentGood + currentDamaged) > returnQty) {
+            goodQtyInput.value = 0;
+            damagedQtyInput.value = 0;
+        }
+        goodQtyInput.max = returnQty;
+        damagedQtyInput.max = returnQty;
+    };
+
+    // Validate good + damaged qty does not exceed return qty
+    window.validateGoodDamagedQty = function(input, orderNumber) {
+        const card = input.closest('.item-selection-card');
+        const returnQtyInput = card.querySelector('.return-qty');
+        const goodQtyInput = card.querySelector('.good-qty');
+        const damagedQtyInput = card.querySelector('.damaged-qty');
+
+        const returnQty = parseInt(returnQtyInput.value) || 0;
+        let goodQty = parseInt(goodQtyInput.value) || 0;
+        let damagedQty = parseInt(damagedQtyInput.value) || 0;
+
+        if (goodQty < 0) { goodQty = 0; goodQtyInput.value = 0; }
+        if (damagedQty < 0) { damagedQty = 0; damagedQtyInput.value = 0; }
+
+        if ((goodQty + damagedQty) > returnQty) {
+            input.classList.add('is-invalid');
+            alert(`Good Qty (${goodQty}) + Damaged Qty (${damagedQty}) cannot exceed Return Qty (${returnQty}).`);
+            input.value = 0;
+            input.classList.remove('is-invalid');
+        }
+        updateReturnSummary(orderNumber);
+    };
 
     // Toggle All Items for an Order
     window.toggleAllItems = function(orderNumber) {
         const selectAllCheckbox = document.getElementById(`selectAll-${orderNumber}`);
         const itemCheckboxes = document.querySelectorAll(`.item-checkbox[data-order="${orderNumber}"]`);
         const qtyInputs = document.querySelectorAll(`.return-qty[data-order="${orderNumber}"]`);
-        
+        const goodQtyInputs = document.querySelectorAll(`.good-qty[data-order="${orderNumber}"]`);
+        const damagedQtyInputs = document.querySelectorAll(`.damaged-qty[data-order="${orderNumber}"]`);
+
         itemCheckboxes.forEach((checkbox, index) => {
             checkbox.checked = selectAllCheckbox.checked;
             const card = checkbox.closest('.item-selection-card');
             card.classList.toggle('selected', selectAllCheckbox.checked);
             qtyInputs[index].disabled = !selectAllCheckbox.checked;
+            goodQtyInputs[index].disabled = !selectAllCheckbox.checked;
+            damagedQtyInputs[index].disabled = !selectAllCheckbox.checked;
         });
-        
+
         updateReturnSummary(orderNumber);
     };
 
@@ -934,48 +1018,82 @@
     window.updateReturnSummary = function(orderNumber) {
         const checkboxes = document.querySelectorAll(`.item-checkbox[data-order="${orderNumber}"]`);
         const qtyInputs = document.querySelectorAll(`.return-qty[data-order="${orderNumber}"]`);
+        const goodQtyInputs = document.querySelectorAll(`.good-qty[data-order="${orderNumber}"]`);
+        const damagedQtyInputs = document.querySelectorAll(`.damaged-qty[data-order="${orderNumber}"]`);
         const summaryBox = document.getElementById(`summary-${orderNumber}`);
-        
+
         let totalRefund = 0;
         let selectedCount = 0;
         let totalQty = 0;
+        let totalGoodQty = 0;
+        let totalDamagedQty = 0;
 
         checkboxes.forEach((checkbox, index) => {
             const card = checkbox.closest('.item-selection-card');
             card.classList.toggle('selected', checkbox.checked);
             qtyInputs[index].disabled = !checkbox.checked;
-            
+            goodQtyInputs[index].disabled = !checkbox.checked;
+            damagedQtyInputs[index].disabled = !checkbox.checked;
+
             if (checkbox.checked) {
                 const price = parseFloat(checkbox.getAttribute('data-price'));
                 const qty = parseInt(qtyInputs[index].value) || 1;
+                const goodQty = parseInt(goodQtyInputs[index].value) || 0;
+                const damagedQty = parseInt(damagedQtyInputs[index].value) || 0;
                 totalRefund += price * qty;
                 selectedCount++;
                 totalQty += qty;
+                totalGoodQty += goodQty;
+                totalDamagedQty += damagedQty;
             }
         });
 
         summaryBox.querySelector('.selected-count').textContent = selectedCount;
         summaryBox.querySelector('.total-qty').textContent = totalQty;
+        summaryBox.querySelector('.total-good-qty').textContent = totalGoodQty;
+        summaryBox.querySelector('.total-damaged-qty').textContent = totalDamagedQty;
         summaryBox.querySelector('.refund-amount').textContent = `रू ${totalRefund.toFixed(2)}`;
     };
 
     // Process Return for an Order
     window.processReturn = function(orderNumber) {
         console.log('📤 Processing return for:', orderNumber);
-        
+
         const form = document.getElementById(`form-${orderNumber}`);
         const checkboxes = form.querySelectorAll('.item-checkbox');
         const qtyInputs = form.querySelectorAll('.return-qty');
-        
+        const goodQtyInputs = form.querySelectorAll('.good-qty');
+        const damagedQtyInputs = form.querySelectorAll('.damaged-qty');
+
         const selectedItems = [];
+        let hasValidationError = false;
         checkboxes.forEach((checkbox, index) => {
             if (checkbox.checked) {
+                const qty = parseInt(qtyInputs[index].value) || 1;
+                const goodQty = parseInt(goodQtyInputs[index].value) || 0;
+                const damagedQty = parseInt(damagedQtyInputs[index].value) || 0;
+
+                if (goodQty < 0 || damagedQty < 0) {
+                    alert('Good Qty and Damaged Qty cannot be negative.');
+                    hasValidationError = true;
+                    return;
+                }
+                if ((goodQty + damagedQty) > qty) {
+                    alert(`Good Qty (${goodQty}) + Damaged Qty (${damagedQty}) cannot exceed Return Qty (${qty}).`);
+                    hasValidationError = true;
+                    return;
+                }
+
                 selectedItems.push({
                     order_item_id: checkbox.getAttribute('data-item-id'),
-                    quantity: parseInt(qtyInputs[index].value) || 1
+                    quantity: qty,
+                    good_qty: goodQty,
+                    damaged_qty: damagedQty
                 });
             }
         });
+
+        if (hasValidationError) return;
 
         if (selectedItems.length === 0) {
             alert('Please select at least one item');

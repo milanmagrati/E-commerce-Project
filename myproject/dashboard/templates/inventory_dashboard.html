@@ -126,6 +126,33 @@
                 <canvas id="sparkline4" width="100" height="30"></canvas>
             </div>
         </div>
+
+        <!-- Damaged Inventory -->
+        <div class="stat-card gradient-damaged">
+            <div class="stat-header">
+                <div class="stat-icon-wrapper">
+                    <i class="fas fa-heart-broken"></i>
+                </div>
+                <div class="stat-trend critical">
+                    <i class="fas fa-exclamation-triangle"></i> Damaged
+                </div>
+            </div>
+            <div class="stat-body">
+                <h3 class="stat-number" data-count="{{ total_damaged_items }}">0</h3>
+                <p class="stat-label">Damaged Items</p>
+                <div class="stat-detail">
+                    <span class="detail-badge danger">Rs {{ total_damaged_value|floatformat:0 }} value</span>
+                </div>
+            </div>
+            <div class="stat-sparkline">
+                <canvas id="sparkline5" width="100" height="30"></canvas>
+            </div>
+            {% if total_damaged_items > 0 %}
+            <div class="alert-indicator damaged-alert">
+                <i class="fas fa-heart-broken"></i>
+            </div>
+            {% endif %}
+        </div>
     </div>
 
     <!-- Charts Row -->
@@ -599,6 +626,124 @@
             </div>
         </div>
     </div>
+
+    <!-- Damaged Inventory from Returns -->
+    <div class="damaged-inventory-section">
+        <div class="alert-table-card damaged-highlight">
+            <div class="card-header-dark alert-damaged">
+                <h5><i class="fas fa-heart-broken pulse-icon"></i> Damaged Inventory (From Returns)</h5>
+                <div class="header-right">
+                    <span class="count-badge danger">{{ total_damaged_items }} items</span>
+                    <span class="count-badge damaged-value-badge">Rs {{ total_damaged_value|floatformat:0 }}</span>
+                </div>
+            </div>
+            <div class="card-body-dark p-0">
+                <!-- Summary by Product -->
+                <div class="damaged-summary-header">
+                    <h6><i class="fas fa-chart-bar"></i> Summary by Product</h6>
+                </div>
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>SKU</th>
+                                <th class="text-center">Damaged Qty</th>
+                                <th class="text-right">Damaged Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in damaged_inventory %}
+                            <tr class="table-row-hover">
+                                <td>
+                                    <div class="product-cell">
+                                        <div class="product-img-placeholder damaged-icon-bg">
+                                            <i class="fas fa-heart-broken"></i>
+                                        </div>
+                                        <span class="product-name">{{ item.product__name }}</span>
+                                    </div>
+                                </td>
+                                <td><span class="sku-badge">{{ item.product_sku|default:item.product__slug|upper }}</span></td>
+                                <td class="text-center">
+                                    <span class="stock-badge danger">{{ item.total_damaged }}</span>
+                                </td>
+                                <td class="text-right">
+                                    <strong class="damaged-value-text">Rs {{ item.total_value|floatformat:2 }}</strong>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center py-5">
+                                    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                                    <p class="text-muted">No damaged inventory recorded</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Recent Damaged Items Detail -->
+                {% if damaged_items_detail %}
+                <div class="damaged-summary-header" style="border-top: 1px solid var(--dark-border);">
+                    <h6><i class="fas fa-list-alt"></i> Recent Damaged Returns</h6>
+                </div>
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>RMA #</th>
+                                <th class="text-center">Damaged Qty</th>
+                                <th class="text-center">Good Qty</th>
+                                <th class="text-center">Return Status</th>
+                                <th>Return Date</th>
+                                <th class="text-right">Damaged Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in damaged_items_detail %}
+                            <tr class="table-row-hover">
+                                <td>
+                                    <div class="product-cell">
+                                        <span class="product-name">{{ item.product_name }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <a href="{% url 'return_detail' item.return_request.id %}" class="rma-link">
+                                        {{ item.return_request.rma_number }}
+                                    </a>
+                                </td>
+                                <td class="text-center">
+                                    <span class="stock-badge danger">{{ item.damaged_qty }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="stock-badge success">{{ item.good_qty }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="type-badge type-{{ item.return_request.return_status }}">
+                                        {{ item.return_request.get_return_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="date-text">
+                                        <span class="date-main">
+                                            <i class="far fa-calendar-alt"></i> {{ item.created_at|date:"M d, Y" }}
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="text-right">
+                                    <strong class="damaged-value-text">Rs {{ item.price|floatformat:2 }}</strong>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- ✅ Custom Date Range Modal -->
@@ -732,6 +877,7 @@
 .gradient-green { border-left: 4px solid var(--accent-green); }
 .gradient-orange { border-left: 4px solid var(--accent-orange); }
 .gradient-red { border-left: 4px solid var(--accent-red); }
+.gradient-damaged { border-left: 4px solid #9333ea; }
 
 .stat-header {
     display: flex;
@@ -1716,6 +1862,85 @@
 .pulse-icon {
     animation: pulse 2s ease-in-out infinite;
 }
+
+/* Damaged Inventory Section */
+.damaged-inventory-section {
+    margin-bottom: 2rem;
+}
+
+.damaged-highlight {
+    box-shadow: 0 8px 24px rgba(147, 51, 234, 0.15) !important;
+    border: 2px solid rgba(147, 51, 234, 0.25) !important;
+}
+
+.alert-damaged {
+    border-bottom: 3px solid #9333ea;
+    background: linear-gradient(to right, rgba(147, 51, 234, 0.08), transparent);
+}
+
+.damaged-summary-header {
+    padding: 1rem 1.5rem;
+    background: rgba(147, 51, 234, 0.04);
+}
+
+.damaged-summary-header h6 {
+    margin: 0;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.damaged-icon-bg {
+    background: rgba(220, 38, 38, 0.1) !important;
+    color: var(--accent-red) !important;
+}
+
+.damaged-value-text {
+    color: var(--accent-red) !important;
+    font-weight: 800 !important;
+}
+
+.damaged-value-badge {
+    background: rgba(147, 51, 234, 0.2);
+    color: #9333ea;
+    border: 1px solid rgba(147, 51, 234, 0.4);
+}
+
+.damaged-alert {
+    background: #9333ea !important;
+}
+
+.rma-link {
+    background: rgba(147, 51, 234, 0.12);
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-family: 'Courier New', monospace;
+    color: #7c3aed;
+    font-weight: 700;
+    text-decoration: none;
+    border: 1px solid rgba(147, 51, 234, 0.25);
+    transition: all 0.3s;
+}
+
+.rma-link:hover {
+    background: rgba(147, 51, 234, 0.25);
+    border-color: #7c3aed;
+    color: #6d28d9;
+}
+
+/* Return status badges */
+.type-pending { background: rgba(217, 119, 6, 0.2); color: #d97706; border-color: rgba(217, 119, 6, 0.5); }
+.type-approved { background: rgba(37, 99, 235, 0.2); color: #2563eb; border-color: rgba(37, 99, 235, 0.5); }
+.type-rejected { background: rgba(220, 38, 38, 0.2); color: #dc2626; border-color: rgba(220, 38, 38, 0.5); }
+.type-received { background: rgba(79, 70, 229, 0.2); color: #4338ca; border-color: rgba(79, 70, 229, 0.5); }
+.type-inspecting { background: rgba(107, 114, 128, 0.2); color: #6b7280; border-color: rgba(107, 114, 128, 0.5); }
+.type-refunded { background: rgba(5, 150, 105, 0.2); color: #059669; border-color: rgba(5, 150, 105, 0.5); }
+.type-exchanged { background: rgba(5, 150, 105, 0.2); color: #059669; border-color: rgba(5, 150, 105, 0.5); }
+.type-cancelled { background: rgba(31, 41, 55, 0.2); color: #1f2937; border-color: rgba(31, 41, 55, 0.5); }
 
 /* Responsive */
 @media (max-width: 1200px) {

@@ -5441,6 +5441,39 @@ def inventory_dashboard(request):
         except Exception as e:
             recent_stock_ins = []
         
+        # Damaged Inventory from Returns
+        try:
+            damaged_inventory = ReturnItem.objects.filter(
+                return_request__is_deleted=False,
+                return_request__created_by=request.user,
+                damaged_qty__gt=0
+            ).values(
+                'product__id',
+                'product__name',
+                'product__slug',
+                'product_sku',
+            ).annotate(
+                total_damaged=Sum('damaged_qty'),
+                total_value=Sum(F('damaged_qty') * F('price')),
+            ).order_by('-total_damaged')
+
+            total_damaged_items = sum(item['total_damaged'] for item in damaged_inventory)
+            total_damaged_value = sum(float(item['total_value'] or 0) for item in damaged_inventory)
+
+            # Recent damaged return items with details
+            damaged_items_detail = ReturnItem.objects.filter(
+                return_request__is_deleted=False,
+                return_request__created_by=request.user,
+                damaged_qty__gt=0
+            ).select_related(
+                'return_request', 'product', 'product_variation'
+            ).order_by('-created_at')[:20]
+        except Exception as e:
+            damaged_inventory = []
+            total_damaged_items = 0
+            total_damaged_value = 0
+            damaged_items_detail = []
+
         # Stock Status Distribution for Charts
         stock_chart_data = {
             'labels': ['In Stock', 'Low Stock', 'Out of Stock'],
@@ -5478,7 +5511,13 @@ def inventory_dashboard(request):
             
             # Stock In Transactions
             'recent_stock_ins': recent_stock_ins,
-            
+
+            # Damaged Inventory from Returns
+            'damaged_inventory': damaged_inventory,
+            'total_damaged_items': total_damaged_items,
+            'total_damaged_value': total_damaged_value,
+            'damaged_items_detail': damaged_items_detail,
+
             # Chart Data (JSON encoded for JavaScript)
             'stock_chart_data': json.dumps(stock_chart_data),
             'category_labels': json.dumps(category_labels),
@@ -6476,7 +6515,27 @@ def return_create(request):
                 if not return_items_data:
                     messages.error(request, 'No items selected for return')
                     return redirect('return_create')
-                
+
+                # Validate returnable quantities (prevent double returns)
+                from django.db.models import Sum
+                for item_data in return_items_data:
+                    order_item = OrderItem.objects.get(id=item_data['order_item_id'])
+                    qty = int(item_data['quantity'])
+
+                    # Calculate already returned qty for this order item
+                    already_returned = ReturnItem.objects.filter(
+                        order_item=order_item,
+                        return_request__is_deleted=False
+                    ).aggregate(total=Sum('return_quantity'))['total'] or 0
+
+                    returnable_qty = order_item.quantity - already_returned
+                    if qty > returnable_qty:
+                        messages.error(
+                            request,
+                            f'Cannot return {qty} of "{order_item.product_name}" — only {returnable_qty} returnable (already returned {already_returned})'
+                        )
+                        return redirect('return_create')
+
                 # Calculate total refund
                 total_refund = Decimal('0.00')
                 for item_data in return_items_data:
@@ -6503,7 +6562,18 @@ def return_create(request):
                 for item_data in return_items_data:
                     order_item = OrderItem.objects.get(id=item_data['order_item_id'])
                     qty = int(item_data['quantity'])
-                    
+                    good_qty = int(item_data.get('good_qty', 0))
+                    damaged_qty = int(item_data.get('damaged_qty', 0))
+
+                    # Validation: neither can be negative
+                    good_qty = max(0, good_qty)
+                    damaged_qty = max(0, damaged_qty)
+
+                    # Validation: sum should not exceed return quantity
+                    if (good_qty + damaged_qty) > qty:
+                        good_qty = 0
+                        damaged_qty = 0
+
                     ReturnItem.objects.create(
                         return_request=return_request,
                         order_item=order_item,
@@ -6515,6 +6585,8 @@ def return_create(request):
                         price=order_item.price,
                         total=order_item.total,
                         return_quantity=qty,
+                        good_qty=good_qty,
+                        damaged_qty=damaged_qty,
                         refund_amount=order_item.price * qty
                     )
                 
@@ -6601,11 +6673,29 @@ def api_get_order_by_barcode(request):
                 'error': f'Order "{barcode}" not found'
             })
         
+        # Calculate already-returned quantities per order item
+        from django.db.models import Sum
+        already_returned = {}
+        existing_returns = ReturnItem.objects.filter(
+            order_item__order=order,
+            return_request__is_deleted=False
+        ).values('order_item_id').annotate(
+            total_returned=Sum('return_quantity')
+        )
+        for r in existing_returns:
+            already_returned[r['order_item_id']] = r['total_returned']
+
         # Prepare order items
         items = []
         try:
             for item in order.items.all():
                 try:
+                    returned_so_far = already_returned.get(item.id, 0)
+                    returnable_qty = item.quantity - returned_so_far
+
+                    # Skip fully returned items
+                    if returnable_qty <= 0:
+                        continue
                     # Get SKU and barcode with safe defaults
                     sku = item.product_sku or ''
                     barcode_val = ''
@@ -6627,10 +6717,16 @@ def api_get_order_by_barcode(request):
                         'product_barcode': barcode_val,
                         'price': str(item.price or 0),
                         'quantity': item.quantity or 1,
+                        'returnable_qty': returnable_qty,
+                        'already_returned': returned_so_far,
                         'product_variation': item.product_variation.sku if item.product_variation else None
                     })
                 except Exception as e:
                     logger.warning(f"Error building item {item.id}: {str(e)}")
+                    returned_so_far = already_returned.get(item.id, 0)
+                    returnable_qty = (item.quantity or 1) - returned_so_far
+                    if returnable_qty <= 0:
+                        continue
                     items.append({
                         'id': item.id,
                         'product_name': item.product_name or 'Unknown',
@@ -6638,12 +6734,21 @@ def api_get_order_by_barcode(request):
                         'product_barcode': '',
                         'price': str(item.price or 0),
                         'quantity': item.quantity or 1,
+                        'returnable_qty': returnable_qty,
+                        'already_returned': returned_so_far,
                         'product_variation': None
                     })
         except Exception as e:
             logger.error(f"Error processing items for order {order.id}: {str(e)}")
             items = []
         
+        # If no returnable items remain, inform the user
+        if not items:
+            return JsonResponse({
+                'success': False,
+                'error': f'All items in order "{order.order_number}" have already been returned'
+            })
+
         return JsonResponse({
             'success': True,
             'order': {
@@ -6733,22 +6838,41 @@ def return_detail(request, return_id):
             elif action == 'quality_check':
                 condition = request.POST.get('condition_received')
                 quality_notes = request.POST.get('quality_check_notes', '')
-                
+
                 return_request.return_status = 'inspecting'
                 return_request.condition_received = condition
                 return_request.quality_check_notes = quality_notes
                 return_request.quality_checked_by = request.user
                 return_request.quality_checked_at = timezone.now()
                 return_request.save()
-                
+
+                # Update per-item good_qty and damaged_qty from quality check
+                for item in return_request.items.all():
+                    good_key = f'good_qty_{item.id}'
+                    damaged_key = f'damaged_qty_{item.id}'
+                    if good_key in request.POST or damaged_key in request.POST:
+                        new_good = int(request.POST.get(good_key, item.good_qty))
+                        new_damaged = int(request.POST.get(damaged_key, item.damaged_qty))
+
+                        # Validation
+                        new_good = max(0, new_good)
+                        new_damaged = max(0, new_damaged)
+                        if (new_good + new_damaged) > item.return_quantity:
+                            new_good = item.good_qty
+                            new_damaged = item.damaged_qty
+
+                        item.good_qty = new_good
+                        item.damaged_qty = new_damaged
+                        item.save()
+
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
                     user=request.user,
                     action_type='quality_checked',
-                    description=f'Quality check completed. Condition: {condition}'
+                    description=f'Quality check completed. Condition: {condition}. Per-item good/damaged quantities verified.'
                 )
-                
-                messages.success(request, '✅ Quality check completed!')
+
+                messages.success(request, 'Quality check completed! Good/Damaged quantities updated.')
                 
             elif action == 'process_refund':
                 refund_amount = Decimal(request.POST.get('refund_amount', '0'))
@@ -6760,21 +6884,22 @@ def return_detail(request, return_id):
                 return_request.refunded_at = timezone.now()
                 return_request.save()
                 
-                # Restock items only if quality condition is good
-                good_conditions = ['new', 'opened', 'used']
-                should_restock = return_request.condition_received in good_conditions
+                # Restock items - only restock good_qty items
                 restocked_count = 0
+                damaged_count = 0
 
                 for item in return_request.items.all():
-                    if should_restock:
+                    restock_qty = item.good_qty  # Only restock good quantity
+
+                    if restock_qty > 0:
                         if item.product_variation:
-                            item.product_variation.stock += item.return_quantity
+                            item.product_variation.stock += restock_qty
                             if item.product_variation.stock > 0:
                                 item.product_variation.status = 'active'
                             item.product_variation.save()
 
                         if item.product:
-                            item.product.stock += item.return_quantity
+                            item.product.stock += restock_qty
                             if item.product.stock > 0:
                                 if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
                                     item.product.stock_status = 'low_stock'
@@ -6786,9 +6911,11 @@ def return_detail(request, return_id):
                         item.restocked_at = timezone.now()
                         item.restocked_by = request.user
                         item.save()
-                        restocked_count += item.return_quantity
-                
-                restock_msg = f' | {restocked_count} items restocked' if should_restock else ' | Items NOT restocked (condition: {})'.format(return_request.condition_received or 'not checked')
+                        restocked_count += restock_qty
+
+                    damaged_count += item.damaged_qty
+
+                restock_msg = f' | {restocked_count} good items restocked, {damaged_count} damaged items'
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
                     user=request.user,
@@ -6796,10 +6923,10 @@ def return_detail(request, return_id):
                     description=f'Refund processed: Rs. {refund_amount} (Restocking fee: Rs. {restocking_fee}){restock_msg}'
                 )
 
-                if should_restock:
-                    messages.success(request, f'Refund of Rs. {refund_amount} processed and {restocked_count} items restocked!')
+                if restocked_count > 0:
+                    messages.success(request, f'Refund of Rs. {refund_amount} processed. {restocked_count} good items restocked, {damaged_count} damaged items not restocked.')
                 else:
-                    messages.success(request, f'Refund of Rs. {refund_amount} processed. Items NOT restocked (condition: {return_request.get_condition_received_display() or "not checked"}).')
+                    messages.success(request, f'Refund of Rs. {refund_amount} processed. No good items to restock ({damaged_count} damaged items).')
                 
             elif action == 'update_notes':
                 admin_notes = request.POST.get('admin_notes', '')

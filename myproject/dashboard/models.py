@@ -747,6 +747,8 @@ class ReturnItem(models.Model):
     
     # Return specific
     return_quantity = models.PositiveIntegerField(default=1)
+    good_qty = models.PositiveIntegerField(default=0, help_text="Quantity in good/resellable condition")
+    damaged_qty = models.PositiveIntegerField(default=0, help_text="Quantity that is damaged/defective")
     refund_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     
     # Inventory action

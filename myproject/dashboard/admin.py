@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import Product, Order, OrderItem, Category, Customer, Branch, StaffPerformance
 from .models import ProductAttribute, ProductAttributeValue, ProductVariation, VariationAttributeValue
+from .models import ReturnRequest, ReturnItem, ReturnActivityLog
 
 
 @admin.register(Category)
@@ -126,3 +127,45 @@ class StaffPerformanceAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+class ReturnItemInline(admin.TabularInline):
+    model = ReturnItem
+    extra = 0
+    readonly_fields = ['order_item', 'product', 'product_variation', 'product_name', 'product_sku',
+                        'quantity', 'price', 'total', 'return_quantity', 'good_qty', 'damaged_qty',
+                        'refund_amount', 'restocked', 'restocked_at', 'restocked_by']
+
+
+class ReturnActivityLogInline(admin.TabularInline):
+    model = ReturnActivityLog
+    extra = 0
+    readonly_fields = ['user', 'action_type', 'description', 'field_name', 'old_value', 'new_value', 'created_at']
+
+
+@admin.register(ReturnRequest)
+class ReturnRequestAdmin(admin.ModelAdmin):
+    list_display = ['rma_number', 'order', 'customer_name', 'return_status', 'return_reason',
+                    'refund_type', 'total_amount', 'refund_amount', 'created_by', 'created_at']
+    list_filter = ['return_status', 'return_reason', 'refund_type', 'condition_received', 'is_deleted', 'created_at']
+    search_fields = ['rma_number', 'customer_name', 'customer_phone', 'customer_email', 'order__order_number']
+    readonly_fields = ['rma_number', 'created_at', 'updated_at', 'approved_at', 'refunded_at',
+                        'quality_checked_at', 'deleted_at']
+    inlines = [ReturnItemInline, ReturnActivityLogInline]
+
+
+@admin.register(ReturnItem)
+class ReturnItemAdmin(admin.ModelAdmin):
+    list_display = ['return_request', 'product_name', 'product_sku', 'return_quantity',
+                    'good_qty', 'damaged_qty', 'refund_amount', 'restocked', 'created_at']
+    list_filter = ['restocked', 'created_at']
+    search_fields = ['product_name', 'product_sku', 'return_request__rma_number']
+    readonly_fields = ['created_at']
+
+
+@admin.register(ReturnActivityLog)
+class ReturnActivityLogAdmin(admin.ModelAdmin):
+    list_display = ['return_request', 'user', 'action_type', 'description', 'created_at']
+    list_filter = ['action_type', 'created_at']
+    search_fields = ['return_request__rma_number', 'description']
+    readonly_fields = ['created_at']

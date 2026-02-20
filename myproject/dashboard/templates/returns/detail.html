@@ -72,6 +72,8 @@
                                     <th>SKU</th>
                                     <th>Price</th>
                                     <th>Return Qty</th>
+                                    <th>Good Qty</th>
+                                    <th>Damaged Qty</th>
                                     <th>Refund Amount</th>
                                     <th>Status</th>
                                 </tr>
@@ -85,6 +87,8 @@
                                     <td><small>{{ item.product_sku|default:"N/A" }}</small></td>
                                     <td>रू {{ item.price }}</td>
                                     <td>{{ item.return_quantity }}</td>
+                                    <td><span class="badge bg-success">{{ item.good_qty }}</span></td>
+                                    <td><span class="badge bg-danger">{{ item.damaged_qty }}</span></td>
                                     <td><strong>रू {{ item.refund_amount }}</strong></td>
                                     <td>
                                         {% if item.restocked %}
@@ -100,16 +104,16 @@
                             </tbody>
                             <tfoot class="table-light">
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Total Refund Amount:</strong></td>
+                                    <td colspan="6" class="text-end"><strong>Total Refund Amount:</strong></td>
                                     <td colspan="2"><strong class="text-success">रू {{ return_request.refund_amount }}</strong></td>
                                 </tr>
                                 {% if return_request.restocking_fee > 0 %}
                                 <tr>
-                                    <td colspan="4" class="text-end">Restocking Fee:</td>
+                                    <td colspan="6" class="text-end">Restocking Fee:</td>
                                     <td colspan="2" class="text-danger">- रू {{ return_request.restocking_fee }}</td>
                                 </tr>
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Net Refund:</strong></td>
+                                    <td colspan="6" class="text-end"><strong>Net Refund:</strong></td>
                                     <td colspan="2"><strong>रू {{ return_request.refund_amount|add:return_request.restocking_fee }}</strong></td>
                                 </tr>
                                 {% endif %}
@@ -410,7 +414,7 @@
 
 <!-- Quality Check Modal -->
 <div class="modal fade" id="qualityCheckModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title"><i class="fas fa-clipboard-check"></i> Quality Inspection</h5>
@@ -420,18 +424,66 @@
                 {% csrf_token %}
                 <input type="hidden" name="action" value="quality_check">
                 <div class="modal-body">
+                    <h6 class="fw-bold mb-3"><i class="fas fa-box-open text-primary me-2"></i>Verify Good & Damaged Quantities</h6>
+                    <p class="small text-muted mb-3">Review and adjust the quantities entered during return creation if needed.</p>
+
+                    <div class="table-responsive mb-3">
+                        <table class="table table-bordered table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th class="text-center">Return Qty</th>
+                                    <th class="text-center">Good Qty</th>
+                                    <th class="text-center">Damaged Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in return_items %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ item.product_name }}</strong>
+                                        <br><small class="text-muted">{{ item.product_sku|default:"" }}</small>
+                                    </td>
+                                    <td class="text-center align-middle">
+                                        <span class="badge bg-secondary">{{ item.return_quantity }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <input type="number" name="good_qty_{{ item.id }}"
+                                               class="form-control form-control-sm text-center qc-good-qty"
+                                               min="0" max="{{ item.return_quantity }}"
+                                               value="{{ item.good_qty }}"
+                                               data-item-id="{{ item.id }}"
+                                               data-return-qty="{{ item.return_quantity }}"
+                                               onchange="validateQCQty(this)">
+                                    </td>
+                                    <td class="text-center">
+                                        <input type="number" name="damaged_qty_{{ item.id }}"
+                                               class="form-control form-control-sm text-center qc-damaged-qty"
+                                               min="0" max="{{ item.return_quantity }}"
+                                               value="{{ item.damaged_qty }}"
+                                               data-item-id="{{ item.id }}"
+                                               data-return-qty="{{ item.return_quantity }}"
+                                               onchange="validateQCQty(this)">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
                     <div class="mb-3">
-                        <label class="form-label">Condition Received <span class="text-danger">*</span></label>
+                        <label class="form-label">Overall Condition <span class="text-danger">*</span></label>
                         <select name="condition_received" class="form-select" required>
                             <option value="">-- Select Condition --</option>
                             {% for condition_code, condition_label in condition_choices %}
                             <option value="{{ condition_code }}">{{ condition_label }}</option>
                             {% endfor %}
                         </select>
+                        <small class="text-muted">General condition note for the return. Restocking is based on per-item Good Qty above.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Quality Check Notes</label>
-                        <textarea name="quality_check_notes" class="form-control" rows="4" placeholder="Inspection findings, damages, etc."></textarea>
+                        <textarea name="quality_check_notes" class="form-control" rows="3" placeholder="Inspection findings, damages, etc."></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -444,6 +496,25 @@
         </div>
     </div>
 </div>
+
+<script>
+function validateQCQty(input) {
+    const row = input.closest('tr');
+    const goodInput = row.querySelector('.qc-good-qty');
+    const damagedInput = row.querySelector('.qc-damaged-qty');
+    const returnQty = parseInt(input.dataset.returnQty) || 0;
+    let goodQty = parseInt(goodInput.value) || 0;
+    let damagedQty = parseInt(damagedInput.value) || 0;
+
+    if (goodQty < 0) { goodQty = 0; goodInput.value = 0; }
+    if (damagedQty < 0) { damagedQty = 0; damagedInput.value = 0; }
+
+    if ((goodQty + damagedQty) > returnQty) {
+        alert('Good Qty (' + goodQty + ') + Damaged Qty (' + damagedQty + ') cannot exceed Return Qty (' + returnQty + ').');
+        input.value = 0;
+    }
+}
+</script>
 
 <!-- Refund Modal -->
 <div class="modal fade" id="refundModal" tabindex="-1">
@@ -465,8 +536,12 @@
                         <label class="form-label">Restocking Fee (if any)</label>
                         <input type="number" name="restocking_fee" class="form-control" step="0.01" value="0">
                     </div>
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i> Items will be automatically restocked after refund processing.
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i> Only <strong>Good Qty</strong> items will be restocked to inventory. Damaged items will not be restocked.
+                        <hr class="my-2">
+                        {% for item in return_items %}
+                        <small>{{ item.product_name }}: <span class="text-success fw-bold">{{ item.good_qty }} good</span>, <span class="text-danger fw-bold">{{ item.damaged_qty }} damaged</span></small><br>
+                        {% endfor %}
                     </div>
                 </div>
                 <div class="modal-footer">
