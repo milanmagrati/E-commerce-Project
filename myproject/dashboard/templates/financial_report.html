@@ -172,7 +172,6 @@
                                 <th>Order ID</th>
                                 <th>Customer</th>
                                 <th>NCM Status</th>
-                                <th>Amount</th>
                                 <th>Delivery Charge</th>
                                 <th>Payment Status</th>
                                 <th>COD Collected</th>
@@ -1507,7 +1506,7 @@
 
         if (!data || data.length === 0) {
             const tr = document.createElement('tr');
-            tr.innerHTML = `<td colspan="8" class="text-center text-muted py-4">
+            tr.innerHTML = `<td colspan="7" class="text-center text-muted py-4">
             <i class="fas fa-inbox fa-2x mb-2"></i><br>
             No NCM orders for this period
         </td>`;
@@ -1546,10 +1545,6 @@
             const statusCell = document.createElement('td');
             statusCell.textContent = row.ncm_status || 'Pending';
 
-            // Amount
-            const amountCell = document.createElement('td');
-            amountCell.textContent = row.total_amount ? parseFloat(row.total_amount).toFixed(2) : '0.00';
-
             // Delivery Charge
             const chargeCell = document.createElement('td');
             chargeCell.textContent = row.delivery_charge ? parseFloat(row.delivery_charge).toFixed(2) : '0.00';
@@ -1573,7 +1568,6 @@
             tr.appendChild(orderCell);
             tr.appendChild(customerCell);
             tr.appendChild(statusCell);
-            tr.appendChild(amountCell);
             tr.appendChild(chargeCell);
             tr.appendChild(paymentCell);
             tr.appendChild(codCell);

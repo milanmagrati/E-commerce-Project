@@ -1,114 +1,1107 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}All Returns{% endblock %}
+{% block title %}{% if view_mode == 'batch_detail' %}Batch {{ batch_filter }}{% else %}All Returns{% endif %}{% endblock %}
 
 {% block breadcrumb %}
 <li class="breadcrumb-item"><a href="{% url 'returns_dashboard' %}">Returns</a></li>
+{% if view_mode == 'batch_detail' %}
+<li class="breadcrumb-item"><a href="{% url 'returns_list' %}">All Returns</a></li>
+<li class="breadcrumb-item active">{{ batch_filter }}</li>
+{% else %}
 <li class="breadcrumb-item active">All Returns</li>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        display: flex;
+        align-items: center;
+        padding: 1.25rem;
+        border-radius: 12px;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        border-left: 4px solid;
+        transition: transform 0.2s;
+    }
+    .stat-card:hover { transform: translateY(-3px); }
+    .stat-card-primary { border-left-color: #0d6efd; background: linear-gradient(135deg, #fff 0%, #e7f1ff 100%); }
+    .stat-card-success { border-left-color: #198754; background: linear-gradient(135deg, #fff 0%, #d1f4e0 100%); }
+    .stat-card-warning { border-left-color: #ffc107; background: linear-gradient(135deg, #fff 0%, #fff4d1 100%); }
+    .stat-card-info { border-left-color: #0dcaf0; background: linear-gradient(135deg, #fff 0%, #d1f9ff 100%); }
+    .stat-icon { font-size: 2.5rem; margin-right: 1rem; opacity: 0.7; }
+    .stat-card-primary .stat-icon { color: #0d6efd; }
+    .stat-card-success .stat-icon { color: #198754; }
+    .stat-card-warning .stat-icon { color: #ffc107; }
+    .stat-card-info .stat-icon { color: #0dcaf0; }
+    .stat-number { font-size: 2rem; font-weight: 700; margin: 0; line-height: 1; color: #2c3e50; }
+    .stat-label { font-size: 0.8rem; color: #6c757d; margin: 0.3rem 0 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Batch rows */
+    .batch-row { cursor: pointer; transition: all 0.2s; }
+    .batch-row:hover { background: rgba(0,123,255,0.05) !important; }
+    .batch-id-label {
+        font-weight: 700;
+        color: #0d6efd;
+        font-size: 0.95rem;
+    }
+    .status-pills .badge { font-size: 0.7rem; margin: 1px; }
+
+    /* Workflow toolbar */
+    .bulk-toolbar-card {
+        border-left: 4px solid #0d6efd;
+        animation: slideDown 0.25s ease;
+    }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .workflow-btn-group .btn {
+        font-size: 0.8rem;
+        padding: 6px 14px;
+        font-weight: 600;
+        border-radius: 6px;
+    }
+    .workflow-separator {
+        width: 1px;
+        height: 28px;
+        background: #dee2e6;
+        margin: 0 6px;
+    }
+
+    /* Sequential workflow steps */
+    .workflow-step .btn { transition: all 0.3s; }
+    .workflow-step.completed .btn {
+        background: #198754 !important;
+        border-color: #198754 !important;
+        color: white !important;
+        opacity: 0.8;
+    }
+    .workflow-step.active .btn {
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        transform: scale(1.05);
+    }
+    .workflow-step.upcoming .btn {
+        opacity: 0.3;
+        cursor: default;
+    }
+    .workflow-arrow { color: #adb5bd; font-size: 0.7rem; }
+    .workflow-step.completed + .workflow-arrow { color: #198754; }
+    .batch-action-toast {
+        animation: fadeInUp 0.3s ease;
+    }
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Stock restock notification banner */
+    .restock-notification {
+        animation: slideDownFade 0.4s ease;
+        border-left: 5px solid #198754;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(25, 135, 84, 0.2);
+    }
+    .restock-notification .restock-icon {
+        font-size: 2.5rem;
+        color: #198754;
+    }
+    .restock-notification .restock-stat {
+        text-align: center;
+        padding: 8px 16px;
+        border-radius: 8px;
+        min-width: 100px;
+    }
+    .restock-notification .restock-stat .stat-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+    .restock-notification .restock-stat .stat-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+    @keyframes slideDownFade {
+        from { opacity: 0; transform: translateY(-15px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
+    <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
+            {% if view_mode == 'batch_detail' %}
+            <h2 class="mb-1"><i class="fas fa-layer-group text-primary"></i> {{ batch_filter }}</h2>
+            <p class="text-muted mb-0">{{ batch_stats.total_returns }} return(s) in this batch</p>
+            {% else %}
             <h2 class="mb-1"><i class="fas fa-undo-alt text-primary"></i> Returns</h2>
-            <p class="text-muted">Manage return requests</p>
+            <p class="text-muted mb-0">Manage return batches</p>
+            {% endif %}
         </div>
-        <div>
-            <a href="{% url 'returns_dashboard' %}" class="btn btn-outline-secondary">
-                <i class="fas fa-arrow-left"></i> Dashboard
+        <div class="d-flex gap-2">
+            {% if view_mode == 'batch_detail' %}
+            <a href="{% url 'returns_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> All Batches
             </a>
-            {% if trash_count %}
-                {% if user.is_superuser or user.role == 'administrator' %}
-                <a href="{% url 'returns_trash_list' %}" class="btn btn-danger">
-                    <i class="fas fa-trash"></i> Trash ({{ trash_count }})
-                </a>
-                {% endif %}
+            {% endif %}
+            <a href="{% url 'return_create' %}" class="btn btn-success">
+                <i class="fas fa-plus"></i> New Return
+            </a>
+            <a href="{% url 'returns_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-bar"></i> Dashboard
+            </a>
+            {% if user.is_superuser or user.role == 'administrator' %}
+            <a href="{% url 'returns_trash_list' %}" class="btn btn-outline-danger">
+                <i class="fas fa-trash"></i> Trash{% if trash_count %} ({{ trash_count }}){% endif %}
+            </a>
             {% endif %}
         </div>
     </div>
 
-    <!-- Filters & Search -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body">
-            <form method="GET" class="row g-3">
-                <div class="col-md-4">
-                    <input type="text" name="search" class="form-control" placeholder="Search returns..." value="{{ search_query }}">
+    {% if view_mode == 'batches' %}
+    {# ===================== DEFAULT VIEW: BATCHES ===================== #}
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stat-card stat-card-primary">
+                <div class="stat-icon"><i class="fas fa-layer-group"></i></div>
+                <div>
+                    <h3 class="stat-number">{{ stats.total_batches }}</h3>
+                    <p class="stat-label">Total Batches</p>
                 </div>
-                <div class="col-md-2">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-info">
+                <div class="stat-icon"><i class="fas fa-undo-alt"></i></div>
+                <div>
+                    <h3 class="stat-number">{{ stats.total_returns }}</h3>
+                    <p class="stat-label">Total Returns</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-warning">
+                <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                <div>
+                    <h3 class="stat-number">{{ stats.pending_count }}</h3>
+                    <p class="stat-label">Pending</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-success">
+                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div>
+                    <h3 class="stat-number">{{ stats.refunded_count }}</h3>
+                    <p class="stat-label">Refunded</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-3 shadow-sm">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small">Search</label>
+                    <input type="text" name="search" class="form-control" placeholder="Batch ID, RMA, order, customer..." value="{{ search_query }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Status</label>
                     <select name="status" class="form-select">
                         <option value="">All Statuses</option>
                         {% for code, label in status_choices %}
-                            <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <select name="reason" class="form-select">
-                        <option value="">All Reasons</option>
-                        {% for code, label in reason_choices %}
-                            <option value="{{ code }}" {% if reason_filter == code %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <select name="refund_type" class="form-select">
-                        <option value="">Any Refund Type</option>
-                        {% for code, label in refund_type_choices %}
-                            <option value="{{ code }}" {% if refund_type_filter == code %}selected{% endif %}>{{ label }}</option>
+                        <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-2">
                     <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-filter"></i> Apply
+                        <i class="fas fa-search"></i> Filter
                     </button>
                 </div>
+                {% if search_query or status_filter %}
+                <div class="col-md-2">
+                    <a href="{% url 'returns_list' %}" class="btn btn-outline-secondary w-100">
+                        <i class="fas fa-times"></i> Clear
+                    </a>
+                </div>
+                {% endif %}
             </form>
         </div>
     </div>
 
-    <!-- Bulk Actions Toolbar -->
-    <div id="bulkActionsToolbar" class="card border-0 shadow-sm mb-4" style="display: none;">
+    <!-- Bulk Actions Toolbar (hidden until batch selection) -->
+    <div id="batchBulkToolbar" class="card border-0 shadow-sm mb-3 bulk-toolbar-card" style="display: none;">
         <div class="card-body py-3">
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
-                    <span class="text-muted">
-                        <strong id="selectedCount">0</strong> return(s) selected
-                    </span>
+                    <i class="fas fa-check-square text-primary me-2"></i>
+                    <strong id="batchSelectedCount">0</strong>
+                    <span class="text-muted">batch(es) selected</span>
+                    <span id="batchActionMessage" class="ms-3 fw-bold batch-action-toast" style="display:none;"></span>
                 </div>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-warning" id="bulkApproveBtn" title="Approve Selected">
-                        <i class="fas fa-check-circle"></i> Approve
-                    </button>
-                    <button type="button" class="btn btn-sm btn-info" id="bulkRejectBtn" title="Reject Selected">
-                        <i class="fas fa-times-circle"></i> Reject
-                    </button>
-                    <button type="button" class="btn btn-sm btn-secondary" id="bulkProcessBtn" title="Mark as Processing">
-                        <i class="fas fa-spinner"></i> Processing
-                    </button>
-                    {% if user.is_superuser or user.role == 'administrator' or user.can_delete_returns %}
-                    <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn" title="Move to Trash">
-                        <i class="fas fa-trash"></i> Delete
+                <div class="d-flex align-items-center flex-wrap gap-2 workflow-btn-group">
+                    <!-- Sequential Workflow Steps -->
+                    <div class="d-flex align-items-center gap-1" id="workflowSteps">
+                        <div class="workflow-step" data-step="approve">
+                            <button type="button" class="btn btn-warning" onclick="submitBatchBulkAction('approve')" title="Step 1: Approve pending returns">
+                                <i class="fas fa-check-circle me-1 step-icon"></i><span class="step-label">Approve</span>
+                            </button>
+                        </div>
+                        <i class="fas fa-chevron-right workflow-arrow"></i>
+                        <div class="workflow-step" data-step="mark_received">
+                            <button type="button" class="btn btn-info text-white" onclick="submitBatchBulkAction('mark_received')" title="Step 2: Mark as received">
+                                <i class="fas fa-box me-1 step-icon"></i><span class="step-label">Received</span>
+                            </button>
+                        </div>
+                        <i class="fas fa-chevron-right workflow-arrow"></i>
+                        <div class="workflow-step" data-step="quality_check">
+                            <button type="button" class="btn btn-primary" onclick="openBatchQCModal()" title="Step 3: Quality check">
+                                <i class="fas fa-clipboard-check me-1 step-icon"></i><span class="step-label">Quality Check</span>
+                            </button>
+                        </div>
+                        <i class="fas fa-chevron-right workflow-arrow"></i>
+                        <div class="workflow-step" data-step="process_refund">
+                            <button type="button" class="btn btn-success" onclick="submitBatchBulkAction('process_refund')" title="Step 4: Process refund">
+                                <i class="fas fa-money-bill-wave me-1 step-icon"></i><span class="step-label">Refund</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="workflow-separator"></div>
+                    {% if user.is_superuser or user.role == 'administrator' %}
+                    <button type="button" class="btn btn-outline-danger" onclick="submitBatchBulkAction('trash')" title="Move all returns in selected batches to trash">
+                        <i class="fas fa-trash me-1"></i> Trash
                     </button>
                     {% endif %}
-                    <button type="button" class="btn btn-sm btn-light" id="bulkClearBtn" title="Clear Selection">
-                        <i class="fas fa-times"></i> Clear
+                    <button type="button" class="btn btn-outline-secondary" id="batchClearBtn">
+                        <i class="fas fa-times"></i>
                     </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Returns Table -->
-    <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white border-bottom">
-            <h5 class="mb-0"><i class="fas fa-list"></i> Return Requests</h5>
+    <!-- Batches Table -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-layer-group text-primary me-2"></i>Return Batches</h5>
+            <small class="text-muted">{{ batches.paginator.count }} batch{{ batches.paginator.count|pluralize:"es" }}</small>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0" id="returnsTable">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="batchSelectAll" class="form-check-input" title="Select All">
+                            </th>
+                            <th>Batch Number</th>
+                            <th>Returns</th>
+                            <th>Total Refund</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for batch in batches %}
+                        <tr class="batch-row" data-href="?batch={{ batch.batch_id }}">
+                            <td onclick="event.stopPropagation();">
+                                <input type="checkbox" class="form-check-input batch-checkbox"
+                                       value="{{ batch.batch_id }}">
+                            </td>
+                            <td>
+                                <span class="batch-id-label">
+                                    <i class="fas fa-layer-group me-1"></i> {{ batch.batch_id }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge bg-dark">{{ batch.total_returns }} return{{ batch.total_returns|pluralize }}</span>
+                            </td>
+                            <td>
+                                <strong>&#2352;&#2370; {{ batch.total_refund }}</strong>
+                            </td>
+                            <td class="status-pills">
+                                {% if batch.pending > 0 %}<span class="badge bg-warning text-dark">{{ batch.pending }} Pending</span>{% endif %}
+                                {% if batch.approved > 0 %}<span class="badge bg-info">{{ batch.approved }} Approved</span>{% endif %}
+                                {% if batch.received > 0 %}<span class="badge bg-secondary">{{ batch.received }} Received</span>{% endif %}
+                                {% if batch.inspecting > 0 %}<span class="badge bg-primary">{{ batch.inspecting }} Inspecting</span>{% endif %}
+                                {% if batch.refunded > 0 %}<span class="badge bg-success">{{ batch.refunded }} Refunded</span>{% endif %}
+                                {% if batch.rejected > 0 %}<span class="badge bg-danger">{{ batch.rejected }} Rejected</span>{% endif %}
+                            </td>
+                            <td>
+                                <small>{{ batch.created_at|date:"M d, Y" }}</small><br>
+                                <small class="text-muted">{{ batch.created_at|time:"g:i A" }}</small>
+                            </td>
+                            <td onclick="event.stopPropagation();">
+                                <a href="?batch={{ batch.batch_id }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i> View
+                                </a>
+                                {% if user.is_superuser or user.role == 'administrator' %}
+                                <button type="button" class="btn btn-sm btn-outline-danger ms-1"
+                                        onclick="trashSingleBatch('{{ batch.batch_id }}')"
+                                        title="Move all returns in this batch to trash">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-5">
+                                <i class="fas fa-layer-group fa-3x text-muted mb-3 d-block"></i>
+                                <p class="text-muted mb-0">No return batches found</p>
+                                <a href="{% url 'return_create' %}" class="btn btn-success btn-sm mt-2">
+                                    <i class="fas fa-plus"></i> Create Return
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if batches.has_other_pages %}
+        <div class="card-footer bg-white border-top">
+            <nav>
+                <ul class="pagination pagination-sm mb-0 justify-content-center">
+                    {% if batches.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?page={{ batches.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">Previous</a></li>
+                    {% endif %}
+                    <li class="page-item active"><span class="page-link">Page {{ batches.number }} of {{ batches.paginator.num_pages }}</span></li>
+                    {% if batches.has_next %}
+                    <li class="page-item"><a class="page-link" href="?page={{ batches.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">Next</a></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Individual Returns (non-batch) -->
+    {% if individual_returns %}
+    <div class="card shadow-sm">
+        <div class="card-header bg-white border-bottom">
+            <h5 class="mb-0"><i class="fas fa-undo-alt text-secondary me-2"></i>Individual Returns</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>RMA #</th>
+                            <th>Order</th>
+                            <th>Customer</th>
+                            <th>Refund</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for return in individual_returns %}
+                        <tr>
+                            <td><strong>{{ return.rma_number }}</strong></td>
+                            <td>{{ return.order.order_number }}</td>
+                            <td>
+                                <div>{{ return.customer_name }}</div>
+                                <small class="text-muted">{{ return.customer_phone }}</small>
+                            </td>
+                            <td><strong>&#2352;&#2370; {{ return.refund_amount }}</strong></td>
+                            <td>
+                                <span class="badge bg-{{ return.get_status_display_class }}">
+                                    {{ return.get_return_status_display }}
+                                </span>
+                            </td>
+                            <td><small>{{ return.created_at|date:"M d, Y" }}</small></td>
+                            <td>
+                                <a href="{% url 'return_detail' return.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Batch Bulk Action Form (fallback, CSRF token source) -->
+    <form id="batchBulkActionForm" method="POST" action="{% url 'returns_batch_bulk_action' %}" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" id="batchBulkActionInput" name="bulk_action" value="">
+        <div id="batchIdsContainer"></div>
+    </form>
+
+    <!-- Batch Quality Check Modal -->
+    <div class="modal fade" id="batchQCModal" tabindex="-1" aria-labelledby="batchQCModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="batchQCModalLabel">
+                        <i class="fas fa-clipboard-check me-2"></i>Batch Quality Check
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info mb-3">
+                        <i class="fas fa-info-circle me-1"></i>
+                        This will apply the same condition and notes to <strong>all received returns</strong> in the selected batch(es).
+                        <br><small class="text-muted">For per-item inspection, use "Go to Batch Detail" below.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Overall Condition <span class="text-danger">*</span></label>
+                        <select class="form-select" id="batchQCCondition" required>
+                            {% for code, label in condition_choices %}
+                            <option value="{{ code }}" {% if code == 'opened' %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Quality Check Notes <small class="text-muted">(Optional)</small></label>
+                        <textarea class="form-control" id="batchQCNotes" rows="3" placeholder="Inspection findings, general condition notes..." maxlength="1000"></textarea>
+                    </div>
+
+                    <div id="batchQCSummary" class="p-3 bg-light rounded">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-muted">Selected batches:</span>
+                            <strong id="qcBatchCount">0</strong>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-1">
+                            <span class="text-muted">Returns to inspect:</span>
+                            <strong id="qcReceivedCount" class="text-primary">checking...</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-info" id="qcGoToDetailBtn" title="Go to batch detail for per-item inspection">
+                        <i class="fas fa-external-link-alt me-1"></i> Go to Batch Detail
+                    </button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="qcConfirmBtn" onclick="submitBatchQC()">
+                            <i class="fas fa-clipboard-check me-1"></i> Quick QC All
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch List Scripts -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // ====== Workflow step order ======
+        const WORKFLOW_STEPS = ['approve', 'mark_received', 'quality_check', 'process_refund'];
+        const STEP_ICONS = {
+            approve: 'fa-check-circle',
+            mark_received: 'fa-box',
+            quality_check: 'fa-clipboard-check',
+            process_refund: 'fa-money-bill-wave'
+        };
+        const STEP_LABELS = {
+            approve: 'Approve',
+            mark_received: 'Received',
+            quality_check: 'Quality Check',
+            process_refund: 'Refund'
+        };
+
+        // ====== Elements ======
+        const batchSelectAll = document.getElementById('batchSelectAll');
+        const batchCheckboxes = document.querySelectorAll('.batch-checkbox');
+        const batchBulkToolbar = document.getElementById('batchBulkToolbar');
+        const batchSelectedCount = document.getElementById('batchSelectedCount');
+        const batchActionMessage = document.getElementById('batchActionMessage');
+        const csrfToken = document.querySelector('#batchBulkActionForm [name=csrfmiddlewaretoken]').value;
+
+        // ====== Clickable batch rows ======
+        document.querySelectorAll('.batch-row').forEach(row => {
+            row.addEventListener('click', function(e) {
+                if (!e.target.closest('a') && !e.target.closest('button') && !e.target.closest('input[type="checkbox"]')) {
+                    window.location.href = this.dataset.href;
+                }
+            });
+        });
+
+        // ====== Select All ======
+        if (batchSelectAll) {
+            batchSelectAll.addEventListener('change', function() {
+                batchCheckboxes.forEach(cb => cb.checked = this.checked);
+                updateBatchToolbar();
+            });
+        }
+
+        // ====== Individual checkbox ======
+        batchCheckboxes.forEach(cb => {
+            cb.addEventListener('change', function() {
+                updateBatchToolbar();
+                const all = Array.from(batchCheckboxes).every(c => c.checked);
+                const some = Array.from(batchCheckboxes).some(c => c.checked);
+                batchSelectAll.checked = all;
+                batchSelectAll.indeterminate = some && !all;
+            });
+        });
+
+        // ====== Update toolbar + auto-detect workflow step ======
+        function updateBatchToolbar() {
+            const count = document.querySelectorAll('.batch-checkbox:checked').length;
+            batchSelectedCount.textContent = count;
+            batchBulkToolbar.style.display = count > 0 ? 'block' : 'none';
+            batchActionMessage.style.display = 'none';
+            if (count > 0) {
+                detectAndSetWorkflowStep();
+            }
+        }
+
+        // ====== Detect starting step from selected batches' status badges ======
+        function detectAndSetWorkflowStep() {
+            const selected = document.querySelectorAll('.batch-checkbox:checked');
+            let hasPending = false, hasApproved = false, hasReceived = false, hasInspecting = false;
+
+            selected.forEach(cb => {
+                const row = cb.closest('tr');
+                const pills = row.querySelector('.status-pills');
+                if (!pills) return;
+                const text = pills.textContent;
+                if (text.includes('Pending')) hasPending = true;
+                if (text.includes('Approved')) hasApproved = true;
+                if (text.includes('Received') && !text.includes('mark_received')) hasReceived = true;
+                if (text.includes('Inspecting')) hasInspecting = true;
+            });
+
+            let activeStep;
+            if (hasPending) activeStep = 'approve';
+            else if (hasApproved) activeStep = 'mark_received';
+            else if (hasReceived) activeStep = 'quality_check';
+            else if (hasInspecting) activeStep = 'process_refund';
+            else activeStep = 'approve';
+
+            setWorkflowStep(activeStep);
+        }
+
+        // ====== Set active workflow step (completed / active / upcoming) ======
+        function setWorkflowStep(activeStep) {
+            const stepIndex = WORKFLOW_STEPS.indexOf(activeStep);
+
+            document.querySelectorAll('.workflow-step').forEach(step => {
+                const stepAction = step.dataset.step;
+                const idx = WORKFLOW_STEPS.indexOf(stepAction);
+                const btn = step.querySelector('.btn');
+                const icon = btn.querySelector('.step-icon');
+                const label = btn.querySelector('.step-label');
+
+                step.classList.remove('active', 'completed', 'upcoming');
+
+                if (idx < stepIndex) {
+                    step.classList.add('completed');
+                    btn.disabled = true;
+                    icon.className = 'fas fa-check me-1 step-icon';
+                    label.textContent = 'Done';
+                } else if (idx === stepIndex) {
+                    step.classList.add('active');
+                    btn.disabled = false;
+                    icon.className = 'fas ' + STEP_ICONS[stepAction] + ' me-1 step-icon';
+                    label.textContent = STEP_LABELS[stepAction];
+                } else {
+                    step.classList.add('upcoming');
+                    btn.disabled = true;
+                    icon.className = 'fas ' + STEP_ICONS[stepAction] + ' me-1 step-icon';
+                    label.textContent = STEP_LABELS[stepAction];
+                }
+            });
+        }
+
+        // ====== Get selected batch IDs ======
+        function getSelectedBatchIds() {
+            return Array.from(document.querySelectorAll('.batch-checkbox:checked')).map(cb => cb.value);
+        }
+
+        // ====== Open Batch QC Modal ======
+        window.openBatchQCModal = function() {
+            const batchIds = getSelectedBatchIds();
+            if (batchIds.length === 0) return;
+
+            // Update modal summary
+            document.getElementById('qcBatchCount').textContent = batchIds.length;
+
+            // Count received returns from selected batch rows' status badges
+            let receivedCount = 0;
+            batchIds.forEach(bid => {
+                const cb = document.querySelector(`.batch-checkbox[value="${bid}"]`);
+                if (!cb) return;
+                const row = cb.closest('tr');
+                const pills = row.querySelector('.status-pills');
+                if (!pills) return;
+                const badges = pills.querySelectorAll('.badge');
+                badges.forEach(badge => {
+                    const text = badge.textContent.trim();
+                    const match = text.match(/^(\d+)\s+Received$/);
+                    if (match) receivedCount += parseInt(match[1]);
+                });
+            });
+            document.getElementById('qcReceivedCount').textContent = receivedCount > 0 ? receivedCount : 'None';
+
+            // Reset form fields
+            document.getElementById('batchQCCondition').value = 'opened';
+            document.getElementById('batchQCNotes').value = '';
+
+            // Setup "Go to Batch Detail" button
+            const detailBtn = document.getElementById('qcGoToDetailBtn');
+            if (batchIds.length === 1) {
+                detailBtn.style.display = 'inline-block';
+                detailBtn.onclick = function() {
+                    window.location.href = '?batch=' + encodeURIComponent(batchIds[0]);
+                };
+            } else {
+                // Multiple batches - can't redirect to single detail, hide the button
+                detailBtn.style.display = 'none';
+            }
+
+            // Show the modal
+            const modal = new bootstrap.Modal(document.getElementById('batchQCModal'));
+            modal.show();
+        };
+
+        // ====== Submit Batch QC from Modal ======
+        window.submitBatchQC = function() {
+            const condition = document.getElementById('batchQCCondition').value;
+            const notes = document.getElementById('batchQCNotes').value;
+
+            if (!condition) {
+                alert('Please select a condition.');
+                return;
+            }
+
+            // Close the modal
+            const modalEl = document.getElementById('batchQCModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+
+            // Call the existing AJAX function with extra data
+            submitBatchBulkAction('quality_check', {
+                condition_received: condition,
+                quality_check_notes: notes
+            });
+        };
+
+        // ====== Submit batch action via AJAX ======
+        window.submitBatchBulkAction = function(action, extraData) {
+            const batchIds = getSelectedBatchIds();
+            if (batchIds.length === 0) return;
+
+            // Confirm for trash
+            if (action === 'trash') {
+                if (!confirm(`Move ALL returns in ${batchIds.length} batch(es) to trash?\nThis will trash all returns within the selected batches.`)) return;
+            }
+
+            // Get the button and show spinner
+            const activeStep = document.querySelector(`.workflow-step[data-step="${action}"]`);
+            let btn, originalHTML;
+            if (activeStep) {
+                btn = activeStep.querySelector('.btn');
+                originalHTML = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Processing...';
+            }
+
+            // Build form data
+            const formData = new FormData();
+            formData.append('bulk_action', action);
+            batchIds.forEach(id => formData.append('batch_ids', id));
+
+            // Append extra data (e.g., QC condition and notes)
+            if (extraData) {
+                for (const [key, value] of Object.entries(extraData)) {
+                    if (value) formData.append(key, value);
+                }
+            }
+
+            fetch('{% url "returns_batch_bulk_action" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success message in toolbar
+                    batchActionMessage.textContent = data.message;
+                    batchActionMessage.className = 'ms-3 fw-bold batch-action-toast text-success';
+                    batchActionMessage.style.display = 'inline';
+
+                    // Update status badges in each selected batch row
+                    if (data.updated_batches) {
+                        for (const [batchId, stats] of Object.entries(data.updated_batches)) {
+                            if (action === 'trash' && stats.total_returns === 0) {
+                                removeBatchRow(batchId);
+                            } else {
+                                updateBatchRowBadges(batchId, stats);
+                            }
+                        }
+                    }
+
+                    // For trash, just update toolbar (rows removed)
+                    if (action === 'trash') {
+                        updateBatchToolbar();
+                        return;
+                    }
+
+                    // Show prominent stock notification for refund action
+                    if (action === 'process_refund' && data.count > 0) {
+                        showRestockNotification(data.count, data.total_restocked || 0, data.total_damaged || 0);
+                    }
+
+                    // Advance workflow: mark current step as done, activate next
+                    const stepIdx = WORKFLOW_STEPS.indexOf(action);
+                    if (stepIdx >= 0 && activeStep) {
+                        activeStep.classList.remove('active');
+                        activeStep.classList.add('completed');
+                        btn.innerHTML = '<i class="fas fa-check me-1 step-icon"></i><span class="step-label">Done</span>';
+                        btn.disabled = true;
+
+                        // Activate next step
+                        const nextAction = WORKFLOW_STEPS[stepIdx + 1];
+                        if (nextAction) {
+                            const nextEl = document.querySelector(`.workflow-step[data-step="${nextAction}"]`);
+                            if (nextEl) {
+                                nextEl.classList.remove('upcoming');
+                                nextEl.classList.add('active');
+                                nextEl.querySelector('.btn').disabled = false;
+                            }
+                        } else {
+                            // All steps completed
+                            batchActionMessage.textContent = 'All workflow steps completed!';
+                            batchActionMessage.className = 'ms-3 fw-bold batch-action-toast text-success';
+                        }
+                    }
+
+                    // Auto-hide message after 4s (only toolbar message, not restock banner)
+                    setTimeout(() => { batchActionMessage.style.display = 'none'; }, 4000);
+
+                } else {
+                    alert(data.error || 'Action failed. Please try again.');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = originalHTML;
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Batch action error:', error);
+                alert('Network error. Please try again.');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHTML;
+                }
+            });
+        };
+
+        // ====== Show stock restock notification banner ======
+        function showRestockNotification(refundedCount, restockedQty, damagedQty) {
+            // Remove any existing notification
+            const existing = document.getElementById('restockNotification');
+            if (existing) existing.remove();
+
+            const totalProcessed = restockedQty + damagedQty;
+            const banner = document.createElement('div');
+            banner.id = 'restockNotification';
+            banner.className = 'card border-0 shadow-sm mb-3 restock-notification';
+            banner.innerHTML = `
+                <div class="card-body py-3">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="restock-icon">
+                                <i class="fas fa-boxes"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-1 fw-bold text-success">
+                                    <i class="fas fa-check-circle me-1"></i> Refund Processed Successfully!
+                                </h6>
+                                <p class="mb-0 text-muted small">
+                                    ${refundedCount} return(s) refunded. Stock has been updated.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="restock-stat bg-success bg-opacity-10">
+                                <div class="stat-value text-success">${restockedQty}</div>
+                                <div class="stat-label text-success">Restocked</div>
+                            </div>
+                            ${damagedQty > 0 ? `
+                            <div class="restock-stat bg-danger bg-opacity-10">
+                                <div class="stat-value text-danger">${damagedQty}</div>
+                                <div class="stat-label text-danger">Damaged</div>
+                            </div>` : ''}
+                            ${totalProcessed > 0 ? `
+                            <div class="restock-stat bg-primary bg-opacity-10">
+                                <div class="stat-value text-primary">${totalProcessed}</div>
+                                <div class="stat-label text-primary">Total Items</div>
+                            </div>` : ''}
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="this.closest('.restock-notification').remove()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Insert before the batches table card
+            const tableCard = document.querySelector('.card.shadow-sm.mb-4');
+            if (tableCard) {
+                tableCard.parentNode.insertBefore(banner, tableCard);
+                banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            // Auto-dismiss after 10 seconds
+            setTimeout(() => {
+                if (banner.parentNode) {
+                    banner.style.transition = 'opacity 0.5s, transform 0.5s';
+                    banner.style.opacity = '0';
+                    banner.style.transform = 'translateY(-10px)';
+                    setTimeout(() => { if (banner.parentNode) banner.remove(); }, 500);
+                }
+            }, 10000);
+        }
+
+        // ====== Update status badges in a batch row ======
+        function updateBatchRowBadges(batchId, stats) {
+            const checkbox = document.querySelector(`.batch-checkbox[value="${batchId}"]`);
+            if (!checkbox) return;
+            const row = checkbox.closest('tr');
+            const pillsCell = row.querySelector('.status-pills');
+            if (!pillsCell) return;
+
+            let html = '';
+            if (stats.pending > 0) html += `<span class="badge bg-warning text-dark">${stats.pending} Pending</span>`;
+            if (stats.approved > 0) html += `<span class="badge bg-info">${stats.approved} Approved</span>`;
+            if (stats.received > 0) html += `<span class="badge bg-secondary">${stats.received} Received</span>`;
+            if (stats.inspecting > 0) html += `<span class="badge bg-primary">${stats.inspecting} Inspecting</span>`;
+            if (stats.refunded > 0) html += `<span class="badge bg-success">${stats.refunded} Refunded</span>`;
+            if (stats.rejected > 0) html += `<span class="badge bg-danger">${stats.rejected} Rejected</span>`;
+            pillsCell.innerHTML = html;
+
+            // Flash green to confirm update
+            row.style.transition = 'background 0.5s';
+            row.style.background = 'rgba(25, 135, 84, 0.1)';
+            setTimeout(() => { row.style.background = ''; }, 1500);
+        }
+
+        // ====== Remove a trashed batch row with animation ======
+        function removeBatchRow(batchId) {
+            const checkbox = document.querySelector(`.batch-checkbox[value="${batchId}"]`);
+            if (!checkbox) return;
+            const row = checkbox.closest('tr');
+            if (row) {
+                row.style.transition = 'opacity 0.4s, transform 0.4s';
+                row.style.opacity = '0';
+                row.style.transform = 'translateX(-20px)';
+                setTimeout(() => row.remove(), 400);
+            }
+        }
+
+        // ====== Clear button ======
+        document.getElementById('batchClearBtn').addEventListener('click', function() {
+            batchCheckboxes.forEach(cb => cb.checked = false);
+            batchSelectAll.checked = false;
+            batchSelectAll.indeterminate = false;
+            updateBatchToolbar();
+        });
+
+        // ====== Trash single batch ======
+        window.trashSingleBatch = function(batchId) {
+            if (!confirm(`Move ALL returns in batch "${batchId}" to trash?`)) return;
+
+            const btn = document.querySelector(`tr [onclick*="trashSingleBatch('${batchId}')"]`);
+            let originalHTML;
+            if (btn) {
+                originalHTML = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            }
+
+            const formData = new FormData();
+            formData.append('bulk_action', 'trash');
+            formData.append('batch_ids', batchId);
+
+            fetch('{% url "returns_batch_bulk_action" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    removeBatchRow(batchId);
+                } else {
+                    alert(data.error || 'Failed to trash batch.');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = originalHTML;
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Trash error:', error);
+                alert('Network error. Please try again.');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHTML;
+                }
+            });
+        };
+    });
+    </script>
+
+    {% elif view_mode == 'batch_detail' %}
+    {# ===================== BATCH DETAIL VIEW ===================== #}
+
+    <!-- Batch Stats Bar -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stat-card stat-card-primary">
+                <div class="stat-icon"><i class="fas fa-undo-alt"></i></div>
+                <div>
+                    <h3 class="stat-number">{{ batch_stats.total_returns }}</h3>
+                    <p class="stat-label">Returns in Batch</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-success">
+                <div class="stat-icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div>
+                    <h3 class="stat-number">{{ batch_stats.total_refund }}</h3>
+                    <p class="stat-label">Total Refund</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-warning">
+                <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                <div>
+                    <h3 class="stat-number">{{ batch_stats.pending }}</h3>
+                    <p class="stat-label">Pending</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card stat-card-info">
+                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div>
+                    <h3 class="stat-number">{{ batch_stats.refunded }}</h3>
+                    <p class="stat-label">Refunded</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Status Summary + Quick Actions -->
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                    <strong class="me-2">Batch Status:</strong>
+                    {% if batch_stats.pending > 0 %}<span class="badge bg-warning text-dark">{{ batch_stats.pending }} Pending</span>{% endif %}
+                    {% if batch_stats.approved > 0 %}<span class="badge bg-info">{{ batch_stats.approved }} Approved</span>{% endif %}
+                    {% if batch_stats.received > 0 %}<span class="badge bg-secondary">{{ batch_stats.received }} Received</span>{% endif %}
+                    {% if batch_stats.inspecting > 0 %}<span class="badge bg-primary">{{ batch_stats.inspecting }} Inspecting</span>{% endif %}
+                    {% if batch_stats.refunded > 0 %}<span class="badge bg-success">{{ batch_stats.refunded }} Refunded</span>{% endif %}
+                    {% if batch_stats.rejected > 0 %}<span class="badge bg-danger">{{ batch_stats.rejected }} Rejected</span>{% endif %}
+                </div>
+                <div class="d-flex align-items-center flex-wrap gap-2 workflow-btn-group">
+                    {% if batch_stats.pending > 0 %}
+                    <button type="button" class="btn btn-warning btn-sm" onclick="batchQuickAction('approve')" title="Approve all {{ batch_stats.pending }} pending returns">
+                        <i class="fas fa-check-circle me-1"></i> Approve All ({{ batch_stats.pending }})
+                    </button>
+                    {% endif %}
+                    {% if batch_stats.approved > 0 %}
+                    <button type="button" class="btn btn-info btn-sm text-white" onclick="batchQuickAction('mark_received')" title="Mark all {{ batch_stats.approved }} approved as received">
+                        <i class="fas fa-box me-1"></i> Receive All ({{ batch_stats.approved }})
+                    </button>
+                    {% endif %}
+                    {% if batch_stats.received > 0 %}
+                    <button type="button" class="btn btn-primary btn-sm" onclick="batchQuickAction('quality_check')" title="Quality check all {{ batch_stats.received }} received">
+                        <i class="fas fa-clipboard-check me-1"></i> QC All ({{ batch_stats.received }})
+                    </button>
+                    {% endif %}
+                    {% if batch_stats.inspecting > 0 %}
+                    <button type="button" class="btn btn-success btn-sm" onclick="batchQuickAction('process_refund')" title="Refund all {{ batch_stats.inspecting }} inspected">
+                        <i class="fas fa-money-bill-wave me-1"></i> Refund All ({{ batch_stats.inspecting }})
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Actions Toolbar (hidden until selection) -->
+    <div id="bulkActionsToolbar" class="card border-0 shadow-sm mb-3 bulk-toolbar-card" style="display: none;">
+        <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <i class="fas fa-check-square text-primary me-2"></i>
+                    <strong id="selectedCount">0</strong>
+                    <span class="text-muted">return(s) selected</span>
+                </div>
+                <div class="d-flex align-items-center flex-wrap gap-2 workflow-btn-group">
+                    <button type="button" class="btn btn-warning" id="bulkApproveBtn" title="Approve pending returns">
+                        <i class="fas fa-check-circle me-1"></i> Approve
+                    </button>
+                    <button type="button" class="btn btn-info text-white" id="bulkReceivedBtn" title="Mark approved as received">
+                        <i class="fas fa-box me-1"></i> Received
+                    </button>
+                    <button type="button" class="btn btn-primary" id="bulkQualityCheckBtn" title="Quality check received">
+                        <i class="fas fa-clipboard-check me-1"></i> Quality Check
+                    </button>
+                    <button type="button" class="btn btn-success" id="bulkRefundBtn" title="Process refund">
+                        <i class="fas fa-money-bill-wave me-1"></i> Refund
+                    </button>
+                    <div class="workflow-separator"></div>
+                    <button type="button" class="btn btn-outline-danger" id="bulkRejectBtn" title="Reject">
+                        <i class="fas fa-times-circle me-1"></i> Reject
+                    </button>
+                    {% if user.is_superuser or user.role == 'administrator' or user.can_delete_returns %}
+                    <button type="button" class="btn btn-outline-danger" id="bulkDeleteBtn" title="Move to Trash">
+                        <i class="fas fa-trash me-1"></i> Trash
+                    </button>
+                    {% endif %}
+                    <div class="workflow-separator"></div>
+                    <button type="button" class="btn btn-outline-secondary" id="bulkClearBtn">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Individual Returns Table -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list text-primary me-2"></i>Returns in Batch</h5>
+            <small class="text-muted">{{ returns.paginator.count }} return{{ returns.paginator.count|pluralize }}</small>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
                             <th style="width: 40px;">
@@ -117,10 +1110,9 @@
                             <th>RMA #</th>
                             <th>Order</th>
                             <th>Customer</th>
-                            <th>Amount</th>
+                            <th>Refund</th>
                             <th>Status</th>
-                            <th>Created At</th>
-                            <th>Created By</th>
+                            <th>Created</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -128,7 +1120,10 @@
                         {% for return in returns %}
                         <tr>
                             <td>
-                                <input type="checkbox" class="form-check-input return-checkbox" value="{{ return.id }}" data-rma="{{ return.rma_number }}">
+                                <input type="checkbox" class="form-check-input return-checkbox"
+                                       value="{{ return.id }}"
+                                       data-rma="{{ return.rma_number }}"
+                                       data-status="{{ return.return_status }}">
                             </td>
                             <td><strong>{{ return.rma_number }}</strong></td>
                             <td>{{ return.order.order_number }}</td>
@@ -136,34 +1131,27 @@
                                 <div>{{ return.customer_name }}</div>
                                 <small class="text-muted">{{ return.customer_phone }}</small>
                             </td>
-                            <td>रू {{ return.total_amount }}</td>
+                            <td><strong>&#2352;&#2370; {{ return.refund_amount }}</strong></td>
                             <td>
                                 <span class="badge bg-{{ return.get_status_display_class }}">
                                     {{ return.get_return_status_display }}
                                 </span>
                             </td>
                             <td>
-                                <small>{{ return.created_at|date:"M d, Y" }}</small>
+                                <small>{{ return.created_at|date:"M d, Y" }}</small><br>
+                                <small class="text-muted">{{ return.created_by.username|default:"System" }}</small>
                             </td>
-                            <td>{{ return.created_by.username|default:"System" }}</td>
                             <td>
-                                <div class="btn-group btn-group-sm">
-                                    <a href="{% url 'return_detail' return.id %}" class="btn btn-outline-primary" title="View">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    {% if user.is_superuser or user.role == 'administrator' or user.can_delete_returns %}
-                                    <a href="{% url 'return_trash' return.id %}" class="btn btn-outline-danger" title="Move to Trash">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
-                                    {% endif %}
-                                </div>
+                                <a href="{% url 'return_detail' return.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </a>
                             </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="9" class="text-center py-5">
+                            <td colspan="8" class="text-center py-5">
                                 <i class="fas fa-box fa-3x text-muted mb-3 d-block"></i>
-                                <p class="text-muted mb-0">No return requests found</p>
+                                <p class="text-muted mb-0">No returns in this batch</p>
                             </td>
                         </tr>
                         {% endfor %}
@@ -171,165 +1159,165 @@
                 </table>
             </div>
         </div>
-
-        <!-- Pagination -->
         {% if returns.has_other_pages %}
         <div class="card-footer bg-white border-top">
             <nav>
                 <ul class="pagination pagination-sm mb-0 justify-content-center">
                     {% if returns.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ returns.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">Previous</a>
-                    </li>
+                    <li class="page-item"><a class="page-link" href="?batch={{ batch_filter }}&page={{ returns.previous_page_number }}">Previous</a></li>
                     {% endif %}
-
-                    <li class="page-item active">
-                        <span class="page-link">Page {{ returns.number }} of {{ returns.paginator.num_pages }}</span>
-                    </li>
-
+                    <li class="page-item active"><span class="page-link">Page {{ returns.number }} of {{ returns.paginator.num_pages }}</span></li>
                     {% if returns.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ returns.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">Next</a>
-                    </li>
+                    <li class="page-item"><a class="page-link" href="?batch={{ batch_filter }}&page={{ returns.next_page_number }}">Next</a></li>
                     {% endif %}
                 </ul>
             </nav>
         </div>
         {% endif %}
     </div>
-</div>
 
-<!-- Bulk Actions Form (Hidden) -->
-<form id="bulkActionForm" method="POST" action="{% url 'returns_bulk_action' %}" style="display: none;">
-    {% csrf_token %}
-    <input type="hidden" id="bulkActionInput" name="bulk_action" value="">
-    <div id="returnIdsContainer"></div>
-</form>
+    <!-- Bulk Actions Form (Hidden) -->
+    <form id="bulkActionForm" method="POST" action="{% url 'returns_bulk_action' %}" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" id="bulkActionInput" name="bulk_action" value="">
+        <input type="hidden" name="batch_id" value="{{ batch_filter }}">
+        <div id="returnIdsContainer"></div>
+    </form>
 
-<!-- Bulk Actions Script -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
-    const returnCheckboxes = document.querySelectorAll('.return-checkbox');
-    const bulkActionsToolbar = document.getElementById('bulkActionsToolbar');
-    const selectedCount = document.getElementById('selectedCount');
-    const bulkActionForm = document.getElementById('bulkActionForm');
-    const bulkActionInput = document.getElementById('bulkActionInput');
-    const returnIdsContainer = document.getElementById('returnIdsContainer');
-    
-    // Select all checkbox handler
-    selectAllCheckbox.addEventListener('change', function() {
-        returnCheckboxes.forEach(checkbox => {
-            checkbox.checked = this.checked;
+    <!-- Batch Quick Action Form (processes ALL returns in batch by status) -->
+    <form id="batchQuickActionForm" method="POST" action="{% url 'returns_bulk_action' %}" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" id="batchQuickActionInput" name="bulk_action" value="">
+        <input type="hidden" name="batch_id" value="{{ batch_filter }}">
+        {% for return in returns %}
+        <input type="hidden" name="return_ids" value="{{ return.id }}">
+        {% endfor %}
+    </form>
+
+    <!-- Bulk Actions Script -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const returnCheckboxes = document.querySelectorAll('.return-checkbox');
+        const bulkActionsToolbar = document.getElementById('bulkActionsToolbar');
+        const selectedCount = document.getElementById('selectedCount');
+        const bulkActionForm = document.getElementById('bulkActionForm');
+        const bulkActionInput = document.getElementById('bulkActionInput');
+        const returnIdsContainer = document.getElementById('returnIdsContainer');
+
+        selectAllCheckbox.addEventListener('change', function() {
+            returnCheckboxes.forEach(cb => cb.checked = this.checked);
+            updateToolbar();
         });
-        updateBulkActionsToolbar();
-    });
-    
-    // Individual checkbox handler
-    returnCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            updateBulkActionsToolbar();
-            // Update select all checkbox state
-            const allChecked = Array.from(returnCheckboxes).every(cb => cb.checked);
-            const someChecked = Array.from(returnCheckboxes).some(cb => cb.checked);
-            selectAllCheckbox.checked = allChecked;
-            selectAllCheckbox.indeterminate = someChecked && !allChecked;
-        });
-    });
-    
-    // Update toolbar visibility and selected count
-    function updateBulkActionsToolbar() {
-        const checked = document.querySelectorAll('.return-checkbox:checked');
-        const count = checked.length;
-        
-        selectedCount.textContent = count;
-        bulkActionsToolbar.style.display = count > 0 ? 'block' : 'none';
-    }
-    
-    // Get selected IDs
-    function getSelectedIds() {
-        const checked = document.querySelectorAll('.return-checkbox:checked');
-        return Array.from(checked).map(cb => cb.value);
-    }
-    
-    // Get selected RMA numbers for confirmation
-    function getSelectedRMAs() {
-        const checked = document.querySelectorAll('.return-checkbox:checked');
-        return Array.from(checked).map(cb => cb.dataset.rma);
-    }
-    
-    // Helper to submit bulk action
-    function submitBulkAction(action) {
-        const ids = getSelectedIds();
-        const rmas = getSelectedRMAs();
-        if (ids.length === 0) return;
-        
-        // Build confirmation message based on action
-        let confirmMessage = '';
-        switch(action) {
-            case 'approve':
-                confirmMessage = `Approve ${ids.length} return(s)?`;
-                break;
-            case 'reject':
-                confirmMessage = `Reject ${ids.length} return(s)?`;
-                break;
-            case 'processing':
-                confirmMessage = `Mark ${ids.length} return(s) as processing?`;
-                break;
-            case 'trash':
-                confirmMessage = `Move ${ids.length} return(s) to trash?`;
-                break;
-        }
-        
-        if (confirmMessage && rmas.length <= 5) {
-            confirmMessage += `\n\n${rmas.join(', ')}`;
-        }
-        
-        if (confirm(confirmMessage)) {
-            // Clear container and add hidden inputs
-            returnIdsContainer.innerHTML = '';
-            ids.forEach(id => {
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'return_ids';
-                input.value = id;
-                returnIdsContainer.appendChild(input);
+
+        returnCheckboxes.forEach(cb => {
+            cb.addEventListener('change', function() {
+                updateToolbar();
+                const all = Array.from(returnCheckboxes).every(c => c.checked);
+                const some = Array.from(returnCheckboxes).some(c => c.checked);
+                selectAllCheckbox.checked = all;
+                selectAllCheckbox.indeterminate = some && !all;
             });
-            
-            bulkActionInput.value = action;
-            bulkActionForm.submit();
+        });
+
+        function updateToolbar() {
+            const count = document.querySelectorAll('.return-checkbox:checked').length;
+            selectedCount.textContent = count;
+            bulkActionsToolbar.style.display = count > 0 ? 'block' : 'none';
+        }
+
+        function getSelectedIds() {
+            return Array.from(document.querySelectorAll('.return-checkbox:checked')).map(cb => cb.value);
+        }
+        function getSelectedRMAs() {
+            return Array.from(document.querySelectorAll('.return-checkbox:checked')).map(cb => cb.dataset.rma);
+        }
+        function countByStatus(status) {
+            return Array.from(document.querySelectorAll('.return-checkbox:checked')).filter(cb => cb.dataset.status === status).length;
+        }
+
+        function submitBulkAction(action) {
+            const ids = getSelectedIds();
+            const rmas = getSelectedRMAs();
+            if (ids.length === 0) return;
+
+            let msg = '', note = '';
+            switch(action) {
+                case 'approve':
+                    msg = `Approve ${ids.length} return(s)?`;
+                    const p = countByStatus('pending');
+                    if (p < ids.length) note = `\n(Only ${p} pending will be approved)`;
+                    break;
+                case 'reject':
+                    msg = `Reject ${ids.length} return(s)?`;
+                    break;
+                case 'mark_received':
+                    msg = `Mark ${ids.length} return(s) as received?`;
+                    const a = countByStatus('approved');
+                    if (a < ids.length) note = `\n(Only ${a} approved will be updated)`;
+                    break;
+                case 'quality_check':
+                    msg = `Quality check ${ids.length} return(s)?`;
+                    const r = countByStatus('received');
+                    if (r < ids.length) note = `\n(Only ${r} received will be updated)`;
+                    break;
+                case 'process_refund':
+                    msg = `Process refund for ${ids.length} return(s)?\nGood items will be restocked.`;
+                    const i = countByStatus('inspecting');
+                    if (i < ids.length) note = `\n(Only ${i} inspected will be refunded)`;
+                    break;
+                case 'trash':
+                    msg = `Move ${ids.length} return(s) to trash?`;
+                    break;
+            }
+            if (rmas.length <= 5) msg += '\n\n' + rmas.join(', ');
+            msg += note;
+
+            if (confirm(msg)) {
+                returnIdsContainer.innerHTML = '';
+                ids.forEach(id => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden'; input.name = 'return_ids'; input.value = id;
+                    returnIdsContainer.appendChild(input);
+                });
+                bulkActionInput.value = action;
+                bulkActionForm.submit();
+            }
+        }
+
+        document.getElementById('bulkApproveBtn').addEventListener('click', () => submitBulkAction('approve'));
+        document.getElementById('bulkRejectBtn').addEventListener('click', () => submitBulkAction('reject'));
+        document.getElementById('bulkReceivedBtn').addEventListener('click', () => submitBulkAction('mark_received'));
+        document.getElementById('bulkQualityCheckBtn').addEventListener('click', () => submitBulkAction('quality_check'));
+        document.getElementById('bulkRefundBtn').addEventListener('click', () => submitBulkAction('process_refund'));
+        const del = document.getElementById('bulkDeleteBtn');
+        if (del) del.addEventListener('click', () => submitBulkAction('trash'));
+        document.getElementById('bulkClearBtn').addEventListener('click', function() {
+            returnCheckboxes.forEach(cb => cb.checked = false);
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+            updateToolbar();
+        });
+    });
+
+    // Batch Quick Action - operate on ALL returns in the batch
+    function batchQuickAction(action) {
+        const actionLabels = {
+            'approve': 'Approve ALL pending returns in this batch?',
+            'mark_received': 'Mark ALL approved returns as received?',
+            'quality_check': 'Quality check ALL received returns?',
+            'process_refund': 'Process refund for ALL inspected returns?\nGood items will be restocked to inventory.'
+        };
+
+        const msg = actionLabels[action] || `Perform "${action}" on all returns in this batch?`;
+
+        if (confirm(msg)) {
+            const form = document.getElementById('batchQuickActionForm');
+            document.getElementById('batchQuickActionInput').value = action;
+            form.submit();
         }
     }
-    
-    // Bulk Approve
-    document.getElementById('bulkApproveBtn').addEventListener('click', function() {
-        submitBulkAction('approve');
-    });
-    
-    // Bulk Reject
-    document.getElementById('bulkRejectBtn').addEventListener('click', function() {
-        submitBulkAction('reject');
-    });
-    
-    // Bulk Processing
-    document.getElementById('bulkProcessBtn').addEventListener('click', function() {
-        submitBulkAction('processing');
-    });
-    
-    // Bulk Delete
-    document.getElementById('bulkDeleteBtn').addEventListener('click', function() {
-        submitBulkAction('trash');
-    });
-    
-    // Clear selection
-    document.getElementById('bulkClearBtn').addEventListener('click', function() {
-        returnCheckboxes.forEach(checkbox => {
-            checkbox.checked = false;
-        });
-        selectAllCheckbox.checked = false;
-        selectAllCheckbox.indeterminate = false;
-        updateBulkActionsToolbar();
-    });
-});
-</script>
+    </script>
+    {% endif %}
+</div>
 {% endblock %}

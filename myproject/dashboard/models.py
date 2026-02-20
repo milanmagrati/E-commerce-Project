@@ -632,7 +632,7 @@ class ReturnRequest(models.Model):
     customer_email = models.EmailField(blank=True, null=True)
     
     # Return Details
-    return_reason = models.CharField(max_length=50, choices=RETURN_REASON_CHOICES)
+    return_reason = models.CharField(max_length=50, choices=RETURN_REASON_CHOICES, blank=True, default='')
     return_status = models.CharField(max_length=50, choices=RETURN_STATUS_CHOICES, default='pending')
     refund_type = models.CharField(max_length=50, choices=REFUND_TYPE_CHOICES, default='full_refund')
     
@@ -662,6 +662,10 @@ class ReturnRequest(models.Model):
     approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_returns')
     approved_at = models.DateTimeField(null=True, blank=True)
     refunded_at = models.DateTimeField(null=True, blank=True)
+
+    # Batch tracking - groups returns created together via bulk
+    batch_id = models.CharField(max_length=50, blank=True, null=True, db_index=True,
+                                help_text="Groups bulk-created returns together")
     
     # ✅ SOFT DELETE FIELDS
     is_deleted = models.BooleanField(default=False)

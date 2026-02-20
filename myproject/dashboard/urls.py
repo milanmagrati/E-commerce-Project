@@ -150,6 +150,7 @@ urlpatterns = [
     
     # Create & Detail
     path('returns/create/', views.return_create, name='return_create'),
+    path('returns/bulk-create/', views.bulk_return_create, name='bulk_return_create'),
     path('returns/<int:return_id>/', views.return_detail, name='return_detail'),
     path('api/order-by-barcode/', views.api_get_order_by_barcode, name='api_get_order_by_barcode'),
     
@@ -162,6 +163,7 @@ urlpatterns = [
     
     # Bulk Actions
     path('returns/bulk-action/', views.returns_bulk_action, name='returns_bulk_action'),
+    path('returns/batch-bulk-action/', views.returns_batch_bulk_action, name='returns_batch_bulk_action'),
     path('returns/trash/bulk-action/', views.returns_trash_bulk_action, name='returns_trash_bulk_action'),
     
     # API Endpoint to search customer by phone number

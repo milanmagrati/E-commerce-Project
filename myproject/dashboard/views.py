@@ -6,7 +6,7 @@ from django.views.decorators.http import require_POST, require_http_methods
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib import messages
-from django.db.models import Sum, Count, Q, F, Prefetch
+from django.db.models import Sum, Count, Q, F, Prefetch, Min
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse, HttpResponse, Http404
 from django.core.paginator import Paginator
@@ -5428,11 +5428,23 @@ def inventory_dashboard(request):
         products_with_value = [{'product': p, 'value': p.stock * p.price} for p in products if p.stock > 0]
         top_products = sorted(products_with_value, key=lambda x: x['value'], reverse=True)[:10]
         
-        # Recent Dispatched Orders
-        recent_dispatched_orders = Order.objects.filter(
-            order_status='dispatched',
-            created_by=request.user
-        ).order_by('-dispatch_date')[:10]
+        # Recent Dispatched Orders — query via DispatchItem for accuracy
+        # (orders are linked to dispatches whether or not order_status was updated)
+        dispatched_order_ids = DispatchItem.objects.filter(
+            dispatch__created_by=request.user,
+            dispatch__is_deleted=False,
+            order__isnull=False
+        ).values_list('order_id', flat=True).distinct()
+
+        all_dispatched_orders_qs = Order.objects.filter(
+            id__in=dispatched_order_ids
+        ).select_related('customer').prefetch_related('items').order_by('-dispatch_date', '-id')
+
+        # Pagination for dispatched orders
+        dispatch_page_num = int(request.GET.get('dispatch_page', 1))
+        dispatch_paginator = Paginator(all_dispatched_orders_qs, 15)
+        dispatched_page_obj = dispatch_paginator.get_page(dispatch_page_num)
+        recent_dispatched_orders = dispatched_page_obj
         
         # Category-wise Stock Distribution WITH CHART DATA
         categories = Category.objects.all()
@@ -5465,44 +5477,77 @@ def inventory_dashboard(request):
             else:
                 cat['percentage'] = 0
         
-        # Stock Movement Data (Last 30 Days)
+        # ── Stock Movement Data with filter support ──────────────────────
         today = timezone.now().date()
+
+        # Read filter params
+        days_param     = request.GET.get('days', '30')
+        start_date_param = request.GET.get('start_date', '')
+        end_date_param   = request.GET.get('end_date', '')
+
+        if start_date_param and end_date_param:
+            try:
+                from datetime import datetime as _dt
+                movement_start = _dt.strptime(start_date_param, '%Y-%m-%d').date()
+                movement_end   = _dt.strptime(end_date_param,   '%Y-%m-%d').date()
+                if movement_start > movement_end:
+                    movement_start, movement_end = movement_end, movement_start
+                selected_days = 'custom'
+            except Exception:
+                movement_start   = today - timedelta(days=29)
+                movement_end     = today
+                selected_days    = '30'
+                start_date_param = ''
+                end_date_param   = ''
+        else:
+            try:
+                days_count = int(days_param)
+                if days_count not in (7, 30, 90):
+                    days_count = 30
+            except Exception:
+                days_count = 30
+            movement_start   = today - timedelta(days=days_count - 1)
+            movement_end     = today
+            selected_days    = str(days_count)
+            start_date_param = ''
+            end_date_param   = ''
+
         movement_labels = []
-        stock_in_data = []
-        stock_out_data = []
-        
-        for i in range(29, -1, -1):
-            date = today - timedelta(days=i)
-            movement_labels.append(date.strftime('%b %d'))
-            
+        stock_in_data   = []
+        stock_out_data  = []
+
+        current_date = movement_start
+        while current_date <= movement_end:
+            movement_labels.append(current_date.strftime('%b %d'))
+
             # Stock In for this date
             try:
                 stock_ins_day = StockIn.objects.filter(
                     created_by=request.user,
-                    created_at__date=date
+                    created_at__date=current_date
                 ).aggregate(total=Sum('total_quantity'))['total'] or 0
-            except:
+            except Exception:
                 stock_ins_day = 0
-            
+
             # Stock Out (from dispatched orders) for this date
             try:
                 orders_day = Order.objects.filter(
                     created_by=request.user,
                     order_status='dispatched',
-                    dispatch_date__date=date
+                    dispatch_date__date=current_date
                 )
-                
                 stock_out_day = 0
                 for order in orders_day:
                     try:
                         stock_out_day += sum(item.quantity for item in order.items.all())
-                    except:
+                    except Exception:
                         pass
-            except:
+            except Exception:
                 stock_out_day = 0
-            
+
             stock_in_data.append(stock_ins_day)
             stock_out_data.append(stock_out_day)
+            current_date += timedelta(days=1)
         
         # Stock Turnover Rate
         total_sold_30days = sum(stock_out_data)
@@ -5616,6 +5661,8 @@ def inventory_dashboard(request):
             'out_of_stock_products': out_of_stock_products,
             'top_products': top_products,
             'recent_dispatched_orders': recent_dispatched_orders,
+            'dispatched_page_obj': dispatched_page_obj,
+            'dispatched_total_count': dispatched_order_ids.count(),
             
             # Category Data
             'category_stock': category_stock,
@@ -5636,6 +5683,11 @@ def inventory_dashboard(request):
             'movement_labels': json.dumps(movement_labels),
             'stock_in_data': json.dumps(stock_in_data),
             'stock_out_data': json.dumps(stock_out_data),
+
+            # Filter context
+            'selected_days': selected_days,
+            'start_date': start_date_param,
+            'end_date': end_date_param,
         }
         
         return render(request, 'inventory_dashboard.html', context)
@@ -6533,69 +6585,136 @@ def returns_dashboard(request):
 @login_required
 @permission_required('can_view_returns')
 def returns_list(request):
-    """List all return requests with filters (excluding trash)"""
-    
-    returns = ReturnRequest.objects.filter(is_deleted=False).select_related(
-        'order', 'customer', 'created_by', 'approved_by'
-    ).prefetch_related('items').all().order_by('-created_at')
-    
-    # Search
-    search_query = request.GET.get('search', '')
-    if search_query:
-        returns = returns.filter(
-            Q(rma_number__icontains=search_query) |
-            Q(customer_name__icontains=search_query) |
-            Q(customer_phone__icontains=search_query) |
-            Q(order__order_number__icontains=search_query)
-        )
-    
-    # Filters
-    status_filter = request.GET.get('status', '')
-    if status_filter:
-        returns = returns.filter(return_status=status_filter)
-    
-    reason_filter = request.GET.get('reason', '')
-    if reason_filter:
-        returns = returns.filter(return_reason=reason_filter)
-    
-    refund_type_filter = request.GET.get('refund_type', '')
-    if refund_type_filter:
-        returns = returns.filter(refund_type=refund_type_filter)
-    
-    # Date filter
-    date_filter = request.GET.get('date_range', '')
-    today = timezone.now().date()
-    
-    if date_filter == 'today':
-        returns = returns.filter(created_at__date=today)
-    elif date_filter == 'yesterday':
-        yesterday = today - timedelta(days=1)
-        returns = returns.filter(created_at__date=yesterday)
-    elif date_filter == 'last_7_days':
-        start = today - timedelta(days=7)
-        returns = returns.filter(created_at__date__gte=start)
-    elif date_filter == 'last_30_days':
-        start = today - timedelta(days=30)
-        returns = returns.filter(created_at__date__gte=start)
-    
-    # Pagination
+    """List all return requests with filters (excluding trash)
+    Default view: shows batches + individual returns
+    Batch view (?batch=X): shows individual returns in that batch
+    """
     from django.core.paginator import Paginator
-    paginator = Paginator(returns, 25)
-    page_number = request.GET.get('page')
-    returns_page = paginator.get_page(page_number)
-    
-    context = {
-        'returns': returns_page,
-        'search_query': search_query,
-        'status_filter': status_filter,
-        'reason_filter': reason_filter,
-        'refund_type_filter': refund_type_filter,
-        'date_filter': date_filter,
-        'status_choices': ReturnRequest.RETURN_STATUS_CHOICES,
-        'reason_choices': ReturnRequest.RETURN_REASON_CHOICES,
-        'refund_type_choices': ReturnRequest.REFUND_TYPE_CHOICES,
-    }
-    
+
+    search_query = request.GET.get('search', '')
+    status_filter = request.GET.get('status', '')
+    batch_filter = request.GET.get('batch', '')
+    trash_count = ReturnRequest.objects.filter(is_deleted=True).count()
+
+    if batch_filter:
+        # ===== BATCH DETAIL VIEW =====
+        # Show individual returns in the selected batch
+        returns = ReturnRequest.objects.filter(
+            is_deleted=False, batch_id=batch_filter
+        ).select_related(
+            'order', 'customer', 'created_by', 'approved_by'
+        ).prefetch_related('items').order_by('-created_at')
+
+        if search_query:
+            returns = returns.filter(
+                Q(rma_number__icontains=search_query) |
+                Q(customer_name__icontains=search_query) |
+                Q(order__order_number__icontains=search_query)
+            )
+        if status_filter:
+            returns = returns.filter(return_status=status_filter)
+
+        paginator = Paginator(returns, 50)
+        returns_page = paginator.get_page(request.GET.get('page'))
+
+        # Get batch-level stats
+        batch_stats = ReturnRequest.objects.filter(
+            is_deleted=False, batch_id=batch_filter
+        ).aggregate(
+            total_returns=Count('id'),
+            total_refund=Sum('refund_amount'),
+            pending=Count('id', filter=Q(return_status='pending')),
+            approved=Count('id', filter=Q(return_status='approved')),
+            received=Count('id', filter=Q(return_status='received')),
+            inspecting=Count('id', filter=Q(return_status='inspecting')),
+            refunded=Count('id', filter=Q(return_status='refunded')),
+            rejected=Count('id', filter=Q(return_status='rejected')),
+        )
+
+        context = {
+            'returns': returns_page,
+            'batch_filter': batch_filter,
+            'batch_stats': batch_stats,
+            'search_query': search_query,
+            'status_filter': status_filter,
+            'status_choices': ReturnRequest.RETURN_STATUS_CHOICES,
+            'condition_choices': ReturnRequest.CONDITION_CHOICES,
+            'trash_count': trash_count,
+            'view_mode': 'batch_detail',
+        }
+    else:
+        # ===== DEFAULT VIEW — BATCH SUMMARY =====
+        # Get batch summaries
+        batches_qs = ReturnRequest.objects.filter(
+            is_deleted=False, batch_id__isnull=False
+        ).exclude(batch_id='')
+
+        if search_query:
+            batches_qs = batches_qs.filter(
+                Q(batch_id__icontains=search_query) |
+                Q(rma_number__icontains=search_query) |
+                Q(customer_name__icontains=search_query) |
+                Q(order__order_number__icontains=search_query)
+            )
+        if status_filter:
+            batches_qs = batches_qs.filter(return_status=status_filter)
+
+        batches = batches_qs.values('batch_id').annotate(
+            total_returns=Count('id'),
+            total_refund=Sum('refund_amount'),
+            created_at=Min('created_at'),
+            pending=Count('id', filter=Q(return_status='pending')),
+            approved=Count('id', filter=Q(return_status='approved')),
+            received=Count('id', filter=Q(return_status='received')),
+            inspecting=Count('id', filter=Q(return_status='inspecting')),
+            refunded=Count('id', filter=Q(return_status='refunded')),
+            rejected=Count('id', filter=Q(return_status='rejected')),
+        ).order_by('-created_at')
+
+        paginator = Paginator(batches, 20)
+        batches_page = paginator.get_page(request.GET.get('page'))
+
+        # Also get individual (non-batch) returns
+        individual_qs = ReturnRequest.objects.filter(
+            is_deleted=False
+        ).filter(
+            Q(batch_id__isnull=True) | Q(batch_id='')
+        ).select_related(
+            'order', 'customer', 'created_by'
+        ).order_by('-created_at')
+
+        if search_query:
+            individual_qs = individual_qs.filter(
+                Q(rma_number__icontains=search_query) |
+                Q(customer_name__icontains=search_query) |
+                Q(order__order_number__icontains=search_query)
+            )
+        if status_filter:
+            individual_qs = individual_qs.filter(return_status=status_filter)
+
+        # Overall stats
+        all_returns = ReturnRequest.objects.filter(is_deleted=False)
+        stats = {
+            'total_batches': ReturnRequest.objects.filter(
+                is_deleted=False, batch_id__isnull=False
+            ).exclude(batch_id='').values('batch_id').distinct().count(),
+            'total_returns': all_returns.count(),
+            'pending_count': all_returns.filter(return_status='pending').count(),
+            'refunded_count': all_returns.filter(return_status='refunded').count(),
+        }
+
+        context = {
+            'batches': batches_page,
+            'individual_returns': individual_qs[:20],
+            'search_query': search_query,
+            'status_filter': status_filter,
+            'status_choices': ReturnRequest.RETURN_STATUS_CHOICES,
+            'condition_choices': ReturnRequest.CONDITION_CHOICES,
+            'trash_count': trash_count,
+            'stats': stats,
+            'view_mode': 'batches',
+        }
+
     return render(request, 'returns/list.html', context)
 
 
@@ -6615,7 +6734,7 @@ def return_create(request):
                 order = get_object_or_404(Order, id=order_id, is_deleted=False)
                 
                 # Get return details
-                return_reason = request.POST.get('return_reason')
+                return_reason = request.POST.get('return_reason', '')
                 refund_type = request.POST.get('refund_type', 'full_refund')
                 customer_notes = request.POST.get('customer_notes', '')
                 
@@ -6749,6 +6868,153 @@ def return_create(request):
     }
     
     return render(request, 'returns/create.html', context)
+
+
+@login_required
+@permission_required('can_create_returns')
+def bulk_return_create(request):
+    """Create multiple return requests at once from scanned orders"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        orders_data = data.get('orders', [])
+        common_reason = data.get('return_reason', '')
+        common_refund_type = data.get('refund_type', 'full_refund')
+        common_notes = data.get('customer_notes', '')
+
+        if not orders_data:
+            return JsonResponse({'success': False, 'error': 'No orders provided'})
+
+        # Generate batch ID for grouping
+        batch_id = f"BATCH-{timezone.now().strftime('%Y%m%d%H%M%S')}-{len(orders_data)}"
+
+        created_returns = []
+        errors = []
+
+        with transaction.atomic():
+            for order_entry in orders_data:
+                try:
+                    order_id = order_entry.get('order_id')
+                    order = Order.objects.get(id=order_id, is_deleted=False)
+                    items_data = order_entry.get('items', [])
+
+                    if not items_data:
+                        errors.append(f'No items selected for order {order.order_number}')
+                        continue
+
+                    # Validate returnable quantities
+                    valid = True
+                    for item_data in items_data:
+                        order_item = OrderItem.objects.get(id=item_data['order_item_id'])
+                        qty = int(item_data['quantity'])
+                        already_returned = ReturnItem.objects.filter(
+                            order_item=order_item,
+                            return_request__is_deleted=False
+                        ).aggregate(total=Sum('return_quantity'))['total'] or 0
+                        returnable_qty = order_item.quantity - already_returned
+                        if qty > returnable_qty:
+                            errors.append(
+                                f'Cannot return {qty} of "{order_item.product_name}" in {order.order_number} — only {returnable_qty} returnable'
+                            )
+                            valid = False
+                            break
+
+                    if not valid:
+                        continue
+
+                    # Calculate total refund
+                    total_refund = Decimal('0.00')
+                    for item_data in items_data:
+                        order_item = OrderItem.objects.get(id=item_data['order_item_id'])
+                        qty = int(item_data['quantity'])
+                        total_refund += order_item.price * qty
+
+                    # Use per-order reason/refund if set, otherwise common values
+                    reason = order_entry.get('return_reason', '') or common_reason
+                    refund_type = order_entry.get('refund_type', '') or common_refund_type
+                    notes = order_entry.get('customer_notes', '') or common_notes
+
+                    return_request = ReturnRequest.objects.create(
+                        order=order,
+                        customer=order.customer,
+                        customer_name=order.customer_name,
+                        customer_phone=order.customer_phone,
+                        customer_email=order.customer_email,
+                        return_reason=reason,
+                        refund_type=refund_type,
+                        customer_notes=notes,
+                        total_amount=order.total_amount,
+                        refund_amount=total_refund,
+                        created_by=request.user,
+                        batch_id=batch_id,
+                    )
+
+                    for item_data in items_data:
+                        order_item = OrderItem.objects.get(id=item_data['order_item_id'])
+                        qty = int(item_data['quantity'])
+                        good_qty = max(0, int(item_data.get('good_qty', 0)))
+                        damaged_qty = max(0, int(item_data.get('damaged_qty', 0)))
+
+                        if (good_qty + damaged_qty) > qty:
+                            good_qty = 0
+                            damaged_qty = 0
+
+                        ReturnItem.objects.create(
+                            return_request=return_request,
+                            order_item=order_item,
+                            product=order_item.product,
+                            product_variation=order_item.product_variation,
+                            product_name=order_item.product_name,
+                            product_sku=order_item.product_sku,
+                            quantity=order_item.quantity,
+                            price=order_item.price,
+                            total=order_item.total,
+                            return_quantity=qty,
+                            good_qty=good_qty,
+                            damaged_qty=damaged_qty,
+                            refund_amount=order_item.price * qty
+                        )
+
+                    ReturnActivityLog.objects.create(
+                        return_request=return_request,
+                        user=request.user,
+                        action_type='created',
+                        description=f'Return request {return_request.rma_number} created via bulk return for order {order.order_number}'
+                    )
+
+                    created_returns.append(return_request.rma_number)
+
+                except Order.DoesNotExist:
+                    errors.append(f'Order ID {order_entry.get("order_id")} not found')
+                except Exception as e:
+                    errors.append(f'Error processing order: {str(e)}')
+
+        if created_returns:
+            messages.success(
+                request,
+                f'Successfully created {len(created_returns)} return request(s): {", ".join(created_returns)}'
+            )
+        if errors:
+            for err in errors:
+                messages.warning(request, err)
+
+        return JsonResponse({
+            'success': len(created_returns) > 0,
+            'created': len(created_returns),
+            'errors': errors,
+            'rma_numbers': created_returns,
+            'batch_id': batch_id if created_returns else None
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 @login_required
 def api_get_order_by_barcode(request):
@@ -7189,58 +7455,290 @@ def returns_empty_trash(request):
 # BULK ACTIONS
 
 @login_required
-@permission_required('can_delete_returns')
 def returns_bulk_action(request):
     """Handle bulk actions on returns"""
-    
+
     if request.method == 'POST':
         return_ids = request.POST.getlist('return_ids')
         action = request.POST.get('bulk_action')
-        
+        batch_id = request.POST.get('batch_id', '')
+
         if not return_ids:
-            messages.error(request, '❌ No returns selected!')
+            messages.error(request, 'No returns selected!')
             return redirect('returns_list')
-        
+
         returns = ReturnRequest.objects.filter(id__in=return_ids, is_deleted=False)
         count = returns.count()
-        
+
         if action == 'trash':
             for return_request in returns:
                 return_request.soft_delete(request.user)
-                
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
                     user=request.user,
                     action_type='trashed',
                     description=f'Bulk moved to trash by {request.user.username}'
                 )
-            
-            messages.success(request, f'✅ {count} return(s) moved to trash!')
-            
+            messages.success(request, f'{count} return(s) moved to trash!')
+
         elif action == 'approve':
-            returns.update(
-                return_status='approved',
-                approved_by=request.user,
-                approved_at=timezone.now()
-            )
-            messages.success(request, f'✅ {count} return(s) approved!')
-            
+            approved = returns.filter(return_status='pending')
+            approved_count = approved.count()
+            for ret in approved:
+                ret.return_status = 'approved'
+                ret.approved_by = request.user
+                ret.approved_at = timezone.now()
+                ret.save()
+                ReturnActivityLog.objects.create(
+                    return_request=ret,
+                    user=request.user,
+                    action_type='approved',
+                    description=f'Bulk approved by {request.user.username}'
+                )
+            messages.success(request, f'{approved_count} return(s) approved!')
+
         elif action == 'reject':
-            returns.update(
-                return_status='rejected',
-                approved_by=request.user,
-                approved_at=timezone.now()
+            rejected = returns.filter(return_status='pending')
+            rejected_count = rejected.count()
+            for ret in rejected:
+                ret.return_status = 'rejected'
+                ret.approved_by = request.user
+                ret.approved_at = timezone.now()
+                ret.save()
+                ReturnActivityLog.objects.create(
+                    return_request=ret,
+                    user=request.user,
+                    action_type='rejected',
+                    description=f'Bulk rejected by {request.user.username}'
+                )
+            messages.success(request, f'{rejected_count} return(s) rejected!')
+
+        elif action == 'mark_received':
+            received = returns.filter(return_status='approved')
+            received_count = received.count()
+            for ret in received:
+                ret.return_status = 'received'
+                ret.save()
+                ReturnActivityLog.objects.create(
+                    return_request=ret,
+                    user=request.user,
+                    action_type='received',
+                    description=f'Bulk marked as received by {request.user.username}'
+                )
+            messages.success(request, f'{received_count} return(s) marked as received!')
+
+        elif action == 'quality_check':
+            inspected = returns.filter(return_status='received')
+            inspected_count = inspected.count()
+            for ret in inspected:
+                ret.return_status = 'inspecting'
+                ret.condition_received = 'opened'
+                ret.quality_checked_by = request.user
+                ret.quality_checked_at = timezone.now()
+                ret.save()
+                ReturnActivityLog.objects.create(
+                    return_request=ret,
+                    user=request.user,
+                    action_type='quality_checked',
+                    description=f'Bulk quality check completed by {request.user.username}'
+                )
+            messages.success(request, f'{inspected_count} return(s) quality checked!')
+
+        elif action == 'process_refund':
+            refunded_returns = returns.filter(return_status='inspecting')
+            refunded_count = 0
+            total_restocked = 0
+            total_damaged = 0
+
+            for ret in refunded_returns:
+                ret.return_status = 'refunded'
+                ret.refunded_at = timezone.now()
+                ret.save()
+
+                # Restock good items
+                for item in ret.items.all():
+                    restock_qty = item.good_qty
+                    if restock_qty > 0:
+                        if item.product_variation:
+                            item.product_variation.stock += restock_qty
+                            if item.product_variation.stock > 0:
+                                item.product_variation.status = 'active'
+                            item.product_variation.save()
+                        if item.product:
+                            item.product.stock += restock_qty
+                            if item.product.stock > 0:
+                                if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
+                                    item.product.stock_status = 'low_stock'
+                                else:
+                                    item.product.stock_status = 'in_stock'
+                            item.product.save()
+                        item.restocked = True
+                        item.restocked_at = timezone.now()
+                        item.restocked_by = request.user
+                        item.save()
+                        total_restocked += restock_qty
+                    total_damaged += item.damaged_qty
+
+                ReturnActivityLog.objects.create(
+                    return_request=ret,
+                    user=request.user,
+                    action_type='refunded',
+                    description=f'Bulk refund processed by {request.user.username}. Amount: Rs. {ret.refund_amount}'
+                )
+                refunded_count += 1
+
+            messages.success(
+                request,
+                f'{refunded_count} return(s) refunded! {total_restocked} good items restocked, {total_damaged} damaged items.'
             )
-            messages.success(request, f'✅ {count} return(s) rejected!')
-            
-        elif action == 'processing':
-            returns.update(
-                return_status='processing'
-            )
-            messages.success(request, f'✅ {count} return(s) marked as processing!')
-        
+
+        # Redirect back to batch detail if batch_id was provided
+        if batch_id:
+            from django.urls import reverse
+            return redirect(f'{reverse("returns_list")}?batch={batch_id}')
         return redirect('returns_list')
-    
+
+    return redirect('returns_list')
+
+@login_required
+@require_POST
+def returns_batch_bulk_action(request):
+    """Handle bulk actions on entire batches from the main batch list.
+    Supports AJAX (returns JSON) and regular form submission (redirects).
+    """
+    batch_ids = request.POST.getlist('batch_ids')
+    action = request.POST.get('bulk_action')
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+    if not batch_ids:
+        if is_ajax:
+            return JsonResponse({'success': False, 'error': 'No batches selected!'})
+        messages.error(request, 'No batches selected!')
+        return redirect('returns_list')
+
+    # Get all returns within the selected batches
+    returns_qs = ReturnRequest.objects.filter(batch_id__in=batch_ids, is_deleted=False)
+    count = 0
+    msg = ''
+    total_restocked = 0
+    total_damaged = 0
+
+    if action == 'trash':
+        for ret in returns_qs:
+            ret.soft_delete(request.user)
+            ReturnActivityLog.objects.create(
+                return_request=ret, user=request.user,
+                action_type='trashed',
+                description=f'Batch bulk trashed by {request.user.username}'
+            )
+            count += 1
+        msg = f'{count} return(s) from {len(batch_ids)} batch(es) moved to trash!'
+
+    elif action == 'approve':
+        for ret in returns_qs.filter(return_status='pending'):
+            ret.return_status = 'approved'
+            ret.approved_by = request.user
+            ret.approved_at = timezone.now()
+            ret.save()
+            ReturnActivityLog.objects.create(
+                return_request=ret, user=request.user,
+                action_type='approved',
+                description=f'Batch bulk approved by {request.user.username}'
+            )
+            count += 1
+        msg = f'{count} pending return(s) approved from {len(batch_ids)} batch(es)!'
+
+    elif action == 'mark_received':
+        for ret in returns_qs.filter(return_status='approved'):
+            ret.return_status = 'received'
+            ret.save()
+            ReturnActivityLog.objects.create(
+                return_request=ret, user=request.user,
+                action_type='received',
+                description=f'Batch bulk marked as received by {request.user.username}'
+            )
+            count += 1
+        msg = f'{count} return(s) marked as received from {len(batch_ids)} batch(es)!'
+
+    elif action == 'quality_check':
+        qc_condition = request.POST.get('condition_received', 'opened')
+        qc_notes = request.POST.get('quality_check_notes', '')
+        for ret in returns_qs.filter(return_status='received'):
+            ret.return_status = 'inspecting'
+            ret.condition_received = qc_condition
+            ret.quality_checked_by = request.user
+            ret.quality_checked_at = timezone.now()
+            if qc_notes:
+                ret.quality_check_notes = qc_notes
+            ret.save()
+            ReturnActivityLog.objects.create(
+                return_request=ret, user=request.user,
+                action_type='quality_checked',
+                description=f'Batch bulk quality check by {request.user.username} - Condition: {qc_condition}'
+            )
+            count += 1
+        msg = f'{count} return(s) quality checked from {len(batch_ids)} batch(es)!'
+
+    elif action == 'process_refund':
+        for ret in returns_qs.filter(return_status='inspecting'):
+            ret.return_status = 'refunded'
+            ret.refunded_at = timezone.now()
+            ret.save()
+            for item in ret.items.all():
+                restock_qty = item.good_qty
+                if restock_qty > 0:
+                    if item.product_variation:
+                        item.product_variation.stock += restock_qty
+                        if item.product_variation.stock > 0:
+                            item.product_variation.status = 'active'
+                        item.product_variation.save()
+                    if item.product:
+                        item.product.stock += restock_qty
+                        if item.product.stock > 0:
+                            if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
+                                item.product.stock_status = 'low_stock'
+                            else:
+                                item.product.stock_status = 'in_stock'
+                        item.product.save()
+                    item.restocked = True
+                    item.restocked_at = timezone.now()
+                    item.restocked_by = request.user
+                    item.save()
+                    total_restocked += restock_qty
+                total_damaged += item.damaged_qty
+            ReturnActivityLog.objects.create(
+                return_request=ret, user=request.user,
+                action_type='refunded',
+                description=f'Batch bulk refund by {request.user.username}. Amount: Rs. {ret.refund_amount}'
+            )
+            count += 1
+        msg = f'{count} return(s) refunded from {len(batch_ids)} batch(es)! {total_restocked} good items restocked, {total_damaged} damaged.'
+
+    if is_ajax:
+        # Return updated batch stats so the UI can refresh badges
+        updated_batches = {}
+        for bid in batch_ids:
+            batch_returns = ReturnRequest.objects.filter(batch_id=bid, is_deleted=False)
+            updated_batches[bid] = {
+                'total_returns': batch_returns.count(),
+                'pending': batch_returns.filter(return_status='pending').count(),
+                'approved': batch_returns.filter(return_status='approved').count(),
+                'received': batch_returns.filter(return_status='received').count(),
+                'inspecting': batch_returns.filter(return_status='inspecting').count(),
+                'refunded': batch_returns.filter(return_status='refunded').count(),
+                'rejected': batch_returns.filter(return_status='rejected').count(),
+            }
+        return JsonResponse({
+            'success': True,
+            'message': msg,
+            'count': count,
+            'action': action,
+            'total_restocked': total_restocked,
+            'total_damaged': total_damaged,
+            'updated_batches': updated_batches,
+        })
+
+    messages.success(request, msg)
     return redirect('returns_list')
 
 @login_required

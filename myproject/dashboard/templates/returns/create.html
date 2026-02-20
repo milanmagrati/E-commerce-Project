@@ -278,6 +278,87 @@
     .loading-overlay.active {
         display: flex;
     }
+
+    /* Bulk Return Button */
+    .bulk-return-btn {
+        background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+        border: none;
+        color: white;
+        padding: 12px 28px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(255, 107, 53, 0.3);
+    }
+
+    .bulk-return-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
+        color: white;
+    }
+
+    .bulk-return-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .bulk-return-btn .badge {
+        background: rgba(255, 255, 255, 0.3);
+        font-size: 0.85rem;
+        padding: 4px 10px;
+        border-radius: 12px;
+        margin-left: 8px;
+    }
+
+    /* Bulk Modal Styles */
+    .bulk-summary-card {
+        background: #f8f9fa;
+        border: 2px solid #e9ecef;
+        border-radius: 10px;
+        padding: 20px;
+    }
+
+    .bulk-summary-card .summary-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+
+    .bulk-summary-card .summary-item:last-child {
+        border-bottom: none;
+        font-weight: bold;
+        font-size: 1.1rem;
+        padding-top: 12px;
+        color: #0d6efd;
+    }
+
+    .bulk-orders-list {
+        max-height: 200px;
+        overflow-y: auto;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+    }
+
+    .bulk-orders-list .order-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 15px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .bulk-orders-list .order-row:last-child {
+        border-bottom: none;
+    }
+
+    .bulk-orders-list .order-row:nth-child(even) {
+        background: #f8f9fa;
+    }
 </style>
 {% endblock %}
 
@@ -386,7 +467,14 @@
                                     <i class="fas fa-history me-1"></i> Draft (Auto-saved)
                                 </small>
                             </div>
-                            <span class="badge bg-white text-success" id="scannedCount">0 Orders</span>
+                            <div class="d-flex align-items-center gap-3">
+                                <span class="badge bg-white text-success" id="scannedCount">0 Orders</span>
+                                <button type="button" class="bulk-return-btn" id="bulkReturnBtn"
+                                        onclick="openBulkReturnModal()" disabled>
+                                    <i class="fas fa-layer-group me-2"></i>Bulk Return All
+                                    <span class="badge" id="bulkBtnCount">0</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="card-body p-3" id="scannedOrdersList">
@@ -446,6 +534,81 @@
                         <li class="mb-0"><i class="fas fa-check text-success"></i> Refund in <strong>5-7 days</strong></li>
                     </ul>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Return Confirmation Modal -->
+<div class="modal fade" id="bulkReturnModal" tabindex="-1" aria-labelledby="bulkReturnModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white;">
+                <h5 class="modal-title" id="bulkReturnModalLabel">
+                    <i class="fas fa-layer-group me-2"></i>Bulk Return - Confirm All Orders
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Orders Summary -->
+                <div class="bulk-orders-list mb-4" id="bulkOrdersList">
+                    <!-- Populated by JS -->
+                </div>
+
+                <!-- Bulk Settings -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Return Reason <small class="text-muted">(Optional - applies to all)</small></label>
+                        <select class="form-select" id="bulkReturnReason">
+                            <option value="">-- No Reason --</option>
+                            {% for code, label in reason_choices %}
+                            <option value="{{ code }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Refund Type <span class="text-danger">*</span></label>
+                        <select class="form-select" id="bulkRefundType">
+                            {% for code, label in refund_type_choices %}
+                            <option value="{{ code }}" {% if code == 'full_refund' %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Notes <small class="text-muted">(Optional - applies to all)</small></label>
+                        <textarea class="form-control" id="bulkCustomerNotes" rows="2"
+                                  placeholder="Common notes for all returns..." maxlength="1000"></textarea>
+                    </div>
+                </div>
+
+                <!-- Summary Stats -->
+                <div class="bulk-summary-card">
+                    <div class="summary-item">
+                        <span><i class="fas fa-shopping-bag text-primary me-2"></i>Total Orders</span>
+                        <strong id="bulkTotalOrders">0</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span><i class="fas fa-box text-info me-2"></i>Total Items</span>
+                        <strong id="bulkTotalItems">0</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span><i class="fas fa-cubes text-secondary me-2"></i>Total Quantity</span>
+                        <strong id="bulkTotalQty">0</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span><i class="fas fa-money-bill-wave text-success me-2"></i>Total Refund Amount</span>
+                        <strong id="bulkTotalRefund" class="text-success">&#2352;&#2370; 0.00</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Cancel
+                </button>
+                <button type="button" class="btn btn-lg" id="confirmBulkBtn" onclick="processBulkReturn()"
+                        style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; font-weight: 600;">
+                    <i class="fas fa-check-circle me-2"></i>Confirm Bulk Return
+                </button>
             </div>
         </div>
     </div>
@@ -893,9 +1056,9 @@
                 
                 <div class="row g-3 mb-3">
                     <div class="col-md-6">
-                        <label class="form-label fw-bold">Return Reason <span class="text-danger">*</span></label>
-                        <select name="return_reason" class="form-select" required>
-                            <option value="">-- Select Reason --</option>
+                        <label class="form-label fw-bold">Return Reason <small class="text-muted">(Optional)</small></label>
+                        <select name="return_reason" class="form-select">
+                            <option value="">-- No Reason --</option>
                             {% for code, label in reason_choices %}
                             <option value="{{ code }}">{{ label }}</option>
                             {% endfor %}
@@ -1154,10 +1317,13 @@
         
         // Update count
         scannedCount.textContent = `${scannedOrders.size} Order${scannedOrders.size !== 1 ? 's' : ''}`;
-        
+
         // ✅ Save draft
         saveDraft();
-        
+
+        // Update bulk return button
+        updateBulkButton();
+
         // Scroll to the new card at the top
         setTimeout(() => {
             cardDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1182,9 +1348,12 @@
             
             // Update count
             scannedCount.textContent = `${scannedOrders.size} Order${scannedOrders.size !== 1 ? 's' : ''}`;
-            
+
             // ✅ Save draft
             saveDraft();
+
+            // Update bulk return button
+            updateBulkButton();
         }
     };
 
@@ -1252,6 +1421,169 @@
 
     // ✅ Load draft from localStorage on page load
     loadDraft();
+
+    // ====== BULK RETURN FUNCTIONS ======
+
+    // Update bulk button state
+    function updateBulkButton() {
+        const btn = document.getElementById('bulkReturnBtn');
+        const countBadge = document.getElementById('bulkBtnCount');
+        const count = scannedOrders.size;
+
+        if (btn) {
+            btn.disabled = count < 2;
+            countBadge.textContent = count;
+        }
+    }
+
+    // Open bulk return modal
+    window.openBulkReturnModal = function() {
+        if (scannedOrders.size < 2) {
+            alert('You need at least 2 orders for bulk return. Use individual return for a single order.');
+            return;
+        }
+
+        const ordersList = document.getElementById('bulkOrdersList');
+        let totalItems = 0;
+        let totalQty = 0;
+        let totalRefund = 0;
+        let ordersHTML = '';
+
+        scannedOrders.forEach((orderData, orderNumber) => {
+            const itemCount = orderData.items.length;
+            let orderQty = 0;
+            let orderRefund = 0;
+
+            orderData.items.forEach(item => {
+                const qty = item.returnable_qty;
+                orderQty += qty;
+                orderRefund += parseFloat(item.price) * qty;
+            });
+
+            totalItems += itemCount;
+            totalQty += orderQty;
+            totalRefund += orderRefund;
+
+            ordersHTML += `
+                <div class="order-row">
+                    <div>
+                        <strong class="text-primary">${orderNumber}</strong>
+                        <small class="text-muted ms-2">${orderData.customer_name}</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="badge bg-info">${itemCount} items</span>
+                        <span class="badge bg-secondary">${orderQty} qty</span>
+                        <strong class="text-success">\u0930\u0942 ${orderRefund.toFixed(2)}</strong>
+                    </div>
+                </div>
+            `;
+        });
+
+        ordersList.innerHTML = ordersHTML;
+        document.getElementById('bulkTotalOrders').textContent = scannedOrders.size;
+        document.getElementById('bulkTotalItems').textContent = totalItems;
+        document.getElementById('bulkTotalQty').textContent = totalQty;
+        document.getElementById('bulkTotalRefund').textContent = `\u0930\u0942 ${totalRefund.toFixed(2)}`;
+
+        // Reset modal fields
+        document.getElementById('bulkReturnReason').value = '';
+        document.getElementById('bulkRefundType').value = 'full_refund';
+        document.getElementById('bulkCustomerNotes').value = '';
+
+        const modal = new bootstrap.Modal(document.getElementById('bulkReturnModal'));
+        modal.show();
+    };
+
+    // Process bulk return - submit all orders
+    window.processBulkReturn = function() {
+        const commonReason = document.getElementById('bulkReturnReason').value;
+        const commonRefundType = document.getElementById('bulkRefundType').value;
+        const commonNotes = document.getElementById('bulkCustomerNotes').value;
+
+        if (!commonRefundType) {
+            alert('Please select a refund type.');
+            return;
+        }
+
+        const ordersPayload = [];
+
+        scannedOrders.forEach((orderData, orderNumber) => {
+            const items = [];
+            orderData.items.forEach(item => {
+                items.push({
+                    order_item_id: item.id,
+                    quantity: item.returnable_qty,
+                    good_qty: item.returnable_qty,
+                    damaged_qty: 0
+                });
+            });
+
+            ordersPayload.push({
+                order_id: orderData.id,
+                items: items
+            });
+        });
+
+        if (ordersPayload.length === 0) {
+            alert('No orders to process.');
+            return;
+        }
+
+        // Disable button to prevent double-click
+        const confirmBtn = document.getElementById('confirmBulkBtn');
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+
+        showLoading();
+
+        fetch('{% url "bulk_return_create" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({
+                orders: ordersPayload,
+                return_reason: commonReason,
+                refund_type: commonRefundType,
+                customer_notes: commonNotes
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                clearDraft();
+                // Redirect to the batch detail page so user can work on the batch
+                if (data.batch_id) {
+                    window.location.href = '{% url "returns_list" %}?batch=' + encodeURIComponent(data.batch_id);
+                } else {
+                    window.location.href = '{% url "returns_list" %}';
+                }
+            } else {
+                loadingOverlay.classList.remove('active');
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>Confirm Bulk Return';
+
+                let errorMsg = 'Bulk return failed.';
+                if (data.errors && data.errors.length > 0) {
+                    errorMsg += '\n' + data.errors.join('\n');
+                } else if (data.error) {
+                    errorMsg += '\n' + data.error;
+                }
+                alert(errorMsg);
+            }
+        })
+        .catch(error => {
+            console.error('Bulk return error:', error);
+            loadingOverlay.classList.remove('active');
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>Confirm Bulk Return';
+            alert('Error processing bulk return. Please try again.');
+        });
+    };
+
+    // Initial bulk button state
+    updateBulkButton();
 
     console.log('✅ Auto-submit enabled - No Enter key needed!');
 })();
