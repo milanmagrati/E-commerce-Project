@@ -4805,6 +4805,7 @@ def dispatch_management(request):
                 updated_count = 0
                 not_found = []
                 stock_warnings = []
+                stock_deductions = []  # detailed per-item deduction records
                 
                 for order_id in order_ids:
                     # Create dispatch item
@@ -4819,48 +4820,115 @@ def dispatch_management(request):
                     ).first()
                     
                     if order:
+                        # Always link the dispatch item to the order (even if already dispatched)
+                        DispatchItem.objects.filter(
+                            dispatch=dispatch,
+                            scanned_order_id=order_id
+                        ).update(order=order)
+
                         # Check if already dispatched
                         if order.order_status == 'dispatched':
                             messages.warning(request, f'⚠️ Order {order_id} already dispatched')
                             continue
                         
-                        # Reduce stock if status is "dispatched"
+                        # ✅ STOCK DEDUCTION: Reduce stock when status is "dispatched"
                         if set_status == 'dispatched':
-                            for item in order.items.select_related('product', 'product_variation'):
+                            order_items = order.items.select_related(
+                                'product', 'product_variation'
+                            ).select_for_update()  # Lock rows to prevent race conditions
+
+                            for item in order_items:
                                 product = item.product
                                 variation = item.product_variation
                                 quantity = item.quantity
-                                
+
                                 if variation:
-                                    # Reduce variation stock
-                                    if variation.stock >= quantity:
+                                    # ── Variation stock ──────────────────────────────
+                                    old_stock = variation.stock
+                                    oversold = variation.stock < quantity
+                                    if not oversold:
                                         variation.stock -= quantity
-                                        if variation.stock == 0:
-                                            variation.status = 'out_of_stock'
-                                        variation.save()
                                     else:
-                                        stock_warnings.append(
-                                            f"⚠️ {variation.sku}: Need {quantity}, Available {variation.stock}"
+                                        warn_msg = (
+                                            f"⚠️ {variation.sku}: Need {quantity}, "
+                                            f"Available {variation.stock} (oversold)"
                                         )
+                                        stock_warnings.append(warn_msg)
                                         variation.stock = max(0, variation.stock - quantity)
+
+                                    # Update variation status based on its own threshold
+                                    threshold = variation.low_stock_threshold or 0
+                                    if variation.stock == 0:
                                         variation.status = 'out_of_stock'
-                                        variation.save()
+                                    elif threshold > 0 and variation.stock <= threshold:
+                                        variation.status = 'inactive'  # low-stock flag for variations
+                                    variation.save()
+
+                                    # Record deduction detail
+                                    product_name = product.name if product else 'Unknown'
+                                    stock_deductions.append({
+                                        'order_id': order_id,
+                                        'name': product_name,
+                                        'sku': variation.sku,
+                                        'type': 'variation',
+                                        'qty': quantity,
+                                        'old_stock': old_stock,
+                                        'new_stock': variation.stock,
+                                        'oversold': oversold,
+                                    })
+
+                                    # ── Recalculate parent product stock_status ───────
+                                    if product:
+                                        total_var_stock = product.variations.aggregate(
+                                            total=Sum('stock')
+                                        )['total'] or 0
+                                        p_threshold = product.low_stock_threshold or 0
+                                        if total_var_stock == 0:
+                                            product.stock_status = 'out_of_stock'
+                                        elif p_threshold > 0 and total_var_stock <= p_threshold:
+                                            product.stock_status = 'low_stock'
+                                        else:
+                                            product.stock_status = 'in_stock'
+                                        product.save(update_fields=['stock_status'])
+
                                 else:
-                                    # Reduce main product stock
-                                    if product and product.stock >= quantity:
-                                        product.stock -= quantity
+                                    # ── Simple product stock ──────────────────────────
+                                    if product:
+                                        old_stock = product.stock
+                                        oversold = product.stock < quantity
+                                        if not oversold:
+                                            product.stock -= quantity
+                                        else:
+                                            warn_msg = (
+                                                f"⚠️ {product.name}: Need {quantity}, "
+                                                f"Available {product.stock} (oversold)"
+                                            )
+                                            stock_warnings.append(warn_msg)
+                                            product.stock = max(0, product.stock - quantity)
+
+                                        # Update stock_status using configured threshold
+                                        threshold = product.low_stock_threshold or 0
                                         if product.stock == 0:
                                             product.stock_status = 'out_of_stock'
+                                        elif threshold > 0 and product.stock <= threshold:
+                                            product.stock_status = 'low_stock'
                                         elif product.stock <= 10:
                                             product.stock_status = 'low_stock'
-                                        product.save()
-                                    elif product:
-                                        stock_warnings.append(
-                                            f"⚠️ {product.name}: Need {quantity}, Available {product.stock}"
-                                        )
-                                        product.stock = max(0, product.stock - quantity)
-                                        product.stock_status = 'out_of_stock'
-                                        product.save()
+                                        else:
+                                            product.stock_status = 'in_stock'
+                                        product.save(update_fields=['stock', 'stock_status'])
+
+                                        # Record deduction detail
+                                        stock_deductions.append({
+                                            'order_id': order_id,
+                                            'name': product.name,
+                                            'sku': product.barcode or str(product.id),
+                                            'type': 'simple',
+                                            'qty': quantity,
+                                            'old_stock': old_stock,
+                                            'new_stock': product.stock,
+                                            'oversold': oversold,
+                                        })
                         
                         # Capture old values BEFORE modification
                         old_order_status = order.order_status
@@ -4889,12 +4957,6 @@ def dispatch_management(request):
                         order.dispatch_date = timezone.now()
                         order.save()
 
-                        # Link dispatch item to order
-                        DispatchItem.objects.filter(
-                            dispatch=dispatch,
-                            scanned_order_id=order_id
-                        ).update(order=order)
-
                         # Create activity log
                         OrderActivityLog.objects.create(
                             order=order,
@@ -4910,12 +4972,17 @@ def dispatch_management(request):
                     else:
                         not_found.append(order_id)
                 
-                # Show stock warnings
-                for warning in stock_warnings[:3]:
-                    messages.warning(request, warning)
-                if len(stock_warnings) > 3:
-                    messages.warning(request, f'...and {len(stock_warnings) - 3} more stock warnings')
-                
+                # Store detailed stock deduction summary in session for display on detail page
+                import json as _json
+                request.session['stock_deduction_summary'] = _json.dumps({
+                    'deductions': stock_deductions,
+                    'warnings': stock_warnings,
+                    'not_found': not_found,
+                    'updated_count': updated_count,
+                    'total_count': len(order_ids),
+                    'batch_number': batch_number,
+                })
+
                 # Success message
                 if updated_count == len(order_ids):
                     messages.success(
@@ -4928,7 +4995,7 @@ def dispatch_management(request):
                         f'⚠️ Dispatched {updated_count}/{len(order_ids)} orders. '
                         f'{len(not_found)} order(s) not found: {", ".join(not_found)}'
                     )
-                
+
                 return redirect('dispatch_detail', pk=dispatch.pk)
                 
         except Exception as e:
@@ -4986,16 +5053,27 @@ def dispatch_list(request):
 @permission_required('can_view_dispatch')
 def dispatch_detail(request, pk):
     """View single dispatch details"""
+    import json as _json
     dispatch = get_object_or_404(
         Dispatch.objects.prefetch_related('items__order'),
         pk=pk,
         is_deleted=False
     )
-    
+
+    # Pop one-time stock deduction summary stored by dispatch_management view
+    stock_summary_raw = request.session.pop('stock_deduction_summary', None)
+    stock_summary = None
+    if stock_summary_raw:
+        try:
+            stock_summary = _json.loads(stock_summary_raw)
+        except Exception:
+            stock_summary = None
+
     context = {
         'dispatch': dispatch,
+        'stock_summary': stock_summary,
     }
-    
+
     return render(request, 'dispatch_detail.html', context)
 
 
@@ -5194,12 +5272,45 @@ def dispatch_list(request):
 @permission_required('can_view_dispatch')
 def dispatch_detail(request, pk):
     """View single dispatch details"""
-    dispatch = get_object_or_404(Dispatch.objects.prefetch_related('items__order'), pk=pk)
-    
+    import json as _json
+    dispatch = get_object_or_404(
+        Dispatch.objects.prefetch_related('items__order__items__product', 'items__order__items__product_variation'),
+        pk=pk
+    )
+
+    # ── One-time flash: detailed before/after stock summary from session ──────
+    stock_summary_raw = request.session.pop('stock_deduction_summary', None)
+    stock_summary = None
+    if stock_summary_raw:
+        try:
+            stock_summary = _json.loads(stock_summary_raw)
+        except Exception:
+            stock_summary = None
+
+    # ── Persistent: build items table from linked orders (always available) ───
+    dispatch_items_detail = []
+    for di in dispatch.items.all():
+        if di.order:
+            for oi in di.order.items.all():
+                product = oi.product
+                variation = oi.product_variation
+                dispatch_items_detail.append({
+                    'order_id': di.scanned_order_id,
+                    'customer': di.order.customer_name,
+                    'product_name': oi.product_name or (product.name if product else 'Unknown'),
+                    'sku': oi.product_sku or (variation.sku if variation else (product.barcode if product else '—')),
+                    'type': 'variation' if variation else 'simple',
+                    'qty': oi.quantity,
+                    'current_stock': (variation.stock if variation else (product.stock if product else '—')),
+                    'stock_status': (variation.status if variation else (product.stock_status if product else '—')),
+                })
+
     context = {
         'dispatch': dispatch,
+        'stock_summary': stock_summary,
+        'dispatch_items_detail': dispatch_items_detail,
     }
-    
+
     return render(request, 'dispatch_detail.html', context)
 
 

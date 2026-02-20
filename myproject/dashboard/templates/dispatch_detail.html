@@ -23,6 +23,262 @@
         </div>
     </div>
 
+    {% if stock_summary %}
+    <!-- ✅ STOCK DEDUCTION SUMMARY CARD -->
+    <div class="stock-summary-card mb-4" id="stockSummaryCard">
+        <!-- Header bar -->
+        <div class="ssc-header">
+            <div class="ssc-header-left">
+                <div class="ssc-icon">
+                    <i class="fas fa-boxes"></i>
+                </div>
+                <div>
+                    <h5 class="ssc-title">Stock Deduction Summary</h5>
+                    <p class="ssc-subtitle">Batch: <strong>{{ stock_summary.batch_number }}</strong></p>
+                </div>
+            </div>
+            <div class="ssc-header-right">
+                <div class="ssc-stat ssc-stat-orders">
+                    <span class="ssc-stat-value">{{ stock_summary.updated_count }}</span>
+                    <span class="ssc-stat-label">Orders Dispatched</span>
+                </div>
+                <div class="ssc-stat ssc-stat-items">
+                    <span class="ssc-stat-value">{{ stock_summary.deductions|length }}</span>
+                    <span class="ssc-stat-label">Items Deducted</span>
+                </div>
+                {% if stock_summary.warnings %}
+                <div class="ssc-stat ssc-stat-warn">
+                    <span class="ssc-stat-value">{{ stock_summary.warnings|length }}</span>
+                    <span class="ssc-stat-label">Oversell Warnings</span>
+                </div>
+                {% endif %}
+                {% if stock_summary.not_found %}
+                <div class="ssc-stat ssc-stat-danger">
+                    <span class="ssc-stat-value">{{ stock_summary.not_found|length }}</span>
+                    <span class="ssc-stat-label">Orders Not Found</span>
+                </div>
+                {% endif %}
+                <button class="ssc-close-btn" onclick="document.getElementById('stockSummaryCard').style.display='none'">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Deduction Table -->
+        {% if stock_summary.deductions %}
+        <div class="ssc-body">
+            <div class="table-responsive">
+                <table class="ssc-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Order ID</th>
+                            <th>Product</th>
+                            <th>SKU / Barcode</th>
+                            <th>Type</th>
+                            <th>Qty Deducted</th>
+                            <th>Before</th>
+                            <th>After</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in stock_summary.deductions %}
+                        <tr class="{% if item.oversold %}ssc-row-warn{% elif item.new_stock == 0 %}ssc-row-danger{% elif item.new_stock <= 5 %}ssc-row-low{% else %}ssc-row-ok{% endif %}">
+                            <td class="ssc-num">{{ forloop.counter }}</td>
+                            <td><span class="ssc-order-chip">{{ item.order_id }}</span></td>
+                            <td class="ssc-product-name">{{ item.name }}</td>
+                            <td class="ssc-sku">{{ item.sku }}</td>
+                            <td>
+                                {% if item.type == 'variation' %}
+                                    <span class="ssc-badge ssc-badge-var"><i class="fas fa-layer-group"></i> Variation</span>
+                                {% else %}
+                                    <span class="ssc-badge ssc-badge-simple"><i class="fas fa-box"></i> Simple</span>
+                                {% endif %}
+                            </td>
+                            <td class="ssc-qty">
+                                <span class="ssc-deducted">-{{ item.qty }}</span>
+                            </td>
+                            <td class="ssc-old-stock">{{ item.old_stock }}</td>
+                            <td class="ssc-new-stock">
+                                <strong>{{ item.new_stock }}</strong>
+                            </td>
+                            <td>
+                                {% if item.oversold %}
+                                    <span class="ssc-status-chip ssc-chip-oversold"><i class="fas fa-exclamation-triangle"></i> Oversold</span>
+                                {% elif item.new_stock == 0 %}
+                                    <span class="ssc-status-chip ssc-chip-out"><i class="fas fa-ban"></i> Out of Stock</span>
+                                {% elif item.new_stock <= 5 %}
+                                    <span class="ssc-status-chip ssc-chip-low"><i class="fas fa-arrow-down"></i> Low Stock</span>
+                                {% else %}
+                                    <span class="ssc-status-chip ssc-chip-ok"><i class="fas fa-check"></i> OK</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="ssc-empty">
+            <i class="fas fa-info-circle me-2"></i>
+            No stock changes were recorded (orders may have already been processed or have no items).
+        </div>
+        {% endif %}
+
+        <!-- Not-found orders warning -->
+        {% if stock_summary.not_found %}
+        <div class="ssc-footer ssc-footer-danger">
+            <i class="fas fa-exclamation-circle me-2"></i>
+            <strong>Orders not found in system:</strong>
+            {% for oid in stock_summary.not_found %}
+            <span class="ssc-order-chip ssc-chip-notfound">{{ oid }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Oversell detail warnings -->
+        {% if stock_summary.warnings %}
+        <div class="ssc-footer ssc-footer-warn">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Oversell warnings:</strong>
+            <ul class="ssc-warn-list">
+                {% for w in stock_summary.warnings %}
+                <li>{{ w }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+
+    <style>
+        .stock-summary-card {
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 4px 24px rgba(102,126,234,0.13);
+            overflow: hidden;
+            border: 1.5px solid #e0e7ff;
+            animation: sscSlideIn 0.4s ease;
+        }
+        @keyframes sscSlideIn {
+            from { opacity: 0; transform: translateY(-18px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .ssc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 18px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+        .ssc-header-left { display: flex; align-items: center; gap: 16px; }
+        .ssc-icon {
+            width: 52px; height: 52px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.6rem;
+        }
+        .ssc-title { font-size: 1.2rem; font-weight: 700; margin: 0; }
+        .ssc-subtitle { font-size: 0.85rem; margin: 2px 0 0; opacity: 0.85; }
+        .ssc-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ssc-stat {
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            padding: 8px 16px;
+            text-align: center;
+            min-width: 90px;
+        }
+        .ssc-stat-value { display: block; font-size: 1.5rem; font-weight: 800; line-height: 1; }
+        .ssc-stat-label { display: block; font-size: 0.72rem; opacity: 0.9; margin-top: 3px; }
+        .ssc-stat-warn  { background: rgba(251,191,36,0.3); }
+        .ssc-stat-danger{ background: rgba(239,68,68,0.3); }
+        .ssc-close-btn {
+            background: rgba(255,255,255,0.2); border: none; color: #fff;
+            border-radius: 50%; width: 34px; height: 34px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 1rem; transition: background 0.2s;
+        }
+        .ssc-close-btn:hover { background: rgba(255,255,255,0.4); }
+
+        .ssc-body { padding: 0; }
+        .ssc-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .ssc-table thead tr {
+            background: #f1f5ff;
+            color: #4338ca;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .ssc-table thead th { padding: 10px 14px; border-bottom: 2px solid #e0e7ff; font-weight: 700; }
+        .ssc-table tbody tr { border-bottom: 1px solid #f3f4f6; transition: background 0.15s; }
+        .ssc-table tbody tr:hover { background: #f8f9ff; }
+        .ssc-table td { padding: 10px 14px; vertical-align: middle; }
+
+        .ssc-row-ok     { background: #fff; }
+        .ssc-row-low    { background: #fffbeb !important; }
+        .ssc-row-danger { background: #fff1f2 !important; }
+        .ssc-row-warn   { background: #fff7ed !important; }
+
+        .ssc-num { color: #9ca3af; font-size: 0.8rem; }
+        .ssc-order-chip {
+            background: #ede9fe; color: #5b21b6;
+            border-radius: 6px; padding: 3px 9px;
+            font-size: 0.82rem; font-weight: 600;
+        }
+        .ssc-chip-notfound { background: #fee2e2; color: #991b1b; }
+        .ssc-product-name { font-weight: 600; color: #1e293b; max-width: 180px; }
+        .ssc-sku { color: #6b7280; font-size: 0.83rem; font-family: monospace; }
+        .ssc-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            border-radius: 6px; padding: 3px 9px; font-size: 0.78rem; font-weight: 600;
+        }
+        .ssc-badge-var    { background: #e0f2fe; color: #0369a1; }
+        .ssc-badge-simple { background: #f0fdf4; color: #15803d; }
+        .ssc-qty { font-weight: 700; }
+        .ssc-deducted { color: #dc2626; font-size: 1rem; }
+        .ssc-old-stock { color: #9ca3af; text-decoration: line-through; }
+        .ssc-new-stock strong { font-size: 1rem; }
+        .ssc-row-danger .ssc-new-stock strong { color: #dc2626; }
+        .ssc-row-low    .ssc-new-stock strong { color: #d97706; }
+        .ssc-row-warn   .ssc-new-stock strong { color: #ea580c; }
+        .ssc-row-ok     .ssc-new-stock strong { color: #16a34a; }
+
+        .ssc-status-chip {
+            display: inline-flex; align-items: center; gap: 5px;
+            border-radius: 20px; padding: 4px 12px;
+            font-size: 0.78rem; font-weight: 700; white-space: nowrap;
+        }
+        .ssc-chip-ok       { background: #dcfce7; color: #15803d; }
+        .ssc-chip-low      { background: #fef9c3; color: #92400e; }
+        .ssc-chip-out      { background: #fee2e2; color: #991b1b; }
+        .ssc-chip-oversold { background: #ffedd5; color: #c2410c; }
+
+        .ssc-footer {
+            padding: 14px 24px;
+            font-size: 0.88rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .ssc-footer-danger { background: #fff1f2; color: #991b1b; border-top: 1px solid #fecaca; }
+        .ssc-footer-warn   { background: #fff7ed; color: #92400e; border-top: 1px solid #fed7aa; }
+        .ssc-warn-list { margin: 6px 0 0 0; padding-left: 18px; }
+        .ssc-empty {
+            padding: 20px 24px;
+            color: #6b7280;
+            font-size: 0.9rem;
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+        }
+    </style>
+    {% endif %}
+
     <div class="row">
         <!-- Dispatch Info Card -->
         <div class="col-md-4 mb-4">
@@ -174,5 +430,115 @@
             </div>
         </div>
     </div>
+
+    <!-- ✅ PERSISTENT STOCK REDUCTION DETAILS -->
+    {% if dispatch_items_detail %}
+    <div class="card shadow-sm mb-4" id="stockReductionCard">
+        <div class="card-header" style="background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%); color:#fff; padding:14px 20px;">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-3">
+                    <div style="background:rgba(255,255,255,0.2);border-radius:10px;padding:8px 12px;font-size:1.4rem;">
+                        <i class="fas fa-chart-bar"></i>
+                    </div>
+                    <div>
+                        <h5 style="margin:0;font-weight:700;">Stock Reduction Details</h5>
+                        <small style="opacity:0.85;">Items deducted from inventory for this dispatch</small>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span style="background:rgba(255,255,255,0.2);border-radius:8px;padding:5px 14px;font-size:0.85rem;font-weight:700;">
+                        <i class="fas fa-boxes me-1"></i>{{ dispatch_items_detail|length }} item{{ dispatch_items_detail|length|pluralize }}
+                    </span>
+                    <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:none;"
+                        onclick="
+                            var b=document.getElementById('stockReductionBody');
+                            var i=this.querySelector('i');
+                            if(b.style.display==='none'){b.style.display='';i.className='fas fa-chevron-up';}
+                            else{b.style.display='none';i.className='fas fa-chevron-down';}
+                        ">
+                        <i class="fas fa-chevron-up"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div id="stockReductionBody">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" style="font-size:0.88rem;">
+                    <thead style="background:#f0fdfa;color:#0f766e;">
+                        <tr>
+                            <th style="padding:10px 14px;">#</th>
+                            <th style="padding:10px 14px;">Order ID</th>
+                            <th style="padding:10px 14px;">Customer</th>
+                            <th style="padding:10px 14px;">Product</th>
+                            <th style="padding:10px 14px;">SKU</th>
+                            <th style="padding:10px 14px;">Type</th>
+                            <th style="padding:10px 14px;text-align:center;">Qty Deducted</th>
+                            <th style="padding:10px 14px;text-align:center;">Current Stock</th>
+                            <th style="padding:10px 14px;text-align:center;">Stock Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in dispatch_items_detail %}
+                        <tr style="border-bottom:1px solid #f0fdf4;">
+                            <td style="padding:10px 14px;color:#9ca3af;">{{ forloop.counter }}</td>
+                            <td style="padding:10px 14px;">
+                                <span style="background:#d1fae5;color:#065f46;border-radius:6px;padding:3px 9px;font-weight:600;font-size:0.82rem;">
+                                    {{ item.order_id }}
+                                </span>
+                            </td>
+                            <td style="padding:10px 14px;font-weight:600;color:#1e293b;">{{ item.customer }}</td>
+                            <td style="padding:10px 14px;font-weight:600;color:#1e293b;max-width:180px;">{{ item.product_name }}</td>
+                            <td style="padding:10px 14px;color:#6b7280;font-family:monospace;font-size:0.83rem;">{{ item.sku }}</td>
+                            <td style="padding:10px 14px;">
+                                {% if item.type == 'variation' %}
+                                <span style="background:#e0f2fe;color:#0369a1;border-radius:6px;padding:3px 9px;font-size:0.78rem;font-weight:600;">
+                                    <i class="fas fa-layer-group me-1"></i>Variation
+                                </span>
+                                {% else %}
+                                <span style="background:#f0fdf4;color:#15803d;border-radius:6px;padding:3px 9px;font-size:0.78rem;font-weight:600;">
+                                    <i class="fas fa-box me-1"></i>Simple
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:10px 14px;text-align:center;">
+                                <span style="color:#dc2626;font-weight:700;font-size:1rem;">-{{ item.qty }}</span>
+                            </td>
+                            <td style="padding:10px 14px;text-align:center;font-weight:700;">
+                                {% if item.current_stock == 0 %}
+                                <span style="color:#dc2626;">{{ item.current_stock }}</span>
+                                {% elif item.current_stock <= 5 %}
+                                <span style="color:#d97706;">{{ item.current_stock }}</span>
+                                {% else %}
+                                <span style="color:#16a34a;">{{ item.current_stock }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:10px 14px;text-align:center;">
+                                {% if item.stock_status == 'out_of_stock' %}
+                                <span style="background:#fee2e2;color:#991b1b;border-radius:20px;padding:4px 12px;font-size:0.78rem;font-weight:700;">
+                                    <i class="fas fa-ban me-1"></i>Out of Stock
+                                </span>
+                                {% elif item.stock_status == 'low_stock' or item.stock_status == 'inactive' %}
+                                <span style="background:#fef9c3;color:#92400e;border-radius:20px;padding:4px 12px;font-size:0.78rem;font-weight:700;">
+                                    <i class="fas fa-arrow-down me-1"></i>Low Stock
+                                </span>
+                                {% else %}
+                                <span style="background:#dcfce7;color:#15803d;border-radius:20px;padding:4px 12px;font-size:0.78rem;font-weight:700;">
+                                    <i class="fas fa-check me-1"></i>In Stock
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="background:#f0fdfa;padding:10px 18px;border-top:1px solid #ccfbf1;font-size:0.82rem;color:#0f766e;">
+                <i class="fas fa-info-circle me-1"></i>
+                Current stock shown is <strong>live</strong> — reflects latest inventory state.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
 </div>
 {% endblock %}
