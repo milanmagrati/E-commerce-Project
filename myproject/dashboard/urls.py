@@ -165,10 +165,13 @@ urlpatterns = [
     path('returns/bulk-action/', views.returns_bulk_action, name='returns_bulk_action'),
     path('returns/batch-bulk-action/', views.returns_batch_bulk_action, name='returns_batch_bulk_action'),
     path('returns/trash/bulk-action/', views.returns_trash_bulk_action, name='returns_trash_bulk_action'),
-    
+
     # API Endpoint to search customer by phone number
     path('api/search-customer-by-phone/', views.search_customer_by_phone, name='search_customer_by_phone'),
-    
+
+    # API Endpoint to check duplicate orders
+    path('api/check-duplicate-order/', views.check_duplicate_order, name='check_duplicate_order'),
+
     # add custom product
     path('api/create-custom-product/', views.create_custom_product, name='create_custom_product'),
 

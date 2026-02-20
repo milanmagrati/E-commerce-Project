@@ -1044,6 +1044,99 @@
         color: #ef4444 !important;
     }
 
+    .field-error-msg {
+        color: #ef4444;
+        font-size: 0.72rem;
+        font-weight: 600;
+        margin-top: 3px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    /* Validation alert banner */
+    #validationAlert {
+        display: none;
+        background: linear-gradient(135deg, #fff5f5, #fee2e2);
+        border: 2px solid #ef4444;
+        border-left: 6px solid #ef4444;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        animation: slideDown 0.35s ease-out;
+    }
+
+    #validationAlert .va-title {
+        font-weight: 700;
+        color: #b91c1c;
+        font-size: 0.95rem;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    #validationAlert .va-list {
+        margin: 0;
+        padding-left: 1.25rem;
+        color: #7f1d1d;
+        font-size: 0.875rem;
+    }
+
+    #validationAlert .va-list li {
+        margin-bottom: 3px;
+        font-weight: 500;
+    }
+
+    #validationAlert .va-close {
+        float: right;
+        background: none;
+        border: none;
+        font-size: 1.1rem;
+        color: #b91c1c;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+        margin-top: -2px;
+    }
+
+    #validationAlert .va-close:hover {
+        color: #7f1d1d;
+    }
+
+    /* Duplicate order warning banner */
+    .duplicate-order-banner {
+        background: linear-gradient(135deg, #fef3c7, #fde68a);
+        border: 2px solid #f59e0b;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        animation: slideDown 0.4s ease-out;
+    }
+
+    .duplicate-order-banner .banner-title {
+        font-weight: 700;
+        color: #92400e;
+        font-size: 0.95rem;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .duplicate-order-banner .banner-detail {
+        color: #78350f;
+        font-size: 0.85rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .duplicate-order-banner .banner-actions {
+        margin-top: 0.75rem;
+        display: flex;
+        gap: 0.5rem;
+    }
+
     /* ✨ BEST-SELLING PRODUCTS SIDEBAR STYLES */
     .bestselling-sidebar {
         position: fixed;
@@ -1958,8 +2051,15 @@
             {% endfor %}
             {% endif %}
 
-            <form method="post" id="orderForm">
+            <form method="post" id="orderForm" novalidate>
                 {% csrf_token %}
+
+                <!-- Validation Alert Banner -->
+                <div id="validationAlert">
+                    <button class="va-close" type="button" onclick="document.getElementById('validationAlert').style.display='none'" title="Dismiss">&times;</button>
+                    <div class="va-title"><i class="fas fa-exclamation-triangle"></i> Please fill in all required fields:</div>
+                    <ul class="va-list" id="validationAlertList"></ul>
+                </div>
 
                 <!-- Row 1: Customer Info -->
                 <div class="row g-3 mb-3">
@@ -3436,8 +3536,29 @@
             setValueSafe('paymentStatusSetup', formData.paymentStatusSetup);
             setValueSafe('taxPercent', formData.taxPercent || '0');
             setValueSafe('inOutSelect', formData.inOut || 'in');
-            
+
             setQueryValueSafe('select[name="order_from"]', formData.orderFrom);
+            // Sync the custom searchable-select UI for "Order From"
+            if (formData.orderFrom) {
+                const orderFromSelect = document.querySelector('select[name="order_from"]');
+                if (orderFromSelect) {
+                    const wrapper = orderFromSelect.parentElement.querySelector('.searchable-select-wrapper');
+                    if (wrapper) {
+                        const searchInput = wrapper.querySelector('.search-input-field');
+                        const clearBtn = wrapper.querySelector('.search-clear-btn');
+                        const selectedOption = orderFromSelect.options[orderFromSelect.selectedIndex];
+                        if (searchInput && selectedOption) {
+                            searchInput.value = selectedOption.textContent.trim();
+                        }
+                        if (clearBtn) clearBtn.style.display = 'inline-flex';
+                        // Highlight the selected option in the dropdown
+                        wrapper.querySelectorAll('.select-option').forEach(opt => {
+                            opt.style.backgroundColor = opt.dataset.value === formData.orderFrom ? '#f0f4ff' : '';
+                        });
+                    }
+                }
+            }
+
             setQueryValueSafe('select[name="order_status"]', formData.orderStatus);
 
             cart = formData.cart || [];
@@ -4824,13 +4945,20 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
     }
 
        document.getElementById('orderForm').addEventListener('submit', function (e) {
-        // Clear previous error highlights
+        // Clear previous error highlights and inline messages
         document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
         document.querySelectorAll('.field-error-label').forEach(el => el.classList.remove('field-error-label'));
+        document.querySelectorAll('.field-error-msg').forEach(el => el.remove());
+        // Hide validation alert banner
+        const va = document.getElementById('validationAlert');
+        if (va) va.style.display = 'none';
+        // Remove any duplicate order banner
+        const existingBanner = document.getElementById('duplicateOrderBanner');
+        if (existingBanner) existingBanner.remove();
 
         if (cart.length === 0) {
             e.preventDefault();
-            alert('Please add at least one product to the order.');
+            showToastNotification('Please add at least one product to the order.', 'error');
             return;
         }
 
@@ -4862,11 +4990,19 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
                 const inputEl = document.querySelector(field.selector);
                 if (inputEl) {
                     inputEl.classList.add('field-error');
-                    // Also highlight the label
+                    // Also highlight the label and add inline error message
                     const container = inputEl.closest('.col-md-2, .col-md-3');
                     if (container) {
                         const label = container.querySelector('.form-label');
                         if (label) label.classList.add('field-error-label');
+                        // Add inline error message below the input
+                        if (!container.querySelector('.field-error-msg')) {
+                            const errorMsg = document.createElement('div');
+                            errorMsg.className = 'field-error-msg';
+                            errorMsg.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${field.label} is required`;
+                            const target = inputEl.closest('.city-search-wrapper, .searchable-select-wrapper') || inputEl;
+                            target.parentNode.insertBefore(errorMsg, target.nextSibling);
+                        }
                     }
                 }
             }
@@ -4874,14 +5010,26 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
 
         if (missingFields.length > 0) {
             e.preventDefault();
-            const fieldNames = missingFields.map(f => '  - ' + f.label).join('\n');
-            alert('Please fill the following mandatory fields:\n\n' + fieldNames);
-            // Scroll to and focus the first missing field
-            const firstMissing = document.querySelector(missingFields[0].selector);
-            if (firstMissing) {
-                firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                setTimeout(() => firstMissing.focus(), 400);
-            }
+
+            // Populate and show the validation alert banner
+            const alertEl = document.getElementById('validationAlert');
+            const listEl = document.getElementById('validationAlertList');
+            listEl.innerHTML = missingFields.map(f => `<li><i class="fas fa-arrow-right" style="font-size:0.7rem;margin-right:4px;"></i><strong>${f.label}</strong> is required</li>`).join('');
+            alertEl.style.display = 'block';
+            alertEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            // Also show toast with specific field names
+            const fieldNames = missingFields.map(f => f.label).join(', ');
+            showToastNotification(`Missing required fields: ${fieldNames}`, 'error');
+
+            // Scroll to and focus the first missing field after banner
+            setTimeout(() => {
+                const firstMissing = document.querySelector(missingFields[0].selector);
+                if (firstMissing) {
+                    firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    setTimeout(() => firstMissing.focus(), 300);
+                }
+            }, 600);
             return;
         }
 
@@ -4890,17 +5038,27 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
             e.preventDefault();
             const emailInput = document.querySelector('[name="customer_email"]');
             emailInput.classList.add('field-error');
-            alert('Please enter a valid email address.');
+            const container = emailInput.closest('.col-md-2');
+            if (container) {
+                const label = container.querySelector('.form-label');
+                if (label) label.classList.add('field-error-label');
+                if (!container.querySelector('.field-error-msg')) {
+                    const errorMsg = document.createElement('div');
+                    errorMsg.className = 'field-error-msg';
+                    errorMsg.innerHTML = '<i class="fas fa-exclamation-circle"></i> Enter a valid email address';
+                    emailInput.parentNode.insertBefore(errorMsg, emailInput.nextSibling);
+                }
+            }
             emailInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
             setTimeout(() => emailInput.focus(), 400);
             return;
         }
 
-        // ✅ FIX: Check if partial payment was selected and confirmed
+        // Check if partial payment was selected and confirmed
         const selectedPaymentSetup = document.getElementById('paymentSetup');
         const selectedOption = selectedPaymentSetup.options[selectedPaymentSetup.selectedIndex];
         const isPartialPaymentSetup = selectedOption.text.includes('Partial Payment');
-        
+
         if (isPartialPaymentSetup && !isPartialPaymentSelected) {
             e.preventDefault();
             showToastNotification('Please complete partial payment details', 'warning');
@@ -4908,12 +5066,127 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
             return;
         }
 
+        // Duplicate order check via AJAX before submitting
+        e.preventDefault();
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+        submitBtn.disabled = true;
+
+        const phone = document.getElementById('customerPhone').value.trim();
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+        fetch('/api/check-duplicate-order/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({
+                phone: phone,
+                cart: cart.map(item => ({
+                    id: item.id,
+                    varId: item.varId || null,
+                    qty: item.qty
+                }))
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.is_duplicate) {
+                // Show duplicate order warning
+                submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> Create Order';
+                submitBtn.disabled = false;
+
+                const banner = document.createElement('div');
+                banner.id = 'duplicateOrderBanner';
+                banner.className = 'duplicate-order-banner';
+                banner.innerHTML = `
+                    <div class="banner-title">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Possible Duplicate Order Detected
+                    </div>
+                    <div class="banner-detail">
+                        <i class="fas fa-phone"></i> A similar order for phone <strong>${escapeHtml(phone)}</strong> was placed
+                        <strong>${escapeHtml(data.time_ago)}</strong> with matching products and quantities.
+                    </div>
+                    <div class="banner-detail">
+                        <i class="fas fa-receipt"></i> Previous Order: <strong>#${escapeHtml(data.order_number)}</strong>
+                        (${escapeHtml(data.order_status)})
+                    </div>
+                    <div class="banner-actions">
+                        <button type="button" class="btn btn-sm btn-danger" onclick="forceSubmitOrder()">
+                            <i class="fas fa-exclamation-circle"></i> Create Anyway
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('duplicateOrderBanner').remove()">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                        <a href="/orders/${data.order_id}/" target="_blank" class="btn btn-sm btn-info">
+                            <i class="fas fa-eye"></i> View Previous Order
+                        </a>
+                    </div>
+                `;
+
+                // Insert banner before the form
+                const form = document.getElementById('orderForm');
+                form.parentNode.insertBefore(banner, form);
+                banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else {
+                // No duplicate - proceed with form submission
+                proceedWithOrderSubmission();
+            }
+        })
+        .catch(error => {
+            console.error('Duplicate check error:', error);
+            // On network error, proceed with submission (don't block the user)
+            proceedWithOrderSubmission();
+        });
+    });
+
+    // Force submit order (user chose to create anyway despite duplicate warning)
+    function forceSubmitOrder() {
+        const banner = document.getElementById('duplicateOrderBanner');
+        if (banner) banner.remove();
+        proceedWithOrderSubmission();
+    }
+
+    // Actually submit the form
+    function proceedWithOrderSubmission() {
         clearFormData();
         hideFloatingButton();
-        
+
         document.getElementById('submitBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
         document.getElementById('submitBtn').disabled = true;
-    });
+
+        const form = document.getElementById('orderForm');
+        const bypassInput = document.createElement('input');
+        bypassInput.type = 'hidden';
+        bypassInput.name = '_bypass_js_validation';
+        bypassInput.value = '1';
+        form.appendChild(bypassInput);
+        form.submit();
+    }
+
+    // Helper: remove a field from validation banner by its label name
+    function clearValidationBannerItem(inputEl) {
+        const alertEl = document.getElementById('validationAlert');
+        if (!alertEl || alertEl.style.display === 'none') return;
+        // Find the field's label text to match against banner list items
+        const container = inputEl.closest('.col-md-2, .col-md-3');
+        if (!container) return;
+        const labelEl = container.querySelector('.form-label');
+        if (!labelEl) return;
+        const labelText = labelEl.textContent.replace('*', '').trim();
+        const listEl = document.getElementById('validationAlertList');
+        if (!listEl) return;
+        // Remove matching list item
+        Array.from(listEl.querySelectorAll('li')).forEach(li => {
+            if (li.textContent.indexOf(labelText) !== -1) li.remove();
+        });
+        // Hide banner if no items remain
+        if (listEl.querySelectorAll('li').length === 0) {
+            alertEl.style.display = 'none';
+        }
+    }
 
     // Clear error highlight when user starts filling a field
     document.querySelectorAll('#orderForm input, #orderForm select, #orderForm textarea').forEach(el => {
@@ -4923,7 +5196,10 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
             if (container) {
                 const label = container.querySelector('.form-label');
                 if (label) label.classList.remove('field-error-label');
+                const errorMsg = container.querySelector('.field-error-msg');
+                if (errorMsg) errorMsg.remove();
             }
+            clearValidationBannerItem(this);
         });
         el.addEventListener('change', function() {
             this.classList.remove('field-error');
@@ -4931,7 +5207,10 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
             if (container) {
                 const label = container.querySelector('.form-label');
                 if (label) label.classList.remove('field-error-label');
+                const errorMsg = container.querySelector('.field-error-msg');
+                if (errorMsg) errorMsg.remove();
             }
+            clearValidationBannerItem(this);
         });
     });
 </script>

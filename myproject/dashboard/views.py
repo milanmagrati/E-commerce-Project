@@ -2391,8 +2391,22 @@ def order_create(request):
                 remaining_amount = Decimal(request.POST.get("remaining_amount") or "0")
 
                 # UPDATED: Added in_out to required fields check
-                if not (customer_name and customer_phone and branch_city_name and shipping_address and created_by_id and in_out):
-                    messages.error(request, "Please fill all required fields.")
+                missing = []
+                if not customer_name:
+                    missing.append('Customer Name')
+                if not customer_phone:
+                    missing.append('Phone Number')
+                if not branch_city_name:
+                    missing.append('Branch/City')
+                if not shipping_address:
+                    missing.append('Shipping Address')
+                if not created_by_id:
+                    missing.append('Created By')
+                if not in_out:
+                    missing.append('IN/OUT')
+
+                if missing:
+                    messages.error(request, f"Missing required fields: {', '.join(missing)}")
                     return redirect("order_create")
 
                 created_by = get_object_or_404(User, id=created_by_id)
@@ -5555,7 +5569,7 @@ def inventory_dashboard(request):
         stock_turnover_rate = (total_sold_30days / avg_inventory) if avg_inventory > 0 else 0
         
         # Dead Stock (No movement in 90 days)
-        ninety_days_ago = today - timedelta(days=90)
+        ninety_days_ago = timezone.now() - timedelta(days=90)
         try:
             dead_stock_count = products.filter(
                 updated_at__lt=ninety_days_ago,
@@ -7830,7 +7844,73 @@ def search_customer_by_phone(request):
         })
 
 
-# add custom product 
+
+# Duplicate order check API
+@login_required
+@require_http_methods(["POST"])
+def check_duplicate_order(request):
+    """Check if a similar order exists within 24 hours for the same phone number with matching products and quantities"""
+    try:
+        data = json.loads(request.body)
+        phone = (data.get('phone') or '').strip()
+        cart_items = data.get('cart', [])
+
+        if not phone or not cart_items:
+            return JsonResponse({'is_duplicate': False})
+
+        # Look for orders with the same phone in the last 24 hours
+        from .models import Order, OrderItem
+        cutoff_time = timezone.now() - timedelta(hours=24)
+        recent_orders = Order.objects.filter(
+            customer_phone=phone,
+            created_at__gte=cutoff_time,
+            is_deleted=False
+        ).order_by('-created_at')
+
+        # Build a set of (product_id, variation_id, quantity) from the current cart
+        new_cart_set = set()
+        for item in cart_items:
+            product_id = int(item.get('id', 0))
+            var_id = int(item['varId']) if item.get('varId') else None
+            qty = int(item.get('qty', 1))
+            new_cart_set.add((product_id, var_id, qty))
+
+        for order in recent_orders:
+            # Build the same set from the existing order's items
+            existing_items = order.items.all()
+            existing_set = set()
+            for oi in existing_items:
+                p_id = oi.product_id
+                v_id = oi.product_variation_id
+                existing_set.add((p_id, v_id, oi.quantity))
+
+            # Check if the cart items match exactly
+            if new_cart_set == existing_set:
+                # Calculate time ago
+                time_diff = timezone.now() - order.created_at
+                minutes = int(time_diff.total_seconds() / 60)
+                if minutes < 60:
+                    time_ago = f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+                else:
+                    hours = minutes // 60
+                    time_ago = f"{hours} hour{'s' if hours != 1 else ''} ago"
+
+                return JsonResponse({
+                    'is_duplicate': True,
+                    'order_id': order.id,
+                    'order_number': order.order_number,
+                    'order_status': order.order_status or 'processing',
+                    'time_ago': time_ago,
+                })
+
+        return JsonResponse({'is_duplicate': False})
+
+    except Exception as e:
+        logger.error(f"Error checking duplicate order: {str(e)}")
+        return JsonResponse({'is_duplicate': False})
+
+
+# add custom product
 
 @login_required
 @require_http_methods(["POST"])
