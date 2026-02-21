@@ -687,7 +687,7 @@
                 {% endif %}
 
                 <!-- ==================== PURCHASE MANAGEMENT ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_purchases %}
                 <li class="purchase-menu {% if 'purchase' in request.resolver_match.url_name or 'supplier' in request.resolver_match.url_name %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#purchaseMenu" aria-expanded="false">
                         <i class="fas fa-file-invoice-dollar"></i> Purchase Management<span class="purchase-badge">NEW</span>
@@ -697,24 +697,30 @@
                         <li class="{% if request.resolver_match.url_name == 'purchase_dashboard' %}active{% endif %}">
                             <a href="{% url 'purchase_dashboard' %}">Dashboard</a>
                         </li>
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_create_purchases %}
                         <li class="{% if request.resolver_match.url_name == 'purchase_create' %}active{% endif %}">
                             <a href="{% url 'purchase_create' %}">New Purchase</a>
                         </li>
+                        {% endif %}
                         <li class="{% if request.resolver_match.url_name == 'supplier_list' %}active{% endif %}">
                             <a href="{% url 'supplier_list' %}">Suppliers</a>
                         </li>
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_manage_suppliers %}
                         <li class="{% if request.resolver_match.url_name == 'supplier_add' %}active{% endif %}">
                             <a href="{% url 'supplier_add' %}">Add Supplier</a>
                         </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_make_supplier_payments %}
                         <li class="{% if request.resolver_match.url_name == 'supplier_payment_add' %}active{% endif %}">
                             <a href="{% url 'supplier_payment_add' %}">Record Payment</a>
                         </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}
 
-                <!-- ==================== STAFF PERFORMANCE (Admin Only) ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
+                <!-- ==================== STAFF PERFORMANCE ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_staff_performance %}
                 <li class="staff-performance-menu {% if request.resolver_match.url_name == 'staff_performance_analytics' %}active{% endif %}">
                     <a href="{% url 'staff_performance_analytics' %}">
                         <i class="fas fa-chart-bar"></i> Staff Performance<span class="performance-badge">ANALYTICS</span>
@@ -723,13 +729,13 @@
                 {% endif %}
 
                 <!-- ==================== STAFF TARGETS ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_targets %}
                 <li class="{% if request.resolver_match.url_name == 'manage_targets' %}active{% endif %}">
                     <a href="{% url 'manage_targets' %}">
                         <i class="fas fa-bullseye"></i> Staff Targets<span class="performance-badge">TARGETS</span>
                     </a>
                 </li>
-                {% else %}
+                {% elif user.can_view_own_targets %}
                 <li class="{% if request.resolver_match.url_name == 'my_targets' %}active{% endif %}">
                     <a href="{% url 'my_targets' %}">
                         <i class="fas fa-bullseye"></i> My Targets

@@ -223,10 +223,45 @@
                                                 <input type="checkbox" class="form-check-input" name="can_approve_returns" id="can_approve_returns" {% if edit_user.can_approve_returns %}checked{% endif %}>
                                                 <label for="can_approve_returns">Approve Returns</label>
                                             </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_process_refunds" id="can_process_refunds" {% if edit_user.can_process_refunds %}checked{% endif %}>
+                                                <label for="can_process_refunds">Process Refunds</label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                                
+
+                                <!-- Staff Targets Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                                            <i class="fas fa-bullseye"></i> Staff Targets Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_targets" id="can_view_targets" {% if edit_user.can_view_targets %}checked{% endif %}>
+                                                <label for="can_view_targets">View All Targets</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_set_targets" id="can_set_targets" {% if edit_user.can_set_targets %}checked{% endif %}>
+                                                <label for="can_set_targets">Set Targets</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_targets" id="can_edit_targets" {% if edit_user.can_edit_targets %}checked{% endif %}>
+                                                <label for="can_edit_targets">Edit Targets</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_targets" id="can_delete_targets" {% if edit_user.can_delete_targets %}checked{% endif %}>
+                                                <label for="can_delete_targets">Delete Targets</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_own_targets" id="can_view_own_targets" {% if edit_user.can_view_own_targets %}checked{% endif %}>
+                                                <label for="can_view_own_targets">View Own Targets</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Dispatch Module -->
                                 <div class="col-lg-6 col-xl-4 mb-3">
                                     <div class="perm-card">
@@ -299,6 +334,48 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_export_data" id="can_export_data" {% if edit_user.can_export_data %}checked{% endif %}>
                                                 <label for="can_export_data">Export Data</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Purchase Management Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #059669 0%, #047857 100%);">
+                                            <i class="fas fa-file-invoice-dollar"></i> Purchase Management
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_purchases" id="can_view_purchases" {% if edit_user.can_view_purchases %}checked{% endif %}>
+                                                <label for="can_view_purchases">View Purchases</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_purchases" id="can_create_purchases" {% if edit_user.can_create_purchases %}checked{% endif %}>
+                                                <label for="can_create_purchases">Create Purchases</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_suppliers" id="can_manage_suppliers" {% if edit_user.can_manage_suppliers %}checked{% endif %}>
+                                                <label for="can_manage_suppliers">Manage Suppliers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_make_supplier_payments" id="can_make_supplier_payments" {% if edit_user.can_make_supplier_payments %}checked{% endif %}>
+                                                <label for="can_make_supplier_payments">Supplier Payments</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Staff Performance Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);">
+                                            <i class="fas fa-chart-line"></i> Staff Performance
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_staff_performance" id="can_view_staff_performance" {% if edit_user.can_view_staff_performance %}checked{% endif %}>
+                                                <label for="can_view_staff_performance">View Staff Performance</label>
                                             </div>
                                         </div>
                                     </div>

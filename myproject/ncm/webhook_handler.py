@@ -49,8 +49,15 @@ class NCMWebhookHandler:
     
     def __init__(self):
         self.sms_service = SMSService()
-        self.system_user = self._get_or_create_system_user()
-    
+        self._system_user = None
+
+    @property
+    def system_user(self):
+        """Lazy-load system user to avoid DB query at import time"""
+        if self._system_user is None:
+            self._system_user = self._get_or_create_system_user()
+        return self._system_user
+
     @staticmethod
     def _get_or_create_system_user():
         """Get or create system user for webhook operations"""

@@ -84,8 +84,23 @@ class CustomUser(AbstractUser):
     can_delete_returns = models.BooleanField(default=False, verbose_name="Can Delete Returns")
     can_approve_returns = models.BooleanField(default=False, verbose_name="Can Approve/Reject Returns")
     can_process_refunds = models.BooleanField(default=False, verbose_name="Can Process Refunds")
-    
-    
+
+    # STAFF TARGET PERMISSIONS
+    can_view_targets = models.BooleanField(default=False, verbose_name="Can View All Targets")
+    can_set_targets = models.BooleanField(default=False, verbose_name="Can Set Targets")
+    can_edit_targets = models.BooleanField(default=False, verbose_name="Can Edit Targets")
+    can_delete_targets = models.BooleanField(default=False, verbose_name="Can Delete Targets")
+    can_view_own_targets = models.BooleanField(default=True, verbose_name="Can View Own Targets")
+
+    # PURCHASE MANAGEMENT PERMISSIONS
+    can_view_purchases = models.BooleanField(default=False, verbose_name="Can View Purchases")
+    can_create_purchases = models.BooleanField(default=False, verbose_name="Can Create Purchases")
+    can_manage_suppliers = models.BooleanField(default=False, verbose_name="Can Manage Suppliers")
+    can_make_supplier_payments = models.BooleanField(default=False, verbose_name="Can Make Supplier Payments")
+
+    # STAFF PERFORMANCE PERMISSIONS
+    can_view_staff_performance = models.BooleanField(default=False, verbose_name="Can View Staff Performance")
+
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
     
@@ -125,7 +140,8 @@ class CustomUser(AbstractUser):
             self.can_view_inventory = True
             self.can_manage_inventory = True
             self.can_adjust_stock = True
-            
+            self.can_view_own_targets = True
+
         elif self.role == 'sales':
             self.can_view_orders = True
             self.can_create_orders = True
@@ -136,6 +152,7 @@ class CustomUser(AbstractUser):
             self.can_edit_customers = True
             self.can_give_discounts = True
             self.max_discount_percent = Decimal('10.00')
+            self.can_view_own_targets = True
     
     class Meta:
         verbose_name = 'User'

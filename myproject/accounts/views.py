@@ -157,11 +157,19 @@ def user_create(request):
                 user.can_edit_returns = True
                 user.can_delete_returns = True
                 user.can_approve_returns = True
-                
+                user.can_process_refunds = True
+
+                user.can_view_targets = True
+                user.can_set_targets = True
+                user.can_edit_targets = True
+                user.can_delete_targets = True
+                user.can_view_own_targets = True
+
                 user.can_view_dispatch = True
                 user.can_manage_dispatch = True
+                user.can_delete_dispatch = True
                 user.can_scan_barcodes = True
-                
+
                 user.can_view_inventory = True
                 user.can_manage_inventory = True
                 user.can_adjust_stock = True
@@ -175,6 +183,13 @@ def user_create(request):
                 user.can_edit_prices = True
                 user.can_give_discounts = True
                 user.max_discount_percent = Decimal('100')
+
+                user.can_view_purchases = True
+                user.can_create_purchases = True
+                user.can_manage_suppliers = True
+                user.can_make_supplier_payments = True
+
+                user.can_view_staff_performance = True
             else:
                 # Apply custom permissions from checkboxes
                 # Orders Module
@@ -202,12 +217,21 @@ def user_create(request):
                 user.can_edit_returns = request.POST.get('can_edit_returns') == 'on'
                 user.can_delete_returns = request.POST.get('can_delete_returns') == 'on'
                 user.can_approve_returns = request.POST.get('can_approve_returns') == 'on'
-                
+                user.can_process_refunds = request.POST.get('can_process_refunds') == 'on'
+
+                # Staff Targets Module
+                user.can_view_targets = request.POST.get('can_view_targets') == 'on'
+                user.can_set_targets = request.POST.get('can_set_targets') == 'on'
+                user.can_edit_targets = request.POST.get('can_edit_targets') == 'on'
+                user.can_delete_targets = request.POST.get('can_delete_targets') == 'on'
+                user.can_view_own_targets = request.POST.get('can_view_own_targets') == 'on'
+
                 # Dispatch Module
                 user.can_view_dispatch = request.POST.get('can_view_dispatch') == 'on'
                 user.can_manage_dispatch = request.POST.get('can_manage_dispatch') == 'on'
+                user.can_delete_dispatch = request.POST.get('can_delete_dispatch') == 'on'
                 user.can_scan_barcodes = request.POST.get('can_scan_barcodes') == 'on'
-                
+
                 # Inventory Module
                 user.can_view_inventory = request.POST.get('can_view_inventory') == 'on'
                 user.can_manage_inventory = request.POST.get('can_manage_inventory') == 'on'
@@ -223,13 +247,22 @@ def user_create(request):
                 user.can_view_cost_price = request.POST.get('can_view_cost_price') == 'on'
                 user.can_edit_prices = request.POST.get('can_edit_prices') == 'on'
                 user.can_give_discounts = request.POST.get('can_give_discounts') == 'on'
-                
+
                 # Max Discount
                 max_discount = request.POST.get('max_discount_percent', '0')
                 try:
                     user.max_discount_percent = Decimal(max_discount)
                 except:
                     user.max_discount_percent = Decimal('0')
+
+                # Purchase Management Module
+                user.can_view_purchases = request.POST.get('can_view_purchases') == 'on'
+                user.can_create_purchases = request.POST.get('can_create_purchases') == 'on'
+                user.can_manage_suppliers = request.POST.get('can_manage_suppliers') == 'on'
+                user.can_make_supplier_payments = request.POST.get('can_make_supplier_payments') == 'on'
+
+                # Staff Performance Module
+                user.can_view_staff_performance = request.POST.get('can_view_staff_performance') == 'on'
             
             user.save()
             
@@ -306,11 +339,19 @@ def user_edit(request, user_id):
             edit_user.can_edit_returns = True
             edit_user.can_delete_returns = True
             edit_user.can_approve_returns = True
-            
+            edit_user.can_process_refunds = True
+
+            edit_user.can_view_targets = True
+            edit_user.can_set_targets = True
+            edit_user.can_edit_targets = True
+            edit_user.can_delete_targets = True
+            edit_user.can_view_own_targets = True
+
             edit_user.can_view_dispatch = True
             edit_user.can_manage_dispatch = True
+            edit_user.can_delete_dispatch = True
             edit_user.can_scan_barcodes = True
-            
+
             edit_user.can_view_inventory = True
             edit_user.can_manage_inventory = True
             edit_user.can_adjust_stock = True
@@ -324,7 +365,14 @@ def user_edit(request, user_id):
             edit_user.can_edit_prices = True
             edit_user.can_give_discounts = True
             edit_user.max_discount_percent = Decimal('100')
-            
+
+            edit_user.can_view_purchases = True
+            edit_user.can_create_purchases = True
+            edit_user.can_manage_suppliers = True
+            edit_user.can_make_supplier_payments = True
+
+            edit_user.can_view_staff_performance = True
+
             messages.info(request, '👑 Administrator role - All permissions granted automatically')
         else:
             # Remove admin privileges
@@ -356,12 +404,21 @@ def user_edit(request, user_id):
             edit_user.can_edit_returns = request.POST.get('can_edit_returns') == 'on'
             edit_user.can_delete_returns = request.POST.get('can_delete_returns') == 'on'
             edit_user.can_approve_returns = request.POST.get('can_approve_returns') == 'on'
-            
+            edit_user.can_process_refunds = request.POST.get('can_process_refunds') == 'on'
+
+            # Staff Targets Module
+            edit_user.can_view_targets = request.POST.get('can_view_targets') == 'on'
+            edit_user.can_set_targets = request.POST.get('can_set_targets') == 'on'
+            edit_user.can_edit_targets = request.POST.get('can_edit_targets') == 'on'
+            edit_user.can_delete_targets = request.POST.get('can_delete_targets') == 'on'
+            edit_user.can_view_own_targets = request.POST.get('can_view_own_targets') == 'on'
+
             # Dispatch Module
             edit_user.can_view_dispatch = request.POST.get('can_view_dispatch') == 'on'
             edit_user.can_manage_dispatch = request.POST.get('can_manage_dispatch') == 'on'
+            edit_user.can_delete_dispatch = request.POST.get('can_delete_dispatch') == 'on'
             edit_user.can_scan_barcodes = request.POST.get('can_scan_barcodes') == 'on'
-            
+
             # Inventory Module
             edit_user.can_view_inventory = request.POST.get('can_view_inventory') == 'on'
             edit_user.can_manage_inventory = request.POST.get('can_manage_inventory') == 'on'
@@ -377,13 +434,22 @@ def user_edit(request, user_id):
             edit_user.can_view_cost_price = request.POST.get('can_view_cost_price') == 'on'
             edit_user.can_edit_prices = request.POST.get('can_edit_prices') == 'on'
             edit_user.can_give_discounts = request.POST.get('can_give_discounts') == 'on'
-            
+
             # Max Discount Percentage
             max_discount = request.POST.get('max_discount_percent', '0')
             try:
                 edit_user.max_discount_percent = Decimal(max_discount)
             except (ValueError, InvalidOperation):
                 edit_user.max_discount_percent = Decimal('0')
+
+            # Purchase Management Module
+            edit_user.can_view_purchases = request.POST.get('can_view_purchases') == 'on'
+            edit_user.can_create_purchases = request.POST.get('can_create_purchases') == 'on'
+            edit_user.can_manage_suppliers = request.POST.get('can_manage_suppliers') == 'on'
+            edit_user.can_make_supplier_payments = request.POST.get('can_make_supplier_payments') == 'on'
+
+            # Staff Performance Module
+            edit_user.can_view_staff_performance = request.POST.get('can_view_staff_performance') == 'on'
         
         try:
             edit_user.save()
@@ -605,11 +671,14 @@ def profile_view(request):
         'can_view_orders', 'can_create_orders', 'can_edit_orders', 'can_delete_orders', 'can_cancel_orders',
         'can_view_products', 'can_create_products', 'can_edit_products', 'can_delete_products',
         'can_view_customers', 'can_create_customers', 'can_edit_customers', 'can_delete_customers',
-        'can_view_returns', 'can_create_returns', 'can_edit_returns', 'can_delete_returns', 'can_approve_returns',
-        'can_view_dispatch', 'can_manage_dispatch', 'can_scan_barcodes',
+        'can_view_returns', 'can_create_returns', 'can_edit_returns', 'can_delete_returns', 'can_approve_returns', 'can_process_refunds',
+        'can_view_targets', 'can_set_targets', 'can_edit_targets', 'can_delete_targets', 'can_view_own_targets',
+        'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
         'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
         'can_view_reports', 'can_view_sales_reports', 'can_view_financial_reports', 'can_export_data',
         'can_view_cost_price', 'can_edit_prices', 'can_give_discounts',
+        'can_view_purchases', 'can_create_purchases', 'can_manage_suppliers', 'can_make_supplier_payments',
+        'can_view_staff_performance',
     ]
     
     permission_summary['total_permissions'] = len(permission_fields)

@@ -10946,7 +10946,11 @@ def financial_report_data(request):
 @login_required(login_url='login')
 def staff_performance_analytics(request):
     """Staff Performance Analytics Dashboard with Session Persistence"""
-    
+
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_staff_performance):
+        messages.error(request, "You don't have permission to view Staff Performance.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
     # ========== SESSION PERSISTENCE LOGIC ==========
     # Check if user wants to clear filters
     clear_filters = request.GET.get('clear_filters', 'false') == 'true'
@@ -11643,7 +11647,7 @@ def product_sales_report(request):
 @login_required
 def purchase_dashboard(request):
     """Purchase Management Dashboard"""
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_purchases):
         messages.error(request, "You don't have permission to access Purchase Management.", extra_tags='permission_denied')
         return redirect('dashboard')
 
@@ -11704,7 +11708,7 @@ def purchase_dashboard(request):
 @login_required
 def supplier_list(request):
     """List all suppliers"""
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_purchases or request.user.can_manage_suppliers):
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         return redirect('dashboard')
 
@@ -11718,7 +11722,7 @@ def supplier_list(request):
 @login_required
 def supplier_add(request):
     """Add a new supplier"""
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_manage_suppliers):
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         return redirect('dashboard')
 
@@ -11752,7 +11756,7 @@ def supplier_add(request):
 @login_required
 def supplier_edit(request, supplier_id):
     """Edit supplier"""
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_manage_suppliers):
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         return redirect('dashboard')
 
@@ -11776,7 +11780,7 @@ def supplier_edit(request, supplier_id):
 @login_required
 def supplier_detail(request, supplier_id):
     """Supplier detail page with purchases, products, payments, and ledger"""
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_purchases or request.user.can_manage_suppliers):
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         return redirect('dashboard')
 
@@ -11869,7 +11873,7 @@ def supplier_detail(request, supplier_id):
 @login_required
 def purchase_create(request):
     """Create a new purchase with items"""
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_create_purchases):
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         return redirect('dashboard')
 
@@ -11970,7 +11974,7 @@ def purchase_create(request):
 @login_required
 def purchase_detail(request, purchase_id):
     """View purchase details"""
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_purchases):
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         return redirect('dashboard')
 
@@ -11993,7 +11997,7 @@ def purchase_detail(request, purchase_id):
 @login_required
 def supplier_payment_add(request):
     """Record a payment to supplier"""
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_make_supplier_payments):
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         return redirect('dashboard')
 
@@ -12123,9 +12127,13 @@ def api_supplier_purchases(request, supplier_id):
 def manage_targets(request):
     """Admin/Manager view: list all staff targets with filters"""
     user = request.user
-    if not (user.is_superuser or user.role == 'administrator'):
-        messages.warning(request, 'You do not have permission to manage targets. Redirected to your targets.')
-        return redirect('my_targets')
+    is_admin = user.is_superuser or user.role == 'administrator'
+    if not (is_admin or user.can_view_targets):
+        if user.can_view_own_targets:
+            messages.warning(request, 'You do not have permission to manage targets. Redirected to your targets.')
+            return redirect('my_targets')
+        messages.error(request, 'You do not have permission to view targets.')
+        return redirect('dashboard')
 
     # Filters
     staff_filter = request.GET.get('staff', '')
@@ -12181,6 +12189,9 @@ def manage_targets(request):
         'type_filter': type_filter,
         'period_filter': period_filter,
         'is_admin_view': True,
+        'can_set': is_admin or user.can_set_targets,
+        'can_edit': is_admin or user.can_edit_targets,
+        'can_delete': is_admin or user.can_delete_targets,
         'kpi': kpi,
     }
     return render(request, 'staff_targets.html', context)
@@ -12190,6 +12201,11 @@ def manage_targets(request):
 def my_targets(request):
     """Staff view: see only their own targets"""
     user = request.user
+    is_admin = user.is_superuser or user.role == 'administrator'
+    if not (is_admin or user.can_view_own_targets):
+        messages.error(request, 'You do not have permission to view targets.')
+        return redirect('dashboard')
+
     today = timezone.now().date()
 
     targets = StaffTarget.objects.filter(staff=user).order_by('-start_date')
@@ -12235,7 +12251,8 @@ def my_targets(request):
 def set_target(request):
     """Admin action: create a new target"""
     user = request.user
-    if not (user.is_superuser or user.role == 'administrator'):
+    is_admin = user.is_superuser or user.role == 'administrator'
+    if not (is_admin or user.can_set_targets):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     try:
@@ -12276,7 +12293,8 @@ def set_target(request):
 def edit_target(request, target_id):
     """Admin action: edit existing target"""
     user = request.user
-    if not (user.is_superuser or user.role == 'administrator'):
+    is_admin = user.is_superuser or user.role == 'administrator'
+    if not (is_admin or user.can_edit_targets):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     target = get_object_or_404(StaffTarget, id=target_id)
@@ -12301,7 +12319,8 @@ def edit_target(request, target_id):
 def delete_target(request, target_id):
     """Admin action: delete a target"""
     user = request.user
-    if not (user.is_superuser or user.role == 'administrator'):
+    is_admin = user.is_superuser or user.role == 'administrator'
+    if not (is_admin or user.can_delete_targets):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     target = get_object_or_404(StaffTarget, id=target_id)
@@ -12315,7 +12334,8 @@ def delete_target(request, target_id):
 def api_target_detail(request, target_id):
     """API to get target details for edit modal"""
     user = request.user
-    if not (user.is_superuser or user.role == 'administrator'):
+    is_admin = user.is_superuser or user.role == 'administrator'
+    if not (is_admin or user.can_edit_targets):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     target = get_object_or_404(StaffTarget, id=target_id)
