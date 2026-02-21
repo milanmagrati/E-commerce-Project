@@ -5644,6 +5644,88 @@ def inventory_dashboard(request):
             total_damaged_value = 0
             damaged_items_detail = []
 
+        # Returns Overview for Inventory Dashboard
+        try:
+            from collections import defaultdict as _defaultdict
+
+            all_returns_qs = ReturnRequest.objects.filter(
+                is_deleted=False,
+                created_by=request.user,
+            )
+
+            # Return stats
+            return_stats = {
+                'total': all_returns_qs.count(),
+                'pending': all_returns_qs.filter(return_status='pending').count(),
+                'approved': all_returns_qs.filter(return_status='approved').count(),
+                'received': all_returns_qs.filter(return_status='received').count(),
+                'inspecting': all_returns_qs.filter(return_status='inspecting').count(),
+                'refunded': all_returns_qs.filter(return_status='refunded').count(),
+                'rejected': all_returns_qs.filter(return_status='rejected').count(),
+            }
+
+            # Total refund amount
+            return_stats['total_refund'] = all_returns_qs.filter(
+                return_status='refunded'
+            ).aggregate(total=Sum('refund_amount'))['total'] or 0
+
+            # Recent returns (both batch and individual) - last 20
+            recent_returns = all_returns_qs.select_related(
+                'order', 'customer'
+            ).order_by('-created_at')[:20]
+
+            # Returned products summary - aggregated by product
+            returned_products_summary = ReturnItem.objects.filter(
+                return_request__is_deleted=False,
+                return_request__created_by=request.user,
+            ).values(
+                'product__id', 'product__name', 'product_sku',
+            ).annotate(
+                total_return_qty=Sum('return_quantity'),
+                total_good_qty=Sum('good_qty'),
+                total_damaged_qty=Sum('damaged_qty'),
+                total_refund=Sum('refund_amount'),
+                return_count=Count('return_request', distinct=True),
+            ).order_by('-total_return_qty')[:15]
+
+            # Recent return activity logs
+            recent_return_logs = ReturnActivityLog.objects.filter(
+                return_request__is_deleted=False,
+                return_request__created_by=request.user,
+            ).select_related(
+                'user', 'return_request'
+            ).order_by('-created_at')[:30]
+
+            # Batch vs Individual breakdown
+            batch_count = all_returns_qs.filter(
+                batch_id__isnull=False
+            ).exclude(batch_id='').values('batch_id').distinct().count()
+            individual_count = all_returns_qs.filter(
+                Q(batch_id__isnull=True) | Q(batch_id='')
+            ).count()
+
+            # Restocked summary
+            restocked_items = ReturnItem.objects.filter(
+                return_request__is_deleted=False,
+                return_request__created_by=request.user,
+                restocked=True,
+            ).aggregate(
+                total_restocked=Sum('good_qty'),
+            )
+            total_restocked_qty = restocked_items['total_restocked'] or 0
+
+        except Exception:
+            return_stats = {
+                'total': 0, 'pending': 0, 'approved': 0, 'received': 0,
+                'inspecting': 0, 'refunded': 0, 'rejected': 0, 'total_refund': 0,
+            }
+            recent_returns = []
+            returned_products_summary = []
+            recent_return_logs = []
+            batch_count = 0
+            individual_count = 0
+            total_restocked_qty = 0
+
         # Stock Status Distribution for Charts
         stock_chart_data = {
             'labels': ['In Stock', 'Low Stock', 'Out of Stock'],
@@ -5702,6 +5784,15 @@ def inventory_dashboard(request):
             'selected_days': selected_days,
             'start_date': start_date_param,
             'end_date': end_date_param,
+
+            # Returns Overview
+            'return_stats': return_stats,
+            'recent_returns': recent_returns,
+            'returned_products_summary': returned_products_summary,
+            'recent_return_logs': recent_return_logs,
+            'batch_count': batch_count,
+            'individual_count': individual_count,
+            'total_restocked_qty': total_restocked_qty,
         }
         
         return render(request, 'inventory_dashboard.html', context)
@@ -6645,6 +6736,49 @@ def returns_list(request):
             rejected=Count('id', filter=Q(return_status='rejected')),
         )
 
+        # Get all return items in this batch with product details (for summary)
+        batch_return_items = ReturnItem.objects.filter(
+            return_request__batch_id=batch_filter,
+            return_request__is_deleted=False
+        ).select_related(
+            'product', 'product_variation', 'return_request', 'restocked_by'
+        ).order_by('-return_request__created_at')
+
+        # Aggregate items by product for a compact summary
+        from collections import defaultdict
+        product_summary = defaultdict(lambda: {
+            'product_name': '', 'product_sku': '', 'total_return_qty': 0,
+            'total_good_qty': 0, 'total_damaged_qty': 0, 'total_refund': Decimal('0'),
+            'restocked_qty': 0, 'orders': set(), 'variation_name': '',
+        })
+        for item in batch_return_items:
+            key = f"{item.product_id}_{item.product_variation_id or 'none'}"
+            summary = product_summary[key]
+            summary['product_name'] = item.product_name
+            summary['product_sku'] = item.product_sku
+            if item.product_variation:
+                summary['variation_name'] = str(item.product_variation)
+            summary['total_return_qty'] += item.return_quantity
+            summary['total_good_qty'] += item.good_qty
+            summary['total_damaged_qty'] += item.damaged_qty
+            summary['total_refund'] += item.refund_amount
+            if item.restocked:
+                summary['restocked_qty'] += item.good_qty
+            summary['orders'].add(item.return_request.order.order_number)
+
+        # Convert to list and make orders a count
+        product_summary_list = []
+        for key, data in product_summary.items():
+            data['order_count'] = len(data['orders'])
+            del data['orders']
+            product_summary_list.append(data)
+
+        # Get activity logs for all returns in this batch
+        batch_activity_logs = ReturnActivityLog.objects.filter(
+            return_request__batch_id=batch_filter,
+            return_request__is_deleted=False
+        ).select_related('user', 'return_request').order_by('-created_at')[:50]
+
         context = {
             'returns': returns_page,
             'batch_filter': batch_filter,
@@ -6655,6 +6789,9 @@ def returns_list(request):
             'condition_choices': ReturnRequest.CONDITION_CHOICES,
             'trash_count': trash_count,
             'view_mode': 'batch_detail',
+            'product_summary': product_summary_list,
+            'batch_return_items': batch_return_items,
+            'batch_activity_logs': batch_activity_logs,
         }
     else:
         # ===== DEFAULT VIEW — BATCH SUMMARY =====
@@ -6695,6 +6832,8 @@ def returns_list(request):
             Q(batch_id__isnull=True) | Q(batch_id='')
         ).select_related(
             'order', 'customer', 'created_by'
+        ).prefetch_related(
+            'items', 'activity_logs'
         ).order_by('-created_at')
 
         if search_query:

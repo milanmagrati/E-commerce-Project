@@ -637,9 +637,9 @@ class ReturnRequest(models.Model):
     refund_type = models.CharField(max_length=50, choices=REFUND_TYPE_CHOICES, default='full_refund')
     
     # Financial
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    refund_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    restocking_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    refund_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    restocking_fee = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     
     # Quality Check
     condition_received = models.CharField(max_length=50, choices=CONDITION_CHOICES, blank=True, null=True)
@@ -746,14 +746,14 @@ class ReturnItem(models.Model):
     product_name = models.CharField(max_length=255)
     product_sku = models.CharField(max_length=100, blank=True)
     quantity = models.PositiveIntegerField(default=1)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    total = models.DecimalField(max_digits=10, decimal_places=2)
-    
+    price = models.DecimalField(max_digits=18, decimal_places=2)
+    total = models.DecimalField(max_digits=18, decimal_places=2)
+
     # Return specific
     return_quantity = models.PositiveIntegerField(default=1)
     good_qty = models.PositiveIntegerField(default=0, help_text="Quantity in good/resellable condition")
     damaged_qty = models.PositiveIntegerField(default=0, help_text="Quantity that is damaged/defective")
-    refund_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    refund_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     
     # Inventory action
     restocked = models.BooleanField(default=False)

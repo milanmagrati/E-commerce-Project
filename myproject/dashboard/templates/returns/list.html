@@ -128,6 +128,19 @@
         from { opacity: 0; transform: translateY(-15px); }
         to { opacity: 1; transform: translateY(0); }
     }
+
+    /* Collapse toggle icon rotation */
+    .card-header[data-bs-toggle="collapse"] .fa-chevron-down {
+        transition: transform 0.3s ease;
+    }
+    .card-header[data-bs-toggle="collapse"].collapsed .fa-chevron-down,
+    .card-header[data-bs-toggle="collapse"][aria-expanded="false"] .fa-chevron-down {
+        transform: rotate(-90deg);
+    }
+
+    /* Individual return expandable row */
+    .individual-return-row:hover { background: rgba(0,123,255,0.04) !important; }
+    .individual-return-row td { vertical-align: middle; }
 </style>
 {% endblock %}
 
@@ -399,6 +412,7 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 30px;"></th>
                             <th>RMA #</th>
                             <th>Order</th>
                             <th>Customer</th>
@@ -410,7 +424,10 @@
                     </thead>
                     <tbody>
                         {% for return in individual_returns %}
-                        <tr>
+                        <tr class="individual-return-row" style="cursor: pointer;" data-collapse-target="#returnDetail{{ return.id }}">
+                            <td>
+                                <i class="fas fa-chevron-right text-muted individual-toggle" id="toggleIcon{{ return.id }}" style="font-size: 0.75rem; transition: transform 0.2s;"></i>
+                            </td>
                             <td><strong>{{ return.rma_number }}</strong></td>
                             <td>{{ return.order.order_number }}</td>
                             <td>
@@ -430,12 +447,114 @@
                                 </a>
                             </td>
                         </tr>
+                        <!-- Expandable Detail Row -->
+                        <tr class="collapse" id="returnDetail{{ return.id }}">
+                            <td colspan="8" class="p-0 border-0">
+                                <div class="bg-light p-3" style="border-left: 4px solid #0d6efd;">
+                                    <div class="row">
+                                        <!-- Returned Items -->
+                                        <div class="col-md-7">
+                                            <h6 class="fw-bold mb-2"><i class="fas fa-boxes text-info me-1"></i> Returned Items</h6>
+                                            <table class="table table-sm table-bordered bg-white mb-0">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th style="font-size: 0.8rem;">Product</th>
+                                                        <th class="text-center" style="font-size: 0.8rem;">Qty</th>
+                                                        <th class="text-center" style="font-size: 0.8rem;">Good</th>
+                                                        <th class="text-center" style="font-size: 0.8rem;">Damaged</th>
+                                                        <th class="text-center" style="font-size: 0.8rem;">Restocked</th>
+                                                        <th class="text-end" style="font-size: 0.8rem;">Refund</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for item in return.items.all %}
+                                                    <tr>
+                                                        <td style="font-size: 0.85rem;">
+                                                            {{ item.product_name }}
+                                                            {% if item.product_sku %}<br><small class="text-muted">{{ item.product_sku }}</small>{% endif %}
+                                                        </td>
+                                                        <td class="text-center" style="font-size: 0.85rem;">{{ item.return_quantity }}</td>
+                                                        <td class="text-center">
+                                                            {% if item.good_qty > 0 %}<span class="text-success fw-bold" style="font-size: 0.85rem;">{{ item.good_qty }}</span>{% else %}<span class="text-muted" style="font-size: 0.85rem;">0</span>{% endif %}
+                                                        </td>
+                                                        <td class="text-center">
+                                                            {% if item.damaged_qty > 0 %}<span class="text-danger fw-bold" style="font-size: 0.85rem;">{{ item.damaged_qty }}</span>{% else %}<span class="text-muted" style="font-size: 0.85rem;">0</span>{% endif %}
+                                                        </td>
+                                                        <td class="text-center">
+                                                            {% if item.restocked %}<span class="badge bg-success" style="font-size: 0.7rem;"><i class="fas fa-check"></i></span>{% else %}<span class="text-muted">-</span>{% endif %}
+                                                        </td>
+                                                        <td class="text-end" style="font-size: 0.85rem;">&#2352;&#2370; {{ item.refund_amount }}</td>
+                                                    </tr>
+                                                    {% empty %}
+                                                    <tr><td colspan="6" class="text-center text-muted small">No items</td></tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <!-- Activity Log -->
+                                        <div class="col-md-5">
+                                            <h6 class="fw-bold mb-2"><i class="fas fa-history text-secondary me-1"></i> Activity Log</h6>
+                                            <div class="bg-white rounded border" style="max-height: 200px; overflow-y: auto;">
+                                                {% for log in return.activity_logs.all %}
+                                                <div class="px-2 py-1 border-bottom" style="font-size: 0.8rem;">
+                                                    <span class="badge
+                                                        {% if log.action_type == 'created' %}bg-primary
+                                                        {% elif log.action_type == 'approved' %}bg-info
+                                                        {% elif log.action_type == 'rejected' %}bg-danger
+                                                        {% elif log.action_type == 'received' %}bg-secondary
+                                                        {% elif log.action_type == 'quality_checked' %}bg-primary
+                                                        {% elif log.action_type == 'refunded' %}bg-success
+                                                        {% else %}bg-dark
+                                                        {% endif %}" style="font-size: 0.65rem;">{{ log.action_type|upper }}</span>
+                                                    <span class="text-muted ms-1">{{ log.description|truncatewords:10 }}</span>
+                                                    <span class="text-muted float-end">{{ log.created_at|date:"M d, g:i A" }}</span>
+                                                </div>
+                                                {% empty %}
+                                                <div class="px-2 py-2 text-center text-muted small">No activity yet</div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
+
+    <!-- Individual return row expand/collapse toggle script -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.individual-return-row').forEach(function(row) {
+            const targetId = row.getAttribute('data-collapse-target');
+            const collapseEl = document.querySelector(targetId);
+            const returnId = targetId.replace('#returnDetail', '');
+            const icon = document.getElementById('toggleIcon' + returnId);
+
+            if (collapseEl) {
+                const bsCollapse = new bootstrap.Collapse(collapseEl, { toggle: false });
+
+                // Toggle on row click, but skip if clicking a link or button
+                row.addEventListener('click', function(e) {
+                    if (e.target.closest('a') || e.target.closest('button')) return;
+                    bsCollapse.toggle();
+                });
+
+                if (icon) {
+                    collapseEl.addEventListener('show.bs.collapse', function() {
+                        icon.style.transform = 'rotate(90deg)';
+                    });
+                    collapseEl.addEventListener('hide.bs.collapse', function() {
+                        icon.style.transform = 'rotate(0deg)';
+                    });
+                }
+            }
+        });
+    });
+    </script>
     {% endif %}
 
     <!-- Batch Bulk Action Form (fallback, CSRF token source) -->
@@ -1175,6 +1294,206 @@
         </div>
         {% endif %}
     </div>
+
+    <!-- Returned Products Summary -->
+    {% if product_summary %}
+    <div class="card shadow-sm mb-4 mt-4">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center"
+             data-bs-toggle="collapse" data-bs-target="#productSummaryBody"
+             style="cursor: pointer;" role="button" aria-expanded="true">
+            <h5 class="mb-0">
+                <i class="fas fa-boxes text-info me-2"></i>Returned Products Summary
+                <span class="badge bg-info ms-2">{{ product_summary|length }} product{{ product_summary|length|pluralize }}</span>
+            </h5>
+            <i class="fas fa-chevron-down text-muted" id="productSummaryToggle"></i>
+        </div>
+        <div class="collapse show" id="productSummaryBody">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Product</th>
+                                <th class="text-center">Return Qty</th>
+                                <th class="text-center">Good Qty</th>
+                                <th class="text-center">Damaged Qty</th>
+                                <th class="text-center">Restocked</th>
+                                <th class="text-end">Refund</th>
+                                <th class="text-center">Orders</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in product_summary %}
+                            <tr>
+                                <td>
+                                    <div class="fw-bold">{{ item.product_name }}</div>
+                                    {% if item.variation_name %}
+                                    <small class="text-muted">{{ item.variation_name }}</small>
+                                    {% endif %}
+                                    {% if item.product_sku %}
+                                    <br><small class="text-muted">SKU: {{ item.product_sku }}</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-dark">{{ item.total_return_qty }}</span>
+                                </td>
+                                <td class="text-center">
+                                    {% if item.total_good_qty > 0 %}
+                                    <span class="badge bg-success">{{ item.total_good_qty }}</span>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if item.total_damaged_qty > 0 %}
+                                    <span class="badge bg-danger">{{ item.total_damaged_qty }}</span>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if item.restocked_qty > 0 %}
+                                    <span class="badge bg-success"><i class="fas fa-check me-1"></i>{{ item.restocked_qty }}</span>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <strong>&#2352;&#2370; {{ item.total_refund }}</strong>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-secondary">{{ item.order_count }}</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Per-Order Return Details -->
+    {% if batch_return_items %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center"
+             data-bs-toggle="collapse" data-bs-target="#perOrderDetailsBody"
+             style="cursor: pointer;" role="button" aria-expanded="false">
+            <h5 class="mb-0">
+                <i class="fas fa-file-alt text-primary me-2"></i>Per-Order Return Details
+                <span class="badge bg-primary ms-2">{{ batch_return_items|length }} item{{ batch_return_items|length|pluralize }}</span>
+            </h5>
+            <i class="fas fa-chevron-down text-muted" id="perOrderToggle"></i>
+        </div>
+        <div class="collapse" id="perOrderDetailsBody">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>RMA / Order</th>
+                                <th>Product</th>
+                                <th class="text-center">Return Qty</th>
+                                <th class="text-center">Good</th>
+                                <th class="text-center">Damaged</th>
+                                <th class="text-center">Restocked</th>
+                                <th class="text-end">Refund</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in batch_return_items %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'return_detail' item.return_request.id %}" class="fw-bold text-decoration-none">
+                                        {{ item.return_request.rma_number }}
+                                    </a>
+                                    <br><small class="text-muted">{{ item.return_request.order.order_number }}</small>
+                                </td>
+                                <td>
+                                    <div>{{ item.product_name }}</div>
+                                    {% if item.product_sku %}<small class="text-muted">{{ item.product_sku }}</small>{% endif %}
+                                </td>
+                                <td class="text-center">{{ item.return_quantity }}</td>
+                                <td class="text-center">
+                                    {% if item.good_qty > 0 %}
+                                    <span class="text-success fw-bold">{{ item.good_qty }}</span>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if item.damaged_qty > 0 %}
+                                    <span class="text-danger fw-bold">{{ item.damaged_qty }}</span>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if item.restocked %}
+                                    <span class="badge bg-success"><i class="fas fa-check"></i></span>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">&#2352;&#2370; {{ item.refund_amount }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Batch Activity Log -->
+    {% if batch_activity_logs %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center"
+             data-bs-toggle="collapse" data-bs-target="#batchActivityBody"
+             style="cursor: pointer;" role="button" aria-expanded="false">
+            <h5 class="mb-0">
+                <i class="fas fa-history text-secondary me-2"></i>Batch Activity Log
+                <span class="badge bg-secondary ms-2">{{ batch_activity_logs|length }}</span>
+            </h5>
+            <i class="fas fa-chevron-down text-muted" id="activityToggle"></i>
+        </div>
+        <div class="collapse" id="batchActivityBody">
+            <div class="card-body p-0" style="max-height: 400px; overflow-y: auto;">
+                <div class="list-group list-group-flush">
+                    {% for log in batch_activity_logs %}
+                    <div class="list-group-item py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="badge
+                                    {% if log.action_type == 'created' %}bg-primary
+                                    {% elif log.action_type == 'approved' %}bg-info
+                                    {% elif log.action_type == 'rejected' %}bg-danger
+                                    {% elif log.action_type == 'received' %}bg-secondary
+                                    {% elif log.action_type == 'quality_checked' %}bg-primary
+                                    {% elif log.action_type == 'refunded' %}bg-success
+                                    {% elif log.action_type == 'trashed' %}bg-danger
+                                    {% elif log.action_type == 'restored' %}bg-warning text-dark
+                                    {% else %}bg-dark
+                                    {% endif %} me-2" style="font-size: 0.7rem;">{{ log.action_type|upper }}</span>
+                                <strong class="small">{{ log.return_request.rma_number }}</strong>
+                                <span class="text-muted small ms-1">{{ log.description }}</span>
+                            </div>
+                            <div class="text-end text-nowrap">
+                                <small class="text-muted">{{ log.created_at|date:"M d, g:i A" }}</small>
+                                {% if log.user %}
+                                <br><small class="text-muted"><i class="fas fa-user me-1"></i>{{ log.user.username }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Bulk Actions Form (Hidden) -->
     <form id="bulkActionForm" method="POST" action="{% url 'returns_bulk_action' %}" style="display: none;">

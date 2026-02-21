@@ -605,6 +605,274 @@
         </div>
     </div>
 
+    <!-- Returns Overview Section -->
+    <div class="returns-overview-section">
+        <div class="alert-table-card returns-highlight">
+            <div class="card-header-dark alert-returns">
+                <h5><i class="fas fa-undo-alt pulse-icon"></i> Returns Overview</h5>
+                <div class="header-right">
+                    <span class="count-badge returns-badge">{{ return_stats.total }} total</span>
+                    <a href="{% url 'returns_list' %}" class="btn-sm-returns">
+                        <i class="fas fa-external-link-alt"></i> View All
+                    </a>
+                </div>
+            </div>
+            <div class="card-body-dark p-0">
+
+                <!-- Return Stats Row -->
+                <div class="returns-stats-row">
+                    <div class="return-stat-item">
+                        <div class="return-stat-number pending-color">{{ return_stats.pending }}</div>
+                        <div class="return-stat-label">Pending</div>
+                    </div>
+                    <div class="return-stat-item">
+                        <div class="return-stat-number approved-color">{{ return_stats.approved }}</div>
+                        <div class="return-stat-label">Approved</div>
+                    </div>
+                    <div class="return-stat-item">
+                        <div class="return-stat-number received-color">{{ return_stats.received }}</div>
+                        <div class="return-stat-label">Received</div>
+                    </div>
+                    <div class="return-stat-item">
+                        <div class="return-stat-number inspecting-color">{{ return_stats.inspecting }}</div>
+                        <div class="return-stat-label">Inspecting</div>
+                    </div>
+                    <div class="return-stat-item">
+                        <div class="return-stat-number refunded-color">{{ return_stats.refunded }}</div>
+                        <div class="return-stat-label">Refunded</div>
+                    </div>
+                    <div class="return-stat-item">
+                        <div class="return-stat-number rejected-color">{{ return_stats.rejected }}</div>
+                        <div class="return-stat-label">Rejected</div>
+                    </div>
+                    <div class="return-stat-item return-stat-highlight">
+                        <div class="return-stat-number refund-amount-color">Rs {{ return_stats.total_refund|floatformat:0 }}</div>
+                        <div class="return-stat-label">Total Refunded</div>
+                    </div>
+                    <div class="return-stat-item">
+                        <div class="return-stat-number restocked-color">{{ total_restocked_qty }}</div>
+                        <div class="return-stat-label">Restocked</div>
+                    </div>
+                </div>
+
+                <!-- Batch vs Individual Info -->
+                <div class="returns-type-bar">
+                    <div class="return-type-item">
+                        <i class="fas fa-layer-group"></i>
+                        <span><strong>{{ batch_count }}</strong> Batch Returns</span>
+                    </div>
+                    <div class="return-type-item">
+                        <i class="fas fa-user"></i>
+                        <span><strong>{{ individual_count }}</strong> Individual Returns</span>
+                    </div>
+                </div>
+
+                <!-- Returned Products Summary Table -->
+                {% if returned_products_summary %}
+                <div class="damaged-summary-header" style="border-top: 1px solid var(--dark-border);">
+                    <h6><i class="fas fa-boxes"></i> Returned Products Summary</h6>
+                </div>
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>SKU</th>
+                                <th class="text-center">Return Qty</th>
+                                <th class="text-center">Good Qty</th>
+                                <th class="text-center">Damaged Qty</th>
+                                <th class="text-center">Returns</th>
+                                <th class="text-right">Refund</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in returned_products_summary %}
+                            <tr class="table-row-hover">
+                                <td>
+                                    <div class="product-cell">
+                                        <div class="product-img-placeholder return-icon-bg">
+                                            <i class="fas fa-undo-alt"></i>
+                                        </div>
+                                        <span class="product-name">{{ item.product__name }}</span>
+                                    </div>
+                                </td>
+                                <td><span class="sku-badge">{{ item.product_sku|default:"—"|upper }}</span></td>
+                                <td class="text-center">
+                                    <span class="stock-badge return-qty-badge">{{ item.total_return_qty }}</span>
+                                </td>
+                                <td class="text-center">
+                                    {% if item.total_good_qty > 0 %}
+                                    <span class="stock-badge success">{{ item.total_good_qty }}</span>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if item.total_damaged_qty > 0 %}
+                                    <span class="stock-badge danger">{{ item.total_damaged_qty }}</span>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <span class="qty-badge">{{ item.return_count }}</span>
+                                </td>
+                                <td class="text-right">
+                                    <strong class="value-text">Rs {{ item.total_refund|floatformat:2 }}</strong>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                <!-- Recent Returns Table -->
+                {% if recent_returns %}
+                <div class="damaged-summary-header" style="border-top: 1px solid var(--dark-border);">
+                    <h6><i class="fas fa-clock"></i> Recent Returns</h6>
+                </div>
+                <div class="table-container-dark">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>RMA #</th>
+                                <th>Order</th>
+                                <th>Customer</th>
+                                <th class="text-center">Type</th>
+                                <th class="text-center">Status</th>
+                                <th>Refund</th>
+                                <th>Date</th>
+                                <th class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for return in recent_returns %}
+                            <tr class="table-row-hover">
+                                <td>
+                                    <a href="{% url 'return_detail' return.id %}" class="rma-link">
+                                        {{ return.rma_number }}
+                                    </a>
+                                </td>
+                                <td>
+                                    <span class="order-badge">{{ return.order.order_number }}</span>
+                                </td>
+                                <td>
+                                    <span class="product-name">{{ return.customer_name }}</span>
+                                </td>
+                                <td class="text-center">
+                                    {% if return.batch_id %}
+                                    <span class="type-badge type-purchase" style="font-size: 0.7rem;">BATCH</span>
+                                    {% else %}
+                                    <span class="type-badge type-other" style="font-size: 0.7rem;">SINGLE</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <span class="type-badge type-{{ return.return_status }}">
+                                        {{ return.get_return_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <strong>Rs {{ return.refund_amount|floatformat:0 }}</strong>
+                                </td>
+                                <td>
+                                    <div class="date-text">
+                                        <span class="date-main">
+                                            <i class="far fa-calendar-alt"></i> {{ return.created_at|date:"M d, Y" }}
+                                        </span>
+                                        <small class="date-time">{{ return.created_at|date:"H:i" }}</small>
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    <a href="{% url 'return_detail' return.id %}" class="btn-action returns-action">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                <!-- Recent Return Activity Log -->
+                {% if recent_return_logs %}
+                <div class="damaged-summary-header" style="border-top: 1px solid var(--dark-border);">
+                    <h6><i class="fas fa-history"></i> Recent Activity Log</h6>
+                </div>
+                <div class="table-container-dark" style="max-height: 350px;">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Action</th>
+                                <th>RMA #</th>
+                                <th>Description</th>
+                                <th>By</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in recent_return_logs %}
+                            <tr class="table-row-hover">
+                                <td>
+                                    <span class="type-badge
+                                        {% if log.action_type == 'created' %}type-purchase
+                                        {% elif log.action_type == 'approved' %}type-transfer
+                                        {% elif log.action_type == 'rejected' %}type-pending
+                                        {% elif log.action_type == 'received' %}type-adjustment
+                                        {% elif log.action_type == 'quality_checked' %}type-purchase
+                                        {% elif log.action_type == 'refunded' %}type-transfer
+                                        {% elif log.action_type == 'trashed' %}type-pending
+                                        {% elif log.action_type == 'restored' %}type-other
+                                        {% else %}type-other
+                                        {% endif %}" style="font-size: 0.72rem;">
+                                        {{ log.action_type|upper }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="{% url 'return_detail' log.return_request.id %}" class="rma-link">
+                                        {{ log.return_request.rma_number }}
+                                    </a>
+                                </td>
+                                <td>
+                                    <span style="font-size: 0.88rem; color: var(--text-secondary);">{{ log.description|truncatewords:12 }}</span>
+                                </td>
+                                <td>
+                                    {% if log.user %}
+                                    <span style="font-size: 0.85rem; color: var(--text-secondary);">
+                                        <i class="fas fa-user" style="font-size: 0.7rem;"></i> {{ log.user.username }}
+                                    </span>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="date-text">
+                                        <span class="date-main" style="font-size: 0.82rem;">
+                                            {{ log.created_at|date:"M d, g:i A" }}
+                                        </span>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                {% if not recent_returns and not returned_products_summary %}
+                <div class="text-center py-5">
+                    <i class="fas fa-undo-alt fa-3x" style="color: #9ca3af; margin-bottom: 1rem;"></i>
+                    <p class="empty-text">No return records found</p>
+                    <a href="{% url 'return_create' %}" class="btn-action returns-action mt-3">
+                        <i class="fas fa-plus"></i> Create Return
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
     <!-- Category-wise Stock Distribution -->
     <div class="category-stock-section">
         <div class="chart-card">
@@ -2037,6 +2305,142 @@
 .type-refunded { background: rgba(5, 150, 105, 0.2); color: #059669; border-color: rgba(5, 150, 105, 0.5); }
 .type-exchanged { background: rgba(5, 150, 105, 0.2); color: #059669; border-color: rgba(5, 150, 105, 0.5); }
 .type-cancelled { background: rgba(31, 41, 55, 0.2); color: #1f2937; border-color: rgba(31, 41, 55, 0.5); }
+
+/* Returns Overview Section */
+.returns-overview-section {
+    margin-bottom: 2rem;
+}
+
+.returns-highlight {
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.15) !important;
+    border: 2px solid rgba(37, 99, 235, 0.2) !important;
+}
+
+.alert-returns {
+    border-bottom: 3px solid #2563eb;
+    background: linear-gradient(to right, rgba(37, 99, 235, 0.08), transparent);
+}
+
+.returns-badge {
+    background: rgba(37, 99, 235, 0.2);
+    color: #2563eb;
+    border: 1px solid rgba(37, 99, 235, 0.4);
+}
+
+.btn-sm-returns {
+    background: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid rgba(37, 99, 235, 0.3);
+    transition: all 0.3s;
+}
+
+.btn-sm-returns:hover {
+    background: rgba(37, 99, 235, 0.25);
+    transform: translateY(-2px);
+    color: #1d4ed8;
+}
+
+.returns-stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0;
+    padding: 0;
+    border-bottom: 1px solid var(--dark-border);
+}
+
+.return-stat-item {
+    text-align: center;
+    padding: 1.25rem 0.75rem;
+    border-right: 1px solid var(--dark-border);
+    transition: background 0.2s;
+}
+
+.return-stat-item:last-child {
+    border-right: none;
+}
+
+.return-stat-item:hover {
+    background: rgba(37, 99, 235, 0.04);
+}
+
+.return-stat-highlight {
+    background: rgba(5, 150, 105, 0.04);
+}
+
+.return-stat-number {
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.return-stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.pending-color { color: #d97706; }
+.approved-color { color: #2563eb; }
+.received-color { color: #4338ca; }
+.inspecting-color { color: #6b7280; }
+.refunded-color { color: #059669; }
+.rejected-color { color: #dc2626; }
+.refund-amount-color { color: #059669; font-size: 1.4rem !important; }
+.restocked-color { color: #059669; }
+
+.returns-type-bar {
+    display: flex;
+    gap: 2rem;
+    padding: 0.85rem 1.5rem;
+    background: rgba(37, 99, 235, 0.03);
+    border-bottom: 1px solid var(--dark-border);
+}
+
+.return-type-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+}
+
+.return-type-item i {
+    color: #2563eb;
+    font-size: 0.85rem;
+}
+
+.return-icon-bg {
+    background: rgba(37, 99, 235, 0.1) !important;
+    color: #2563eb !important;
+}
+
+.return-qty-badge {
+    background: rgba(37, 99, 235, 0.2) !important;
+    color: #2563eb !important;
+    border: 1px solid rgba(37, 99, 235, 0.4) !important;
+}
+
+.btn-action.returns-action {
+    background: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
+    border-color: rgba(37, 99, 235, 0.3);
+}
+
+.btn-action.returns-action:hover {
+    background: rgba(37, 99, 235, 0.3);
+    border-color: #2563eb;
+}
 
 /* ── Filter Pills ─────────────────────────────────── */
 .filter-pill-group {
