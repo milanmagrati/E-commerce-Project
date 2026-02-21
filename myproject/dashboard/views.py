@@ -6,16 +6,17 @@ from django.views.decorators.http import require_POST, require_http_methods
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib import messages
-from django.db.models import Sum, Count, Q, F, Prefetch, Min
+from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse, HttpResponse, Http404
 from django.core.paginator import Paginator
 from datetime import datetime, timedelta
 import pytz
 import requests
-from .models import (Product, Order, OrderItem, Category, Customer, 
+from .models import (Product, Order, OrderItem, Category, Customer,
                      ProductVariation, ProductImage, ProductVariantOption,
-                     OrderActivityLog, StockIn, City, StockInItem, Setup)
+                     OrderActivityLog, StockIn, City, StockInItem, Setup,
+                     Supplier, Purchase, PurchaseItem, SupplierPayment)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -32,7 +33,7 @@ from django.core.files.storage import default_storage
 from django.core.files.base import File
 from django.conf import settings
 from django.utils.text import slugify
-from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem
+from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem, StaffTarget
 
 # IMPORT DECORATORS
 from accounts.decorators import permission_required, admin_only
@@ -5674,12 +5675,14 @@ def inventory_dashboard(request):
                 'order', 'customer'
             ).order_by('-created_at')[:20]
 
-            # Returned products summary - aggregated by product
+            # Returned products summary - aggregated by product + variation
             returned_products_summary = ReturnItem.objects.filter(
                 return_request__is_deleted=False,
                 return_request__created_by=request.user,
             ).values(
                 'product__id', 'product__name', 'product_sku',
+                'product_variation__id', 'product_variation__variation_name',
+                'product_variation__sku',
             ).annotate(
                 total_return_qty=Sum('return_quantity'),
                 total_good_qty=Sum('good_qty'),
@@ -11078,8 +11081,9 @@ def staff_performance_analytics(request):
         staff_delivered = staff_orders.filter(
             Q(status='delivered') | Q(order_status='delivered')
         ).count()
-        staff_returns = return_requests.filter(order__created_by=staff).count()
-        
+        staff_return_qs = return_requests.filter(order__created_by=staff)
+        staff_returns = staff_return_qs.count()
+
         # Use aggregation for revenue instead of loop
         staff_revenue_result = staff_orders.aggregate(Sum('total_amount'))
         staff_revenue = safe_decimal(
@@ -11087,9 +11091,34 @@ def staff_performance_analytics(request):
             max_digits=12,  # Allow aggregated sums to exceed single order limit
             decimal_places=2
         )
-        
+
         staff_success_rate = (staff_delivered / staff_orders.count() * 100) if staff_orders.count() > 0 else 0
-        
+
+        # Return status breakdown per staff
+        staff_return_statuses = staff_return_qs.values('return_status').annotate(
+            count=Count('id')
+        )
+        staff_return_status_map = {item['return_status']: item['count'] for item in staff_return_statuses}
+
+        # Return reason breakdown per staff
+        staff_return_reasons = staff_return_qs.exclude(return_reason='').values('return_reason').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Total refund amount per staff
+        staff_refund_result = staff_return_qs.aggregate(
+            total_refund=Sum('refund_amount'),
+            total_return_amount=Sum('total_amount')
+        )
+        staff_total_refund = safe_decimal(
+            staff_refund_result.get('total_refund') or 0,
+            max_digits=12, decimal_places=2
+        )
+        staff_total_return_amount = safe_decimal(
+            staff_refund_result.get('total_return_amount') or 0,
+            max_digits=12, decimal_places=2
+        )
+
         staff_performance_data.append({
             'id': staff.id,
             'name': staff.get_full_name() or staff.username,
@@ -11099,6 +11128,15 @@ def staff_performance_analytics(request):
             'return_count': staff_returns,
             'revenue': staff_revenue,
             'success_rate': round(staff_success_rate, 2),
+            'return_pending': staff_return_status_map.get('pending', 0),
+            'return_approved': staff_return_status_map.get('approved', 0),
+            'return_refunded': staff_return_status_map.get('refunded', 0),
+            'return_rejected': staff_return_status_map.get('rejected', 0),
+            'return_received': staff_return_status_map.get('received', 0),
+            'return_inspecting': staff_return_status_map.get('inspecting', 0),
+            'total_refund': staff_total_refund,
+            'total_return_amount': staff_total_return_amount,
+            'return_reasons': list(staff_return_reasons),
         })
     
     # Sort by success rate descending (only when showing all staff)
@@ -11289,7 +11327,49 @@ def staff_performance_analytics(request):
     
     # Ensure status_breakdown has all keys for chart
     status_breakdown_json = json.dumps(status_breakdown)
-    
+
+    # ========== DETAILED RETURNS DATA ==========
+    # Recent return requests with items
+    recent_returns = return_requests.select_related(
+        'order', 'customer', 'created_by'
+    ).prefetch_related('items').order_by('-created_at')[:20]
+
+    # Return stats summary
+    return_stats = {
+        'total': returns_count,
+        'pending': return_requests.filter(return_status='pending').count(),
+        'approved': return_requests.filter(return_status='approved').count(),
+        'received': return_requests.filter(return_status='received').count(),
+        'inspecting': return_requests.filter(return_status='inspecting').count(),
+        'refunded': return_requests.filter(return_status='refunded').count(),
+        'rejected': return_requests.filter(return_status='rejected').count(),
+        'total_refund': safe_decimal(
+            return_requests.aggregate(Sum('refund_amount')).get('refund_amount__sum') or 0,
+            max_digits=12, decimal_places=2
+        ),
+    }
+
+    # Returned products summary (aggregated across all returns in period)
+    returned_products_summary = ReturnItem.objects.filter(
+        return_request__in=return_requests
+    ).values(
+        'product__name', 'product_sku',
+        'product_variation__id', 'product_variation__variation_name'
+    ).annotate(
+        total_return_qty=Sum('return_quantity'),
+        total_good_qty=Sum('good_qty'),
+        total_damaged_qty=Sum('damaged_qty'),
+        total_refund=Sum('refund_amount'),
+        return_count=Count('return_request', distinct=True)
+    ).order_by('-total_return_qty')
+
+    # Return reason breakdown (overall)
+    return_reason_breakdown = return_requests.exclude(
+        return_reason=''
+    ).values('return_reason').annotate(
+        count=Count('id')
+    ).order_by('-count')
+
     # ========== CONTEXT ==========
     context = {
         'total_orders': total_orders,
@@ -11308,7 +11388,982 @@ def staff_performance_analytics(request):
         'selected_staff': staff_filter,
         'date_range': date_range_text,
         'status_breakdown': status_breakdown_json,
+        'recent_returns': recent_returns,
+        'return_stats': return_stats,
+        'returned_products_summary': returned_products_summary,
+        'return_reason_breakdown': return_reason_breakdown,
     }
     
     return render(request, 'staff_performance.html', context)
 
+
+# ==================== PRODUCT SALES REPORT ====================
+@login_required
+@permission_required('can_view_sales_reports')
+def product_sales_report(request):
+    """Product-level sales analytics with staff ranking and trend charts"""
+    from django.db.models.functions import TruncDate, Coalesce
+    from django.db.models import Avg
+
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
+    selected_product_id = request.GET.get('product_id', '')
+    selected_variation_id = request.GET.get('variation_id', '')
+    from_date_str = request.GET.get('from_date', '')
+    to_date_str = request.GET.get('to_date', '')
+
+    now = timezone.now()
+
+    # Parse date range (default: last 30 days)
+    try:
+        from_date = timezone.make_aware(datetime.strptime(from_date_str, '%Y-%m-%d')) if from_date_str else now - timedelta(days=30)
+    except ValueError:
+        from_date = now - timedelta(days=30)
+
+    try:
+        to_date = timezone.make_aware(datetime.strptime(to_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)) if to_date_str else now
+    except ValueError:
+        to_date = now
+
+    selected_product = None
+    selected_variation = None
+    summary = {}
+    staff_ranking = []
+    chart_labels = []
+    chart_qty_data = []
+    chart_revenue_data = []
+    staff_chart_labels = []
+    staff_chart_data = []
+    status_chart_labels = []
+    status_chart_data = []
+    variations = []
+    variant_breakdown = []
+    variant_chart_labels = []
+    variant_chart_data = []
+    is_variable = False
+
+    if selected_product_id:
+        try:
+            selected_product = Product.objects.get(id=selected_product_id, is_deleted=False)
+        except Product.DoesNotExist:
+            selected_product = None
+
+    if selected_product:
+        is_variable = selected_product.product_type == 'variable'
+
+        # Load variations for variable products
+        if is_variable:
+            variations = list(selected_product.variations.all().order_by('variation_name'))
+
+            # Check if a specific variation is selected
+            if selected_variation_id:
+                try:
+                    selected_variation = ProductVariation.objects.get(
+                        id=selected_variation_id, product=selected_product
+                    )
+                except ProductVariation.DoesNotExist:
+                    selected_variation = None
+
+        # Base queryset: order items for this product in date range
+        items_qs = OrderItem.objects.filter(
+            product=selected_product,
+            order__is_deleted=False,
+            order__created_at__gte=from_date,
+            order__created_at__lte=to_date,
+        )
+
+        # If a specific variation is selected, filter further
+        if selected_variation:
+            items_qs = items_qs.filter(product_variation=selected_variation)
+
+        # -- Summary card --
+        agg = items_qs.aggregate(
+            total_qty=Coalesce(Sum('quantity'), 0),
+            total_revenue=Coalesce(Sum('total'), Decimal('0')),
+            avg_price=Coalesce(Avg('price'), Decimal('0')),
+        )
+
+        # Stock: for variable products sum all variation stocks, for simple use product stock
+        if is_variable:
+            if selected_variation:
+                current_stock = selected_variation.stock
+            else:
+                current_stock = sum(v.stock for v in variations)
+        else:
+            current_stock = selected_product.stock
+
+        summary = {
+            'total_qty': agg['total_qty'],
+            'total_revenue': agg['total_revenue'],
+            'avg_price': round(agg['avg_price'], 2),
+            'current_stock': current_stock,
+        }
+
+        # -- Variant breakdown (only for variable products, when no specific variant selected) --
+        if is_variable and not selected_variation:
+            variant_data = (
+                items_qs
+                .values('product_variation__id', 'product_variation__variation_name')
+                .annotate(
+                    units_sold=Sum('quantity'),
+                    revenue=Sum('total'),
+                    avg_price_val=Coalesce(Avg('price'), Decimal('0')),
+                )
+                .order_by('-units_sold')
+            )
+            for row in variant_data:
+                vname = row['product_variation__variation_name'] or 'No Variant'
+                # Find the variation object to get current stock
+                v_stock = 0
+                for v in variations:
+                    if v.id == row['product_variation__id']:
+                        v_stock = v.stock
+                        break
+                variant_breakdown.append({
+                    'name': vname,
+                    'units_sold': row['units_sold'],
+                    'revenue': row['revenue'],
+                    'avg_price': round(row['avg_price_val'], 2),
+                    'stock': v_stock,
+                })
+                variant_chart_labels.append(vname)
+                variant_chart_data.append(row['units_sold'])
+
+        # -- Staff ranking --
+        staff_data = (
+            items_qs
+            .values('order__created_by__id', 'order__created_by__first_name', 'order__created_by__last_name', 'order__created_by__username')
+            .annotate(
+                units_sold=Sum('quantity'),
+                revenue=Sum('total'),
+                last_sale=Max('order__created_at'),
+            )
+            .order_by('-units_sold')
+        )
+        for rank, row in enumerate(staff_data, start=1):
+            first = row['order__created_by__first_name'] or ''
+            last = row['order__created_by__last_name'] or ''
+            name = f"{first} {last}".strip() or row['order__created_by__username'] or 'Unknown'
+            staff_ranking.append({
+                'rank': rank,
+                'name': name,
+                'units_sold': row['units_sold'],
+                'revenue': row['revenue'],
+                'last_sale': row['last_sale'],
+            })
+            staff_chart_labels.append(name)
+            staff_chart_data.append(row['units_sold'])
+
+        # -- Chart data (daily) --
+        daily = (
+            items_qs
+            .annotate(day=TruncDate('order__created_at'))
+            .values('day')
+            .annotate(qty=Sum('quantity'), rev=Sum('total'))
+            .order_by('day')
+        )
+        for entry in daily:
+            chart_labels.append(entry['day'].strftime('%b %d'))
+            chart_qty_data.append(int(entry['qty'] or 0))
+            chart_revenue_data.append(float(entry['rev'] or 0))
+
+        # -- Order status breakdown for this product --
+        status_data = (
+            items_qs
+            .values('order__order_status')
+            .annotate(count=Count('order__id', distinct=True))
+            .order_by('-count')
+        )
+        for row in status_data:
+            label = (row['order__order_status'] or 'unknown').replace('_', ' ').title()
+            status_chart_labels.append(label)
+            status_chart_data.append(row['count'])
+
+    # JSON for AJAX
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'summary': summary,
+            'staff_ranking': staff_ranking,
+            'chart_labels': chart_labels,
+            'chart_qty_data': chart_qty_data,
+            'chart_revenue_data': chart_revenue_data,
+            'staff_chart_labels': staff_chart_labels,
+            'staff_chart_data': staff_chart_data,
+            'status_chart_labels': status_chart_labels,
+            'status_chart_data': status_chart_data,
+            'variant_breakdown': variant_breakdown,
+            'variant_chart_labels': variant_chart_labels,
+            'variant_chart_data': variant_chart_data,
+            'is_variable': is_variable,
+        }, safe=False)
+
+    # Determine active quick filter
+    active_filter = ''
+    if from_date_str and to_date_str:
+        today_str = now.strftime('%Y-%m-%d')
+        day_of_week = now.weekday()
+        week_start = (now - timedelta(days=day_of_week)).strftime('%Y-%m-%d')
+        month_start = now.replace(day=1).strftime('%Y-%m-%d')
+        if from_date_str == today_str and to_date_str == today_str:
+            active_filter = 'today'
+        elif from_date_str == week_start and to_date_str == today_str:
+            active_filter = 'week'
+        elif from_date_str == month_start and to_date_str == today_str:
+            active_filter = 'month'
+
+    context = {
+        'products': products,
+        'selected_product': selected_product,
+        'selected_product_id': selected_product_id,
+        'selected_variation': selected_variation,
+        'selected_variation_id': selected_variation_id,
+        'from_date': from_date.strftime('%Y-%m-%d'),
+        'to_date': to_date.strftime('%Y-%m-%d'),
+        'summary': summary,
+        'staff_ranking': staff_ranking,
+        'chart_labels': json.dumps(chart_labels),
+        'chart_qty_data': json.dumps(chart_qty_data),
+        'chart_revenue_data': json.dumps(chart_revenue_data),
+        'staff_chart_labels': json.dumps(staff_chart_labels),
+        'staff_chart_data': json.dumps(staff_chart_data),
+        'status_chart_labels': json.dumps(status_chart_labels),
+        'status_chart_data': json.dumps(status_chart_data),
+        'is_variable': is_variable,
+        'variations': variations,
+        'variant_breakdown': variant_breakdown,
+        'variant_chart_labels': json.dumps(variant_chart_labels),
+        'variant_chart_data': json.dumps(variant_chart_data),
+        'active_filter': active_filter,
+    }
+    return render(request, 'product_sales_report.html', context)
+
+
+# ==================== PURCHASE MANAGEMENT VIEWS ====================
+
+@login_required
+def purchase_dashboard(request):
+    """Purchase Management Dashboard"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "You don't have permission to access Purchase Management.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    today = timezone.now().date()
+    first_day_of_month = today.replace(day=1)
+
+    # Summary cards
+    today_purchases = Purchase.objects.filter(purchase_date=today).aggregate(
+        total=Sum('total_amount'))['total'] or Decimal('0')
+    month_purchases = Purchase.objects.filter(purchase_date__gte=first_day_of_month).aggregate(
+        total=Sum('total_amount'))['total'] or Decimal('0')
+    total_paid = SupplierPayment.objects.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    total_purchase_amount = Purchase.objects.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    total_opening = Supplier.objects.aggregate(total=Sum('opening_balance'))['total'] or Decimal('0')
+    total_remaining = total_opening + total_purchase_amount - total_paid
+
+    # Supplier-wise outstanding
+    suppliers = Supplier.objects.filter(is_active=True).annotate(
+        total_purchase=Sum('purchases__total_amount'),
+        paid=Sum('payments__amount'),
+    )
+    supplier_outstanding = []
+    for s in suppliers:
+        tp = (s.total_purchase or Decimal('0'))
+        p = (s.paid or Decimal('0'))
+        remaining = s.opening_balance + tp - p
+        supplier_outstanding.append({
+            'id': s.id,
+            'name': s.name,
+            'total_purchase': tp,
+            'paid': p,
+            'remaining': remaining,
+        })
+
+    # Low stock alerts
+    low_stock_products = Product.objects.filter(
+        is_deleted=False,
+        is_active=True,
+        low_stock_threshold__gt=0,
+        stock__lte=F('low_stock_threshold'),
+    ).order_by('stock')[:10]
+
+    # Recent purchases
+    recent_purchases = Purchase.objects.select_related('supplier', 'created_by').order_by('-purchase_date', '-created_at')[:15]
+
+    context = {
+        'today_purchases': today_purchases,
+        'month_purchases': month_purchases,
+        'total_paid': total_paid,
+        'total_remaining': total_remaining,
+        'supplier_outstanding': supplier_outstanding,
+        'low_stock_products': low_stock_products,
+        'recent_purchases': recent_purchases,
+    }
+    return render(request, 'purchase/purchase_dashboard.html', context)
+
+
+@login_required
+def supplier_list(request):
+    """List all suppliers"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    suppliers = Supplier.objects.filter(is_active=True).annotate(
+        total_purchase=Sum('purchases__total_amount'),
+        paid=Sum('payments__amount'),
+    )
+    return render(request, 'purchase/supplier_list.html', {'suppliers': suppliers})
+
+
+@login_required
+def supplier_add(request):
+    """Add a new supplier"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        phone = request.POST.get('phone', '').strip()
+        address = request.POST.get('address', '').strip()
+        opening_balance = request.POST.get('opening_balance', '0').strip()
+
+        if not name:
+            messages.error(request, "Supplier name is required.")
+            return redirect('supplier_add')
+
+        try:
+            opening_balance = Decimal(opening_balance) if opening_balance else Decimal('0')
+        except (InvalidOperation, ValueError):
+            opening_balance = Decimal('0')
+
+        Supplier.objects.create(
+            name=name,
+            phone=phone,
+            address=address,
+            opening_balance=opening_balance,
+        )
+        messages.success(request, f"Supplier '{name}' added successfully.")
+        return redirect('supplier_list')
+
+    return render(request, 'purchase/supplier_form.html', {'action': 'Add'})
+
+
+@login_required
+def supplier_edit(request, supplier_id):
+    """Edit supplier"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    supplier = get_object_or_404(Supplier, id=supplier_id)
+
+    if request.method == 'POST':
+        supplier.name = request.POST.get('name', '').strip()
+        supplier.phone = request.POST.get('phone', '').strip()
+        supplier.address = request.POST.get('address', '').strip()
+        try:
+            supplier.opening_balance = Decimal(request.POST.get('opening_balance', '0').strip())
+        except (InvalidOperation, ValueError):
+            pass
+        supplier.save()
+        messages.success(request, f"Supplier '{supplier.name}' updated.")
+        return redirect('supplier_detail', supplier_id=supplier.id)
+
+    return render(request, 'purchase/supplier_form.html', {'action': 'Edit', 'supplier': supplier})
+
+
+@login_required
+def supplier_detail(request, supplier_id):
+    """Supplier detail page with purchases, products, payments, and ledger"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    supplier = get_object_or_404(Supplier, id=supplier_id)
+    today = timezone.now().date()
+
+    # Purchase invoices
+    purchases = Purchase.objects.filter(supplier=supplier).order_by('-purchase_date')
+    purchase_data = []
+    for p in purchases:
+        paid = p.get_total_paid()
+        remaining = p.total_amount - paid
+        purchase_data.append({
+            'id': p.id,
+            'invoice_number': p.invoice_number,
+            'purchase_date': p.purchase_date,
+            'total_amount': p.total_amount,
+            'paid': paid,
+            'remaining': remaining,
+            'payment_status': p.payment_status,
+            'items': p.purchase_items.select_related('product').all(),
+        })
+
+    # Products supplied
+    products_supplied = PurchaseItem.objects.filter(
+        purchase__supplier=supplier
+    ).values('product__id', 'product__name').annotate(
+        total_qty=Sum('quantity'),
+        avg_rate=Avg('rate'),
+        last_purchase=Max('purchase__purchase_date'),
+    ).order_by('product__name')
+
+    # Payment history
+    payments = SupplierPayment.objects.filter(supplier=supplier).select_related('purchase').order_by('-payment_date')
+
+    # Ledger (Tally-style)
+    ledger_entries = []
+    # Add opening balance
+    if supplier.opening_balance > 0:
+        ledger_entries.append({
+            'date': supplier.created_at.date() if supplier.created_at else today,
+            'description': 'Opening Balance',
+            'debit': supplier.opening_balance,
+            'credit': Decimal('0'),
+            'sort_key': (supplier.created_at.date() if supplier.created_at else today, 0),
+        })
+
+    for p in purchases:
+        ledger_entries.append({
+            'date': p.purchase_date,
+            'description': f'Purchase - {p.invoice_number}',
+            'debit': p.total_amount,
+            'credit': Decimal('0'),
+            'sort_key': (p.purchase_date, 1),
+        })
+
+    for pay in payments:
+        desc = f'Payment - {pay.reference_no}' if pay.reference_no else 'Payment'
+        if pay.purchase:
+            desc += f' (Inv: {pay.purchase.invoice_number})'
+        ledger_entries.append({
+            'date': pay.payment_date,
+            'description': desc,
+            'debit': Decimal('0'),
+            'credit': pay.amount,
+            'sort_key': (pay.payment_date, 2),
+        })
+
+    ledger_entries.sort(key=lambda x: x['sort_key'])
+
+    # Calculate running balance
+    running_balance = Decimal('0')
+    for entry in ledger_entries:
+        running_balance += entry['debit'] - entry['credit']
+        entry['balance'] = running_balance
+
+    outstanding = supplier.get_outstanding()
+
+    context = {
+        'supplier': supplier,
+        'purchase_data': purchase_data,
+        'products_supplied': products_supplied,
+        'payments': payments,
+        'ledger_entries': ledger_entries,
+        'outstanding': outstanding,
+    }
+    return render(request, 'purchase/supplier_detail.html', context)
+
+
+@login_required
+def purchase_create(request):
+    """Create a new purchase with items"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        supplier_id = request.POST.get('supplier')
+        purchase_date = request.POST.get('purchase_date', '')
+        invoice_number = request.POST.get('invoice_number', '').strip()
+        payment_method = request.POST.get('payment_method', '').strip()
+        notes = request.POST.get('notes', '').strip()
+
+        if not supplier_id or not invoice_number:
+            messages.error(request, "Supplier and Invoice Number are required.")
+            return redirect('purchase_create')
+
+        # Check duplicate invoice
+        if Purchase.objects.filter(invoice_number=invoice_number).exists():
+            messages.error(request, f"Invoice number '{invoice_number}' already exists.")
+            return redirect('purchase_create')
+
+        supplier = get_object_or_404(Supplier, id=supplier_id)
+
+        try:
+            p_date = datetime.strptime(purchase_date, '%Y-%m-%d').date() if purchase_date else timezone.now().date()
+        except ValueError:
+            p_date = timezone.now().date()
+
+        with transaction.atomic():
+            purchase = Purchase.objects.create(
+                supplier=supplier,
+                purchase_date=p_date,
+                invoice_number=invoice_number,
+                payment_method=payment_method,
+                notes=notes,
+                created_by=request.user,
+            )
+
+            # Process items
+            product_ids = request.POST.getlist('product_id[]')
+            quantities = request.POST.getlist('quantity[]')
+            rates = request.POST.getlist('rate[]')
+
+            total_amount = Decimal('0')
+            for i in range(len(product_ids)):
+                if not product_ids[i]:
+                    continue
+                try:
+                    product = Product.objects.get(id=product_ids[i])
+                    qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 1
+                    rate = Decimal(rates[i]) if i < len(rates) and rates[i] else Decimal('0')
+                    item = PurchaseItem.objects.create(
+                        purchase=purchase,
+                        product=product,
+                        quantity=qty,
+                        rate=rate,
+                    )
+                    total_amount += item.total
+
+                    # Update product stock
+                    product.stock += qty
+                    if product.stock > 0:
+                        product.stock_status = 'in_stock'
+                    product.save(update_fields=['stock', 'stock_status'])
+                except (Product.DoesNotExist, ValueError, InvalidOperation):
+                    continue
+
+            purchase.total_amount = total_amount
+            purchase.save(update_fields=['total_amount'])
+
+            # Handle payment if provided
+            payment_amount = request.POST.get('payment_amount', '').strip()
+            if payment_amount:
+                try:
+                    pay_amount = Decimal(payment_amount)
+                    if pay_amount > 0:
+                        SupplierPayment.objects.create(
+                            supplier=supplier,
+                            purchase=purchase,
+                            amount=pay_amount,
+                            payment_date=p_date,
+                            payment_method=payment_method,
+                            created_by=request.user,
+                        )
+                except (InvalidOperation, ValueError):
+                    pass
+
+        messages.success(request, f"Purchase {invoice_number} created successfully.")
+        return redirect('purchase_dashboard')
+
+    suppliers = Supplier.objects.filter(is_active=True)
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    context = {
+        'suppliers': suppliers,
+        'products': products,
+    }
+    return render(request, 'purchase/purchase_form.html', context)
+
+
+@login_required
+def purchase_detail(request, purchase_id):
+    """View purchase details"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    purchase = get_object_or_404(Purchase, id=purchase_id)
+    items = purchase.purchase_items.select_related('product').all()
+    payments = purchase.payments.all()
+    paid = purchase.get_total_paid()
+    remaining = purchase.total_amount - paid
+
+    context = {
+        'purchase': purchase,
+        'items': items,
+        'payments': payments,
+        'paid': paid,
+        'remaining': remaining,
+    }
+    return render(request, 'purchase/purchase_detail.html', context)
+
+
+@login_required
+def supplier_payment_add(request):
+    """Record a payment to supplier"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        supplier_id = request.POST.get('supplier')
+        purchase_id = request.POST.get('purchase', '')
+        amount = request.POST.get('amount', '').strip()
+        payment_date = request.POST.get('payment_date', '')
+        payment_method = request.POST.get('payment_method', '').strip()
+        reference_no = request.POST.get('reference_no', '').strip()
+        notes = request.POST.get('notes', '').strip()
+
+        if not supplier_id or not amount:
+            messages.error(request, "Supplier and amount are required.")
+            return redirect('supplier_payment_add')
+
+        supplier = get_object_or_404(Supplier, id=supplier_id)
+
+        try:
+            pay_amount = Decimal(amount)
+        except (InvalidOperation, ValueError):
+            messages.error(request, "Invalid amount.")
+            return redirect('supplier_payment_add')
+
+        try:
+            p_date = datetime.strptime(payment_date, '%Y-%m-%d').date() if payment_date else timezone.now().date()
+        except ValueError:
+            p_date = timezone.now().date()
+
+        purchase = None
+        if purchase_id:
+            try:
+                purchase = Purchase.objects.get(id=purchase_id)
+            except Purchase.DoesNotExist:
+                pass
+
+        SupplierPayment.objects.create(
+            supplier=supplier,
+            purchase=purchase,
+            amount=pay_amount,
+            payment_date=p_date,
+            payment_method=payment_method,
+            reference_no=reference_no,
+            notes=notes,
+            created_by=request.user,
+        )
+        messages.success(request, f"Payment of Rs.{pay_amount} recorded for {supplier.name}.")
+        return redirect('supplier_detail', supplier_id=supplier.id)
+
+    suppliers = Supplier.objects.filter(is_active=True)
+    # Pre-select supplier if provided via query param
+    selected_supplier = request.GET.get('supplier', '')
+    purchases = []
+    if selected_supplier:
+        purchases = Purchase.objects.filter(supplier_id=selected_supplier).order_by('-purchase_date')
+
+    context = {
+        'suppliers': suppliers,
+        'selected_supplier': selected_supplier,
+        'purchases': purchases,
+    }
+    return render(request, 'purchase/payment_form.html', context)
+
+
+@login_required
+def product_purchase_history(request, product_id):
+    """Product purchase history page"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    product = get_object_or_404(Product, id=product_id)
+
+    # Total purchased
+    purchase_data = PurchaseItem.objects.filter(product=product).aggregate(
+        total_qty=Sum('quantity'),
+        avg_rate=Avg('rate'),
+    )
+    total_purchased = purchase_data['total_qty'] or 0
+    avg_purchase_rate = purchase_data['avg_rate'] or Decimal('0')
+
+    # Total sold
+    total_sold = OrderItem.objects.filter(
+        product=product,
+        order__is_deleted=False,
+    ).aggregate(total=Sum('quantity'))['total'] or 0
+
+    current_stock = product.stock
+
+    # Purchase history table
+    purchase_items = PurchaseItem.objects.filter(product=product).select_related(
+        'purchase', 'purchase__supplier'
+    ).order_by('-purchase__purchase_date')
+
+    # Supplier comparison
+    supplier_comparison = PurchaseItem.objects.filter(product=product).values(
+        'purchase__supplier__id', 'purchase__supplier__name'
+    ).annotate(
+        total_qty=Sum('quantity'),
+        avg_rate=Avg('rate'),
+    ).order_by('avg_rate')
+
+    context = {
+        'product': product,
+        'total_purchased': total_purchased,
+        'total_sold': total_sold,
+        'current_stock': current_stock,
+        'avg_purchase_rate': avg_purchase_rate,
+        'purchase_items': purchase_items,
+        'supplier_comparison': supplier_comparison,
+    }
+    return render(request, 'purchase/product_purchase_history.html', context)
+
+
+@login_required
+def api_supplier_purchases(request, supplier_id):
+    """API to get purchases for a supplier (used in payment form dropdown)"""
+    purchases = Purchase.objects.filter(supplier_id=supplier_id).order_by('-purchase_date')
+    data = [{'id': p.id, 'invoice_number': p.invoice_number, 'total': str(p.total_amount),
+             'remaining': str(p.get_remaining())} for p in purchases]
+    return JsonResponse({'purchases': data})
+
+
+# ==================== STAFF TARGET VIEWS ====================
+
+@login_required(login_url='login')
+def manage_targets(request):
+    """Admin/Manager view: list all staff targets with filters"""
+    user = request.user
+    if not (user.is_superuser or user.role == 'administrator'):
+        messages.warning(request, 'You do not have permission to manage targets. Redirected to your targets.')
+        return redirect('my_targets')
+
+    # Filters
+    staff_filter = request.GET.get('staff', '')
+    type_filter = request.GET.get('target_type', '')
+    period_filter = request.GET.get('period', '')
+
+    targets = StaffTarget.objects.select_related('staff', 'set_by').all()
+
+    if staff_filter:
+        targets = targets.filter(staff_id=staff_filter)
+    if type_filter:
+        targets = targets.filter(target_type=type_filter)
+    if period_filter:
+        targets = targets.filter(period=period_filter)
+
+    today = timezone.now().date()
+
+    # Calculate achievement for each target
+    targets_data = []
+    for target in targets:
+        achieved = _calculate_achievement(target)
+        remaining = max(float(target.target_value) - achieved, 0)
+        pct = (achieved / float(target.target_value) * 100) if float(target.target_value) > 0 else 0
+        pct = min(pct, 100)
+
+        if target.end_date < today:
+            status = 'met' if pct >= 100 else 'not_met'
+        else:
+            status = 'in_progress'
+
+        targets_data.append({
+            'target': target,
+            'achieved': round(achieved, 2),
+            'remaining': round(remaining, 2),
+            'percentage': round(pct, 1),
+            'status': status,
+        })
+
+    staff_members = User.objects.filter(is_active=True, is_deleted=False, role__in=['sales', 'warehouse']).order_by('first_name')
+
+    # KPI counts
+    kpi = {
+        'total': len(targets_data),
+        'met': sum(1 for t in targets_data if t['status'] == 'met'),
+        'in_progress': sum(1 for t in targets_data if t['status'] == 'in_progress'),
+        'not_met': sum(1 for t in targets_data if t['status'] == 'not_met'),
+    }
+
+    context = {
+        'targets_data': targets_data,
+        'staff_members': staff_members,
+        'staff_filter': staff_filter,
+        'type_filter': type_filter,
+        'period_filter': period_filter,
+        'is_admin_view': True,
+        'kpi': kpi,
+    }
+    return render(request, 'staff_targets.html', context)
+
+
+@login_required(login_url='login')
+def my_targets(request):
+    """Staff view: see only their own targets"""
+    user = request.user
+    today = timezone.now().date()
+
+    targets = StaffTarget.objects.filter(staff=user).order_by('-start_date')
+
+    targets_data = []
+    for target in targets:
+        achieved = _calculate_achievement(target)
+        remaining = max(float(target.target_value) - achieved, 0)
+        pct = (achieved / float(target.target_value) * 100) if float(target.target_value) > 0 else 0
+        pct = min(pct, 100)
+
+        if target.end_date < today:
+            status = 'met' if pct >= 100 else 'not_met'
+        else:
+            status = 'in_progress'
+
+        targets_data.append({
+            'target': target,
+            'achieved': round(achieved, 2),
+            'remaining': round(remaining, 2),
+            'percentage': round(pct, 1),
+            'status': status,
+        })
+
+    # KPI counts
+    kpi = {
+        'total': len(targets_data),
+        'met': sum(1 for t in targets_data if t['status'] == 'met'),
+        'in_progress': sum(1 for t in targets_data if t['status'] == 'in_progress'),
+        'not_met': sum(1 for t in targets_data if t['status'] == 'not_met'),
+    }
+
+    context = {
+        'targets_data': targets_data,
+        'is_admin_view': False,
+        'kpi': kpi,
+    }
+    return render(request, 'staff_targets.html', context)
+
+
+@login_required(login_url='login')
+@require_http_methods(["POST"])
+def set_target(request):
+    """Admin action: create a new target"""
+    user = request.user
+    if not (user.is_superuser or user.role == 'administrator'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    try:
+        staff_id = request.POST.get('staff_id')
+        target_type = request.POST.get('target_type')
+        target_value = request.POST.get('target_value')
+        period = request.POST.get('period')
+        start_date = request.POST.get('start_date')
+        end_date = request.POST.get('end_date')
+        note = request.POST.get('note', '')
+
+        if not all([staff_id, target_type, target_value, period, start_date, end_date]):
+            messages.error(request, 'All required fields must be filled.')
+            return redirect('manage_targets')
+
+        staff = User.objects.get(id=staff_id, is_active=True, is_deleted=False)
+        StaffTarget.objects.create(
+            staff=staff,
+            target_type=target_type,
+            target_value=Decimal(target_value),
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+            set_by=user,
+            note=note,
+        )
+        messages.success(request, f'Target set for {staff.get_full_name() or staff.username}.')
+    except User.DoesNotExist:
+        messages.error(request, 'Invalid staff member.')
+    except Exception as e:
+        messages.error(request, f'Error setting target: {e}')
+
+    return redirect('manage_targets')
+
+
+@login_required(login_url='login')
+@require_http_methods(["POST"])
+def edit_target(request, target_id):
+    """Admin action: edit existing target"""
+    user = request.user
+    if not (user.is_superuser or user.role == 'administrator'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    target = get_object_or_404(StaffTarget, id=target_id)
+
+    try:
+        target.target_type = request.POST.get('target_type', target.target_type)
+        target.target_value = Decimal(request.POST.get('target_value', target.target_value))
+        target.period = request.POST.get('period', target.period)
+        target.start_date = request.POST.get('start_date', target.start_date)
+        target.end_date = request.POST.get('end_date', target.end_date)
+        target.note = request.POST.get('note', target.note)
+        target.save()
+        messages.success(request, 'Target updated successfully.')
+    except Exception as e:
+        messages.error(request, f'Error updating target: {e}')
+
+    return redirect('manage_targets')
+
+
+@login_required(login_url='login')
+@require_http_methods(["POST"])
+def delete_target(request, target_id):
+    """Admin action: delete a target"""
+    user = request.user
+    if not (user.is_superuser or user.role == 'administrator'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    target = get_object_or_404(StaffTarget, id=target_id)
+    staff_name = target.staff.get_full_name() or target.staff.username
+    target.delete()
+    messages.success(request, f'Target for {staff_name} deleted.')
+    return redirect('manage_targets')
+
+
+@login_required(login_url='login')
+def api_target_detail(request, target_id):
+    """API to get target details for edit modal"""
+    user = request.user
+    if not (user.is_superuser or user.role == 'administrator'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    target = get_object_or_404(StaffTarget, id=target_id)
+    return JsonResponse({
+        'id': target.id,
+        'staff_id': target.staff_id,
+        'staff_name': target.staff.get_full_name() or target.staff.username,
+        'target_type': target.target_type,
+        'target_value': str(target.target_value),
+        'period': target.period,
+        'start_date': target.start_date.strftime('%Y-%m-%d'),
+        'end_date': target.end_date.strftime('%Y-%m-%d'),
+        'note': target.note,
+    })
+
+
+def _calculate_achievement(target):
+    """Calculate achievement value for a target based on its type and period"""
+    start = target.start_date
+    end = target.end_date
+
+    if target.target_type == 'sales':
+        # Sum of total_amount from delivered/confirmed orders created by this staff in the period
+        result = Order.objects.filter(
+            created_by=target.staff,
+            created_at__date__gte=start,
+            created_at__date__lte=end,
+            is_deleted=False,
+        ).filter(
+            Q(order_status='delivered') | Q(status='delivered') |
+            Q(order_status='confirmed') | Q(status='confirmed') |
+            Q(order_status='shipped') | Q(status='shipped')
+        ).aggregate(total=Sum('total_amount'))
+        return float(result['total'] or 0)
+
+    elif target.target_type == 'warehouse':
+        # Count of dispatched/processed orders in the period
+        count = Order.objects.filter(
+            created_by=target.staff,
+            created_at__date__gte=start,
+            created_at__date__lte=end,
+            is_deleted=False,
+        ).filter(
+            Q(order_status='dispatched') | Q(status='dispatched') |
+            Q(order_status='shipped') | Q(status='shipped') |
+            Q(order_status='delivered') | Q(status='delivered') |
+            Q(order_status='packed') | Q(status='packed')
+        ).count()
+        return float(count)
+
+    return 0

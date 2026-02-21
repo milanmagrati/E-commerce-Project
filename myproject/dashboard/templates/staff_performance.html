@@ -400,6 +400,7 @@
         gap: 1.5rem;
         width: 100%;
         margin-bottom: 2rem;
+        align-items: start;
     }
 
     .sp-table-card {
@@ -429,6 +430,7 @@
     .sp-table {
         width: 100%;
         border-collapse: collapse;
+        table-layout: fixed;
     }
 
     .sp-table thead {
@@ -459,6 +461,8 @@
         padding: 1rem;
         font-size: 0.95rem;
         color: #333;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
     }
 
     .sp-rank-badge {
@@ -516,16 +520,21 @@
     .sp-staff-info {
         display: flex;
         align-items: center;
+        min-width: 0;
     }
 
     .sp-staff-details {
         display: flex;
         flex-direction: column;
+        min-width: 0;
     }
 
     .sp-staff-name {
         font-weight: 600;
         color: #1a1a1a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .sp-staff-role {
@@ -710,6 +719,262 @@
         font-size: 0.7rem;
         font-weight: 600;
     }
+
+    /* ========== RETURNS OVERVIEW ========== */
+    .sp-returns-stats-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 1rem;
+        padding: 1.5rem;
+        background: #f8f9fa;
+        border-bottom: 1px solid #e8e8e8;
+    }
+
+    .sp-return-stat-item {
+        text-align: center;
+        padding: 0.75rem 0.5rem;
+        border-radius: 8px;
+        transition: var(--sp-transition);
+    }
+
+    .sp-return-stat-item:hover {
+        background: white;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .sp-return-stat-number {
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .sp-return-stat-label {
+        font-size: 0.75rem;
+        color: #666;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 0.25rem;
+    }
+
+    .sp-pending-color { color: #f59e0b; }
+    .sp-approved-color { color: #10b981; }
+    .sp-received-color { color: #3b82f6; }
+    .sp-inspecting-color { color: #8b5cf6; }
+    .sp-refunded-color { color: #14b8a6; }
+    .sp-rejected-color { color: #ef4444; }
+    .sp-refund-amount-color { color: #059669; }
+
+    .sp-return-stat-highlight {
+        background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+        border-radius: 8px;
+    }
+
+    .sp-reason-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid #e8e8e8;
+    }
+
+    .sp-reason-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.85rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        background: #f0f0f0;
+        color: #555;
+    }
+
+    .sp-reason-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: #6366f1;
+        color: white;
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+
+    .sp-rma-link {
+        color: #6366f1;
+        font-weight: 600;
+        text-decoration: none;
+        transition: var(--sp-transition);
+    }
+
+    .sp-rma-link:hover {
+        color: #4f46e5;
+        text-decoration: underline;
+    }
+
+    .sp-status-badge {
+        display: inline-block;
+        padding: 0.3rem 0.65rem;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .sp-status-pending { background: #fef3c7; color: #92400e; }
+    .sp-status-approved { background: #d1fae5; color: #065f46; }
+    .sp-status-received { background: #dbeafe; color: #1e40af; }
+    .sp-status-inspecting { background: #ede9fe; color: #5b21b6; }
+    .sp-status-approved_refund { background: #ccfbf1; color: #0f766e; }
+    .sp-status-approved_exchange { background: #e0e7ff; color: #3730a3; }
+    .sp-status-refunded { background: #d1fae5; color: #065f46; }
+    .sp-status-exchanged { background: #dbeafe; color: #1e40af; }
+    .sp-status-rejected { background: #fee2e2; color: #991b1b; }
+    .sp-status-cancelled { background: #f3f4f6; color: #374151; }
+
+    .sp-reason-badge {
+        display: inline-block;
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.72rem;
+        font-weight: 500;
+        background: #f3f4f6;
+        color: #4b5563;
+    }
+
+    .sp-batch-badge {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .sp-batch-type { background: #ede9fe; color: #5b21b6; }
+    .sp-single-type { background: #e0e7ff; color: #3730a3; }
+
+    .sp-return-items-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .sp-return-item-line {
+        font-size: 0.85rem;
+        color: #555;
+    }
+
+    .sp-return-item-qty {
+        font-weight: 600;
+        color: #ef4444;
+    }
+
+    .sp-mini-badge {
+        display: inline-block;
+        padding: 0.2rem 0.45rem;
+        border-radius: 4px;
+        font-size: 0.68rem;
+        font-weight: 600;
+    }
+
+    .sp-mini-pending { background: #fef3c7; color: #92400e; }
+    .sp-mini-approved { background: #d1fae5; color: #065f46; }
+    .sp-mini-refunded { background: #ccfbf1; color: #0f766e; }
+    .sp-mini-rejected { background: #fee2e2; color: #991b1b; }
+
+    .sp-refund-text {
+        font-size: 0.85rem;
+        color: #059669;
+        font-weight: 600;
+    }
+
+    /* ========== RANKING TABLE COMPACT ========== */
+    .sp-ranking-table {
+        table-layout: fixed !important;
+        width: 100%;
+    }
+
+    .sp-ranking-table thead th {
+        padding: 0.9rem 1rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 0.8rem;
+    }
+
+    .sp-ranking-table tbody td {
+        padding: 0.9rem 1rem;
+        vertical-align: middle;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sp-ranking-table thead th.col-rank,
+    .sp-ranking-table tbody td.col-rank {
+        text-align: center;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+
+    .sp-ranking-table thead th.col-name,
+    .sp-ranking-table tbody td.col-name {
+        padding-left: 0.75rem;
+    }
+
+    .sp-ranking-table thead th.col-center,
+    .sp-ranking-table tbody td.col-center {
+        text-align: center;
+    }
+
+    .sp-ranking-table thead th.col-status,
+    .sp-ranking-table tbody td.col-status {
+        padding-left: 1.25rem;
+    }
+
+    .sp-ranking-table thead th.col-refund,
+    .sp-ranking-table tbody td.col-refund {
+        text-align: right;
+        padding-right: 1.25rem;
+    }
+
+    .sp-staff-return-breakdown {
+        display: flex;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .sp-ranking-table .sp-staff-avatar {
+        width: 32px;
+        height: 32px;
+        font-size: 0.85rem;
+        margin-right: 0.5rem;
+        flex-shrink: 0;
+    }
+
+    .sp-return-product-summary td {
+        vertical-align: middle;
+    }
+
+    .sp-qty-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 700;
+    }
+
+    .sp-qty-return { background: #fee2e2; color: #991b1b; }
+    .sp-qty-good { background: #d1fae5; color: #065f46; }
+    .sp-qty-damaged { background: #fef3c7; color: #92400e; }
 </style>
 
 <!-- Page Header with Filters -->
@@ -953,27 +1218,29 @@
                 <h3><i class="fas fa-trophy me-2"></i>Staff Performance Ranking</h3>
             </div>
             <div style="overflow-x: auto;">
-                <table class="sp-table">
+                <table class="sp-table sp-ranking-table">
                     <thead>
                         <tr>
-                            <th style="width: 8%;">Rank</th>
-                            <th style="width: 25%;">Staff Name</th>
-                            <th style="width: 20%;">Total Orders</th>
-                            <th style="width: 20%;">Success Rate</th>
-                            <th style="width: 27%;">Returns</th>
+                            <th class="col-rank" style="width: 6%;">Rank</th>
+                            <th class="col-name" style="width: 22%;">Staff Name</th>
+                            <th class="col-center" style="width: 10%;">Orders</th>
+                            <th class="col-center" style="width: 13%;">Success Rate</th>
+                            <th class="col-center" style="width: 9%;">Returns</th>
+                            <th class="col-status" style="width: 26%;">Return Status</th>
+                            <th class="col-refund" style="width: 14%;">Refund Amt</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for staff in staff_performance_data %}
                         <tr>
-                            <td>
+                            <td class="col-rank">
                                 {% if forloop.counter <= 3 %}
                                 <span class="sp-rank-badge sp-rank-{{ forloop.counter }}">{{ forloop.counter }}</span>
                                 {% else %}
                                 <span class="sp-rank-badge" style="background: #e5e7eb; color: #333;">{{ forloop.counter }}</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="col-name">
                                 <div class="sp-staff-info">
                                     <span class="sp-staff-avatar">{{ staff.name|first|upper }}</span>
                                     <div class="sp-staff-details">
@@ -982,21 +1249,42 @@
                                     </div>
                                 </div>
                             </td>
-                            <td><strong>{{ staff.total_orders }}</strong></td>
-                            <td>
+                            <td class="col-center"><strong>{{ staff.total_orders }}</strong></td>
+                            <td class="col-center">
                                 {% if staff.success_rate >= 90 %}
-                                <span class="sp-success-pill sp-success-high">✓ {{ staff.success_rate }}%</span>
+                                <span class="sp-success-pill sp-success-high">{{ staff.success_rate }}%</span>
                                 {% elif staff.success_rate >= 70 %}
-                                <span class="sp-success-pill sp-success-medium">⚠ {{ staff.success_rate }}%</span>
+                                <span class="sp-success-pill sp-success-medium">{{ staff.success_rate }}%</span>
                                 {% else %}
-                                <span class="sp-success-pill sp-success-low">✗ {{ staff.success_rate }}%</span>
+                                <span class="sp-success-pill sp-success-low">{{ staff.success_rate }}%</span>
                                 {% endif %}
                             </td>
-                            <td><span class="sp-badge sp-badge-returned">{{ staff.return_count }} Returns</span></td>
+                            <td class="col-center"><span class="sp-badge sp-badge-returned">{{ staff.return_count }}</span></td>
+                            <td class="col-status">
+                                {% if staff.return_count > 0 %}
+                                <div class="sp-staff-return-breakdown">
+                                    {% if staff.return_pending > 0 %}<span class="sp-mini-badge sp-mini-pending">Pending {{ staff.return_pending }}</span>{% endif %}
+                                    {% if staff.return_approved > 0 %}<span class="sp-mini-badge sp-mini-approved">Approved {{ staff.return_approved }}</span>{% endif %}
+                                    {% if staff.return_received > 0 %}<span class="sp-mini-badge" style="background:#dbeafe;color:#1e40af;">Received {{ staff.return_received }}</span>{% endif %}
+                                    {% if staff.return_inspecting > 0 %}<span class="sp-mini-badge" style="background:#ede9fe;color:#5b21b6;">Inspecting {{ staff.return_inspecting }}</span>{% endif %}
+                                    {% if staff.return_refunded > 0 %}<span class="sp-mini-badge sp-mini-refunded">Refunded {{ staff.return_refunded }}</span>{% endif %}
+                                    {% if staff.return_rejected > 0 %}<span class="sp-mini-badge sp-mini-rejected">Rejected {{ staff.return_rejected }}</span>{% endif %}
+                                </div>
+                                {% else %}
+                                <span style="color: #999; font-size: 0.85rem;">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="col-refund">
+                                {% if staff.total_refund > 0 %}
+                                <span class="sp-refund-text">Rs. {{ staff.total_refund|floatformat:2 }}</span>
+                                {% else %}
+                                <span style="color: #999; font-size: 0.85rem;">—</span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="5" class="sp-no-data">
+                            <td colspan="7" class="sp-no-data">
                                 <i class="fas fa-users-slash"></i>
                                 <div>No staff data available</div>
                             </td>
@@ -1010,18 +1298,20 @@
         <!-- Detailed Staff Metrics -->
         <div class="sp-table-card">
             <div class="sp-table-header">
-                <h3><i class="fas fa-user-chart me-2"></i>Detailed Staff Metrics</h3>
+                <h3><i class="fas fa-chart-bar me-2"></i>Detailed Staff Metrics</h3>
             </div>
             <div style="overflow-x: auto;">
                 <table class="sp-table">
                     <thead>
                         <tr>
-                            <th style="width: 25%;">Staff Member</th>
-                            <th style="width: 12%;">Orders</th>
-                            <th style="width: 12%;">Delivered</th>
-                            <th style="width: 12%;">Returns</th>
-                            <th style="width: 20%;">Success Rate</th>
-                            <th style="width: 19%;">Revenue (Rs.)</th>
+                            <th style="width: 20%;">Staff Member</th>
+                            <th style="width: 9%;">Orders</th>
+                            <th style="width: 9%;">Delivered</th>
+                            <th style="width: 9%;">Returns</th>
+                            <th style="width: 15%;">Success Rate</th>
+                            <th style="width: 14%;">Revenue (Rs.)</th>
+                            <th style="width: 12%;">Return Amt</th>
+                            <th style="width: 12%;">Refund Amt</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1048,10 +1338,24 @@
                                 </div>
                             </td>
                             <td><strong>Rs. {{ staff.revenue|floatformat:2 }}</strong></td>
+                            <td>
+                                {% if staff.total_return_amount > 0 %}
+                                <span style="color: #ef4444; font-weight: 600; font-size: 0.85rem;">Rs. {{ staff.total_return_amount|floatformat:2 }}</span>
+                                {% else %}
+                                <span style="color: #999;">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if staff.total_refund > 0 %}
+                                <span class="sp-refund-text">Rs. {{ staff.total_refund|floatformat:2 }}</span>
+                                {% else %}
+                                <span style="color: #999;">-</span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="6" class="sp-no-data">
+                            <td colspan="8" class="sp-no-data">
                                 <i class="fas fa-chart-bar"></i>
                                 <div>No detailed metrics available</div>
                             </td>
@@ -1060,6 +1364,206 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <!-- ========== RETURNS OVERVIEW SECTION ========== -->
+        <div class="sp-table-card sp-fade-in">
+            <div class="sp-table-header" style="background: var(--sp-danger-gradient);">
+                <h3><i class="fas fa-undo-alt me-2"></i>Returns Overview</h3>
+            </div>
+
+            <!-- Return Stats Row -->
+            <div class="sp-returns-stats-row">
+                <div class="sp-return-stat-item">
+                    <div class="sp-return-stat-number sp-pending-color">{{ return_stats.pending }}</div>
+                    <div class="sp-return-stat-label">Pending</div>
+                </div>
+                <div class="sp-return-stat-item">
+                    <div class="sp-return-stat-number sp-approved-color">{{ return_stats.approved }}</div>
+                    <div class="sp-return-stat-label">Approved</div>
+                </div>
+                <div class="sp-return-stat-item">
+                    <div class="sp-return-stat-number sp-received-color">{{ return_stats.received }}</div>
+                    <div class="sp-return-stat-label">Received</div>
+                </div>
+                <div class="sp-return-stat-item">
+                    <div class="sp-return-stat-number sp-inspecting-color">{{ return_stats.inspecting }}</div>
+                    <div class="sp-return-stat-label">Inspecting</div>
+                </div>
+                <div class="sp-return-stat-item">
+                    <div class="sp-return-stat-number sp-refunded-color">{{ return_stats.refunded }}</div>
+                    <div class="sp-return-stat-label">Refunded</div>
+                </div>
+                <div class="sp-return-stat-item">
+                    <div class="sp-return-stat-number sp-rejected-color">{{ return_stats.rejected }}</div>
+                    <div class="sp-return-stat-label">Rejected</div>
+                </div>
+                <div class="sp-return-stat-item sp-return-stat-highlight">
+                    <div class="sp-return-stat-number sp-refund-amount-color">Rs. {{ return_stats.total_refund|floatformat:0 }}</div>
+                    <div class="sp-return-stat-label">Total Refunded</div>
+                </div>
+            </div>
+
+            <!-- Return Reason Tags -->
+            {% if return_reason_breakdown %}
+            <div class="sp-reason-tags">
+                <span style="font-weight: 600; color: #333; margin-right: 0.5rem; font-size: 0.85rem;">Reasons:</span>
+                {% for reason in return_reason_breakdown %}
+                <span class="sp-reason-tag">
+                    {{ reason.return_reason|title }}
+                    <span class="sp-reason-count">{{ reason.count }}</span>
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Returned Products Summary Table -->
+            {% if returned_products_summary %}
+            <div style="padding: 1rem 1.5rem 0.5rem; border-top: 1px solid #e8e8e8;">
+                <h4 style="font-size: 1rem; font-weight: 700; color: #333; margin-bottom: 0.75rem;">
+                    <i class="fas fa-boxes me-2" style="color: #6366f1;"></i>Returned Products Summary
+                </h4>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="sp-table">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>SKU</th>
+                            <th style="text-align: center;">Return Qty</th>
+                            <th style="text-align: center;">Good Qty</th>
+                            <th style="text-align: center;">Damaged Qty</th>
+                            <th style="text-align: center;">Returns</th>
+                            <th style="text-align: right;">Refund</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in returned_products_summary %}
+                        <tr class="sp-return-product-summary">
+                            <td>
+                                <strong>{{ item.product__name }}</strong>
+                                {% if item.product_variation__id %}
+                                <br><span class="sp-reason-badge">{{ item.product_variation__variation_name }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="sp-reason-badge">{{ item.product_sku|default:"-"|upper }}</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="sp-qty-badge sp-qty-return">{{ item.total_return_qty }}</span>
+                            </td>
+                            <td style="text-align: center;">
+                                {% if item.total_good_qty > 0 %}
+                                <span class="sp-qty-badge sp-qty-good">{{ item.total_good_qty }}</span>
+                                {% else %}
+                                <span style="color: #999;">0</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: center;">
+                                {% if item.total_damaged_qty > 0 %}
+                                <span class="sp-qty-badge sp-qty-damaged">{{ item.total_damaged_qty }}</span>
+                                {% else %}
+                                <span style="color: #999;">0</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="sp-badge sp-badge-returned">{{ item.return_count }}</span>
+                            </td>
+                            <td style="text-align: right;">
+                                <strong class="sp-refund-text">Rs. {{ item.total_refund|floatformat:2 }}</strong>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            <!-- Recent Returns Table -->
+            {% if recent_returns %}
+            <div style="padding: 1rem 1.5rem 0.5rem; border-top: 1px solid #e8e8e8;">
+                <h4 style="font-size: 1rem; font-weight: 700; color: #333; margin-bottom: 0.75rem;">
+                    <i class="fas fa-clock me-2" style="color: #f97316;"></i>Recent Returns
+                </h4>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="sp-table">
+                    <thead>
+                        <tr>
+                            <th>RMA #</th>
+                            <th>Order</th>
+                            <th>Customer</th>
+                            <th>Reason</th>
+                            <th>Items</th>
+                            <th style="text-align: center;">Type</th>
+                            <th style="text-align: center;">Status</th>
+                            <th>Refund</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for return in recent_returns %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'return_detail' return.id %}" class="sp-rma-link">
+                                    {{ return.rma_number }}
+                                </a>
+                            </td>
+                            <td>
+                                <span class="sp-reason-badge">{{ return.order.order_number }}</span>
+                            </td>
+                            <td>
+                                <span style="font-weight: 500;">{{ return.customer_name }}</span>
+                            </td>
+                            <td>
+                                {% if return.return_reason %}
+                                <span class="sp-reason-badge">{{ return.get_return_reason_display }}</span>
+                                {% else %}
+                                <span style="color: #999;">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="sp-return-items-cell">
+                                    {% for item in return.items.all %}
+                                    <span class="sp-return-item-line">
+                                        {{ item.product_name }}
+                                        <span class="sp-return-item-qty">x{{ item.return_quantity }}</span>
+                                    </span>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td style="text-align: center;">
+                                {% if return.batch_id %}
+                                <span class="sp-batch-badge sp-batch-type">BATCH</span>
+                                {% else %}
+                                <span class="sp-batch-badge sp-single-type">SINGLE</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="sp-status-badge sp-status-{{ return.return_status }}">
+                                    {{ return.get_return_status_display }}
+                                </span>
+                            </td>
+                            <td>
+                                <strong class="sp-refund-text">Rs. {{ return.refund_amount|floatformat:0 }}</strong>
+                            </td>
+                            <td>
+                                <span style="font-size: 0.85rem; color: #666;">{{ return.created_at|date:"M d, Y" }}</span>
+                                <br><span style="font-size: 0.75rem; color: #999;">{{ return.created_at|date:"H:i" }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if not recent_returns and not returned_products_summary and return_stats.total == 0 %}
+            <div class="sp-no-data">
+                <i class="fas fa-inbox"></i>
+                <div>No return records found for this period</div>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

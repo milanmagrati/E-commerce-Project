@@ -1,0 +1,242 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Purchase Management Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="fas fa-file-invoice-dollar me-2 text-primary"></i>Purchase Management</h4>
+            <p class="text-muted mb-0">Track purchases, suppliers, and payments</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'purchase_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> New Purchase
+            </a>
+            <a href="{% url 'supplier_add' %}" class="btn btn-outline-primary">
+                <i class="fas fa-user-plus me-1"></i> Add Supplier
+            </a>
+            <a href="{% url 'supplier_payment_add' %}" class="btn btn-outline-success">
+                <i class="fas fa-money-bill-wave me-1"></i> Record Payment
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small">Today's Purchase</p>
+                            <h4 class="mb-0 fw-bold">Rs. {{ today_purchases|floatformat:2 }}</h4>
+                        </div>
+                        <div class="bg-primary bg-opacity-10 rounded-3 p-2">
+                            <i class="fas fa-calendar-day text-primary fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small">This Month Total</p>
+                            <h4 class="mb-0 fw-bold">Rs. {{ month_purchases|floatformat:2 }}</h4>
+                        </div>
+                        <div class="bg-info bg-opacity-10 rounded-3 p-2">
+                            <i class="fas fa-calendar-alt text-info fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small">Total Paid</p>
+                            <h4 class="mb-0 fw-bold text-success">Rs. {{ total_paid|floatformat:2 }}</h4>
+                        </div>
+                        <div class="bg-success bg-opacity-10 rounded-3 p-2">
+                            <i class="fas fa-check-circle text-success fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small">Total Remaining</p>
+                            <h4 class="mb-0 fw-bold text-danger">Rs. {{ total_remaining|floatformat:2 }}</h4>
+                        </div>
+                        <div class="bg-danger bg-opacity-10 rounded-3 p-2">
+                            <i class="fas fa-exclamation-circle text-danger fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Supplier-wise Outstanding -->
+        <div class="col-xl-7">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-users me-2 text-primary"></i>Supplier Outstanding</h6>
+                    <a href="{% url 'supplier_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Supplier</th>
+                                    <th class="text-end">Total Purchase</th>
+                                    <th class="text-end">Paid</th>
+                                    <th class="text-end">Remaining</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for s in supplier_outstanding %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'supplier_detail' supplier_id=s.id %}" class="text-decoration-none fw-medium">
+                                            {{ s.name }}
+                                        </a>
+                                    </td>
+                                    <td class="text-end">Rs. {{ s.total_purchase|floatformat:2 }}</td>
+                                    <td class="text-end text-success">Rs. {{ s.paid|floatformat:2 }}</td>
+                                    <td class="text-end">
+                                        {% if s.remaining > 0 %}
+                                        <span class="text-danger fw-bold">Rs. {{ s.remaining|floatformat:2 }}</span>
+                                        {% else %}
+                                        <span class="text-success">Rs. 0.00</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="4" class="text-center text-muted py-4">No suppliers added yet</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Low Stock Alert -->
+        <div class="col-xl-5">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-exclamation-triangle me-2 text-warning"></i>Low Stock Alerts</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th class="text-center">Stock</th>
+                                    <th class="text-center">Threshold</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in low_stock_products %}
+                                <tr>
+                                    <td class="fw-medium">{{ p.name|truncatewords:4 }}</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-danger">{{ p.stock }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-warning text-dark">{{ p.low_stock_threshold }}</span>
+                                    </td>
+                                    <td class="text-end">
+                                        <a href="{% url 'product_purchase_history' product_id=p.id %}" class="btn btn-sm btn-outline-primary" title="Purchase History">
+                                            <i class="fas fa-history"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="4" class="text-center text-muted py-4">All products are well stocked</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Purchases -->
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+            <h6 class="mb-0 fw-bold"><i class="fas fa-history me-2 text-primary"></i>Recent Purchases</h6>
+            <a href="{% url 'purchase_create' %}" class="btn btn-sm btn-primary">
+                <i class="fas fa-plus me-1"></i> New Purchase
+            </a>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Invoice No</th>
+                            <th>Supplier</th>
+                            <th>Date</th>
+                            <th class="text-end">Amount</th>
+                            <th class="text-center">Status</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in recent_purchases %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'purchase_detail' purchase_id=p.id %}" class="text-decoration-none fw-medium">
+                                    {{ p.invoice_number }}
+                                </a>
+                            </td>
+                            <td>
+                                <a href="{% url 'supplier_detail' supplier_id=p.supplier.id %}" class="text-decoration-none">
+                                    {{ p.supplier.name }}
+                                </a>
+                            </td>
+                            <td>{{ p.purchase_date|date:"d M Y" }}</td>
+                            <td class="text-end fw-bold">Rs. {{ p.total_amount|floatformat:2 }}</td>
+                            <td class="text-center">
+                                {% if p.payment_status == 'paid' %}
+                                <span class="badge bg-success">Paid</span>
+                                {% elif p.payment_status == 'partial' %}
+                                <span class="badge bg-warning text-dark">Partial</span>
+                                {% else %}
+                                <span class="badge bg-danger">Unpaid</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <a href="{% url 'purchase_detail' purchase_id=p.id %}" class="btn btn-sm btn-outline-primary" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-center text-muted py-4">No purchases recorded yet</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

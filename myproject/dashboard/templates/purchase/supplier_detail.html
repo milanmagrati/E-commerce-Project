@@ -1,0 +1,310 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ supplier.name }} - Supplier Detail{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="fas fa-user me-2 text-primary"></i>{{ supplier.name }}</h4>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'purchase_dashboard' %}">Purchase Management</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'supplier_list' %}">Suppliers</a></li>
+                    <li class="breadcrumb-item active">{{ supplier.name }}</li>
+                </ol>
+            </nav>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'supplier_payment_add' %}?supplier={{ supplier.id }}" class="btn btn-success">
+                <i class="fas fa-money-bill-wave me-1"></i> Record Payment
+            </a>
+            <a href="{% url 'supplier_edit' supplier_id=supplier.id %}" class="btn btn-outline-warning">
+                <i class="fas fa-edit me-1"></i> Edit
+            </a>
+        </div>
+    </div>
+
+    <!-- Supplier Info Card -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="bg-primary bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width:60px;height:60px">
+                        <i class="fas fa-user fa-xl text-primary"></i>
+                    </div>
+                    <h5 class="fw-bold">{{ supplier.name }}</h5>
+                    {% if supplier.phone %}<p class="mb-1"><i class="fas fa-phone me-1 text-muted"></i> {{ supplier.phone }}</p>{% endif %}
+                    {% if supplier.address %}<p class="text-muted small mb-0"><i class="fas fa-map-marker-alt me-1"></i> {{ supplier.address }}</p>{% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <p class="text-muted mb-1 small">Total Purchases</p>
+                    <h4 class="fw-bold">Rs. {{ supplier.get_total_purchases|floatformat:2 }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <p class="text-muted mb-1 small">Total Paid</p>
+                    <h4 class="fw-bold text-success">Rs. {{ supplier.get_total_paid|floatformat:2 }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <p class="text-muted mb-1 small">Current Outstanding</p>
+                    <h4 class="fw-bold {% if outstanding > 0 %}text-danger{% else %}text-success{% endif %}">
+                        Rs. {{ outstanding|floatformat:2 }}
+                    </h4>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" data-bs-toggle="tab" href="#purchases">
+                <i class="fas fa-file-invoice me-1"></i> Purchase Invoices
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#products">
+                <i class="fas fa-box me-1"></i> Products Supplied
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#payments">
+                <i class="fas fa-money-bill me-1"></i> Payment History
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#ledger">
+                <i class="fas fa-book me-1"></i> Ledger
+            </a>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- Purchase Invoices Tab -->
+        <div class="tab-pane fade show active" id="purchases">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Invoice No</th>
+                                    <th>Date</th>
+                                    <th class="text-end">Total</th>
+                                    <th class="text-end">Paid</th>
+                                    <th class="text-end">Remaining</th>
+                                    <th class="text-center">Status</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in purchase_data %}
+                                <tr data-bs-toggle="collapse" data-bs-target="#items-{{ p.id }}" style="cursor:pointer">
+                                    <td class="fw-medium">{{ p.invoice_number }}</td>
+                                    <td>{{ p.purchase_date|date:"d M Y" }}</td>
+                                    <td class="text-end fw-bold">Rs. {{ p.total_amount|floatformat:2 }}</td>
+                                    <td class="text-end text-success">Rs. {{ p.paid|floatformat:2 }}</td>
+                                    <td class="text-end {% if p.remaining > 0 %}text-danger{% endif %}">Rs. {{ p.remaining|floatformat:2 }}</td>
+                                    <td class="text-center">
+                                        {% if p.payment_status == 'paid' %}
+                                        <span class="badge bg-success">Paid</span>
+                                        {% elif p.payment_status == 'partial' %}
+                                        <span class="badge bg-warning text-dark">Partial</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Unpaid</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <a href="{% url 'purchase_detail' purchase_id=p.id %}" class="btn btn-sm btn-outline-primary" title="View Detail">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr class="collapse" id="items-{{ p.id }}">
+                                    <td colspan="7" class="bg-light p-0">
+                                        <table class="table table-sm mb-0">
+                                            <thead>
+                                                <tr class="table-secondary">
+                                                    <th class="ps-4">Product</th>
+                                                    <th class="text-center">Qty</th>
+                                                    <th class="text-end">Rate</th>
+                                                    <th class="text-end">Total</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for item in p.items %}
+                                                <tr>
+                                                    <td class="ps-4">{{ item.product.name }}</td>
+                                                    <td class="text-center">{{ item.quantity }}</td>
+                                                    <td class="text-end">Rs. {{ item.rate|floatformat:2 }}</td>
+                                                    <td class="text-end">Rs. {{ item.total|floatformat:2 }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="7" class="text-center text-muted py-4">No purchases from this supplier yet</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Products Supplied Tab -->
+        <div class="tab-pane fade" id="products">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th class="text-center">Total Qty</th>
+                                    <th class="text-end">Avg Rate</th>
+                                    <th>Last Purchase Date</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in products_supplied %}
+                                <tr>
+                                    <td class="fw-medium">{{ p.product__name }}</td>
+                                    <td class="text-center">{{ p.total_qty }}</td>
+                                    <td class="text-end">Rs. {{ p.avg_rate|floatformat:2 }}</td>
+                                    <td>{{ p.last_purchase|date:"d M Y" }}</td>
+                                    <td class="text-center">
+                                        <a href="{% url 'product_purchase_history' product_id=p.product__id %}" class="btn btn-sm btn-outline-primary" title="Purchase History">
+                                            <i class="fas fa-history"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="5" class="text-center text-muted py-4">No products supplied yet</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment History Tab -->
+        <div class="tab-pane fade" id="payments">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                    <h6 class="mb-0 fw-bold">Payment History</h6>
+                    <a href="{% url 'supplier_payment_add' %}?supplier={{ supplier.id }}" class="btn btn-sm btn-success">
+                        <i class="fas fa-plus me-1"></i> Record Payment
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Invoice</th>
+                                    <th class="text-end">Amount</th>
+                                    <th>Method</th>
+                                    <th>Reference</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pay in payments %}
+                                <tr>
+                                    <td>{{ pay.payment_date|date:"d M Y" }}</td>
+                                    <td>
+                                        {% if pay.purchase %}
+                                        <a href="{% url 'purchase_detail' purchase_id=pay.purchase.id %}" class="text-decoration-none">
+                                            {{ pay.purchase.invoice_number }}
+                                        </a>
+                                        {% else %}
+                                        <span class="text-muted">General</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end fw-bold text-success">Rs. {{ pay.amount|floatformat:2 }}</td>
+                                    <td>{{ pay.payment_method|default:"-" }}</td>
+                                    <td>{{ pay.reference_no|default:"-" }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="5" class="text-center text-muted py-4">No payments recorded</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ledger Tab (Tally-style) -->
+        <div class="tab-pane fade" id="ledger">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white py-3">
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-book me-2"></i>Ledger - {{ supplier.name }}</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th class="text-end">Debit (Purchase)</th>
+                                    <th class="text-end">Credit (Payment)</th>
+                                    <th class="text-end">Running Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in ledger_entries %}
+                                <tr>
+                                    <td>{{ entry.date|date:"d M Y" }}</td>
+                                    <td>{{ entry.description }}</td>
+                                    <td class="text-end {% if entry.debit > 0 %}text-danger fw-medium{% endif %}">
+                                        {% if entry.debit > 0 %}Rs. {{ entry.debit|floatformat:2 }}{% else %}-{% endif %}
+                                    </td>
+                                    <td class="text-end {% if entry.credit > 0 %}text-success fw-medium{% endif %}">
+                                        {% if entry.credit > 0 %}Rs. {{ entry.credit|floatformat:2 }}{% else %}-{% endif %}
+                                    </td>
+                                    <td class="text-end fw-bold {% if entry.balance > 0 %}text-danger{% else %}text-success{% endif %}">
+                                        Rs. {{ entry.balance|floatformat:2 }}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="5" class="text-center text-muted py-4">No transactions yet</td></tr>
+                                {% endfor %}
+                            </tbody>
+                            {% if ledger_entries %}
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="4" class="text-end fw-bold">Closing Balance:</td>
+                                    <td class="text-end fw-bold {% if outstanding > 0 %}text-danger{% else %}text-success{% endif %}">
+                                        Rs. {{ outstanding|floatformat:2 }}
+                                    </td>
+                                </tr>
+                            </tfoot>
+                            {% endif %}
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+
+{% block title %}Purchase {{ purchase.invoice_number }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="fas fa-file-invoice me-2 text-primary"></i>Purchase #{{ purchase.invoice_number }}</h4>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'purchase_dashboard' %}">Purchase Management</a></li>
+                    <li class="breadcrumb-item active">{{ purchase.invoice_number }}</li>
+                </ol>
+            </nav>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'supplier_payment_add' %}?supplier={{ purchase.supplier.id }}" class="btn btn-success">
+                <i class="fas fa-money-bill-wave me-1"></i> Record Payment
+            </a>
+            <a href="{% url 'supplier_detail' supplier_id=purchase.supplier.id %}" class="btn btn-outline-primary">
+                <i class="fas fa-user me-1"></i> View Supplier
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <!-- Purchase Info -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <p class="text-muted mb-1 small">Supplier</p>
+                            <p class="fw-bold mb-0">
+                                <a href="{% url 'supplier_detail' supplier_id=purchase.supplier.id %}" class="text-decoration-none">
+                                    {{ purchase.supplier.name }}
+                                </a>
+                            </p>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="text-muted mb-1 small">Purchase Date</p>
+                            <p class="fw-bold mb-0">{{ purchase.purchase_date|date:"d M Y" }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="text-muted mb-1 small">Payment Method</p>
+                            <p class="fw-bold mb-0">{{ purchase.payment_method|default:"-" }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="text-muted mb-1 small">Created By</p>
+                            <p class="fw-bold mb-0">{{ purchase.created_by.get_full_name|default:purchase.created_by.username }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="text-muted mb-1 small">Status</p>
+                            {% if purchase.payment_status == 'paid' %}
+                            <span class="badge bg-success fs-6">Paid</span>
+                            {% elif purchase.payment_status == 'partial' %}
+                            <span class="badge bg-warning text-dark fs-6">Partial</span>
+                            {% else %}
+                            <span class="badge bg-danger fs-6">Unpaid</span>
+                            {% endif %}
+                        </div>
+                        {% if purchase.notes %}
+                        <div class="col-12">
+                            <p class="text-muted mb-1 small">Notes</p>
+                            <p class="mb-0">{{ purchase.notes }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Items Table -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white py-3">
+                    <h6 class="mb-0 fw-bold">Items</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Product</th>
+                                    <th class="text-center">Quantity</th>
+                                    <th class="text-end">Rate</th>
+                                    <th class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in items %}
+                                <tr>
+                                    <td>{{ forloop.counter }}</td>
+                                    <td>
+                                        <a href="{% url 'product_purchase_history' product_id=item.product.id %}" class="text-decoration-none">
+                                            {{ item.product.name }}
+                                        </a>
+                                    </td>
+                                    <td class="text-center">{{ item.quantity }}</td>
+                                    <td class="text-end">Rs. {{ item.rate|floatformat:2 }}</td>
+                                    <td class="text-end fw-bold">Rs. {{ item.total|floatformat:2 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="4" class="text-end fw-bold">Total:</td>
+                                    <td class="text-end fw-bold fs-5">Rs. {{ purchase.total_amount|floatformat:2 }}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Summary Sidebar -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white py-3">
+                    <h6 class="mb-0 fw-bold">Payment Summary</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Total Amount:</span>
+                        <span class="fw-bold">Rs. {{ purchase.total_amount|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Total Paid:</span>
+                        <span class="fw-bold text-success">Rs. {{ paid|floatformat:2 }}</span>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between">
+                        <span class="fw-bold">Remaining:</span>
+                        <span class="fw-bold {% if remaining > 0 %}text-danger{% else %}text-success{% endif %} fs-5">
+                            Rs. {{ remaining|floatformat:2 }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payment History -->
+            {% if payments %}
+            <div class="card border-0 shadow-sm mt-3">
+                <div class="card-header bg-white py-3">
+                    <h6 class="mb-0 fw-bold">Payments Made</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for pay in payments %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <p class="mb-0 fw-medium">Rs. {{ pay.amount|floatformat:2 }}</p>
+                                    <small class="text-muted">{{ pay.payment_date|date:"d M Y" }} | {{ pay.payment_method|default:"N/A" }}</small>
+                                </div>
+                                {% if pay.reference_no %}
+                                <small class="text-muted">Ref: {{ pay.reference_no }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

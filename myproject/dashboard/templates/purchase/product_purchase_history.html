@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ product.name }} - Purchase History{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="fas fa-history me-2 text-primary"></i>{{ product.name }} - Purchase History</h4>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'purchase_dashboard' %}">Purchase Management</a></li>
+                    <li class="breadcrumb-item active">{{ product.name }}</li>
+                </ol>
+            </nav>
+        </div>
+        <a href="{% url 'purchase_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i> New Purchase
+        </a>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small">Total Purchased</p>
+                            <h4 class="mb-0 fw-bold">{{ total_purchased }}</h4>
+                        </div>
+                        <div class="bg-primary bg-opacity-10 rounded-3 p-2">
+                            <i class="fas fa-shopping-bag text-primary fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small">Total Sold</p>
+                            <h4 class="mb-0 fw-bold">{{ total_sold }}</h4>
+                        </div>
+                        <div class="bg-success bg-opacity-10 rounded-3 p-2">
+                            <i class="fas fa-shopping-cart text-success fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small">Current Stock</p>
+                            <h4 class="mb-0 fw-bold {% if current_stock <= product.low_stock_threshold %}text-danger{% endif %}">{{ current_stock }}</h4>
+                        </div>
+                        <div class="bg-info bg-opacity-10 rounded-3 p-2">
+                            <i class="fas fa-warehouse text-info fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small">Avg Purchase Rate</p>
+                            <h4 class="mb-0 fw-bold">Rs. {{ avg_purchase_rate|floatformat:2 }}</h4>
+                        </div>
+                        <div class="bg-warning bg-opacity-10 rounded-3 p-2">
+                            <i class="fas fa-tag text-warning fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Purchase History -->
+        <div class="col-xl-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white py-3">
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-list me-2"></i>Purchase History</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Supplier</th>
+                                    <th class="text-center">Qty</th>
+                                    <th class="text-end">Rate</th>
+                                    <th class="text-end">Total</th>
+                                    <th>Invoice No</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in purchase_items %}
+                                <tr>
+                                    <td>{{ item.purchase.purchase_date|date:"d M Y" }}</td>
+                                    <td>
+                                        <a href="{% url 'supplier_detail' supplier_id=item.purchase.supplier.id %}" class="text-decoration-none">
+                                            {{ item.purchase.supplier.name }}
+                                        </a>
+                                    </td>
+                                    <td class="text-center fw-bold">{{ item.quantity }}</td>
+                                    <td class="text-end">Rs. {{ item.rate|floatformat:2 }}</td>
+                                    <td class="text-end fw-bold">Rs. {{ item.total|floatformat:2 }}</td>
+                                    <td>
+                                        <a href="{% url 'purchase_detail' purchase_id=item.purchase.id %}" class="text-decoration-none">
+                                            {{ item.purchase.invoice_number }}
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="6" class="text-center text-muted py-4">No purchase records for this product</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Supplier Comparison -->
+        <div class="col-xl-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white py-3">
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-balance-scale me-2"></i>Supplier Comparison</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Supplier</th>
+                                    <th class="text-center">Total Qty</th>
+                                    <th class="text-end">Avg Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for s in supplier_comparison %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'supplier_detail' supplier_id=s.purchase__supplier__id %}" class="text-decoration-none">
+                                            {{ s.purchase__supplier__name }}
+                                        </a>
+                                        {% if forloop.first %}
+                                        <span class="badge bg-success ms-1">Cheapest</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">{{ s.total_qty }}</td>
+                                    <td class="text-end fw-bold">Rs. {{ s.avg_rate|floatformat:2 }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="3" class="text-center text-muted py-4">No supplier data</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

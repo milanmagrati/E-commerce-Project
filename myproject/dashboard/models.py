@@ -1013,3 +1013,166 @@ class StaffPerformance(models.Model):
         verbose_name = 'Staff Performance'
         verbose_name_plural = 'Staff Performance Metrics'
         ordering = ['-success_rate', '-total_revenue']
+
+
+# ==================== STAFF TARGET MODEL ====================
+
+class StaffTarget(models.Model):
+    """Track targets assigned to staff members"""
+    TARGET_TYPE_CHOICES = [
+        ('sales', 'Sales'),
+        ('warehouse', 'Warehouse'),
+    ]
+    PERIOD_CHOICES = [
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+    ]
+
+    staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='targets')
+    target_type = models.CharField(max_length=20, choices=TARGET_TYPE_CHOICES)
+    target_value = models.DecimalField(max_digits=18, decimal_places=2)
+    period = models.CharField(max_length=20, choices=PERIOD_CHOICES, default='monthly')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    set_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='targets_set')
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Staff Target'
+        verbose_name_plural = 'Staff Targets'
+
+    def __str__(self):
+        return f"{self.staff.get_full_name() or self.staff.username} - {self.get_target_type_display()} ({self.get_period_display()})"
+
+
+# ==================== PURCHASE MANAGEMENT MODELS ====================
+
+class Supplier(models.Model):
+    """Supplier model for purchase management"""
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20, blank=True)
+    address = models.TextField(blank=True)
+    opening_balance = models.DecimalField(max_digits=18, decimal_places=2, default=0,
+                                          help_text="Opening balance (amount owed to supplier)")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Supplier'
+        verbose_name_plural = 'Suppliers'
+
+    def get_total_purchases(self):
+        return self.purchases.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+
+    def get_total_paid(self):
+        return self.payments.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    def get_outstanding(self):
+        return self.opening_balance + self.get_total_purchases() - self.get_total_paid()
+
+
+class Purchase(models.Model):
+    """Purchase invoice model"""
+    PAYMENT_STATUS_CHOICES = [
+        ('paid', 'Paid'),
+        ('partial', 'Partial'),
+        ('unpaid', 'Unpaid'),
+    ]
+
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='purchases')
+    purchase_date = models.DateField(default=timezone.now)
+    invoice_number = models.CharField(max_length=100, unique=True)
+    total_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='unpaid')
+    payment_method = models.CharField(max_length=50, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   related_name='created_purchases')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.invoice_number} - {self.supplier.name}"
+
+    class Meta:
+        ordering = ['-purchase_date', '-created_at']
+        verbose_name = 'Purchase'
+        verbose_name_plural = 'Purchases'
+
+    def get_total_paid(self):
+        return self.payments.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    def get_remaining(self):
+        return self.total_amount - self.get_total_paid()
+
+    def update_payment_status(self):
+        paid = self.get_total_paid()
+        if paid >= self.total_amount:
+            self.payment_status = 'paid'
+        elif paid > 0:
+            self.payment_status = 'partial'
+        else:
+            self.payment_status = 'unpaid'
+        self.save(update_fields=['payment_status'])
+
+    def recalculate_total(self):
+        total = self.purchase_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+        self.total_amount = total
+        self.save(update_fields=['total_amount'])
+
+
+class PurchaseItem(models.Model):
+    """Individual items in a purchase"""
+    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name='purchase_items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='purchase_items')
+    quantity = models.IntegerField(default=1)
+    rate = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.product.name} x {self.quantity} @ {self.rate}"
+
+    class Meta:
+        verbose_name = 'Purchase Item'
+        verbose_name_plural = 'Purchase Items'
+
+    def save(self, *args, **kwargs):
+        self.total = Decimal(str(self.rate)) * self.quantity
+        super().save(*args, **kwargs)
+
+
+class SupplierPayment(models.Model):
+    """Payment records for suppliers"""
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='payments')
+    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name='payments',
+                                 null=True, blank=True)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    payment_date = models.DateField(default=timezone.now)
+    payment_method = models.CharField(max_length=50, blank=True)
+    reference_no = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   related_name='recorded_supplier_payments')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Payment of Rs.{self.amount} to {self.supplier.name}"
+
+    class Meta:
+        ordering = ['-payment_date', '-created_at']
+        verbose_name = 'Supplier Payment'
+        verbose_name_plural = 'Supplier Payments'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.purchase:
+            self.purchase.update_payment_status()

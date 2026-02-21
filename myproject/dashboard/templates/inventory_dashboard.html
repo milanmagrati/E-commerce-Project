@@ -691,12 +691,27 @@
                                 <td>
                                     <div class="product-cell">
                                         <div class="product-img-placeholder return-icon-bg">
+                                            {% if item.product_variation__id %}
+                                            <i class="fas fa-th-list"></i>
+                                            {% else %}
                                             <i class="fas fa-undo-alt"></i>
+                                            {% endif %}
                                         </div>
-                                        <span class="product-name">{{ item.product__name }}</span>
+                                        <div>
+                                            <span class="product-name">{{ item.product__name }}</span>
+                                            {% if item.product_variation__id %}
+                                            <br><span class="variation-label">{{ item.product_variation__variation_name|default:item.product_variation__sku }}</span>
+                                            {% endif %}
+                                        </div>
                                     </div>
                                 </td>
-                                <td><span class="sku-badge">{{ item.product_sku|default:"—"|upper }}</span></td>
+                                <td>
+                                    {% if item.product_variation__id and item.product_variation__sku %}
+                                    <span class="sku-badge variation-sku">{{ item.product_variation__sku|upper }}</span>
+                                    {% else %}
+                                    <span class="sku-badge">{{ item.product_sku|default:"—"|upper }}</span>
+                                    {% endif %}
+                                </td>
                                 <td class="text-center">
                                     <span class="stock-badge return-qty-badge">{{ item.total_return_qty }}</span>
                                 </td>
@@ -2440,6 +2455,24 @@
 .btn-action.returns-action:hover {
     background: rgba(37, 99, 235, 0.3);
     border-color: #2563eb;
+}
+
+.variation-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #7c3aed;
+    background: rgba(124, 58, 237, 0.1);
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    border: 1px solid rgba(124, 58, 237, 0.2);
+    display: inline-block;
+    margin-top: 2px;
+}
+
+.sku-badge.variation-sku {
+    background: rgba(124, 58, 237, 0.12);
+    color: #7c3aed;
+    border: 1px solid rgba(124, 58, 237, 0.25);
 }
 
 /* ── Filter Pills ─────────────────────────────────── */

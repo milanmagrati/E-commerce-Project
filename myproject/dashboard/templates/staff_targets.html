@@ -1,0 +1,1044 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dashboard_extras %}
+
+{% block title %}{% if is_admin_view %}Manage Staff Targets{% else %}My Targets{% endif %}{% endblock %}
+
+{% block extra_css %}
+<style>
+.st-page { background: #f5f7fa; min-height: 100vh; }
+
+/* Page Header */
+.st-header {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff;
+    border-radius: 0 0 18px 18px;
+    padding: 2rem 2rem 1.8rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 30px rgba(99,102,241,.25);
+}
+.st-header::before {
+    content: '';
+    position: absolute;
+    top: -40%;
+    right: -8%;
+    width: 400px;
+    height: 400px;
+    background: rgba(255,255,255,.05);
+    border-radius: 50%;
+}
+.st-header h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: .3rem;
+    position: relative;
+    z-index: 1;
+}
+.st-header p {
+    opacity: .85;
+    font-size: .88rem;
+    margin-bottom: 0;
+    position: relative;
+    z-index: 1;
+}
+.btn-header-action {
+    background: rgba(255,255,255,.2);
+    border: 1.5px solid rgba(255,255,255,.4);
+    color: #fff;
+    border-radius: 10px;
+    padding: 9px 20px;
+    font-weight: 700;
+    font-size: .88rem;
+    backdrop-filter: blur(8px);
+    transition: all .2s;
+    position: relative;
+    z-index: 1;
+}
+.btn-header-action:hover {
+    background: #fff;
+    color: #6366f1;
+    border-color: #fff;
+    transform: translateY(-1px);
+}
+
+/* KPI Cards */
+.st-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.st-kpi {
+    background: #fff;
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    position: relative;
+    overflow: hidden;
+}
+.st-kpi::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    border-radius: 4px 0 0 4px;
+}
+.st-kpi.kpi-total::after { background: #6366f1; }
+.st-kpi.kpi-met::after { background: #10b981; }
+.st-kpi.kpi-progress::after { background: #f59e0b; }
+.st-kpi.kpi-notmet::after { background: #ef4444; }
+.st-kpi .kpi-val {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #111827;
+    line-height: 1.2;
+}
+.st-kpi .kpi-lbl {
+    font-size: .78rem;
+    color: #9ca3af;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+    margin-top: 4px;
+}
+.st-kpi .kpi-icon {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .9rem;
+}
+.kpi-total .kpi-icon { background: #ede9fe; color: #6366f1; }
+.kpi-met .kpi-icon { background: #d1fae5; color: #059669; }
+.kpi-progress .kpi-icon { background: #fef3c7; color: #d97706; }
+.kpi-notmet .kpi-icon { background: #fee2e2; color: #dc2626; }
+
+/* Filter Bar */
+.st-filter-bar {
+    background: #fff;
+    border-radius: 14px;
+    padding: 18px 22px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    margin-bottom: 20px;
+}
+.st-filter-bar .form-select,
+.st-filter-bar .form-control {
+    border-radius: 10px;
+    border: 1.5px solid #e5e7eb;
+    padding: 9px 14px;
+    font-size: .88rem;
+}
+.st-filter-bar .form-select:focus,
+.st-filter-bar .form-control:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+.btn-filter {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border: none;
+    color: #fff;
+    border-radius: 10px;
+    padding: 9px 20px;
+    font-weight: 600;
+    font-size: .88rem;
+}
+.btn-filter:hover { box-shadow: 0 4px 12px rgba(99,102,241,.3); color: #fff; }
+.btn-reset {
+    background: #f3f4f6;
+    border: 1.5px solid #e5e7eb;
+    color: #6b7280;
+    border-radius: 10px;
+    padding: 9px 18px;
+    font-weight: 600;
+    font-size: .88rem;
+}
+.btn-reset:hover { background: #e5e7eb; color: #374151; }
+
+/* Target Cards for Staff View */
+.st-target-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 22px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+    transition: transform .2s, box-shadow .2s;
+    position: relative;
+    overflow: hidden;
+    border: 1.5px solid transparent;
+}
+.st-target-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.1);
+    border-color: rgba(99,102,241,.15);
+}
+.st-target-card .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 14px;
+}
+.target-type-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+.badge-sales { background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1d4ed8; }
+.badge-warehouse { background: linear-gradient(135deg, #f5f3ff, #ede9fe); color: #7c3aed; }
+
+.st-target-card .target-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #111827;
+    line-height: 1.2;
+}
+.st-target-card .target-label {
+    font-size: .8rem;
+    color: #9ca3af;
+    font-weight: 500;
+}
+
+/* Progress Bar */
+.st-progress-wrap { margin: 14px 0 10px; }
+.st-progress-bar {
+    height: 10px;
+    background: #f3f4f6;
+    border-radius: 5px;
+    overflow: hidden;
+}
+.st-progress-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width .8s ease;
+}
+.fill-green { background: linear-gradient(135deg, #10b981, #059669); }
+.fill-yellow { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.fill-red { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.st-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: .78rem;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    display: inline-block;
+}
+.status-met { background: #d1fae5; color: #065f46; }
+.status-not_met { background: #fee2e2; color: #991b1b; }
+.status-in_progress { background: #fef3c7; color: #92400e; }
+
+/* Stats Row */
+.st-stats-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+.st-stat-item {
+    flex: 1;
+    min-width: 75px;
+    text-align: center;
+    padding: 10px 6px;
+    background: #f9fafb;
+    border-radius: 10px;
+}
+.st-stat-item .stat-val {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #111827;
+}
+.st-stat-item .stat-lbl {
+    font-size: .65rem;
+    color: #9ca3af;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+    margin-top: 2px;
+}
+
+.st-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #f3f4f6;
+    font-size: .78rem;
+    color: #9ca3af;
+}
+
+/* Admin Table */
+.st-table-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+    overflow: hidden;
+}
+.st-table-header {
+    padding: 16px 22px;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.st-table-header h5 {
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+    font-size: 1rem;
+}
+.st-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+.st-table thead th {
+    background: #f9fafb;
+    padding: 11px 14px;
+    font-size: .72rem;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    border-bottom: 1px solid #f3f4f6;
+    white-space: nowrap;
+}
+.st-table tbody td {
+    padding: 12px 14px;
+    font-size: .85rem;
+    color: #374151;
+    border-bottom: 1px solid #f9fafb;
+    vertical-align: middle;
+}
+.st-table tbody tr:hover { background: #fafafb; }
+.st-table tbody tr:last-child td { border-bottom: none; }
+
+.st-staff-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.st-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: .82rem;
+    color: #fff;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    flex-shrink: 0;
+}
+.st-staff-name { font-weight: 600; color: #1f2937; font-size: .85rem; }
+.st-staff-role { font-size: .72rem; color: #9ca3af; }
+
+/* Action Buttons */
+.st-action-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .75rem;
+    cursor: pointer;
+    transition: all .2s;
+}
+.st-action-edit { background: #eff6ff; color: #3b82f6; }
+.st-action-edit:hover { background: #3b82f6; color: #fff; }
+.st-action-delete { background: #fef2f2; color: #ef4444; }
+.st-action-delete:hover { background: #ef4444; color: #fff; }
+
+.btn-set-target {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border: none;
+    color: #fff;
+    border-radius: 10px;
+    padding: 9px 20px;
+    font-weight: 600;
+    font-size: .88rem;
+    transition: transform .15s, box-shadow .15s;
+}
+.btn-set-target:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99,102,241,.35);
+    color: #fff;
+}
+
+/* Modal Styles */
+.st-modal .modal-content {
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 20px 60px rgba(0,0,0,.15);
+}
+.st-modal .modal-header {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    border-radius: 16px 16px 0 0;
+    padding: 18px 24px;
+    border: none;
+}
+.st-modal .modal-header .modal-title { font-size: 1.05rem; font-weight: 700; }
+.st-modal .modal-header .btn-close { filter: invert(1); opacity: .8; }
+.st-modal .modal-body { padding: 24px; }
+.st-modal .form-label {
+    font-size: .82rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 5px;
+}
+.st-modal .form-control,
+.st-modal .form-select {
+    border-radius: 10px;
+    border: 1.5px solid #e5e7eb;
+    padding: 10px 14px;
+    font-size: .88rem;
+}
+.st-modal .form-control:focus,
+.st-modal .form-select:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+.st-modal .modal-footer {
+    border: none;
+    padding: 14px 24px 20px;
+}
+.st-modal .hint-text {
+    font-size: .75rem;
+    color: #9ca3af;
+    margin-top: 4px;
+}
+
+/* Empty State */
+.st-empty {
+    text-align: center;
+    padding: 50px 20px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+}
+.st-empty i { font-size: 2.5rem; color: #d1d5db; margin-bottom: 14px; display: block; }
+.st-empty h5 { color: #6b7280; font-weight: 700; margin-bottom: 8px; }
+.st-empty p { color: #9ca3af; font-size: .88rem; margin-bottom: 16px; }
+
+/* History Card */
+.st-history-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+    overflow: hidden;
+    margin-top: 24px;
+}
+
+/* Mini Progress */
+.mini-progress {
+    width: 70px;
+    height: 6px;
+    background: #f3f4f6;
+    border-radius: 3px;
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+}
+.mini-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+}
+
+/* Note tooltip */
+.note-indicator {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #fef3c7;
+    color: #d97706;
+    font-size: .65rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+@media (max-width: 768px) {
+    .st-header { padding: 1.5rem 1.2rem 1.3rem; }
+    .st-header h1 { font-size: 1.3rem; }
+    .st-kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .st-target-card .target-value { font-size: 1.3rem; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="st-page">
+    <!-- Page Header -->
+    <div class="st-header">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+                <h1><i class="fas fa-bullseye me-2"></i>{% if is_admin_view %}Staff Targets{% else %}My Targets{% endif %}</h1>
+                <p>{% if is_admin_view %}Set, track and manage performance targets for your team{% else %}Track your assigned performance targets and achievements{% endif %}</p>
+            </div>
+            {% if is_admin_view %}
+            <button type="button" class="btn-header-action" data-bs-toggle="modal" data-bs-target="#setTargetModal">
+                <i class="fas fa-plus me-1"></i> Set Target
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="container-fluid px-3 px-lg-4">
+
+        {% if is_admin_view %}
+        <!-- ==================== ADMIN VIEW ==================== -->
+
+        <!-- KPI Summary -->
+        <div class="st-kpi-row">
+            <div class="st-kpi kpi-total">
+                <div class="kpi-val">{{ kpi.total }}</div>
+                <div class="kpi-lbl">Total Targets</div>
+                <div class="kpi-icon"><i class="fas fa-bullseye"></i></div>
+            </div>
+            <div class="st-kpi kpi-met">
+                <div class="kpi-val">{{ kpi.met }}</div>
+                <div class="kpi-lbl">Targets Met</div>
+                <div class="kpi-icon"><i class="fas fa-check-circle"></i></div>
+            </div>
+            <div class="st-kpi kpi-progress">
+                <div class="kpi-val">{{ kpi.in_progress }}</div>
+                <div class="kpi-lbl">In Progress</div>
+                <div class="kpi-icon"><i class="fas fa-spinner"></i></div>
+            </div>
+            <div class="st-kpi kpi-notmet">
+                <div class="kpi-val">{{ kpi.not_met }}</div>
+                <div class="kpi-lbl">Not Met</div>
+                <div class="kpi-icon"><i class="fas fa-times-circle"></i></div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <form method="get" class="st-filter-bar">
+            <div class="row g-2 align-items-end">
+                <div class="col-lg-3 col-md-4">
+                    <label class="form-label fw-semibold text-muted" style="font-size:.75rem; text-transform:uppercase; letter-spacing:.5px;">Staff Member</label>
+                    <select name="staff" class="form-select">
+                        <option value="">All Staff</option>
+                        {% for s in staff_members %}
+                        <option value="{{ s.id }}" {% if staff_filter == s.id|stringformat:"s" %}selected{% endif %}>
+                            {{ s.get_full_name|default:s.username }} ({{ s.get_role_display }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label fw-semibold text-muted" style="font-size:.75rem; text-transform:uppercase; letter-spacing:.5px;">Target Type</label>
+                    <select name="target_type" class="form-select">
+                        <option value="">All Types</option>
+                        <option value="sales" {% if type_filter == 'sales' %}selected{% endif %}>Sales</option>
+                        <option value="warehouse" {% if type_filter == 'warehouse' %}selected{% endif %}>Warehouse</option>
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label fw-semibold text-muted" style="font-size:.75rem; text-transform:uppercase; letter-spacing:.5px;">Period</label>
+                    <select name="period" class="form-select">
+                        <option value="">All Periods</option>
+                        <option value="weekly" {% if period_filter == 'weekly' %}selected{% endif %}>Weekly</option>
+                        <option value="monthly" {% if period_filter == 'monthly' %}selected{% endif %}>Monthly</option>
+                    </select>
+                </div>
+                <div class="col-lg-3 col-md-12 d-flex gap-2 mt-2 mt-lg-0">
+                    <button type="submit" class="btn btn-filter"><i class="fas fa-filter me-1"></i> Filter</button>
+                    <a href="{% url 'manage_targets' %}" class="btn btn-reset"><i class="fas fa-undo me-1"></i> Reset</a>
+                </div>
+            </div>
+        </form>
+
+        {% if targets_data %}
+        <!-- Admin Table -->
+        <div class="st-table-card">
+            <div class="st-table-header">
+                <h5><i class="fas fa-bullseye me-2" style="color:#6366f1;"></i>All Targets ({{ targets_data|length }})</h5>
+                <button type="button" class="btn btn-set-target btn-sm" data-bs-toggle="modal" data-bs-target="#setTargetModal">
+                    <i class="fas fa-plus me-1"></i> New Target
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="st-table">
+                    <thead>
+                        <tr>
+                            <th>Staff</th>
+                            <th>Type</th>
+                            <th>Target</th>
+                            <th>Achieved</th>
+                            <th>Progress</th>
+                            <th>Period</th>
+                            <th>Date Range</th>
+                            <th>Status</th>
+                            <th style="text-align:center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in targets_data %}
+                        <tr>
+                            <td>
+                                <div class="st-staff-info">
+                                    <span class="st-avatar">{{ item.target.staff.first_name|default:item.target.staff.username|first|upper }}</span>
+                                    <div>
+                                        <div class="st-staff-name">{{ item.target.staff.get_full_name|default:item.target.staff.username }}</div>
+                                        <div class="st-staff-role">{{ item.target.staff.get_role_display }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="target-type-badge badge-{{ item.target.target_type }}">{{ item.target.get_target_type_display }}</span>
+                            </td>
+                            <td>
+                                <strong>{% if item.target.target_type == 'sales' %}Rs. {{ item.target.target_value|floatformat:0 }}{% else %}{{ item.target.target_value|floatformat:0 }} orders{% endif %}</strong>
+                            </td>
+                            <td>
+                                {% if item.target.target_type == 'sales' %}<strong>Rs. {{ item.achieved|floatformat:0 }}</strong>{% else %}<strong>{{ item.achieved|floatformat:0 }}</strong>{% endif %}
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="mini-progress">
+                                        <div class="mini-progress-fill {% if item.percentage >= 100 %}fill-green{% elif item.percentage >= 50 %}fill-yellow{% else %}fill-red{% endif %}"
+                                             style="width:{{ item.percentage }}%;"></div>
+                                    </div>
+                                    <span style="font-size:.8rem; font-weight:700; {% if item.percentage >= 100 %}color:#059669;{% elif item.percentage >= 50 %}color:#d97706;{% else %}color:#dc2626;{% endif %}">{{ item.percentage }}%</span>
+                                </div>
+                            </td>
+                            <td><span style="font-size:.82rem;">{{ item.target.get_period_display }}</span></td>
+                            <td><span style="font-size:.78rem; color:#6b7280;">{{ item.target.start_date|date:"d M" }} - {{ item.target.end_date|date:"d M Y" }}</span></td>
+                            <td>
+                                <span class="status-badge status-{{ item.status }}">
+                                    {% if item.status == 'met' %}Met{% elif item.status == 'not_met' %}Not Met{% else %}In Progress{% endif %}
+                                </span>
+                                {% if item.target.note %}
+                                <span class="note-indicator ms-1" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ item.target.note }}"><i class="fas fa-sticky-note"></i></span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align:center;">
+                                <div class="d-flex gap-1 justify-content-center">
+                                    <button type="button" class="st-action-btn st-action-edit" onclick="openEditModal({{ item.target.id }})" title="Edit">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <form method="post" action="{% url 'delete_target' item.target.id %}" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this target?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="st-action-btn st-action-delete" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="st-empty">
+            <i class="fas fa-bullseye"></i>
+            <h5>No Targets Found</h5>
+            <p>No staff targets have been set yet. Start assigning targets to your team.</p>
+            <button type="button" class="btn btn-set-target" data-bs-toggle="modal" data-bs-target="#setTargetModal">
+                <i class="fas fa-plus me-1"></i> Set First Target
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- ==================== SET TARGET MODAL ==================== -->
+        <div class="modal fade st-modal" id="setTargetModal" tabindex="-1" aria-labelledby="setTargetLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="setTargetLabel"><i class="fas fa-plus-circle me-2"></i>Set New Target</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form method="post" action="{% url 'set_target' %}" id="setTargetForm">
+                        {% csrf_token %}
+                        <div class="modal-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Staff Member <span class="text-danger">*</span></label>
+                                    <select name="staff_id" id="setStaffId" class="form-select" required>
+                                        <option value="">-- Select Staff --</option>
+                                        {% for s in staff_members %}
+                                        <option value="{{ s.id }}" data-role="{{ s.role }}">{{ s.get_full_name|default:s.username }} ({{ s.get_role_display }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Target Type <span class="text-danger">*</span></label>
+                                    <select name="target_type" id="setTargetType" class="form-select" required>
+                                        <option value="">-- Select Type --</option>
+                                        <option value="sales">Sales (Revenue Amount)</option>
+                                        <option value="warehouse">Warehouse (Order Count)</option>
+                                    </select>
+                                    <div class="hint-text" id="typeHint"></div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Target Value <span class="text-danger">*</span></label>
+                                    <input type="number" name="target_value" id="setTargetValue" class="form-control" step="0.01" min="1" placeholder="e.g. 100000" required>
+                                    <div class="hint-text" id="valueHint">Sales: Rs. amount | Warehouse: order count</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Period <span class="text-danger">*</span></label>
+                                    <select name="period" id="setPeriod" class="form-select" required>
+                                        <option value="monthly">Monthly</option>
+                                        <option value="weekly">Weekly</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4"></div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Start Date <span class="text-danger">*</span></label>
+                                    <input type="date" name="start_date" id="setStartDate" class="form-control" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">End Date <span class="text-danger">*</span></label>
+                                    <input type="date" name="end_date" id="setEndDate" class="form-control" required>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Note <span class="text-muted">(optional)</span></label>
+                                    <textarea name="note" class="form-control" rows="2" placeholder="Any additional notes about this target..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-reset" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-set-target"><i class="fas fa-check me-1"></i> Set Target</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== EDIT TARGET MODAL ==================== -->
+        <div class="modal fade st-modal" id="editTargetModal" tabindex="-1" aria-labelledby="editTargetLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="editTargetLabel"><i class="fas fa-pen me-2"></i>Edit Target</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form method="post" id="editTargetForm" action="">
+                        {% csrf_token %}
+                        <div class="modal-body">
+                            <div class="mb-3 p-3" style="background:#f9fafb; border-radius:10px;">
+                                <label class="form-label fw-bold text-muted mb-1" style="font-size:.72rem; text-transform:uppercase;">Staff Member</label>
+                                <p id="editStaffName" class="mb-0 fw-bold" style="font-size:1rem; color:#1f2937;"></p>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Target Type <span class="text-danger">*</span></label>
+                                    <select name="target_type" id="editTargetType" class="form-select" required>
+                                        <option value="sales">Sales (Revenue Amount)</option>
+                                        <option value="warehouse">Warehouse (Order Count)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Target Value <span class="text-danger">*</span></label>
+                                    <input type="number" name="target_value" id="editTargetValue" class="form-control" step="0.01" min="1" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Period <span class="text-danger">*</span></label>
+                                    <select name="period" id="editPeriod" class="form-select" required>
+                                        <option value="monthly">Monthly</option>
+                                        <option value="weekly">Weekly</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6"></div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Start Date <span class="text-danger">*</span></label>
+                                    <input type="date" name="start_date" id="editStartDate" class="form-control" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">End Date <span class="text-danger">*</span></label>
+                                    <input type="date" name="end_date" id="editEndDate" class="form-control" required>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Note <span class="text-muted">(optional)</span></label>
+                                    <textarea name="note" id="editNote" class="form-control" rows="2"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-reset" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-set-target"><i class="fas fa-save me-1"></i> Save Changes</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        <!-- ==================== STAFF VIEW ==================== -->
+
+        {% if targets_data %}
+
+        <!-- KPI for Staff -->
+        <div class="st-kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+            <div class="st-kpi kpi-total">
+                <div class="kpi-val">{{ kpi.total }}</div>
+                <div class="kpi-lbl">Total Targets</div>
+                <div class="kpi-icon"><i class="fas fa-bullseye"></i></div>
+            </div>
+            <div class="st-kpi kpi-met">
+                <div class="kpi-val">{{ kpi.met }}</div>
+                <div class="kpi-lbl">Met</div>
+                <div class="kpi-icon"><i class="fas fa-check-circle"></i></div>
+            </div>
+            <div class="st-kpi kpi-progress">
+                <div class="kpi-val">{{ kpi.in_progress }}</div>
+                <div class="kpi-lbl">In Progress</div>
+                <div class="kpi-icon"><i class="fas fa-clock"></i></div>
+            </div>
+            <div class="st-kpi kpi-notmet">
+                <div class="kpi-val">{{ kpi.not_met }}</div>
+                <div class="kpi-lbl">Not Met</div>
+                <div class="kpi-icon"><i class="fas fa-times-circle"></i></div>
+            </div>
+        </div>
+
+        <!-- Active Targets Cards -->
+        {% for item in targets_data %}
+        {% if item.status == 'in_progress' %}
+        {% if forloop.first or forloop.counter == 1 %}
+        <h6 class="fw-bold mb-3" style="color:#1f2937; font-size:.92rem;"><i class="fas fa-crosshairs me-2" style="color:#6366f1;"></i>Active Targets</h6>
+        <div class="row g-3 mb-4">
+        {% endif %}
+            <div class="col-xl-4 col-md-6">
+                <div class="st-target-card">
+                    <div class="card-top">
+                        <span class="target-type-badge badge-{{ item.target.target_type }}">
+                            <i class="fas fa-{% if item.target.target_type == 'sales' %}chart-line{% else %}warehouse{% endif %} me-1"></i>
+                            {{ item.target.get_target_type_display }}
+                        </span>
+                        <span class="status-badge status-in_progress">In Progress</span>
+                    </div>
+
+                    <div class="target-value">
+                        {% if item.target.target_type == 'sales' %}Rs. {{ item.target.target_value|floatformat:0 }}{% else %}{{ item.target.target_value|floatformat:0 }} Orders{% endif %}
+                    </div>
+                    <div class="target-label">{{ item.target.get_period_display }} Target</div>
+
+                    <div class="st-progress-wrap">
+                        <div class="st-progress-bar">
+                            <div class="st-progress-fill {% if item.percentage >= 100 %}fill-green{% elif item.percentage >= 50 %}fill-yellow{% else %}fill-red{% endif %}"
+                                 style="width:{{ item.percentage }}%;"></div>
+                        </div>
+                        <div class="st-progress-meta">
+                            <span>{{ item.percentage }}% Complete</span>
+                            <span>{% if item.target.target_type == 'sales' %}Rs. {{ item.remaining|floatformat:0 }}{% else %}{{ item.remaining|floatformat:0 }}{% endif %} left</span>
+                        </div>
+                    </div>
+
+                    <div class="st-stats-row">
+                        <div class="st-stat-item">
+                            <div class="stat-val" style="color:#10b981;">{% if item.target.target_type == 'sales' %}Rs. {{ item.achieved|floatformat:0 }}{% else %}{{ item.achieved|floatformat:0 }}{% endif %}</div>
+                            <div class="stat-lbl">Achieved</div>
+                        </div>
+                        <div class="st-stat-item">
+                            <div class="stat-val" style="color:#f59e0b;">{% if item.target.target_type == 'sales' %}Rs. {{ item.remaining|floatformat:0 }}{% else %}{{ item.remaining|floatformat:0 }}{% endif %}</div>
+                            <div class="stat-lbl">Remaining</div>
+                        </div>
+                        <div class="st-stat-item">
+                            <div class="stat-val" style="color:#6366f1;">{{ item.percentage }}%</div>
+                            <div class="stat-lbl">Progress</div>
+                        </div>
+                    </div>
+
+                    <div class="st-card-footer">
+                        <span><i class="fas fa-calendar-alt me-1"></i>{{ item.target.start_date|date:"d M" }} - {{ item.target.end_date|date:"d M Y" }}</span>
+                        <span>{{ item.target.get_period_display }}</span>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+        {% endfor %}
+        </div>
+
+        <!-- Performance History Table -->
+        <div class="st-history-card">
+            <div class="st-table-header">
+                <h5><i class="fas fa-history me-2" style="color:#f59e0b;"></i>All Targets History</h5>
+            </div>
+            <div class="table-responsive">
+                <table class="st-table">
+                    <thead>
+                        <tr>
+                            <th>Period</th>
+                            <th>Type</th>
+                            <th>Target</th>
+                            <th>Achieved</th>
+                            <th>Progress</th>
+                            <th>Date Range</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in targets_data %}
+                        <tr>
+                            <td><strong>{{ item.target.get_period_display }}</strong></td>
+                            <td><span class="target-type-badge badge-{{ item.target.target_type }}">{{ item.target.get_target_type_display }}</span></td>
+                            <td><strong>{% if item.target.target_type == 'sales' %}Rs. {{ item.target.target_value|floatformat:0 }}{% else %}{{ item.target.target_value|floatformat:0 }}{% endif %}</strong></td>
+                            <td><strong>{% if item.target.target_type == 'sales' %}Rs. {{ item.achieved|floatformat:0 }}{% else %}{{ item.achieved|floatformat:0 }}{% endif %}</strong></td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="mini-progress">
+                                        <div class="mini-progress-fill {% if item.percentage >= 100 %}fill-green{% elif item.percentage >= 50 %}fill-yellow{% else %}fill-red{% endif %}" style="width:{{ item.percentage }}%;"></div>
+                                    </div>
+                                    <span style="font-size:.8rem; font-weight:700;">{{ item.percentage }}%</span>
+                                </div>
+                            </td>
+                            <td><span style="font-size:.78rem; color:#6b7280;">{{ item.target.start_date|date:"d M" }} - {{ item.target.end_date|date:"d M Y" }}</span></td>
+                            <td><span class="status-badge status-{{ item.status }}">{% if item.status == 'met' %}Met{% elif item.status == 'not_met' %}Not Met{% else %}In Progress{% endif %}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% else %}
+        <div class="st-empty">
+            <i class="fas fa-bullseye"></i>
+            <h5>No Targets Assigned</h5>
+            <p>You don't have any targets assigned yet. Your administrator will set targets for you.</p>
+        </div>
+        {% endif %}
+
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    // Initialize Bootstrap tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(function(el) { new bootstrap.Tooltip(el); });
+
+    {% if is_admin_view %}
+    // ========== Auto-fill target type based on staff role ==========
+    var staffSelect = document.getElementById('setStaffId');
+    var typeSelect = document.getElementById('setTargetType');
+    var typeHint = document.getElementById('typeHint');
+    var valueHint = document.getElementById('valueHint');
+
+    if (staffSelect && typeSelect) {
+        staffSelect.addEventListener('change', function() {
+            var selected = this.options[this.selectedIndex];
+            var role = selected.getAttribute('data-role');
+            if (role === 'sales') {
+                typeSelect.value = 'sales';
+                typeHint.textContent = 'Auto-selected Sales based on staff role';
+                typeHint.style.color = '#059669';
+                valueHint.textContent = 'Enter revenue target amount in Rs.';
+            } else if (role === 'warehouse') {
+                typeSelect.value = 'warehouse';
+                typeHint.textContent = 'Auto-selected Warehouse based on staff role';
+                typeHint.style.color = '#7c3aed';
+                valueHint.textContent = 'Enter number of orders to process';
+            } else {
+                typeSelect.value = '';
+                typeHint.textContent = '';
+                valueHint.textContent = 'Sales: Rs. amount | Warehouse: order count';
+            }
+        });
+    }
+
+    // ========== Auto-fill dates based on period ==========
+    var periodSelect = document.getElementById('setPeriod');
+    var startInput = document.getElementById('setStartDate');
+    var endInput = document.getElementById('setEndDate');
+
+    function fillDates(periodVal, startEl, endEl) {
+        var now = new Date();
+        var y = now.getFullYear();
+        var m = now.getMonth();
+        var d = now.getDate();
+
+        function fmt(dt) {
+            return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+        }
+
+        if (periodVal === 'monthly') {
+            var start = new Date(y, m, 1);
+            var end = new Date(y, m + 1, 0);
+            startEl.value = fmt(start);
+            endEl.value = fmt(end);
+        } else if (periodVal === 'weekly') {
+            var day = now.getDay();
+            var diff = day === 0 ? 6 : day - 1;
+            var monday = new Date(y, m, d - diff);
+            var sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            startEl.value = fmt(monday);
+            endEl.value = fmt(sunday);
+        }
+    }
+
+    if (periodSelect && startInput && endInput) {
+        // Auto-fill on page load (default monthly)
+        fillDates(periodSelect.value, startInput, endInput);
+
+        periodSelect.addEventListener('change', function() {
+            fillDates(this.value, startInput, endInput);
+        });
+    }
+
+    // ========== Edit Modal ==========
+    window.openEditModal = function(targetId) {
+        fetch('/api/targets/' + targetId + '/')
+            .then(function(res) {
+                if (!res.ok) throw new Error('Failed to load');
+                return res.json();
+            })
+            .then(function(data) {
+                if (data.error) { alert(data.error); return; }
+                document.getElementById('editStaffName').textContent = data.staff_name;
+                document.getElementById('editTargetType').value = data.target_type;
+                document.getElementById('editTargetValue').value = data.target_value;
+                document.getElementById('editPeriod').value = data.period;
+                document.getElementById('editStartDate').value = data.start_date;
+                document.getElementById('editEndDate').value = data.end_date;
+                document.getElementById('editNote').value = data.note || '';
+                document.getElementById('editTargetForm').action = '/targets/' + data.id + '/edit/';
+                var modal = new bootstrap.Modal(document.getElementById('editTargetModal'));
+                modal.show();
+            })
+            .catch(function(err) {
+                alert('Error loading target details: ' + err.message);
+            });
+    };
+    {% endif %}
+});
+</script>
+{% endblock %}

@@ -1,0 +1,1119 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dashboard_extras %}
+
+{% block title %}Product Sales Report{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+<li class="breadcrumb-item">Reports</li>
+<li class="breadcrumb-item active">Product Sales Report</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.psr-page { background: #f5f7fa; min-height: 100vh; }
+
+/* Filter Bar */
+.filter-bar {
+    background: #fff;
+    border-radius: 14px;
+    padding: 20px 28px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    margin-bottom: 24px;
+}
+.filter-bar .form-label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+}
+.filter-bar .form-select,
+.filter-bar .form-control {
+    border-radius: 10px;
+    border: 1.5px solid #e5e7eb;
+    padding: 10px 14px;
+    font-size: .9rem;
+    transition: border-color .2s;
+}
+.filter-bar .form-select:focus,
+.filter-bar .form-control:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+.filter-bar .btn-apply {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border: none;
+    color: #fff;
+    border-radius: 10px;
+    padding: 10px 28px;
+    font-weight: 600;
+    font-size: .9rem;
+    transition: transform .15s, box-shadow .15s;
+}
+.filter-bar .btn-apply:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99,102,241,.35);
+}
+.filter-bar .btn-reset {
+    background: #f3f4f6;
+    border: 1.5px solid #e5e7eb;
+    color: #6b7280;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-weight: 600;
+    font-size: .9rem;
+}
+
+/* Summary Cards */
+.summary-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 22px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    position: relative;
+    overflow: hidden;
+    transition: transform .2s, box-shadow .2s;
+}
+.summary-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.1);
+}
+.summary-card .card-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    margin-bottom: 14px;
+}
+.summary-card .card-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #111827;
+    line-height: 1.2;
+}
+.summary-card .card-label {
+    font-size: .8rem;
+    color: #9ca3af;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-top: 4px;
+}
+.icon-blue { background: #eff6ff; color: #3b82f6; }
+.icon-green { background: #ecfdf5; color: #10b981; }
+.icon-purple { background: #f5f3ff; color: #8b5cf6; }
+.icon-amber { background: #fffbeb; color: #f59e0b; }
+
+/* Staff Table */
+.staff-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    overflow: hidden;
+}
+.staff-card .card-header-custom {
+    padding: 18px 24px;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.staff-card .card-header-custom h6 {
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+    font-size: 1rem;
+}
+.staff-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+.staff-table thead th {
+    background: #f9fafb;
+    padding: 12px 16px;
+    font-size: .75rem;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    border-bottom: 1px solid #f3f4f6;
+}
+.staff-table tbody td {
+    padding: 14px 16px;
+    font-size: .88rem;
+    color: #374151;
+    border-bottom: 1px solid #f9fafb;
+    vertical-align: middle;
+}
+.staff-table tbody tr:hover {
+    background: #f9fafb;
+}
+.staff-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Gold badge for rank 1 */
+.rank-badge {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: .8rem;
+}
+.rank-gold {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(245,158,11,.4);
+}
+.rank-silver { background: #e5e7eb; color: #374151; }
+.rank-bronze { background: #fed7aa; color: #9a3412; }
+.rank-default { background: #f3f4f6; color: #6b7280; }
+.top-seller-row { background: #fffbeb !important; }
+.top-seller-row td:first-child { border-left: 3px solid #f59e0b; }
+
+/* Chart Card */
+.chart-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    padding: 24px;
+}
+.chart-card .card-header-custom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.chart-card .card-header-custom h6 {
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+    font-size: 1rem;
+}
+.toggle-btns .btn-toggle {
+    padding: 6px 16px;
+    border-radius: 8px;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+    color: #6b7280;
+    font-size: .8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+}
+.toggle-btns .btn-toggle.active {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: #fff;
+}
+.toggle-btns .btn-toggle:hover:not(.active) {
+    border-color: #6366f1;
+    color: #6366f1;
+}
+
+/* Quick Filter Buttons */
+.quick-filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.quick-filters .btn-quick {
+    padding: 7px 18px;
+    border-radius: 10px;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+    color: #6b7280;
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+}
+.quick-filters .btn-quick:hover {
+    border-color: #6366f1;
+    color: #6366f1;
+}
+.quick-filters .btn-quick.active {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border-color: #6366f1;
+    color: #fff;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+}
+.empty-state i {
+    font-size: 3rem;
+    color: #d1d5db;
+    margin-bottom: 16px;
+}
+.empty-state h5 {
+    color: #6b7280;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.empty-state p {
+    color: #9ca3af;
+    font-size: .9rem;
+}
+
+/* Product info badge */
+.selected-product-info {
+    background: linear-gradient(135deg, #eff6ff, #f5f3ff);
+    border: 1.5px solid #c7d2fe;
+    border-radius: 12px;
+    padding: 14px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.selected-product-info .product-name {
+    font-weight: 700;
+    color: #1f2937;
+    font-size: 1.05rem;
+}
+.selected-product-info .product-meta {
+    font-size: .82rem;
+    color: #6b7280;
+}
+
+/* Product search dropdown */
+.product-search-wrapper { position: relative; }
+.product-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1.5px solid #e5e7eb;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    max-height: 260px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    box-shadow: 0 8px 20px rgba(0,0,0,.12);
+}
+.product-dropdown.show { display: block; }
+.product-dropdown .dropdown-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: .88rem;
+    color: #374151;
+    border-bottom: 1px solid #f9fafb;
+    transition: background .15s;
+}
+.product-dropdown .dropdown-item:hover,
+.product-dropdown .dropdown-item.highlighted {
+    background: #eff6ff;
+    color: #4f46e5;
+}
+.product-dropdown .dropdown-item .stock-info {
+    font-size: .75rem;
+    color: #9ca3af;
+    margin-left: 8px;
+}
+.product-dropdown .no-results {
+    padding: 14px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: .85rem;
+}
+
+/* Chart empty placeholder */
+.chart-empty {
+    padding: 40px;
+    text-align: center;
+    color: #9ca3af;
+}
+.chart-empty i {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    display: block;
+}
+
+/* Doughnut legend */
+.doughnut-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+    justify-content: center;
+}
+.doughnut-legend .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .78rem;
+    color: #6b7280;
+    font-weight: 500;
+}
+.doughnut-legend .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    .filter-bar { padding: 16px; }
+    .summary-card .card-value { font-size: 1.3rem; }
+    .staff-table { font-size: .82rem; }
+    .selected-product-info { flex-direction: column; align-items: flex-start; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="psr-page">
+    <div class="container-fluid py-3">
+
+        <!-- Page Header -->
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <div>
+                <h4 class="fw-bold mb-1" style="color:#1f2937;">Product Sales Report</h4>
+                <p class="text-muted mb-0" style="font-size:.88rem;">Analyze individual product performance, staff rankings & sales trends</p>
+            </div>
+            <div class="quick-filters">
+                <button type="button" class="btn-quick{% if active_filter == 'today' %} active{% endif %}" data-filter="today">Today</button>
+                <button type="button" class="btn-quick{% if active_filter == 'week' %} active{% endif %}" data-filter="week">This Week</button>
+                <button type="button" class="btn-quick{% if active_filter == 'month' %} active{% endif %}" data-filter="month">This Month</button>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <form method="get" class="filter-bar" id="filterForm">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label">Select Product</label>
+                    <div class="product-search-wrapper">
+                        <input type="text" class="form-control" id="productSearch"
+                               placeholder="Type to search products..."
+                               autocomplete="off"
+                               value="{% if selected_product %}{{ selected_product.name }}{% endif %}">
+                        <input type="hidden" name="product_id" id="productIdInput" value="{{ selected_product_id }}">
+                        <div class="product-dropdown" id="productDropdown">
+                            {% for p in products %}
+                            <div class="dropdown-item" data-id="{{ p.id }}" data-name="{{ p.name }}" data-type="{{ p.product_type }}">
+                                {{ p.name }}
+                                {% if p.product_type == 'variable' %}<span class="badge bg-info text-white ms-1" style="font-size:.6rem; vertical-align:middle;">VARIABLE</span>{% endif %}
+                                <span class="stock-info">Stock: {{ p.stock }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <!-- Variation Selector (only shown for variable products) -->
+                <div class="col-lg-2 col-md-3" id="variationCol" {% if not is_variable %}style="display:none;"{% endif %}>
+                    <label class="form-label">Variant</label>
+                    <select class="form-select" name="variation_id" id="variationSelect">
+                        <option value="">All Variants</option>
+                        {% for v in variations %}
+                        <option value="{{ v.id }}" {% if selected_variation_id == v.id|stringformat:"s" %}selected{% endif %}>
+                            {{ v.variation_name }} (Stock: {{ v.stock }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-3 col-6">
+                    <label class="form-label">From Date</label>
+                    <input type="date" class="form-control" name="from_date" value="{{ from_date }}">
+                </div>
+                <div class="col-lg-2 col-md-3 col-6">
+                    <label class="form-label">To Date</label>
+                    <input type="date" class="form-control" name="to_date" value="{{ to_date }}">
+                </div>
+                <div class="col-lg-3 col-md-12 d-flex gap-2">
+                    <button type="submit" class="btn btn-apply">
+                        <i class="fas fa-search me-1"></i> Generate Report
+                    </button>
+                    <a href="{% url 'product_sales_report' %}" class="btn btn-reset">
+                        <i class="fas fa-undo me-1"></i> Reset
+                    </a>
+                </div>
+            </div>
+        </form>
+
+        {% if selected_product %}
+        <!-- Selected Product Info -->
+        <div class="selected-product-info">
+            <i class="fas fa-box-open" style="font-size:1.5rem; color:#6366f1;"></i>
+            <div>
+                <div class="product-name">
+                    {{ selected_product.name }}
+                    {% if is_variable %}
+                        <span class="badge bg-info text-white ms-1" style="font-size:.65rem; vertical-align:middle;">VARIABLE</span>
+                    {% else %}
+                        <span class="badge bg-secondary text-white ms-1" style="font-size:.65rem; vertical-align:middle;">SIMPLE</span>
+                    {% endif %}
+                    {% if selected_variation %}
+                        <span class="badge bg-purple text-white ms-1" style="font-size:.65rem; vertical-align:middle; background:#8b5cf6;">{{ selected_variation.variation_name }}</span>
+                    {% endif %}
+                </div>
+                <div class="product-meta">
+                    Category: {{ selected_product.category.name|default:"Uncategorized" }}
+                    &middot; Price: {% if selected_variation %}{{ selected_variation.price|currency }}{% else %}{{ selected_product.price|currency }}{% endif %}
+                    &middot; SKU: {% if selected_variation %}{{ selected_variation.sku|default:"N/A" }}{% else %}{{ selected_product.barcode|default:"N/A" }}{% endif %}
+                    {% if is_variable and not selected_variation %}&middot; {{ variations|length }} variant{{ variations|length|pluralize }}{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-xl-3 col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-blue"><i class="fas fa-shopping-cart"></i></div>
+                    <div class="card-value">{{ summary.total_qty|default:"0" }}</div>
+                    <div class="card-label">Total Units Sold</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-green"><i class="fas fa-money-bill-wave"></i></div>
+                    <div class="card-value">{{ summary.total_revenue|currency }}</div>
+                    <div class="card-label">Total Revenue</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-purple"><i class="fas fa-tag"></i></div>
+                    <div class="card-value">{{ summary.avg_price|currency }}</div>
+                    <div class="card-label">Avg Selling Price</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-amber"><i class="fas fa-warehouse"></i></div>
+                    <div class="card-value">{{ summary.current_stock|default:"0" }}</div>
+                    <div class="card-label">Current Stock</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Variant Breakdown (only for variable products when viewing "All Variants") -->
+        {% if is_variable and not selected_variation %}
+        <div class="row g-4 mb-4">
+            <div class="col-lg-7">
+                <div class="staff-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-layer-group me-2" style="color:#8b5cf6;"></i>Variant Breakdown</h6>
+                        <span class="badge bg-light text-dark" style="font-size:.75rem;">{{ variant_breakdown|length }} variant{{ variant_breakdown|length|pluralize }}</span>
+                    </div>
+                    {% if variant_breakdown %}
+                    <div class="table-responsive">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>Variant</th>
+                                    <th>Units Sold</th>
+                                    <th>Revenue</th>
+                                    <th>Avg Price</th>
+                                    <th>Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for vb in variant_breakdown %}
+                                <tr {% if forloop.first %}class="top-seller-row"{% endif %}>
+                                    <td>
+                                        <strong>{{ vb.name }}</strong>
+                                        {% if forloop.first %}<span class="badge bg-success ms-1" style="font-size:.6rem;">BEST</span>{% endif %}
+                                    </td>
+                                    <td><strong>{{ vb.units_sold }}</strong></td>
+                                    <td>{{ vb.revenue|currency }}</td>
+                                    <td>{{ vb.avg_price|currency }}</td>
+                                    <td>
+                                        <span class="badge bg-{% if vb.stock > 10 %}success{% elif vb.stock > 0 %}warning{% else %}danger{% endif %}">
+                                            {{ vb.stock }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-layer-group"></i>
+                        No variant sales data found for this date range.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="chart-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-chart-pie me-2" style="color:#8b5cf6;"></i>Variant Sales Share</h6>
+                    </div>
+                    {% if variant_chart_labels != "[]" %}
+                    <div style="position:relative; height:240px; width:100%;">
+                        <canvas id="variantDoughnut"></canvas>
+                    </div>
+                    <div id="variantLegend" class="doughnut-legend"></div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-chart-pie"></i>
+                        No variant data available.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Row 1: Sales Trend (full width line chart with dual y-axis) -->
+        <div class="row g-4 mb-4">
+            <div class="col-12">
+                <div class="chart-card">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-chart-line me-2" style="color:#4f46e5;"></i>Sales Trend</h6>
+                        <div class="toggle-btns">
+                            <button type="button" class="btn-toggle active" data-mode="both" data-chart="trend">Both</button>
+                            <button type="button" class="btn-toggle" data-mode="qty" data-chart="trend">Units Sold</button>
+                            <button type="button" class="btn-toggle" data-mode="revenue" data-chart="trend">Revenue</button>
+                        </div>
+                    </div>
+                    {% if chart_labels != "[]" %}
+                    <div style="position:relative; height:300px; width:100%;">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-chart-area"></i>
+                        No sales data available for this date range.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 2: Staff Table + Doughnut Charts -->
+        <div class="row g-4 mb-4">
+            <!-- Staff Sales Ranking -->
+            <div class="col-lg-6">
+                <div class="staff-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-trophy me-2" style="color:#f59e0b;"></i>Staff Sales Ranking</h6>
+                        <span class="badge bg-light text-dark" style="font-size:.75rem;">{{ staff_ranking|length }} staff</span>
+                    </div>
+                    {% if staff_ranking %}
+                    <div class="table-responsive">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>Rank</th>
+                                    <th>Staff Name</th>
+                                    <th>Units Sold</th>
+                                    <th>Revenue</th>
+                                    <th>Last Sale</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for s in staff_ranking %}
+                                <tr class="{% if s.rank == 1 %}top-seller-row{% endif %}">
+                                    <td>
+                                        <span class="rank-badge {% if s.rank == 1 %}rank-gold{% elif s.rank == 2 %}rank-silver{% elif s.rank == 3 %}rank-bronze{% else %}rank-default{% endif %}">
+                                            {% if s.rank == 1 %}<i class="fas fa-crown" style="font-size:.7rem;"></i>{% else %}{{ s.rank }}{% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <strong>{{ s.name }}</strong>
+                                        {% if s.rank == 1 %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">TOP SELLER</span>{% endif %}
+                                    </td>
+                                    <td><strong>{{ s.units_sold }}</strong></td>
+                                    <td>{{ s.revenue|currency }}</td>
+                                    <td style="font-size:.82rem; color:#9ca3af;">{{ s.last_sale|nepali_datetime }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-users"></i>
+                        No sales data found for this product in the selected date range.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Doughnut Charts Column -->
+            <div class="col-lg-6">
+                <div class="row g-4">
+                    <!-- Staff Contribution Doughnut -->
+                    <div class="col-12">
+                        <div class="chart-card">
+                            <div class="card-header-custom">
+                                <h6><i class="fas fa-users me-2" style="color:#8b5cf6;"></i>Staff Contribution</h6>
+                            </div>
+                            {% if staff_chart_labels != "[]" %}
+                            <div style="position:relative; height:240px; width:100%;">
+                                <canvas id="staffDoughnut"></canvas>
+                            </div>
+                            <div id="staffLegend" class="doughnut-legend"></div>
+                            {% else %}
+                            <div class="chart-empty">
+                                <i class="fas fa-chart-pie"></i>
+                                No staff data available.
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <!-- Order Status Doughnut -->
+                    <div class="col-12">
+                        <div class="chart-card">
+                            <div class="card-header-custom">
+                                <h6><i class="fas fa-clipboard-list me-2" style="color:#059669;"></i>Order Status Breakdown</h6>
+                            </div>
+                            {% if status_chart_labels != "[]" %}
+                            <div style="position:relative; height:240px; width:100%;">
+                                <canvas id="statusDoughnut"></canvas>
+                            </div>
+                            <div id="statusLegend" class="doughnut-legend"></div>
+                            {% else %}
+                            <div class="chart-empty">
+                                <i class="fas fa-chart-pie"></i>
+                                No order status data available.
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        <!-- Empty State -->
+        <div class="empty-state">
+            <i class="fas fa-search"></i>
+            <h5>Select a Product to View Report</h5>
+            <p>Choose a product from the dropdown above and set a date range to generate the sales report.</p>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    // ========== Quick Filter Buttons (Today / Week / Month) ==========
+    document.querySelectorAll('.btn-quick[data-filter]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var filter = this.dataset.filter;
+            var today = new Date();
+            var fromDate = new Date();
+
+            if (filter === 'today') {
+                fromDate = today;
+            } else if (filter === 'week') {
+                var day = today.getDay();
+                var diff = day === 0 ? 6 : day - 1;
+                fromDate.setDate(today.getDate() - diff);
+            } else if (filter === 'month') {
+                fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
+            }
+
+            var fmt = function(d) {
+                var y = d.getFullYear();
+                var m = String(d.getMonth() + 1).padStart(2, '0');
+                var dd = String(d.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + dd;
+            };
+
+            var form = document.getElementById('filterForm');
+            var fromInput = form.querySelector('input[name="from_date"]');
+            var toInput = form.querySelector('input[name="to_date"]');
+            fromInput.value = fmt(fromDate);
+            toInput.value = fmt(today);
+            form.submit();
+        });
+    });
+
+    // ========== Product Search Dropdown ==========
+    const searchInput = document.getElementById('productSearch');
+    const dropdown = document.getElementById('productDropdown');
+    const hiddenInput = document.getElementById('productIdInput');
+    const items = dropdown.querySelectorAll('.dropdown-item');
+    let highlighted = -1;
+
+    searchInput.addEventListener('focus', function() {
+        filterDropdown(this.value);
+        dropdown.classList.add('show');
+    });
+
+    searchInput.addEventListener('input', function() {
+        hiddenInput.value = '';
+        filterDropdown(this.value);
+        highlighted = -1;
+    });
+
+    searchInput.addEventListener('keydown', function(e) {
+        const visible = dropdown.querySelectorAll('.dropdown-item:not([style*="display: none"])');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            highlighted = Math.min(highlighted + 1, visible.length - 1);
+            updateHighlight(visible);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            highlighted = Math.max(highlighted - 1, 0);
+            updateHighlight(visible);
+        } else if (e.key === 'Enter' && highlighted >= 0) {
+            e.preventDefault();
+            visible[highlighted].click();
+        } else if (e.key === 'Escape') {
+            dropdown.classList.remove('show');
+        }
+    });
+
+    items.forEach(function(item) {
+        item.addEventListener('click', function() {
+            searchInput.value = this.dataset.name;
+            hiddenInput.value = this.dataset.id;
+            dropdown.classList.remove('show');
+            // Show/hide variation selector based on product type
+            var variationCol = document.getElementById('variationCol');
+            var variationSelect = document.getElementById('variationSelect');
+            if (this.dataset.type === 'variable') {
+                variationCol.style.display = '';
+            } else {
+                variationCol.style.display = 'none';
+                variationSelect.value = '';
+            }
+        });
+    });
+
+    document.addEventListener('click', function(e) {
+        if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.classList.remove('show');
+        }
+    });
+
+    function filterDropdown(query) {
+        const q = query.toLowerCase();
+        let hasResults = false;
+        items.forEach(function(item) {
+            const match = item.dataset.name.toLowerCase().includes(q);
+            item.style.display = match ? '' : 'none';
+            if (match) hasResults = true;
+        });
+        const old = dropdown.querySelector('.no-results');
+        if (old) old.remove();
+        if (!hasResults) {
+            const div = document.createElement('div');
+            div.className = 'no-results';
+            div.textContent = 'No products found';
+            dropdown.appendChild(div);
+        }
+        dropdown.classList.add('show');
+    }
+
+    function updateHighlight(visible) {
+        visible.forEach(function(el, i) {
+            el.classList.toggle('highlighted', i === highlighted);
+            if (i === highlighted) el.scrollIntoView({ block: 'nearest' });
+        });
+    }
+
+    // ========== Charts ==========
+    {% if selected_product %}
+
+    const COLORS = ['#4f46e5','#2563eb','#059669','#d97706','#dc2626','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316'];
+    const STATUS_COLORS = { 'Processing':'#3b82f6','Pending':'#f59e0b','Confirmed':'#6366f1','Packed':'#6b7280','Shipped':'#06b6d4','Delivered':'#10b981','Cancelled':'#ef4444','Returned':'#374151' };
+
+    // ---------- 1. Sales Trend (Dual-Axis Line) ----------
+    {% if chart_labels != "[]" %}
+    (function() {
+        const labels = {{ chart_labels|safe }};
+        const qtyData = {{ chart_qty_data|safe }};
+        const revData = {{ chart_revenue_data|safe }};
+        const ctx = document.getElementById('trendChart').getContext('2d');
+
+        const trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Units Sold',
+                        data: qtyData,
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79,70,229,0.08)',
+                        fill: true,
+                        yAxisID: 'y',
+                        borderWidth: 2.5,
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
+                        pointBackgroundColor: '#4f46e5',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        tension: 0.4,
+                    },
+                    {
+                        label: 'Revenue (Rs.)',
+                        data: revData,
+                        borderColor: '#d97706',
+                        backgroundColor: 'rgba(217,119,6,0.08)',
+                        fill: true,
+                        yAxisID: 'y1',
+                        borderWidth: 2,
+                        borderDash: [6, 3],
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#d97706',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        tension: 0.4,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { usePointStyle: true, font: { size: 12, weight: '600' }, padding: 20, color: '#6b7280' }
+                    },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { size: 13, weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                if (c.datasetIndex === 1) return ' Revenue: Rs ' + c.parsed.y.toLocaleString();
+                                return ' Units: ' + c.parsed.y;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11, weight: '500' }, color: '#9ca3af' }
+                    },
+                    y: {
+                        type: 'linear',
+                        position: 'left',
+                        beginAtZero: true,
+                        title: { display: true, text: 'Units Sold', font: { size: 11, weight: '600' }, color: '#4f46e5' },
+                        grid: { color: '#f3f4f6' },
+                        ticks: { font: { size: 11 }, color: '#9ca3af', stepSize: 1 }
+                    },
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        title: { display: true, text: 'Revenue (Rs.)', font: { size: 11, weight: '600' }, color: '#d97706' },
+                        grid: { drawOnChartArea: false },
+                        ticks: {
+                            font: { size: 11 },
+                            color: '#9ca3af',
+                            callback: function(v) { return 'Rs ' + (v >= 1000 ? (v/1000).toFixed(1) + 'K' : v); }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Toggle buttons
+        document.querySelectorAll('.btn-toggle[data-chart="trend"]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.btn-toggle[data-chart="trend"]').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                var mode = this.dataset.mode;
+                trendChart.data.datasets[0].hidden = (mode === 'revenue');
+                trendChart.data.datasets[1].hidden = (mode === 'qty');
+                trendChart.options.scales.y.display = (mode !== 'revenue');
+                trendChart.options.scales.y1.display = (mode !== 'qty');
+                trendChart.update();
+            });
+        });
+    })();
+    {% endif %}
+
+    // ---------- 2. Staff Contribution Doughnut ----------
+    {% if staff_chart_labels != "[]" %}
+    (function() {
+        const staffLabels = {{ staff_chart_labels|safe }};
+        const staffData = {{ staff_chart_data|safe }};
+        const staffColors = staffLabels.map(function(_, i) { return COLORS[i % COLORS.length]; });
+        const total = staffData.reduce(function(a, b) { return a + b; }, 0);
+
+        const ctx = document.getElementById('staffDoughnut').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: staffLabels,
+                datasets: [{
+                    data: staffData,
+                    backgroundColor: staffColors,
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                var pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : 0;
+                                return ' ' + c.label + ': ' + c.parsed + ' units (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Build custom legend
+        var legendEl = document.getElementById('staffLegend');
+        staffLabels.forEach(function(label, i) {
+            var pct = total > 0 ? ((staffData[i] / total) * 100).toFixed(1) : 0;
+            legendEl.innerHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + staffColors[i] + '"></span>' + label + ' (' + pct + '%)</div>';
+        });
+    })();
+    {% endif %}
+
+    // ---------- 3. Order Status Doughnut ----------
+    {% if status_chart_labels != "[]" %}
+    (function() {
+        const statusLabels = {{ status_chart_labels|safe }};
+        const statusData = {{ status_chart_data|safe }};
+        const statusColors = statusLabels.map(function(label) {
+            return STATUS_COLORS[label] || COLORS[statusLabels.indexOf(label) % COLORS.length];
+        });
+        const total = statusData.reduce(function(a, b) { return a + b; }, 0);
+
+        const ctx = document.getElementById('statusDoughnut').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: statusLabels,
+                datasets: [{
+                    data: statusData,
+                    backgroundColor: statusColors,
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                var pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : 0;
+                                return ' ' + c.label + ': ' + c.parsed + ' orders (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Build custom legend
+        var legendEl = document.getElementById('statusLegend');
+        statusLabels.forEach(function(label, i) {
+            var pct = total > 0 ? ((statusData[i] / total) * 100).toFixed(1) : 0;
+            legendEl.innerHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + statusColors[i] + '"></span>' + label + ' (' + pct + '%)</div>';
+        });
+    })();
+    {% endif %}
+
+    // ---------- 4. Variant Sales Doughnut ----------
+    {% if variant_chart_labels != "[]" %}
+    (function() {
+        const varLabels = {{ variant_chart_labels|safe }};
+        const varData = {{ variant_chart_data|safe }};
+        const VARIANT_COLORS = ['#8b5cf6','#6366f1','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#84cc16','#f97316'];
+        const varColors = varLabels.map(function(_, i) { return VARIANT_COLORS[i % VARIANT_COLORS.length]; });
+        const total = varData.reduce(function(a, b) { return a + b; }, 0);
+
+        const ctx = document.getElementById('variantDoughnut').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: varLabels,
+                datasets: [{
+                    data: varData,
+                    backgroundColor: varColors,
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                var pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : 0;
+                                return ' ' + c.label + ': ' + c.parsed + ' units (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        var legendEl = document.getElementById('variantLegend');
+        varLabels.forEach(function(label, i) {
+            var pct = total > 0 ? ((varData[i] / total) * 100).toFixed(1) : 0;
+            legendEl.innerHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + varColors[i] + '"></span>' + label + ' (' + pct + '%)</div>';
+        });
+    })();
+    {% endif %}
+
+    {% endif %}
+});
+</script>
+{% endblock %}

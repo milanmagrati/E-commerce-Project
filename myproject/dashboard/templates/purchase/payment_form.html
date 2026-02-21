@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+
+{% block title %}Record Payment - Purchase Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <h4 class="mb-1"><i class="fas fa-money-bill-wave me-2 text-success"></i>Record Supplier Payment</h4>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{% url 'purchase_dashboard' %}">Purchase Management</a></li>
+                <li class="breadcrumb-item active">Record Payment</li>
+            </ol>
+        </nav>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label fw-medium">Supplier <span class="text-danger">*</span></label>
+                            <select name="supplier" id="supplierSelect" class="form-select" required>
+                                <option value="">-- Select Supplier --</option>
+                                {% for s in suppliers %}
+                                <option value="{{ s.id }}" {% if selected_supplier|stringformat:"s" == s.id|stringformat:"s" %}selected{% endif %}>
+                                    {{ s.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-medium">Against Invoice (Optional)</label>
+                            <select name="purchase" id="purchaseSelect" class="form-select">
+                                <option value="">-- General Payment --</option>
+                                {% for p in purchases %}
+                                <option value="{{ p.id }}">{{ p.invoice_number }} (Remaining: Rs. {{ p.get_remaining|floatformat:2 }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-medium">Amount (Rs.) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" name="amount" class="form-control" required>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Payment Date</label>
+                                <input type="date" name="payment_date" class="form-control" id="paymentDate">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Payment Method</label>
+                                <select name="payment_method" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    <option value="Cash">Cash</option>
+                                    <option value="Bank Transfer">Bank Transfer</option>
+                                    <option value="Cheque">Cheque</option>
+                                    <option value="UPI">UPI</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3 mt-3">
+                            <label class="form-label fw-medium">Reference No</label>
+                            <input type="text" name="reference_no" class="form-control" placeholder="Cheque no, Transaction ID, etc.">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-medium">Notes</label>
+                            <textarea name="notes" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save me-1"></i> Record Payment
+                            </button>
+                            <a href="{% url 'purchase_dashboard' %}" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Set today's date
+    const dateInput = document.getElementById('paymentDate');
+    if (dateInput && !dateInput.value) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+
+    // Load purchases when supplier changes
+    const supplierSelect = document.getElementById('supplierSelect');
+    const purchaseSelect = document.getElementById('purchaseSelect');
+
+    supplierSelect.addEventListener('change', function() {
+        const supplierId = this.value;
+        purchaseSelect.innerHTML = '<option value="">-- General Payment --</option>';
+
+        if (supplierId) {
+            fetch('/api/supplier/' + supplierId + '/purchases/')
+                .then(r => r.json())
+                .then(data => {
+                    data.purchases.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = p.invoice_number + ' (Remaining: Rs. ' + parseFloat(p.remaining).toFixed(2) + ')';
+                        purchaseSelect.appendChild(opt);
+                    });
+                });
+        }
+    });
+});
+</script>
+{% endblock %}

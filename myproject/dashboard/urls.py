@@ -178,6 +178,7 @@ urlpatterns = [
     # ==================== SALES REPORTS ====================
     path('reports/sales/', views.sales_report, name='sales_report'),
     path('reports/daily-sales/', views.daily_sales_report, name='daily_sales_report'),
+    path('reports/product-sales/', views.product_sales_report, name='product_sales_report'),
 
       # ✅ NCM ORDERS MANAGEMENT (already exists in your code)
     path('ncm-orders/', views.ncm_orders_list, name='ncm_orders_list'),
@@ -208,5 +209,33 @@ urlpatterns = [
     
     # Staff Performance
     path('staff-performance/', views.staff_performance_analytics, name='staff_performance_analytics'),
+
+    # ==================== PURCHASE MANAGEMENT ====================
+    path('purchases/dashboard/', views.purchase_dashboard, name='purchase_dashboard'),
+    path('purchases/create/', views.purchase_create, name='purchase_create'),
+    path('purchases/<int:purchase_id>/', views.purchase_detail, name='purchase_detail'),
+
+    # Suppliers
+    path('suppliers/', views.supplier_list, name='supplier_list'),
+    path('suppliers/add/', views.supplier_add, name='supplier_add'),
+    path('suppliers/<int:supplier_id>/', views.supplier_detail, name='supplier_detail'),
+    path('suppliers/<int:supplier_id>/edit/', views.supplier_edit, name='supplier_edit'),
+
+    # Supplier Payments
+    path('suppliers/payment/add/', views.supplier_payment_add, name='supplier_payment_add'),
+
+    # Product Purchase History
+    path('products/<int:product_id>/purchase-history/', views.product_purchase_history, name='product_purchase_history'),
+
+    # API
+    path('api/supplier/<int:supplier_id>/purchases/', views.api_supplier_purchases, name='api_supplier_purchases'),
+
+    # ==================== STAFF TARGETS ====================
+    path('targets/manage/', views.manage_targets, name='manage_targets'),
+    path('targets/my-targets/', views.my_targets, name='my_targets'),
+    path('targets/set/', views.set_target, name='set_target'),
+    path('targets/<int:target_id>/edit/', views.edit_target, name='edit_target'),
+    path('targets/<int:target_id>/delete/', views.delete_target, name='delete_target'),
+    path('api/targets/<int:target_id>/', views.api_target_detail, name='api_target_detail'),
 ]
     
