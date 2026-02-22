@@ -161,6 +161,7 @@
     </div>
 
     <!-- Add City Forms in Tabs -->
+    {% if can_add %}
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-info text-white">
             <h5 class="mb-0"><i class="fas fa-plus-circle"></i> Add Cities</h5>
@@ -283,6 +284,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Cities List -->
     <div class="card shadow-sm">
@@ -338,12 +340,16 @@
                                     {% endif %}
                                 </td>
                                 <td>
+                                    {% if can_edit %}
                                     <a href="{% url 'city_edit' city.id %}" class="btn btn-sm btn-warning">
                                         <i class="fas fa-edit"></i>
                                     </a>
+                                    {% endif %}
+                                    {% if can_delete %}
                                     <a href="{% url 'city_delete' city.id %}" class="btn btn-sm btn-danger">
                                         <i class="fas fa-trash"></i>
                                     </a>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% empty %}
@@ -390,6 +396,7 @@
     </div>
 
     <!-- Quick Setup Section -->
+    {% if can_add %}
     <div class="card shadow-sm mt-4">
         <div class="card-header bg-gradient-primary text-white">
             <h5 class="mb-0"><i class="fas fa-bolt"></i> Quick Setup - Common Cities</h5>
@@ -464,6 +471,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 <script>

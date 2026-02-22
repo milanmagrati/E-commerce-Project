@@ -755,9 +755,13 @@
                         <li class="{% if request.resolver_match.url_name == 'sales_report' %}active{% endif %}">
                             <a href="{% url 'sales_report' %}">Sales Reports</a>
                         </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_daily_sales_reports %}
                         <li class="{% if request.resolver_match.url_name == 'daily_sales_report' %}active{% endif %}">
                             <a href="{% url 'daily_sales_report' %}">Daily Sales Report</a>
                         </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_product_sales_reports %}
                         <li class="{% if request.resolver_match.url_name == 'product_sales_report' %}active{% endif %}">
                             <a href="{% url 'product_sales_report' %}">Product Sales Report</a>
                         </li>

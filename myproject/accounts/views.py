@@ -358,6 +358,8 @@ def user_edit(request, user_id):
             
             edit_user.can_view_reports = True
             edit_user.can_view_sales_reports = True
+            edit_user.can_view_daily_sales_reports = True
+            edit_user.can_view_product_sales_reports = True
             edit_user.can_view_financial_reports = True
             edit_user.can_export_data = True
             
@@ -372,6 +374,11 @@ def user_edit(request, user_id):
             edit_user.can_make_supplier_payments = True
 
             edit_user.can_view_staff_performance = True
+
+            edit_user.can_view_cities = True
+            edit_user.can_add_cities = True
+            edit_user.can_edit_cities = True
+            edit_user.can_delete_cities = True
 
             messages.info(request, '👑 Administrator role - All permissions granted automatically')
         else:
@@ -427,6 +434,8 @@ def user_edit(request, user_id):
             # Reports Module
             edit_user.can_view_reports = request.POST.get('can_view_reports') == 'on'
             edit_user.can_view_sales_reports = request.POST.get('can_view_sales_reports') == 'on'
+            edit_user.can_view_daily_sales_reports = request.POST.get('can_view_daily_sales_reports') == 'on'
+            edit_user.can_view_product_sales_reports = request.POST.get('can_view_product_sales_reports') == 'on'
             edit_user.can_view_financial_reports = request.POST.get('can_view_financial_reports') == 'on'
             edit_user.can_export_data = request.POST.get('can_export_data') == 'on'
             
@@ -450,6 +459,12 @@ def user_edit(request, user_id):
 
             # Staff Performance Module
             edit_user.can_view_staff_performance = request.POST.get('can_view_staff_performance') == 'on'
+
+            # City Management Module
+            edit_user.can_view_cities = request.POST.get('can_view_cities') == 'on'
+            edit_user.can_add_cities = request.POST.get('can_add_cities') == 'on'
+            edit_user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
+            edit_user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
         
         try:
             edit_user.save()

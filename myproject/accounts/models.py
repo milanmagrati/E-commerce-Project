@@ -68,6 +68,8 @@ class CustomUser(AbstractUser):
     # REPORT PERMISSIONS
     can_view_reports = models.BooleanField(default=False)
     can_view_sales_reports = models.BooleanField(default=False)
+    can_view_daily_sales_reports = models.BooleanField(default=False, verbose_name="Can View Daily Sales Reports")
+    can_view_product_sales_reports = models.BooleanField(default=False, verbose_name="Can View Product Sales Reports")
     can_view_financial_reports = models.BooleanField(default=False)
     can_export_data = models.BooleanField(default=False)
     
@@ -100,6 +102,12 @@ class CustomUser(AbstractUser):
 
     # STAFF PERFORMANCE PERMISSIONS
     can_view_staff_performance = models.BooleanField(default=False, verbose_name="Can View Staff Performance")
+
+    # CITY MANAGEMENT PERMISSIONS
+    can_view_cities = models.BooleanField(default=False, verbose_name="Can View Cities")
+    can_add_cities = models.BooleanField(default=False, verbose_name="Can Add Cities")
+    can_edit_cities = models.BooleanField(default=False, verbose_name="Can Edit Cities")
+    can_delete_cities = models.BooleanField(default=False, verbose_name="Can Delete Cities")
 
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)

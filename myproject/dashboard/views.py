@@ -1959,6 +1959,24 @@ def category_list(request):
 
 
 @login_required
+def add_category_ajax(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Invalid request method'}, status=405)
+    try:
+        data = json.loads(request.body)
+        name = data.get('name', '').strip()
+        slug = data.get('slug', '').strip()
+        if not name or not slug:
+            return JsonResponse({'success': False, 'message': 'Name and slug are required'})
+        if Category.objects.filter(slug=slug).exists():
+            return JsonResponse({'success': False, 'message': 'A category with this slug already exists'})
+        category = Category.objects.create(name=name, slug=slug)
+        return JsonResponse({'success': True, 'category': {'id': category.id, 'name': category.name}})
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
+
+
+@login_required
 @admin_only
 def category_delete(request, category_id):
     category = get_object_or_404(Category, id=category_id)
@@ -6176,57 +6194,77 @@ def api_get_product_for_stockin(request, product_id):
 # ==================== CITY MANAGEMENT VIEWS ====================
 
 @login_required
-@admin_only
 def city_management(request):
     """City management page - Add, edit, delete cities with valley status"""
+    user = request.user
+    is_admin = user.is_superuser or user.role == 'administrator'
+
+    if not (is_admin or user.can_view_cities):
+        messages.error(request, '❌ You do not have permission to access City Management.', extra_tags='permission_denied')
+        return redirect('dashboard')
     cities = City.objects.all().order_by('name')
     
     if request.method == 'POST':
         # Add new city
         if 'add_city' in request.POST:
-            name = request.POST.get('city_name', '').strip().title()
-            valley_status = request.POST.get('valley_status', 'valley')
-            
-            if name:
-                city, created = City.objects.get_or_create(
-                    name=name,
-                    defaults={
-                        'valley_status': valley_status,
-                        'is_active': True
-                    }
-                )
-                
-                if created:
-                    messages.success(request, f'✅ City "{name}" added successfully!')
-                else:
-                    messages.info(request, f'ℹ️ City "{name}" already exists')
+            if not (is_admin or user.can_add_cities):
+                messages.error(request, '❌ You do not have permission to add cities.')
             else:
-                messages.error(request, 'Please enter a city name')
-                
+                name = request.POST.get('city_name', '').strip().title()
+                valley_status = request.POST.get('valley_status', 'valley')
+
+                if name:
+                    city, created = City.objects.get_or_create(
+                        name=name,
+                        defaults={
+                            'valley_status': valley_status,
+                            'is_active': True
+                        }
+                    )
+
+                    if created:
+                        messages.success(request, f'✅ City "{name}" added successfully!')
+                    else:
+                        messages.info(request, f'ℹ️ City "{name}" already exists')
+                else:
+                    messages.error(request, 'Please enter a city name')
+
         # Bulk actions
         elif 'bulk_action' in request.POST:
             city_ids = request.POST.getlist('city_ids')
             action = request.POST.get('bulk_action')
-            
+
             if city_ids and action:
                 cities_to_update = City.objects.filter(id__in=city_ids)
-                
+
                 if action == 'delete':
-                    count = cities_to_update.count()
-                    cities_to_update.delete()
-                    messages.success(request, f'✅ {count} city(s) deleted successfully!')
-                    
+                    if not (is_admin or user.can_delete_cities):
+                        messages.error(request, '❌ You do not have permission to delete cities.')
+                    else:
+                        count = cities_to_update.count()
+                        cities_to_update.delete()
+                        messages.success(request, f'✅ {count} city(s) deleted successfully!')
+
                 elif action in ['valley', 'out_valley']:
-                    cities_to_update.update(valley_status=action)
-                    messages.success(request, f'✅ {cities_to_update.count()} city(s) updated to {action.replace("_", " ").title()}!')
-                    
+                    if not (is_admin or user.can_edit_cities):
+                        messages.error(request, '❌ You do not have permission to edit cities.')
+                    else:
+                        cities_to_update.update(valley_status=action)
+                        messages.success(request, f'✅ {cities_to_update.count()} city(s) updated to {action.replace("_", " ").title()}!')
+
                 elif action == 'activate':
-                    cities_to_update.update(is_active=True)
-                    messages.success(request, f'✅ {cities_to_update.count()} city(s) activated!')
-                    
+                    if not (is_admin or user.can_edit_cities):
+                        messages.error(request, '❌ You do not have permission to edit cities.')
+                    else:
+                        cities_to_update.update(is_active=True)
+                        messages.success(request, f'✅ {cities_to_update.count()} city(s) activated!')
+
                 elif action == 'deactivate':
-                    cities_to_update.update(is_active=False)
-                    messages.success(request, f'✅ {cities_to_update.count()} city(s) deactivated!')
+                    if not (is_admin or user.can_edit_cities):
+                        messages.error(request, '❌ You do not have permission to edit cities.')
+                    else:
+                        cities_to_update.update(is_active=False)
+                        messages.success(request, f'✅ {cities_to_update.count()} city(s) deactivated!')
     
     # Get statistics
     total_cities = cities.count()
@@ -6239,14 +6277,23 @@ def city_management(request):
         'valley_cities': valley_cities,
         'out_valley_cities': out_valley_cities,
         'valley_status_choices': City.VALLEY_STATUS_CHOICES,
+        'can_add': is_admin or user.can_add_cities,
+        'can_edit': is_admin or user.can_edit_cities,
+        'can_delete': is_admin or user.can_delete_cities,
     }
     
     return render(request, 'city_management.html', context)
 
 @login_required
-@admin_only
 def city_edit(request, city_id):
     """Edit a city"""
+    user = request.user
+    is_admin = user.is_superuser or user.role == 'administrator'
+
+    if not (is_admin or user.can_edit_cities):
+        messages.error(request, '❌ You do not have permission to edit cities.', extra_tags='permission_denied')
+        return redirect('city_management')
+
     city = get_object_or_404(City, id=city_id)
     
     if request.method == 'POST':
@@ -6277,9 +6324,15 @@ def city_edit(request, city_id):
 
 
 @login_required
-@admin_only
 def city_delete(request, city_id):
     """Delete a city"""
+    user = request.user
+    is_admin = user.is_superuser or user.role == 'administrator'
+
+    if not (is_admin or user.can_delete_cities):
+        messages.error(request, '❌ You do not have permission to delete cities.', extra_tags='permission_denied')
+        return redirect('city_management')
+
     city = get_object_or_404(City, id=city_id)
     
     if request.method == 'POST':
@@ -6291,9 +6344,14 @@ def city_delete(request, city_id):
     return render(request, 'city_delete.html', {'city': city})
 
 @login_required
-@admin_only
 def city_quick_add(request):
     """Quick add cities via AJAX"""
+    user = request.user
+    is_admin = user.is_superuser or user.role == 'administrator'
+
+    if not (is_admin or user.can_add_cities):
+        return JsonResponse({'success': False, 'message': 'You do not have permission to add cities.'})
+
     if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         try:
             data = json.loads(request.body)
@@ -6356,9 +6414,13 @@ def city_quick_add(request):
     return JsonResponse({'success': False, 'message': 'Invalid request'})
 
 @login_required
-@admin_only
 def city_bulk_add(request):
     """Bulk add multiple cities at once via AJAX"""
+    user = request.user
+    is_admin = user.is_superuser or user.role == 'administrator'
+
+    if not (is_admin or user.can_add_cities):
+        return JsonResponse({'success': False, 'message': 'You do not have permission to add cities.'})
     if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         try:
             data = json.loads(request.body)
@@ -10341,7 +10403,7 @@ def sales_report(request):
 # ==================== DAILY SALES REPORT ====================
 
 @login_required
-@permission_required('can_view_sales_reports')
+@permission_required('can_view_daily_sales_reports')
 def daily_sales_report(request):
     """Daily sales report — detailed breakdown for a specific date"""
     from django.db.models.functions import ExtractHour
@@ -11403,7 +11465,7 @@ def staff_performance_analytics(request):
 
 # ==================== PRODUCT SALES REPORT ====================
 @login_required
-@permission_required('can_view_sales_reports')
+@permission_required('can_view_product_sales_reports')
 def product_sales_report(request):
     """Product-level sales analytics with staff ranking and trend charts"""
     from django.db.models.functions import TruncDate, Coalesce

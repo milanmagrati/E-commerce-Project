@@ -16,12 +16,24 @@
     </div>
 
     <!-- Auto-save Indicator -->
-    <div id="autoSaveIndicator" class="alert alert-success alert-dismissible fade show mb-3" style="display: none;">
-        <i class="fas fa-check-circle"></i> <strong>Draft Restored!</strong> Your unsaved work has been recovered.
-        <button type="button" class="btn btn-sm btn-warning ms-2" onclick="clearDraft()">
-            <i class="fas fa-trash"></i> Clear & Start Fresh
-        </button>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <div id="autoSaveIndicator" class="draft-restored-banner mb-3" style="display: none;">
+        <div class="draft-restored-inner">
+            <div class="draft-restored-icon">
+                <i class="fas fa-rotate-left"></i>
+            </div>
+            <div class="draft-restored-content">
+                <div class="draft-restored-title">Draft Restored</div>
+                <div class="draft-restored-text">Your unsaved work has been recovered.</div>
+            </div>
+            <div class="draft-restored-actions">
+                <button type="button" class="btn btn-sm draft-clear-btn" onclick="clearDraft()">
+                    <i class="fas fa-broom"></i> Clear & Start Fresh
+                </button>
+                <button type="button" class="draft-dismiss-btn" data-bs-dismiss="alert" onclick="this.closest('.draft-restored-banner').style.display='none'">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Alert Messages -->
@@ -340,6 +352,114 @@
 </div>
 
 <style>
+    /* Draft Restored Banner */
+    .draft-restored-banner {
+        background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+        border: 1px solid #a5d6a7;
+        border-left: 4px solid #43a047;
+        border-radius: 10px;
+        padding: 0;
+        overflow: hidden;
+        box-shadow: 0 2px 12px rgba(67, 160, 71, 0.12);
+        animation: slideDown 0.4s ease-out;
+    }
+
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-12px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .draft-restored-inner {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 18px;
+    }
+
+    .draft-restored-icon {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        background: linear-gradient(135deg, #43a047, #66bb6a);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 18px;
+        box-shadow: 0 2px 8px rgba(67, 160, 71, 0.25);
+    }
+
+    .draft-restored-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .draft-restored-title {
+        font-weight: 700;
+        font-size: 14px;
+        color: #2e7d32;
+    }
+
+    .draft-restored-text {
+        font-size: 13px;
+        color: #558b2f;
+        margin-top: 1px;
+    }
+
+    .draft-restored-text .last-saved {
+        display: inline;
+        margin-top: 0;
+        font-style: italic;
+        opacity: 0.85;
+    }
+
+    .draft-restored-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+
+    .draft-clear-btn {
+        background: #fff;
+        color: #e65100;
+        border: 1px solid #ffcc80;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 7px;
+        padding: 5px 14px;
+        transition: all 0.2s ease;
+    }
+
+    .draft-clear-btn:hover {
+        background: #fff3e0;
+        border-color: #fb8c00;
+        color: #e65100;
+        box-shadow: 0 2px 6px rgba(251, 140, 0, 0.18);
+    }
+
+    .draft-dismiss-btn {
+        background: none;
+        border: none;
+        color: #81c784;
+        font-size: 16px;
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 50%;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+    }
+
+    .draft-dismiss-btn:hover {
+        background: rgba(0, 0, 0, 0.06);
+        color: #388e3c;
+    }
+
     .card {
         border: none;
         border-radius: 10px;
@@ -629,13 +749,17 @@
                     indicator.style.display = 'block';
                     let last = '';
                     try { last = new Date(draft.meta && draft.meta.lastSaved ? draft.meta.lastSaved : draft.timestamp).toLocaleTimeString(); } catch(e) { last = new Date(draft.timestamp).toLocaleTimeString(); }
-                    let lastSpan = indicator.querySelector('.last-saved');
-                    if (!lastSpan) {
-                        lastSpan = document.createElement('div');
-                        lastSpan.className = 'last-saved small text-muted mt-2';
-                        indicator.appendChild(lastSpan);
+                    const textEl = indicator.querySelector('.draft-restored-text');
+                    if (textEl) {
+                        let lastSpan = textEl.querySelector('.last-saved');
+                        if (!lastSpan) {
+                            lastSpan = document.createElement('span');
+                            lastSpan.className = 'last-saved';
+                            textEl.appendChild(document.createTextNode(' '));
+                            textEl.appendChild(lastSpan);
+                        }
+                        lastSpan.textContent = '(Saved at ' + last + ')';
                     }
-                    lastSpan.textContent = 'Last saved: ' + last;
                 }
                 if (typeof toggleVariations === 'function') {
                     setTimeout(toggleVariations, 50);
@@ -682,10 +806,9 @@
             console.log('💾 Draft saved at', new Date(draft.timestamp).toLocaleTimeString());
 
             const indicator = document.getElementById('autoSaveIndicator');
-            if (indicator) {
-                indicator.style.display = 'block';
+            if (indicator && indicator.style.display === 'block') {
                 const lastSpan = indicator.querySelector('.last-saved');
-                if (lastSpan) lastSpan.textContent = 'Last saved: ' + new Date(draft.timestamp).toLocaleTimeString();
+                if (lastSpan) lastSpan.textContent = '(Saved at ' + new Date(draft.timestamp).toLocaleTimeString() + ')';
             }
         }
     }
@@ -1067,7 +1190,7 @@
                 return;
             }
 
-            fetch('/admin/add-category/', {
+            fetch('/add-category/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
