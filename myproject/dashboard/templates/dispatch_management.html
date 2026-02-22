@@ -31,13 +31,49 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <!-- Unique Count Display -->
-                    <div class="alert alert-info mb-4">
-                        <h5 class="mb-0 text-center">
-                            <i class="fas fa-barcode"></i>
-                            Total Unique Scanned Orders:
-                            <strong class="text-primary" style="font-size: 2rem;" id="uniqueCountDisplay">0</strong>
-                        </h5>
+                    <!-- Scan Stats Dashboard -->
+                    <div class="scan-stats-dashboard mb-4">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="stat-card stat-total">
+                                    <div class="stat-icon">
+                                        <i class="fas fa-barcode"></i>
+                                    </div>
+                                    <div class="stat-info">
+                                        <span class="stat-label">Total Scans</span>
+                                        <span class="stat-value" id="totalScansDisplay">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="stat-card stat-unique">
+                                    <div class="stat-icon">
+                                        <i class="fas fa-check-double"></i>
+                                    </div>
+                                    <div class="stat-info">
+                                        <span class="stat-label">Unique Orders</span>
+                                        <span class="stat-value" id="uniqueCountDisplay">0</span>
+                                    </div>
+                                    <div class="stat-ring" id="uniqueRing">
+                                        <svg viewBox="0 0 36 36">
+                                            <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                            <path class="ring-fill" id="uniqueRingFill" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="stat-card stat-duplicate">
+                                    <div class="stat-icon">
+                                        <i class="fas fa-copy"></i>
+                                    </div>
+                                    <div class="stat-info">
+                                        <span class="stat-label">Duplicates</span>
+                                        <span class="stat-value" id="duplicateCountDisplay">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <form method="POST" id="dispatchForm">
@@ -277,10 +313,119 @@
         filter: grayscale(40%);
     }
 
-    .alert-info {
-        background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%);
-        border: 2px solid #60a5fa;
-        border-radius: 10px;
+    /* Scan Stats Dashboard */
+    .scan-stats-dashboard {
+        padding: 4px;
+    }
+
+    .stat-card {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 18px 20px;
+        border-radius: 14px;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s ease;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-card.stat-total {
+        background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+        border-left: 4px solid #6366f1;
+    }
+
+    .stat-card.stat-unique {
+        background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+        border-left: 4px solid #10b981;
+    }
+
+    .stat-card.stat-duplicate {
+        background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+        border-left: 4px solid #ef4444;
+    }
+
+    .stat-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3rem;
+        flex-shrink: 0;
+    }
+
+    .stat-total .stat-icon {
+        background: rgba(99, 102, 241, 0.15);
+        color: #6366f1;
+    }
+
+    .stat-unique .stat-icon {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+
+    .stat-duplicate .stat-icon {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .stat-info {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .stat-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #6b7280;
+    }
+
+    .stat-value {
+        font-size: 1.75rem;
+        font-weight: 800;
+        line-height: 1.2;
+        font-family: 'Courier New', monospace;
+    }
+
+    .stat-total .stat-value { color: #4f46e5; }
+    .stat-unique .stat-value { color: #059669; }
+    .stat-duplicate .stat-value { color: #dc2626; }
+
+    .stat-ring {
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+    }
+
+    .stat-ring svg {
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+    }
+
+    .ring-bg {
+        fill: none;
+        stroke: #d1fae5;
+        stroke-width: 3;
+    }
+
+    .ring-fill {
+        fill: none;
+        stroke: #10b981;
+        stroke-width: 3;
+        stroke-linecap: round;
+        transition: stroke-dasharray 0.5s ease;
     }
 
     .badge {
@@ -400,11 +545,27 @@
         if (inputField) inputField.focus();
     }
 
+    // ✅ Update stats dashboard
+    function updateStatsDashboard(totalScans, uniqueCount, duplicateCount) {
+        const totalEl = document.getElementById('totalScansDisplay');
+        const uniqueEl = document.getElementById('uniqueCountDisplay');
+        const dupEl = document.getElementById('duplicateCountDisplay');
+        const ringFill = document.getElementById('uniqueRingFill');
+
+        if (totalEl) totalEl.textContent = totalScans;
+        if (uniqueEl) uniqueEl.textContent = uniqueCount;
+        if (dupEl) dupEl.textContent = duplicateCount;
+
+        if (ringFill) {
+            const pct = totalScans > 0 ? Math.round((uniqueCount / totalScans) * 100) : 0;
+            ringFill.setAttribute('stroke-dasharray', `${pct}, 100`);
+        }
+    }
+
     // ✅ Render order IDs with safety checks
     function renderOrderIds() {
         const display = document.getElementById('orderIdsDisplay');
         const hiddenField = document.getElementById('orderIds');
-        const uniqueCountEl = document.getElementById('uniqueCountDisplay');
 
         if (!display || !hiddenField) {
             console.error('Required elements not found');
@@ -414,7 +575,7 @@
         if (scannedOrdersList.length === 0) {
             display.innerHTML = '<span class="text-muted">Start scanning order IDs...</span>';
             hiddenField.value = '';
-            if (uniqueCountEl) uniqueCountEl.textContent = '0';
+            updateStatsDashboard(0, 0, 0);
             updateButtons();
             return;
         }
@@ -447,7 +608,8 @@
 
         display.innerHTML = html;
         hiddenField.value = scannedOrdersList.join(',');
-        if (uniqueCountEl) uniqueCountEl.textContent = uniqueSet.size;
+        const duplicateCount = scannedOrdersList.length - uniqueSet.size;
+        updateStatsDashboard(scannedOrdersList.length, uniqueSet.size, duplicateCount);
         updateButtons();
     }
 

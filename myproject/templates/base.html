@@ -806,10 +806,12 @@
                         <li class="{% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
                             <a href="{% url 'profile' %}">My Profile</a>
                         </li>
-                        {% if user.is_superuser or user.role == 'administrator' %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_cities %}
                         <li class="{% if request.resolver_match.url_name == 'city_management' %}active{% endif %}">
                             <a href="{% url 'city_management' %}">City Setup</a>
                         </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' %}
                         <!-- ✅ UPDATED: Custom Setup Management Page -->
                         <li class="{% if request.resolver_match.url_name == 'setup_management' %}active{% endif %}">
                             <a href="{% url 'setup_management' %}">Payment & Status Setup</a>
@@ -977,12 +979,16 @@
                                     </div>
                                 </li>
                                 <li><a class="dropdown-item" href="{% url 'profile' %}"><i class="fas fa-user nav-di-blue"></i> My Profile</a></li>
-                                {% if user.is_superuser or user.role == 'administrator' %}
+                                {% if user.is_superuser or user.role == 'administrator' or user.can_view_cities %}
                                 <li><hr class="dropdown-divider"></li>
                                 <li class="nav-qd-header"><i class="fas fa-cog"></i> Administration</li>
+                                {% if user.is_superuser or user.role == 'administrator' %}
                                 <li><a class="dropdown-item" href="{% url 'setup_management' %}"><i class="fas fa-sliders-h nav-di-purple"></i> Setup</a></li>
+                                {% endif %}
                                 <li><a class="dropdown-item" href="{% url 'city_management' %}"><i class="fas fa-city nav-di-cyan"></i> Cities</a></li>
+                                {% if user.is_superuser or user.role == 'administrator' %}
                                 <li><a class="dropdown-item" href="{% url 'user_list' %}"><i class="fas fa-user-friends nav-di-green"></i> Team</a></li>
+                                {% endif %}
                                 {% endif %}
                                 <li><hr class="dropdown-divider"></li>
                                 <li class="px-3 py-2">

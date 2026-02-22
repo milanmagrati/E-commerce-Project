@@ -263,6 +263,12 @@ def user_create(request):
 
                 # Staff Performance Module
                 user.can_view_staff_performance = request.POST.get('can_view_staff_performance') == 'on'
+
+                # City Management Module
+                user.can_view_cities = request.POST.get('can_view_cities') == 'on'
+                user.can_add_cities = request.POST.get('can_add_cities') == 'on'
+                user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
+                user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
             
             user.save()
             
