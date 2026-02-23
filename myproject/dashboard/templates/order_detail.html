@@ -1994,7 +1994,7 @@ function syncNCMStatusAJAX(orderId) {
     syncBtnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
     
     // Send AJAX request to sync status
-    fetch(`/logistics/api/sync/${orderId}/`, {
+    fetch(`/ncm/api/order/${orderId}/sync/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -2006,17 +2006,12 @@ function syncNCMStatusAJAX(orderId) {
         if (data.success) {
             // Show success message
             showNotification('success', data.message);
-            
-            // If status or payment changed, reload page to show updated values
-            if (data.status_changed || data.payment_changed) {
-                setTimeout(() => {
-                    location.reload();
-                }, 1500);
-            } else {
-                // Just reset button
-                syncBtn.disabled = false;
-                syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
-            }
+
+            // Always reload when user explicitly clicks sync,
+            // so display fields (status_setup, order_status) are always fresh
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
         } else {
             showNotification('error', data.message);
             syncBtn.disabled = false;

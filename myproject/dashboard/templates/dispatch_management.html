@@ -784,13 +784,14 @@
     window.deleteOrder = deleteOrder;
 
 // ============================================================
-// ✅ AUTO-SAVE AND RESTORE (24 HOUR EXPIRY)
+// ✅ AUTO-SAVE AND RESTORE (30 MINUTE EXPIRY)
 // ============================================================
 (function() {
     'use strict';
     
     const STORAGE_KEY = 'dispatch_form_draft';
-    const EXPIRY_HOURS = 24;
+    const EXPIRY_MINUTES = 30;
+    let dispatched = false;
     
     // Save dispatch form data
     function saveFormDraft() {
@@ -824,10 +825,10 @@
             const draft = JSON.parse(savedData);
             const savedAt = draft.savedAt;
             const now = new Date().getTime();
-            const hoursSinceCreated = (now - savedAt) / (1000 * 60 * 60);
-            
-            // Check if expired (24 hours)
-            if (hoursSinceCreated > EXPIRY_HOURS) {
+            const minutesSinceCreated = (now - savedAt) / (1000 * 60);
+
+            // Check if expired (30 minutes)
+            if (minutesSinceCreated > EXPIRY_MINUTES) {
                 console.log('⏰ Draft expired, clearing...');
                 localStorage.removeItem(STORAGE_KEY);
                 showExpiredNotification();
@@ -854,7 +855,7 @@
             }
             
             console.log('✅ Draft restored successfully');
-            showRestoreNotification(hoursSinceCreated);
+            showRestoreNotification(minutesSinceCreated);
             return true;
             
         } catch (e) {
@@ -871,10 +872,9 @@
     }
     
     // Show restore notification
-    function showRestoreNotification(hoursSinceCreated) {
-        const minutes = Math.floor((hoursSinceCreated % 1) * 60);
-        const hours = Math.floor(hoursSinceCreated);
-        const timeText = hours > 0 ? `${hours} hour${hours > 1 ? 's' : ''} ago` : `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    function showRestoreNotification(minutesSinceCreated) {
+        const minutes = Math.floor(minutesSinceCreated);
+        const timeText = minutes > 0 ? `${minutes} minute${minutes !== 1 ? 's' : ''} ago` : 'just now';
         
         const notification = document.createElement('div');
         notification.className = 'alert alert-success alert-dismissible fade show';
@@ -902,7 +902,7 @@
         notification.style.cssText = `position: fixed; top: 80px; right: 20px; z-index: 9999; min-width: 350px;`;
         notification.innerHTML = `
             <strong><i class="fas fa-clock"></i> Session Expired</strong><br>
-            <small>Your previous session was older than 24 hours and has been cleared.</small>
+            <small>Your previous session was older than 30 minutes and has been cleared.</small>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
         document.body.appendChild(notification);
@@ -929,6 +929,19 @@
         clearTimeout(saveTimeout);
         saveTimeout = setTimeout(saveFormDraft, 2000);
     }
+
+    // ✅ SAVE IMMEDIATELY when leaving the page (but NOT after dispatch)
+    window.addEventListener('beforeunload', function() {
+        if (!dispatched && scannedOrdersList.length > 0) {
+            saveFormDraft();
+        }
+    });
+
+    window.addEventListener('pagehide', function() {
+        if (!dispatched && scannedOrdersList.length > 0) {
+            saveFormDraft();
+        }
+    });
     
     // ✅ INTERCEPT renderOrderIds to auto-save
     const originalRenderOrderIds = renderOrderIds;
@@ -949,14 +962,13 @@
     if (form) {
         form.addEventListener('change', scheduleSave);
         
-        // Clear draft on successful form submission
+        // Clear draft immediately on successful form submission
         form.addEventListener('submit', function(e) {
             const orderIds = document.getElementById('orderIds');
             if (orderIds && orderIds.value.trim()) {
-                setTimeout(() => { 
-                    clearDraft();
-                    console.log('✅ Draft cleared after successful dispatch');
-                }, 1000);
+                dispatched = true;
+                clearDraft();
+                console.log('✅ Draft cleared on dispatch submission');
             }
         });
     }

@@ -162,5 +162,95 @@ class NCMService:
             'Out for Delivery': 'shipped',
             'Delivered': 'delivered',
             'Confirmed': 'delivered',
+            'Returned': 'returned',
+            'Return Initiated': 'return_initiated',
+            'Return Approved': 'return_approved',
         }
         return mapping.get(ncm_status, 'processing')
+
+    @staticmethod
+    def parse_vendor_return(value) -> bool:
+        """Parse the vendor_return flag from NCM API response.
+        The API returns this as a string ('True'/'False')."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() == 'true'
+        return False
+
+    @staticmethod
+    def resolve_delivered_status(status_entry: dict) -> tuple:
+        """Resolve the actual order status and payment status when NCM reports 'Delivered'.
+
+        The NCM API returns status='Delivered' for both successful deliveries and
+        vendor returns. The vendor_return flag differentiates them.
+
+        Returns:
+            (system_status, payment_status) tuple
+        """
+        ncm_status = status_entry.get('status') or status_entry.get('Status', '')
+        vendor_return_raw = status_entry.get('vendor_return', status_entry.get('vendorReturn', 'False'))
+
+        if ncm_status == 'Delivered':
+            vendor_return = NCMService.parse_vendor_return(vendor_return_raw)
+            if vendor_return:
+                return ('returned', None)  # Returned to vendor, no payment update
+            else:
+                return ('delivered', 'paid')  # Successful delivery, mark as paid
+
+        # For non-Delivered statuses, use standard mapping
+        system_status = NCMService.map_ncm_status_to_system(ncm_status)
+        return (system_status, None)
+
+    @staticmethod
+    def sync_order_status_fields(order, system_status, payment_status=None):
+        """Update all status-related fields on an order to keep them in sync.
+
+        Updates: status, order_status, status_setup (FK),
+                 payment_status, payment_status_setup (FK).
+
+        Returns list of field names that were modified (for use in update_fields).
+        """
+        from dashboard.models import Setup
+
+        update_fields = []
+
+        # Update status and order_status string fields
+        order.status = system_status
+        order.order_status = system_status
+        update_fields.extend(['status', 'order_status'])
+
+        # Try to find matching Setup FK for order status
+        try:
+            # Match by converting Setup name to the same format as system_status
+            # e.g. Setup name "Delivered" -> "delivered", "In Transit" -> "in_transit"
+            status_setup = None
+            for s in Setup.objects.filter(setup_type='status', is_active=True):
+                if s.name.lower().replace(' ', '_') == system_status:
+                    status_setup = s
+                    break
+            if status_setup:
+                order.status_setup = status_setup
+                update_fields.append('status_setup')
+        except Exception:
+            pass
+
+        # Update payment status
+        if payment_status:
+            order.payment_status = payment_status
+            update_fields.append('payment_status')
+
+            # Try to find matching Setup FK for payment status
+            try:
+                ps_setup = None
+                for s in Setup.objects.filter(setup_type='payment_status', is_active=True):
+                    if s.name.lower().replace(' ', '_') == payment_status:
+                        ps_setup = s
+                        break
+                if ps_setup:
+                    order.payment_status_setup = ps_setup
+                    update_fields.append('payment_status_setup')
+            except Exception:
+                pass
+
+        return update_fields

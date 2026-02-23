@@ -1991,20 +1991,7 @@ function stopOrdersListAutoSync() {
     }
 }
 
-/**
- * Sync all orders manually (via FAB button)
- */
-function syncAllOrdersFAB() {
-    const btn = document.getElementById('fabSyncAllOrders');
-    btn.classList.add('loading');
-    
-    fetchOrdersListStatus();
-    
-    setTimeout(() => {
-        btn.classList.remove('loading');
-        alertify.success('✓ Orders synchronized');
-    }, 2000);
-}
+// syncAllOrdersFAB is defined above (form POST to bulk_sync endpoint)
 
 // CSS for flash update effect
 const style = document.createElement('style');

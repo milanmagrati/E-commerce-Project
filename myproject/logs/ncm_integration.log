@@ -571,3 +571,33 @@ Created system user for webhook operations
 [ERROR] 2026-02-19 16:57:12 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514302
 [ERROR] 2026-02-19 16:57:13 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18514304
 [ERROR] 2026-02-19 16:57:13 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18510873
+[ERROR] 2026-02-23 12:29:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:30:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:31:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:32:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:33:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:34:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:35:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:36:26 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:37:26 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:38:26 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:39:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:40:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:41:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:42:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:43:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:44:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:45:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:46:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:47:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:48:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[ERROR] 2026-02-23 12:49:25 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514295
+[INFO] 2026-02-23 14:49:03 realtime_api.api_sync_order_status:159 ✓ API Sync: ORD000059 -> delivered
+[INFO] 2026-02-23 15:28:58 realtime_api.api_sync_order_status:168 ✓ API Sync: ORD000059 -> returned
+[INFO] 2026-02-23 15:29:25 views.sync_ncm_status:286 Syncing NCM Order ID: 18514300
+[INFO] 2026-02-23 15:29:27 views.sync_ncm_status:327 Status synced: ORD000059 -> returned (NCM: Delivered)
+[INFO] 2026-02-23 15:40:54 views.sync_ncm_status:286 Syncing NCM Order ID: 18514300
+[INFO] 2026-02-23 15:40:55 views.sync_ncm_status:327 Status synced: ORD000059 -> returned (NCM: Delivered)
+[INFO] 2026-02-23 15:54:22 realtime_api.api_sync_order_status:183 ✓ API Sync: ORD000060 -> delivered, payment: paid
+[INFO] 2026-02-23 15:56:34 views.bulk_sync_ncm_orders:560 Bulk sync: 5 orders
+[INFO] 2026-02-23 16:06:48 views.bulk_sync_ncm_orders:569 Bulk sync: 1 orders

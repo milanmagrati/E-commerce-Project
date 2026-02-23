@@ -104,34 +104,70 @@ def api_sync_order_status(request, order_id):
         
         # Fetch latest status from NCM
         result = ncm_service.get_order_status(order.ncm_order_id)
-        
+
         if not result['success']:
             return JsonResponse({
                 'success': False,
                 'message': f"Failed to fetch from NCM: {result.get('error')}"
             }, status=400)
-        
+
         status_data = result['data']
-        
-        # Extract latest status
+
+        # Extract latest status entry
+        latest_entry = None
         if isinstance(status_data, dict) and 'last_status' in status_data:
             latest_status = status_data['last_status']
+            latest_entry = status_data  # Use the whole dict as the entry
         elif isinstance(status_data, list) and len(status_data) > 0:
-            latest_status = status_data[0].get('status') or status_data[0].get('Status')
+            latest_entry = status_data[0]
+            latest_status = latest_entry.get('status') or latest_entry.get('Status')
         else:
             latest_status = order.ncm_status
-        
-        # Map to system status
+            latest_entry = {}
+
+        # Map to system status using vendor_return-aware resolution
         old_status = order.status
         old_ncm_status = order.ncm_status
-        system_status = ncm_service.map_ncm_status_to_system(latest_status)
-        
-        # Update if different
-        if latest_status != order.ncm_status or system_status != order.status:
+        old_payment_status = order.payment_status
+
+        if latest_entry:
+            system_status, payment_status = ncm_service.resolve_delivered_status(latest_entry)
+        else:
+            system_status = ncm_service.map_ncm_status_to_system(latest_status)
+            payment_status = None
+
+        # Check if any status field needs updating.
+        # Include order_status (legacy display field) and status_setup FK
+        # to catch cases where order.status was updated by old code but
+        # order_status/status_setup were left stale.
+        status_setup_matches = (
+            order.status_setup is not None
+            and order.status_setup.name.lower().replace(' ', '_') == system_status
+        )
+        needs_update = (
+            latest_status != order.ncm_status
+            or system_status != order.status
+            or system_status != order.order_status
+            or not status_setup_matches
+            or (payment_status and payment_status != order.payment_status)
+        )
+
+        if needs_update:
             order.ncm_status = latest_status
-            order.status = system_status
-            order.save(update_fields=['ncm_status', 'status', 'updated_at'])
-            
+
+            # Update all status-related fields (status, order_status, status_setup FK, payment fields)
+            update_fields = ncm_service.sync_order_status_fields(order, system_status, payment_status)
+            update_fields.append('ncm_status')
+            update_fields.append('updated_at')
+
+            if system_status == 'delivered' and not order.delivered_at:
+                order.delivered_at = timezone.now()
+                update_fields.append('delivered_at')
+
+            # Deduplicate
+            update_fields = list(dict.fromkeys(update_fields))
+            order.save(update_fields=update_fields)
+
             # Create activity log
             OrderActivityLog.objects.create(
                 order=order,
@@ -141,10 +177,11 @@ def api_sync_order_status(request, order_id):
                 old_value=old_ncm_status,
                 new_value=latest_status,
                 description=f'Manual API sync: {old_status} → {system_status}'
+                            + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
             )
-            
-            logger.info(f"✓ API Sync: {order.order_number} -> {system_status}")
-            
+
+            logger.info(f"✓ API Sync: {order.order_number} -> {system_status}" + (f", payment: {payment_status}" if payment_status else ""))
+
             return JsonResponse({
                 'success': True,
                 'message': 'Status updated',
@@ -153,6 +190,7 @@ def api_sync_order_status(request, order_id):
                 'old_status': old_status,
                 'new_status': system_status,
                 'ncm_status': latest_status,
+                'payment_status': order.payment_status,
                 'changed': True
             })
         else:

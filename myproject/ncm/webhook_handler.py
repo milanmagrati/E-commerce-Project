@@ -199,8 +199,8 @@ class NCMWebhookHandler:
                         
                         if result['success']:
                             updated_orders.append(result)
-                            # Send SMS notification
-                            self._send_status_notification(order, status, cod_amount)
+                            # Send SMS notification using resolved system status
+                            self._send_status_notification(order, order.status, cod_amount)
                         else:
                             failed_orders.append(result)
                         
@@ -251,31 +251,50 @@ class NCMWebhookHandler:
             
             raise
     
-    def _update_order_from_webhook(self, order: Order, status: str, 
-                                   delivery_date=None, cod_amount=None, 
+    def _update_order_from_webhook(self, order: Order, status: str,
+                                   delivery_date=None, cod_amount=None,
                                    payload: dict = None) -> dict:
         """Update order fields from webhook data"""
         try:
+            from services.ncm_service import NCMService
+
             old_status = order.status
             old_ncm_status = order.ncm_status
             old_payment_status = order.payment_status
             old_delivery_charge = order.delivery_charge
-            
-            # Map NCM status to system status
-            system_status = self.STATUS_MAPPING.get(status, 'processing')
-            
-            # Update NCM status
+
+            # Build a status entry dict for resolve_delivered_status
+            status_entry = {'status': status}
+            if payload:
+                # Copy vendor_return flag from payload if present
+                for key in ('vendor_return', 'vendorReturn'):
+                    if key in payload:
+                        status_entry[key] = payload[key]
+
+            # Use vendor_return-aware resolution for 'Delivered' status
+            system_status, payment_status = NCMService.resolve_delivered_status(status_entry)
+
+            # Update NCM status (always store the raw NCM status)
             order.ncm_status = status
-            order.status = system_status
-            
+
+            # Update all status-related fields (status, order_status, status_setup FK, payment fields)
+            update_fields = NCMService.sync_order_status_fields(order, system_status, payment_status)
+            update_fields.append('ncm_status')
+            update_fields.append('updated_at')
+
             # Update delivery date if delivered
             if system_status == 'delivered' and delivery_date:
                 order.delivered_at = delivery_date
-            
-            # Handle COD collection
+                update_fields.append('delivered_at')
+
+            # Handle COD collection (overrides resolved payment_status if applicable)
             if cod_amount is not None and cod_amount > 0:
                 order.cod_collected = Decimal(str(cod_amount))
                 order.payment_status = 'paid'
+                if 'payment_status' not in update_fields:
+                    update_fields.append('payment_status')
+                if 'cod_collected' not in update_fields:
+                    update_fields.append('cod_collected')
             
             # ✅ Extract and save delivery charge from webhook payload
             if payload:
@@ -291,12 +310,16 @@ class NCMWebhookHandler:
                 if delivery_charge and float(delivery_charge) > 0:
                     try:
                         order.delivery_charge = Decimal(str(delivery_charge))
+                        if 'delivery_charge' not in update_fields:
+                            update_fields.append('delivery_charge')
                         logger.info(f"✓ Updated delivery charge: {delivery_charge} for order {order.order_number}")
                     except Exception as e:
                         logger.warning(f"Could not parse delivery_charge {delivery_charge}: {str(e)}")
-            
-            order.save(update_fields=['ncm_status', 'status', 'payment_status', 'delivered_at', 'cod_collected', 'delivery_charge', 'updated_at'])
-            
+
+            # Deduplicate
+            update_fields = list(dict.fromkeys(update_fields))
+            order.save(update_fields=update_fields)
+
             # Create activity log
             OrderActivityLog.objects.create(
                 order=order,
@@ -305,10 +328,10 @@ class NCMWebhookHandler:
                 field_name='ncm_status',
                 old_value=old_ncm_status or 'None',
                 new_value=status,
-                description=f'NCM Webhook: {status}'
+                description=f'NCM Webhook: {status} (vendor_return={status_entry.get("vendor_return", "N/A")})'
             )
-            
-            logger.info(f"✓ Updated: {order.order_number} - Status: {old_status}→{system_status}, NCM: {old_ncm_status}→{status}")
+
+            logger.info(f"✓ Updated: {order.order_number} - Status: {old_status}→{system_status}, NCM: {old_ncm_status}→{status}, Payment: {old_payment_status}→{order.payment_status}")
             
             return {
                 'success': True,
@@ -328,18 +351,18 @@ class NCMWebhookHandler:
             }
     
     def _send_status_notification(self, order: Order, status: str, cod_amount=None):
-        """Send SMS notification to customer"""
+        """Send SMS notification to customer based on resolved system status"""
         try:
             if not order.customer_phone:
                 logger.warning(f"No phone number for order {order.order_number}")
                 return
-            
-            # Determine notification type
-            if status in ['Delivered', 'Confirmed']:
+
+            # Map resolved system status to notification type
+            if status in ['delivered']:
                 notification_status = 'delivered'
-            elif status in ['In Transit', 'Out for Delivery', 'Sent for Delivery']:
+            elif status in ['in_transit', 'shipped']:
                 notification_status = 'in_transit'
-            elif status in ['Returned', 'Return Initiated', 'Return Approved']:
+            elif status in ['returned', 'return_initiated', 'return_approved']:
                 notification_status = 'returned'
             elif cod_amount and cod_amount > 0:
                 notification_status = 'cod_collected'
