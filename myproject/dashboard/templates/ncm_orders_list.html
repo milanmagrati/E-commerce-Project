@@ -175,7 +175,15 @@
                             <strong class="text-success">रू {{ order.total_amount|floatformat:2 }}</strong>
                         </td>
                         <td>
-                            <span class="badge bg-success">{{ order.ncm_status|default:"Pickup Order Created" }}</span>
+                            {% with ncm_st=order.ncm_status|default:"Pickup Order Created" %}
+                            <span class="badge
+                                {% if ncm_st == 'Delivered' or ncm_st == 'Confirmed' %}bg-success
+                                {% elif ncm_st == 'In Transit' or ncm_st == 'Dispatched' or ncm_st == 'Arrived' or ncm_st == 'Sent for Delivery' or ncm_st == 'Out for Delivery' %}bg-primary
+                                {% elif ncm_st == 'Returned' or ncm_st == 'Return Initiated' or ncm_st == 'Return Approved' %}bg-danger
+                                {% elif ncm_st == 'Pickup Order Created' or ncm_st == 'Drop off Order Created' or ncm_st == 'Pickup Complete' or ncm_st == 'Drop off Order Collected' %}bg-warning text-dark
+                                {% else %}bg-secondary
+                                {% endif %}">{{ ncm_st }}</span>
+                            {% endwith %}
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">
