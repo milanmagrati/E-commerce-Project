@@ -339,7 +339,11 @@
                                 <a href="{% url 'order_detail' order.id %}" class="btn btn-info" title="View Details">
                                     <i class="fas fa-eye"></i>
                                 </a>
-                                <a href="{% url 'order_edit' order.id %}" class="btn btn-warning" title="Edit">
+                                <a href="{% if request.user.role == 'administrator' or request.user.can_edit_orders %}{% url 'order_edit' order.id %}{% else %}#{% endif %}"
+                                   class="btn btn-warning" title="Edit"
+                                   {% if not request.user.can_edit_orders and request.user.role != 'administrator' %}
+                                   onclick="event.preventDefault(); showAccessDenied('You do not have permission to edit orders. Please contact your administrator.');"
+                                   {% endif %}>
                                     <i class="fas fa-edit"></i>
                                 </a>
                                 <a href="{% url 'order_invoice' order.id %}" class="btn btn-primary" title="Invoice" target="_blank">

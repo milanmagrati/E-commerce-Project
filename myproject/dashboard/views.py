@@ -3655,11 +3655,19 @@ def api_get_customer(request, customer_id):
 def api_get_product(request, product_id):
     """Return product details (non-variation) for POS modals"""
     try:
-        # Role-aware access
-        if request.user.is_superuser or getattr(request.user, 'role', None) in ['administrator', 'warehouse']:
-            product = get_object_or_404(Product, id=product_id, is_deleted=False)
-        else:
-            product = get_object_or_404(Product, id=product_id, is_deleted=False, user=request.user)
+        user = request.user
+        # Grant access if superuser/administrator, or if user has can_view_products
+        # or can_create_orders permission (assigned from user create/edit page)
+        has_access = (
+            user.is_superuser
+            or getattr(user, 'role', None) == 'administrator'
+            or getattr(user, 'can_view_products', False)
+            or getattr(user, 'can_create_orders', False)
+        )
+        if not has_access:
+            return JsonResponse({'success': False, 'message': 'You do not have permission to view products.'}, status=403)
+
+        product = get_object_or_404(Product, id=product_id, is_deleted=False)
 
         data = {
             'id': product.id,
@@ -3694,13 +3702,21 @@ def api_search_products(request):
     """
     try:
         q = (request.GET.get("q") or "").strip()
+        user = request.user
 
-        # Role-aware visibility: administrators and warehouse users can see all products.
-        # Other users (e.g., sales) will only see products they created.
-        if request.user.is_superuser or getattr(request.user, 'role', None) in ['administrator', 'warehouse']:
-            qs = Product.objects.filter(is_active=True, is_deleted=False).order_by("name")
-        else:
-            qs = Product.objects.filter(is_active=True, is_deleted=False, user=request.user).order_by("name")
+        # Check permission using actual model fields set from user create/edit page.
+        # Administrator/superuser always have access.
+        # Other users need can_view_products OR can_create_orders to use the POS product picker.
+        has_access = (
+            user.is_superuser
+            or getattr(user, 'role', None) == 'administrator'
+            or getattr(user, 'can_view_products', False)
+            or getattr(user, 'can_create_orders', False)
+        )
+        if not has_access:
+            return JsonResponse({'success': False, 'error': 'You do not have permission to view products.', 'products': []}, status=403)
+
+        qs = Product.objects.filter(is_active=True, is_deleted=False).order_by("name")
 
         if q:
             qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(slug__icontains=q))
@@ -3757,11 +3773,18 @@ def api_get_product_variations(request, product_id):
     JSON format matches your JS usage: data.variations[]
     """
     try:
-        # Role-based product access
-        if request.user.is_superuser or getattr(request.user, 'role', None) in ['administrator', 'warehouse']:
-            product = get_object_or_404(Product, id=product_id, is_deleted=False)
-        else:
-            product = get_object_or_404(Product, id=product_id, is_deleted=False, user=request.user)
+        user = request.user
+        # Check permission using actual model fields set from user create/edit page
+        has_access = (
+            user.is_superuser
+            or getattr(user, 'role', None) == 'administrator'
+            or getattr(user, 'can_view_products', False)
+            or getattr(user, 'can_create_orders', False)
+        )
+        if not has_access:
+            return JsonResponse({'success': False, 'message': 'You do not have permission to view products.', 'variations': []}, status=403)
+
+        product = get_object_or_404(Product, id=product_id, is_deleted=False)
 
         # Check if variable product
         if product.product_type != "variable":

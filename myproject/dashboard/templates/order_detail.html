@@ -16,7 +16,11 @@
                 </p>
             </div>
             <div class="d-flex gap-2">
-                <a href="{% url 'order_edit' order.id %}" class="btn btn-warning">
+                <a href="{% if request.user.role == 'administrator' or request.user.can_edit_orders %}{% url 'order_edit' order.id %}{% else %}#{% endif %}"
+                   class="btn btn-warning"
+                   {% if not request.user.can_edit_orders and request.user.role != 'administrator' %}
+                   onclick="event.preventDefault(); showAccessDenied('You do not have permission to edit orders. Please contact your administrator.');"
+                   {% endif %}>
                     <i class="fas fa-edit"></i> Edit Order
                 </a>
                 <a href="{% url 'order_invoice' order.id %}" class="btn btn-primary" target="_blank">

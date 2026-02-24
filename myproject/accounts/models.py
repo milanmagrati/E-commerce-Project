@@ -38,7 +38,7 @@ class CustomUser(AbstractUser):
     # ORDER PERMISSIONS
     can_view_orders = models.BooleanField(default=True)
     can_create_orders = models.BooleanField(default=True)
-    can_edit_orders = models.BooleanField(default=True)
+    can_edit_orders = models.BooleanField(default=False)
     can_delete_orders = models.BooleanField(default=False)
     can_cancel_orders = models.BooleanField(default=False)
     

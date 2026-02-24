@@ -3476,7 +3476,7 @@
             setValueSafe('citySearchInput', formData.branchCity);
             setValueSafe('customerAddress', formData.customerAddress);
             setValueSafe('customerLandmark', formData.customerLandmark);
-            setValueSafe('createdBy', formData.createdBy);
+            if (formData.createdBy) setValueSafe('createdBy', formData.createdBy);
             setValueSafe('discount', formData.discount || '0');
             setValueSafe('shipping', formData.shipping || '0');
             setValueSafe('orderNotes', formData.orderNotes);
