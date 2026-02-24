@@ -45,7 +45,8 @@ INSTALLED_APPS = [
 EXTERNAL_APPS = [
      "dashboard",
     "accounts",
-    "ncm"
+    "ncm",
+    "chat",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 
@@ -74,6 +75,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'dashboard.context_processors.low_stock_notifications',
+                'chat.context_processors.unread_message_count',
             ],
         },
     },

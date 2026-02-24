@@ -24,8 +24,7 @@ urlpatterns = [
     path('', include('dashboard.urls')),
     path('accounts/', include('accounts.urls')),
     path('ncm/', include('ncm.urls')),
-
-    
+    path('chat/', include('chat.urls')),
 
 ] 
 # Serve media files in development

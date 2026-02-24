@@ -796,6 +796,16 @@
                 </li>
                 {% endif %}
 
+                <!-- ==================== CHAT / MESSAGES ==================== -->
+                <li class="{% if request.path|slice:':6' == '/chat/' %}active{% endif %}">
+                    <a href="{% url 'chat:inbox' %}">
+                        <i class="fas fa-comments"></i> Messages
+                        {% if unread_chat_count > 0 %}
+                        <span class="badge bg-danger float-end">{{ unread_chat_count }}</span>
+                        {% endif %}
+                    </a>
+                </li>
+
                 <!-- ==================== SETTINGS ==================== -->
                 <li>
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#settingsMenu" aria-expanded="false">
@@ -944,6 +954,20 @@
                                 </li>
                             </ul>
                         </div>
+
+                        <!-- Chat Messages Icon -->
+                        <a href="{% url 'chat:inbox' %}" class="nav-icon-btn position-relative" title="Messages" style="color: #667eea; text-decoration: none;">
+                            <i class="fas fa-comments"></i>
+                            {% if unread_chat_count > 0 %}
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="navChatBadge" style="font-size: 0.6rem; padding: 0.2rem 0.4rem; min-width: 18px;">
+                                {{ unread_chat_count }}
+                            </span>
+                            {% else %}
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" id="navChatBadge" style="font-size: 0.6rem; padding: 0.2rem 0.4rem; min-width: 18px;">
+                                0
+                            </span>
+                            {% endif %}
+                        </a>
 
                         <!-- User Info -->
                         <span class="d-none d-lg-flex align-items-center gap-2 nav-user-info">
@@ -1269,6 +1293,67 @@
     </script>
     
     {% block extra_js %}{% endblock %}
+
+    <!-- Chat Instant Notification via SSE -->
+    {% if user.is_authenticated %}
+    <script>
+        var _prevUnreadCount = {{ unread_chat_count|default:"0" }};
+
+        function playChatNotifSound() {
+            try {
+                var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                var t = ctx.currentTime;
+                [{f:587.33,s:0,d:0.12},{f:880,s:0.1,d:0.18}].forEach(function(n) {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = n.f;
+                    gain.gain.setValueAtTime(0, t+n.s);
+                    gain.gain.linearRampToValueAtTime(0.13, t+n.s+0.02);
+                    gain.gain.linearRampToValueAtTime(0, t+n.s+n.d);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(t+n.s);
+                    osc.stop(t+n.s+n.d+0.05);
+                });
+            } catch(e) {}
+        }
+
+        function handleUnreadUpdate(newCount) {
+            var badge = document.getElementById('navChatBadge');
+            if (badge) {
+                if (newCount > 0) {
+                    badge.textContent = newCount > 99 ? '99+' : newCount;
+                    badge.classList.remove('d-none');
+                } else {
+                    badge.classList.add('d-none');
+                }
+            }
+            if (newCount > _prevUnreadCount) {
+                playChatNotifSound();
+                alertify.message('<i class="fas fa-comments me-2"></i> You have a new message! <a href="{% url "chat:inbox" %}" style="color:#667eea;font-weight:600;margin-left:8px;">Open Chat</a>');
+            }
+            _prevUnreadCount = newCount;
+        }
+
+        // SSE: persistent connection for instant unread count updates
+        var _chatSSE = null;
+        function connectChatSSE() {
+            if (_chatSSE) _chatSSE.close();
+            var src = new EventSource('{% url "chat:sse_unread" %}');
+            src.onmessage = function(event) {
+                var data = JSON.parse(event.data);
+                handleUnreadUpdate(data.unread_count);
+            };
+            src.onerror = function() {
+                src.close();
+                setTimeout(connectChatSSE, 3000);
+            };
+            _chatSSE = src;
+        }
+        connectChatSSE();
+    </script>
+    {% endif %}
 </body>
 
 </html>
