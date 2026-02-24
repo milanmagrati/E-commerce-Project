@@ -2296,7 +2296,10 @@ def orders_list(request):
     
     # Pagination
     from django.core.paginator import Paginator
-    paginator = Paginator(orders, 25)
+    per_page = request.GET.get('per_page', '50')
+    if per_page not in ('50', '100', '200'):
+        per_page = '50'
+    paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
     orders_page = paginator.get_page(page_number)
     
@@ -2340,6 +2343,7 @@ def orders_list(request):
         'start_date': start_date,
         'end_date': end_date,
         'logistics_filter': logistics_filter,
+        'per_page': per_page,
     }
     
     return render(request, 'orders_list.html', context)

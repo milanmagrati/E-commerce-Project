@@ -56,9 +56,17 @@ urlpatterns = [
          realtime_api.api_get_orders_status_batch, 
          name='api_batch_status'),
     
-    path('api/order/<int:order_id>/activity/', 
-         realtime_api.api_get_order_activity_log, 
+    path('api/order/<int:order_id>/activity/',
+         realtime_api.api_get_order_activity_log,
          name='api_activity_log'),
+
+    path('api/order/<int:order_id>/comments/',
+         realtime_api.api_get_order_comments,
+         name='api_order_comments'),
+
+    path('api/order/<int:order_id>/comments/add/',
+         realtime_api.api_add_order_comment,
+         name='api_add_comment'),
     
     path('api/check-pending-updates/', 
          realtime_api.api_check_pending_ncm_updates, 

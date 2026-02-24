@@ -332,6 +332,149 @@ def api_get_order_activity_log(request, order_id):
 
 @login_required
 @require_http_methods(["GET"])
+def api_get_order_comments(request, order_id):
+    """
+    Fetch comments for an NCM order.
+    Pulls from both order details (comments field) and status history
+    (comment remarks from NCM staff on each status update).
+    """
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+
+        if not order.ncm_order_id:
+            return JsonResponse({
+                'success': True,
+                'comments': [],
+                'message': 'Order not in NCM system'
+            })
+
+        all_comments = []
+
+        # 1. Fetch order details - extract standalone comments
+        details_result = ncm_service.get_order_details(order.ncm_order_id)
+        if details_result['success']:
+            data = details_result['data']
+            if isinstance(data, dict):
+                raw_comments = data.get('comments', data.get('comment', []))
+                if isinstance(raw_comments, list):
+                    for c in raw_comments:
+                        if isinstance(c, dict):
+                            all_comments.append(c)
+                        elif isinstance(c, str) and c.strip():
+                            all_comments.append({
+                                'comment': c,
+                                'created_by': 'NCM',
+                                'role': 'ncm'
+                            })
+                elif isinstance(raw_comments, str) and raw_comments.strip():
+                    all_comments.append({
+                        'comment': raw_comments,
+                        'created_by': 'NCM',
+                        'role': 'ncm'
+                    })
+
+        # 2. Fetch status history - extract staff comments from status entries
+        status_result = ncm_service.get_order_status(order.ncm_order_id)
+        if status_result['success']:
+            status_data = status_result['data']
+            entries = []
+            if isinstance(status_data, list):
+                entries = status_data
+            elif isinstance(status_data, dict):
+                entries = status_data.get('statuses', status_data.get('history', []))
+                if not entries and 'status' in status_data:
+                    entries = [status_data]
+
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                comment_text = entry.get('comment', entry.get('comments', entry.get('remarks', '')))
+                if comment_text and isinstance(comment_text, str) and comment_text.strip():
+                    all_comments.append({
+                        'comment': comment_text.strip(),
+                        'created_by': entry.get('created_by', entry.get('updated_by', 'NCM Staff')),
+                        'created_at': entry.get('created_at', entry.get('date', entry.get('timestamp', ''))),
+                        'status': entry.get('status', entry.get('Status', '')),
+                        'role': 'ncm'
+                    })
+
+        return JsonResponse({
+            'success': True,
+            'order_id': order.id,
+            'ncm_order_id': order.ncm_order_id,
+            'comments': all_comments,
+            'timestamp': timezone.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching NCM comments: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_add_order_comment(request, order_id):
+    """
+    Add a comment to an NCM order.
+    """
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+
+        if not order.ncm_order_id:
+            return JsonResponse({
+                'success': False,
+                'message': 'Order not in NCM system'
+            }, status=400)
+
+        body = json.loads(request.body) if request.body else {}
+        comment_text = body.get('comment', '').strip()
+
+        if not comment_text:
+            return JsonResponse({
+                'success': False,
+                'message': 'Comment text is required'
+            }, status=400)
+
+        result = ncm_service.create_order_comment(order.ncm_order_id, comment_text)
+
+        if result['success']:
+            OrderActivityLog.objects.create(
+                order=order,
+                action_type='notes_added',
+                user=request.user,
+                field_name='ncm_comment',
+                old_value='',
+                new_value=comment_text[:255],
+                description=f'NCM comment added: {comment_text[:100]}'
+            )
+            return JsonResponse({
+                'success': True,
+                'message': 'Comment added successfully'
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'message': f"NCM API error: {result.get('error')}"
+            }, status=400)
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'message': 'Invalid JSON body'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error adding NCM comment: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["GET"])
 def api_check_pending_ncm_updates(request):
     """
     Check for NCM orders that might have updates

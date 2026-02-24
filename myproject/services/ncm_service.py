@@ -114,6 +114,20 @@ class NCMService:
         data = {'orders': order_ids}
         return self._make_request('POST', url, data=data)
     
+    def get_order_comments(self, ncm_order_id: int):
+        """Get comments for an NCM order from order details"""
+        result = self.get_order_details(ncm_order_id)
+        if result['success']:
+            data = result['data']
+            # NCM API may return comments in various formats
+            comments = []
+            if isinstance(data, dict):
+                comments = data.get('comments', data.get('comment', []))
+            if isinstance(comments, str):
+                comments = [{'comment': comments}] if comments else []
+            return {'success': True, 'data': comments}
+        return result
+
     def create_order_comment(self, ncm_order_id: int, comment: str):
         """Add comment to NCM order"""
         url = f"{self.base_url}/comment"

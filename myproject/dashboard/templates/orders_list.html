@@ -26,21 +26,21 @@
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li>
-                            <a class="dropdown-item {% if not logistics_filter %}active{% endif %}" 
-                               href="?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if payment_filter %}payment={{ payment_filter }}&{% endif %}{% if date_filter %}date_range={{ date_filter }}&{% endif %}{% if start_date %}start_date={{ start_date }}&{% endif %}{% if end_date %}end_date={{ end_date }}{% endif %}">
+                            <a class="dropdown-item {% if not logistics_filter %}active{% endif %}"
+                               href="?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if payment_filter %}payment={{ payment_filter }}&{% endif %}{% if date_filter %}date_range={{ date_filter }}&{% endif %}{% if start_date %}start_date={{ start_date }}&{% endif %}{% if end_date %}end_date={{ end_date }}&{% endif %}per_page={{ per_page }}">
                                 <i class="fas fa-list"></i> All Orders
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
-                            <a class="dropdown-item {% if logistics_filter == 'sent' %}active{% endif %}" 
-                               href="?logistics_status=sent{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">
+                            <a class="dropdown-item {% if logistics_filter == 'sent' %}active{% endif %}"
+                               href="?logistics_status=sent{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}&per_page={{ per_page }}">
                                 <i class="fas fa-check-circle text-success"></i> Sent to Logistics
                             </a>
                         </li>
                         <li>
-                            <a class="dropdown-item {% if logistics_filter == 'not_sent' %}active{% endif %}" 
-                               href="?logistics_status=not_sent{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">
+                            <a class="dropdown-item {% if logistics_filter == 'not_sent' %}active{% endif %}"
+                               href="?logistics_status=not_sent{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}&per_page={{ per_page }}">
                                 <i class="fas fa-exclamation-circle text-warning"></i> Not Sent to Logistics
                             </a>
                         </li>
@@ -85,6 +85,7 @@
             {% if logistics_filter %}
             <input type="hidden" name="logistics_status" value="{{ logistics_filter }}">
             {% endif %}
+            <input type="hidden" name="per_page" value="{{ per_page }}" id="perPageHidden">
             
             <div class="col-md-3">
                 <div class="input-group">
@@ -228,6 +229,15 @@
                     </span>
                 {% endif %}
             </h5>
+            <div class="d-flex align-items-center gap-2">
+                <label class="text-white mb-0 small fw-bold">Show:</label>
+                <select id="perPageSelect" class="form-select form-select-sm"
+                        style="width: auto; min-width: 80px;" onchange="changePerPage(this.value)">
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                    <option value="200" {% if per_page == '200' %}selected{% endif %}>200</option>
+                </select>
+            </div>
         </div>
     </div>
     <div class="card-body p-0">
@@ -389,19 +399,19 @@
             <ul class="pagination justify-content-center mb-0">
                 {% if orders.has_previous %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ orders.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">Previous</a>
+                    <a class="page-link" href="?page={{ orders.previous_page_number }}&per_page={{ per_page }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">Previous</a>
                 </li>
                 {% endif %}
-                
+
                 {% for num in orders.paginator.page_range %}
                 <li class="page-item {% if orders.number == num %}active{% endif %}">
-                    <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">{{ num }}</a>
+                    <a class="page-link" href="?page={{ num }}&per_page={{ per_page }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">{{ num }}</a>
                 </li>
                 {% endfor %}
-                
+
                 {% if orders.has_next %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ orders.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">Next</a>
+                    <a class="page-link" href="?page={{ orders.next_page_number }}&per_page={{ per_page }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">Next</a>
                 </li>
                 {% endif %}
             </ul>
@@ -1067,6 +1077,14 @@
 </style>
 
 <script>
+// Per-page selector: rebuild current URL with new per_page and reset to page 1
+function changePerPage(value) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('per_page', value);
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+}
+
 // Stats Data
 const statsData = {
     total_orders: {

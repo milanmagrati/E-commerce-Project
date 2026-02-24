@@ -601,3 +601,5 @@ Created system user for webhook operations
 [INFO] 2026-02-23 15:54:22 realtime_api.api_sync_order_status:183 ✓ API Sync: ORD000060 -> delivered, payment: paid
 [INFO] 2026-02-23 15:56:34 views.bulk_sync_ncm_orders:560 Bulk sync: 5 orders
 [INFO] 2026-02-23 16:06:48 views.bulk_sync_ncm_orders:569 Bulk sync: 1 orders
+[ERROR] 2026-02-23 20:44:01 ncm_service._make_request:37 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order?id=18514304
+[INFO] 2026-02-24 10:30:34 realtime_api.api_sync_order_status:183 ✓ API Sync: ORD000066 -> processing
