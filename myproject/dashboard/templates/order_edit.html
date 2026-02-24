@@ -1164,37 +1164,17 @@
                     <div class="col-md-2">
                         <label class="form-label">Order From *</label>
                         <select name="order_from" class="form-select" required>
-                            <option value="">Select Source</option>
-                            
-                            <!-- Website & Online -->
-                            <optgroup label="Website & Online">
-                                <option value="website" {% if order.order_from == 'website' %}selected{% endif %}>Website</option>
-                                <option value="mobile_app" {% if order.order_from == 'mobile_app' %}selected{% endif %}>Mobile App</option>
-                                <option value="email" {% if order.order_from == 'email' %}selected{% endif %}>Email</option>
-                            </optgroup>
-                            
-                            <!-- Social Media -->
-                            <optgroup label="Social Media">
-                                <option value="facebook" {% if order.order_from == 'facebook' %}selected{% endif %}>Facebook</option>
-                                <option value="instagram" {% if order.order_from == 'instagram' %}selected{% endif %}>Instagram</option>
-                                <option value="whatsapp" {% if order.order_from == 'whatsapp' %}selected{% endif %}>WhatsApp</option>
-                                <option value="telegram" {% if order.order_from == 'telegram' %}selected{% endif %}>Telegram</option>
-                                <option value="tiktok" {% if order.order_from == 'tiktok' %}selected{% endif %}>TikTok</option>
-                                <option value="youtube" {% if order.order_from == 'youtube' %}selected{% endif %}>YouTube</option>
-                                <option value="linkedin" {% if order.order_from == 'linkedin' %}selected{% endif %}>LinkedIn</option>
-                            </optgroup>
-                            
-                            <!-- Communication -->
-                            <optgroup label="Communication">
-                                <option value="phone" {% if order.order_from == 'phone' %}selected{% endif %}>Phone</option>
-                                <option value="sms" {% if order.order_from == 'sms' %}selected{% endif %}>SMS</option>
-                            </optgroup>
-                            
-                            <!-- In Person -->
-                            <optgroup label="In Person">
-                                <option value="walk-in" {% if order.order_from == 'walk-in' %}selected{% endif %}>Walk-in</option>
-                                <option value="showroom" {% if order.order_from == 'showroom' %}selected{% endif %}>Showroom</option>
-                            </optgroup>
+                            <option value="">Search order source...</option>
+                            {% if order_source_setups %}
+                                {% for source in order_source_setups %}
+                                <option value="{{ source.name }}" {% if order.order_from == source.name %}selected{% endif %}>{{ source.name }}</option>
+                                {% endfor %}
+                            {% else %}
+                                <option value="" disabled>No sources configured — add in Setup Management</option>
+                            {% endif %}
+                            {% if order.order_from %}
+                            <option value="{{ order.order_from }}" selected style="display:none">{{ order.order_from }}</option>
+                            {% endif %}
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -2617,9 +2597,19 @@
         // Build options from select element
         const optionsData = [];
         let currentGroup = '';
+        let initialSelectedText = '';
         
         for (const option of selectElement.options) {
             if (option.value === '') continue;
+            
+            // Skip hidden fallback options (used only to preserve the current value,
+            // not intended to appear as selectable choices in the dropdown)
+            if (option.style.display === 'none') {
+                if (option.selected) {
+                    initialSelectedText = option.textContent.trim();
+                }
+                continue;
+            }
             
             const optgroup = option.parentElement.tagName === 'OPTGROUP' ? option.parentElement.label : '';
             if (currentGroup !== optgroup && optgroup) {
@@ -2640,6 +2630,10 @@
             optDiv.className = 'select-option';
             optDiv.textContent = option.textContent;
             optDiv.dataset.value = option.value;
+            if (option.selected) {
+                optDiv.style.backgroundColor = '#f0f4ff';
+                initialSelectedText = option.textContent.trim();
+            }
             dropdown.appendChild(optDiv);
             
             // Store reference
@@ -2655,6 +2649,12 @@
         wrapper.appendChild(dropdown);
         selectElement.style.display = 'none';
         parentDiv.appendChild(wrapper);
+
+        // Set initial display value from selected option
+        if (initialSelectedText) {
+            searchInput.value = initialSelectedText;
+            clearBtn.style.display = 'inline-flex';
+        }
         
         // ===== EVENT HANDLERS =====
         

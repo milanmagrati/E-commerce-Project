@@ -52,7 +52,7 @@
 
     .setup-container {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: 1fr 1fr;
         gap: 2rem;
         margin-bottom: 3rem;
     }
@@ -107,6 +107,10 @@
 
     .payment-status-header {
         color: #d97706;
+    }
+
+    .order-source-header {
+        color: #7c3aed;
     }
 
     .btn-add-setup {
@@ -377,7 +381,7 @@
             <i class="fas fa-cog"></i>
             {{ page_title }}
         </h1>
-        <p>Manage payment methods, order statuses, and payment statuses for your system</p>
+        <p>Manage payment methods, order statuses, payment statuses, and order sources for your system</p>
     </div>
 
     <!-- Messages -->
@@ -652,6 +656,93 @@
                 {% endif %}
             </div>
         </div>
+
+        <!-- Order Source Setup -->
+        <div class="setup-section">
+            <div class="setup-section-header">
+                <h2 class="order-source-header">
+                    <i class="fas fa-share-alt"></i>
+                    Order Sources
+                </h2>
+                <button class="btn-add-setup" data-bs-toggle="modal" data-bs-target="#orderSourceModal">
+                    <i class="fas fa-plus"></i>
+                    Add Source
+                </button>
+            </div>
+            <div class="setup-list">
+                {% if order_source_setups %}
+                    {% for setup in order_source_setups %}
+                        <div class="setup-item">
+                            <div class="setup-item-info">
+                                <div class="setup-item-name">
+                                    {{ setup.name }}
+                                    <span class="setup-badge {% if setup.is_active %}badge-active{% else %}badge-inactive{% endif %}">
+                                        {% if setup.is_active %}Active{% else %}Inactive{% endif %}
+                                    </span>
+                                </div>
+                                {% if setup.description %}
+                                    <div class="setup-item-desc">{{ setup.description }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="setup-item-actions">
+                                <button class="btn-icon btn-edit" data-bs-toggle="modal" data-bs-target="#editOrderSourceModal{{ setup.id }}" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                    Edit
+                                </button>
+                                <form method="POST" action="{% url 'setup_delete' setup.id %}" style="display: inline;" onsubmit="return confirm('Are you sure?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn-icon btn-delete" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                        Delete
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Edit Modal -->
+                        <div class="modal fade" id="editOrderSourceModal{{ setup.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Edit Order Source</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form method="POST" action="{% url 'setup_edit' setup.id %}">
+                                        {% csrf_token %}
+                                        <div class="modal-body">
+                                            <div class="form-group">
+                                                <label class="form-label">Name</label>
+                                                <input type="text" name="name" class="form-control" value="{{ setup.name }}" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label class="form-label">Description</label>
+                                                <textarea name="description" class="form-control" rows="3">{{ setup.description }}</textarea>
+                                            </div>
+                                            <div class="form-check">
+                                                <input type="checkbox" name="is_active" class="form-check-input" id="activeOrderSource{{ setup.id }}" {% if setup.is_active %}checked{% endif %}>
+                                                <label class="form-check-label" for="activeOrderSource{{ setup.id }}">
+                                                    Active
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer bg-light">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" class="btn-submit">Update Source</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📡</div>
+                        <h3>No Order Sources</h3>
+                        <p>Add your first order source (e.g., Facebook, Website, Walk-in)</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
@@ -757,6 +848,42 @@
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn-submit">Add Payment Status</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Order Source Modal -->
+<div class="modal fade" id="orderSourceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Order Source</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{% url 'setup_add' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <input type="hidden" name="setup_type" value="order_source">
+                    <div class="form-group">
+                        <label class="form-label">Source Name</label>
+                        <input type="text" name="name" class="form-control" placeholder="e.g., Facebook, Website, Walk-in, WhatsApp" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Description</label>
+                        <textarea name="description" class="form-control" rows="3" placeholder="Optional description about this order source..."></textarea>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" name="is_active" class="form-check-input" id="newOrderSourceActive" checked>
+                        <label class="form-check-label" for="newOrderSourceActive">
+                            Active
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn-submit">Add Order Source</button>
                 </div>
             </form>
         </div>

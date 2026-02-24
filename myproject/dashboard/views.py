@@ -2619,6 +2619,7 @@ def order_create(request):
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
     payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
 
     return render(
         request,
@@ -2631,6 +2632,7 @@ def order_create(request):
             "payment_setups": payment_setups,
             "status_setups": status_setups,
             "payment_status_setups": payment_status_setups,
+            "order_source_setups": order_source_setups,
         },
     )
 @login_required
@@ -3372,6 +3374,7 @@ def order_edit(request, order_id):
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
     payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
 
     # ✅ SAFE: Handle decimal InvalidOperation errors by deferring problematic decimal fields
     # Some orders have corrupted decimal values in total_amount and other fields
@@ -3405,6 +3408,7 @@ def order_edit(request, order_id):
         "payment_setups": payment_setups,
         "status_setups": status_setups,
         "payment_status_setups": payment_status_setups,
+        "order_source_setups": order_source_setups,
         "categories": Category.objects.all().order_by('name'),
     }
 
@@ -9521,18 +9525,20 @@ def ncm_orders_empty_trash(request):
 @login_required
 @permission_required('can_view_orders')
 def setup_management(request):
-    """Manage Payment, Status, and Payment Status setups"""
+    """Manage Payment, Status, Payment Status, and Order Source setups"""
     from .models import Setup
 
     # Get all setups grouped by type
     payment_setups = Setup.objects.filter(setup_type='payment').order_by('name')
     status_setups = Setup.objects.filter(setup_type='status').order_by('name')
     payment_status_setups = Setup.objects.filter(setup_type='payment_status').order_by('name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source').order_by('name')
 
     context = {
         'payment_setups': payment_setups,
         'status_setups': status_setups,
         'payment_status_setups': payment_status_setups,
+        'order_source_setups': order_source_setups,
         'page_title': 'Setup Management',
     }
 

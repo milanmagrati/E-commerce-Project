@@ -935,6 +935,7 @@ class Setup(models.Model):
         ('payment', 'Payment Setup'),
         ('status', 'Status Setup'),
         ('payment_status', 'Payment Status Setup'),
+        ('order_source', 'Order Source'),
     ]
     
     setup_type = models.CharField(max_length=50, choices=SETUP_TYPES)
