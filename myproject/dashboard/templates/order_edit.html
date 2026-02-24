@@ -2330,7 +2330,10 @@
                     const statusEl = document.getElementById('statusSetup');
                     if (statusEl) statusEl.value = formData.orderStatus;
                 }
-                cart = Array.isArray(formData.cart) ? formData.cart : [];
+                // Only restore draft cart if it has items; otherwise keep backend-loaded cart
+                if (Array.isArray(formData.cart) && formData.cart.length > 0) {
+                    cart = formData.cart;
+                }
                 updateCart();
                 if (formData.isPartialPayment) {
                     isPartialPaymentSelected = true;
@@ -3004,13 +3007,11 @@
                 // User cleared the draft in this tab — do not auto-restore and remove the flag
                 try { sessionStorage.removeItem('order_edit_just_cleared'); } catch(e) {}
                 updateCart();
-                updateTotal();
             } else {
                 // Auto-restore draft (no prompt) so changes persist across refreshes
                 const restored = loadFormData();
                 if (!restored) {
                     updateCart();
-                    updateTotal();
                 }
             }
 
@@ -3019,8 +3020,11 @@
             }
         } else {
             updateCart();
-            updateTotal();
         }
+
+        // Always calculate totals and populate hidden orderItems input
+        // This MUST run after all branches above so the server receives cart data on submit
+        updateTotal();
 
         // Setup auto-save
         setupAutoSave();
@@ -3117,11 +3121,14 @@
                 return false;
             }
 
+            // Ensure hidden inputs are populated with latest cart data before submit
+            updateTotal();
+
             // Clear draft on successful submission so stale data doesn't override fresh DB values
             isSubmitting = true;
             clearFormData();
             hideFloatingButton();
-            
+
             return true;
         });
 

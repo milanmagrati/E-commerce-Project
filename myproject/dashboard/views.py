@@ -3405,6 +3405,7 @@ def order_edit(request, order_id):
         "payment_setups": payment_setups,
         "status_setups": status_setups,
         "payment_status_setups": payment_status_setups,
+        "categories": Category.objects.all().order_by('name'),
     }
 
     return render(request, "order_edit.html", context)
