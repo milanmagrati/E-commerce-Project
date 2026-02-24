@@ -10,8 +10,9 @@ class ChatMessageInline(admin.TabularInline):
 
 @admin.register(ChatThread)
 class ChatThreadAdmin(admin.ModelAdmin):
-    list_display = ('id', 'get_participants', 'updated_at', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('id', 'get_participants', 'is_group', 'group_name', 'created_by', 'updated_at', 'created_at')
+    list_filter = ('is_group', 'created_at')
+    search_fields = ('group_name',)
     inlines = [ChatMessageInline]
 
     def get_participants(self, obj):

@@ -9,12 +9,9 @@ urlpatterns = [
     path('start/<int:user_id>/', views.start_chat, name='start'),
 
     # API endpoints
+    path('api/create-group/', views.create_group, name='create_group'),
     path('api/send/', views.api_send_message, name='api_send'),
     path('api/messages/<int:thread_id>/', views.api_get_messages, name='api_messages'),
     path('api/unread-count/', views.api_unread_count, name='api_unread_count'),
     path('api/mark-read/<int:thread_id>/', views.api_mark_read, name='api_mark_read'),
-
-    # SSE (Server-Sent Events) for instant delivery
-    path('sse/messages/<int:thread_id>/', views.sse_thread_messages, name='sse_messages'),
-    path('sse/unread/', views.sse_unread_count, name='sse_unread'),
 ]

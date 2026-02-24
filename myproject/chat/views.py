@@ -1,7 +1,6 @@
 import json
-import time
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse, StreamingHttpResponse, HttpResponseForbidden
+from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST, require_http_methods
 from django.contrib.auth import get_user_model
@@ -27,28 +26,36 @@ def chat_inbox(request):
 
     thread_list = []
     for thread in threads:
-        other_user = thread.get_other_participant(request.user)
-        last_msg = thread.get_last_message()
-        if other_user:
+        if thread.is_group:
+            # Group thread
+            members = thread.participants.exclude(id=request.user.id)
+            last_msg = thread.get_last_message()
             thread_list.append({
                 'thread': thread,
-                'other_user': other_user,
+                'is_group': True,
+                'group_name': thread.group_name or 'Unnamed Group',
+                'members': members,
+                'member_count': thread.participants.count(),
                 'last_message': last_msg,
                 'unread_count': thread.unread_count,
             })
+        else:
+            # 1-on-1 thread
+            other_user = thread.get_other_participant(request.user)
+            last_msg = thread.get_last_message()
+            if other_user:
+                thread_list.append({
+                    'thread': thread,
+                    'is_group': False,
+                    'other_user': other_user,
+                    'last_message': last_msg,
+                    'unread_count': thread.unread_count,
+                })
 
-    # Determine which users the current user can message
-    if request.user.is_superuser or request.user.role == 'administrator':
-        available_users = User.objects.filter(
-            is_active=True, is_deleted=False
-        ).exclude(id=request.user.id).order_by('username')
-    else:
-        available_users = User.objects.filter(
-            is_active=True,
-            is_deleted=False
-        ).filter(
-            Q(role='administrator') | Q(is_superuser=True)
-        ).exclude(id=request.user.id).order_by('username')
+    # All users can message any other user
+    available_users = User.objects.filter(
+        is_active=True, is_deleted=False
+    ).exclude(id=request.user.id).order_by('username')
 
     context = {
         'thread_list': thread_list,
@@ -65,9 +72,7 @@ def chat_thread(request, thread_id):
     if not thread.participants.filter(id=request.user.id).exists():
         return redirect('chat:inbox')
 
-    other_user = thread.get_other_participant(request.user)
-
-    # Mark unread messages from the other user as read
+    # Mark unread messages as read
     thread.messages.filter(
         is_read=False
     ).exclude(
@@ -76,11 +81,27 @@ def chat_thread(request, thread_id):
 
     messages_list = thread.messages.select_related('sender').order_by('created_at')
 
-    context = {
-        'thread': thread,
-        'other_user': other_user,
-        'messages': messages_list,
-    }
+    if thread.is_group:
+        # Group chat context
+        members = thread.participants.all()
+        context = {
+            'thread': thread,
+            'is_group': True,
+            'group_name': thread.group_name or 'Unnamed Group',
+            'members': members,
+            'member_count': members.count(),
+            'messages': messages_list,
+        }
+    else:
+        # 1-on-1 chat context
+        other_user = thread.get_other_participant(request.user)
+        context = {
+            'thread': thread,
+            'is_group': False,
+            'other_user': other_user,
+            'messages': messages_list,
+        }
+
     return render(request, 'chat/thread.html', context)
 
 
@@ -89,13 +110,9 @@ def start_chat(request, user_id):
     """Start a new chat with a user, or redirect to existing thread"""
     other_user = get_object_or_404(User, id=user_id, is_active=True, is_deleted=False)
 
-    # Permission check: non-admins can only chat with admins
-    if not (request.user.is_superuser or request.user.role == 'administrator'):
-        if not (other_user.is_superuser or other_user.role == 'administrator'):
-            return redirect('chat:inbox')
-
-    # Check if a thread already exists between these two users
+    # Check if a 1-on-1 thread already exists between these two users
     existing_threads = ChatThread.objects.filter(
+        is_group=False,
         participants=request.user
     ).filter(
         participants=other_user
@@ -109,6 +126,46 @@ def start_chat(request, user_id):
     thread.participants.add(request.user, other_user)
 
     return redirect('chat:thread', thread_id=thread.id)
+
+
+@login_required
+@require_POST
+def create_group(request):
+    """Create a new group chat - only admins can create groups"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'message': 'Only administrators can create groups'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+        group_name = data.get('group_name', '').strip()
+        member_ids = data.get('member_ids', [])
+
+        if not group_name:
+            return JsonResponse({'success': False, 'message': 'Group name is required'}, status=400)
+
+        if not member_ids or len(member_ids) < 1:
+            return JsonResponse({'success': False, 'message': 'Select at least 1 member'}, status=400)
+
+        # Validate members exist
+        members = User.objects.filter(id__in=member_ids, is_active=True, is_deleted=False)
+        if members.count() == 0:
+            return JsonResponse({'success': False, 'message': 'No valid members selected'}, status=400)
+
+        # Create group thread
+        thread = ChatThread.objects.create(
+            is_group=True,
+            group_name=group_name,
+            created_by=request.user,
+        )
+        thread.participants.add(request.user, *members)
+
+        return JsonResponse({
+            'success': True,
+            'thread_id': thread.id,
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid request'}, status=400)
 
 
 @login_required
@@ -146,7 +203,7 @@ def api_send_message(request):
             'message': {
                 'id': message.id,
                 'content': message.content,
-                'sender': message.sender.username,
+                'sender': message.sender.get_full_name() or message.sender.username,
                 'sender_id': message.sender.id,
                 'sender_role': message.sender.role,
                 'created_at': message.created_at.strftime('%b %d, %Y %I:%M %p'),
@@ -185,7 +242,7 @@ def api_get_messages(request, thread_id):
         messages_data.append({
             'id': msg.id,
             'content': msg.content,
-            'sender': msg.sender.username,
+            'sender': msg.sender.get_full_name() or msg.sender.username,
             'sender_id': msg.sender.id,
             'sender_role': msg.sender.role,
             'created_at': msg.created_at.strftime('%b %d, %Y %I:%M %p'),
@@ -234,94 +291,3 @@ def api_mark_read(request, thread_id):
         'success': True,
         'marked_count': updated,
     })
-
-
-@login_required
-def sse_thread_messages(request, thread_id):
-    """SSE endpoint: pushes new messages instantly to the client"""
-    thread = get_object_or_404(ChatThread, id=thread_id)
-
-    if not thread.participants.filter(id=request.user.id).exists():
-        return HttpResponseForbidden()
-
-    last_id = int(request.GET.get('last_id', 0))
-
-    def event_stream():
-        nonlocal last_id
-        heartbeat = 0
-        while True:
-            from django.db import connection
-            # Ensure fresh query results (no stale cache)
-            if connection.connection and not connection.is_usable():
-                connection.close()
-
-            new_msgs = list(
-                ChatMessage.objects.filter(
-                    thread_id=thread_id, id__gt=last_id
-                ).exclude(
-                    sender=request.user
-                ).select_related('sender').order_by('created_at')
-            )
-
-            for msg in new_msgs:
-                if not msg.is_read:
-                    ChatMessage.objects.filter(id=msg.id).update(is_read=True)
-                data = json.dumps({
-                    'id': msg.id,
-                    'content': msg.content,
-                    'sender': msg.sender.username,
-                    'sender_id': msg.sender.id,
-                    'sender_role': msg.sender.role,
-                    'created_at': msg.created_at.strftime('%b %d, %Y %I:%M %p'),
-                    'is_mine': False,
-                })
-                last_id = msg.id
-                yield f"data: {data}\n\n"
-
-            # Heartbeat every ~15 seconds to keep connection alive
-            heartbeat += 1
-            if heartbeat % 30 == 0:
-                yield ": heartbeat\n\n"
-
-            time.sleep(0.5)
-
-    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-    response['Cache-Control'] = 'no-cache'
-    response['X-Accel-Buffering'] = 'no'
-    return response
-
-
-@login_required
-def sse_unread_count(request):
-    """SSE endpoint: pushes unread count changes instantly to the client"""
-    user = request.user
-
-    def event_stream():
-        last_count = -1
-        heartbeat = 0
-        while True:
-            from django.db import connection
-            if connection.connection and not connection.is_usable():
-                connection.close()
-
-            count = ChatMessage.objects.filter(
-                thread__participants=user,
-                is_read=False
-            ).exclude(
-                sender=user
-            ).count()
-
-            if count != last_count:
-                yield f"data: {json.dumps({'unread_count': count})}\n\n"
-                last_count = count
-
-            heartbeat += 1
-            if heartbeat % 30 == 0:
-                yield ": heartbeat\n\n"
-
-            time.sleep(0.5)
-
-    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-    response['Cache-Control'] = 'no-cache'
-    response['X-Accel-Buffering'] = 'no'
-    return response

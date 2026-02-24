@@ -109,6 +109,10 @@
         background: linear-gradient(135deg, #fff7ed, #ffedd5);
         color: #f59e0b;
     }
+    .chat-stat-icon.blue {
+        background: linear-gradient(135deg, #eff6ff, #dbeafe);
+        color: #3b82f6;
+    }
     .chat-stat-value {
         font-size: 1.35rem;
         font-weight: 700;
@@ -193,17 +197,7 @@
     .chat-avatar-administrator { background: linear-gradient(135deg, #667eea, #764ba2); }
     .chat-avatar-sales { background: linear-gradient(135deg, #34d399, #059669); }
     .chat-avatar-warehouse { background: linear-gradient(135deg, #fbbf24, #d97706); }
-    .chat-avatar-online::after {
-        content: '';
-        position: absolute;
-        bottom: -2px;
-        right: -2px;
-        width: 14px;
-        height: 14px;
-        background: #22c55e;
-        border-radius: 50%;
-        border: 2.5px solid #fff;
-    }
+    .chat-avatar-group { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
 
     /* Thread Info */
     .chat-thread-info {
@@ -219,6 +213,7 @@
         display: flex;
         align-items: center;
         gap: 0.5rem;
+        flex-wrap: wrap;
     }
     .chat-role-pill {
         font-size: 0.6rem;
@@ -231,6 +226,7 @@
     .chat-role-pill.admin { background: #eef2ff; color: #667eea; }
     .chat-role-pill.sales { background: #ecfdf5; color: #059669; }
     .chat-role-pill.warehouse { background: #fff7ed; color: #d97706; }
+    .chat-role-pill.group { background: #eff6ff; color: #3b82f6; }
     .chat-thread-preview {
         font-size: 0.84rem;
         color: #64748b;
@@ -319,7 +315,7 @@
         color: #fff;
     }
 
-    /* New Chat Modal */
+    /* Modal Shared Styles */
     .new-chat-search {
         border-radius: 12px;
         border: 2px solid #e2e8f0;
@@ -380,6 +376,92 @@
         color: #fff;
     }
 
+    /* Group Modal Styles */
+    .group-name-input {
+        border-radius: 12px;
+        border: 2px solid #e2e8f0;
+        padding: 0.7rem 1rem;
+        transition: all 0.2s;
+    }
+    .group-name-input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .group-member-item {
+        display: flex;
+        align-items: center;
+        padding: 0.7rem 1.25rem;
+        border-bottom: 1px solid #f8fafc;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+    .group-member-item:hover {
+        background: #faf5ff;
+    }
+    .group-member-item label {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        cursor: pointer;
+        flex: 1;
+        margin: 0;
+    }
+    .group-member-item input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: #667eea;
+        flex-shrink: 0;
+    }
+    .group-selected-count {
+        font-size: 0.8rem;
+        color: #667eea;
+        font-weight: 600;
+    }
+    .group-create-btn {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        border: none;
+        color: #fff;
+        padding: 0.65rem 1.5rem;
+        border-radius: 12px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        width: 100%;
+    }
+    .group-create-btn:hover {
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.35);
+        color: #fff;
+    }
+    .group-create-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Group member avatars stacked */
+    .group-avatar-stack {
+        display: flex;
+        position: relative;
+        width: 50px;
+        height: 50px;
+        flex-shrink: 0;
+    }
+    .group-avatar-stack .stack-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.7rem;
+        color: #fff;
+        position: absolute;
+        border: 2px solid #fff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    .group-avatar-stack .stack-avatar:nth-child(1) { top: 0; left: 0; z-index: 3; }
+    .group-avatar-stack .stack-avatar:nth-child(2) { top: 8px; left: 12px; z-index: 2; }
+    .group-avatar-stack .stack-avatar:nth-child(3) { top: 16px; left: 4px; z-index: 1; }
+
     @media (max-width: 768px) {
         .chat-stats { flex-direction: column; }
         .chat-page-header { padding: 1.25rem 1.5rem; }
@@ -396,9 +478,16 @@
             <h2><i class="fas fa-comments me-2"></i> Messages</h2>
             <p>Internal team messaging &mdash; stay connected with your team</p>
         </div>
-        <button class="chat-header-btn" data-bs-toggle="modal" data-bs-target="#newChatModal">
-            <i class="fas fa-plus me-2"></i> New Conversation
-        </button>
+        <div class="d-flex gap-2 flex-wrap" style="position:relative;z-index:1;">
+            <button class="chat-header-btn" data-bs-toggle="modal" data-bs-target="#newChatModal">
+                <i class="fas fa-plus me-2"></i> New Chat
+            </button>
+            {% if request.user.is_superuser or request.user.role == 'administrator' %}
+            <button class="chat-header-btn" data-bs-toggle="modal" data-bs-target="#newGroupModal">
+                <i class="fas fa-users me-2"></i> New Group
+            </button>
+            {% endif %}
+        </div>
     </div>
 </div>
 
@@ -443,24 +532,49 @@
     {% if thread_list %}
         {% for item in thread_list %}
         <a href="{% url 'chat:thread' item.thread.id %}" class="chat-thread-item {% if item.unread_count > 0 %}has-unread{% endif %}">
-            <div class="chat-avatar chat-avatar-{{ item.other_user.role }}">
-                {{ item.other_user.username|make_list|first|upper }}
-            </div>
-            <div class="chat-thread-info">
-                <div class="chat-thread-name">
-                    {{ item.other_user.get_full_name|default:item.other_user.username }}
-                    <span class="chat-role-pill {% if item.other_user.role == 'administrator' %}admin{% elif item.other_user.role == 'sales' %}sales{% elif item.other_user.role == 'warehouse' %}warehouse{% endif %}">
-                        {{ item.other_user.get_role_display }}
-                    </span>
+
+            {% if item.is_group %}
+                <!-- Group Thread Avatar -->
+                <div class="chat-avatar chat-avatar-group">
+                    <i class="fas fa-users" style="font-size: 1rem;"></i>
                 </div>
-                <div class="chat-thread-preview {% if item.unread_count > 0 %}unread-text{% endif %}">
-                    {% if item.last_message %}
-                        {% if item.last_message.sender == request.user %}<i class="fas fa-reply fa-xs me-1" style="color:#94a3b8;"></i>{% endif %}{{ item.last_message.content|truncatewords:12 }}
-                    {% else %}
-                        <i>No messages yet &mdash; say hello!</i>
-                    {% endif %}
+                <div class="chat-thread-info">
+                    <div class="chat-thread-name">
+                        {{ item.group_name }}
+                        <span class="chat-role-pill group">
+                            <i class="fas fa-users fa-xs me-1"></i> {{ item.member_count }} members
+                        </span>
+                    </div>
+                    <div class="chat-thread-preview {% if item.unread_count > 0 %}unread-text{% endif %}">
+                        {% if item.last_message %}
+                            <strong style="font-size:0.8rem;">{{ item.last_message.sender.get_full_name|default:item.last_message.sender.username }}:</strong> {{ item.last_message.content|truncatewords:10 }}
+                        {% else %}
+                            <i>No messages yet &mdash; say hello!</i>
+                        {% endif %}
+                    </div>
                 </div>
-            </div>
+            {% else %}
+                <!-- 1-on-1 Thread Avatar -->
+                <div class="chat-avatar chat-avatar-{{ item.other_user.role }}">
+                    {{ item.other_user.username|make_list|first|upper }}
+                </div>
+                <div class="chat-thread-info">
+                    <div class="chat-thread-name">
+                        {{ item.other_user.get_full_name|default:item.other_user.username }}
+                        <span class="chat-role-pill {% if item.other_user.role == 'administrator' %}admin{% elif item.other_user.role == 'sales' %}sales{% elif item.other_user.role == 'warehouse' %}warehouse{% endif %}">
+                            {{ item.other_user.get_role_display }}
+                        </span>
+                    </div>
+                    <div class="chat-thread-preview {% if item.unread_count > 0 %}unread-text{% endif %}">
+                        {% if item.last_message %}
+                            {% if item.last_message.sender == request.user %}<i class="fas fa-reply fa-xs me-1" style="color:#94a3b8;"></i>{% endif %}{{ item.last_message.content|truncatewords:12 }}
+                        {% else %}
+                            <i>No messages yet &mdash; say hello!</i>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
             <div class="chat-thread-meta">
                 {% if item.last_message %}
                 <div class="chat-thread-time">{{ item.last_message.created_at|timesince }} ago</div>
@@ -485,7 +599,7 @@
     {% endif %}
 </div>
 
-<!-- New Chat Modal -->
+<!-- New Chat Modal (1-on-1) -->
 <div class="modal fade" id="newChatModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
@@ -531,16 +645,65 @@
         </div>
     </div>
 </div>
+
+<!-- New Group Chat Modal (Admin only) -->
+{% if request.user.is_superuser or request.user.role == 'administrator' %}
+<div class="modal fade" id="newGroupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+            <div class="modal-header border-0 py-3" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff;">
+                <h5 class="modal-title fw-bold"><i class="fas fa-users me-2"></i> Create Group Chat</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="p-3">
+                    <input type="text" class="form-control group-name-input mb-2" id="groupNameInput" placeholder="Group name..." autocomplete="off" maxlength="100">
+                    <input type="text" class="form-control new-chat-search" id="searchGroupMembers" placeholder="Search members..." autocomplete="off">
+                </div>
+                <div class="px-3 pb-2 d-flex justify-content-between align-items-center">
+                    <span class="group-selected-count"><span id="selectedCount">0</span> members selected</span>
+                    <button type="button" class="btn btn-sm" style="color:#667eea;font-weight:600;" id="selectAllBtn">Select All</button>
+                </div>
+                <div style="max-height: 280px; overflow-y: auto;" id="groupMembersList">
+                    {% for u in available_users %}
+                    <div class="group-member-item" data-username="{{ u.username|lower }}" data-fullname="{{ u.get_full_name|lower }}">
+                        <label>
+                            <input type="checkbox" class="group-member-checkbox" value="{{ u.id }}">
+                            <div class="new-chat-avatar chat-avatar-{{ u.role }}" style="width:36px;height:36px;font-size:0.8rem;">
+                                {{ u.username|make_list|first|upper }}
+                            </div>
+                            <div>
+                                <strong style="color: #1e293b; font-size: 0.9rem;">{{ u.get_full_name|default:u.username }}</strong>
+                                <br>
+                                <span class="chat-role-pill {% if u.role == 'administrator' %}admin{% elif u.role == 'sales' %}sales{% elif u.role == 'warehouse' %}warehouse{% endif %}" style="font-size:0.55rem;">
+                                    {{ u.get_role_display }}
+                                </span>
+                            </div>
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="p-3">
+                    <button type="button" class="group-create-btn" id="createGroupBtn" disabled>
+                        <i class="fas fa-plus me-2"></i> Create Group
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Search in New Chat modal
         var searchInput = document.getElementById('searchUsers');
         if (searchInput) {
             searchInput.addEventListener('input', function() {
                 var query = this.value.toLowerCase();
-                var items = document.querySelectorAll('.new-chat-user-item');
+                var items = document.querySelectorAll('#usersList .new-chat-user-item');
                 items.forEach(function(item) {
                     var username = item.dataset.username || '';
                     var fullname = item.dataset.fullname || '';
@@ -549,6 +712,116 @@
                     } else {
                         item.style.display = 'none';
                     }
+                });
+            });
+        }
+
+        // Search in Group modal
+        var groupSearch = document.getElementById('searchGroupMembers');
+        if (groupSearch) {
+            groupSearch.addEventListener('input', function() {
+                var query = this.value.toLowerCase();
+                var items = document.querySelectorAll('#groupMembersList .group-member-item');
+                items.forEach(function(item) {
+                    var username = item.dataset.username || '';
+                    var fullname = item.dataset.fullname || '';
+                    if (username.indexOf(query) !== -1 || fullname.indexOf(query) !== -1) {
+                        item.style.display = '';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            });
+        }
+
+        // Group member selection
+        var checkboxes = document.querySelectorAll('.group-member-checkbox');
+        var selectedCountEl = document.getElementById('selectedCount');
+        var createGroupBtn = document.getElementById('createGroupBtn');
+        var groupNameInput = document.getElementById('groupNameInput');
+
+        function updateGroupUI() {
+            var checked = document.querySelectorAll('.group-member-checkbox:checked').length;
+            if (selectedCountEl) selectedCountEl.textContent = checked;
+            if (createGroupBtn) {
+                createGroupBtn.disabled = checked === 0 || !groupNameInput.value.trim();
+            }
+        }
+
+        checkboxes.forEach(function(cb) {
+            cb.addEventListener('change', updateGroupUI);
+        });
+
+        if (groupNameInput) {
+            groupNameInput.addEventListener('input', updateGroupUI);
+        }
+
+        // Select All button
+        var selectAllBtn = document.getElementById('selectAllBtn');
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', function() {
+                var allChecked = document.querySelectorAll('.group-member-checkbox:checked').length === checkboxes.length;
+                checkboxes.forEach(function(cb) {
+                    cb.checked = !allChecked;
+                });
+                updateGroupUI();
+            });
+        }
+
+        // Create Group
+        if (createGroupBtn) {
+            createGroupBtn.addEventListener('click', function() {
+                var groupName = groupNameInput.value.trim();
+                var memberIds = [];
+                document.querySelectorAll('.group-member-checkbox:checked').forEach(function(cb) {
+                    memberIds.push(parseInt(cb.value));
+                });
+
+                if (!groupName || memberIds.length === 0) return;
+
+                createGroupBtn.disabled = true;
+                createGroupBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Creating...';
+
+                function getCookie(name) {
+                    var cookieValue = null;
+                    if (document.cookie && document.cookie !== '') {
+                        var cookies = document.cookie.split(';');
+                        for (var i = 0; i < cookies.length; i++) {
+                            var cookie = cookies[i].trim();
+                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                    }
+                    return cookieValue;
+                }
+
+                fetch('{% url "chat:create_group" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken'),
+                    },
+                    body: JSON.stringify({
+                        group_name: groupName,
+                        member_ids: memberIds,
+                    }),
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        window.location.href = '/chat/thread/' + data.thread_id + '/';
+                    } else {
+                        alertify.error(data.message || 'Failed to create group');
+                        createGroupBtn.disabled = false;
+                        createGroupBtn.innerHTML = '<i class="fas fa-plus me-2"></i> Create Group';
+                    }
+                })
+                .catch(function() {
+                    alertify.error('Network error. Please try again.');
+                    createGroupBtn.disabled = false;
+                    createGroupBtn.innerHTML = '<i class="fas fa-plus me-2"></i> Create Group';
                 });
             });
         }

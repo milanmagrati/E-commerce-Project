@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Chat with {{ other_user.get_full_name|default:other_user.username }} - Admin Panel{% endblock %}
+{% block title %}{% if is_group %}{{ group_name }}{% else %}Chat with {{ other_user.get_full_name|default:other_user.username }}{% endif %} - Admin Panel{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -7,7 +7,7 @@
 
     /* Page Header with Gradient */
     .chat-page-top {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        background: linear-gradient(135deg, {% if is_group %}#3b82f6 0%, #1d4ed8 100%{% else %}#667eea 0%, #764ba2 50%, #f093fb 100%{% endif %});
         border-radius: 16px;
         padding: 1.25rem 1.75rem;
         color: #fff;
@@ -117,6 +117,43 @@
         font-size: 0.5rem;
     }
 
+    /* Group Members Bar */
+    .group-members-bar {
+        background: linear-gradient(90deg, #eff6ff 0%, #eef2ff 50%, #f0fdf4 100%);
+        border-bottom: 1px solid #e8ecf4;
+        padding: 0.65rem 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+    }
+    .group-members-bar .member-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        padding: 0.25rem 0.65rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #475569;
+    }
+    .group-members-bar .member-chip .chip-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+    .chip-dot.administrator { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .chip-dot.sales { background: linear-gradient(135deg, #34d399, #059669); }
+    .chip-dot.warehouse { background: linear-gradient(135deg, #fbbf24, #d97706); }
+    .group-members-label {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        font-weight: 500;
+    }
+
     /* Chat Card Container */
     .chat-card {
         background: #fff;
@@ -153,6 +190,7 @@
     .chat-header-avatar-sm.administrator { background: linear-gradient(135deg, #667eea, #764ba2); }
     .chat-header-avatar-sm.sales { background: linear-gradient(135deg, #34d399, #059669); }
     .chat-header-avatar-sm.warehouse { background: linear-gradient(135deg, #fbbf24, #d97706); }
+    .chat-header-avatar-sm.group { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
     .chat-header-details strong {
         color: #1e293b;
         font-size: 0.9rem;
@@ -213,10 +251,10 @@
         font-size: 0.9rem;
     }
     .msg-sent {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, {% if is_group %}#3b82f6 0%, #1d4ed8 100%{% else %}#667eea 0%, #764ba2 100%{% endif %});
         color: #fff;
         border-radius: 20px 20px 6px 20px;
-        box-shadow: 0 3px 12px rgba(102, 126, 234, 0.25);
+        box-shadow: 0 3px 12px {% if is_group %}rgba(59, 130, 246, 0.25){% else %}rgba(102, 126, 234, 0.25){% endif %};
     }
     .msg-received {
         background: #fff;
@@ -306,8 +344,8 @@
         box-shadow: 0 2px 8px rgba(0,0,0,0.03);
     }
     .chat-input-wrap:focus-within {
-        border-color: #667eea;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.08), 0 2px 12px rgba(102, 126, 234, 0.1);
+        border-color: {% if is_group %}#3b82f6{% else %}#667eea{% endif %};
+        box-shadow: 0 0 0 4px {% if is_group %}rgba(59, 130, 246, 0.08){% else %}rgba(102, 126, 234, 0.08){% endif %}, 0 2px 12px {% if is_group %}rgba(59, 130, 246, 0.1){% else %}rgba(102, 126, 234, 0.1){% endif %};
     }
     .chat-input-wrap input {
         border: none;
@@ -328,17 +366,17 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(135deg, #667eea, #764ba2);
+        background: linear-gradient(135deg, {% if is_group %}#3b82f6, #1d4ed8{% else %}#667eea, #764ba2{% endif %});
         color: #fff;
         border: none;
         transition: all 0.25s ease;
         flex-shrink: 0;
         cursor: pointer;
-        box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 3px 10px {% if is_group %}rgba(59, 130, 246, 0.3){% else %}rgba(102, 126, 234, 0.3){% endif %};
     }
     .chat-send-button:hover {
         transform: scale(1.08);
-        box-shadow: 0 5px 16px rgba(102, 126, 234, 0.45);
+        box-shadow: 0 5px 16px {% if is_group %}rgba(59, 130, 246, 0.45){% else %}rgba(102, 126, 234, 0.45){% endif %};
         color: #fff;
     }
     .chat-send-button:disabled {
@@ -349,32 +387,6 @@
     .chat-send-button i {
         font-size: 0.9rem;
         margin-left: 1px;
-    }
-
-    /* Date Divider */
-    .chat-date-sep {
-        text-align: center;
-        margin: 1.25rem 0;
-        position: relative;
-    }
-    .chat-date-sep::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 0;
-        right: 0;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
-    }
-    .chat-date-sep span {
-        position: relative;
-        background: linear-gradient(180deg, #f8fafc, #f1f5f9);
-        padding: 0.2rem 0.85rem;
-        font-size: 0.7rem;
-        color: #94a3b8;
-        border-radius: 10px;
-        border: 1px solid #e8ecf4;
-        font-weight: 500;
     }
 
     @media (max-width: 768px) {
@@ -395,11 +407,27 @@
     </a>
     <div class="chat-top-info">
         <div class="chat-top-avatar">
-            {{ other_user.username|make_list|first|upper }}
+            {% if is_group %}
+                <i class="fas fa-users" style="font-size:1rem;"></i>
+            {% else %}
+                {{ other_user.username|make_list|first|upper }}
+            {% endif %}
         </div>
         <div>
-            <div class="chat-top-name">{{ other_user.get_full_name|default:other_user.username }}</div>
-            <span class="chat-top-role">{{ other_user.get_role_display }}</span>
+            <div class="chat-top-name">
+                {% if is_group %}
+                    {{ group_name }}
+                {% else %}
+                    {{ other_user.get_full_name|default:other_user.username }}
+                {% endif %}
+            </div>
+            <span class="chat-top-role">
+                {% if is_group %}
+                    <i class="fas fa-users fa-xs me-1"></i> {{ member_count }} members
+                {% else %}
+                    {{ other_user.get_role_display }}
+                {% endif %}
+            </span>
         </div>
     </div>
     <div class="chat-top-status">
@@ -411,14 +439,37 @@
 <div class="chat-card">
     <!-- Inner Header -->
     <div class="chat-header-bar">
-        <div class="chat-header-avatar-sm {{ other_user.role }}">
-            {{ other_user.username|make_list|first|upper }}
-        </div>
-        <div class="chat-header-details">
-            <strong>{{ other_user.get_full_name|default:other_user.username }}</strong>
-            <div class="chat-email">{{ other_user.email }}</div>
-        </div>
+        {% if is_group %}
+            <div class="chat-header-avatar-sm group">
+                <i class="fas fa-users" style="font-size:0.8rem;"></i>
+            </div>
+            <div class="chat-header-details">
+                <strong>{{ group_name }}</strong>
+                <div class="chat-email">{{ member_count }} members in this group</div>
+            </div>
+        {% else %}
+            <div class="chat-header-avatar-sm {{ other_user.role }}">
+                {{ other_user.username|make_list|first|upper }}
+            </div>
+            <div class="chat-header-details">
+                <strong>{{ other_user.get_full_name|default:other_user.username }}</strong>
+                <div class="chat-email">{{ other_user.email }}</div>
+            </div>
+        {% endif %}
     </div>
+
+    {% if is_group %}
+    <!-- Group Members Bar -->
+    <div class="group-members-bar">
+        <span class="group-members-label">Members:</span>
+        {% for member in members %}
+        <span class="member-chip">
+            <span class="chip-dot {{ member.role }}"></span>
+            {{ member.get_full_name|default:member.username }}
+        </span>
+        {% endfor %}
+    </div>
+    {% endif %}
 
     <!-- Messages Area -->
     <div class="chat-messages" id="chatContainer">
@@ -598,28 +649,26 @@
         } catch(e) {}
     }
 
-    // SSE: Instant message delivery via Server-Sent Events
-    var evtSource = null;
-
-    function connectSSE() {
-        if (evtSource) evtSource.close();
-        var src = new EventSource('/chat/sse/messages/' + threadId + '/?last_id=' + lastMessageId);
-        src.onmessage = function(event) {
-            var msg = JSON.parse(event.data);
-            if (msg.id > lastMessageId) {
-                appendMessage(msg);
-                lastMessageId = msg.id;
+    // Poll for new messages every 2 seconds
+    function pollMessages() {
+        fetch('/chat/api/messages/' + threadId + '/?after_id=' + lastMessageId)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success && data.messages && data.messages.length > 0) {
+                data.messages.forEach(function(msg) {
+                    if (msg.id > lastMessageId && !msg.is_mine) {
+                        appendMessage(msg);
+                        lastMessageId = msg.id;
+                        playMessageSound();
+                    } else if (msg.id > lastMessageId) {
+                        lastMessageId = msg.id;
+                    }
+                });
                 scrollToBottom();
-                playMessageSound();
             }
-        };
-        src.onerror = function() {
-            src.close();
-            // Reconnect with updated last_id after brief pause
-            setTimeout(connectSSE, 2000);
-        };
-        evtSource = src;
+        })
+        .catch(function() {});
     }
-    connectSSE();
+    setInterval(pollMessages, 2000);
 </script>
 {% endblock %}
