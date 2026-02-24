@@ -242,7 +242,7 @@ class Order(models.Model):
     shipping_charge = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     delivery_charge = models.DecimalField(max_digits=18, decimal_places=2, default=0, help_text="NCM delivery charge or logistics charge")
     expense_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0, help_text="Other operational expenses")
-    tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=13)
+    tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=18, decimal_places=2)
     notes = models.TextField(blank=True)
     
