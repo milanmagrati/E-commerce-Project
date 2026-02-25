@@ -671,11 +671,6 @@
                             <a href="{% url 'stock_in_create' %}">Stock In</a>
                         </li>
                         {% endif %}
-                        {% if user.is_superuser or user.role == 'administrator' or user.can_adjust_stock %}
-                        <li>
-                            <a href="#">Stock Adjustments</a>
-                        </li>
-                        {% endif %}
                         <li class="{% if request.resolver_match.url_name == 'low_stock_settings' %}active{% endif %}">
                             <a href="{% url 'low_stock_settings' %}">Low Stock Settings</a>
                         </li>
@@ -777,7 +772,7 @@
 
                 <!-- ==================== TEAM MEMBERS (Admin Only) ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' %}
-                <li class="{% if 'user' in request.resolver_match.url_name %}active{% endif %}">
+                <li class="{% if 'user' in request.resolver_match.url_name or 'role' in request.resolver_match.url_name %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#teamMenu" aria-expanded="false">
                         <i class="fas fa-user-friends"></i> Team Members
                         <i class="fas fa-chevron-down float-end mt-1"></i>
@@ -788,6 +783,9 @@
                         </li>
                         <li class="{% if request.resolver_match.url_name == 'user_create' %}active{% endif %}">
                             <a href="{% url 'user_create' %}">Add New Member</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'role_list' %}active{% endif %}">
+                            <a href="{% url 'role_list' %}">Manage Roles</a>
                         </li>
                         <li class="{% if request.resolver_match.url_name == 'user_trash' %}active{% endif %}">
                             <a href="{% url 'user_trash' %}">Trash</a>

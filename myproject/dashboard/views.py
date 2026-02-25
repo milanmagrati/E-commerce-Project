@@ -5453,8 +5453,8 @@ def inventory_dashboard(request):
         from datetime import datetime, timedelta
         from django.db.models import Sum
         
-        # Get user's products
-        products = Product.objects.filter(user=request.user)
+        # Get all products (role-based access is handled by @permission_required)
+        products = Product.objects.filter(is_deleted=False)
         
         # Stock Statistics
         total_products = products.count()
@@ -5465,7 +5465,7 @@ def inventory_dashboard(request):
         out_of_stock = products.filter(stock=0).count()
 
         # Product Variations Stock
-        variations = ProductVariation.objects.filter(product__user=request.user)
+        variations = ProductVariation.objects.filter(product__is_deleted=False)
         total_variations = variations.count()
         variations_in_stock = variations.filter(stock__gt=10).count()
         variations_low_stock = variations.filter(
@@ -5496,7 +5496,6 @@ def inventory_dashboard(request):
         # Recent Dispatched Orders — query via DispatchItem for accuracy
         # (orders are linked to dispatches whether or not order_status was updated)
         dispatched_order_ids = DispatchItem.objects.filter(
-            dispatch__created_by=request.user,
             dispatch__is_deleted=False,
             order__isnull=False
         ).values_list('order_id', flat=True).distinct()
@@ -5588,7 +5587,6 @@ def inventory_dashboard(request):
             # Stock In for this date
             try:
                 stock_ins_day = StockIn.objects.filter(
-                    created_by=request.user,
                     created_at__date=current_date
                 ).aggregate(total=Sum('total_quantity'))['total'] or 0
             except Exception:
@@ -5597,7 +5595,6 @@ def inventory_dashboard(request):
             # Stock Out (from dispatched orders) for this date
             try:
                 orders_day = Order.objects.filter(
-                    created_by=request.user,
                     order_status='dispatched',
                     dispatch_date__date=current_date
                 )
@@ -5632,8 +5629,7 @@ def inventory_dashboard(request):
         # SAFE QUERY - Get Recent Stock In Transactions
         recent_stock_ins = []
         try:
-            stock_ins_qs = StockIn.objects.filter(
-                created_by=request.user
+            stock_ins_qs = StockIn.objects.all(
             ).only('id', 'reference_number', 'stock_in_type', 'supplier_name', 'created_at', 'total_quantity').order_by('-created_at')[:10]
             
             for stock_in in stock_ins_qs:
@@ -5666,7 +5662,6 @@ def inventory_dashboard(request):
         try:
             damaged_inventory = ReturnItem.objects.filter(
                 return_request__is_deleted=False,
-                return_request__created_by=request.user,
                 damaged_qty__gt=0
             ).values(
                 'product__id',
@@ -5684,7 +5679,6 @@ def inventory_dashboard(request):
             # Recent damaged return items with details
             damaged_items_detail = ReturnItem.objects.filter(
                 return_request__is_deleted=False,
-                return_request__created_by=request.user,
                 damaged_qty__gt=0
             ).select_related(
                 'return_request', 'product', 'product_variation'
@@ -5701,7 +5695,6 @@ def inventory_dashboard(request):
 
             all_returns_qs = ReturnRequest.objects.filter(
                 is_deleted=False,
-                created_by=request.user,
             )
 
             # Return stats
@@ -5728,7 +5721,6 @@ def inventory_dashboard(request):
             # Returned products summary - aggregated by product + variation
             returned_products_summary = ReturnItem.objects.filter(
                 return_request__is_deleted=False,
-                return_request__created_by=request.user,
             ).values(
                 'product__id', 'product__name', 'product_sku',
                 'product_variation__id', 'product_variation__variation_name',
@@ -5744,7 +5736,6 @@ def inventory_dashboard(request):
             # Recent return activity logs
             recent_return_logs = ReturnActivityLog.objects.filter(
                 return_request__is_deleted=False,
-                return_request__created_by=request.user,
             ).select_related(
                 'user', 'return_request'
             ).order_by('-created_at')[:30]
@@ -5760,7 +5751,6 @@ def inventory_dashboard(request):
             # Restocked summary
             restocked_items = ReturnItem.objects.filter(
                 return_request__is_deleted=False,
-                return_request__created_by=request.user,
                 restocked=True,
             ).aggregate(
                 total_restocked=Sum('good_qty'),
@@ -9821,7 +9811,7 @@ def ncm_bulk_logs_bulk_action(request):
 @login_required
 def low_stock_settings(request):
     """Display all products (with variations) with editable low stock threshold inputs"""
-    products = Product.objects.filter(user=request.user, is_deleted=False).prefetch_related('variations').order_by('name')
+    products = Product.objects.filter(is_deleted=False).prefetch_related('variations').order_by('name')
 
     search = request.GET.get('search', '')
     if search:
@@ -9850,8 +9840,8 @@ def low_stock_settings(request):
     categories = Category.objects.all()
 
     # Counts for summary (products + variations)
-    all_products = Product.objects.filter(user=request.user, is_deleted=False)
-    all_variations = ProductVariation.objects.filter(product__user=request.user, product__is_deleted=False)
+    all_products = Product.objects.filter(is_deleted=False)
+    all_variations = ProductVariation.objects.filter(product__is_deleted=False)
     total = all_products.count()
     total_variations = all_variations.count()
     low_count = all_products.filter(
@@ -9889,7 +9879,7 @@ def save_low_stock_thresholds(request):
         if key.startswith('threshold_'):
             product_id = key.replace('threshold_', '')
             try:
-                product = Product.objects.get(id=product_id, user=request.user)
+                product = Product.objects.get(id=product_id)
                 threshold = int(value) if value else 0
                 if threshold < 0:
                     threshold = 0
@@ -9902,7 +9892,7 @@ def save_low_stock_thresholds(request):
         elif key.startswith('var_threshold_'):
             variation_id = key.replace('var_threshold_', '')
             try:
-                variation = ProductVariation.objects.get(id=variation_id, product__user=request.user)
+                variation = ProductVariation.objects.get(id=variation_id)
                 threshold = int(value) if value else 0
                 if threshold < 0:
                     threshold = 0
@@ -9921,27 +9911,27 @@ def save_low_stock_thresholds(request):
 def low_stock_alerts(request):
     """Display all products and variations that are currently below their low stock threshold"""
     low_stock_products = Product.objects.filter(
-        user=request.user, is_deleted=False,
+        is_deleted=False,
         low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
     ).annotate(
         deficit=F('low_stock_threshold') - F('stock')
     ).select_related('category').order_by('stock')
 
     out_of_stock_products = Product.objects.filter(
-        user=request.user, is_deleted=False, stock=0,
+        is_deleted=False, stock=0,
         low_stock_threshold__gt=0
     ).select_related('category').order_by('name')
 
     # Variation alerts
     low_stock_variations = ProductVariation.objects.filter(
-        product__user=request.user, product__is_deleted=False,
+        product__is_deleted=False,
         low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
     ).annotate(
         deficit=F('low_stock_threshold') - F('stock')
     ).select_related('product', 'product__category').order_by('stock')
 
     out_of_stock_variations = ProductVariation.objects.filter(
-        product__user=request.user, product__is_deleted=False, stock=0,
+        product__is_deleted=False, stock=0,
         low_stock_threshold__gt=0
     ).select_related('product', 'product__category').order_by('product__name')
 

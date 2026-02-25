@@ -110,9 +110,9 @@
                                     <label class="form-label required">Choose Role</label>
                                     <select class="form-select form-select-lg" name="role" id="roleSelect" required>
                                         <option value="">-- Select Role --</option>
-                                        <option value="administrator">👑 Administrator</option>
-                                        <option value="warehouse">📦 Warehouse</option>
-                                        <option value="sales">💼 Sales</option>
+                                        {% for role in roles %}
+                                        <option value="{{ role.name }}" data-description="{{ role.description }}">{{ role.display_name }}</option>
+                                        {% endfor %}
                                     </select>
                                 </div>
                                 <div class="col-md-6">
@@ -445,7 +445,7 @@
                                                 <div class="col-md-3">
                                                     <div class="perm-item">
                                                         <input type="checkbox" class="form-check-input" name="can_view_cost_price" id="can_view_cost_price">
-                                                        <label for="can_view_cost_price">View Cost Prices</label>
+                                                        <label for="can_view_cost_price">View Cost Price</label>
                                                     </div>
                                                 </div>
                                                 <div class="col-md-3">
@@ -462,7 +462,7 @@
                                                 </div>
                                                 <div class="col-md-3">
                                                     <label class="form-label fw-bold small">Max Discount %</label>
-                                                    <input type="number" class="form-control" name="max_discount_percent" id="max_discount_percent" value="0" min="0" max="100" step="0.01">
+                                                    <input type="number" class="form-control" name="max_discount_percent" id="max_discount_percent" value="0" min="0" max="100" step="0.01" disabled>
                                                 </div>
                                             </div>
                                         </div>
@@ -781,20 +781,22 @@ document.getElementById('userCreateForm').addEventListener('submit', function(e)
 // Role permissions configuration
 const roleDefaults = {
     'warehouse': {
-        title: '📦 Warehouse Role Selected',
-        desc: 'Default permissions loaded. Customize below as needed.',
-        permissions: ['can_view_orders', 'can_view_products', 'can_view_customers',
-                     'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
-                     'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
-                     'can_view_returns', 'can_view_own_targets']
+        permissions: [
+            'can_view_orders', 'can_view_products', 'can_view_customers',
+            'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
+            'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
+            'can_view_returns', 'can_view_own_targets',
+            'can_view_cost_price', 'can_edit_prices'
+        ]
     },
     'sales': {
-        title: '💼 Sales Role Selected',
-        desc: 'Default permissions loaded. Customize below as needed.',
-        permissions: ['can_view_orders', 'can_create_orders',
-                     'can_view_products', 'can_view_customers', 'can_create_customers',
-                     'can_edit_customers', 'can_give_discounts', 'can_view_inventory',
-                     'can_view_returns', 'can_create_returns', 'can_view_own_targets']
+        permissions: [
+            'can_view_orders', 'can_create_orders',
+            'can_view_products', 'can_view_customers', 'can_create_customers',
+            'can_edit_customers', 'can_give_discounts', 'can_view_inventory',
+            'can_view_returns', 'can_create_returns', 'can_view_own_targets',
+            'can_edit_prices'
+        ]
     }
 };
 
@@ -805,35 +807,67 @@ document.getElementById('roleSelect').addEventListener('change', function() {
     const roleInfo = document.getElementById('roleInfo');
     const roleTitle = document.getElementById('roleTitle');
     const roleDesc = document.getElementById('roleDesc');
+    const selectedOption = this.options[this.selectedIndex];
+    const description = selectedOption.getAttribute('data-description') || '';
 
     if (role === 'administrator') {
         permSection.style.display = 'none';
         roleInfo.classList.remove('d-none');
-        roleTitle.textContent = '👑 Administrator - Full Access';
+        roleTitle.textContent = 'Administrator - Full Access';
         roleDesc.textContent = 'Administrators have all permissions by default. No customization needed.';
-    } else if (role && roleDefaults[role]) {
+        document.getElementById('can_view_cost_price').checked = false;
+        document.getElementById('can_edit_prices').checked = false;
+        document.getElementById('can_give_discounts').checked = false;
+        document.getElementById('max_discount_percent').value = '0.00';
+        document.getElementById('max_discount_percent').disabled = true;
+    } else if (role) {
         permSection.style.display = 'block';
         roleInfo.classList.remove('d-none');
-        roleTitle.textContent = roleDefaults[role].title;
-        roleDesc.textContent = roleDefaults[role].desc;
+        roleTitle.textContent = selectedOption.textContent + ' Role Selected';
+        roleDesc.textContent = description || 'Customize permissions below as needed.';
 
         // Uncheck all first
         uncheckAllPermissions();
 
-        // Check default permissions
-        roleDefaults[role].permissions.forEach(perm => {
-            const checkbox = document.getElementById(perm);
-            if (checkbox) checkbox.checked = true;
-        });
+        // Check default permissions if available for this role
+        if (roleDefaults[role]) {
+            roleDefaults[role].permissions.forEach(perm => {
+                const checkbox = document.getElementById(perm);
+                if (checkbox) checkbox.checked = true;
+            });
+        }
 
         // Set default discount for sales
         if (role === 'sales') {
             document.getElementById('max_discount_percent').value = '10.00';
+        } else {
+            document.getElementById('max_discount_percent').value = '0.00';
         }
+        updateDiscountInput();
     } else {
         permSection.style.display = 'none';
         roleInfo.classList.add('d-none');
     }
+// Enable/disable Max Discount % input based on Give Discounts checkbox
+function updateDiscountInput() {
+    const giveDiscounts = document.getElementById('can_give_discounts');
+    const discountInput = document.getElementById('max_discount_percent');
+    if (giveDiscounts.checked) {
+        discountInput.disabled = false;
+        if (!discountInput.value || discountInput.value === '0' || discountInput.value === '0.00') {
+            discountInput.value = '10.00';
+        }
+    } else {
+        discountInput.disabled = true;
+        discountInput.value = '0.00';
+    }
+}
+
+document.getElementById('can_give_discounts').addEventListener('change', updateDiscountInput);
+
+window.addEventListener('DOMContentLoaded', function() {
+    updateDiscountInput();
+});
 });
 
 // Check all permissions

@@ -14,6 +14,9 @@ from PIL import Image
 from django.core.files.storage import default_storage
 from io import BytesIO
 import logging
+import re
+
+from .models import Role
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,99 @@ def administrator_required(view_func):
         login_url='/admin/login/'
     )(view_func)
     return decorated_view
+
+
+# ==================== ROLE MANAGEMENT ====================
+
+@login_required
+@administrator_required
+def role_list(request):
+    """Display all roles with create functionality"""
+    roles = Role.objects.all()
+    context = {
+        'roles': roles,
+    }
+    return render(request, 'accounts/role_list.html', context)
+
+
+@login_required
+@administrator_required
+def role_create(request):
+    """Create a new role"""
+    if request.method == 'POST':
+        display_name = request.POST.get('display_name', '').strip()
+        description = request.POST.get('description', '').strip()
+
+        if not display_name:
+            messages.error(request, 'Role name is required.')
+            return redirect('role_list')
+
+        # Generate internal name from display name (lowercase, underscores)
+        name = re.sub(r'[^a-z0-9]+', '_', display_name.lower()).strip('_')
+
+        if not name:
+            messages.error(request, 'Invalid role name. Use letters and numbers.')
+            return redirect('role_list')
+
+        if Role.objects.filter(name=name).exists():
+            messages.error(request, f'A role with the name "{display_name}" already exists.')
+            return redirect('role_list')
+
+        Role.objects.create(
+            name=name,
+            display_name=display_name,
+            description=description,
+            is_system=False,
+        )
+        messages.success(request, f'Role "{display_name}" created successfully.')
+        return redirect('role_list')
+
+    return redirect('role_list')
+
+
+@login_required
+@administrator_required
+def role_delete(request, role_id):
+    """Delete a role with protection measures"""
+    role = get_object_or_404(Role, id=role_id)
+
+    if request.method != 'POST':
+        return redirect('role_list')
+
+    # Check if any users are assigned to this role
+    assigned_users = User.objects.filter(role=role.name, is_deleted=False).count()
+    if assigned_users > 0:
+        messages.error(
+            request,
+            f'Cannot delete role "{role.display_name}". '
+            f'{assigned_users} active user(s) are assigned to this role. '
+            f'Reassign them first.'
+        )
+        return redirect('role_list')
+
+    # ALL roles require password confirmation
+    confirm_password = request.POST.get('confirm_password', '').strip()
+    if not confirm_password or not request.user.check_password(confirm_password):
+        messages.error(request, 'Incorrect password. Role deletion requires password confirmation.')
+        return redirect('role_list')
+
+    # System roles additionally require typing the role name
+    if role.is_system:
+        confirm_name = request.POST.get('confirm_name', '').strip()
+        if confirm_name != role.display_name:
+            messages.error(
+                request,
+                f'Confirmation failed. You must type "{role.display_name}" exactly to delete a system role.'
+            )
+            return redirect('role_list')
+
+    role_name = role.display_name
+    role.delete()
+    messages.success(request, f'Role "{role_name}" has been deleted.')
+    return redirect('role_list')
+
+
+# ==================== USER MANAGEMENT ====================
 
 @login_required
 @administrator_required
@@ -48,20 +144,21 @@ def user_list(request):
         users = users.filter(role=role_filter)
     
     users = users.order_by('-date_joined')
-    
-    role_counts = {
-        'administrator': User.objects.filter(role='administrator', is_deleted=False).count(),
-        'warehouse': User.objects.filter(role='warehouse', is_deleted=False).count(),
-        'sales': User.objects.filter(role='sales', is_deleted=False).count(),
-    }
-    
+
+    # Build dynamic role counts from Role model
+    all_roles = Role.objects.all()
+    role_counts = {}
+    for r in all_roles:
+        role_counts[r.name] = User.objects.filter(role=r.name, is_deleted=False).count()
+
     deleted_count = User.objects.filter(is_deleted=True).count()
-    
+
     context = {
         'users': users,
         'search': search,
         'role_filter': role_filter,
         'role_counts': role_counts,
+        'roles': all_roles,
         'deleted_count': deleted_count,
     }
     return render(request, 'accounts/user_list.html', context)
@@ -92,27 +189,16 @@ def user_create(request):
         if not username or not password or not email:
             messages.error(request, '❌ Username, email, and password are required!')
             return render(request, 'accounts/user_create.html', {
-                'reason_choices': [
-                    ('defective', 'Defective Product'),
-                    ('wrong_item', 'Wrong Item Sent'),
-                    ('damaged', 'Damaged During Shipping'),
-                    ('not_as_described', 'Not As Described'),
-                    ('other', 'Other Reason')
-                ],
-                'refund_type_choices': [
-                    ('store_credit', 'Store Credit'),
-                    ('original_payment', 'Original Payment Method'),
-                    ('exchange', 'Exchange Product')
-                ]
+                'roles': Role.objects.all(),
             })
         
         if User.objects.filter(username=username).exists():
             messages.error(request, f'❌ Username "{username}" already exists!')
-            return render(request, 'accounts/user_create.html')
-        
+            return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
+
         if User.objects.filter(email=email).exists():
             messages.error(request, f'❌ Email "{email}" is already registered!')
-            return render(request, 'accounts/user_create.html')
+            return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
         
         try:
             # Create user
@@ -277,22 +363,11 @@ def user_create(request):
         
         except Exception as e:
             messages.error(request, f'❌ Error creating user: {str(e)}')
-            return render(request, 'accounts/user_create.html')
-    
+            return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
+
     # GET request - show form
     return render(request, 'accounts/user_create.html', {
-        'reason_choices': [
-            ('defective', 'Defective Product'),
-            ('wrong_item', 'Wrong Item Sent'),
-            ('damaged', 'Damaged During Shipping'),
-            ('not_as_described', 'Not As Described'),
-            ('other', 'Other Reason')
-        ],
-        'refund_type_choices': [
-            ('store_credit', 'Store Credit'),
-            ('original_payment', 'Original Payment Method'),
-            ('exchange', 'Exchange Product')
-        ]
+        'roles': Role.objects.all(),
     })
 
 @login_required
@@ -481,7 +556,8 @@ def user_edit(request, user_id):
     
     # GET request - render form
     return render(request, 'accounts/user_edit.html', {
-        'edit_user': edit_user
+        'edit_user': edit_user,
+        'roles': Role.objects.all(),
     })
 @login_required
 @administrator_required

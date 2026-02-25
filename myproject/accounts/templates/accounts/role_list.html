@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Manage Roles{% endblock %}
+
+{% block extra_css %}
+<style>
+    .bg-gradient-role {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient-role text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0"><i class="fas fa-user-tag"></i> Manage Roles</h4>
+                        <div>
+                            <a href="{% url 'user_list' %}" class="btn btn-light btn-sm">
+                                <i class="fas fa-arrow-left"></i> Back to Users
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Create Role Form -->
+        <div class="col-lg-4 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0"><i class="fas fa-plus-circle text-success"></i> Create New Role</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'role_create' %}">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Role Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="display_name"
+                                   placeholder="e.g. Manager, Accountant..." required
+                                   maxlength="100">
+                            <small class="text-muted">This name will appear in the role dropdown when creating users.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Description</label>
+                            <textarea class="form-control" name="description" rows="3"
+                                      placeholder="Brief description of this role's purpose..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-plus"></i> Create Role
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Roles List -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-list text-primary"></i> All Roles</h5>
+                    <span class="badge bg-primary">{{ roles|length }} role{{ roles|length|pluralize }}</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Role</th>
+                                    <th>Description</th>
+                                    <th class="text-center">Users</th>
+                                    <th class="text-center">Type</th>
+                                    <th class="text-center">Created</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for role in roles %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ role.display_name }}</strong>
+                                        <br>
+                                        <small class="text-muted">{{ role.name }}</small>
+                                    </td>
+                                    <td>
+                                        <small>{{ role.description|default:"No description"|truncatewords:15 }}</small>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-info">{{ role.user_count }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if role.is_system %}
+                                        <span class="badge bg-warning text-dark"><i class="fas fa-lock"></i> System</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary"><i class="fas fa-user-cog"></i> Custom</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <small>{{ role.created_at|date:"M d, Y" }}</small>
+                                    </td>
+                                    <td class="text-end">
+                                        {% if role.user_count > 0 %}
+                                        <button class="btn btn-sm btn-outline-secondary" disabled
+                                                title="Cannot delete: {{ role.user_count }} user(s) assigned">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                        {% else %}
+                                        <button type="button" class="btn btn-sm btn-outline-danger"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#deleteModal-{{ role.id }}"
+                                                title="Delete role">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center py-5">
+                                        <i class="fas fa-user-tag fa-3x text-muted mb-3 d-block"></i>
+                                        <p class="text-muted">No roles found. Create one to get started.</p>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Card -->
+            <div class="card shadow-sm mt-3">
+                <div class="card-body">
+                    <h6 class="text-muted mb-2"><i class="fas fa-info-circle"></i> About Role Deletion</h6>
+                    <ul class="mb-0 small text-muted">
+                        <li>Roles with assigned users cannot be deleted. Reassign users to a different role first.</li>
+                        <li>All role deletions require your account password for confirmation.</li>
+                        <li><span class="badge bg-warning text-dark">System</span> roles additionally require you to type the exact role name.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modals (one per deletable role) -->
+{% for role in roles %}
+{% if role.user_count == 0 %}
+<div class="modal fade" id="deleteModal-{{ role.id }}" tabindex="-1" aria-labelledby="deleteModalLabel-{{ role.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" action="{% url 'role_delete' role.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title" id="deleteModalLabel-{{ role.id }}">
+                        <i class="fas fa-exclamation-triangle"></i> Delete Role: {{ role.display_name }}
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {% if role.is_system %}
+                    <div class="alert alert-danger mb-3">
+                        <i class="fas fa-shield-alt"></i>
+                        <strong>System Role!</strong> This is a protected system role. Deleting it may affect core functionality.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">
+                            Type "<strong>{{ role.display_name }}</strong>" to confirm:
+                        </label>
+                        <input type="text" class="form-control" name="confirm_name"
+                               placeholder="Type role name exactly..." required autocomplete="off">
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning mb-3">
+                        <i class="fas fa-exclamation-circle"></i>
+                        Are you sure you want to delete the role <strong>"{{ role.display_name }}"</strong>? This action cannot be undone.
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-lock"></i> Enter your password to confirm:
+                        </label>
+                        <input type="password" class="form-control" name="confirm_password"
+                               placeholder="Your account password..." required autocomplete="off">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Delete Role
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

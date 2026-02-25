@@ -83,9 +83,9 @@
                                 <div class="col-md-6">
                                     <label class="form-label required">Role</label>
                                     <select class="form-select form-select-lg" name="role" id="roleSelect" required>
-                                        <option value="administrator" {% if edit_user.role == 'administrator' %}selected{% endif %}>👑 Administrator</option>
-                                        <option value="warehouse" {% if edit_user.role == 'warehouse' %}selected{% endif %}>📦 Warehouse</option>
-                                        <option value="sales" {% if edit_user.role == 'sales' %}selected{% endif %}>💼 Sales</option>
+                                        {% for role in roles %}
+                                        <option value="{{ role.name }}" {% if edit_user.role == role.name %}selected{% endif %}>{{ role.display_name }}</option>
+                                        {% endfor %}
                                     </select>
                                 </div>
                                 <div class="col-md-6">
@@ -444,7 +444,7 @@
                                                 </div>
                                                 <div class="col-md-3">
                                                     <label class="form-label fw-bold small">Max Discount %</label>
-                                                    <input type="number" class="form-control" name="max_discount_percent" id="max_discount_percent" value="{{ edit_user.max_discount_percent|default:0 }}" min="0" max="100" step="0.01">
+                                                    <input type="number" class="form-control" name="max_discount_percent" id="max_discount_percent" value="{{ edit_user.max_discount_percent|default:'0.00' }}" min="0" max="100" step="0.01" {% if not edit_user.can_give_discounts %}disabled{% endif %}>
                                                 </div>
                                             </div>
                                         </div>
@@ -604,6 +604,7 @@ function checkAll() {
         cb.checked = true;
     });
     document.getElementById('max_discount_percent').value = '100.00';
+    updateDiscountInput();
 }
 
 // Uncheck all permissions
@@ -612,26 +613,51 @@ function uncheckAll() {
         cb.checked = false;
     });
     document.getElementById('max_discount_percent').value = '0.00';
+    updateDiscountInput();
 }
 
 // Hide/show permissions based on role
 document.getElementById('roleSelect').addEventListener('change', function() {
     const permSection = document.getElementById('permissionsSection');
     const roleAlert = document.getElementById('roleAlert');
-    
+    const selectedOption = this.options[this.selectedIndex];
+    const roleName = selectedOption.textContent;
+
     if (this.value === 'administrator') {
         if (permSection) permSection.style.display = 'none';
         roleAlert.innerHTML = '<i class="fas fa-crown text-warning"></i> <strong>Administrator selected:</strong> Full access granted automatically.';
         roleAlert.className = 'alert alert-warning mt-4';
+        document.getElementById('can_view_cost_price').checked = false;
+        document.getElementById('can_edit_prices').checked = false;
+        document.getElementById('can_give_discounts').checked = false;
+        document.getElementById('max_discount_percent').value = '0.00';
+        document.getElementById('max_discount_percent').disabled = true;
     } else {
         if (permSection) permSection.style.display = 'block';
-        const roleNames = {
-            'warehouse': 'Warehouse',
-            'sales': 'Sales'
-        };
-        roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleNames[this.value]} role selected:</strong> Customize permissions below.`;
+        roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleName} role selected:</strong> Customize permissions below.`;
         roleAlert.className = 'alert alert-info mt-4';
+        updateDiscountInput();
     }
+});
+// Enable/disable Max Discount % input based on Give Discounts checkbox
+function updateDiscountInput() {
+    const giveDiscounts = document.getElementById('can_give_discounts');
+    const discountInput = document.getElementById('max_discount_percent');
+    if (giveDiscounts.checked) {
+        discountInput.disabled = false;
+        if (!discountInput.value || discountInput.value === '0' || discountInput.value === '0.00') {
+            discountInput.value = '10.00';
+        }
+    } else {
+        discountInput.disabled = true;
+        discountInput.value = '0.00';
+    }
+}
+
+document.getElementById('can_give_discounts').addEventListener('change', updateDiscountInput);
+
+window.addEventListener('DOMContentLoaded', function() {
+    updateDiscountInput();
 });
 
 // Form submission with confirmation

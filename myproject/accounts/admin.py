@@ -1,5 +1,14 @@
 from django.contrib import admin
-from .models import CustomUser
+from .models import CustomUser, Role
+
+
+@admin.register(Role)
+class RoleAdmin(admin.ModelAdmin):
+    list_display = ['display_name', 'name', 'is_system', 'created_at']
+    list_filter = ['is_system']
+    search_fields = ['name', 'display_name']
+    readonly_fields = ['created_at']
+
 
 @admin.register(CustomUser)
 class CustomUserAdmin(admin.ModelAdmin):

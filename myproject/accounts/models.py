@@ -2,14 +2,30 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from decimal import Decimal
 
+
+class Role(models.Model):
+    """Dynamic Role model - roles are created here and referenced by users"""
+    name = models.CharField(max_length=50, unique=True, help_text="Internal name used in code (e.g. administrator, sales, warehouse)")
+    display_name = models.CharField(max_length=100, help_text="Human-readable name shown in UI")
+    description = models.TextField(blank=True, default='')
+    is_system = models.BooleanField(default=False, help_text="System roles cannot be deleted without extra confirmation")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['display_name']
+        verbose_name = 'Role'
+        verbose_name_plural = 'Roles'
+
+    def __str__(self):
+        return self.display_name
+
+    @property
+    def user_count(self):
+        return CustomUser.objects.filter(role=self.name, is_deleted=False).count()
+
+
 class CustomUser(AbstractUser):
     """User Model with Granular Custom Permissions"""
-    
-    ROLE_CHOICES = [
-        ('administrator', 'Administrator'),
-        ('warehouse', 'Warehouse'),
-        ('sales', 'Sales'),
-    ]
 
     phone = models.CharField(max_length=20, blank=True, null=True)
     profile_picture = models.ImageField(
@@ -22,7 +38,7 @@ class CustomUser(AbstractUser):
     vendor_id = models.CharField(max_length=100, blank=True, null=True, unique=True, 
                                 help_text="Unique vendor ID for logistics providers like NCM")
     
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='sales')
+    role = models.CharField(max_length=50, default='sales')
     email = models.EmailField(unique=True, blank=False)
     phone = models.CharField(max_length=15, blank=True, null=True)
     is_active = models.BooleanField(default=True)
@@ -116,6 +132,14 @@ class CustomUser(AbstractUser):
     
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
+
+    def get_role_display(self):
+        """Get human-readable role name from Role model"""
+        try:
+            role_obj = Role.objects.get(name=self.role)
+            return role_obj.display_name
+        except Role.DoesNotExist:
+            return self.role.title() if self.role else 'Unknown'
     
     @property
     def is_administrator(self):

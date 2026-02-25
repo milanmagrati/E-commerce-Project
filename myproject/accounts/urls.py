@@ -3,6 +3,11 @@ from django.contrib.auth import views as auth_views
 from . import views
 
 urlpatterns = [
+    # Role Management URLs
+    path('roles/', views.role_list, name='role_list'),
+    path('roles/create/', views.role_create, name='role_create'),
+    path('roles/<int:role_id>/delete/', views.role_delete, name='role_delete'),
+
     # User Management URLs
     path('users/', views.user_list, name='user_list'),
     path('users/create/', views.user_create, name='user_create'),
