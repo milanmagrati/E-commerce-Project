@@ -662,12 +662,17 @@
     }
 
     .valley-info-box {
-        margin-top: 5px;
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-size: 0.8rem;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 0.62rem;
         animation: slideInRight 0.3s ease-out;
-        border-left: 4px solid transparent;
+        border-left: 3px solid transparent;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.4;
+        display: inline-block;
+        max-width: 100%;
     }
 
     .valley-info-box.valley {
@@ -2201,12 +2206,14 @@
                             value="0" step="0.01" min="0">
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">IN/OUT *</label>
+                        <div class="d-flex align-items-center gap-1" style="min-height:18px; margin-bottom:0.1rem;">
+                            <label class="form-label mb-0" style="white-space:nowrap;">IN/OUT *</label>
+                            <div id="valleyStatusInfo" style="flex:1; min-width:0; overflow:hidden;"></div>
+                        </div>
                         <select name="in_out" id="inOutSelect" class="form-select" required>
                             <option value="in">Valley</option>
                             <option value="out">Out Valley</option>
                         </select>
-                        <div id="valleyStatusInfo"></div>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label d-block text-truncate">&nbsp;</label>
@@ -2755,7 +2762,7 @@
             
             const optDiv = document.createElement('div');
             optDiv.className = 'select-option';
-            optDiv.textContent = option.textContent;
+            optDiv.textContent = option.textContent.trim();
             optDiv.dataset.value = option.value;
             dropdown.appendChild(optDiv);
             
@@ -2785,11 +2792,15 @@
                 selectElement.value = value;
                 
                 // Update display
-                searchInput.value = text;
+                searchInput.value = text.trim();
                 
                 // Update UI
-                dropdown.querySelectorAll('.select-option').forEach(o => o.style.backgroundColor = '');
+                dropdown.querySelectorAll('.select-option').forEach(o => {
+                    o.style.backgroundColor = '';
+                    o.classList.remove('selected');
+                });
                 e.target.style.backgroundColor = '#f0f4ff';
+                e.target.classList.add('selected');
                 dropdown.classList.remove('show');
                 clearBtn.style.display = 'inline-flex';
                 
@@ -2927,6 +2938,43 @@
                 dropdown.classList.remove('show');
             }
         });
+    }
+
+    // ✅ SYNC SEARCHABLE SELECT UI (SET OR CLEAR VALUE)
+    function syncSearchableSelectUI(selectSelector, value) {
+        const selectElement = document.querySelector(selectSelector);
+        if (!selectElement) return;
+
+        const wrapper = selectElement.parentElement.querySelector('.searchable-select-wrapper');
+        if (!wrapper) return;
+
+        const searchInput = wrapper.querySelector('.search-input-field');
+        const clearBtn = wrapper.querySelector('.search-clear-btn');
+
+        if (value) {
+            selectElement.value = value;
+            const matchingOpt = Array.from(wrapper.querySelectorAll('.select-option'))
+                .find(opt => opt.dataset.value === value);
+            if (matchingOpt) {
+                if (searchInput) searchInput.value = matchingOpt.textContent.trim();
+                if (clearBtn) clearBtn.style.display = 'inline-flex';
+                wrapper.querySelectorAll('.select-option').forEach(opt => {
+                    opt.style.backgroundColor = '';
+                    opt.classList.remove('selected');
+                });
+                matchingOpt.style.backgroundColor = '#f0f4ff';
+                matchingOpt.classList.add('selected');
+            }
+        } else {
+            selectElement.value = '';
+            if (searchInput) searchInput.value = '';
+            if (clearBtn) clearBtn.style.display = 'none';
+            wrapper.querySelectorAll('.select-option').forEach(opt => {
+                opt.style.display = '';
+                opt.style.backgroundColor = '';
+                opt.classList.remove('selected');
+            });
+        }
     }
 
     // ✅ LOCAL STORAGE CONFIGURATION
@@ -3487,26 +3535,9 @@
             setValueSafe('taxPercent', formData.taxPercent || '0');
             setValueSafe('inOutSelect', formData.inOut || 'in');
 
-            setQueryValueSafe('select[name="order_from"]', formData.orderFrom);
             // Sync the custom searchable-select UI for "Order From"
             if (formData.orderFrom) {
-                const orderFromSelect = document.querySelector('select[name="order_from"]');
-                if (orderFromSelect) {
-                    const wrapper = orderFromSelect.parentElement.querySelector('.searchable-select-wrapper');
-                    if (wrapper) {
-                        const searchInput = wrapper.querySelector('.search-input-field');
-                        const clearBtn = wrapper.querySelector('.search-clear-btn');
-                        const selectedOption = orderFromSelect.options[orderFromSelect.selectedIndex];
-                        if (searchInput && selectedOption) {
-                            searchInput.value = selectedOption.textContent.trim();
-                        }
-                        if (clearBtn) clearBtn.style.display = 'inline-flex';
-                        // Highlight the selected option in the dropdown
-                        wrapper.querySelectorAll('.select-option').forEach(opt => {
-                            opt.style.backgroundColor = opt.dataset.value === formData.orderFrom ? '#f0f4ff' : '';
-                        });
-                    }
-                }
+                syncSearchableSelectUI('select[name="order_from"]', formData.orderFrom);
             }
 
             setQueryValueSafe('select[name="order_status"]', formData.orderStatus);
@@ -3602,7 +3633,7 @@
         setValueSafe('taxPercent', '0');
         setValueSafe('inOutSelect', 'in');
         
-        setQueryValueSafe('select[name="order_from"]', '');
+        syncSearchableSelectUI('select[name="order_from"]', '');
         setQueryValueSafe('select[name="order_status"]', 'processing');
         
         cart = [];
@@ -4271,19 +4302,19 @@
 
         switch (status) {
             case 'valley':
-                message = `<i class="fas fa-mountain"></i> <strong>${cityName}</strong> is a Valley city (${displayStatus}). Auto-set to <strong>Valley</strong>`;
+                message = `<i class="fas fa-mountain"></i> <strong>${cityName}</strong> is a Valley city`;
                 className = 'valley-info-box valley';
                 break;
             case 'out_valley':
-                message = `<i class="fas fa-truck"></i> <strong>${cityName}</strong> is an Out Valley city (${displayStatus}). Auto-set to <strong>Out Valley</strong>`;
+                message = `<i class="fas fa-truck"></i> <strong>${cityName}</strong> is Out Valley`;
                 className = 'valley-info-box out-valley';
                 break;
             case 'unknown':
-                message = `<i class="fas fa-question-circle"></i> <strong>${cityName}</strong> not found in database. Defaulting to <strong>Valley</strong>`;
+                message = `<i class="fas fa-question-circle"></i> <strong>${cityName}</strong> not found`;
                 className = 'valley-info-box unknown';
                 break;
             case 'error':
-                message = `<i class="fas fa-exclamation-triangle"></i> Error detecting valley status for <strong>${cityName}</strong>. Defaulting to <strong>Valley</strong>`;
+                message = `<i class="fas fa-exclamation-triangle"></i> Detection error`;
                 className = 'valley-info-box error';
                 break;
         }

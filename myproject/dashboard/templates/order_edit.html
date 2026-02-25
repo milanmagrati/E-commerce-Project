@@ -586,12 +586,17 @@
     }
 
     .valley-info-box {
-        margin-top: 5px;
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-size: 0.8rem;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 0.62rem;
         animation: slideInRight 0.3s ease-out;
-        border-left: 4px solid transparent;
+        border-left: 3px solid transparent;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.4;
+        display: inline-block;
+        max-width: 100%;
     }
 
     .valley-info-box.valley {
@@ -1276,12 +1281,14 @@
                             value="{{ order.tax_percent|floatformat:2 }}" step="0.01" min="0">
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">IN/OUT *</label>
+                        <div class="d-flex align-items-center gap-1" style="min-height:18px; margin-bottom:0.1rem;">
+                            <label class="form-label mb-0" style="white-space:nowrap;">IN/OUT *</label>
+                            <div id="valleyStatusInfo" style="flex:1; min-width:0; overflow:hidden;"></div>
+                        </div>
                         <select name="in_out" id="inOutSelect" class="form-select" required>
                             <option value="in" {% if order.in_out == 'in' %}selected{% endif %}>Valley</option>
                             <option value="out" {% if order.in_out == 'out' %}selected{% endif %}>Out Valley</option>
                         </select>
-                        <div id="valleyStatusInfo"></div>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label d-block text-truncate">&nbsp;</label>
@@ -2018,19 +2025,19 @@
 
         switch (status) {
             case 'valley':
-                message = `<i class="fas fa-mountain"></i> <strong>${cityName}</strong> is a Valley city (${displayStatus}). Auto-set to <strong>Valley</strong>`;
+                message = `<i class="fas fa-mountain"></i> <strong>${cityName}</strong> is a Valley city`;
                 className = 'valley-info-box valley';
                 break;
             case 'out_valley':
-                message = `<i class="fas fa-truck"></i> <strong>${cityName}</strong> is an Out Valley city (${displayStatus}). Auto-set to <strong>Out Valley</strong>`;
+                message = `<i class="fas fa-truck"></i> <strong>${cityName}</strong> is Out Valley`;
                 className = 'valley-info-box out-valley';
                 break;
             case 'unknown':
-                message = `<i class="fas fa-question-circle"></i> <strong>${cityName}</strong> not found in database. Defaulting to <strong>Valley</strong>`;
+                message = `<i class="fas fa-question-circle"></i> <strong>${cityName}</strong> not found`;
                 className = 'valley-info-box unknown';
                 break;
             case 'error':
-                message = `<i class="fas fa-exclamation-triangle"></i> Error detecting valley status for <strong>${cityName}</strong>. Defaulting to <strong>Valley</strong>`;
+                message = `<i class="fas fa-exclamation-triangle"></i> Detection error`;
                 className = 'valley-info-box error';
                 break;
         }
