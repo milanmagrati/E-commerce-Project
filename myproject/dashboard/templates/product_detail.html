@@ -18,9 +18,15 @@
         </button>
         {% endif %}
 
+        {% if user_permissions.can_edit_prices or user_permissions.is_administrator %}
         <a href="{% url 'product_edit' product.id %}" class="btn btn-warning">
           <i class="fas fa-edit"></i> Edit
         </a>
+        {% else %}
+        <button class="btn btn-warning disabled" title="You don't have permission to edit prices">
+          <i class="fas fa-lock"></i> Edit (Restricted)
+        </button>
+        {% endif %}
 
         <form method="POST" action="{% url 'product_move_to_trash' product.id %}" 
         onsubmit="return confirm('Move this product to trash?');" class="d-inline">
@@ -33,6 +39,39 @@
     </div>
   </div>
 </div>
+
+<!-- Permission Status Alert -->
+{% if not user_permissions.is_administrator %}
+<div class="row mb-3">
+  <div class="col-12">
+    <div class="alert alert-info border-0 shadow-sm" role="alert">
+      <div class="d-flex align-items-center">
+        <i class="fas fa-info-circle me-3 fa-lg"></i>
+        <div>
+          <strong>Pricing Permissions:</strong>
+          {% if user_permissions.can_view_cost_price %}
+            <span class="badge bg-success me-2"><i class="fas fa-eye"></i> Can View Cost Price</span>
+          {% else %}
+            <span class="badge bg-secondary me-2"><i class="fas fa-eye-slash"></i> Cannot View Cost Price</span>
+          {% endif %}
+          
+          {% if user_permissions.can_edit_prices %}
+            <span class="badge bg-success me-2"><i class="fas fa-edit"></i> Can Edit Prices</span>
+          {% else %}
+            <span class="badge bg-secondary me-2"><i class="fas fa-lock"></i> Cannot Edit Prices</span>
+          {% endif %}
+          
+          {% if user_permissions.can_give_discounts %}
+            <span class="badge bg-success"><i class="fas fa-percent"></i> Can Give Discounts (Max: {{ user_permissions.max_discount_percent }}%)</span>
+          {% else %}
+            <span class="badge bg-secondary"><i class="fas fa-ban"></i> Cannot Give Discounts</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="row g-4">
   <!-- Left Column -->
@@ -250,6 +289,9 @@
               <h4 class="text-success mb-0">रू {{ product.price|floatformat:2 }}</h4>
             </div>
           </div>
+          
+          <!-- Cost Price - Permission Based -->
+          {% if user_permissions.can_view_cost_price or user_permissions.is_administrator %}
           <div class="col-md-3">
             <div class="text-center p-3 bg-danger bg-opacity-10 rounded">
               <small class="text-muted d-block mb-1">Cost Price</small>
@@ -268,6 +310,14 @@
               <h4 class="text-info mb-0">{{ product.stock }}</h4>
             </div>
           </div>
+          {% else %}
+          <div class="col-md-6">
+            <div class="text-center p-3 bg-info bg-opacity-10 rounded">
+              <small class="text-muted d-block mb-1">Stock Quantity</small>
+              <h4 class="text-info mb-0">{{ product.stock }}</h4>
+            </div>
+          </div>
+          {% endif %}
         </div>
 
         <div class="row mt-3">

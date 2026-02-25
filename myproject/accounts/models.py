@@ -87,6 +87,7 @@ class CustomUser(AbstractUser):
     can_view_daily_sales_reports = models.BooleanField(default=False, verbose_name="Can View Daily Sales Reports")
     can_view_product_sales_reports = models.BooleanField(default=False, verbose_name="Can View Product Sales Reports")
     can_view_financial_reports = models.BooleanField(default=False)
+    can_view_total_revenue = models.BooleanField(default=False, verbose_name="Can View Total Revenue")
     can_export_data = models.BooleanField(default=False)
     
     # PRICING PERMISSIONS
@@ -124,6 +125,9 @@ class CustomUser(AbstractUser):
     can_add_cities = models.BooleanField(default=False, verbose_name="Can Add Cities")
     can_edit_cities = models.BooleanField(default=False, verbose_name="Can Edit Cities")
     can_delete_cities = models.BooleanField(default=False, verbose_name="Can Delete Cities")
+
+    # DASHBOARD PERMISSIONS
+    can_view_dashboard = models.BooleanField(default=True, verbose_name="Can View Dashboard")
 
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
@@ -163,6 +167,7 @@ class CustomUser(AbstractUser):
     def set_default_permissions_by_role(self):
         """Auto-set permissions based on role"""
         if self.role == 'warehouse':
+            self.can_view_dashboard = True
             self.can_view_orders = True
             self.can_edit_orders = True
             self.can_view_dispatch = True
@@ -175,6 +180,7 @@ class CustomUser(AbstractUser):
             self.can_view_own_targets = True
 
         elif self.role == 'sales':
+            self.can_view_dashboard = True
             self.can_view_orders = True
             self.can_create_orders = True
             self.can_edit_orders = True

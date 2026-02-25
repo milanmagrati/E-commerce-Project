@@ -345,6 +345,7 @@ def dashboard_view(request):
         'low_stock_alert_count': low_stock_alert_count,
         'monthly_sales': json.dumps(monthly_sales),
         'order_sources': json.dumps(order_sources),
+        'can_view_total_revenue': request.user.can_view_total_revenue or request.user.role == 'administrator',
     }
     return render(request, 'dashboard.html', context)
 @login_required
@@ -1023,7 +1024,12 @@ def product_add(request):
                         'form': form,
                         'formset': formset,
                         'action': 'Add',
-                        'current_step': 2
+                        'current_step': 2,
+                        'user_permissions': {
+                            'can_edit_prices': request.user.can_edit_prices,
+                            'can_view_cost_price': request.user.can_view_cost_price,
+                            'is_administrator': request.user.role == 'administrator',
+                        }
                     }
                     if temp_url:
                         ctx['temp_image_url'] = temp_url
@@ -1073,6 +1079,11 @@ def product_add(request):
                 'current_step': 1,
                 'temp_image_url': temp_url,
                 'temp_image_path': temp_path,
+                'user_permissions': {
+                    'can_edit_prices': request.user.can_edit_prices,
+                    'can_view_cost_price': request.user.can_view_cost_price,
+                    'is_administrator': request.user.role == 'administrator',
+                }
             })
     else:
         form = ProductForm()
@@ -1105,11 +1116,21 @@ def product_add(request):
         'current_step': 1,
         'temp_image_url': temp_url,
         'temp_image_path': temp_path,
+        'user_permissions': {
+            'can_edit_prices': request.user.can_edit_prices,
+            'can_view_cost_price': request.user.can_view_cost_price,
+            'is_administrator': request.user.role == 'administrator',
+        }
     })
 @login_required
 @permission_required('can_edit_products')
 def product_edit(request, product_id):
     product = get_object_or_404(Product, pk=product_id, is_deleted=False)
+    
+    # Check permission to edit prices
+    if not request.user.can_edit_prices and request.user.role != 'administrator':
+        messages.error(request, 'You do not have permission to edit product prices.')
+        return redirect('product_detail', product_id=product_id)
     
     # Get existing variant options
     variant_option = product.variant_options.filter(option_name='Variant').first()
@@ -1248,7 +1269,12 @@ def product_edit(request, product_id):
         'action': 'Edit',
         'current_step': 1,
         'temp_image_url': temp_url,
-        'temp_image_path': temp_path
+        'temp_image_path': temp_path,
+        'user_permissions': {
+            'can_edit_prices': request.user.can_edit_prices,
+            'can_view_cost_price': request.user.can_view_cost_price,
+            'is_administrator': request.user.role == 'administrator',
+        }
     })
 
 
@@ -1349,12 +1375,22 @@ def product_detail(request, product_id):
     if product.cost_price and product.cost_price > 0:
         profit_margin = ((product.price - product.cost_price) / product.price) * 100
     
+    # Get user permissions
+    user_permissions = {
+        'can_view_cost_price': request.user.can_view_cost_price,
+        'can_edit_prices': request.user.can_edit_prices,
+        'can_give_discounts': request.user.can_give_discounts,
+        'max_discount_percent': float(request.user.max_discount_percent),
+        'is_administrator': request.user.role == 'administrator',
+    }
+    
     context = {
         'product': product,
         'variations': variations,  # ADDED: Explicitly pass variations
         'product_images': product_images,
         'order_items': order_items,
         'profit_margin': profit_margin,
+        'user_permissions': user_permissions,  # ADDED: Pass user permissions
     }
     
     return render(request, 'product_detail.html', context)

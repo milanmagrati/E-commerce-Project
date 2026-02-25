@@ -137,6 +137,25 @@
                             </div>
 
                             <div class="row">
+                                <!-- Dashboard Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                            <i class="fas fa-chart-line"></i> Dashboard Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard" id="can_view_dashboard">
+                                                <label for="can_view_dashboard">View Dashboard</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_total_revenue" id="can_view_total_revenue">
+                                                <label for="can_view_total_revenue">View Total Revenue</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Orders Module -->
                                 <div class="col-lg-6 col-xl-4 mb-3">
                                     <div class="perm-card">
@@ -782,6 +801,7 @@ document.getElementById('userCreateForm').addEventListener('submit', function(e)
 const roleDefaults = {
     'warehouse': {
         permissions: [
+            'can_view_dashboard',
             'can_view_orders', 'can_view_products', 'can_view_customers',
             'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
             'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
@@ -791,6 +811,7 @@ const roleDefaults = {
     },
     'sales': {
         permissions: [
+            'can_view_dashboard',
             'can_view_orders', 'can_create_orders',
             'can_view_products', 'can_view_customers', 'can_create_customers',
             'can_edit_customers', 'can_give_discounts', 'can_view_inventory',

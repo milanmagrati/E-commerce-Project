@@ -137,6 +137,7 @@
             </div>
             <div class="card-body">
                 <div class="row">
+                    {% if user_permissions.can_edit_prices or user_permissions.is_administrator %}
                     <div class="col-md-4 mb-3">
                         <label class="form-label fw-bold">Selling Price (रू) <span class="text-danger">*</span></label>
                         {{ form.price }}
@@ -149,6 +150,14 @@
                         <label class="form-label fw-bold">Stock Quantity <span class="text-danger">*</span></label>
                         {{ form.stock }}
                     </div>
+                    {% else %}
+                    <div class="col-12 mb-3">
+                        <div class="alert alert-warning border-0" role="alert">
+                            <i class="fas fa-lock me-2"></i>
+                            <strong>Pricing Restricted:</strong> You don't have permission to edit pricing. Contact your administrator to request access.
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

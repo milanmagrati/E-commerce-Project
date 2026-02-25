@@ -276,8 +276,14 @@ def user_create(request):
                 user.can_make_supplier_payments = True
 
                 user.can_view_staff_performance = True
+                
+                # Dashboard Module
+                user.can_view_dashboard = True
             else:
                 # Apply custom permissions from checkboxes
+                # Dashboard Module
+                user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
+                
                 # Orders Module
                 user.can_view_orders = request.POST.get('can_view_orders') == 'on'
                 user.can_create_orders = request.POST.get('can_create_orders') == 'on'
@@ -352,6 +358,12 @@ def user_create(request):
 
                 # City Management Module
                 user.can_view_cities = request.POST.get('can_view_cities') == 'on'
+                user.can_add_cities = request.POST.get('can_add_cities') == 'on'
+                user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
+                user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
+                
+                # Dashboard Module
+                user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
                 user.can_add_cities = request.POST.get('can_add_cities') == 'on'
                 user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
                 user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
@@ -461,11 +473,17 @@ def user_edit(request, user_id):
             edit_user.can_edit_cities = True
             edit_user.can_delete_cities = True
 
+            # Dashboard Module
+            edit_user.can_view_dashboard = True
+
             messages.info(request, '👑 Administrator role - All permissions granted automatically')
         else:
             # Remove admin privileges
             edit_user.is_staff = False
             edit_user.is_superuser = False
+            
+            # Dashboard Module
+            edit_user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
             
             # Orders Module
             edit_user.can_view_orders = request.POST.get('can_view_orders') == 'on'
@@ -543,6 +561,12 @@ def user_edit(request, user_id):
 
             # City Management Module
             edit_user.can_view_cities = request.POST.get('can_view_cities') == 'on'
+            edit_user.can_add_cities = request.POST.get('can_add_cities') == 'on'
+            edit_user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
+            edit_user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
+            
+            # Dashboard Module
+            edit_user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
             edit_user.can_add_cities = request.POST.get('can_add_cities') == 'on'
             edit_user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
             edit_user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
