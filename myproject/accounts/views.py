@@ -276,13 +276,27 @@ def user_create(request):
                 user.can_make_supplier_payments = True
 
                 user.can_view_staff_performance = True
+
+                # NCM LOGISTICS MODULE
+                user.can_view_ncm_orders = True
+                user.can_create_ncm_orders = True
+                user.can_edit_ncm_orders = True
+                user.can_delete_ncm_orders = True
+                user.can_view_ncm_bulk_logs = True
+                user.can_manage_ncm_bulk_logs = True
+                user.can_view_ncm_trash = True
+                user.can_sync_ncm_orders = True
+                user.can_view_ncm_branches = True
+                user.can_manage_ncm_branches = True
                 
                 # Dashboard Module
                 user.can_view_dashboard = True
+                user.can_view_total_revenue = True
             else:
                 # Apply custom permissions from checkboxes
                 # Dashboard Module
                 user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
+                user.can_view_total_revenue = request.POST.get('can_view_total_revenue') == 'on'
                 
                 # Orders Module
                 user.can_view_orders = request.POST.get('can_view_orders') == 'on'
@@ -361,12 +375,18 @@ def user_create(request):
                 user.can_add_cities = request.POST.get('can_add_cities') == 'on'
                 user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
                 user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
-                
-                # Dashboard Module
-                user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
-                user.can_add_cities = request.POST.get('can_add_cities') == 'on'
-                user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
-                user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
+
+                # NCM LOGISTICS MODULE
+                user.can_view_ncm_orders = request.POST.get('can_view_ncm_orders') == 'on'
+                user.can_create_ncm_orders = request.POST.get('can_create_ncm_orders') == 'on'
+                user.can_edit_ncm_orders = request.POST.get('can_edit_ncm_orders') == 'on'
+                user.can_delete_ncm_orders = request.POST.get('can_delete_ncm_orders') == 'on'
+                user.can_view_ncm_bulk_logs = request.POST.get('can_view_ncm_bulk_logs') == 'on'
+                user.can_manage_ncm_bulk_logs = request.POST.get('can_manage_ncm_bulk_logs') == 'on'
+                user.can_view_ncm_trash = request.POST.get('can_view_ncm_trash') == 'on'
+                user.can_sync_ncm_orders = request.POST.get('can_sync_ncm_orders') == 'on'
+                user.can_view_ncm_branches = request.POST.get('can_view_ncm_branches') == 'on'
+                user.can_manage_ncm_branches = request.POST.get('can_manage_ncm_branches') == 'on'
             
             user.save()
             
@@ -473,8 +493,21 @@ def user_edit(request, user_id):
             edit_user.can_edit_cities = True
             edit_user.can_delete_cities = True
 
+            # NCM LOGISTICS MODULE
+            edit_user.can_view_ncm_orders = True
+            edit_user.can_create_ncm_orders = True
+            edit_user.can_edit_ncm_orders = True
+            edit_user.can_delete_ncm_orders = True
+            edit_user.can_view_ncm_bulk_logs = True
+            edit_user.can_manage_ncm_bulk_logs = True
+            edit_user.can_view_ncm_trash = True
+            edit_user.can_sync_ncm_orders = True
+            edit_user.can_view_ncm_branches = True
+            edit_user.can_manage_ncm_branches = True
+
             # Dashboard Module
             edit_user.can_view_dashboard = True
+            edit_user.can_view_total_revenue = True
 
             messages.info(request, '👑 Administrator role - All permissions granted automatically')
         else:
@@ -484,6 +517,7 @@ def user_edit(request, user_id):
             
             # Dashboard Module
             edit_user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
+            edit_user.can_view_total_revenue = request.POST.get('can_view_total_revenue') == 'on'
             
             # Orders Module
             edit_user.can_view_orders = request.POST.get('can_view_orders') == 'on'
@@ -564,12 +598,18 @@ def user_edit(request, user_id):
             edit_user.can_add_cities = request.POST.get('can_add_cities') == 'on'
             edit_user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
             edit_user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
-            
-            # Dashboard Module
-            edit_user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
-            edit_user.can_add_cities = request.POST.get('can_add_cities') == 'on'
-            edit_user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
-            edit_user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
+
+            # NCM LOGISTICS MODULE
+            edit_user.can_view_ncm_orders = request.POST.get('can_view_ncm_orders') == 'on'
+            edit_user.can_create_ncm_orders = request.POST.get('can_create_ncm_orders') == 'on'
+            edit_user.can_edit_ncm_orders = request.POST.get('can_edit_ncm_orders') == 'on'
+            edit_user.can_delete_ncm_orders = request.POST.get('can_delete_ncm_orders') == 'on'
+            edit_user.can_view_ncm_bulk_logs = request.POST.get('can_view_ncm_bulk_logs') == 'on'
+            edit_user.can_manage_ncm_bulk_logs = request.POST.get('can_manage_ncm_bulk_logs') == 'on'
+            edit_user.can_view_ncm_trash = request.POST.get('can_view_ncm_trash') == 'on'
+            edit_user.can_sync_ncm_orders = request.POST.get('can_sync_ncm_orders') == 'on'
+            edit_user.can_view_ncm_branches = request.POST.get('can_view_ncm_branches') == 'on'
+            edit_user.can_manage_ncm_branches = request.POST.get('can_manage_ncm_branches') == 'on'
         
         try:
             edit_user.save()

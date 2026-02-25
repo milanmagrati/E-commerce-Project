@@ -129,6 +129,18 @@ class CustomUser(AbstractUser):
     # DASHBOARD PERMISSIONS
     can_view_dashboard = models.BooleanField(default=True, verbose_name="Can View Dashboard")
 
+    # NCM LOGISTICS PERMISSIONS
+    can_view_ncm_orders = models.BooleanField(default=False, verbose_name="Can View NCM Orders")
+    can_create_ncm_orders = models.BooleanField(default=False, verbose_name="Can Create NCM Orders")
+    can_edit_ncm_orders = models.BooleanField(default=False, verbose_name="Can Edit NCM Orders")
+    can_delete_ncm_orders = models.BooleanField(default=False, verbose_name="Can Delete NCM Orders")
+    can_view_ncm_bulk_logs = models.BooleanField(default=False, verbose_name="Can View NCM Bulk Logs")
+    can_manage_ncm_bulk_logs = models.BooleanField(default=False, verbose_name="Can Manage NCM Bulk Logs")
+    can_view_ncm_trash = models.BooleanField(default=False, verbose_name="Can View NCM Trash")
+    can_sync_ncm_orders = models.BooleanField(default=False, verbose_name="Can Sync NCM Orders")
+    can_view_ncm_branches = models.BooleanField(default=False, verbose_name="Can View NCM Branches")
+    can_manage_ncm_branches = models.BooleanField(default=False, verbose_name="Can Manage NCM Branches")
+
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
     

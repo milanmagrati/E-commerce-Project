@@ -628,29 +628,42 @@
                 {% endif %}
 
                 <!-- ==================== ✅ NCM LOGISTICS (UPDATED WITH NCM ORDERS) ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_orders or user.can_view_ncm_bulk_logs or user.can_view_ncm_trash or user.can_sync_ncm_orders or user.can_view_ncm_branches %}
                 <li class="ncm-menu {% if 'ncm' in request.resolver_match.url_name %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#ncmMenu" aria-expanded="false">
                         <i class="fas fa-truck-loading"></i> NCM Logistics
                         <i class="fas fa-chevron-down float-end mt-1"></i>
                     </a>
                     <ul class="collapse list-unstyled" id="ncmMenu">
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_orders %}
                         <li class="{% if request.resolver_match.url_name == 'ncm_orders_list' %}active{% endif %}">
                             <a href="{% url 'ncm_orders_list' %}">NCM Orders</a>
                         </li>
+                        {% endif %}
+                        
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_bulk_logs %}
                         <li class="{% if request.resolver_match.url_name == 'ncm_bulk_logs_list' or request.resolver_match.url_name == 'ncm_bulk_log_detail' %}active{% endif %}">
                             <a href="{% url 'ncm_bulk_logs_list' %}">Bulk Logs</a>
                         </li>
+                        {% endif %}
+                        
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_trash %}
                         <li class="{% if request.resolver_match.url_name == 'ncm_orders_trash' %}active{% endif %}">
                             <a href="{% url 'ncm_orders_trash' %}">NCM Trash</a>
                         </li>
-                   <li class="{% if request.resolver_match.url_name == 'ncm:bulk_sync' %}active{% endif %}">
-                            <a href="{% url 'ncm:bulk_sync' %}">
-                                </i>Sync Orders</a>
+                        {% endif %}
+                   
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_sync_ncm_orders %}
+                        <li class="{% if request.resolver_match.url_name == 'ncm:bulk_sync' %}active{% endif %}">
+                            <a href="{% url 'ncm:bulk_sync' %}">Sync Orders</a>
                         </li>
+                        {% endif %}
+                        
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_branches %}
                         <li class="{% if request.resolver_match.url_name == 'ncm_branches_json' %}active{% endif %}">
                             <a href="{% url 'ncm_branches_json' %}" target="_blank">NCM Branches</a>
                         </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}

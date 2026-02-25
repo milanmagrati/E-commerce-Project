@@ -9,10 +9,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.utils import timezone
 from django.db import transaction
 from django.conf import settings
+from functools import wraps
 
 # Import NCM service from services folder
 from services.ncm_service import NCMService
@@ -34,7 +35,31 @@ ncm_service = NCMService()
 webhook_handler = NCMWebhookHandler()
 
 
-# ===================== WEBHOOK SECURITY UTILITIES =====================
+# ===================== NCM PERMISSION DECORATORS =====================
+
+def ncm_permission_required(permission_field):
+    """
+    Decorator to check if user has required NCM permission.
+    Redirects to forbidden page if user lacks permission.
+    """
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            # Allow superusers and administrators
+            if request.user.is_superuser or request.user.role == 'administrator':
+                return view_func(request, *args, **kwargs)
+            
+            # Check specific permission
+            if not getattr(request.user, permission_field, False):
+                messages.error(request, '❌ You do not have permission to access this page')
+                logger.warning(f"Access denied for user {request.user.username} - Missing permission: {permission_field}")
+                return redirect('orders_list')
+            
+            return view_func(request, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
 
 def get_client_ip(request):
     """Extract client IP from request"""
@@ -117,6 +142,7 @@ def is_order_eligible_for_status_update(order):
 # ===================== BRANCHES JSON ENDPOINT =====================
 
 @login_required
+@ncm_permission_required('can_view_ncm_branches')
 @require_http_methods(["GET"])
 def branches_json(request):
     """Return NCM branches as JSON for frontend dropdown"""
@@ -145,6 +171,7 @@ def branches_json(request):
 # ===================== ORDER CREATION IN NCM =====================
 
 @login_required
+@ncm_permission_required('can_create_ncm_orders')
 @require_POST
 def create_ncm_shipment(request, order_id):
     """Create NCM shipment for an existing order"""
@@ -273,6 +300,7 @@ def create_ncm_shipment(request, order_id):
 
 
 @login_required
+@ncm_permission_required('can_sync_ncm_orders')
 @require_http_methods(["GET", "POST"])
 def sync_ncm_status(request, order_id):
     """Manually sync order status from NCM"""
@@ -425,6 +453,7 @@ def ncm_webhook(request):
 
 
 @login_required
+@ncm_permission_required('can_view_ncm_branches')
 def ncm_branches_list(request):
     """Display NCM branches"""
     result = ncm_service.get_branches()
@@ -450,6 +479,7 @@ def ncm_branches_list(request):
 
 
 @login_required
+@ncm_permission_required('can_view_ncm_orders')
 def track_ncm_order(request, order_id):
     """View tracking details"""
     try:
@@ -479,6 +509,7 @@ def track_ncm_order(request, order_id):
 
 
 @login_required
+@ncm_permission_required('can_sync_ncm_orders')
 @require_http_methods(["GET", "POST"])
 def bulk_sync_ncm_orders(request):
     """Sync multiple NCM orders at once"""

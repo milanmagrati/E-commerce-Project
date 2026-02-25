@@ -8297,6 +8297,7 @@ def create_custom_product(request):
     # my name is milan
 
 @login_required
+@permission_required('can_view_ncm_orders')
 def ncm_orders_list(request):
     """
     NCM Orders Management Page - Shows all orders sent to NCM with details and activity logs
@@ -8424,6 +8425,7 @@ def ncm_orders_list(request):
 
 
 @login_required
+@permission_required('can_view_ncm_orders')
 def ncm_order_detail(request, order_id):
     """
     View detailed information about NCM order with activity logs
@@ -8504,6 +8506,7 @@ def ncm_order_detail(request, order_id):
 
 
 @login_required
+@permission_required('can_view_ncm_orders')
 def ncm_track_order(request, order_id):
     """
     Track NCM order status from NCM API and update local database
@@ -8611,6 +8614,7 @@ def ncm_track_order(request, order_id):
 
 
 @login_required
+@permission_required('can_sync_ncm_orders')
 def ncm_sync_all_statuses(request):
     """
     Sync status and delivery charges for all NCM orders (admin function)
@@ -8713,6 +8717,7 @@ def ncm_sync_all_statuses(request):
 
 
 @login_required
+@permission_required('can_view_ncm_branches')
 def ncm_branches_json(request):
     """
     Display NCM branches fetched from NCM API as HTML page or JSON API.
@@ -9058,6 +9063,7 @@ def orders_bulk_ncm_send(request):
 
 
 @login_required
+@permission_required('can_create_ncm_orders')
 def ncm_single_order_send(request, order_id):
     """
     Send single order to NCM from order detail page
@@ -9310,6 +9316,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
 # ============================================================================
 
 @login_required
+@permission_required('can_view_ncm_trash')
 def ncm_orders_trash(request):
     """
     NCM Orders Trash - Shows deleted NCM orders
@@ -9381,6 +9388,7 @@ def ncm_orders_trash(request):
 
 
 @login_required
+@permission_required('can_delete_ncm_orders')
 @require_http_methods(["POST"])
 def ncm_order_move_to_trash(request, order_id):
     """
@@ -9421,6 +9429,7 @@ def ncm_order_move_to_trash(request, order_id):
 
 
 @login_required
+@permission_required('can_view_ncm_trash')
 @require_http_methods(["POST"])
 def ncm_order_restore(request, order_id):
     """
@@ -9456,6 +9465,7 @@ def ncm_order_restore(request, order_id):
 
 
 @login_required
+@permission_required('can_view_ncm_trash')
 @require_http_methods(["POST"])
 def ncm_order_permanent_delete(request, order_id):
     """
@@ -9478,6 +9488,7 @@ def ncm_order_permanent_delete(request, order_id):
 
 
 @login_required
+@permission_required('can_delete_ncm_orders')
 @require_http_methods(["POST"])
 def ncm_orders_bulk_trash_action(request):
     """
@@ -9535,6 +9546,7 @@ def ncm_orders_bulk_trash_action(request):
 
 
 @login_required
+@permission_required('can_view_ncm_trash')
 @require_http_methods(["POST"])
 def ncm_orders_empty_trash(request):
     """
@@ -9688,7 +9700,7 @@ def setup_delete(request, setup_id):
 # ==================== NCM BULK ORDER LOG VIEWS ====================
 
 @login_required
-@permission_required('can_view_orders')
+@permission_required('can_view_ncm_bulk_logs')
 def ncm_bulk_logs_list(request):
     """List all NCM bulk send logs with filtering and AJAX expand"""
     from ncm.models import NCMBulkLog, NCMBulkLogOrder
@@ -9786,7 +9798,7 @@ def ncm_bulk_logs_list(request):
 
 
 @login_required
-@permission_required('can_view_orders')
+@permission_required('can_view_ncm_bulk_logs')
 def ncm_bulk_log_detail(request, log_id):
     """View details of a single NCM bulk send batch"""
     from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
@@ -9804,7 +9816,7 @@ def ncm_bulk_log_detail(request, log_id):
 
 
 @login_required
-@permission_required('can_delete_orders')
+@permission_required('can_manage_ncm_bulk_logs')
 def ncm_bulk_log_trash(request, log_id):
     """Move a bulk log to trash (soft delete)"""
     from ncm.models import NCMBulkLog
@@ -9820,7 +9832,7 @@ def ncm_bulk_log_trash(request, log_id):
 
 
 @login_required
-@permission_required('can_delete_orders')
+@permission_required('can_manage_ncm_bulk_logs')
 def ncm_bulk_logs_bulk_action(request):
     """Handle bulk actions on NCM bulk logs"""
     from ncm.models import NCMBulkLog
