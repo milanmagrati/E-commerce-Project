@@ -2040,8 +2040,11 @@
                 Create Order - POS
             </h4>
             <div class="d-flex gap-2">
-                <a href="{% url 'city_management' %}" class="btn btn-info btn-sm">
-                    <i class="fas fa-city"></i> Manage Cities
+                <button type="button" class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#ncmBranchesSearchModal">
+                    <i class="fas fa-city"></i> Search NCM Branches
+                </button>
+                <a href="{% url 'city_management' %}" class="btn btn-warning btn-sm" title="Setup Valley/Out Valley Cities">
+                    <i class="fas fa-cog"></i> City Management
                 </a>
                 <a href="{% url 'orders_list' %}" class="btn btn-light btn-sm">
                     <i class="fas fa-arrow-left"></i> Back
@@ -2645,9 +2648,54 @@
     </div>
 </div>
 
+<!-- ✨ NCM BRANCHES SEARCH MODAL -->
+<div class="modal fade" id="ncmBranchesSearchModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #5568d3 100%); color: white;">
+                <h5 class="modal-title" style="color: white;">
+                    <i class="fas fa-map-marker-alt"></i> Search NCM Branches
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter: invert(1);"></button>
+            </div>
+            <div class="modal-body" style="background: #f8f9fa;">
+                <!-- Search Input -->
+                <div class="mb-3">
+                    <input type="text" id="ncmBranchSearchInput" class="form-control" placeholder="Search by branch name, code, areas, municipality, address or district..." 
+                           style="border: 2px solid #667eea; border-radius: 8px; padding: 12px 15px; font-size: 0.95rem;">
+                </div>
+
+                <!-- Results Counter -->
+                <div style="padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 12px; font-size: 0.9rem; color: #667eea; font-weight: 600;">
+                    <i class="fas fa-list"></i> <span id="ncmBranchResultCount">Loading...</span> results
+                </div>
+
+                <!-- Branches List -->
+                <div id="ncmBranchesListContainer" style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 400px; overflow-y: auto;">
+                    <div style="padding: 40px 20px; text-align: center; color: #999;">
+                        <i class="fas fa-spinner fa-spin" style="font-size: 2rem; margin-bottom: 15px; display: block;"></i>
+                        Loading branches...
+                    </div>
+                </div>
+
+                <!-- No Results Message -->
+                <div id="ncmBranchNoResults" style="padding: 40px 20px; text-align: center; color: #999; display: none;">
+                    <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 15px; display: block; opacity: 0.5;"></i>
+                    <p>No branches found matching your search</p>
+                </div>
+            </div>
+            <div class="modal-footer" style="background: #f8f9fa;">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     let cart = [];
-    let productModal, variationModal, partialPaymentModal, customProductModal, bestsellingProductDetailModal;
+    let productModal, variationModal, partialPaymentModal, customProductModal, bestsellingProductDetailModal, ncmBranchesSearchModal;
     let isPartialPaymentSelected = false;
     let currentCityDetectionInProgress = false;
     let isProductLoading = false;
@@ -2655,6 +2703,8 @@
     let customProductImageFile = null;
     let currentBestsellingProduct = null;
     let bestsellingProducts = [];
+    let ncmBranchesData = [];
+    let filteredNcmBranches = [];
 
     // SVG generator for beautiful product shape with random color
     function getRandomProductSVG() {
@@ -2705,6 +2755,295 @@
             // Fallback if audio context not supported
             console.log('Audio context not available');
         }
+    }
+
+    // ✨ NCM BRANCHES SEARCH FUNCTIONALITY
+    function initializeNcmBranchesSearch() {
+        const searchInput = document.getElementById('ncmBranchSearchInput');
+        const filterRegion = document.getElementById('ncmBranchFilterRegion');
+        const filterDistrict = document.getElementById('ncmBranchFilterDistrict');
+        const listContainer = document.getElementById('ncmBranchesListContainer');
+        const noResults = document.getElementById('ncmBranchNoResults');
+        const resultCount = document.getElementById('ncmBranchResultCount');
+
+        // Get CSRF token from cookie
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Helper function to normalize strings for search
+        function normalizeString(str) {
+            if (!str) return '';
+            return String(str)
+                .toLowerCase()
+                .trim()
+                .replace(/\s+/g, ' ')
+                .replace(/[,]/g, ' '); // Convert commas to spaces for better search
+        }
+
+        // Helper function to check if a field matches the search term
+        function fieldMatches(fieldValue, searchTerm) {
+            if (!fieldValue || !searchTerm) return false;
+            const normalized = normalizeString(fieldValue);
+            return normalized.includes(normalizeString(searchTerm));
+        }
+
+        // Helper function to get matched field for highlighting
+        function getMatchedField(branch, searchTerm) {
+            if (!searchTerm) return null;
+            
+            const fields = [
+                { name: 'name', value: branch.name, label: 'Name' },
+                { name: 'code', value: branch.code, label: 'Code' },
+                { name: 'municipality', value: branch.municipality, label: 'Municipality' },
+                { name: 'district', value: branch.district, label: 'District' },
+                { name: 'region', value: branch.region, label: 'Region' },
+                { name: 'address', value: branch.address, label: 'Address' },
+                { name: 'phone', value: branch.phone, label: 'Phone' },
+                { name: 'areas_covered', value: branch.areas_covered, label: 'Areas' }
+            ];
+            
+            for (let field of fields) {
+                if (fieldMatches(field.value, searchTerm)) {
+                    return field;
+                }
+            }
+            return null;
+        }
+
+        // Fetch NCM branches data
+        console.log('Initializing NCM Branches Search...');
+        
+        fetch('{% url "ncm_branches_json" %}', {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCsrfToken()
+            },
+            credentials: 'same-origin'
+        })
+            .then(response => {
+                console.log('Response status:', response.status);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('NCM Branches data received:', data);
+                ncmBranchesData = data.branches || [];
+                
+                if (!ncmBranchesData || ncmBranchesData.length === 0) {
+                    console.warn('No branches data returned');
+                    listContainer.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: #ff6b6b;"><i class="fas fa-database"></i> No branches available in database</div>';
+                    resultCount.textContent = '0';
+                    return;
+                }
+                
+                filteredNcmBranches = [...ncmBranchesData];
+                displayNcmBranches(ncmBranchesData);
+            })
+            .catch(error => {
+                console.error('Error fetching NCM branches:', error);
+                listContainer.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: #dc3545;"><i class="fas fa-exclamation-circle"></i> Error loading branches: ' + error.message + '</div>';
+                resultCount.textContent = '0';
+            });
+
+        // Search functionality with debounce
+        let searchTimeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(filterNcmBranchesFunc, 300);
+        });
+
+        function filterNcmBranchesFunc() {
+            const searchTerm = searchInput.value.trim();
+            const searchTermLower = normalizeString(searchTerm);
+
+            filteredNcmBranches = ncmBranchesData
+                .map(branch => ({
+                    ...branch,
+                    matchedField: getMatchedField(branch, searchTerm)
+                }))
+                .filter(branch => {
+                    // If no search term, return all branches
+                    if (!searchTerm) {
+                        return true;
+                    }
+
+                    // Check if any field matches search term
+                    const matchesSearch = 
+                        fieldMatches(branch.name, searchTerm) ||
+                        fieldMatches(branch.code, searchTerm) ||
+                        fieldMatches(branch.municipality, searchTerm) ||
+                        fieldMatches(branch.district, searchTerm) ||
+                        fieldMatches(branch.address, searchTerm) ||
+                        fieldMatches(branch.phone, searchTerm) ||
+                        fieldMatches(branch.region, searchTerm) ||
+                        fieldMatches(branch.areas_covered, searchTerm);
+
+                    return matchesSearch;
+                });
+
+            displayNcmBranches(filteredNcmBranches);
+        }
+    }
+
+    function displayNcmBranches(branches) {
+        const listContainer = document.getElementById('ncmBranchesListContainer');
+        const noResults = document.getElementById('ncmBranchNoResults');
+        const resultCount = document.getElementById('ncmBranchResultCount');
+        const searchInputElement = document.getElementById('ncmBranchSearchInput');
+        const searchTerm = searchInputElement ? searchInputElement.value.trim() : '';
+
+        resultCount.textContent = branches.length;
+
+        if (!branches || branches.length === 0) {
+            listContainer.style.display = 'none';
+            noResults.style.display = 'block';
+            return;
+        }
+
+        listContainer.style.display = 'block';
+        noResults.style.display = 'none';
+        listContainer.innerHTML = '';
+
+        branches.forEach((branch, index) => {
+            const branchItem = document.createElement('div');
+            branchItem.style.cssText = `
+                padding: 15px;
+                border-bottom: 1px solid #e2e8f0;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                background: white;
+            `;
+            
+            // Add match highlight if there's a search term
+            if (searchTerm && branch.matchedField) {
+                branchItem.style.borderLeft = '4px solid #667eea';
+                branchItem.style.paddingLeft = '12px';
+            }
+            
+            branchItem.onmouseover = function() {
+                this.style.background = '#f0f4ff';
+                this.style.boxShadow = 'inset 4px 0 0 0 #667eea';
+            };
+            
+            branchItem.onmouseout = function() {
+                this.style.background = 'white';
+                this.style.boxShadow = 'none';
+            };
+
+            // Safely get branch data with fallbacks
+            const branchName = branch.name || 'Unknown Branch';
+            const branchCode = branch.code || 'N/A';
+            const branchRegion = branch.region || 'N/A';
+            const branchMunicipality = branch.municipality || 'N/A';
+            const branchDistrict = branch.district || 'N/A';
+            const branchPhone = branch.phone || 'N/A';
+            const branchAddress = branch.address || 'N/A';
+            const branchAreas = branch.areas_covered || 'N/A';
+
+            // Build matched field indicator
+            let matchIndicator = '';
+            if (searchTerm && branch.matchedField) {
+                const matchedField = branch.matchedField;
+                matchIndicator = `<div style="font-size: 0.75rem; color: #fff; background: #667eea; padding: 2px 8px; border-radius: 3px; display: inline-block; margin-bottom: 8px; font-weight: 600;"><i class="fas fa-check-circle me-1"></i>Matched in: ${matchedField.label}</div>`;
+            }
+
+            branchItem.innerHTML = `
+                <div>
+                    ${matchIndicator}
+                    <div style="font-weight: 600; color: #1a1a2e; margin-bottom: 5px;">
+                        <i class="fas fa-building" style="color: #667eea; margin-right: 8px;"></i>${branchName}
+                    </div>
+                    <div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;">
+                        <strong>Code:</strong> <span style="font-family: monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">${branchCode}</span> 
+                        <strong style="margin-left: 10px;">Region:</strong> <span style="${branch.matchedField?.name === 'region' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchRegion}</span>
+                    </div>
+                    <div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;">
+                        <strong>Municipality:</strong> <span style="${branch.matchedField?.name === 'municipality' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchMunicipality}</span> 
+                        <strong style="margin-left: 10px;">District:</strong> <span style="${branch.matchedField?.name === 'district' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchDistrict}</span>
+                    </div>
+                    ${branchPhone && branchPhone !== 'N/A' ? `<div style="font-size: 0.85rem; color: #667eea; margin-bottom: 5px;"><i class="fas fa-phone"></i> <span style="${branch.matchedField?.name === 'phone' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchPhone}</span></div>` : ''}
+                    ${branchAddress && branchAddress !== 'N/A' ? `<div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;"><strong>Address:</strong> <span style="${branch.matchedField?.name === 'address' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchAddress}</span></div>` : ''}
+                    ${branchAreas && branchAreas !== 'N/A' ? `<div style="font-size: 0.85rem; color: #10b981; margin-bottom: 5px;"><i class="fas fa-map" style="margin-right: 5px;"></i><strong>Areas:</strong> <span style="${branch.matchedField?.name === 'areas_covered' ? 'background: #dcfce7; padding: 2px 6px; border-radius: 3px; font-weight: 600;' : ''} word-wrap: break-word; word-break: break-word; white-space: normal; display: block; margin-top: 4px; line-height: 1.4;">${branchAreas}</span></div>` : ''}
+                </div>
+            `;
+
+            listContainer.appendChild(branchItem);
+        });
+    }
+
+    function selectNcmBranch(index) {
+        const branch = filteredNcmBranches[index];
+        if (!branch) {
+            console.error('Branch not found at index:', index);
+            return;
+        }
+
+        // Set the city/branch fields
+        const citySearchInput = document.getElementById('citySearchInput');
+        const branchCitySelect = document.getElementById('branchCity');
+        
+        // Set the value to the branch name or municipality
+        const cityValue = branch.municipality && branch.municipality !== 'N/A' ? branch.municipality : branch.name;
+        
+        if (citySearchInput) citySearchInput.value = cityValue;
+        if (branchCitySelect) {
+            branchCitySelect.value = cityValue;
+            // Dispatch change event
+            branchCitySelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        
+        // Show success toast and close modal
+        showNcmSelectionToast(`✓ ${branch.name} (${branch.code}) selected`);
+        
+        // Close modal
+        const modalElement = document.getElementById('ncmBranchesSearchModal');
+        if (modalElement) {
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) modal.hide();
+        }
+    }
+
+    function showNcmSelectionToast(message) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-left: 4px solid #10b981;
+        `;
+        toast.innerHTML = `<i class="fas fa-check-circle" style="color: #10b981; font-size: 1.2rem;"></i> <span>${message}</span>`;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transition = 'opacity 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }
 
     // ✅ CUSTOM SEARCHABLE SELECT INITIALIZATION
@@ -3956,6 +4295,10 @@
         partialPaymentModal = new bootstrap.Modal(document.getElementById('partialPaymentModal'));
         customProductModal = new bootstrap.Modal(document.getElementById('customProductModal'));
         bestsellingProductDetailModal = new bootstrap.Modal(document.getElementById('bestsellingProductDetailModal'));
+        ncmBranchesSearchModal = new bootstrap.Modal(document.getElementById('ncmBranchesSearchModal'));
+
+        // ✨ Initialize NCM Branches Search
+        initializeNcmBranchesSearch();
 
         // ✅ INITIALIZE CUSTOM SEARCHABLE DROPDOWN FOR ORDER FROM
         initializeSearchableSelect('select[name="order_from"]');
