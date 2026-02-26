@@ -259,6 +259,7 @@ def user_create(request):
                 user.can_view_inventory = True
                 user.can_manage_inventory = True
                 user.can_adjust_stock = True
+                user.can_view_inventory_cost = True
                 
                 user.can_view_reports = True
                 user.can_view_sales_reports = True
@@ -342,6 +343,7 @@ def user_create(request):
                 user.can_view_inventory = request.POST.get('can_view_inventory') == 'on'
                 user.can_manage_inventory = request.POST.get('can_manage_inventory') == 'on'
                 user.can_adjust_stock = request.POST.get('can_adjust_stock') == 'on'
+                user.can_view_inventory_cost = request.POST.get('can_view_inventory_cost') == 'on'
                 
                 # Reports Module
                 user.can_view_reports = request.POST.get('can_view_reports') == 'on'
@@ -468,6 +470,7 @@ def user_edit(request, user_id):
             edit_user.can_view_inventory = True
             edit_user.can_manage_inventory = True
             edit_user.can_adjust_stock = True
+            edit_user.can_view_inventory_cost = True
             
             edit_user.can_view_reports = True
             edit_user.can_view_sales_reports = True
@@ -563,6 +566,7 @@ def user_edit(request, user_id):
             edit_user.can_view_inventory = request.POST.get('can_view_inventory') == 'on'
             edit_user.can_manage_inventory = request.POST.get('can_manage_inventory') == 'on'
             edit_user.can_adjust_stock = request.POST.get('can_adjust_stock') == 'on'
+            edit_user.can_view_inventory_cost = request.POST.get('can_view_inventory_cost') == 'on'
             
             # Reports Module
             edit_user.can_view_reports = request.POST.get('can_view_reports') == 'on'

@@ -282,7 +282,7 @@
                                 <th>SUPPLIER</th>
                                 <th>ITEMS</th>
                                 <th class="text-center">TOTAL QTY</th>
-                                <th>TOTAL COST</th>
+                                {% if user.can_view_inventory_cost or user.role == 'administrator' %}<th>TOTAL COST</th>{% endif %}
                                 <th>DATE</th>
                                 <th class="text-end">ACTION</th>
                             </tr>
@@ -309,9 +309,9 @@
                                 <td class="text-center">
                                     <span class="stock-badge success">{{ stock_in.total_quantity }}</span>
                                 </td>
-                                <td>
+                                {% if user.can_view_inventory_cost or user.role == 'administrator' %}<td>
                                     <strong class="total-cost-text">Rs {{ stock_in.total_cost|floatformat:2 }}</strong>
-                                </td>
+                                </td>{% endif %}
                                 <td>
                                     <div class="date-text">
                                         <span class="date-main">
@@ -328,7 +328,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="8" class="text-center py-5">
+                                <td colspan="{% if user.can_view_inventory_cost or user.role == 'administrator' %}8{% else %}7{% endif %}" class="text-center py-5">
                                     <i class="fas fa-box-open fa-3x empty-icon mb-3"></i>
                                     <p class="empty-text">No stock in transactions yet</p>
                                     <a href="{% url 'stock_in_create' %}" class="btn-action success mt-3">

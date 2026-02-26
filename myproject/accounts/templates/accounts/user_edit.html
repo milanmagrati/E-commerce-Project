@@ -327,6 +327,10 @@
                                                 <input type="checkbox" class="form-check-input" name="can_adjust_stock" id="can_adjust_stock" {% if edit_user.can_adjust_stock %}checked{% endif %}>
                                                 <label for="can_adjust_stock">Adjust Stock</label>
                                             </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_inventory_cost" id="can_view_inventory_cost" {% if edit_user.can_view_inventory_cost %}checked{% endif %}>
+                                                <label for="can_view_inventory_cost">View Inventory Cost</label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -435,96 +439,76 @@
                                     </div>
                                 </div>
 
-                                <!-- 🆕 NCM LOGISTICS MODULE -->
+                                <!-- 🆕 NCM LOGISTICS MODULE (CONSOLIDATED) -->
                                 <div class="col-lg-6 col-xl-4 mb-3">
                                     <div class="perm-card">
                                         <div class="perm-card-header" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);">
-                                            <i class="fas fa-truck"></i> NCM Orders
+                                            <i class="fas fa-truck"></i> NcM Logistics
                                         </div>
                                         <div class="perm-card-body">
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_view_ncm_orders" id="can_view_ncm_orders" {% if edit_user.can_view_ncm_orders %}checked{% endif %}>
-                                                <label for="can_view_ncm_orders">View NCM Orders</label>
+                                            <!-- NCM Orders -->
+                                            <div style="padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #e0e0e0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">NCM Orders</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_ncm_orders" id="can_view_ncm_orders" {% if edit_user.can_view_ncm_orders %}checked{% endif %}>
+                                                    <label for="can_view_ncm_orders">View NCM Orders</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_create_ncm_orders" id="can_create_ncm_orders" {% if edit_user.can_create_ncm_orders %}checked{% endif %}>
+                                                    <label for="can_create_ncm_orders">Create NCM Orders</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_edit_ncm_orders" id="can_edit_ncm_orders" {% if edit_user.can_edit_ncm_orders %}checked{% endif %}>
+                                                    <label for="can_edit_ncm_orders">Edit NCM Orders</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_delete_ncm_orders" id="can_delete_ncm_orders" {% if edit_user.can_delete_ncm_orders %}checked{% endif %}>
+                                                    <label for="can_delete_ncm_orders">Delete NCM Orders</label>
+                                                </div>
                                             </div>
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_create_ncm_orders" id="can_create_ncm_orders" {% if edit_user.can_create_ncm_orders %}checked{% endif %}>
-                                                <label for="can_create_ncm_orders">Create NCM Orders</label>
-                                            </div>
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_edit_ncm_orders" id="can_edit_ncm_orders" {% if edit_user.can_edit_ncm_orders %}checked{% endif %}>
-                                                <label for="can_edit_ncm_orders">Edit NCM Orders</label>
-                                            </div>
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_delete_ncm_orders" id="can_delete_ncm_orders" {% if edit_user.can_delete_ncm_orders %}checked{% endif %}>
-                                                <label for="can_delete_ncm_orders">Delete NCM Orders</label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <!-- Bulk Logs -->
-                                <div class="col-lg-6 col-xl-4 mb-3">
-                                    <div class="perm-card">
-                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);">
-                                            <i class="fas fa-list-check"></i> Bulk Logs
-                                        </div>
-                                        <div class="perm-card-body">
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_view_ncm_bulk_logs" id="can_view_ncm_bulk_logs" {% if edit_user.can_view_ncm_bulk_logs %}checked{% endif %}>
-                                                <label for="can_view_ncm_bulk_logs">View Bulk Logs</label>
+                                            <!-- Bulk Logs -->
+                                            <div style="padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #e0e0e0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">Bulk Logs</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_ncm_bulk_logs" id="can_view_ncm_bulk_logs" {% if edit_user.can_view_ncm_bulk_logs %}checked{% endif %}>
+                                                    <label for="can_view_ncm_bulk_logs">View Bulk Logs</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_manage_ncm_bulk_logs" id="can_manage_ncm_bulk_logs" {% if edit_user.can_manage_ncm_bulk_logs %}checked{% endif %}>
+                                                    <label for="can_manage_ncm_bulk_logs">Manage Bulk Logs</label>
+                                                </div>
                                             </div>
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_manage_ncm_bulk_logs" id="can_manage_ncm_bulk_logs" {% if edit_user.can_manage_ncm_bulk_logs %}checked{% endif %}>
-                                                <label for="can_manage_ncm_bulk_logs">Manage Bulk Logs</label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <!-- NCM Trash -->
-                                <div class="col-lg-6 col-xl-4 mb-3">
-                                    <div class="perm-card">
-                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);">
-                                            <i class="fas fa-trash-alt"></i> NCM Trash
-                                        </div>
-                                        <div class="perm-card-body">
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_view_ncm_trash" id="can_view_ncm_trash" {% if edit_user.can_view_ncm_trash %}checked{% endif %}>
-                                                <label for="can_view_ncm_trash">View NCM Trash</label>
+                                            <!-- NCM Trash -->
+                                            <div style="padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #e0e0e0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">NCM Trash</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_ncm_trash" id="can_view_ncm_trash" {% if edit_user.can_view_ncm_trash %}checked{% endif %}>
+                                                    <label for="can_view_ncm_trash">View NCM Trash</label>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <!-- Sync Orders -->
-                                <div class="col-lg-6 col-xl-4 mb-3">
-                                    <div class="perm-card">
-                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);">
-                                            <i class="fas fa-sync-alt"></i> Sync Orders
-                                        </div>
-                                        <div class="perm-card-body">
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_sync_ncm_orders" id="can_sync_ncm_orders" {% if edit_user.can_sync_ncm_orders %}checked{% endif %}>
-                                                <label for="can_sync_ncm_orders">Sync NCM Orders</label>
+                                            <!-- Sync Orders -->
+                                            <div style="padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #e0e0e0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">Sync Orders</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_sync_ncm_orders" id="can_sync_ncm_orders" {% if edit_user.can_sync_ncm_orders %}checked{% endif %}>
+                                                    <label for="can_sync_ncm_orders">Sync NCM Orders</label>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <!-- NCM Branches -->
-                                <div class="col-lg-6 col-xl-4 mb-3">
-                                    <div class="perm-card">
-                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);">
-                                            <i class="fas fa-code-branch"></i> NCM Branches
-                                        </div>
-                                        <div class="perm-card-body">
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_view_ncm_branches" id="can_view_ncm_branches" {% if edit_user.can_view_ncm_branches %}checked{% endif %}>
-                                                <label for="can_view_ncm_branches">View NCM Branches</label>
-                                            </div>
-                                            <div class="perm-item">
-                                                <input type="checkbox" class="form-check-input" name="can_manage_ncm_branches" id="can_manage_ncm_branches" {% if edit_user.can_manage_ncm_branches %}checked{% endif %}>
-                                                <label for="can_manage_ncm_branches">Manage NCM Branches</label>
+                                            <!-- NCM Branches -->
+                                            <div style="padding-bottom: 0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">NCM Branches</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_ncm_branches" id="can_view_ncm_branches" {% if edit_user.can_view_ncm_branches %}checked{% endif %}>
+                                                    <label for="can_view_ncm_branches">View NCM Branches</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_manage_ncm_branches" id="can_manage_ncm_branches" {% if edit_user.can_manage_ncm_branches %}checked{% endif %}>
+                                                    <label for="can_manage_ncm_branches">Manage NCM Branches</label>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

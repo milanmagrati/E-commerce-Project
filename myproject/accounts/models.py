@@ -80,6 +80,7 @@ class CustomUser(AbstractUser):
     can_view_inventory = models.BooleanField(default=True)
     can_manage_inventory = models.BooleanField(default=False)
     can_adjust_stock = models.BooleanField(default=False)
+    can_view_inventory_cost = models.BooleanField(default=False, verbose_name="Can View Inventory Cost")
     
     # REPORT PERMISSIONS
     can_view_reports = models.BooleanField(default=False)
