@@ -3744,6 +3744,7 @@ def api_get_product(request, product_id):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 @login_required
+@require_http_methods(["GET"])
 def api_search_products(request):
     """
     Returns products for POS modal grid.
@@ -3768,23 +3769,27 @@ def api_search_products(request):
         qs = Product.objects.filter(is_active=True, is_deleted=False).order_by("name")
 
         if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(slug__icontains=q))
+            # Search only on fields that exist in Product model: name, slug
+            qs = qs.filter(Q(name__icontains=q) | Q(slug__icontains=q))
 
         qs = qs[:40]
 
         data = []
         for p in qs:
-            # Get stock - try different field names
-            try:
-                stock = p.stock_quantity if hasattr(p, 'stock_quantity') else (p.stock if hasattr(p, 'stock') else 0)
-            except AttributeError:
-                stock = 0
+            # Get stock from product
+            stock = getattr(p, 'stock', 0) or 0
             
-            # Get SKU - try sku field first, then slug as fallback
-            try:
-                sku = p.sku if hasattr(p, 'sku') and p.sku else p.slug
-            except AttributeError:
-                sku = p.slug
+            # Use slug as identifier (Product model doesn't have sku field)
+            identifier = getattr(p, 'slug', '')
+
+            # Get image URL safely
+            image_url = None
+            if p.image:
+                try:
+                    image_url = p.image.url
+                except Exception as e:
+                    logger.warning(f"Error getting image URL for product {p.id}: {e}")
+                    image_url = None
 
             data.append({
                 "id": p.id,
@@ -3792,8 +3797,8 @@ def api_search_products(request):
                 "price": str(p.price) if p.price else "0",
                 "stock": stock,
                 "product_type": p.product_type,
-                "image": p.image.url if p.image else None,
-                "sku": sku,
+                "image": image_url,
+                "sku": identifier,
             })
 
         return JsonResponse({
