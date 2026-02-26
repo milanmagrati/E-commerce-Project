@@ -22,7 +22,8 @@
         max-width: 1600px;
         margin: 0 auto;
         padding: 0.5rem 0.75rem;
-        margin-right: 340px;
+        margin-right: 300px;
+        position: relative;
     }
 
     .pos-card {
@@ -763,9 +764,9 @@
 
     /* ✅ FLOATING CLEAR DRAFT BUTTON */
     .floating-clear-btn {
-        position: absolute;
-        top: 90px;
-        right: 367px;
+        position: fixed;
+        top: 130px;
+        right: 280px;
         width: 60px;
         height: 60px;
         border-radius: 50%;
@@ -775,7 +776,7 @@
         font-size: 1.5rem;
         box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4);
         cursor: pointer;
-        z-index: 100;
+        z-index: 1050;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         display: flex;
         align-items: center;
@@ -1144,11 +1145,12 @@
 
     /* ✨ BEST-SELLING PRODUCTS SIDEBAR STYLES */
     .bestselling-sidebar {
-        position: fixed;
-        right: 0;
+        position: absolute;
+        right: -300px;
         top: 0;
-        width: 320px;
-        height: 100vh;
+        width: 280px;
+        height: auto;
+        max-height: calc(100vh - 20px);
         background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%);
         border-left: 4px solid #10b981;
         box-shadow: -4px 0 20px rgba(0, 0, 0, 0.08);
@@ -1172,7 +1174,7 @@
     }
 
     .bestselling-header {
-        padding: 33px 12px 12px 12px;
+        padding: 6px 12px 6px 12px;
         border-bottom: 3px solid #10b981;
         margin: 0;
         position: sticky;
@@ -1180,10 +1182,11 @@
         background: white;
         z-index: 10;
         display: block;
+        border-left: 4px solid #10b981;
     }
 
     .bestselling-header h6 {
-        margin: 0 0 5px 0;
+        margin: 0 0 2px 0;
         font-size: 1.15rem;
         font-weight: 700;
         color: var(--primary);
@@ -1195,11 +1198,11 @@
 
     .bestselling-header small {
         margin: 0;
-        font-size: 0.75rem;
+        font-size: 0.73rem;
         color: #94a3b8;
         display: block;
         font-weight: 500;
-        line-height: 1.2;
+        line-height: 1.1;
     }
 
     .trending-badge {
