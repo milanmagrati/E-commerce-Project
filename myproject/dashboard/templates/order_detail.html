@@ -787,22 +787,52 @@
             </div>
         </div>
 
-        <!-- Order Notes (from Order Creation) -->
-        {% if order.notes %}
+        <!-- Order Notes (from Order Creation & Admin Notes) -->
+        {% if order.notes or order.admin_notes_list.exists %}
         <div class="card shadow-sm mb-3">
             <div class="card-header text-white" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
                 <h5 class="mb-0"><i class="fas fa-sticky-note"></i> Order Notes</h5>
             </div>
             <div class="card-body">
-                <div class="d-flex align-items-start gap-3">
+                <!-- Customer Notes (from Order Creation) -->
+                {% if order.notes %}
+                <div class="d-flex align-items-start gap-3 mb-3">
                     <div style="width: 40px; height: 40px; border-radius: 10px; background: #fef3c7; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i class="fas fa-pencil-alt text-warning"></i>
                     </div>
-                    <div>
+                    <div style="flex: 1;">
                         <small class="text-muted d-block mb-1" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Note added during order creation</small>
                         <p class="mb-0" style="color: #2c3e50; line-height: 1.6; white-space: pre-wrap;">{{ order.notes }}</p>
                     </div>
                 </div>
+                {% endif %}
+
+                <!-- ✅ Admin Notes History -->
+                {% if order.admin_notes_list.exists %}
+                    {% if order.notes %}
+                    <hr class="my-2">
+                    {% endif %}
+                    
+                    <!-- Display all admin notes -->
+                    {% for admin_note in order.admin_notes_list.all %}
+                    <div class="d-flex align-items-start gap-3 mb-3" style="padding: 12px; background: #f0f9ff; border-left: 3px solid #3b82f6; border-radius: 6px;">
+                        <div style="width: 40px; height: 40px; border-radius: 10px; background: #dbeafe; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            <i class="fas fa-user-shield text-info"></i>
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                            <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                                <small class="text-muted" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Admin Note</small>
+                                <small class="text-muted" style="font-size: 0.65rem;">
+                                    <i class="fas fa-user-circle"></i> 
+                                    <strong>{{ admin_note.created_by.get_full_name|default:admin_note.created_by.username }}</strong>
+                                    — {{ admin_note.created_at|date:"F d, Y \a\t h:i A" }}
+                                </small>
+                            </div>
+                            <p class="mb-0" style="color: #2c3e50; line-height: 1.6; white-space: pre-wrap;">{{ admin_note.content }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% endif %}
             </div>
         </div>
         {% endif %}

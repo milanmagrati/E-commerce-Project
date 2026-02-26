@@ -571,7 +571,7 @@
             </div>
             <div class="modal-body">
                 <p class="text-muted mb-3">
-                    <i class="fas fa-info-circle"></i> Select exactly 4 statistics to display on your dashboard
+                    <i class="fas fa-info-circle"></i> Select statistics to display on your dashboard (1-7)
                 </p>
                 
                 <div class="stats-selection">
@@ -637,7 +637,7 @@
                 </div>
                 
                 <div class="alert alert-info mt-3" id="selectionMessage">
-                    <i class="fas fa-hand-pointer"></i> Please select exactly 4 statistics
+                    <i class="fas fa-hand-pointer"></i> Select at least 1 statistic
                 </div>
             </div>
             <div class="modal-footer">
@@ -661,6 +661,8 @@
         padding: 20px;
         display: flex;
         align-items: center;
+        justify-content: space-between;
+        min-height: 110px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         transition: transform 0.3s ease;
     }
@@ -699,12 +701,24 @@
         font-size: 2.5rem;
         margin-right: 20px;
         opacity: 0.8;
+        flex-shrink: 0;
+        min-width: 60px;
+        text-align: center;
+    }
+
+    .stat-content {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
     }
 
     .stat-content h3 {
         margin: 0;
-        font-size: 2rem;
+        font-size: clamp(0.95rem, 2.5vw, 1.3rem);
         font-weight: bold;
+        word-break: break-word;
+        line-height: 1.2;
+        overflow-wrap: break-word;
     }
 
     .stat-content p {
@@ -974,10 +988,49 @@
     @media (max-width: 768px) {
         .stat-card {
             margin-bottom: 1rem;
+            padding: 15px;
+            min-height: 100px;
+        }
+        
+        .stat-icon {
+            font-size: 2rem;
+            margin-right: 15px;
+            min-width: 50px;
+        }
+        
+        .stat-content h3 {
+            font-size: clamp(0.9rem, 2.5vw, 1.2rem);
+        }
+        
+        .stat-content p {
+            font-size: 0.85rem;
         }
         
         .stats-selection {
             grid-template-columns: 1fr;
+        }
+    }
+    
+    @media (max-width: 480px) {
+        .stat-card {
+            flex-direction: column;
+            text-align: center;
+            padding: 12px;
+            min-height: auto;
+        }
+        
+        .stat-icon {
+            margin-right: 0;
+            margin-bottom: 10px;
+            font-size: 1.75rem;
+        }
+        
+        .stat-content h3 {
+            font-size: clamp(0.85rem, 2vw, 1.1rem);
+        }
+        
+        .stat-content p {
+            font-size: 0.8rem;
         }
     }
 
@@ -1133,29 +1186,42 @@ document.addEventListener('DOMContentLoaded', function() {
     loadStatsCards();
     
     // Initialize event listeners for stats checkboxes
-    document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
-        checkbox.addEventListener('change', updateSelectionMessage);
-    });
+    const initCheckboxListeners = () => {
+        document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
+            // Remove old listeners to prevent duplicates
+            checkbox.removeEventListener('change', updateSelectionMessage);
+            // Add new listener
+            checkbox.addEventListener('change', updateSelectionMessage);
+        });
+    };
+    initCheckboxListeners();
     
-    // Initialize modal cleanup to prevent backdrop issues
+    // Initialize modal event cleanup
     const statsModal = document.getElementById('statsSettingsModal');
     if (statsModal) {
-        statsModal.addEventListener('hidden.bs.modal', function() {
-            // Remove any lingering backdrops and body locks
-            document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
-            document.body.classList.remove('modal-open');
-            document.body.style.removeProperty('overflow');
-            document.body.style.removeProperty('padding-right');
-            // Dispose the modal instance so next open starts fresh
-            const instance = bootstrap.Modal.getInstance(statsModal);
-            if (instance) {
-                instance.dispose();
-            }
-        });
+        // Remove old listeners to prevent duplicates
+        statsModal.removeEventListener('hidden.bs.modal', modalHiddenHandler);
+        // Add listener for when modal is hidden
+        statsModal.addEventListener('hidden.bs.modal', modalHiddenHandler);
     }
     
     console.log('✅ Orders page loaded successfully');
 });
+
+// Define handler outside to allow removal
+function modalHiddenHandler() {
+    const statsModal = document.getElementById('statsSettingsModal');
+    // Remove any lingering backdrops and body locks
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    // Dispose the modal instance so next open starts fresh
+    const instance = bootstrap.Modal.getInstance(statsModal);
+    if (instance) {
+        instance.dispose();
+    }
+}
 
 function loadStatsCards() {
     const savedStats = localStorage.getItem('selectedStats');
@@ -1164,11 +1230,14 @@ function loadStatsCards() {
     const container = document.getElementById('statsContainer');
     container.innerHTML = '';
     
+    // Dynamically set column class based on number of stats
+    const colClass = getResponsiveColClass(selectedStats.length);
+    
     selectedStats.forEach(statKey => {
         if (statsData[statKey]) {
             const stat = statsData[statKey];
             const col = document.createElement('div');
-            col.className = 'col-md-3';
+            col.className = colClass;
             col.innerHTML = `
                 <div class="stat-card ${stat.gradient}">
                     <div class="stat-icon">
@@ -1185,6 +1254,15 @@ function loadStatsCards() {
     });
 }
 
+function getResponsiveColClass(statCount) {
+    // Dynamically determine column width based on number of stats
+    if (statCount === 1) return 'col-12';
+    if (statCount === 2) return 'col-lg-6';
+    if (statCount === 3) return 'col-lg-4';
+    if (statCount >= 4) return 'col-lg-3';
+    return 'col-lg-3';
+}
+
 function openStatsSettings() {
     const modalElement = document.getElementById('statsSettingsModal');
 
@@ -1193,32 +1271,57 @@ function openStatsSettings() {
         return;
     }
 
-    // Clean up any lingering modal state from previous opens
+    // COMPLETE cleanup of modal state
+    // Remove all backdrops
     document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+    
+    // Reset body styles
     document.body.classList.remove('modal-open');
-    document.body.style.removeProperty('overflow');
-    document.body.style.removeProperty('padding-right');
-
-    // Dispose any existing modal instance to avoid stale state
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    
+    // Reset modal element display and attributes
+    modalElement.classList.remove('show');
+    modalElement.classList.remove('fade');
+    modalElement.style.display = 'none';
+    modalElement.removeAttribute('aria-modal');
+    modalElement.removeAttribute('aria-hidden');
+    modalElement.setAttribute('aria-hidden', 'true');
+    
+    // Dispose any existing modal instance
     let existingModal = bootstrap.Modal.getInstance(modalElement);
     if (existingModal) {
+        existingModal.hide();
         existingModal.dispose();
     }
 
-    // Get saved stats or use defaults
-    const savedStats = localStorage.getItem('selectedStats');
-    const selectedStats = savedStats ? JSON.parse(savedStats) : ['total_orders', 'total_revenue', 'pending_orders', 'delivered_today'];
+    // Small delay to ensure complete cleanup
+    setTimeout(() => {
+        // Re-add the fade class for smooth animation
+        modalElement.classList.add('fade');
+        
+        // Get saved stats or use defaults
+        const savedStats = localStorage.getItem('selectedStats');
+        const selectedStats = savedStats ? JSON.parse(savedStats) : ['total_orders', 'total_revenue', 'pending_orders', 'delivered_today'];
 
-    // Update checkboxes with saved state
-    document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
-        checkbox.checked = selectedStats.includes(checkbox.value);
-    });
+        // Update checkboxes with saved state
+        document.querySelectorAll('.stat-option input[type="checkbox"]').forEach(checkbox => {
+            checkbox.checked = selectedStats.includes(checkbox.value);
+        });
 
-    updateSelectionMessage();
+        updateSelectionMessage();
 
-    // Always create a fresh modal instance
-    const modal = new bootstrap.Modal(modalElement);
-    modal.show();
+        // Create and show fresh modal instance
+        try {
+            const modal = new bootstrap.Modal(modalElement, {
+                backdrop: 'static',
+                keyboard: true
+            });
+            modal.show();
+        } catch (error) {
+            console.error('Error showing modal:', error);
+        }
+    }, 50);
 }
 
 // Toggle function is no longer needed - using change event handlers instead
@@ -1228,18 +1331,18 @@ function updateSelectionMessage() {
     const messageDiv = document.getElementById('selectionMessage');
     const saveBtn = document.getElementById('saveStatsBtn');
     
-    if (checked.length === 4) {
-        messageDiv.className = 'alert alert-success mt-3';
-        messageDiv.innerHTML = '<i class="fas fa-check-circle"></i> Perfect! 4 statistics selected';
-        saveBtn.disabled = false;
-    } else if (checked.length < 4) {
-        messageDiv.className = 'alert alert-info mt-3';
-        messageDiv.innerHTML = `<i class="fas fa-hand-pointer"></i> Select ${4 - checked.length} more statistic(s)`;
-        saveBtn.disabled = true;
-    } else {
+    if (checked.length === 0) {
         messageDiv.className = 'alert alert-warning mt-3';
-        messageDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Too many! Unselect ${checked.length - 4} statistic(s)`;
+        messageDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> Please select at least 1 statistic';
         saveBtn.disabled = true;
+    } else if (checked.length === 1) {
+        messageDiv.className = 'alert alert-success mt-3';
+        messageDiv.innerHTML = '<i class="fas fa-check-circle"></i> 1 statistic selected';
+        saveBtn.disabled = false;
+    } else {
+        messageDiv.className = 'alert alert-success mt-3';
+        messageDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${checked.length} statistics selected`;
+        saveBtn.disabled = false;
     }
 }
 
@@ -1247,7 +1350,7 @@ function saveStatsPreference() {
     const checked = Array.from(document.querySelectorAll('.stat-option input[type="checkbox"]:checked'))
         .map(cb => cb.value);
 
-    if (checked.length === 4) {
+    if (checked.length >= 1) {
         localStorage.setItem('selectedStats', JSON.stringify(checked));
         loadStatsCards();
 
@@ -1257,17 +1360,19 @@ function saveStatsPreference() {
             const modalInstance = bootstrap.Modal.getInstance(modalElement);
             if (modalInstance) {
                 modalInstance.hide();
-            } else {
-                // Fallback: manually clean up if no instance exists
+                modalInstance.dispose();
+            }
+            
+            // Complete cleanup with delay
+            setTimeout(() => {
+                document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.overflow = '';
+                document.body.style.paddingRight = '';
                 modalElement.classList.remove('show');
                 modalElement.style.display = 'none';
                 modalElement.removeAttribute('aria-modal');
-                modalElement.removeAttribute('role');
-                document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
-                document.body.classList.remove('modal-open');
-                document.body.style.removeProperty('overflow');
-                document.body.style.removeProperty('padding-right');
-            }
+            }, 300);
         }
         
         const toast = document.createElement('div');
@@ -1280,12 +1385,17 @@ function saveStatsPreference() {
                     <button type="button" class="btn-close btn-close-white" onclick="this.closest('.toast').remove()"></button>
                 </div>
                 <div class="toast-body">
-                    Statistics preference saved successfully!
+                    Statistics preference saved successfully! (${checked.length} stats displayed)
                 </div>
             </div>
         `;
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 3000);
+    } else {
+        // Show error message
+        const messageDiv = document.getElementById('selectionMessage');
+        messageDiv.className = 'alert alert-danger mt-3';
+        messageDiv.innerHTML = '<i class="fas fa-times-circle"></i> Please select at least 1 statistic';
     }
 }
 

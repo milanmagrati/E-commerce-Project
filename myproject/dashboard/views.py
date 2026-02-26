@@ -2712,7 +2712,6 @@ def order_detail(request, order_id):
                 old_payment_status = order.payment_status
                 old_payment_method = order.payment_method
                 old_tracking = order.tracking_number or ''
-                old_admin_notes = order.admin_notes or ''
                 old_logistics = order.logistics or ''
                 old_status_setup = order.status_setup
                 old_payment_setup = order.payment_setup
@@ -2785,11 +2784,15 @@ def order_detail(request, order_id):
                     if new_tracking:
                         changes_made.append('Tracking Number')
                 
-                # ====== UPDATE ADMIN NOTES ======
-                if new_admin_notes != old_admin_notes:
-                    order.admin_notes = new_admin_notes
-                    if new_admin_notes:
-                        changes_made.append('Admin Notes')
+                # ====== CREATE ADMIN NOTE ======
+                if new_admin_notes:
+                    from .models import OrderAdminNote
+                    OrderAdminNote.objects.create(
+                        order=order,
+                        content=new_admin_notes,
+                        created_by=request.user
+                    )
+                    changes_made.append('Admin Notes')
                 
                 # ====== UPDATE LOGISTICS (only if explicitly selected) ======
                 if new_logistics_input and new_logistics_input != old_logistics:
@@ -3158,6 +3161,16 @@ def order_edit(request, order_id):
                 order.tax_percent = Decimal(request.POST.get("tax_percent") or "0")
                 order.total_amount = Decimal(request.POST.get("total_amount") or "0")
                 order.notes = request.POST.get("notes", "")
+                
+                # ✅ CREATE ADMIN NOTE
+                new_admin_notes = request.POST.get("admin_notes", "").strip()
+                if new_admin_notes:
+                    from .models import OrderAdminNote
+                    OrderAdminNote.objects.create(
+                        order=order,
+                        content=new_admin_notes,
+                        created_by=request.user
+                    )
 
                 # UPDATE PARTIAL PAYMENT DATA
                 is_partial_payment = request.POST.get("is_partial_payment") == "true"

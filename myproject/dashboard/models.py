@@ -481,6 +481,22 @@ class OrderActivityLog(models.Model):
         ordering = ['-created_at']
 
 
+class OrderAdminNote(models.Model):
+    """Track individual admin notes added to orders with history"""
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='admin_notes_list')
+    content = models.TextField(help_text="Admin's note content")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_order_notes')
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.order.order_number} - Note by {self.created_by.username} on {self.created_at.date()}"
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Order Admin Note"
+        verbose_name_plural = "Order Admin Notes"
+
+
 class StockIn(models.Model):
     """Track incoming stock movements"""
     STOCK_IN_TYPES = (
