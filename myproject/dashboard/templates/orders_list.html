@@ -146,6 +146,14 @@
                 </select>
             </div>
             
+            <div class="col-md-2">
+                <select name="in_out" class="form-select" onchange="this.form.submit()">
+                    <option value="">All Locations</option>
+                    <option value="in" {% if in_out_filter == "in" %}selected{% endif %}>In Valley</option>
+                    <option value="out" {% if in_out_filter == "out" %}selected{% endif %}>Out Valley</option>
+                </select>
+            </div>
+            
             <div class="col-md-1">
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="fas fa-filter"></i>

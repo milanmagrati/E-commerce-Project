@@ -2242,6 +2242,7 @@ def orders_list(request):
     search_query = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
     payment_filter = request.GET.get('payment', '')
+    in_out_filter = request.GET.get('in_out', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
     logistics_filter = request.GET.get('logistics_status', '')
@@ -2263,6 +2264,10 @@ def orders_list(request):
     # Payment filter
     if payment_filter:
         orders = orders.filter(payment_status=payment_filter)
+    
+    # In/Out Valley filter
+    if in_out_filter:
+        orders = orders.filter(in_out=in_out_filter)
     
     # Logistics filter
     if logistics_filter == 'sent':
@@ -2375,6 +2380,7 @@ def orders_list(request):
         'search_query': search_query,
         'status_filter': status_filter,
         'payment_filter': payment_filter,
+        'in_out_filter': in_out_filter,
         'date_filter': date_filter,
         'start_date': start_date,
         'end_date': end_date,

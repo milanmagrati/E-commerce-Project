@@ -759,6 +759,27 @@
                         </div>
                     </div>
                     
+                    <div class="detail-row">
+                        <i class="fas {% if order.in_out == 'in' %}fa-map-marker-alt{% else %}fa-map-pin{% endif %}" 
+                           style="color: {% if order.in_out == 'in' %}#10b981{% else %}#ef4444{% endif %};"></i>
+                        <div class="flex-grow-1">
+                            <small class="text-muted">Location Type</small>
+                            <p class="mb-0">
+                                <strong>
+                                    <span style="display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+                                                  background: {% if order.in_out == 'in' %}#d1fae5{% else %}#fee2e2{% endif %};
+                                                  color: {% if order.in_out == 'in' %}#065f46{% else %}#991b1b{% endif %};">
+                                        {% if order.in_out == 'in' %}
+                                            <i class="fas fa-check-circle"></i> In Valley
+                                        {% else %}
+                                            <i class="fas fa-exclamation-circle"></i> Out Valley
+                                        {% endif %}
+                                    </span>
+                                </strong>
+                            </p>
+                        </div>
+                    </div>
+                    
                     {% if order.landmark %}
                     <div class="detail-row">
                         <i class="fas fa-landmark text-warning"></i>
