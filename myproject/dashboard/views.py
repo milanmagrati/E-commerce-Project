@@ -2401,6 +2401,17 @@ def orders_list(request):
         for setup in payment_setups
     ]
     
+    # ✅ PREPARE DROPDOWN OPTIONS FOR BULK ACTIONS
+    # Format options as (action_value, display_label, icon)
+    order_status_bulk_options = [
+        (f'status_setup_{setup.id}', f'Mark as {setup.name}', '📋')
+        for setup in order_setups
+    ]
+    payment_status_bulk_options = [
+        (f'payment_status_setup_{setup.id}', f'Mark as {setup.name}', '💳')
+        for setup in payment_setups
+    ]
+    
     # ✅ FIX DECIMAL CORRUPTION IN ORDERS BEFORE DISPLAY
     # This ensures amounts are always correct without needing to visit detail page
     order_products = {}
@@ -2445,6 +2456,10 @@ def orders_list(request):
         'per_page': per_page,
         'order_status_choices': order_status_choices,
         'payment_status_choices': payment_status_choices,
+        'order_setups': order_setups,
+        'payment_setups': payment_setups,
+        'order_status_bulk_options': order_status_bulk_options,
+        'payment_status_bulk_options': payment_status_bulk_options,
     }
     
     return render(request, 'orders_list.html', context)
@@ -4564,7 +4579,56 @@ def orders_bulk_action(request):
                 # Soft delete instead of permanent delete
                 orders.update(is_deleted=True, deleted_at=timezone.now())
                 messages.success(request, f'✅ {count} order(s) moved to trash successfully!')
-                
+            
+            # ✅ DYNAMIC ORDER STATUS UPDATE
+            elif action.startswith('status_setup_'):
+                try:
+                    setup_id = int(action.split('_')[-1])
+                    status_setup = Setup.objects.get(id=setup_id, setup_type='status')
+                    
+                    # Update orders with the selected status
+                    for order in orders:
+                        order.status_setup = status_setup
+                        order.order_status = status_setup.name
+                        order.save()
+                        
+                        # Log activity
+                        OrderActivityLog.objects.create(
+                            order=order,
+                            user=request.user,
+                            action_type='status_changed',
+                            description=f'Order status changed to {status_setup.name} by {request.user.username}'
+                        )
+                    
+                    messages.success(request, f'✅ {count} order(s) marked as {status_setup.name}!')
+                except (ValueError, Setup.DoesNotExist):
+                    messages.error(request, 'Invalid status selected!')
+            
+            # ✅ DYNAMIC PAYMENT STATUS UPDATE
+            elif action.startswith('payment_status_setup_'):
+                try:
+                    setup_id = int(action.split('_')[-1])
+                    payment_setup = Setup.objects.get(id=setup_id, setup_type='payment_status')
+                    
+                    # Update orders with the selected payment status
+                    for order in orders:
+                        order.payment_status_setup = payment_setup
+                        order.payment_status = payment_setup.name
+                        order.save()
+                        
+                        # Log activity
+                        OrderActivityLog.objects.create(
+                            order=order,
+                            user=request.user,
+                            action_type='payment_changed',
+                            description=f'Payment status changed to {payment_setup.name} by {request.user.username}'
+                        )
+                    
+                    messages.success(request, f'✅ {count} order(s) marked as {payment_setup.name}!')
+                except (ValueError, Setup.DoesNotExist):
+                    messages.error(request, 'Invalid payment status selected!')
+            
+            # ✅ LEGACY: Keep backward compatibility with old action names
             elif action == 'mark_delivered':
                 orders.update(order_status='delivered')
                 

@@ -175,13 +175,21 @@
                     <select name="bulk_action" class="form-select form-select-sm" required>
                         <option value="">Select Action</option>
                         <option value="export_excel">📊 Export to Excel</option>
-                        <option value="delete">Move to Trash</option>
-                        <option value="mark_processing">Mark as Processing</option>
-                        <option value="mark_shipped">Mark as Shipped</option>
-                        <option value="mark_delivered">Mark as Delivered</option>
-                        <option value="mark_cancelled">Mark as Cancelled</option>
-                        <option value="mark_paid">Mark as Paid</option>
-                        <option value="mark_pending">Mark as Pending Payment</option>
+                        <option value="delete">🗑️ Move to Trash</option>
+                        {% if order_status_bulk_options %}
+                            <optgroup label="Order Status">
+                                {% for action_value, display_label, icon in order_status_bulk_options %}
+                                    <option value="{{ action_value }}">📋 {{ display_label }}</option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endif %}
+                        {% if payment_status_bulk_options %}
+                            <optgroup label="Payment Status">
+                                {% for action_value, display_label, icon in payment_status_bulk_options %}
+                                    <option value="{{ action_value }}">💳 {{ display_label }}</option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endif %}
                     </select>
                 </div>
                 <div class="col-md-3">
