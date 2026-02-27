@@ -2507,11 +2507,16 @@ function syncNCMStatusAJAX(orderId) {
             'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
         }
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             // Show success message
-            showNotification('success', data.message);
+            showNotification('success', data.message || 'Status updated successfully');
 
             // Always reload when user explicitly clicks sync,
             // so display fields (status_setup, order_status) are always fresh
@@ -2519,13 +2524,13 @@ function syncNCMStatusAJAX(orderId) {
                 location.reload();
             }, 1000);
         } else {
-            showNotification('error', data.message);
+            showNotification('error', data.message || 'Failed to update status');
             syncBtn.disabled = false;
             syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
         }
     })
     .catch(error => {
-        console.error('Error:', error);
+        console.error('Error syncing status:', error);
         showNotification('error', 'Failed to sync status. Please try again.');
         syncBtn.disabled = false;
         syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
@@ -2659,7 +2664,7 @@ function notifyStatusChange(fieldName, oldValue, newValue, type = 'success') {
     const statusMessages = {
         'in_transit': '📍 In Transit - Order is on the way to delivery',
         'delivered': '✅ Delivered - Order has been successfully delivered',
-        'returned': '↩️ Returned - Order has been returned',
+        'return': '↩️ Return - Order has been returned',
         'return_initiated': '↩️ Return Initiated - Return process started',
         'processing': '⏳ Processing - Order is being processed',
         'pending': '⏸️ Pending - Awaiting confirmation',

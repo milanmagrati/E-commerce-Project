@@ -768,7 +768,7 @@
     .order-status-packed { color: #6366f1 !important; font-size: 0.9rem; }
     .order-status-shipped { color: #06b6d4 !important; font-size: 0.9rem; }
     .order-status-delivered { color: #10b981 !important; font-size: 0.9rem; }
-    .order-status-cancelled, .order-status-returned { color: #ef4444 !important; font-size: 0.9rem; }
+    .order-status-cancelled, .order-status-return { color: #ef4444 !important; font-size: 0.9rem; }
     .order-status-dispatched { color: #8b5cf6 !important; font-size: 0.9rem; }
 
     /* Bulk Actions Styling */
@@ -2090,7 +2090,7 @@ function notifyStatusUpdateInList(orderNumber, oldStatus, newStatus) {
     const statusMessages = {
         'in_transit': `📍 ${orderNumber}: In Transit`,
         'delivered': `✅ ${orderNumber}: Delivered!`,
-        'returned': `↩️ ${orderNumber}: Returned`,
+        'return': `↩️ ${orderNumber}: Return`,
         'processing': `⏳ ${orderNumber}: Processing`,
         'shipped': `📦 ${orderNumber}: Shipped`
     };
@@ -2100,7 +2100,7 @@ function notifyStatusUpdateInList(orderNumber, oldStatus, newStatus) {
     if (typeof alertify !== 'undefined') {
         if (newStatus === 'delivered') {
             alertify.success(message);
-        } else if (newStatus === 'returned') {
+        } else if (newStatus === 'return') {
             alertify.error(message);
         } else {
             alertify.notify(message, 'info', 3);

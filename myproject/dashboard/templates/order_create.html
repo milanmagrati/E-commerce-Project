@@ -874,14 +874,58 @@
     }
 
     /* ✨ CLEAN VARIATION MODAL STYLES */
+    /* ✨ VARIATION MODAL STYLES */
+    #variationModal .modal-header {
+        padding: 0.75rem 1.25rem;
+        border-bottom: 2px solid #e2e8f0;
+    }
+
+    #variationModal .modal-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+
+    #variationModal .modal-body {
+        padding: 0.75rem;
+        max-height: none;
+        overflow-y: visible;
+    }
+
+    #variationModal .btn {
+        padding: 0.35rem 0.7rem;
+        font-size: 0.8rem;
+    }
+
+    #variationModal .btn-success {
+        padding: 0.35rem 0.8rem;
+    }
+
     .variation-header {
         text-align: center;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .variation-header h6 {
+        font-size: 0.75rem !important;
+        margin-bottom: 0.15rem !important;
+        font-weight: 500;
+    }
+
+    .variation-header h5 {
+        font-size: 0.95rem !important;
+        margin-bottom: 0.1rem !important;
+    }
+
+    .variation-header small {
+        font-size: 0.7rem !important;
     }
 
     .variation-list {
-        max-height: 450px;
-        overflow-y: auto;
-        padding-right: 0.5rem;
+        max-height: none;
+        overflow-y: visible;
+        padding-right: 0.25rem;
     }
 
     .variation-list::-webkit-scrollbar {
@@ -901,11 +945,11 @@
     .variation-item {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        padding: 1rem;
-        margin-bottom: 0.75rem;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        margin-bottom: 0.35rem;
         border: 2px solid #e2e8f0;
-        border-radius: 8px;
+        border-radius: 6px;
         cursor: pointer;
         transition: all 0.3s ease;
         position: relative;
@@ -926,17 +970,17 @@
 
     .variation-check-icon {
         position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 24px;
-        height: 24px;
+        top: 6px;
+        right: 6px;
+        width: 20px;
+        height: 20px;
         background: var(--success);
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         color: white;
-        font-size: 0.75rem;
+        font-size: 0.65rem;
         opacity: 0;
         transform: scale(0);
         transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
@@ -952,11 +996,11 @@
     }
 
     .variation-image-box img {
-        width: 80px;
-        height: 80px;
+        width: 55px;
+        height: 55px;
         object-fit: cover;
-        border-radius: 6px;
-        border: 2px solid #e2e8f0;
+        border-radius: 5px;
+        border: 1px solid #e2e8f0;
         transition: all 0.3s ease;
     }
 
@@ -970,28 +1014,38 @@
     }
 
     .variation-name {
-        font-size: 1rem;
-        line-height: 1.3;
+        font-size: 0.88rem;
+        line-height: 1.15;
+        font-weight: 600;
+        margin-bottom: 0.1rem;
     }
 
     .variation-sku {
-        font-size: 0.875rem;
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-bottom: 0.1rem;
     }
 
     .variation-price {
-        font-size: 1.1rem;
+        font-size: 0.95rem;
+        font-weight: 700;
+        margin-bottom: 0.05rem;
     }
 
     .variation-stock .badge {
-        font-size: 0.75rem;
-        padding: 0.35rem 0.75rem;
+        font-size: 0.65rem;
+        padding: 0.2rem 0.5rem;
+        font-weight: 600;
     }
 
     .variation-footer {
-        background: #f8f9fa;
-        margin: 0 -1rem -1rem;
-        padding: 1rem;
-        border-radius: 0 0 8px 8px;
+        background: transparent;
+        margin: 0.5rem -0.5rem -0.5rem;
+        padding: 0.5rem;
+        border-radius: 0;
+        margin-top: 0.35rem;
+        padding-top: 0.35rem;
+        border-top: 1px solid #e2e8f0;
     }
 
     /* ✨ CUSTOM PRODUCT MODAL STYLES */

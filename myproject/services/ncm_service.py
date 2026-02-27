@@ -176,7 +176,7 @@ class NCMService:
             'Out for Delivery': 'shipped',
             'Delivered': 'delivered',
             'Confirmed': 'delivered',
-            'Returned': 'returned',
+            'Returned': 'return',
             'Return Initiated': 'return_initiated',
             'Return Approved': 'return_approved',
         }
@@ -208,7 +208,7 @@ class NCMService:
         if ncm_status == 'Delivered':
             vendor_return = NCMService.parse_vendor_return(vendor_return_raw)
             if vendor_return:
-                return ('returned', None)  # Returned to vendor, no payment update
+                return ('return', None)  # Returned to vendor, no payment update
             else:
                 return ('delivered', 'paid')  # Successful delivery, mark as paid
 

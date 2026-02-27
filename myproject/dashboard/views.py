@@ -4440,13 +4440,14 @@ def delete_product_image(request, image_id):
 def variation_create(request, product_id):
     product = get_object_or_404(Product, pk=product_id, user=request.user)
 
+    variation_name = request.POST.get("variation_name", "").strip()
     sku = request.POST.get("sku", "").strip()
     price = request.POST.get("price", "").strip()
     stock = request.POST.get("stock", "").strip()
     status = request.POST.get("status", "active").strip()
 
-    if not sku or price == "" or stock == "":
-        messages.error(request, "SKU, price and stock are required.")
+    if not variation_name or not sku or price == "" or stock == "":
+        messages.error(request, "Variation name, SKU, price and stock are required.")
         return redirect("product_detail", product_id=product_id)
 
     try:
@@ -4458,6 +4459,7 @@ def variation_create(request, product_id):
 
     variation = ProductVariation.objects.create(
         product=product,
+        variation_name=variation_name,
         sku=sku,
         price=price_val,
         stock=stock_val,
@@ -4465,7 +4467,7 @@ def variation_create(request, product_id):
         image=request.FILES.get("image") if "image" in request.FILES else None,
     )
 
-    messages.success(request, f'Variation "{variation.sku}" created.')
+    messages.success(request, f'Variation "{variation.variation_name}" created.')
     return redirect("product_detail", product_id=product_id)
 
 
