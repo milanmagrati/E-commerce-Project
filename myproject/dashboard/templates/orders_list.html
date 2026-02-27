@@ -121,28 +121,23 @@
                        placeholder="End Date" value="{{ end_date }}">
             </div>
             
+            <!-- ✅ DYNAMIC ORDER STATUS FILTER (from Setup Management) -->
             <div class="col-md-2">
                 <select name="status" class="form-select">
                     <option value="">All Status</option>
-                    <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending</option>
-                    <option value="processing" {% if status_filter == "processing" %}selected{% endif %}>Processing</option>
-                    <option value="confirmed" {% if status_filter == "confirmed" %}selected{% endif %}>Confirmed</option>
-                    <option value="packed" {% if status_filter == "packed" %}selected{% endif %}>Packed</option>
-                    <option value="shipped" {% if status_filter == "shipped" %}selected{% endif %}>Shipped</option>
-                    <option value="delivered" {% if status_filter == "delivered" %}selected{% endif %}>Delivered</option>
-                    <option value="cancelled" {% if status_filter == "cancelled" %}selected{% endif %}>Cancelled</option>
-                    <option value="dispatched" {% if status_filter == "dispatched" %}selected{% endif %}>Dispatched</option>
+                    {% for status_key, status_name in order_status_choices %}
+                        <option value="{{ status_key }}" {% if status_filter == status_key %}selected{% endif %}>{{ status_name }}</option>
+                    {% endfor %}
                 </select>
             </div>
             
+            <!-- ✅ DYNAMIC PAYMENT STATUS FILTER (from Setup Management) -->
             <div class="col-md-2">
                 <select name="payment" class="form-select">
                     <option value="">All Payment</option>
-                    <option value="pending" {% if payment_filter == "pending" %}selected{% endif %}>Pending</option>
-                    <option value="paid" {% if payment_filter == "paid" %}selected{% endif %}>Paid</option>
-                    <option value="partial" {% if payment_filter == "partial" %}selected{% endif %}>Partial</option>
-                    <option value="cod" {% if payment_filter == "cod" %}selected{% endif %}>COD</option>
-                    <option value="failed" {% if payment_filter == "failed" %}selected{% endif %}>Failed</option>
+                    {% for payment_key, payment_name in payment_status_choices %}
+                        <option value="{{ payment_key }}" {% if payment_filter == payment_key %}selected{% endif %}>{{ payment_name }}</option>
+                    {% endfor %}
                 </select>
             </div>
             

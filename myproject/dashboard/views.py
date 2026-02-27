@@ -2257,13 +2257,53 @@ def orders_list(request):
             Q(customer_email__icontains=search_query)
         )
     
-    # Status filter
+    # Status filter - Now properly handles Setup-based statuses
     if status_filter:
-        orders = orders.filter(order_status=status_filter)
+        # Try to find the Setup with matching filter value
+        # The filter value comes from setup.name.lower().replace(' ', '_')
+        try:
+            # First, try to find Setup by matching the filter value format
+            status_setup = Setup.objects.filter(
+                setup_type='status',
+                name__iexact=status_filter.replace('_', ' ')
+            ).first()
+            
+            if status_setup:
+                # STRICT FILTER: Primary by status_setup_id, fallback only for null status_setup
+                # This prevents "On Hold" showing when "Processing" is selected
+                orders = orders.filter(
+                    Q(status_setup_id=status_setup.id) |
+                    (Q(status_setup_id__isnull=True) & Q(order_status__iexact=status_filter.replace('_', ' ')))
+                )
+            else:
+                # Setup not found, filter by order_status field only
+                orders = orders.filter(order_status__iexact=status_filter.replace('_', ' '))
+        except Exception:
+            # Fallback filtering
+            orders = orders.filter(order_status__iexact=status_filter.replace('_', ' '))
     
-    # Payment filter
+    # Payment status filter - Now properly handles Setup-based payment statuses
     if payment_filter:
-        orders = orders.filter(payment_status=payment_filter)
+        # Try to find the Setup with matching filter value
+        try:
+            # First, try to find Setup by matching the filter value format
+            payment_setup = Setup.objects.filter(
+                setup_type='payment_status',
+                name__iexact=payment_filter.replace('_', ' ')
+            ).first()
+            
+            if payment_setup:
+                # STRICT FILTER: Primary by payment_status_setup_id, fallback only for null payment_status_setup
+                orders = orders.filter(
+                    Q(payment_status_setup_id=payment_setup.id) |
+                    (Q(payment_status_setup_id__isnull=True) & Q(payment_status__iexact=payment_filter.replace('_', ' ')))
+                )
+            else:
+                # Setup not found, filter by payment_status field only
+                orders = orders.filter(payment_status__iexact=payment_filter.replace('_', ' '))
+        except Exception:
+            # Fallback filtering
+            orders = orders.filter(payment_status=payment_filter)
     
     # In/Out Valley filter
     if in_out_filter:
@@ -2344,6 +2384,23 @@ def orders_list(request):
     page_number = request.GET.get('page')
     orders_page = paginator.get_page(page_number)
     
+    # ✅ FETCH DYNAMIC ORDER STATUSES AND PAYMENT STATUSES FROM SETUP MANAGEMENT
+    # This ensures filters pull from Setup Management for consistency
+    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    
+    # Convert Setup names to filter values (lowercase with underscores)
+    # Format: [(filter_value, display_name), ...]
+    # Example: [('pending', 'Pending'), ('confirmed', 'Confirmed')]
+    order_status_choices = [
+        (setup.name.lower().replace(' ', '_'), setup.name)
+        for setup in order_setups
+    ]
+    payment_status_choices = [
+        (setup.name.lower().replace(' ', '_'), setup.name)
+        for setup in payment_setups
+    ]
+    
     # ✅ FIX DECIMAL CORRUPTION IN ORDERS BEFORE DISPLAY
     # This ensures amounts are always correct without needing to visit detail page
     order_products = {}
@@ -2386,6 +2443,8 @@ def orders_list(request):
         'end_date': end_date,
         'logistics_filter': logistics_filter,
         'per_page': per_page,
+        'order_status_choices': order_status_choices,
+        'payment_status_choices': payment_status_choices,
     }
     
     return render(request, 'orders_list.html', context)
@@ -2433,6 +2492,8 @@ def order_create(request):
                     try:
                         from .models import Setup
                         status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
+                        # ✅ SYNC order_status with the setup name (consistent with payment_status sync)
+                        order_status = status_setup.name.lower().replace(' ', '_')
                     except Setup.DoesNotExist:
                         status_setup = None
 
@@ -2510,24 +2571,37 @@ def order_create(request):
                 customer.landmark = landmark
                 customer.save()
 
-                # ✅ FIXED: Generate order number using ORM (no raw SQL)
+                # ✅ FIXED: Generate unique order number with race condition handling
                 from .decimal_utils import safe_decimal
                 try:
-                    last_order = Order.objects.filter(
-                        order_number__startswith='T'
-                    ).order_by('-id').first()
+                    max_attempts = 100
+                    order_number = None
                     
-                    if last_order:
-                        try:
-                            n = int(last_order.order_number.replace("T", ""))
-                            order_number = f"T{n+1:03d}"
-                        except (ValueError, AttributeError):
+                    for attempt in range(max_attempts):
+                        # Get the highest order number currently in database
+                        last_order = Order.objects.filter(
+                            order_number__startswith='T'
+                        ).order_by('-order_number').first()
+                        
+                        if last_order:
+                            try:
+                                n = int(last_order.order_number[1:])  # Extract number after 'T'
+                                order_number = f"T{n+1:03d}"
+                            except (ValueError, AttributeError, IndexError):
+                                order_number = f"T{Order.objects.filter(order_number__startswith='T').count() + 1:03d}"
+                        else:
                             order_number = "T001"
-                    else:
-                        order_number = "T001"
+                        
+                        # Check if this order number already exists
+                        if not Order.objects.filter(order_number=order_number).exists():
+                            break
+                    
+                    if not order_number:
+                        order_number = f"T{Order.objects.count() + 1:03d}"
+                        
                 except Exception as e:
                     logger.error(f"Error generating order number: {str(e)}")
-                    order_number = "T001"
+                    order_number = f"T{Order.objects.count() + 1:03d}"
 
                 order_items_json = request.POST.get("order_items") or "[]"
                 cart = json.loads(order_items_json)
@@ -2549,34 +2623,71 @@ def order_create(request):
                     remaining_amount = safe_decimal(remaining_amount, max_digits=10, decimal_places=2)
 
                 # UPDATED: Use branch_city from City model, added in_out field, and Setup fields
-                order = Order.objects.create(
-                    order_number=order_number,
-                    created_by=created_by,
-                    customer=customer,
-                    customer_name=customer_name,
-                    customer_phone=customer_phone,
-                    customer_email=customer_email,
-                    branch_city=branch_city_name,
-                    in_out=in_out,
-                    shipping_address=shipping_address,
-                    landmark=landmark,
-                    order_from=order_from,
-                    order_status=order_status,
-                    payment_method=payment_method,
-                    payment_status=payment_status,
-                    payment_setup=payment_setup,
-                    status_setup=status_setup,
-                    payment_status_setup=payment_status_setup,
-                    discount_amount=discount_amount_safe,
-                    shipping_charge=shipping_charge_safe,
-                    tax_percent=tax_percent_safe,
-                    total_amount=total_amount_safe,
-                    notes=notes,
-                    # ADD PARTIAL PAYMENT FIELDS
-                    is_partial_payment=is_partial_payment,
-                    partial_amount_paid=partial_amount_paid if is_partial_payment else None,
-                    remaining_amount=remaining_amount if is_partial_payment else None,
-                )
+                # ✅ WITH RETRY LOGIC FOR RACE CONDITIONS
+                order = None
+                retry_count = 0
+                max_retries = 5
+                
+                while order is None and retry_count < max_retries:
+                    try:
+                        order = Order.objects.create(
+                            order_number=order_number,
+                            created_by=created_by,
+                            customer=customer,
+                            customer_name=customer_name,
+                            customer_phone=customer_phone,
+                            customer_email=customer_email,
+                            branch_city=branch_city_name,
+                            in_out=in_out,
+                            shipping_address=shipping_address,
+                            landmark=landmark,
+                            order_from=order_from,
+                            order_status=order_status,
+                            payment_method=payment_method,
+                            payment_status=payment_status,
+                            payment_setup=payment_setup,
+                            status_setup=status_setup,
+                            payment_status_setup=payment_status_setup,
+                            discount_amount=discount_amount_safe,
+                            shipping_charge=shipping_charge_safe,
+                            tax_percent=tax_percent_safe,
+                            total_amount=total_amount_safe,
+                            notes=notes,
+                            # ADD PARTIAL PAYMENT FIELDS
+                            is_partial_payment=is_partial_payment,
+                            partial_amount_paid=partial_amount_paid if is_partial_payment else None,
+                            remaining_amount=remaining_amount if is_partial_payment else None,
+                        )
+                    except IntegrityError as e:
+                        if 'order_number' in str(e):
+                            # Order number exists, generate a new one and retry
+                            retry_count += 1
+                            last_order = Order.objects.filter(
+                                order_number__startswith='T'
+                            ).order_by('-order_number').first()
+                            
+                            if last_order:
+                                try:
+                                    n = int(last_order.order_number[1:])
+                                    order_number = f"T{n+1:03d}"
+                                except (ValueError, AttributeError, IndexError):
+                                    order_number = f"T{Order.objects.filter(order_number__startswith='T').count() + retry_count:03d}"
+                            else:
+                                order_number = f"T{Order.objects.count() + retry_count:03d}"
+                            
+                            if retry_count >= max_retries:
+                                messages.error(request, "Failed to create order after multiple attempts. Please try again.")
+                                return redirect("order_create")
+                        else:
+                            raise
+                
+                # ✅ VERIFY ORDER WAS CREATED
+                if not order:
+                    messages.error(request, "Failed to create order. Please try again.")
+                    return redirect("order_create")
+                
+                # ✅ SYNC ORDER STATUS WITH STATUS SETUP - ENSURES DATA CONSISTENCY
+                order = sync_order_status_setup(order)
 
                 # CREATE ORDER ITEMS
                 for item in cart:
