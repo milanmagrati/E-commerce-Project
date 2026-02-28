@@ -1,0 +1,467 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Return Orders - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2><i class="fas fa-undo-alt text-danger"></i> Return Orders Management</h2>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'order_create' %}" class="btn btn-primary btn-lg">
+                    <i class="fas fa-plus-circle"></i> Create New Order
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Return Orders Statistics Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-left-danger shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-0">Total Return Orders</h6>
+                        <h3 class="text-danger mb-0">{{ total_return_orders }}</h3>
+                    </div>
+                    <div class="icon-large text-danger opacity-25">
+                        <i class="fas fa-undo-alt fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card border-left-warning shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-0">Pending Return Amount</h6>
+                        <h3 class="text-warning mb-0">₹{{ pending_returns }}</h3>
+                    </div>
+                    <div class="icon-large text-warning opacity-25">
+                        <i class="fas fa-clock fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card border-left-success shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-0">Total Return Amount</h6>
+                        <h3 class="text-success mb-0">₹{{ total_return_amount }}</h3>
+                    </div>
+                    <div class="icon-large text-success opacity-25">
+                        <i class="fas fa-money-bill fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card border-left-info shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-0">Average Return Value</h6>
+                        <h3 class="text-info mb-0">₹{{ average_return_value|floatformat:2 }}</h3>
+                    </div>
+                    <div class="icon-large text-info opacity-25">
+                        <i class="fas fa-chart-bar fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3" id="filterForm">
+            <input type="hidden" name="per_page" value="{{ per_page }}" id="perPageHidden">
+            
+            <div class="col-md-3">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" name="search" 
+                           placeholder="Search by order #, customer..." 
+                           value="{{ search_query }}">
+                </div>
+            </div>
+            
+            <!-- Payment Status Filter -->
+            <div class="col-md-2">
+                <select name="payment" class="form-select">
+                    <option value="">All Payment Status</option>
+                    {% for payment_key, payment_name in payment_status_choices %}
+                        <option value="{{ payment_key }}" {% if payment_filter == payment_key %}selected{% endif %}>{{ payment_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Custom Date Range -->
+            <div class="col-md-2">
+                <input type="date" class="form-control" name="start_date" 
+                       placeholder="Start Date" value="{{ start_date }}">
+            </div>
+            <div class="col-md-2">
+                <input type="date" class="form-control" name="end_date" 
+                       placeholder="End Date" value="{{ end_date }}">
+            </div>
+            
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i>
+                </button>
+            </div>
+            <div class="col-md-1">
+                <a href="{% url 'return_orders_list' %}" class="btn btn-secondary w-100">
+                    <i class="fas fa-redo"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk Actions Bar -->
+<div id="bulkActionsBar" class="card shadow-sm mb-3" style="display: none;">
+    <div class="card-body py-2">
+        <form method="post" action="{% url 'orders_bulk_action' %}" id="bulkActionForm" onsubmit="return confirmBulkAction()">
+            {% csrf_token %}
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <span id="selectedCount" class="fw-bold text-primary">0 orders selected</span>
+                </div>
+                <div class="col-md-5">
+                    <select name="bulk_action" class="form-select form-select-sm" required>
+                        <option value="">Select Action</option>
+                        <option value="export_excel">📊 Export to Excel</option>
+                        <option value="delete">🗑️ Move to Trash</option>
+                        <option value="bulk_edit">✏️ Edit Selected</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-danger">
+                        <i class="fas fa-check"></i> Apply
+                    </button>
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="clearSelection()">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Orders Table -->
+<div class="card shadow-sm mb-4">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" id="selectAllCheckbox" onchange="selectAllOrders()">
+                    </th>
+                    <th>Order #</th>
+                    <th>Customer</th>
+                    <th>Items</th>
+                    <th>Amount</th>
+                    <th>Payment Status</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if orders.object_list %}
+                    {% for order in orders.object_list %}
+                    <tr class="order-row" data-order-id="{{ order.id }}">
+                        <td>
+                            <input type="checkbox" class="order-checkbox" value="{{ order.id }}" onchange="updateBulkBar()">
+                        </td>
+                        <td>
+                            <a href="{% url 'order_detail' order.id %}" class="fw-bold text-primary">
+                                {{ order.order_number }}
+                            </a>
+                        </td>
+                        <td>
+                            <div class="small">
+                                <strong>{{ order.customer_name }}</strong><br>
+                                <span class="text-muted">{{ order.customer_phone }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">{{ order.items.count }} items</span>
+                        </td>
+                        <td>
+                            <span class="fw-bold text-success">₹{{ order.total_amount|floatformat:2 }}</span>
+                        </td>
+                        <td>
+                            {% if order.payment_status == 'paid' %}
+                                <span class="badge bg-success">{{ order.payment_status|title }}</span>
+                            {% elif order.payment_status == 'pending' %}
+                                <span class="badge bg-warning">{{ order.payment_status|title }}</span>
+                            {% elif order.payment_status == 'partial' %}
+                                <span class="badge bg-info">Partial Paid</span>
+                            {% else %}
+                                <span class="badge bg-danger">{{ order.payment_status|title }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="small text-muted">{{ order.created_at|date:"M d, Y" }}</span>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <a href="{% url 'order_detail' order.id %}" class="btn btn-outline-primary" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{% url 'order_edit' order.id %}" class="btn btn-outline-info" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <button type="button" class="btn btn-outline-danger" 
+                                        onclick="moveToTrash({{ order.id }}, '{{ order.order_number }}')" 
+                                        title="Move to Trash">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center py-5">
+                            <div class="empty-state">
+                                <i class="fas fa-inbox fa-3x text-muted mb-3" style="display: block;"></i>
+                                <h5 class="text-muted">No Return Orders Found</h5>
+                                <p class="text-muted">There are currently no orders marked as "Return"</p>
+                                <a href="{% url 'orders_list' %}" class="btn btn-primary">
+                                    <i class="fas fa-arrow-left"></i> Back to Orders
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if orders.has_other_pages %}
+<nav aria-label="Page navigation">
+    <ul class="pagination justify-content-center">
+        {% if orders.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
+                    <i class="fas fa-step-backward"></i> First
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ orders.previous_page_number }}&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
+                    <i class="fas fa-chevron-left"></i> Previous
+                </a>
+            </li>
+        {% endif %}
+
+        {% for num in orders.paginator.page_range %}
+            {% if num == orders.number %}
+                <li class="page-item active">
+                    <span class="page-link">{{ num }}</span>
+                </li>
+            {% elif num > orders.number|add:'-3' and num < orders.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ num }}&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if orders.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ orders.next_page_number }}&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
+                    Next <i class="fas fa-chevron-right"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ orders.paginator.num_pages }}&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
+                    Last <i class="fas fa-step-forward"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<style>
+    .border-left-danger {
+        border-left: 4px solid #dc3545 !important;
+    }
+
+    .border-left-warning {
+        border-left: 4px solid #ffc107 !important;
+    }
+
+    .border-left-success {
+        border-left: 4px solid #28a745 !important;
+    }
+
+    .border-left-info {
+        border-left: 4px solid #17a2b8 !important;
+    }
+
+    .icon-large {
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .empty-state {
+        padding: 2rem;
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: rgba(0, 0, 0, 0.02);
+    }
+
+    .order-row:hover {
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-group-sm .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    @media (max-width: 768px) {
+        .table {
+            font-size: 0.875rem;
+        }
+
+        .btn-group-sm .btn {
+            padding: 0.2rem 0.4rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+
+<script>
+// Select/Deselect all checkboxes
+function selectAllOrders() {
+    const checkboxes = document.querySelectorAll('.order-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+    updateBulkBar();
+}
+
+// Update bulk actions bar visibility
+function updateBulkBar() {
+    const selectedCount = document.querySelectorAll('.order-checkbox:checked').length;
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const selectedCountSpan = document.getElementById('selectedCount');
+
+    if (selectedCount > 0) {
+        bulkBar.style.display = 'block';
+        selectedCountSpan.textContent = selectedCount + ' order(s) selected';
+    } else {
+        bulkBar.style.display = 'none';
+    }
+
+    // Update the number in submit button badges
+    document.getElementById('exportCountBadge').textContent = selectedCount;
+}
+
+// Clear selection
+function clearSelection() {
+    document.querySelectorAll('.order-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    document.getElementById('selectAllCheckbox').checked = false;
+    updateBulkBar();
+}
+
+// Move order to trash
+function moveToTrash(orderId, orderNumber) {
+    if (confirm(`Are you sure you want to move order "${orderNumber}" to trash?`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `{% url 'order_move_to_trash' 0 %}`.replace('0', orderId);
+        
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (csrfToken) {
+            form.appendChild(csrfToken.cloneNode(true));
+        }
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Confirm bulk action
+function confirmBulkAction() {
+    const action = document.querySelector('select[name="bulk_action"]').value;
+    const count = document.querySelectorAll('.order-checkbox:checked').length;
+
+    if (!action) {
+        alert('Please select an action');
+        return false;
+    }
+
+    if (action === 'delete') {
+        return confirm(`Are you sure you want to move ${count} order(s) to trash?`);
+    } else if (action === 'export_excel') {
+        return confirm(`Export ${count} order(s) to Excel?`);
+    }
+
+    return true;
+}
+
+// Export selected orders
+function exportSelectedOrders() {
+    const selectedIds = Array.from(document.querySelectorAll('.order-checkbox:checked'))
+        .map(checkbox => checkbox.value)
+        .join(',');
+
+    if (!selectedIds) {
+        alert('Please select at least one order');
+        return;
+    }
+
+    window.location.href = `{% url 'export_selected_orders_excel' %}?ids=${selectedIds}`;
+}
+
+// Bulk sync selected orders
+function bulkSyncSelectedOrders() {
+    const selectedIds = Array.from(document.querySelectorAll('.order-checkbox:checked'))
+        .map(checkbox => checkbox.value);
+
+    if (selectedIds.length === 0) {
+        alert('Please select at least one order');
+        return;
+    }
+
+    // Implement sync logic here
+    alert(`Syncing ${selectedIds.length} order(s)...`);
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateBulkBar();
+});
+</script>
+{% endblock %}

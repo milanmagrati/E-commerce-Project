@@ -3831,6 +3831,126 @@ def empty_orders_trash(request):
 
 @login_required
 @permission_required('can_view_orders')
+def return_orders_list(request):
+    """Display list of orders with Return status"""
+    from datetime import timedelta
+    from django.utils import timezone
+    from django.db.models import Q, Sum
+    from decimal import Decimal
+    import pytz
+    
+    # Get all orders with "Return" status
+    orders = Order.objects.filter(
+        is_deleted=False,
+        order_status__iexact='return'  # Case-insensitive search for 'Return' status
+    ).select_related(
+        'customer', 'created_by', 'status_setup', 
+        'payment_setup', 'payment_status_setup'
+    ).prefetch_related('items').order_by('-created_at')
+    
+    # GET FILTER PARAMETERS
+    search_query = request.GET.get('search', '')
+    payment_filter = request.GET.get('payment', '')
+    logistics_filter = request.GET.get('logistics_status', '')
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+    
+    # Apply filters
+    if search_query:
+        orders = orders.filter(
+            Q(order_number__icontains=search_query) |
+            Q(customer_name__icontains=search_query) |
+            Q(customer_phone__icontains=search_query) |
+            Q(customer_email__icontains=search_query)
+        )
+    
+    # Payment status filter
+    if payment_filter:
+        try:
+            payment_setup = Setup.objects.filter(
+                setup_type='payment_status',
+                name__iexact=payment_filter.replace('_', ' ')
+            ).first()
+            
+            if payment_setup:
+                orders = orders.filter(
+                    Q(payment_status_setup_id=payment_setup.id) |
+                    (Q(payment_status_setup_id__isnull=True) & Q(payment_status__iexact=payment_filter.replace('_', ' ')))
+                )
+            else:
+                orders = orders.filter(payment_status__iexact=payment_filter.replace('_', ' '))
+        except Exception:
+            orders = orders.filter(payment_status=payment_filter)
+    
+    # Logistics filter
+    if logistics_filter == 'sent':
+        orders = orders.exclude(ncm_order_id__isnull=True)
+    elif logistics_filter == 'not_sent':
+        orders = orders.filter(ncm_order_id__isnull=True)
+    
+    # Date filter
+    if start_date and end_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+        except ValueError:
+            pass
+    
+    # Calculate statistics
+    total_return_orders = orders.count()
+    total_return_amount = orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    pending_returns = orders.filter(payment_status='pending').count()
+    
+    # Calculate average return value
+    if total_return_orders > 0:
+        average_return_value = total_return_amount / Decimal(total_return_orders)
+    else:
+        average_return_value = Decimal('0')
+    
+    # Pagination
+    per_page = request.GET.get('per_page', '50')
+    if per_page not in ('50', '100', '200'):
+        per_page = '50'
+    paginator = Paginator(orders, int(per_page))
+    page_number = request.GET.get('page')
+    orders_page = paginator.get_page(page_number)
+    
+    # Fix decimal corruption in orders
+    for order in orders_page.object_list:
+        try:
+            fix_order_decimals(order)
+        except Exception:
+            pass
+    
+    # Get payment statuses for filters
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    payment_status_choices = [
+        (setup.name.lower().replace(' ', '_'), setup.name)
+        for setup in payment_setups
+    ]
+    
+    context = {
+        'orders': orders_page,
+        'total_return_orders': total_return_orders,
+        'total_return_amount': total_return_amount,
+        'pending_returns': pending_returns,
+        'average_return_value': average_return_value,
+        'search_query': search_query,
+        'payment_filter': payment_filter,
+        'logistics_filter': logistics_filter,
+        'start_date': start_date,
+        'end_date': end_date,
+        'per_page': per_page,
+        'payment_status_choices': payment_status_choices,
+        'page_obj': orders_page,
+    }
+    
+    return render(request, 'return_orders.html', context)
+
+
+@login_required
+@permission_required('can_view_orders')
 def order_invoice(request, order_id):
     order = get_object_or_404(Order, id=order_id, created_by=request.user)
     order_items = order.items.all()

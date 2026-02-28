@@ -73,6 +73,9 @@ urlpatterns = [
     path('orders/trash/bulk-action/', views.orders_trash_bulk_action, name='orders_trash_bulk_action'),
     path('orders/trash/empty/', views.empty_orders_trash, name='empty_orders_trash'),
     
+    # Return Orders
+    path('orders/returns/', views.return_orders_list, name='return_orders_list'),
+    
     
     
     # API Endpoints

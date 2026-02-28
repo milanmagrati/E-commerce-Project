@@ -539,6 +539,9 @@
                         <li class="{% if request.resolver_match.url_name == 'orders_list' %}active{% endif %}">
                             <a href="{% url 'orders_list' %}">All Orders</a>
                         </li>
+                        <li class="{% if request.resolver_match.url_name == 'return_orders_list' %}active{% endif %}">
+                            <a href="{% url 'return_orders_list' %}">Return Orders</a>
+                        </li>
                         {% if user.is_superuser or user.role == 'administrator' or user.can_create_orders %}
                         <li class="{% if request.resolver_match.url_name == 'order_create' %}active{% endif %}">
                             <a href="{% url 'order_create' %}">Create Order</a>
