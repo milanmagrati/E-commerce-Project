@@ -2747,7 +2747,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ============================================================
-// ORDER COMMENTS
+// ORDER COMMENTS WITH OPTIMISTIC UI UPDATE
 // ============================================================
 
 // Character counter for comment input
@@ -2773,6 +2773,88 @@ document.addEventListener('DOMContentLoaded', function() {
 
 {% if order.ncm_order_id %}
 /**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
+/**
+ * Format date/time for display
+ */
+function formatCommentTime(dateString) {
+    if (!dateString) return '';
+    try {
+        const d = new Date(dateString);
+        if (isNaN(d.getTime())) return dateString;
+        
+        const now = new Date();
+        const diffMs = now - d;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+        
+        if (diffMins < 1) return 'just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        
+        return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) +
+               ' ' + d.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+    } catch(e) {
+        return dateString;
+    }
+}
+
+/**
+ * Determine comment role and styling
+ */
+function getCommentRole(comment, author) {
+    const role = comment.role || '';
+    if (role === 'admin' || role === 'system') return role;
+    
+    // Default to NCM if author name contains 'ncm'
+    if (author && author.toLowerCase().includes('ncm')) return 'ncm';
+    return 'admin';
+}
+
+/**
+ * Render a single comment element
+ */
+function createCommentElement(comment) {
+    const text = comment.comment || comment.comments || comment.text || comment.message || '';
+    const author = comment.created_by || comment.author || comment.user || comment.name || 'User';
+    const time = comment.created_at || comment.date || comment.timestamp || '';
+    const statusLabel = comment.status || '';
+    const role = getCommentRole(comment, author);
+
+    const markerClass = role === 'ncm' ? 'marker-ncm' : (role === 'system' ? 'marker-system' : 'marker-admin');
+    const roleClass = role === 'ncm' ? 'role-ncm' : (role === 'system' ? 'role-system' : 'role-admin');
+    const roleLabel = role === 'ncm' ? 'NCM Staff' : (role === 'system' ? 'System' : 'You');
+    const initial = author.charAt(0).toUpperCase();
+    const timeDisplay = formatCommentTime(time);
+
+    const div = document.createElement('div');
+    div.className = 'ncm-comment-item';
+    div.innerHTML = `
+        <div class="ncm-comment-marker ${markerClass}">${initial}</div>
+        <div class="ncm-comment-body">
+            <div class="ncm-comment-meta">
+                <span class="ncm-comment-author">${escapeHtml(author)}</span>
+                <span class="ncm-comment-role-badge ${roleClass}">${roleLabel}</span>
+                ${statusLabel ? `<span class="ncm-comment-status-tag"><i class="fas fa-truck"></i> ${escapeHtml(statusLabel)}</span>` : ''}
+                ${timeDisplay ? `<span class="ncm-comment-time"><i class="fas fa-clock"></i> ${timeDisplay}</span>` : ''}
+            </div>
+            <div class="ncm-comment-text">${escapeHtml(text)}</div>
+        </div>
+    `;
+    return div;
+}
+
+/**
  * Fetch NCM comments via AJAX
  */
 function fetchNCMComments() {
@@ -2781,13 +2863,9 @@ function fetchNCMComments() {
     const refreshBtn = document.querySelector('.btn-comments-refresh');
 
     if (refreshBtn) refreshBtn.classList.add('spinning');
-
-    container.innerHTML = `
-        <div class="ncm-comments-loading">
-            <div class="ncm-comments-spinner"></div>
-            <p>Loading comments...</p>
-        </div>
-    `;
+    
+    // Update last fetch time
+    lastCommentFetchTime = Date.now();
 
     fetch(`/ncm/api/order/{{ order.id }}/comments/`)
         .then(response => response.json())
@@ -2800,23 +2878,30 @@ function fetchNCMComments() {
                 renderComments(comments, container);
             } else {
                 countBadge.textContent = '--';
-                container.innerHTML = `
-                    <div class="ncm-comments-error">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <span>${escapeHtml(data.message || 'Failed to load comments')}</span>
-                    </div>
-                `;
+                // Only show error if container was empty
+                if (container.innerHTML.trim() === '' || container.innerHTML.includes('ncm-comments-empty')) {
+                    container.innerHTML = `
+                        <div class="ncm-comments-error">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span>${escapeHtml(data.message || 'Failed to load comments')}</span>
+                        </div>
+                    `;
+                }
             }
         })
         .catch(error => {
             if (refreshBtn) refreshBtn.classList.remove('spinning');
             countBadge.textContent = '--';
-            container.innerHTML = `
-                <div class="ncm-comments-error">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <span>Network error. Please try again.</span>
-                </div>
-            `;
+            // Only show error if container was empty
+            if (container.innerHTML.trim() === '' || container.innerHTML.includes('ncm-comments-empty')) {
+                container.innerHTML = `
+                    <div class="ncm-comments-error">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <span>Network error. Please try again.</span>
+                    </div>
+                `;
+            }
+            console.error('Error fetching comments:', error);
         });
 }
 
@@ -2837,66 +2922,68 @@ function renderComments(comments, container) {
         return;
     }
 
-    let html = '';
-    comments.forEach(function(comment, index) {
-        const text = comment.comment || comment.comments || comment.text || comment.message || (typeof comment === 'string' ? comment : JSON.stringify(comment));
-        const author = comment.created_by || comment.author || comment.user || comment.name || 'NCM Staff';
-        const time = comment.created_at || comment.date || comment.timestamp || '';
-        const statusLabel = comment.status || '';
-        const role = comment.role || (author.toLowerCase().includes('ncm') ? 'ncm' : 'admin');
-
-        const markerClass = role === 'ncm' ? 'marker-ncm' : (role === 'system' ? 'marker-system' : 'marker-admin');
-        const roleClass = role === 'ncm' ? 'role-ncm' : (role === 'system' ? 'role-system' : 'role-admin');
-        const roleLabel = role === 'ncm' ? 'NCM' : (role === 'system' ? 'System' : 'Admin');
-        const initial = author.charAt(0).toUpperCase();
-
-        let timeDisplay = '';
-        if (time) {
-            try {
-                const d = new Date(time);
-                if (!isNaN(d.getTime())) {
-                    timeDisplay = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) +
-                                  ' ' + d.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
-                } else {
-                    timeDisplay = time;
-                }
-            } catch(e) {
-                timeDisplay = time;
-            }
-        }
-
-        html += `
-            <div class="ncm-comment-item">
-                <div class="ncm-comment-marker ${markerClass}">${initial}</div>
-                <div class="ncm-comment-body">
-                    <div class="ncm-comment-meta">
-                        <span class="ncm-comment-author">${escapeHtml(author)}</span>
-                        <span class="ncm-comment-role-badge ${roleClass}">${roleLabel}</span>
-                        ${statusLabel ? `<span class="ncm-comment-status-tag"><i class="fas fa-truck"></i> ${escapeHtml(statusLabel)}</span>` : ''}
-                        ${timeDisplay ? `<span class="ncm-comment-time"><i class="fas fa-clock"></i> ${escapeHtml(timeDisplay)}</span>` : ''}
-                    </div>
-                    <div class="ncm-comment-text">${escapeHtml(text)}</div>
-                </div>
-            </div>
-        `;
+    container.innerHTML = '';
+    
+    // Sort comments by date (oldest first)
+    const sortedComments = [...comments].sort((a, b) => {
+        const timeA = new Date(a.created_at || a.date || a.timestamp || 0);
+        const timeB = new Date(b.created_at || b.date || b.timestamp || 0);
+        return timeA - timeB;
     });
 
-    container.innerHTML = html;
+    sortedComments.forEach(comment => {
+        const element = createCommentElement(comment);
+        container.appendChild(element);
+    });
 }
 
 /**
- * Submit a new NCM comment
+ * Submit a new NCM comment with optimistic UI update
  */
 function submitNCMComment() {
     const input = document.getElementById('ncmCommentInput');
     const btn = document.getElementById('submitCommentBtn');
+    const container = document.getElementById('ncmCommentsContainer');
+    const countBadge = document.getElementById('commentsCount');
     const commentText = input.value.trim();
 
     if (!commentText) return;
 
+    // Prepare optimistic comment
+    const optimisticComment = {
+        comment: commentText,
+        created_by: 'You',
+        author: 'You',
+        created_at: new Date().toISOString(),
+        role: 'admin',
+        _optimistic: true
+    };
+
+    // Save original button state
+    const originalBtnHTML = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
 
+    // Immediately show the comment in the UI (optimistic update)
+    if (container.innerHTML.includes('ncm-comments-empty')) {
+        // If empty state, replace it
+        container.innerHTML = '';
+    }
+    
+    const optimisticElement = createCommentElement(optimisticComment);
+    optimisticElement.style.opacity = '0.7';
+    optimisticElement.style.animation = 'slideInUp 0.3s ease-out';
+    container.appendChild(optimisticElement);
+
+    // Update comment count
+    const currentCount = parseInt(countBadge.textContent) || 0;
+    countBadge.textContent = (currentCount + 1) + ' Comment' + (currentCount !== 0 ? 's' : '');
+
+    // Clear input
+    input.value = '';
+    document.getElementById('charCount').textContent = '0';
+
+    // Send to server
     fetch(`/ncm/api/order/{{ order.id }}/comments/add/`, {
         method: 'POST',
         headers: {
@@ -2907,38 +2994,58 @@ function submitNCMComment() {
     })
     .then(response => response.json())
     .then(data => {
+        // Reset button immediately regardless of success/error
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHTML;
+        
         if (data.success) {
-            input.value = '';
-            document.getElementById('charCount').textContent = '0';
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send';
-            showNotification('success', 'Comment added to NCM order');
-            fetchNCMComments();
+            showNotification('success', 'Comment sent successfully');
+            
+            // Fetch fresh comments from server quickly to show actual comment from DB
+            setTimeout(() => {
+                fetchNCMComments();
+            }, 100);
         } else {
-            showNotification('error', data.message || 'Failed to add comment');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send';
+            // Remove optimistic element if server rejected the comment
+            optimisticElement.remove();
+            countBadge.textContent = Math.max(0, currentCount) + ' Comment' + (currentCount !== 1 ? 's' : '');
+            
+            showNotification('error', data.message || 'Failed to send comment');
         }
     })
     .catch(error => {
-        showNotification('error', 'Network error. Please try again.');
+        // Reset button on error
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send';
+        btn.innerHTML = originalBtnHTML;
+        
+        // Remove optimistic element on network error
+        optimisticElement.remove();
+        countBadge.textContent = Math.max(0, currentCount) + ' Comment' + (currentCount !== 1 ? 's' : '');
+        
+        showNotification('error', 'Network error. Please try again.');
+        
+        console.error('Error submitting comment:', error);
     });
 }
 
-/**
- * Escape HTML to prevent XSS
- */
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
-}
-
 // Auto-fetch comments on page load
+let lastCommentFetchTime = 0;
+const MIN_FETCH_INTERVAL = 5000; // Minimum 5 seconds between fetches to avoid rate limiting
+
 document.addEventListener('DOMContentLoaded', function() {
     fetchNCMComments();
+    
+    // Auto-refresh comments every 5 seconds with rate limiting protection
+    setInterval(function() {
+        const container = document.getElementById('ncmCommentsContainer');
+        const now = Date.now();
+        
+        // Only fetch if enough time has passed and no optimistic comments are pending
+        if ((now - lastCommentFetchTime) >= MIN_FETCH_INTERVAL && 
+            container && !container.querySelector('[style*="opacity"]')) {
+            fetchNCMComments();
+        }
+    }, 5000);
 });
 {% endif %}
 </script>

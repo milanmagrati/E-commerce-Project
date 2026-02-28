@@ -10,14 +10,59 @@ from django.views.decorators.http import require_POST, require_http_methods
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
+from django.core.mail import send_mail
 from dashboard.models import Order, OrderActivityLog
 from services.ncm_service import NCMService
 import logging
 import json
+import threading
 from decimal import Decimal
 
 logger = logging.getLogger('ncm')
 ncm_service = NCMService()
+
+# Simple in-memory cache for comments to reduce API calls
+_comment_cache = {}
+_cache_timeout = 5  # Cache for 5 seconds
+
+
+def get_cached_comments(order_id):
+    """Get cached comments if still valid"""
+    cache_key = f"comments_{order_id}"
+    if cache_key in _comment_cache:
+        cached_data, timestamp = _comment_cache[cache_key]
+        if (timezone.now() - timestamp).total_seconds() < _cache_timeout:
+            return cached_data
+        else:
+            del _comment_cache[cache_key]
+    return None
+
+
+def set_cached_comments(order_id, data):
+    """Cache comments with current timestamp"""
+    cache_key = f"comments_{order_id}"
+    _comment_cache[cache_key] = (data, timezone.now())
+
+
+def send_ncm_comment_async(ncm_order_id, comment_text, order_id, user_id):
+    """
+    Send comment to NCM in background thread to avoid blocking the response.
+    This allows the API to return immediately to the user.
+    """
+    try:
+        result = ncm_service.create_order_comment(ncm_order_id, comment_text)
+        
+        if result['success']:
+            logger.info(f"NCM comment sent successfully for order {order_id}")
+            # Invalidate cache when new comment is sent
+            cache_key = f"comments_{order_id}"
+            if cache_key in _comment_cache:
+                del _comment_cache[cache_key]
+        else:
+            logger.warning(f"NCM comment failed for order {order_id}: {result.get('error')}")
+    except Exception as e:
+        logger.error(f"Error sending NCM comment for order {order_id}: {str(e)}")
+
 
 
 @login_required
@@ -335,8 +380,8 @@ def api_get_order_activity_log(request, order_id):
 def api_get_order_comments(request, order_id):
     """
     Fetch comments for an NCM order.
-    Pulls from both order details (comments field) and status history
-    (comment remarks from NCM staff on each status update).
+    Pulls from both local database (OrderActivityLog) and NCM system.
+    Uses caching to reduce API calls to NCM (429 rate limiting).
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
@@ -348,7 +393,34 @@ def api_get_order_comments(request, order_id):
                 'message': 'Order not in NCM system'
             })
 
+        # Check cache first
+        cached_comments = get_cached_comments(order_id)
+        if cached_comments:
+            return JsonResponse({
+                'success': True,
+                'order_id': order.id,
+                'ncm_order_id': order.ncm_order_id,
+                'comments': cached_comments,
+                'timestamp': timezone.now().isoformat(),
+                'cached': True
+            })
+
         all_comments = []
+
+        # 0. Fetch local comments from OrderActivityLog (user comments)
+        local_comments = OrderActivityLog.objects.filter(
+            order=order,
+            action_type__in=['notes_added', 'notes_updated']
+        ).order_by('created_at').values()
+        
+        for log in local_comments:
+            all_comments.append({
+                'comment': log.get('new_value', ''),
+                'created_by': log.get('user__username', 'You'),
+                'created_at': log.get('created_at').isoformat() if log.get('created_at') else '',
+                'role': 'admin',
+                'is_local': True
+            })
 
         # 1. Fetch order details - extract standalone comments
         details_result = ncm_service.get_order_details(order.ncm_order_id)
@@ -398,6 +470,9 @@ def api_get_order_comments(request, order_id):
                         'role': 'ncm'
                     })
 
+        # Cache the results to reduce API calls (429 rate limiting)
+        set_cached_comments(order_id, all_comments)
+
         return JsonResponse({
             'success': True,
             'order_id': order.id,
@@ -419,6 +494,7 @@ def api_get_order_comments(request, order_id):
 def api_add_order_comment(request, order_id):
     """
     Add a comment to an NCM order.
+    Returns immediately while comment is sent to NCM in background.
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
@@ -438,27 +514,30 @@ def api_add_order_comment(request, order_id):
                 'message': 'Comment text is required'
             }, status=400)
 
-        result = ncm_service.create_order_comment(order.ncm_order_id, comment_text)
+        # Create activity log immediately
+        OrderActivityLog.objects.create(
+            order=order,
+            action_type='notes_added',
+            user=request.user,
+            field_name='ncm_comment',
+            old_value='',
+            new_value=comment_text[:255],
+            description=f'NCM comment added: {comment_text[:100]}'
+        )
 
-        if result['success']:
-            OrderActivityLog.objects.create(
-                order=order,
-                action_type='notes_added',
-                user=request.user,
-                field_name='ncm_comment',
-                old_value='',
-                new_value=comment_text[:255],
-                description=f'NCM comment added: {comment_text[:100]}'
-            )
-            return JsonResponse({
-                'success': True,
-                'message': 'Comment added successfully'
-            })
-        else:
-            return JsonResponse({
-                'success': False,
-                'message': f"NCM API error: {result.get('error')}"
-            }, status=400)
+        # Send comment to NCM in background (non-blocking)
+        thread = threading.Thread(
+            target=send_ncm_comment_async,
+            args=(order.ncm_order_id, comment_text, order.id, request.user.id),
+            daemon=True
+        )
+        thread.start()
+
+        # Return success immediately to user
+        return JsonResponse({
+            'success': True,
+            'message': 'Comment sent successfully'
+        })
 
     except json.JSONDecodeError:
         return JsonResponse({
