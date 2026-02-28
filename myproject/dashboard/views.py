@@ -7762,6 +7762,27 @@ def return_detail(request, return_id):
                 return_request.refunded_at = timezone.now()
                 return_request.save()
                 
+                # ✅ Update order status to 'returned' with Setup link
+                from .models import Setup
+                order = return_request.order
+                order.status = 'returned'
+                order.order_status = 'returned'
+                
+                # Link to the "Returned" Setup object
+                try:
+                    returned_setup = Setup.objects.get(setup_type='status', name='Returned')
+                    order.status_setup = returned_setup
+                except Setup.DoesNotExist:
+                    # Fallback: create it if it doesn't exist
+                    returned_setup, _ = Setup.objects.get_or_create(
+                        setup_type='status',
+                        name='Returned',
+                        defaults={'is_active': True}
+                    )
+                    order.status_setup = returned_setup
+                
+                order.save()
+                
                 # Restock items - only restock good_qty items
                 restocked_count = 0
                 damaged_count = 0
@@ -8050,11 +8071,29 @@ def returns_bulk_action(request):
             refunded_count = 0
             total_restocked = 0
             total_damaged = 0
+            
+            # Get the "Returned" Setup object once
+            from .models import Setup
+            try:
+                returned_setup = Setup.objects.get(setup_type='status', name='Returned')
+            except Setup.DoesNotExist:
+                returned_setup, _ = Setup.objects.get_or_create(
+                    setup_type='status',
+                    name='Returned',
+                    defaults={'is_active': True}
+                )
 
             for ret in refunded_returns:
                 ret.return_status = 'refunded'
                 ret.refunded_at = timezone.now()
                 ret.save()
+                
+                # ✅ Update order status to 'returned' with Setup link
+                order = ret.order
+                order.status = 'returned'
+                order.order_status = 'returned'
+                order.status_setup = returned_setup
+                order.save()
 
                 # Restock good items
                 for item in ret.items.all():
@@ -8181,10 +8220,30 @@ def returns_batch_bulk_action(request):
         msg = f'{count} return(s) quality checked from {len(batch_ids)} batch(es)!'
 
     elif action == 'process_refund':
+        from .models import Setup
+        
+        # Get the "Returned" Setup object once
+        try:
+            returned_setup = Setup.objects.get(setup_type='status', name='Returned')
+        except Setup.DoesNotExist:
+            returned_setup, _ = Setup.objects.get_or_create(
+                setup_type='status',
+                name='Returned',
+                defaults={'is_active': True}
+            )
+        
         for ret in returns_qs.filter(return_status='inspecting'):
             ret.return_status = 'refunded'
             ret.refunded_at = timezone.now()
             ret.save()
+            
+            # ✅ Update order status to 'returned' with Setup link
+            order = ret.order
+            order.status = 'returned'
+            order.order_status = 'returned'
+            order.status_setup = returned_setup
+            order.save()
+            
             for item in ret.items.all():
                 restock_qty = item.good_qty
                 if restock_qty > 0:
