@@ -776,6 +776,9 @@
     }
 
     .variation-list {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
         max-height: 450px;
         overflow-y: auto;
         padding-right: 0.5rem;
@@ -797,22 +800,24 @@
 
     .variation-item {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 1rem;
+        justify-content: center;
+        gap: 0.75rem;
         padding: 1rem;
-        margin-bottom: 0.75rem;
         border: 2px solid #e2e8f0;
         border-radius: 8px;
         cursor: pointer;
         transition: all 0.3s ease;
         position: relative;
         background: white;
+        text-align: center;
     }
 
     .variation-item:hover {
         border-color: var(--primary);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
-        transform: translateX(4px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
+        transform: translateY(-4px);
     }
 
     .variation-item.selected {
@@ -846,6 +851,9 @@
 
     .variation-image-box {
         flex-shrink: 0;
+        width: 100%;
+        display: flex;
+        justify-content: center;
     }
 
     .variation-image-box img {
@@ -864,19 +872,25 @@
 
     .variation-info {
         flex: 1;
+        width: 100%;
     }
 
     .variation-name {
         font-size: 1rem;
         line-height: 1.3;
+        font-weight: 700;
+        color: #1f2937;
     }
 
     .variation-sku {
         font-size: 0.875rem;
+        color: #6b7280;
     }
 
     .variation-price {
         font-size: 1.1rem;
+        font-weight: 700;
+        color: #10b981;
     }
 
     .variation-stock .badge {
@@ -889,6 +903,32 @@
         margin: 0 -1rem -1rem;
         padding: 1rem;
         border-radius: 0 0 8px 8px;
+    }
+
+    /* Responsive grid for variations */
+    @media (max-width: 992px) {
+        .variation-list {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 576px) {
+        .variation-list {
+            grid-template-columns: 1fr;
+        }
+
+        .variation-item {
+            padding: 0.75rem;
+        }
+
+        .variation-image-box img {
+            width: 70px;
+            height: 70px;
+        }
+
+        .variation-name {
+            font-size: 0.9rem;
+        }
     }
 
     /* ✨ CUSTOM PRODUCT MODAL STYLES */
@@ -1724,9 +1764,11 @@
                 }
 
                 variationBody.innerHTML = `
-                    <div class="variation-header mb-3">
-                        <h6 class="mb-1"><strong>${productName}</strong></h6>
-                        <p class="text-muted small mb-0">Select a variation to add to cart</p>
+                    <div class="variation-header">
+                        <h5 class="fw-bold text-primary">
+                            <i class="fas fa-layer-group"></i> ${productName}
+                        </h5>
+                        <small>${variations.length} option(s) available</small>
                     </div>
                     <div class="variation-list">
                         ${variations.map(v => `

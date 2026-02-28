@@ -904,29 +904,36 @@
 
     .variation-header {
         text-align: center;
-        margin-bottom: 0.5rem;
-        padding-bottom: 0.35rem;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
         border-bottom: 1px solid #e2e8f0;
         flex-shrink: 0;
     }
 
     .variation-header h6 {
         font-size: 0.75rem !important;
-        margin-bottom: 0.15rem !important;
+        margin-bottom: 0 !important;
         font-weight: 500;
+        display: none;
     }
 
     .variation-header h5 {
-        font-size: 0.95rem !important;
-        margin-bottom: 0.1rem !important;
+        font-size: 0.9rem !important;
+        margin-bottom: 0.2rem !important;
+        font-weight: 700;
     }
 
     .variation-header small {
-        font-size: 0.7rem !important;
+        font-size: 0.75rem !important;
+        color: #6b7280 !important;
+        font-weight: 500;
     }
 
     .variation-list {
-        max-height: 350px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        max-height: 450px;
         overflow-y: auto;
         padding-right: 0.5rem;
         flex: 1;
@@ -949,22 +956,24 @@
 
     .variation-item {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem;
-        margin-bottom: 0.35rem;
+        justify-content: center;
+        gap: 0.75rem;
+        padding: 1rem;
         border: 2px solid #e2e8f0;
-        border-radius: 6px;
+        border-radius: 8px;
         cursor: pointer;
         transition: all 0.3s ease;
         position: relative;
         background: white;
+        text-align: center;
     }
 
     .variation-item:hover {
         border-color: var(--primary);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
-        transform: translateX(4px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
+        transform: translateY(-4px);
     }
 
     .variation-item.selected {
@@ -998,13 +1007,16 @@
 
     .variation-image-box {
         flex-shrink: 0;
+        width: 100%;
+        display: flex;
+        justify-content: center;
     }
 
     .variation-image-box img {
-        width: 55px;
-        height: 55px;
+        width: 80px;
+        height: 80px;
         object-fit: cover;
-        border-radius: 5px;
+        border-radius: 6px;
         border: 1px solid #e2e8f0;
         transition: all 0.3s ease;
     }
@@ -1016,25 +1028,28 @@
 
     .variation-info {
         flex: 1;
+        width: 100%;
     }
 
     .variation-name {
-        font-size: 0.88rem;
-        line-height: 1.15;
-        font-weight: 600;
-        margin-bottom: 0.1rem;
+        font-size: 0.9rem;
+        line-height: 1.3;
+        font-weight: 700;
+        margin-bottom: 0.3rem;
+        color: #1f2937;
     }
 
     .variation-sku {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         color: #6b7280;
-        margin-bottom: 0.1rem;
+        margin-bottom: 0.4rem;
     }
 
     .variation-price {
-        font-size: 0.95rem;
+        font-size: 1rem;
         font-weight: 700;
-        margin-bottom: 0.05rem;
+        margin-bottom: 0.4rem;
+        color: #10b981;
     }
 
     .variation-stock .badge {
@@ -1920,6 +1935,32 @@
 
         .product-detail-row {
             padding: 6px 0;
+        }
+    }
+
+    /* Responsive grid for variations */
+    @media (max-width: 992px) {
+        .variation-list {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 576px) {
+        .variation-list {
+            grid-template-columns: 1fr;
+        }
+
+        .variation-item {
+            padding: 0.75rem;
+        }
+
+        .variation-image-box img {
+            width: 70px;
+            height: 70px;
+        }
+
+        .variation-name {
+            font-size: 0.85rem;
         }
     }
 
@@ -4898,10 +4939,11 @@
 
                 // ✨ CLEAN & PROFESSIONAL CARD DESIGN
                 body.innerHTML = `
-                    <div class="variation-header mb-3 pb-3 border-bottom">
-                        <h6 class="text-muted mb-1"><i class="fas fa-layer-group"></i> Select Variation for</h6>
-                        <h5 class="fw-bold text-primary mb-0">${escapeHtml(productName)}</h5>
-                        <small class="text-muted">${variations.length} option(s) available</small>
+                    <div class="variation-header">
+                        <h5 class="fw-bold text-primary">
+                            <i class="fas fa-layer-group"></i> ${escapeHtml(productName)}
+                        </h5>
+                        <small>${variations.length} option(s) available</small>
                     </div>
 
                     <div class="variation-list" id="variationList">
