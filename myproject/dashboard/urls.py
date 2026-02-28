@@ -35,6 +35,7 @@ urlpatterns = [
     # Category URLs
     path('categories/', views.category_list, name='category_list'),
     path('categories/<int:category_id>/delete/', views.category_delete, name='category_delete'),
+    path('categories/<int:category_id>/edit/', views.category_edit, name='category_edit'),
     path('add-category/', views.add_category_ajax, name='add_category_ajax'),
     
       path('products/<int:product_id>/variations/', views.product_variations, name='product_variations'),

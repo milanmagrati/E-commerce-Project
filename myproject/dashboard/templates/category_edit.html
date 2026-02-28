@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Edit Category - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <a href="{% url 'category_list' %}" class="btn btn-secondary btn-sm mb-3">
+            <i class="fas fa-arrow-left"></i> Back to Categories
+        </a>
+        <h2>Edit Category</h2>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label class="form-label">Category Name *</label>
+                <input type="text" class="form-control" name="name" value="{{ category.name }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Slug *</label>
+                <input type="text" class="form-control" name="slug" id="categorySlug" value="{{ category.slug }}" required>
+                <small class="text-muted">URL-friendly name</small>
+            </div>
+            <div class="mb-0">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="{% url 'category_list' %}" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Auto-generate slug from category name on change
+    document.querySelector('input[name="name"]').addEventListener('input', function(e) {
+        const slug = e.target.value
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        document.getElementById('categorySlug').value = slug;
+    });
+</script>
+{% endblock %}

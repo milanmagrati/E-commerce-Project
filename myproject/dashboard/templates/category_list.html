@@ -31,6 +31,9 @@
                         <td><code>{{ category.slug }}</code></td>
                         <td>{{ category.created_at|date:"d M, Y" }}</td>
                         <td>
+                            <a href="{% url 'category_edit' category.id %}" class="btn btn-sm btn-warning">
+                                <i class="fas fa-edit"></i> Edit
+                            </a>
                             <form method="post" action="{% url 'category_delete' category.id %}" style="display:inline;">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')">

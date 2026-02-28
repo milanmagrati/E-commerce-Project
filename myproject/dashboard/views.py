@@ -2027,6 +2027,33 @@ def category_delete(request, category_id):
 
 
 @login_required
+@admin_only
+def category_edit(request, category_id):
+    category = get_object_or_404(Category, id=category_id)
+    
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        slug = request.POST.get('slug')
+        
+        if name and slug:
+            # Check if slug is already taken by another category
+            if Category.objects.filter(slug=slug).exclude(id=category_id).exists():
+                messages.error(request, 'A category with this slug already exists!')
+                return redirect('category_edit', category_id=category_id)
+            
+            category.name = name
+            category.slug = slug
+            category.save()
+            messages.success(request, f'Category "{name}" updated successfully!')
+            return redirect('category_list')
+    
+    context = {
+        'category': category,
+    }
+    return render(request, 'category_edit.html', context)
+
+
+@login_required
 @permission_required('can_edit_products')
 def product_variations(request, product_id):
     product = get_object_or_404(Product, id=product_id, user=request.user)
