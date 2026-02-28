@@ -11331,12 +11331,25 @@ def financial_report_data(request):
 
         # Daily summary - calculate expenses from product cost_price
         # Group by date and calculate sum of (product_cost_price * quantity) for all items in each order
+        # ✅ ONLY INCLUDE DISPATCHED ORDERS (orders that have DispatchItem entries)
         from django.db.models import DecimalField
         from django.db.models.functions import Coalesce
         
+        # Get list of order IDs that have been dispatched
+        from .models import DispatchItem
+        dispatched_order_ids = DispatchItem.objects.filter(
+            order__isnull=False
+        ).values_list('order_id', flat=True).distinct()
+        
+        logger.info(f"✅ Total dispatched orders: {len(dispatched_order_ids)}")
+        
+        # Filter orders to only those that have been dispatched
+        dispatched_orders = orders.filter(id__in=dispatched_order_ids)
+        logger.info(f"✅ Orders in selected period that are dispatched: {dispatched_orders.count()}")
+        
         daily_data = {}
         
-        for order in orders:
+        for order in dispatched_orders:
             order_date = order.created_at.date()
             
             # Calculate total cost for this order (cost of all items)
@@ -11374,9 +11387,15 @@ def financial_report_data(request):
             if day['date']:
                 day['date'] = str(day['date'])
 
-        # NCM Delivery Revenue Table - show all NCM orders with status
+        # NCM Delivery Revenue Table - show only DELIVERED + PAID NCM orders
+        delivered_paid_orders = orders.filter(
+            ncm_status__icontains='delivered',
+            payment_status='paid'
+        )
+        logger.info(f"✅ NCM Delivered & Paid orders in period: {delivered_paid_orders.count()}")
+        
         ncm_revenue_list = list(
-            orders.values(
+            delivered_paid_orders.values(
                 'delivered_at', 'id', 'order_number', 'customer__name', 'ncm_order_id', 'ncm_status',
                 'total_amount', 'shipping_charge', 'delivery_charge', 'payment_status', 'payment_method', 'cod_collected', 'created_at'
             )

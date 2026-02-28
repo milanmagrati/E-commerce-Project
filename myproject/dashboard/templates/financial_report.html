@@ -119,7 +119,13 @@
     <div class="row mb-4">
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-primary text-white"><i class="fas fa-table"></i> Daily Summary <span class="table-badge" id="dailySummaryCount">0</span></div>
+                <div class="card-header bg-gradient-primary text-white">
+                    <i class="fas fa-table"></i> Daily Summary 
+                    <span class="table-badge" id="dailySummaryCount">0</span>
+                    <small style="font-size: 0.75rem; font-weight: normal; margin-left: 12px; opacity: 0.9;">
+                        <i class="fas fa-info-circle"></i> Shows only dispatched orders
+                    </small>
+                </div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="dailySummaryTable">
                         <thead class="table-light">
@@ -162,7 +168,12 @@
         </div>
         <div class="col-12 mb-3">
             <div class="card">
-                <div class="card-header bg-gradient-ncm text-white"><i class="fas fa-table"></i> NCM Delivery Revenue <span class="table-badge" id="ncmRevenueCount">0</span>
+                <div class="card-header bg-gradient-ncm text-white">
+                    <i class="fas fa-table"></i> NCM Delivery Revenue
+                    <span class="table-badge" id="ncmRevenueCount">0</span>
+                    <small style="font-size: 0.75rem; font-weight: normal; margin-left: 12px; opacity: 0.9;">
+                        <i class="fas fa-check-circle"></i> Shows only delivered & paid orders
+                    </small>
                 </div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover" id="ncmRevenueTable">
@@ -1247,19 +1258,58 @@
                         throw new Error('Invalid JSON response from server');
                     }
                 }).then(data => {
-                    if (!data.success && data.error) {
+                    if (data.error) {
                         console.error('❌ API returned error:', data.error);
                         throw new Error(data.message || data.error);
                     }
-                    console.log('✅ Data received successfully with', data.ncm_revenue?.length || 0, 'orders');
+                    if (!data || typeof data !== 'object') {
+                        throw new Error('Invalid response format from server');
+                    }
+                    console.log('✅ Data received successfully');
                     return data;
                 });
             })
             .catch(error => {
                 console.error('❌ Fetch error:', error);
                 showErrorAlert('Error loading financial report: ' + error.message);
-                throw error;
+                return Promise.reject(error);
             });
+    }
+
+    // Export functions
+    function exportTable(format) {
+        if (format === 'excel') {
+            console.log('📥 Exporting to Excel...');
+            // Get all table data and export
+            const tables = document.querySelectorAll('table');
+            if (tables.length === 0) {
+                showErrorAlert('No tables to export');
+                return;
+            }
+            // Simple CSV export
+            let csv = '';
+            tables.forEach((table, idx) => {
+                if (idx > 0) csv += '\n\n';
+                const rows = table.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td, th');
+                    csv += Array.from(cells).map(cell => '"' + cell.textContent.trim().replace(/"/g, '""') + '"').join(',') + '\n';
+                });
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'financial_report_' + new Date().toISOString().split('T')[0] + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else if (format === 'pdf') {
+            console.log('📥 PDF export requires additional library');
+            showErrorAlert('PDF export requires jsPDF library. Using print instead.');
+            window.print();
+        }
     }
 
     // Improved error display function
@@ -1282,6 +1332,7 @@
     }
 
     function renderStats(stats) {
+        if (!stats) return;
         const formatNumber = (val, decimals = 2) => {
             if (val === null || val === undefined) return '0' + (decimals > 0 ? '.' + '0'.repeat(decimals) : '');
             try {
@@ -1296,12 +1347,23 @@
         console.log('💰 Rendering stats:', stats);
 
         try {
-            document.getElementById('totalRevenue').textContent = formatNumber(stats.total_revenue, 2);
-            document.getElementById('ordersDelivered').textContent = stats.orders_delivered || '0';
-            document.getElementById('codCollected').textContent = formatNumber(stats.cod_collected, 2);
-            document.getElementById('pendingPayments').textContent = formatNumber(stats.pending_payments, 2);
-            document.getElementById('netProfit').textContent = formatNumber(stats.net_profit, 2);
-            document.getElementById('ncmDeliveryCharges').textContent = formatNumber(stats.ncm_delivery_charges, 2);
+            const totalRevenueEl = document.getElementById('totalRevenue');
+            if (totalRevenueEl) totalRevenueEl.textContent = formatNumber(stats.total_revenue, 2);
+            
+            const ordersDeliveredEl = document.getElementById('ordersDelivered');
+            if (ordersDeliveredEl) ordersDeliveredEl.textContent = stats.orders_delivered || '0';
+            
+            const codCollectedEl = document.getElementById('codCollected');
+            if (codCollectedEl) codCollectedEl.textContent = formatNumber(stats.cod_collected, 2);
+            
+            const pendingPaymentsEl = document.getElementById('pendingPayments');
+            if (pendingPaymentsEl) pendingPaymentsEl.textContent = formatNumber(stats.pending_payments, 2);
+            
+            const netProfitEl = document.getElementById('netProfit');
+            if (netProfitEl) netProfitEl.textContent = formatNumber(stats.net_profit, 2);
+            
+            const ncmDeliveryChargesEl = document.getElementById('ncmDeliveryCharges');
+            if (ncmDeliveryChargesEl) ncmDeliveryChargesEl.textContent = formatNumber(stats.ncm_delivery_charges, 2);
         } catch (error) {
             console.error('Error rendering stats:', error);
             showErrorAlert('Error rendering statistics: ' + error.message);
@@ -1309,6 +1371,7 @@
     }
 
     function renderKeyMetrics(metrics) {
+        if (!metrics) return;
         const formatNumber = (val, decimals = 2) => {
             if (val === null || val === undefined) return '0' + (decimals > 0 ? '.' + '0'.repeat(decimals) : '');
             try {
@@ -1321,10 +1384,17 @@
         };
 
         try {
-            document.getElementById('avgOrderValue').textContent = formatNumber(metrics.avg_order_value, 2);
-            document.getElementById('totalNcmCharges').textContent = formatNumber(metrics.total_ncm_charges, 2);
-            document.getElementById('profitMargin').textContent = formatNumber(metrics.profit_margin, 2) + '%';
-            document.getElementById('codCollectionRate').textContent = formatNumber(metrics.cod_collection_rate, 2) + '%';
+            const avgOrderValueEl = document.getElementById('avgOrderValue');
+            if (avgOrderValueEl) avgOrderValueEl.textContent = formatNumber(metrics.avg_order_value, 2);
+            
+            const totalNcmChargesEl = document.getElementById('totalNcmCharges');
+            if (totalNcmChargesEl) totalNcmChargesEl.textContent = formatNumber(metrics.total_ncm_charges, 2);
+            
+            const profitMarginEl = document.getElementById('profitMargin');
+            if (profitMarginEl) profitMarginEl.textContent = formatNumber(metrics.profit_margin, 2) + '%';
+            
+            const codCollectionRateEl = document.getElementById('codCollectionRate');
+            if (codCollectionRateEl) codCollectionRateEl.textContent = formatNumber(metrics.cod_collection_rate, 2) + '%';
         } catch (error) {
             console.error('Error rendering key metrics:', error);
         }
@@ -1332,7 +1402,15 @@
 
     function renderPaymentStatusTablePaginated(data) {
         const table = document.getElementById('paymentStatusTable');
+        if (!table) {
+            console.warn('⚠️ Payment status table not found');
+            return;
+        }
         const tbody = table.querySelector('tbody');
+        if (!tbody) {
+            console.warn('⚠️ Payment status table body not found');
+            return;
+        }
         tbody.innerHTML = '';
 
         if (!data || data.length === 0) {
@@ -1377,7 +1455,15 @@
 
     function renderBranchSummaryTablePaginated(data) {
         const table = document.getElementById('branchSummaryTable');
+        if (!table) {
+            console.warn('⚠️ Branch summary table not found');
+            return;
+        }
         const tbody = table.querySelector('tbody');
+        if (!tbody) {
+            console.warn('⚠️ Branch summary table body not found');
+            return;
+        }
         tbody.innerHTML = '';
 
         if (!data || data.length === 0) {
@@ -1430,7 +1516,15 @@
 
     function renderDailySummaryTablePaginated(data) {
         const table = document.getElementById('dailySummaryTable');
+        if (!table) {
+            console.warn('⚠️ Daily summary table not found');
+            return;
+        }
         const tbody = table.querySelector('tbody');
+        if (!tbody) {
+            console.warn('⚠️ Daily summary table body not found');
+            return;
+        }
         tbody.innerHTML = '';
 
         if (!data || data.length === 0) {
@@ -1501,7 +1595,15 @@
 
     function renderNcmRevenueTablePaginated(data) {
         const table = document.getElementById('ncmRevenueTable');
+        if (!table) {
+            console.warn('⚠️ NCM Revenue table not found');
+            return;
+        }
         const tbody = table.querySelector('tbody');
+        if (!tbody) {
+            console.warn('⚠️ NCM Revenue table body not found');
+            return;
+        }
         tbody.innerHTML = '';
 
         if (!data || data.length === 0) {
@@ -1515,23 +1617,33 @@
         }
 
         data.forEach(row => {
-            const tr = document.createElement('tr');
+            try {
+                const tr = document.createElement('tr');
 
-            // Format delivered_at date (falls back to created_at from backend)
-            const dateCell = document.createElement('td');
-            const rawDate = row.delivered_at || row.created_at;
-            if (rawDate) {
-                // Ensure ISO format for cross-browser compat
-                const dateStr = rawDate.includes('T') ? rawDate : rawDate.replace(' ', 'T');
-                const date = new Date(dateStr);
-                if (!isNaN(date.getTime())) {
-                    dateCell.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                // Format delivered_at date (falls back to created_at from backend)
+                const dateCell = document.createElement('td');
+                const rawDate = row.delivered_at || row.created_at;
+                if (rawDate) {
+                    try {
+                        // Parse date safely
+                        let dateObj;
+                        if (typeof rawDate === 'string') {
+                            dateObj = new Date(rawDate);
+                        } else {
+                            dateObj = new Date(rawDate);
+                        }
+                        if (!isNaN(dateObj.getTime())) {
+                            dateCell.textContent = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString();
+                        } else {
+                            dateCell.textContent = String(rawDate);
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Error parsing date:', rawDate);
+                        dateCell.textContent = String(rawDate);
+                    }
                 } else {
-                    dateCell.textContent = rawDate;
+                    dateCell.textContent = '-';
                 }
-            } else {
-                dateCell.textContent = '-';
-            }
 
             // Order number
             const orderCell = document.createElement('td');
@@ -1564,15 +1676,18 @@
             }
             codCell.textContent = codAmount;
 
-            tr.appendChild(dateCell);
-            tr.appendChild(orderCell);
-            tr.appendChild(customerCell);
-            tr.appendChild(statusCell);
-            tr.appendChild(chargeCell);
-            tr.appendChild(paymentCell);
-            tr.appendChild(codCell);
+                tr.appendChild(dateCell);
+                tr.appendChild(orderCell);
+                tr.appendChild(customerCell);
+                tr.appendChild(statusCell);
+                tr.appendChild(chargeCell);
+                tr.appendChild(paymentCell);
+                tr.appendChild(codCell);
 
-            tbody.appendChild(tr);
+                tbody.appendChild(tr);
+            } catch (rowError) {
+                console.error('⚠️ Error rendering table row:', row, rowError);
+            }
         });
     }
 
@@ -1594,6 +1709,7 @@
 
     let dailyRevenueChart, paymentMethodChart, revenueVsExpensesChart;
     function renderCharts(data) {
+        if (!data) return;
         console.log('📊 Rendering charts with data:', {
             dailyRevenueCount: data.daily_revenue?.length || 0,
             paymentMethodsCount: data.payment_methods?.length || 0,
@@ -1601,86 +1717,102 @@
         });
 
         // Daily Revenue Line Chart
-        const drLabels = (data.daily_revenue || []).map(x => {
-            if (x.date) {
-                const d = new Date(x.date);
-                return d.toLocaleDateString();
-            }
-            return '';
-        });
-        const drData = (data.daily_revenue || []).map(x => x.amount || 0);
-
-        if (dailyRevenueChart) dailyRevenueChart.destroy();
-        const drCanvas = document.getElementById('dailyRevenueChart');
-        if (drCanvas) {
-            dailyRevenueChart = new Chart(drCanvas, {
-                type: 'line',
-                data: {
-                    labels: drLabels.length ? drLabels : ['No data'],
-                    datasets: [{
-                        label: 'Revenue',
-                        data: drData.length ? drData : [0],
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102,126,234,0.1)',
-                        tension: 0.3,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { beginAtZero: true }
+        try {
+            const drLabels = (data.daily_revenue || []).map(x => {
+                if (x.date) {
+                    try {
+                        const d = new Date(x.date);
+                        return d.toLocaleDateString();
+                    } catch (e) {
+                        return String(x.date);
                     }
                 }
+                return '';
             });
+            const drData = (data.daily_revenue || []).map(x => x.amount || 0);
+
+            if (dailyRevenueChart) dailyRevenueChart.destroy();
+            const drCanvas = document.getElementById('dailyRevenueChart');
+            if (drCanvas) {
+                dailyRevenueChart = new Chart(drCanvas, {
+                    type: 'line',
+                    data: {
+                        labels: drLabels.length ? drLabels : ['No data'],
+                        datasets: [{
+                            label: 'Revenue',
+                            data: drData.length ? drData : [0],
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102,126,234,0.1)',
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('⚠️ Error rendering daily revenue chart:', e);
         }
 
         // Payment Method Pie Chart
-        const pmLabels = (data.payment_methods || []).map(x => x.payment_method || 'Unknown').filter(x => x);
-        const pmData = (data.payment_methods || []).map(x => x.amount || 0);
+        try {
+            const pmLabels = (data.payment_methods || []).map(x => x.payment_method || 'Unknown').filter(x => x);
+            const pmData = (data.payment_methods || []).map(x => x.amount || 0);
 
-        if (paymentMethodChart) paymentMethodChart.destroy();
-        const pmCanvas = document.getElementById('paymentMethodChart');
-        if (pmCanvas) {
-            paymentMethodChart = new Chart(pmCanvas, {
-                type: 'pie',
-                data: {
-                    labels: pmLabels.length ? pmLabels : ['No data'],
-                    datasets: [{
-                        data: pmData.length ? pmData : [0],
-                        backgroundColor: ['#667eea', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#3b82f6']
-                    }]
-                },
-                options: { responsive: true }
-            });
+            if (paymentMethodChart) paymentMethodChart.destroy();
+            const pmCanvas = document.getElementById('paymentMethodChart');
+            if (pmCanvas) {
+                paymentMethodChart = new Chart(pmCanvas, {
+                    type: 'pie',
+                    data: {
+                        labels: pmLabels.length ? pmLabels : ['No data'],
+                        datasets: [{
+                            data: pmData.length ? pmData : [0],
+                            backgroundColor: ['#667eea', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#3b82f6']
+                        }]
+                    },
+                    options: { responsive: true }
+                });
+            }
+        } catch (e) {
+            console.error('⚠️ Error rendering payment method chart:', e);
         }
 
         // Revenue vs Expenses Bar Chart
-        const reLabels = (data.revenue_vs_expenses || []).map(x => x.label || '');
-        const reData = (data.revenue_vs_expenses || []).map(x => x.amount || 0);
+        try {
+            const reLabels = (data.revenue_vs_expenses || []).map(x => x.label || '');
+            const reData = (data.revenue_vs_expenses || []).map(x => x.amount || 0);
 
-        if (revenueVsExpensesChart) revenueVsExpensesChart.destroy();
-        const reCanvas = document.getElementById('revenueVsExpensesChart');
-        if (reCanvas) {
-            revenueVsExpensesChart = new Chart(reCanvas, {
-                type: 'bar',
-                data: {
-                    labels: reLabels.length ? reLabels : ['No data'],
-                    datasets: [{
-                        label: 'Amount',
-                        data: reData.length ? reData : [0],
-                        backgroundColor: ['#667eea', '#f59e0b', '#ef4444', '#10b981']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { beginAtZero: true }
+            if (revenueVsExpensesChart) revenueVsExpensesChart.destroy();
+            const reCanvas = document.getElementById('revenueVsExpensesChart');
+            if (reCanvas) {
+                revenueVsExpensesChart = new Chart(reCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: reLabels.length ? reLabels : ['No data'],
+                        datasets: [{
+                            label: 'Amount',
+                            data: reData.length ? reData : [0],
+                            backgroundColor: ['#667eea', '#f59e0b', '#ef4444', '#10b981']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
                     }
-                }
-            });
+                });
+            }
+        } catch (e) {
+            console.error('⚠️ Error rendering revenue vs expenses chart:', e);
         }
     }
 
