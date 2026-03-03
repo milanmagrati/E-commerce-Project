@@ -449,9 +449,19 @@ def api_get_order_comments(request, order_id):
                         'role': 'ncm'
                     })
 
-        # Note: NCM vendor API does not expose a GET endpoint for staff comments.
-        # Comments posted via POST /comment are write-only from the vendor side.
-        # NCM staff replies are only visible on the NCM portal.
+        # Fetch NCM Staff comments from /ordercomment endpoint
+        try:
+            staff_result = ncm_service.get_staff_comments(order.ncm_order_id)
+            if staff_result.get('success'):
+                staff_comments = staff_result.get('data', [])
+                # De-duplicate: skip staff comments whose text already exists
+                existing_texts = {c.get('comment', '').strip().lower() for c in all_comments}
+                for sc in staff_comments:
+                    if sc.get('comment', '').strip().lower() not in existing_texts:
+                        all_comments.append(sc)
+                        existing_texts.add(sc.get('comment', '').strip().lower())
+        except Exception as staff_err:
+            logger.warning(f"Could not fetch NCM staff comments for order {order.ncm_order_id}: {staff_err}")
 
         # Cache the results to reduce API calls (429 rate limiting)
         set_cached_comments(order_id, all_comments)

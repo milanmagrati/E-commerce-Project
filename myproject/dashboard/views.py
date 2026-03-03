@@ -993,7 +993,14 @@ def _get_bundle_context():
     simple_products = Product.objects.filter(
         is_deleted=False, is_active=True
     ).exclude(product_type='bundle').order_by('name')
-    return {'simple_products': simple_products}
+    # Build a JSON map of product_id -> cost_price for JS auto-calculation
+    product_cost_map = {
+        str(p.id): float(p.average_cost) for p in simple_products
+    }
+    return {
+        'simple_products': simple_products,
+        'product_cost_map_json': json.dumps(product_cost_map),
+    }
 
 
 @login_required
@@ -1343,9 +1350,10 @@ def product_detail(request, product_id):
     product = get_object_or_404(Product, pk=product_id, is_deleted=False)
     # FIXED: Refresh from database to get latest changes
     product.refresh_from_db()
-    
+
     try:
-        profit = (product.price or 0) - (product.cost_price or 0)
+        effective_cost = product.average_cost if product.average_cost else (product.cost_price or 0)
+        profit = (product.price or 0) - effective_cost
     except Exception:
         profit = 0
 
@@ -1429,9 +1437,11 @@ def product_detail(request, product_id):
     variations = ProductVariation.objects.filter(product=product).order_by('created_at')
     
     # Calculate profit margin
+    effective_cost = product.average_cost if product.average_cost else (product.cost_price or 0)
     profit_margin = 0
-    if product.cost_price and product.cost_price > 0:
-        profit_margin = ((product.price - product.cost_price) / product.price) * 100
+    if effective_cost and effective_cost > 0 and product.price and product.price > 0:
+        profit_margin = ((product.price - effective_cost) / product.price) * 100
+    profit = (product.price or 0) - effective_cost
     
     # Get user permissions
     user_permissions = {
@@ -1442,13 +1452,20 @@ def product_detail(request, product_id):
         'is_administrator': request.user.role == 'administrator',
     }
     
+    # Bundle components for bundle products
+    bundle_components = []
+    if product.is_bundle:
+        bundle_components = product.bundle_components.select_related('component_product').all()
+
     context = {
         'product': product,
         'variations': variations,  # ADDED: Explicitly pass variations
         'product_images': product_images,
-        'order_items': order_items,
+        'recent_items': order_items,
+        'profit': profit,
         'profit_margin': profit_margin,
         'user_permissions': user_permissions,  # ADDED: Pass user permissions
+        'bundle_components': bundle_components,
     }
     
     return render(request, 'product_detail.html', context)

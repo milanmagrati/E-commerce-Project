@@ -331,6 +331,10 @@
                                             <i class="fas fa-tags"></i>
                                             {{ item.product_variation.variation_name|default:item.product_variation.sku }}
                                         </span>
+                                    {% elif item.product and item.product.product_type == 'bundle' %}
+                                        <span class="bundle-product-label">
+                                            <i class="fas fa-boxes-stacked"></i> Bundle
+                                        </span>
                                     {% else %}
                                         <span class="simple-product-label">
                                             <i class="fas fa-box-open"></i> Simple
@@ -2359,6 +2363,22 @@ tfoot td strong.text-danger {
     gap: 0.25rem;
     box-shadow: 0 1px 3px rgba(245, 158, 11, 0.3);
 }
+
+/* Bundle Product Badge */
+.bundle-product-label {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    box-shadow: 0 1px 3px rgba(139, 92, 246, 0.3);
+}
 </style>
 
 <script>
@@ -2826,10 +2846,10 @@ function getCommentRole(comment, author) {
  */
 function createCommentElement(comment) {
     const text = comment.comment || comment.comments || comment.text || comment.message || '';
-    const author = comment.created_by || comment.author || comment.user || comment.name || 'User';
-    const time = comment.created_at || comment.date || comment.timestamp || '';
+    const author = comment.created_by || comment.addedBy || comment.author || comment.user || comment.name || 'User';
+    const time = comment.created_at || comment.added_time || comment.addedtime || comment.date || comment.timestamp || '';
     const statusLabel = comment.status || '';
-    const role = getCommentRole(comment, author);
+    const role = comment.is_ncm_staff ? 'ncm' : getCommentRole(comment, author);
 
     const markerClass = role === 'ncm' ? 'marker-ncm' : (role === 'system' ? 'marker-system' : 'marker-admin');
     const roleClass = role === 'ncm' ? 'role-ncm' : (role === 'system' ? 'role-system' : 'role-admin');

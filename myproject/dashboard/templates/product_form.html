@@ -142,11 +142,19 @@
                         <label class="form-label fw-bold">Selling Price (रू) <span class="text-danger">*</span></label>
                         {{ form.price }}
                     </div>
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-4 mb-3" id="costPriceField">
                         <label class="form-label fw-bold">Cost Price (रू) <span class="text-danger">*</span></label>
                         {{ form.cost_price }}
+                        <!-- Bundle auto-calculated cost display -->
+                        <div id="bundleCostDisplay" style="display: none;">
+                            <div class="input-group">
+                                <span class="input-group-text bg-purple-light"><i class="fas fa-calculator"></i></span>
+                                <input type="text" class="form-control fw-bold" id="bundleCostTotal" readonly placeholder="0.00">
+                            </div>
+                            <small class="text-muted"><i class="fas fa-info-circle"></i> Auto-calculated from components</small>
+                        </div>
                     </div>
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-4 mb-3" id="stockField">
                         <label class="form-label fw-bold">Stock Quantity <span class="text-danger">*</span></label>
                         {{ form.stock }}
                     </div>
@@ -335,7 +343,7 @@
                             </div>
                             <div class="card-body py-2">
                                 <div class="row align-items-end">
-                                    <div class="col-md-7 mb-2">
+                                    <div class="col-md-5 mb-2">
                                         <label class="form-label fw-bold">Product</label>
                                         <select name="bundle_component_product_{{ forloop.counter0 }}" class="form-select component-product-select" required>
                                             <option value="">-- Select product --</option>
@@ -346,11 +354,19 @@
                                             {% endfor %}
                                         </select>
                                     </div>
-                                    <div class="col-md-3 mb-2">
+                                    <div class="col-md-2 mb-2">
                                         <label class="form-label fw-bold">Qty Required</label>
-                                        <input type="number" name="bundle_component_qty_{{ forloop.counter0 }}" class="form-control" value="{{ comp.quantity_required }}" min="1" required>
+                                        <input type="number" name="bundle_component_qty_{{ forloop.counter0 }}" class="form-control component-qty-input" value="{{ comp.quantity_required }}" min="1" required>
                                     </div>
                                     <div class="col-md-2 mb-2">
+                                        <label class="form-label fw-bold">Unit Cost</label>
+                                        <input type="text" class="form-control component-unit-cost" readonly value="" placeholder="0.00">
+                                    </div>
+                                    <div class="col-md-2 mb-2">
+                                        <label class="form-label fw-bold">Subtotal</label>
+                                        <input type="text" class="form-control component-subtotal fw-bold" readonly value="" placeholder="0.00">
+                                    </div>
+                                    <div class="col-md-1 mb-2">
                                         <input type="hidden" name="bundle_component_id_{{ forloop.counter0 }}" value="{{ comp.id }}">
                                     </div>
                                 </div>
@@ -364,6 +380,16 @@
                             <p class="text-muted mb-0">Click "Add Component" to build your bundle.</p>
                         </div>
                     {% endif %}
+                </div>
+
+                <!-- Bundle Cost Summary -->
+                <div id="bundleCostSummary" class="card border-purple mt-3" style="display: none;">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-bold text-purple"><i class="fas fa-calculator"></i> Total Bundle Cost Price:</span>
+                            <span class="fs-5 fw-bold text-purple" id="bundleTotalCostLabel">Rs. 0.00</span>
+                        </div>
+                    </div>
                 </div>
 
                 <input type="hidden" name="bundle_component_count" id="bundleComponentCount" value="{{ bundle_components|length|default:'0' }}">
@@ -669,6 +695,28 @@
     .component-product-select:focus {
         border-color: #7c3aed;
         box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25);
+    }
+
+    .bg-purple-light {
+        background-color: #ede9fe !important;
+        color: #7c3aed;
+        border-color: #c4b5fd;
+    }
+
+    .border-purple {
+        border: 2px solid #8b5cf6 !important;
+        background: linear-gradient(135deg, #faf5ff, #f3e8ff);
+    }
+
+    .component-unit-cost, .component-subtotal {
+        background-color: #f8f9fa;
+        color: #6b7280;
+        font-size: 0.9rem;
+    }
+
+    .component-subtotal {
+        color: #7c3aed;
+        background-color: #ede9fe;
     }
 </style>
 
@@ -1062,12 +1110,28 @@
     const variationsCard = document.getElementById('variationsCard');
     const bundleCard = document.getElementById('bundleCard');
     const simpleSkuField = document.getElementById('simpleSkuField');
+    const stockField = document.getElementById('stockField');
+    const costPriceInput = document.querySelector('[name="cost_price"]');
+    const bundleCostDisplay = document.getElementById('bundleCostDisplay');
 
     function toggleVariations() {
         const type = productTypeSelect ? productTypeSelect.value : 'simple';
         if (variationsCard) variationsCard.style.display = (type === 'variable') ? 'block' : 'none';
         if (bundleCard) bundleCard.style.display = (type === 'bundle') ? 'block' : 'none';
         if (simpleSkuField) simpleSkuField.style.display = (type === 'variable') ? 'none' : 'block';
+
+        // Hide stock field for bundles (stock is auto-calculated from components)
+        if (stockField) stockField.style.display = (type === 'bundle') ? 'none' : 'block';
+
+        // Toggle cost price: show auto-calculated display for bundles, original input for others
+        if (type === 'bundle') {
+            if (costPriceInput) costPriceInput.style.display = 'none';
+            if (bundleCostDisplay) bundleCostDisplay.style.display = 'block';
+            recalcBundleCost();
+        } else {
+            if (costPriceInput) costPriceInput.style.display = 'block';
+            if (bundleCostDisplay) bundleCostDisplay.style.display = 'none';
+        }
     }
 
     if (productTypeSelect) {
@@ -1314,6 +1378,43 @@
     // ========== BUNDLE COMPONENT ADD/REMOVE ==========
     let bundleComponentCount = parseInt(document.getElementById('bundleComponentCount')?.value || '0', 10);
 
+    // Product cost map from server (product_id -> cost_price)
+    const _productCostMap = JSON.parse('{{ product_cost_map_json|escapejs|default:"{}" }}');
+
+    // Recalculate bundle total cost from all component rows
+    function recalcBundleCost() {
+        let total = 0;
+        document.querySelectorAll('.bundle-component-row').forEach(function(row) {
+            const select = row.querySelector('.component-product-select');
+            const qtyInput = row.querySelector('.component-qty-input');
+            const unitCostEl = row.querySelector('.component-unit-cost');
+            const subtotalEl = row.querySelector('.component-subtotal');
+
+            const productId = select ? select.value : '';
+            const qty = qtyInput ? parseInt(qtyInput.value, 10) || 0 : 0;
+            const unitCost = productId && _productCostMap[productId] ? parseFloat(_productCostMap[productId]) : 0;
+            const subtotal = unitCost * qty;
+
+            if (unitCostEl) unitCostEl.value = unitCost > 0 ? 'Rs. ' + unitCost.toFixed(2) : '';
+            if (subtotalEl) subtotalEl.value = subtotal > 0 ? 'Rs. ' + subtotal.toFixed(2) : '';
+
+            total += subtotal;
+        });
+
+        // Update the cost summary in bundle card
+        const summaryEl = document.getElementById('bundleCostSummary');
+        const labelEl = document.getElementById('bundleTotalCostLabel');
+        if (summaryEl) summaryEl.style.display = total > 0 ? 'block' : 'none';
+        if (labelEl) labelEl.textContent = 'Rs. ' + total.toFixed(2);
+
+        // Update the cost display in pricing section
+        const bundleCostTotal = document.getElementById('bundleCostTotal');
+        if (bundleCostTotal) bundleCostTotal.value = 'Rs. ' + total.toFixed(2);
+
+        // Also sync the hidden cost_price input so the form submits the correct value
+        if (costPriceInput) costPriceInput.value = total.toFixed(2);
+    }
+
     const addComponentBtn = document.getElementById('addComponentBtn');
     if (addComponentBtn) {
         addComponentBtn.addEventListener('click', function() {
@@ -1338,18 +1439,26 @@
                     </div>
                     <div class="card-body py-2">
                         <div class="row align-items-end">
-                            <div class="col-md-7 mb-2">
+                            <div class="col-md-5 mb-2">
                                 <label class="form-label fw-bold">Product</label>
                                 <select name="bundle_component_product_${idx}" class="form-select component-product-select" required>
                                     <option value="">-- Select product --</option>
                                     ${productOptions}
                                 </select>
                             </div>
-                            <div class="col-md-3 mb-2">
+                            <div class="col-md-2 mb-2">
                                 <label class="form-label fw-bold">Qty Required</label>
-                                <input type="number" name="bundle_component_qty_${idx}" class="form-control" value="1" min="1" required>
+                                <input type="number" name="bundle_component_qty_${idx}" class="form-control component-qty-input" value="1" min="1" required>
                             </div>
                             <div class="col-md-2 mb-2">
+                                <label class="form-label fw-bold">Unit Cost</label>
+                                <input type="text" class="form-control component-unit-cost" readonly placeholder="0.00">
+                            </div>
+                            <div class="col-md-2 mb-2">
+                                <label class="form-label fw-bold">Subtotal</label>
+                                <input type="text" class="form-control component-subtotal fw-bold" readonly placeholder="0.00">
+                            </div>
+                            <div class="col-md-1 mb-2">
                                 <input type="hidden" name="bundle_component_id_${idx}" value="">
                             </div>
                         </div>
@@ -1357,6 +1466,7 @@
                 </div>
             `;
             container.insertAdjacentHTML('beforeend', html);
+            recalcBundleCost();
         });
     }
 
@@ -1374,9 +1484,25 @@
                 });
                 bundleComponentCount = rows.length;
                 document.getElementById('bundleComponentCount').value = bundleComponentCount;
+                recalcBundleCost();
             }
         }
     });
+
+    // Recalculate when product selection or quantity changes in any component
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('component-product-select')) {
+            recalcBundleCost();
+        }
+    });
+    document.addEventListener('input', function(e) {
+        if (e.target.classList.contains('component-qty-input')) {
+            recalcBundleCost();
+        }
+    });
+
+    // Initial calculation on page load for edit mode
+    setTimeout(function() { recalcBundleCost(); }, 100);
 })();
 </script>
 

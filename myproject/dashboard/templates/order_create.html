@@ -1384,6 +1384,11 @@
         color: white;
     }
 
+    .bestselling-product-type-badge.bundle {
+        background: #8b5cf6;
+        color: white;
+    }
+
     .bestselling-product-name {
         font-size: 0.85rem;
         font-weight: 600;
@@ -3471,7 +3476,14 @@
                 // Direct add to cart for simple products
                 productEl.onclick = () => {
                     playProductClickSound();
-                    addToCart(product.id, product.name, product.price, null, product.sku, 1, false);
+                    addToCart(product.id, product.name, product.price, null, product.sku, 1, false, '', 'simple');
+                    showToastNotification(`✅ ${product.name} added to cart!`, 'success');
+                };
+            } else if (product.product_type === 'bundle') {
+                // Direct add to cart for bundle products (stock is auto-managed via components)
+                productEl.onclick = () => {
+                    playProductClickSound();
+                    addToCart(product.id, product.name, product.price, null, product.sku, 1, false, '', 'bundle');
                     showToastNotification(`✅ ${product.name} added to cart!`, 'success');
                 };
             } else {
@@ -3488,9 +3500,10 @@
             
             // Determine product type badge
             const isVariable = product.product_type === 'variable';
-            const badgeClass = isVariable ? 'variable' : 'simple';
-            const badgeText = isVariable ? 'Variable' : 'Simple';
-            const badgeIcon = isVariable ? 'fa-sitemap' : 'fa-cube';
+            const isBundle = product.product_type === 'bundle';
+            const badgeClass = isBundle ? 'bundle' : (isVariable ? 'variable' : 'simple');
+            const badgeText = isBundle ? 'Bundle' : (isVariable ? 'Variable' : 'Simple');
+            const badgeIcon = isBundle ? 'fa-boxes-stacked' : (isVariable ? 'fa-sitemap' : 'fa-cube');
             
             productEl.innerHTML = `
                 <img src="${product.image ? product.image : fixedSVG}" alt="${product.name}" class="bestselling-product-img" onerror="if (!this.src.includes('svg+xml')) this.src='${fixedSVG}';">
@@ -3813,7 +3826,8 @@
                 variant.sku,
                 quantity,
                 false,
-                variant.name || variant.variation_name || variant.sku
+                variant.name || variant.variation_name || variant.sku,
+                product.product_type || 'variable'
             );
             
             showToastNotification(
@@ -3821,14 +3835,17 @@
                 'success'
             );
         } else {
-            // Simple product - add directly with quantity
+            // Simple or bundle product - add directly with quantity
             addToCart(
                 product.id,
                 product.name,
                 product.price,
                 null,
                 product.sku,
-                quantity
+                quantity,
+                false,
+                '',
+                product.product_type || 'simple'
             );
             
             showToastNotification(
@@ -4602,7 +4619,7 @@
                 }, 300);
             } else {
                 // Simple or Bundle product - add directly to cart and close modal
-                addToCart(id, name, price, null, sku, 1, false);
+                addToCart(id, name, price, null, sku, 1, false, '', type || 'simple');
                 showToastNotification(`${name} added to cart!`, 'success');
 
                 // Close modal immediately after adding
@@ -5044,14 +5061,14 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
         const sku = selectedItem.dataset.sku || '';
         const variantName = selectedItem.dataset.varname || '';
         
-        addToCart(productId, productName, price, varId, sku, 1, false, variantName);
+        addToCart(productId, productName, price, varId, sku, 1, false, variantName, 'variable');
         variationModal.hide();
     }
 
-    function addToCart(id, name, price, varId, sku, qty = 1, isCustom = false, variantName = '') {
+    function addToCart(id, name, price, varId, sku, qty = 1, isCustom = false, variantName = '', productType = '') {
         const existing = cart.find(i => i.id === id && i.varId === varId);
         if (existing) existing.qty += qty;
-        else cart.push({ id, varId, name, sku, price, qty, isCustom, variantName });
+        else cart.push({ id, varId, name, sku, price, qty, isCustom, variantName, productType });
         updateCart();
         saveFormData();
     }
@@ -5071,9 +5088,10 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
         let html = '';
         cart.forEach((item, i) => {
             const customBadge = item.isCustom ? ' <span class="badge bg-warning text-dark" style="font-size:0.65rem;"><i class="fas fa-bolt"></i> CUSTOM</span>' : '';
+            const bundleBadge = item.productType === 'bundle' ? ' <span class="badge" style="font-size:0.65rem;background:linear-gradient(135deg,#8b5cf6,#a855f7);color:#fff;"><i class="fas fa-boxes-stacked"></i> BUNDLE</span>' : '';
             const variantDisplay = item.varId ? (item.variantName ? `<span class="badge bg-info">${escapeHtml(item.variantName)}</span>` : (item.sku ? `<span class="badge bg-secondary">${escapeHtml(item.sku)}</span>` : '-')) : '-';
             html += `<tr id="row-${i}">
-      <td><strong>${escapeHtml(item.name)}</strong>${customBadge}<br><small class="text-muted">रू ${item.price} each</small></td>
+      <td><strong>${escapeHtml(item.name)}</strong>${customBadge}${bundleBadge}<br><small class="text-muted">रू ${item.price} each</small></td>
       <td>${variantDisplay}</td>
       <td>
         <div class="qty-control">

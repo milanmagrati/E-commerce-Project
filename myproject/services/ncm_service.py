@@ -128,6 +128,46 @@ class NCMService:
             return {'success': True, 'data': comments}
         return result
 
+    def get_staff_comments(self, ncm_order_id: int):
+        """Fetch NCM order comments via GET /order/comment?id=<ncm_order_id>.
+
+        NCM API docs:
+          GET /api/v1/order/comment?id=ORDERID
+          Returns a list: [{orderid, comments, addedBy, added_time}, ...]
+
+        Returns only comments where addedBy == 'NCM Staff'.
+        """
+        url = f"{self.base_url}/order/comment"
+        params = {'id': ncm_order_id}
+        result = self._make_request('GET', url, params=params)
+        if result['success']:
+            raw = result['data']
+            # API returns a flat JSON list
+            if isinstance(raw, list):
+                items = raw
+            elif isinstance(raw, dict):
+                # Fallback if wrapped in an object
+                items = raw.get('data', raw.get('results', []))
+                if isinstance(items, dict):
+                    items = [items]
+            else:
+                items = []
+
+            staff_comments = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                if item.get('addedBy') == 'NCM Staff':
+                    staff_comments.append({
+                        'comment': item.get('comments', ''),
+                        'created_by': item.get('addedBy', 'NCM Staff'),
+                        'created_at': item.get('added_time', ''),
+                        'role': 'ncm',
+                        'is_ncm_staff': True,
+                    })
+            return {'success': True, 'data': staff_comments}
+        return result
+
     def create_order_comment(self, ncm_order_id: int, comment: str):
         """Add comment to NCM order"""
         url = f"{self.base_url}/comment"

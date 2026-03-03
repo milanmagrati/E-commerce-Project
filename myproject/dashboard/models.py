@@ -169,6 +169,11 @@ class BundleComponent(models.Model):
     def __str__(self):
         return f"{self.bundle_product.name} -> {self.component_product.name} x{self.quantity_required}"
 
+    @property
+    def line_cost(self):
+        """Cost for this component line: unit average_cost * quantity_required."""
+        return self.component_product.average_cost * self.quantity_required
+
 
 class ProductPurchase(models.Model):
     """Track cost price per purchase batch for accurate weighted average cost."""
