@@ -825,3 +825,4 @@ Created system user for webhook operations
 [ERROR] 2026-03-01 00:52:43 ncm_service._make_request:33 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order
 [ERROR] 2026-03-01 00:52:50 ncm_service._make_request:37 NCM API error: ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
 [ERROR] 2026-03-01 00:52:54 ncm_service._make_request:37 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order?id=18514304
+[ERROR] 2026-03-02 20:48:34 ncm_service._make_request:37 NCM API error: HTTPSConnectionPool(host='portal.nepalcanmove.com', port=443): Max retries exceeded with url: /api/v2/branches (Caused by NameResolutionError("HTTPSConnection(host='portal.nepalcanmove.com', port=443): Failed to resolve 'portal.nepalcanmove.com' ([Errno -3] Temporary failure in name resolution)"))

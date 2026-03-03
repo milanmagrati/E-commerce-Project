@@ -11145,10 +11145,10 @@ def financial_report(request):
 def financial_report_data(request):
     """
     Returns JSON data for the financial report page, filtered by period or custom date range.
-    Now includes:
-    - Orders with NCM data (ncm_order_id not null)
-    - Orders created within date range (using created_at or ncm_created_at)
-    - Better error handling and logging
+    - Daily Summary: Shows all dispatched orders (from dispatch management) grouped by dispatch date
+    - NCM Revenue: Shows dispatched orders with NCM data, delivery charges synced from NCM API
+    - Stats/Charts: Based on all dispatched orders in the selected period
+    - Filters: today, yesterday, last 7 days, last 30 days, custom, all
     """
     try:
         from decimal import Decimal
@@ -11160,32 +11160,26 @@ def financial_report_data(request):
         tz = pytz.timezone('Asia/Kathmandu')
         now = datetime.now(tz)
 
-        # Date range logic
+        # Date range logic - matches frontend labels
         start = None
         end = None
         if period == 'all':
-            # No date restriction — show every NCM order
+            # No date restriction
             pass
         elif period == 'today':
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         elif period == 'yesterday':
-            # Get yesterday's date range
             yesterday = now - timedelta(days=1)
             start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
             end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
-            logger.info(f"Yesterday period: {start} to {end}")
         elif period == 'week':
-            # Get start of this week (Monday at 00:00)
-            days_since_monday = now.weekday()
-            week_start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
-            # Get end of this week (Sunday at 23:59:59) - 6 days after Monday
-            week_end = (week_start + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=999999)
-            start = week_start
-            end = week_end
-            logger.info(f"Week period: today={now}, weekday={now.weekday()}, week_start={week_start}, week_end={week_end}")
+            # Last 7 Days
+            start = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         elif period == 'month':
-            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Last 30 Days
+            start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         elif period == 'custom' and start_date and end_date:
             try:
@@ -11193,53 +11187,105 @@ def financial_report_data(request):
                 end = tz.localize(datetime.strptime(end_date, '%Y-%m-%d')).replace(hour=23, minute=59, second=59, microsecond=999999)
             except ValueError as e:
                 logger.error(f"Date parsing error: {str(e)}")
-                start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
                 end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         else:
-            # Fallback to today
-            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Fallback to last 30 days
+            start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        from .models import Order
+        from .models import Order, DispatchItem
         from django.db.models import Q
-        
-        logger.info(f"=== FINANCIAL REPORT: Period={period} ===")
-        logger.info(f"Current time NOW: {now}")
-        logger.info(f"Current weekday (0=Mon, 6=Sun): {now.weekday()}")
-        
-        # Debug: Show ALL orders regardless of NCM status
-        all_orders_unfiltered = Order.objects.all().exclude(is_deleted=True)
-        logger.info(f"Total orders in DB (not deleted): {all_orders_unfiltered.count()}")
-        
-        # Show recent orders
-        recent_orders = all_orders_unfiltered.order_by('-created_at').values(
-            'id', 'order_number', 'ncm_order_id', 'ncm_status', 'created_at', 'updated_at'
-        )[:10]
-        logger.info(f"Recent 10 orders: {list(recent_orders)}")
-        
-        # Base query: ONLY orders that have been SENT to NCM (must have ncm_order_id)
-        # Filter to show only orders with actual NCM tracking numbers
-        base_query = Q(ncm_order_id__isnull=False)
-        all_orders = Order.objects.filter(base_query).exclude(is_deleted=True)
-        
-        logger.info(f"Total NCM orders in DB (ncm_order_id or ncm_status): {all_orders.count()}")
-        if all_orders.count() > 0:
-            logger.info(f"Sample NCM orders: {list(all_orders.values('id', 'order_number', 'ncm_status', 'created_at', 'updated_at')[:5])}")
-        
-        # Apply period filter
-        if period == 'all':
-            # Show ALL NCM-related orders, no date restriction
-            orders = all_orders
-            logger.info(f"Period 'all': showing all {orders.count()} NCM orders")
-        else:
-            # Apply date range filter
-            logger.info(f"Date range: START={start} to END={end}")
-            
-            # Filter by created_at ONLY - show only orders created in this period
-            orders = all_orders.filter(created_at__range=(start, end))
 
-        logger.info(f"FINAL: {orders.count()} orders to display")
-        
+        logger.info(f"=== FINANCIAL REPORT: Period={period}, Start={start}, End={end} ===")
+
+        # Get all dispatched orders (orders linked through DispatchItem)
+        dispatched_order_ids = DispatchItem.objects.filter(
+            order__isnull=False
+        ).values_list('order_id', flat=True).distinct()
+
+        orders_base = Order.objects.filter(
+            id__in=dispatched_order_ids
+        ).exclude(is_deleted=True)
+
+        # Apply date filter using dispatch_date (fallback to created_at)
+        if period == 'all':
+            orders = orders_base
+        elif start and end:
+            orders = orders_base.filter(
+                Q(dispatch_date__range=(start, end)) |
+                Q(dispatch_date__isnull=True, created_at__range=(start, end))
+            )
+        else:
+            orders = orders_base
+
+        logger.info(f"Dispatched orders in period: {orders.count()}")
+
+        # Sync NCM delivery charges from NCM API for orders that need it
+        ncm_orders_to_sync = list(
+            orders.filter(
+                ncm_order_id__isnull=False
+            ).filter(
+                Q(delivery_charge__isnull=True) | Q(delivery_charge=0)
+            ).values_list('id', 'ncm_order_id', named=True)[:50]
+        )
+
+        if ncm_orders_to_sync:
+            try:
+                from services.ncm_service import NCMService
+                ncm_service = NCMService()
+
+                for item in ncm_orders_to_sync:
+                    try:
+                        result = ncm_service.get_order_details(item.ncm_order_id)
+                        if result.get('success') and result.get('data'):
+                            ncm_data = result['data']
+                            update_fields = []
+
+                            # Extract delivery charge from NCM API response
+                            charge = None
+                            for field_name in ['chargeDetail', 'deliveryCharge', 'delivery_charge', 'charge', 'serviceCharge']:
+                                val = ncm_data.get(field_name)
+                                if val is not None:
+                                    try:
+                                        charge = Decimal(str(val))
+                                        if charge > 0:
+                                            break
+                                    except (ValueError, TypeError):
+                                        pass
+
+                            order_obj = Order.objects.get(id=item.id)
+                            if charge and charge > 0:
+                                order_obj.delivery_charge = charge
+                                update_fields.append('delivery_charge')
+
+                            # Update NCM status if available
+                            ncm_status_val = ncm_data.get('status') or ncm_data.get('Status', '')
+                            if ncm_status_val and ncm_status_val != order_obj.ncm_status:
+                                order_obj.ncm_status = ncm_status_val
+                                update_fields.append('ncm_status')
+
+                            if update_fields:
+                                order_obj.save(update_fields=update_fields)
+                                logger.info(f"Synced NCM data for order {item.ncm_order_id}: {update_fields}")
+                    except Exception as e:
+                        logger.warning(f"NCM sync failed for order {item.ncm_order_id}: {e}")
+            except ImportError:
+                logger.error("NCMService not available for sync")
+            except Exception as e:
+                logger.error(f"NCM batch sync error: {e}")
+
+            # Re-query to get updated data after sync
+            if period == 'all':
+                orders = orders_base
+            elif start and end:
+                orders = orders_base.filter(
+                    Q(dispatch_date__range=(start, end)) |
+                    Q(dispatch_date__isnull=True, created_at__range=(start, end))
+                )
+            else:
+                orders = orders_base
+
         # Prefetch related items and products for all orders (optimization)
         orders = orders.prefetch_related('items__product')
 
@@ -11250,11 +11296,10 @@ def financial_report_data(request):
                 return float(value)
             return float(value) if value else 0
 
-        # Stats - calculate based on all NCM orders in range
+        # Stats - calculate based on all dispatched orders in range
         total_revenue = orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
         orders_delivered = orders.filter(ncm_status__icontains='delivered').count()
         orders_in_transit = orders.filter(ncm_status__icontains='transit').count()
-        orders_pending = orders.filter(ncm_status__isnull=True) | orders.filter(ncm_status='')
         
         cod_collected = orders.filter(payment_method='cod', payment_status='paid').aggregate(total=Sum('cod_collected'))['total'] or Decimal('0')
         pending_payments = orders.filter(payment_status__in=['pending', 'partial']).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
@@ -11329,35 +11374,18 @@ def financial_report_data(request):
             branch['expenses'] = to_float(branch['expenses'])
             branch['profit'] = to_float(branch['profit'])
 
-        # Daily summary - calculate expenses from product cost_price
-        # Group by date and calculate sum of (product_cost_price * quantity) for all items in each order
-        # ✅ ONLY INCLUDE DISPATCHED ORDERS (orders that have DispatchItem entries)
-        from django.db.models import DecimalField
-        from django.db.models.functions import Coalesce
-        
-        # Get list of order IDs that have been dispatched
-        from .models import DispatchItem
-        dispatched_order_ids = DispatchItem.objects.filter(
-            order__isnull=False
-        ).values_list('order_id', flat=True).distinct()
-        
-        logger.info(f"✅ Total dispatched orders: {len(dispatched_order_ids)}")
-        
-        # Filter orders to only those that have been dispatched
-        dispatched_orders = orders.filter(id__in=dispatched_order_ids)
-        logger.info(f"✅ Orders in selected period that are dispatched: {dispatched_orders.count()}")
-        
+        # Daily summary - dispatched orders grouped by dispatch date
         daily_data = {}
-        
-        for order in dispatched_orders:
-            order_date = order.created_at.date()
-            
-            # Calculate total cost for this order (cost of all items)
+
+        for order in orders:
+            # Use dispatch_date if available, fallback to created_at
+            order_date = (order.dispatch_date or order.created_at).date()
+
             order_cost = Decimal('0')
             for item in order.items.all():
                 if item.product and item.product.cost_price:
                     order_cost += (item.product.cost_price * item.quantity)
-            
+
             if order_date not in daily_data:
                 daily_data[order_date] = {
                     'date': order_date,
@@ -11366,19 +11394,17 @@ def financial_report_data(request):
                     'ncm_charges': Decimal('0'),
                     'expenses': Decimal('0'),
                 }
-            
+
             daily_data[order_date]['orders'] += 1
             daily_data[order_date]['revenue'] += order.total_amount or Decimal('0')
             daily_data[order_date]['ncm_charges'] += order.delivery_charge or Decimal('0')
             daily_data[order_date]['expenses'] += order_cost
-        
-        # Convert to list and calculate net_profit, then convert Decimals to float
+
         daily_summary = []
         for date, data in sorted(daily_data.items(), reverse=True):
             data['net_profit'] = data['revenue'] - data['ncm_charges'] - data['expenses']
             daily_summary.append(data)
-        
-        # Convert Decimals in daily_summary
+
         for day in daily_summary:
             day['revenue'] = to_float(day['revenue'])
             day['ncm_charges'] = to_float(day['ncm_charges'])
@@ -11387,15 +11413,16 @@ def financial_report_data(request):
             if day['date']:
                 day['date'] = str(day['date'])
 
-        # NCM Delivery Revenue Table - show only DELIVERED + PAID NCM orders
-        delivered_paid_orders = orders.filter(
+        # NCM Delivery Revenue Table - only delivered + paid orders
+        ncm_orders_in_period = orders.filter(
+            ncm_order_id__isnull=False,
             ncm_status__icontains='delivered',
             payment_status='paid'
         )
-        logger.info(f"✅ NCM Delivered & Paid orders in period: {delivered_paid_orders.count()}")
-        
+        logger.info(f"NCM delivered & paid orders in period: {ncm_orders_in_period.count()}")
+
         ncm_revenue_list = list(
-            delivered_paid_orders.values(
+            ncm_orders_in_period.values(
                 'delivered_at', 'id', 'order_number', 'customer__name', 'ncm_order_id', 'ncm_status',
                 'total_amount', 'shipping_charge', 'delivery_charge', 'payment_status', 'payment_method', 'cod_collected', 'created_at'
             )
@@ -11444,9 +11471,12 @@ def financial_report_data(request):
             if not method['payment_method']:
                 method['payment_method'] = 'Unknown'
 
-        # Daily revenue line chart - use created_at
+        # Daily revenue line chart - use dispatch_date with fallback to created_at
+        from django.db.models.functions import Coalesce
         daily_revenue = list(
-            orders.annotate(date=TruncDate('created_at')).values('date').annotate(amount=Sum('total_amount')).order_by('date')
+            orders.annotate(
+                date=TruncDate(Coalesce('dispatch_date', 'created_at'))
+            ).values('date').annotate(amount=Sum('total_amount')).order_by('date')
         )
         
         # Convert Decimals in daily_revenue
