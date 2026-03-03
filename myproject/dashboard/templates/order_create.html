@@ -543,6 +543,11 @@
         color: white;
     }
 
+    .product-type-badge.bundle {
+        background: #8b5cf6;
+        color: white;
+    }
+
     @keyframes slideInDown {
         from {
             opacity: 0;
@@ -4588,20 +4593,19 @@
             console.log('🎯 Product Clicked:', { id, name, type, price, sku });
 
             if (type === 'variable') {
-                console.log('📦 Variable product - showing variations modal');
+                console.log('Variable product - showing variations modal');
                 loadVariationsDropdown(id, name);
                 productModal.hide();
-                
+
                 setTimeout(() => {
                     variationModal.show();
                 }, 300);
             } else {
-                // Simple product - add directly to cart and close modal
-                console.log('✅ Simple product - adding to cart directly');
+                // Simple or Bundle product - add directly to cart and close modal
                 addToCart(id, name, price, null, sku, 1, false);
-                showToastNotification(`✅ ${name} added to cart!`, 'success');
-                
-                // Close modal immediately after adding simple product
+                showToastNotification(`${name} added to cart!`, 'success');
+
+                // Close modal immediately after adding
                 productModal.hide();
             }
         });
@@ -4866,11 +4870,12 @@
             : `<img src="${window.getRandomProductSVG()}" class="product-img">`;
 
         const isVariable = p.product_type === 'variable';
-        const badgeClass = isVariable ? 'variable' : 'simple';
-        const badgeText = isVariable ? 'Variable' : 'Simple';
-        const badgeIcon = isVariable ? 'fa-sitemap' : 'fa-cube';
+        const isBundle = p.product_type === 'bundle';
+        const badgeClass = isBundle ? 'bundle' : (isVariable ? 'variable' : 'simple');
+        const badgeText = isBundle ? 'Bundle' : (isVariable ? 'Variable' : 'Simple');
+        const badgeIcon = isBundle ? 'fa-boxes-stacked' : (isVariable ? 'fa-sitemap' : 'fa-cube');
 
-        console.log(`🏷️  Product: ${p.name} | Type: ${p.product_type} (isVariable: ${isVariable})`);
+        console.log(`Product: ${p.name} | Type: ${p.product_type}`);
 
         return `
     <div class="col-md-3 product-item">

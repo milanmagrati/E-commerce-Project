@@ -50,6 +50,7 @@ class Product(models.Model):
     PRODUCT_TYPE = (
         ('simple', 'Simple Product'),
         ('variable', 'Variable Product'),
+        ('bundle', 'Bundle/Combo Product'),
     )
     
     STOCK_STATUS = (
@@ -100,10 +101,96 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def is_bundle(self):
+        """Check if this product is a bundle/combo product."""
+        return self.product_type == 'bundle'
+
+    @property
+    def average_cost(self):
+        """Calculate weighted average cost from ProductPurchase records.
+        Falls back to the static cost_price field if no purchases exist.
+        """
+        purchases = self.product_purchases.all()
+        if not purchases.exists():
+            return self.cost_price
+        total_cost = sum(p.cost_price * p.quantity for p in purchases)
+        total_qty = sum(p.quantity for p in purchases)
+        if total_qty == 0:
+            return self.cost_price
+        return (total_cost / total_qty).quantize(Decimal('0.01'))
+
+    @property
+    def available_stock(self):
+        """Return available stock.
+        For bundles: min(component.stock // qty_required) across all components.
+        For simple/variable products: own stock field value.
+        """
+        if self.is_bundle:
+            components = self.bundle_components.select_related('component_product').all()
+            if not components.exists():
+                return 0
+            return min(
+                comp.component_product.stock // comp.quantity_required
+                for comp in components
+            )
+        return self.stock
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Product'
         verbose_name_plural = 'Products'
+
+
+class BundleComponent(models.Model):
+    """Links a bundle product to its component (child) products with required quantities."""
+    bundle_product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='bundle_components',
+        help_text="The bundle/combo product"
+    )
+    component_product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='part_of_bundles',
+        help_text="The child component product"
+    )
+    quantity_required = models.PositiveIntegerField(
+        default=1,
+        help_text="How many units of this component are needed per bundle"
+    )
+
+    class Meta:
+        unique_together = ('bundle_product', 'component_product')
+        verbose_name = 'Bundle Component'
+        verbose_name_plural = 'Bundle Components'
+
+    def __str__(self):
+        return f"{self.bundle_product.name} -> {self.component_product.name} x{self.quantity_required}"
+
+
+class ProductPurchase(models.Model):
+    """Track cost price per purchase batch for accurate weighted average cost."""
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='product_purchases',
+        help_text="Simple product this purchase is for"
+    )
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.PositiveIntegerField()
+    purchase_date = models.DateField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-purchase_date']
+        verbose_name = 'Product Purchase'
+        verbose_name_plural = 'Product Purchases'
+
+    def __str__(self):
+        return f"{self.product.name} - {self.quantity} units @ Rs.{self.cost_price}"
+
+
 class Customer(models.Model):
     CUSTOMER_TYPES = [
         ('retail', 'Retail'),

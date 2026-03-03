@@ -16,7 +16,8 @@ import requests
 from .models import (Product, Order, OrderItem, Category, Customer,
                      ProductVariation, ProductImage, ProductVariantOption,
                      OrderActivityLog, StockIn, City, StockInItem, Setup,
-                     Supplier, Purchase, PurchaseItem, SupplierPayment)
+                     Supplier, Purchase, PurchaseItem, SupplierPayment,
+                     BundleComponent, ProductPurchase)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -953,6 +954,48 @@ def export_products_excel(request):
     return response
 
 
+def _save_bundle_components(request, product):
+    """Parse bundle component fields from POST and save BundleComponent records."""
+    count = int(request.POST.get('bundle_component_count', 0))
+    submitted_ids = set()
+    for i in range(count):
+        comp_product_id = request.POST.get(f'bundle_component_product_{i}')
+        comp_qty = request.POST.get(f'bundle_component_qty_{i}')
+        comp_id = request.POST.get(f'bundle_component_id_{i}')
+        if not comp_product_id or not comp_qty:
+            continue
+        if comp_id:
+            try:
+                bc = BundleComponent.objects.get(pk=int(comp_id), bundle_product=product)
+                bc.component_product_id = int(comp_product_id)
+                bc.quantity_required = int(comp_qty)
+                bc.save()
+                submitted_ids.add(bc.pk)
+            except BundleComponent.DoesNotExist:
+                bc = BundleComponent.objects.create(
+                    bundle_product=product,
+                    component_product_id=int(comp_product_id),
+                    quantity_required=int(comp_qty)
+                )
+                submitted_ids.add(bc.pk)
+        else:
+            bc = BundleComponent.objects.create(
+                bundle_product=product,
+                component_product_id=int(comp_product_id),
+                quantity_required=int(comp_qty)
+            )
+            submitted_ids.add(bc.pk)
+    product.bundle_components.exclude(pk__in=submitted_ids).delete()
+
+
+def _get_bundle_context():
+    """Return context data for the bundle component section of the product form."""
+    simple_products = Product.objects.filter(
+        is_deleted=False, is_active=True
+    ).exclude(product_type='bundle').order_by('name')
+    return {'simple_products': simple_products}
+
+
 @login_required
 @permission_required('can_create_products')
 
@@ -1036,7 +1079,11 @@ def product_add(request):
                         ctx['temp_image_path'] = temp_path
 
                     return render(request, 'dashboard/product_form.html', ctx)
-            
+
+            # Handle bundle components
+            if product.product_type == 'bundle':
+                _save_bundle_components(request, product)
+
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
@@ -1072,7 +1119,7 @@ def product_add(request):
                 temp_url = None
 
             messages.error(request, 'Please correct the errors below.')
-            return render(request, 'product_form.html', {
+            ctx = {
                 'form': form,
                 'formset': formset,
                 'action': 'Add',
@@ -1084,7 +1131,9 @@ def product_add(request):
                     'can_view_cost_price': request.user.can_view_cost_price,
                     'is_administrator': request.user.role == 'administrator',
                 }
-            })
+            }
+            ctx.update(_get_bundle_context())
+            return render(request, 'product_form.html', ctx)
     else:
         form = ProductForm()
         formset = ProductVariationFormSet()
@@ -1109,7 +1158,7 @@ def product_add(request):
     except Exception:
         temp_path = None
 
-    return render(request, 'product_form.html', {
+    ctx = {
         'form': form,
         'formset': formset,
         'action': 'Add',
@@ -1121,7 +1170,9 @@ def product_add(request):
             'can_view_cost_price': request.user.can_view_cost_price,
             'is_administrator': request.user.role == 'administrator',
         }
-    })
+    }
+    ctx.update(_get_bundle_context())
+    return render(request, 'product_form.html', ctx)
 @login_required
 @permission_required('can_edit_products')
 def product_edit(request, product_id):
@@ -1201,7 +1252,11 @@ def product_edit(request, product_id):
                     })
             else:
                 messages.success(request, f'Product "{product.name}" updated successfully!')
-            
+
+            # Handle bundle components
+            if product.product_type == 'bundle':
+                _save_bundle_components(request, product)
+
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
@@ -1262,7 +1317,7 @@ def product_edit(request, product_id):
     except Exception:
         temp_path = None
 
-    return render(request, 'product_form.html', {
+    ctx = {
         'form': form,
         'formset': formset,
         'product': product,
@@ -1274,8 +1329,11 @@ def product_edit(request, product_id):
             'can_edit_prices': request.user.can_edit_prices,
             'can_view_cost_price': request.user.can_view_cost_price,
             'is_administrator': request.user.role == 'administrator',
-        }
-    })
+        },
+        'bundle_components': list(product.bundle_components.select_related('component_product').all()) if product.product_type == 'bundle' else [],
+    }
+    ctx.update(_get_bundle_context())
+    return render(request, 'product_form.html', ctx)
 
 
 @login_required
@@ -4045,7 +4103,9 @@ def api_search_products(request):
         if not has_access:
             return JsonResponse({'success': False, 'error': 'You do not have permission to view products.', 'products': []}, status=403)
 
-        qs = Product.objects.filter(is_active=True, is_deleted=False).order_by("name")
+        qs = Product.objects.filter(is_active=True, is_deleted=False).prefetch_related(
+            'bundle_components__component_product'
+        ).order_by("name")
 
         if q:
             qs = qs.filter(Q(name__icontains=q) | Q(barcode__icontains=q) | Q(slug__icontains=q))
@@ -4054,12 +4114,12 @@ def api_search_products(request):
 
         data = []
         for p in qs:
-            # Get stock from the stock field
+            # For bundle products use available_stock (min of components), else own stock
             try:
-                stock = int(p.stock) if p.stock else 0
+                stock = p.available_stock if p.product_type == 'bundle' else (int(p.stock) if p.stock else 0)
             except (AttributeError, ValueError, TypeError):
                 stock = 0
-            
+
             # Get SKU - use barcode first, then slug as fallback
             try:
                 sku = p.barcode if p.barcode else p.slug

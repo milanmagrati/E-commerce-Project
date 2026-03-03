@@ -307,6 +307,69 @@
             </div>
         </div>
 
+        <!-- Bundle Components (Bundle/Combo Products Only) -->
+        <div class="card shadow-sm mb-4" id="bundleCard" style="display: none;">
+            <div class="card-header text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #8b5cf6, #a855f7);">
+                <h5 class="mb-0"><i class="fas fa-boxes-stacked"></i> Bundle Components</h5>
+                <button type="button" class="btn btn-sm btn-light" id="addComponentBtn">
+                    <i class="fas fa-plus"></i> Add Component
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info mb-3" style="font-size: 0.85rem;">
+                    <i class="fas fa-info-circle"></i>
+                    Select the products that make up this bundle/combo. Stock will be auto-calculated from the lowest available component.
+                </div>
+
+                <div id="bundleComponentsContainer">
+                    {% if bundle_components %}
+                        {% for comp in bundle_components %}
+                        <div class="bundle-component-row card mb-3" data-index="{{ forloop.counter0 }}">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                                <h6 class="mb-0 text-purple">
+                                    <i class="fas fa-puzzle-piece"></i> Component #<span class="component-number">{{ forloop.counter }}</span>
+                                </h6>
+                                <button type="button" class="btn btn-sm btn-danger remove-component">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="row align-items-end">
+                                    <div class="col-md-7 mb-2">
+                                        <label class="form-label fw-bold">Product</label>
+                                        <select name="bundle_component_product_{{ forloop.counter0 }}" class="form-select component-product-select" required>
+                                            <option value="">-- Select product --</option>
+                                            {% for p in simple_products %}
+                                            <option value="{{ p.id }}" {% if p.id == comp.component_product_id %}selected{% endif %}>
+                                                {{ p.name }} (Stock: {{ p.stock }})
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3 mb-2">
+                                        <label class="form-label fw-bold">Qty Required</label>
+                                        <input type="number" name="bundle_component_qty_{{ forloop.counter0 }}" class="form-control" value="{{ comp.quantity_required }}" min="1" required>
+                                    </div>
+                                    <div class="col-md-2 mb-2">
+                                        <input type="hidden" name="bundle_component_id_{{ forloop.counter0 }}" value="{{ comp.id }}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-secondary text-center py-4" id="noBundleComponentsMsg">
+                            <i class="fas fa-boxes-stacked fa-2x mb-3 d-block" style="color: #a855f7;"></i>
+                            <h5>No components yet</h5>
+                            <p class="text-muted mb-0">Click "Add Component" to build your bundle.</p>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <input type="hidden" name="bundle_component_count" id="bundleComponentCount" value="{{ bundle_components|length|default:'0' }}">
+            </div>
+        </div>
+
         <!-- Form Actions -->
         <div class="card shadow-sm">
             <div class="card-body">
@@ -583,6 +646,29 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    /* Bundle Component Styles */
+    .text-purple { color: #8b5cf6 !important; }
+
+    .bundle-component-row {
+        border: 2px solid #e9ecef;
+        transition: all 0.3s ease;
+    }
+
+    .bundle-component-row:hover {
+        border-color: #8b5cf6;
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+    }
+
+    .component-product-select {
+        border: 2px solid #8b5cf6;
+        font-weight: 500;
+    }
+
+    .component-product-select:focus {
+        border-color: #7c3aed;
+        box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25);
     }
 </style>
 
@@ -974,18 +1060,14 @@
 
     const productTypeSelect = document.querySelector('[name="product_type"]');
     const variationsCard = document.getElementById('variationsCard');
+    const bundleCard = document.getElementById('bundleCard');
     const simpleSkuField = document.getElementById('simpleSkuField');
 
     function toggleVariations() {
-        if (productTypeSelect && variationsCard && simpleSkuField) {
-            if (productTypeSelect.value === 'variable') {
-                variationsCard.style.display = 'block';
-                simpleSkuField.style.display = 'none';
-            } else {
-                variationsCard.style.display = 'none';
-                simpleSkuField.style.display = 'block';
-            }
-        }
+        const type = productTypeSelect ? productTypeSelect.value : 'simple';
+        if (variationsCard) variationsCard.style.display = (type === 'variable') ? 'block' : 'none';
+        if (bundleCard) bundleCard.style.display = (type === 'bundle') ? 'block' : 'none';
+        if (simpleSkuField) simpleSkuField.style.display = (type === 'variable') ? 'none' : 'block';
     }
 
     if (productTypeSelect) {
@@ -1228,7 +1310,79 @@
             });
         });
     }
+
+    // ========== BUNDLE COMPONENT ADD/REMOVE ==========
+    let bundleComponentCount = parseInt(document.getElementById('bundleComponentCount')?.value || '0', 10);
+
+    const addComponentBtn = document.getElementById('addComponentBtn');
+    if (addComponentBtn) {
+        addComponentBtn.addEventListener('click', function() {
+            const container = document.getElementById('bundleComponentsContainer');
+            const noMsg = document.getElementById('noBundleComponentsMsg');
+            if (noMsg) noMsg.remove();
+
+            const idx = bundleComponentCount;
+            bundleComponentCount++;
+            document.getElementById('bundleComponentCount').value = bundleComponentCount;
+
+            const productOptions = window._simpleProductOptions || '';
+            const html = `
+                <div class="bundle-component-row card mb-3" data-index="${idx}">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                        <h6 class="mb-0 text-purple">
+                            <i class="fas fa-puzzle-piece"></i> Component #<span class="component-number">${bundleComponentCount}</span>
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-danger remove-component">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div class="card-body py-2">
+                        <div class="row align-items-end">
+                            <div class="col-md-7 mb-2">
+                                <label class="form-label fw-bold">Product</label>
+                                <select name="bundle_component_product_${idx}" class="form-select component-product-select" required>
+                                    <option value="">-- Select product --</option>
+                                    ${productOptions}
+                                </select>
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <label class="form-label fw-bold">Qty Required</label>
+                                <input type="number" name="bundle_component_qty_${idx}" class="form-control" value="1" min="1" required>
+                            </div>
+                            <div class="col-md-2 mb-2">
+                                <input type="hidden" name="bundle_component_id_${idx}" value="">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', html);
+        });
+    }
+
+    // Remove component handler
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-component')) {
+            const row = e.target.closest('.bundle-component-row');
+            if (row && confirm('Remove this component?')) {
+                row.remove();
+                // Re-number remaining components
+                const rows = document.querySelectorAll('.bundle-component-row');
+                rows.forEach(function(r, i) {
+                    const num = r.querySelector('.component-number');
+                    if (num) num.textContent = i + 1;
+                });
+                bundleComponentCount = rows.length;
+                document.getElementById('bundleComponentCount').value = bundleComponentCount;
+            }
+        }
+    });
 })();
+</script>
+
+<!-- Provide simple product options to JS for dynamic component rows -->
+<script>
+window._simpleProductOptions = `{% for p in simple_products %}<option value="{{ p.id }}">{{ p.name }} (Stock: {{ p.stock }})</option>{% endfor %}`;
 </script>
 
 {% endblock %}

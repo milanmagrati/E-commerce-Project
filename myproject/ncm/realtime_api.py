@@ -407,22 +407,26 @@ def api_get_order_comments(request, order_id):
 
         all_comments = []
 
-        # 0. Fetch local comments from OrderActivityLog (user comments)
+        # 0. Fetch local comments from OrderActivityLog (NCM comments only)
         local_comments = OrderActivityLog.objects.filter(
             order=order,
-            action_type__in=['notes_added', 'notes_updated']
-        ).order_by('created_at').values()
-        
+            action_type__in=['notes_added', 'notes_updated'],
+            field_name='ncm_comment'
+        ).select_related('user').order_by('created_at')
+
         for log in local_comments:
+            username = 'You'
+            if log.user:
+                username = log.user.get_full_name() or log.user.username
             all_comments.append({
-                'comment': log.get('new_value', ''),
-                'created_by': log.get('user__username', 'You'),
-                'created_at': log.get('created_at').isoformat() if log.get('created_at') else '',
+                'comment': log.new_value or '',
+                'created_by': username,
+                'created_at': log.created_at.isoformat() if log.created_at else '',
                 'role': 'admin',
                 'is_local': True
             })
 
-        # 1. Fetch order details - extract standalone comments
+        # 1. Fetch order details - extract comments if NCM API includes them
         details_result = ncm_service.get_order_details(order.ncm_order_id)
         if details_result['success']:
             data = details_result['data']
@@ -445,30 +449,9 @@ def api_get_order_comments(request, order_id):
                         'role': 'ncm'
                     })
 
-        # 2. Fetch status history - extract staff comments from status entries
-        status_result = ncm_service.get_order_status(order.ncm_order_id)
-        if status_result['success']:
-            status_data = status_result['data']
-            entries = []
-            if isinstance(status_data, list):
-                entries = status_data
-            elif isinstance(status_data, dict):
-                entries = status_data.get('statuses', status_data.get('history', []))
-                if not entries and 'status' in status_data:
-                    entries = [status_data]
-
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                comment_text = entry.get('comment', entry.get('comments', entry.get('remarks', '')))
-                if comment_text and isinstance(comment_text, str) and comment_text.strip():
-                    all_comments.append({
-                        'comment': comment_text.strip(),
-                        'created_by': entry.get('created_by', entry.get('updated_by', 'NCM Staff')),
-                        'created_at': entry.get('created_at', entry.get('date', entry.get('timestamp', ''))),
-                        'status': entry.get('status', entry.get('Status', '')),
-                        'role': 'ncm'
-                    })
+        # Note: NCM vendor API does not expose a GET endpoint for staff comments.
+        # Comments posted via POST /comment are write-only from the vendor side.
+        # NCM staff replies are only visible on the NCM portal.
 
         # Cache the results to reduce API calls (429 rate limiting)
         set_cached_comments(order_id, all_comments)
@@ -524,6 +507,11 @@ def api_add_order_comment(request, order_id):
             new_value=comment_text[:255],
             description=f'NCM comment added: {comment_text[:100]}'
         )
+
+        # Invalidate comments cache so next fetch includes this new comment
+        cache_key = f"comments_{order_id}"
+        if cache_key in _comment_cache:
+            del _comment_cache[cache_key]
 
         # Send comment to NCM in background (non-blocking)
         thread = threading.Thread(

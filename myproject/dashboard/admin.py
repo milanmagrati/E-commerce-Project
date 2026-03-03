@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import Product, Order, OrderItem, Category, Customer, Branch, StaffPerformance
 from .models import ProductAttribute, ProductAttributeValue, ProductVariation, VariationAttributeValue
 from .models import ReturnRequest, ReturnItem, ReturnActivityLog
+from .models import BundleComponent, ProductPurchase
 
 
 @admin.register(Category)
@@ -15,12 +16,47 @@ class BranchAdmin(admin.ModelAdmin):
     list_filter = ['is_active', 'city']
     search_fields = ['name', 'city']
 
+class BundleComponentInline(admin.TabularInline):
+    model = BundleComponent
+    fk_name = 'bundle_product'
+    extra = 1
+    autocomplete_fields = ['component_product']
+
+
+class ProductPurchaseInline(admin.TabularInline):
+    model = ProductPurchase
+    extra = 0
+    readonly_fields = ['purchase_date']
+
+
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'price', 'stock', 'stock_status', 'is_active', 'created_at']
-    list_filter = ['is_active', 'stock_status', 'category']
+    list_display = ['name', 'product_type', 'category', 'price', 'stock', 'display_available_stock',
+                    'display_average_cost', 'stock_status', 'is_active', 'created_at']
+    list_filter = ['is_active', 'stock_status', 'product_type', 'category']
     search_fields = ['name', 'description']
     prepopulated_fields = {'slug': ('name',)}
+    readonly_fields = ['display_average_cost', 'display_available_stock']
+    inlines = [BundleComponentInline, ProductPurchaseInline]
+
+    def display_average_cost(self, obj):
+        return obj.average_cost
+    display_average_cost.short_description = 'Avg Cost'
+
+    def display_available_stock(self, obj):
+        return obj.available_stock
+    display_available_stock.short_description = 'Available Stock'
+
+    def get_inlines(self, request, obj=None):
+        """Only show BundleComponentInline for bundle products, ProductPurchaseInline for non-bundles."""
+        if obj is None:
+            return [BundleComponentInline, ProductPurchaseInline]
+        if obj.is_bundle:
+            return [BundleComponentInline]
+        return [ProductPurchaseInline]
+
+    class Media:
+        js = ('admin/js/bundle_admin.js',)
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
