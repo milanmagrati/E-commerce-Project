@@ -286,12 +286,22 @@
                         </td>
                         <td><strong class="text-success">रू {{ product.price|floatformat:2 }}</strong></td>
                         <td>
-                            {% if product.stock == 0 %}
-                                <span class="badge bg-danger">Out</span>
-                            {% elif product.stock <= 10 %}
-                                <span class="badge bg-warning text-dark">{{ product.stock }}</span>
+                            {% if product.product_type == 'bundle' %}
+                                {% if product.available_stock == 0 %}
+                                    <span class="badge bg-danger">Out</span>
+                                {% elif product.available_stock <= 10 %}
+                                    <span class="badge bg-warning text-dark">{{ product.available_stock }}</span>
+                                {% else %}
+                                    <span class="badge bg-success">{{ product.available_stock }}</span>
+                                {% endif %}
                             {% else %}
-                                <span class="badge bg-success">{{ product.stock }}</span>
+                                {% if product.stock == 0 %}
+                                    <span class="badge bg-danger">Out</span>
+                                {% elif product.stock <= 10 %}
+                                    <span class="badge bg-warning text-dark">{{ product.stock }}</span>
+                                {% else %}
+                                    <span class="badge bg-success">{{ product.stock }}</span>
+                                {% endif %}
                             {% endif %}
                         </td>
                         <td>

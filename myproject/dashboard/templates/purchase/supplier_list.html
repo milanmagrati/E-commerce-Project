@@ -47,8 +47,12 @@
                             <td class="text-end">Rs. {{ s.total_purchase|default:"0"|floatformat:2 }}</td>
                             <td class="text-end text-success">Rs. {{ s.paid|default:"0"|floatformat:2 }}</td>
                             <td class="text-end">
-                                {% with outstanding=s.opening_balance|add:s.total_purchase|default:0 %}
-                                <span class="fw-bold text-danger">-</span>
+                                {% with outstanding=s.get_outstanding %}
+                                {% if outstanding > 0 %}
+                                <span class="fw-bold text-danger">Rs. {{ outstanding|floatformat:2 }}</span>
+                                {% else %}
+                                <span class="text-success">Rs. 0.00</span>
+                                {% endif %}
                                 {% endwith %}
                             </td>
                             <td class="text-center">

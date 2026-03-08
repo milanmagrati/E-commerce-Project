@@ -5415,43 +5415,85 @@ def dispatch_management(request):
                                         product.save(update_fields=['stock_status'])
 
                                 else:
-                                    # ── Simple product stock ──────────────────────────
                                     if product:
-                                        old_stock = product.stock
-                                        oversold = product.stock < quantity
-                                        if not oversold:
-                                            product.stock -= quantity
-                                        else:
-                                            warn_msg = (
-                                                f"⚠️ {product.name}: Need {quantity}, "
-                                                f"Available {product.stock} (oversold)"
-                                            )
-                                            stock_warnings.append(warn_msg)
-                                            product.stock = max(0, product.stock - quantity)
+                                        if product.is_bundle:
+                                            # ── Bundle product stock ─────────────────────────
+                                            components = product.bundle_components.select_related('component_product').all()
+                                            for comp in components:
+                                                comp_product = comp.component_product
+                                                required = comp.quantity_required * quantity
+                                                old_stock = comp_product.stock
+                                                oversold = comp_product.stock < required
+                                                if not oversold:
+                                                    comp_product.stock -= required
+                                                else:
+                                                    warn_msg = (
+                                                        f"⚠️ {comp_product.name} (bundle component of {product.name}): "
+                                                        f"Need {required}, Available {comp_product.stock} (oversold)"
+                                                    )
+                                                    stock_warnings.append(warn_msg)
+                                                    comp_product.stock = max(0, comp_product.stock - required)
 
-                                        # Update stock_status using configured threshold
-                                        threshold = product.low_stock_threshold or 0
-                                        if product.stock == 0:
-                                            product.stock_status = 'out_of_stock'
-                                        elif threshold > 0 and product.stock <= threshold:
-                                            product.stock_status = 'low_stock'
-                                        elif product.stock <= 10:
-                                            product.stock_status = 'low_stock'
-                                        else:
-                                            product.stock_status = 'in_stock'
-                                        product.save(update_fields=['stock', 'stock_status'])
+                                                # Update component stock_status
+                                                threshold = comp_product.low_stock_threshold or 0
+                                                if comp_product.stock == 0:
+                                                    comp_product.stock_status = 'out_of_stock'
+                                                elif threshold > 0 and comp_product.stock <= threshold:
+                                                    comp_product.stock_status = 'low_stock'
+                                                elif comp_product.stock <= 10:
+                                                    comp_product.stock_status = 'low_stock'
+                                                else:
+                                                    comp_product.stock_status = 'in_stock'
+                                                comp_product.save(update_fields=['stock', 'stock_status'])
 
-                                        # Record deduction detail
-                                        stock_deductions.append({
-                                            'order_id': order_id,
-                                            'name': product.name,
-                                            'sku': product.barcode or str(product.id),
-                                            'type': 'simple',
-                                            'qty': quantity,
-                                            'old_stock': old_stock,
-                                            'new_stock': product.stock,
-                                            'oversold': oversold,
-                                        })
+                                                # Record deduction detail for each component
+                                                stock_deductions.append({
+                                                    'order_id': order_id,
+                                                    'name': f"{comp_product.name} (component of {product.name})",
+                                                    'sku': comp_product.barcode or str(comp_product.id),
+                                                    'type': 'bundle_component',
+                                                    'qty': required,
+                                                    'old_stock': old_stock,
+                                                    'new_stock': comp_product.stock,
+                                                    'oversold': oversold,
+                                                })
+                                        else:
+                                            # ── Simple product stock ──────────────────────────
+                                            old_stock = product.stock
+                                            oversold = product.stock < quantity
+                                            if not oversold:
+                                                product.stock -= quantity
+                                            else:
+                                                warn_msg = (
+                                                    f"⚠️ {product.name}: Need {quantity}, "
+                                                    f"Available {product.stock} (oversold)"
+                                                )
+                                                stock_warnings.append(warn_msg)
+                                                product.stock = max(0, product.stock - quantity)
+
+                                            # Update stock_status using configured threshold
+                                            threshold = product.low_stock_threshold or 0
+                                            if product.stock == 0:
+                                                product.stock_status = 'out_of_stock'
+                                            elif threshold > 0 and product.stock <= threshold:
+                                                product.stock_status = 'low_stock'
+                                            elif product.stock <= 10:
+                                                product.stock_status = 'low_stock'
+                                            else:
+                                                product.stock_status = 'in_stock'
+                                            product.save(update_fields=['stock', 'stock_status'])
+
+                                            # Record deduction detail
+                                            stock_deductions.append({
+                                                'order_id': order_id,
+                                                'name': product.name,
+                                                'sku': product.barcode or str(product.id),
+                                                'type': 'simple',
+                                                'qty': quantity,
+                                                'old_stock': old_stock,
+                                                'new_stock': product.stock,
+                                                'oversold': oversold,
+                                            })
                         
                         # Capture old values BEFORE modification
                         old_order_status = order.order_status
@@ -6390,7 +6432,19 @@ def stock_in_create(request):
                         if product.stock > 0:
                             product.stock_status = 'in_stock'
                         product.save()
-                    
+
+                    # Create ProductPurchase record to keep average_cost dynamic
+                    if unit_cost_float > 0 and not variation:
+                        ProductPurchase.objects.create(
+                            product=product,
+                            cost_price=unit_cost_float,
+                            quantity=quantity,
+                        )
+                        # Sync cost_price field with the new weighted average
+                        product.refresh_from_db()
+                        product.cost_price = product.average_cost
+                        product.save(update_fields=['cost_price'])
+
                     total_qty += quantity
                     total_cost += item_total
                     
@@ -7995,13 +8049,28 @@ def return_detail(request, return_id):
                             item.product_variation.save()
 
                         if item.product:
-                            item.product.stock += restock_qty
-                            if item.product.stock > 0:
-                                if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
-                                    item.product.stock_status = 'low_stock'
-                                else:
-                                    item.product.stock_status = 'in_stock'
-                            item.product.save()
+                            if item.product.is_bundle:
+                                # ── Bundle product: restock each component ──────
+                                components = item.product.bundle_components.select_related('component_product').all()
+                                for comp in components:
+                                    comp_product = comp.component_product
+                                    restore_qty = comp.quantity_required * restock_qty
+                                    comp_product.stock += restore_qty
+                                    if comp_product.stock > 0:
+                                        if comp_product.low_stock_threshold and comp_product.stock <= comp_product.low_stock_threshold:
+                                            comp_product.stock_status = 'low_stock'
+                                        else:
+                                            comp_product.stock_status = 'in_stock'
+                                    comp_product.save(update_fields=['stock', 'stock_status'])
+                            else:
+                                # ── Simple product: restock directly ─────────────
+                                item.product.stock += restock_qty
+                                if item.product.stock > 0:
+                                    if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
+                                        item.product.stock_status = 'low_stock'
+                                    else:
+                                        item.product.stock_status = 'in_stock'
+                                item.product.save(update_fields=['stock', 'stock_status'])
 
                         item.restocked = True
                         item.restocked_at = timezone.now()

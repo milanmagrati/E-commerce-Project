@@ -1,7 +1,7 @@
 import logging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .models import Order, OrderItem, OrderActivityLog
+from .models import Order, OrderActivityLog
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +22,3 @@ def log_order_creation(sender, instance, created, **kwargs):
         )
 
 
-@receiver(post_save, sender=OrderItem)
-def deduct_stock_on_order_item_create(sender, instance, created, **kwargs):
-    """Automatically deduct stock when a new OrderItem is created."""
-    if created and instance.product:
-        from .services import deduct_stock
-        try:
-            deduct_stock(instance.product, instance.quantity)
-        except Exception as e:
-            logger.error(f"Stock deduction failed for OrderItem {instance}: {e}")
