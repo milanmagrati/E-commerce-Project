@@ -361,14 +361,78 @@
         </div>
     </div>
     
-    <!-- ✅ Activity Log Section -->
-    <div class="col-12">
-        <div class="card shadow-sm activity-log-card">
-            <div class="card-header bg-gradient-dark text-white d-flex align-items-center justify-content-between">
-                <h5 class="mb-0"><i class="fas fa-history"></i> Activity Log</h5>
-                <span class="badge bg-light text-dark">{{ activity_logs|length }} Activities</span>
+    <!-- ✅ Order Comments Section -->
+    <div class="col-md-6">
+        <div class="card shadow-sm ncm-comments-card h-100">
+            <div class="card-header py-2 bg-gradient-comments text-white d-flex align-items-center justify-content-between">
+                <h6 class="mb-0"><i class="fas fa-comments"></i> Order Comments</h6>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-light text-dark" style="font-size:0.7rem" id="commentsCount">--</span>
+                    {% if order.ncm_order_id %}
+                    <button type="button" class="btn btn-sm btn-light btn-comments-refresh" onclick="fetchNCMComments()" title="Refresh comments">
+                        <i class="fas fa-sync-alt" id="commentsRefreshIcon"></i>
+                    </button>
+                    {% endif %}
+                </div>
             </div>
-            <div class="card-body p-0">
+            <div class="card-body p-2">
+                {% if order.ncm_order_id %}
+                <!-- Add Comment Form -->
+                <div class="ncm-comment-form-wrapper">
+                    <div class="ncm-comment-input-group">
+                        <div class="ncm-comment-avatar">
+                            <i class="fas fa-user-circle"></i>
+                        </div>
+                        <div class="ncm-comment-input-area">
+                            <textarea id="ncmCommentInput" class="form-control ncm-comment-textarea"
+                                      placeholder="Write a comment to NCM..."
+                                      rows="1" maxlength="500"></textarea>
+                            <div class="ncm-comment-actions">
+                                <small class="text-muted ncm-char-count">
+                                    <span id="charCount">0</span>/500
+                                </small>
+                                <button type="button" class="btn btn-sm btn-ncm-comment-submit" id="submitCommentBtn" onclick="submitNCMComment()" disabled>
+                                    <i class="fas fa-paper-plane"></i> Send
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ncm-comments-divider">
+                    <span>Comments</span>
+                </div>
+                {% endif %}
+
+                <!-- Comments List (scrollable) -->
+                <div id="ncmCommentsContainer" class="ncm-comments-scroll">
+                    {% if order.ncm_order_id %}
+                    <div class="ncm-comments-loading">
+                        <div class="ncm-comments-spinner"></div>
+                        <p>Loading comments...</p>
+                    </div>
+                    {% else %}
+                    <div class="ncm-comments-empty">
+                        <div class="ncm-comments-empty-icon">
+                            <i class="fas fa-comment-slash"></i>
+                        </div>
+                        <h6>No Comments</h6>
+                        <p>Comments will appear here once this order is sent to NCM</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✅ Activity Log Section -->
+    <div class="col-md-6">
+        <div class="card shadow-sm activity-log-card h-100">
+            <div class="card-header py-2 bg-gradient-dark text-white d-flex align-items-center justify-content-between">
+                <h6 class="mb-0"><i class="fas fa-history"></i> Activity Log</h6>
+                <span class="badge bg-light text-dark" style="font-size:0.7rem">{{ activity_logs|length }} Activities</span>
+            </div>
+            <div class="card-body p-0 activity-log-scroll">
                 {% if activity_logs %}
                 <div class="activity-timeline">
                     {% for log in activity_logs %}
@@ -551,7 +615,7 @@
         border: 1px solid #e5e7eb;
         animation: slideInUp 0.5s ease-out;
     }
-    
+
     @keyframes slideInUp {
         from {
             opacity: 0;
@@ -562,54 +626,54 @@
             transform: translateY(0);
         }
     }
-    
+
     .activity-timeline {
         position: relative;
-        padding: 20px;
+        padding: 10px 12px;
     }
-    
+
     .activity-item {
         display: flex;
-        gap: 15px;
-        padding: 15px 20px;
+        gap: 8px;
+        padding: 8px 10px;
         border-left: 2px solid #e5e7eb;
         position: relative;
         transition: all 0.2s ease;
     }
-    
+
     .activity-item:hover {
         background-color: #f8f9fa;
         border-left-color: #3b82f6;
     }
-    
+
     .activity-item.first {
-        border-radius: 8px 8px 0 0;
+        border-radius: 6px 6px 0 0;
     }
-    
+
     .activity-item.last {
-        border-radius: 0 0 8px 8px;
+        border-radius: 0 0 6px 6px;
         border-left: 2px solid #e5e7eb;
     }
-    
+
     .activity-timeline-marker {
         flex-shrink: 0;
         position: relative;
-        width: 40px;
+        width: 28px;
         display: flex;
         flex-direction: column;
         align-items: center;
     }
-    
+
     .activity-icon {
-        width: 36px;
-        height: 36px;
+        width: 26px;
+        height: 26px;
         background: white;
-        border: 2px solid #e5e7eb;
+        border: 1.5px solid #e5e7eb;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1rem;
+        font-size: 0.7rem;
         position: relative;
         z-index: 2;
         transition: all 0.3s ease;
@@ -658,61 +722,61 @@
         flex-grow: 1;
         width: 2px;
         background: #e5e7eb;
-        margin-top: 5px;
-        min-height: 40px;
+        margin-top: 3px;
+        min-height: 20px;
     }
-    
+
     .activity-content {
         flex-grow: 1;
-        padding-top: 5px;
+        padding-top: 2px;
     }
-    
+
     .activity-header {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 8px;
+        gap: 6px;
+        margin-bottom: 3px;
         flex-wrap: wrap;
     }
-    
+
     .activity-action-badge {
         display: inline-block;
         background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
         color: #1e40af;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.65rem;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.3px;
     }
-    
+
     .activity-time {
-        font-size: 0.8rem;
+        font-size: 0.68rem;
         color: #9ca3af;
         display: flex;
         align-items: center;
-        gap: 5px;
+        gap: 3px;
     }
-    
+
     .activity-description {
-        font-size: 0.95rem;
+        font-size: 0.8rem;
         color: #374151;
-        margin-bottom: 8px;
-        line-height: 1.5;
+        margin-bottom: 3px;
+        line-height: 1.35;
     }
-    
+
     .activity-user {
         display: flex;
         align-items: center;
-        gap: 6px;
-        font-size: 0.85rem;
+        gap: 4px;
+        font-size: 0.72rem;
         color: #6b7280;
-        padding: 6px 10px;
+        padding: 3px 6px;
         background: #f3f4f6;
-        border-radius: 6px;
+        border-radius: 4px;
         width: fit-content;
-        margin-bottom: 8px;
+        margin-bottom: 3px;
     }
     
     .activity-user i {
@@ -726,10 +790,10 @@
     .activity-field-change {
         background: #f9fafb;
         border: 1px solid #e5e7eb;
-        border-radius: 6px;
-        padding: 10px;
-        font-size: 0.85rem;
-        margin-top: 8px;
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-size: 0.72rem;
+        margin-top: 3px;
     }
     
     .activity-field-change code {
@@ -741,24 +805,24 @@
     }
     
     .field-values {
-        margin-top: 8px;
+        margin-top: 4px;
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 3px;
     }
-    
+
     .value-row {
         display: flex;
         align-items: flex-start;
-        gap: 8px;
+        gap: 6px;
     }
-    
+
     .value-label {
         font-weight: 600;
-        min-width: 70px;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.8rem;
+        min-width: 50px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.68rem;
     }
     
     .value-label.old-value {
@@ -774,34 +838,35 @@
     .value-text {
         flex-grow: 1;
         background: white;
-        padding: 4px 8px;
-        border-radius: 4px;
+        padding: 2px 6px;
+        border-radius: 3px;
         border: 1px solid #e5e7eb;
         word-break: break-word;
         font-family: 'Courier New', monospace;
+        font-size: 0.72rem;
     }
-    
+
     .empty-state-activity {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 60px 20px;
+        padding: 30px 15px;
         text-align: center;
         background: linear-gradient(135deg, #f8f9fa 0%, #f0f1f5 100%);
     }
-    
+
     .empty-state-icon {
-        font-size: 4rem;
+        font-size: 2.5rem;
         color: #d1d5db;
-        margin-bottom: 15px;
+        margin-bottom: 8px;
     }
-    
+
     .empty-state-text {
-        font-size: 1.1rem;
+        font-size: 0.85rem;
         color: #6b7280;
         font-weight: 600;
-        margin: 0 0 8px 0;
+        margin: 0 0 4px 0;
     }
     
     /* Responsive Adjustments */
@@ -810,40 +875,451 @@
             min-height: 120px;
             padding: 20px 15px;
         }
-        
+
         .status-icon-circle {
             width: 50px;
             height: 50px;
             font-size: 1.5rem;
             margin-bottom: 12px;
         }
-        
+
         .status-text h4 {
             font-size: 1rem;
         }
-        
+
         .status-text h3 {
             font-size: 1.4rem;
         }
-        
+
         .activity-header {
             flex-direction: column;
             align-items: flex-start;
         }
-        
+
         .activity-item {
-            padding: 12px 15px;
-            gap: 10px;
+            padding: 6px 8px;
+            gap: 6px;
         }
-        
+
         .activity-timeline-marker {
-            width: 30px;
+            width: 24px;
         }
-        
+
         .activity-icon {
-            width: 30px;
-            height: 30px;
-            font-size: 0.9rem;
+            width: 22px;
+            height: 22px;
+            font-size: 0.6rem;
+        }
+    }
+
+    /* ==================== NCM COMMENTS SECTION STYLES ==================== */
+    .bg-gradient-comments {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    }
+
+    .ncm-comments-card {
+        border: 1px solid #e0e7ff;
+        overflow: hidden;
+    }
+
+    .ncm-comments-scroll {
+        max-height: 260px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: #c4b5fd #f5f3ff;
+    }
+
+    .ncm-comments-scroll::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .ncm-comments-scroll::-webkit-scrollbar-track {
+        background: #f5f3ff;
+    }
+
+    .ncm-comments-scroll::-webkit-scrollbar-thumb {
+        background: #c4b5fd;
+        border-radius: 4px;
+    }
+
+    .activity-log-scroll {
+        max-height: 350px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: #9ca3af #f3f4f6;
+    }
+
+    .activity-log-scroll::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .activity-log-scroll::-webkit-scrollbar-track {
+        background: #f3f4f6;
+    }
+
+    .activity-log-scroll::-webkit-scrollbar-thumb {
+        background: #9ca3af;
+        border-radius: 4px;
+    }
+
+    .btn-comments-refresh {
+        border: none;
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        padding: 0;
+        font-size: 0.75rem;
+    }
+
+    .btn-comments-refresh:hover {
+        background: rgba(255, 255, 255, 0.35);
+        color: white;
+        transform: rotate(90deg);
+    }
+
+    .btn-comments-refresh.spinning i {
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    /* Comment Form */
+    .ncm-comment-form-wrapper {
+        padding: 0 0 8px 0;
+    }
+
+    .ncm-comment-input-group {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+    }
+
+    .ncm-comment-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .ncm-comment-input-area {
+        flex: 1;
+    }
+
+    .ncm-comment-textarea {
+        border: 1.5px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 0.82rem;
+        resize: none;
+        transition: all 0.3s ease;
+        background: #f9fafb;
+    }
+
+    .ncm-comment-textarea:focus {
+        border-color: #8b5cf6;
+        background: white;
+        box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.1);
+    }
+
+    .ncm-comment-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 4px;
+    }
+
+    .ncm-char-count {
+        font-size: 0.7rem;
+        color: #9ca3af;
+    }
+
+    .btn-ncm-comment-submit {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        color: white;
+        border: none;
+        border-radius: 14px;
+        padding: 3px 12px;
+        font-weight: 600;
+        font-size: 0.75rem;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .btn-ncm-comment-submit:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 3px 8px rgba(99, 102, 241, 0.3);
+        color: white;
+    }
+
+    .btn-ncm-comment-submit:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        color: white;
+    }
+
+    /* Comments Divider */
+    .ncm-comments-divider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 2px 0 8px 0;
+    }
+
+    .ncm-comments-divider::before,
+    .ncm-comments-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, #e5e7eb 50%, transparent 100%);
+    }
+
+    .ncm-comments-divider span {
+        font-size: 0.65rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #9ca3af;
+    }
+
+    /* Comments Loading */
+    .ncm-comments-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px 10px;
+        color: #9ca3af;
+    }
+
+    .ncm-comments-spinner {
+        width: 24px;
+        height: 24px;
+        border: 2px solid #e5e7eb;
+        border-top-color: #8b5cf6;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 6px;
+    }
+
+    .ncm-comments-loading p {
+        font-size: 0.78rem;
+        margin: 0;
+    }
+
+    /* Individual Comment */
+    .ncm-comment-item {
+        display: flex;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        margin-bottom: 6px;
+        transition: all 0.2s ease;
+        background: #f9fafb;
+        border: 1px solid #f3f4f6;
+    }
+
+    .ncm-comment-item:hover {
+        background: #f3f4f6;
+        border-color: #e5e7eb;
+    }
+
+    .ncm-comment-item:last-child {
+        margin-bottom: 0;
+    }
+
+    .ncm-comment-marker {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.72rem;
+        flex-shrink: 0;
+        font-weight: 700;
+        color: white;
+    }
+
+    .ncm-comment-marker.marker-ncm {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+
+    .ncm-comment-marker.marker-admin {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    }
+
+    .ncm-comment-marker.marker-system {
+        background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+    }
+
+    .ncm-comment-body {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ncm-comment-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 2px;
+        flex-wrap: wrap;
+    }
+
+    .ncm-comment-author {
+        font-weight: 700;
+        font-size: 0.78rem;
+        color: #1f2937;
+    }
+
+    .ncm-comment-role-badge {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 8px;
+        font-size: 0.6rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .ncm-comment-role-badge.role-ncm {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .ncm-comment-role-badge.role-admin {
+        background: #ede9fe;
+        color: #5b21b6;
+    }
+
+    .ncm-comment-role-badge.role-system {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .ncm-comment-time {
+        font-size: 0.68rem;
+        color: #9ca3af;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+    }
+
+    .ncm-comment-status-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        font-size: 0.62rem;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 8px;
+        background: #ecfdf5;
+        color: #065f46;
+    }
+
+    .ncm-comment-text {
+        font-size: 0.82rem;
+        color: #374151;
+        line-height: 1.4;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* Empty State */
+    .ncm-comments-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px 10px;
+        text-align: center;
+    }
+
+    .ncm-comments-empty-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        color: #9ca3af;
+        margin-bottom: 8px;
+    }
+
+    .ncm-comments-empty h6 {
+        font-weight: 600;
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-bottom: 2px;
+    }
+
+    .ncm-comments-empty p {
+        font-size: 0.75rem;
+        color: #9ca3af;
+        margin: 0;
+    }
+
+    /* Error State */
+    .ncm-comments-error {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        color: #991b1b;
+        font-size: 0.8rem;
+    }
+
+    .ncm-comments-error i {
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    @media (max-width: 576px) {
+        .ncm-comment-input-group {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .ncm-comment-avatar {
+            display: none;
+        }
+
+        .ncm-comment-item {
+            padding: 6px 8px;
+            gap: 6px;
+        }
+
+        .ncm-comment-marker {
+            width: 24px;
+            height: 24px;
+            font-size: 0.65rem;
+        }
+
+        .ncm-comment-meta {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
         }
     }
 </style>
@@ -917,6 +1393,299 @@ function showNCMNotification(type, message) {
         notification.remove();
     }, 4000);
 }
+
+// ============================================================
+// ORDER COMMENTS WITH OPTIMISTIC UI UPDATE
+// ============================================================
+
+// Character counter for comment input
+const ncmCommentInput = document.getElementById('ncmCommentInput');
+const charCountEl = document.getElementById('charCount');
+const submitCommentBtn = document.getElementById('submitCommentBtn');
+
+if (ncmCommentInput) {
+    ncmCommentInput.addEventListener('input', function() {
+        const len = this.value.trim().length;
+        charCountEl.textContent = this.value.length;
+        submitCommentBtn.disabled = len === 0;
+    });
+}
+
+// Set initial badge for non-NCM orders
+{% if not order.ncm_order_id %}
+document.addEventListener('DOMContentLoaded', function() {
+    const countBadge = document.getElementById('commentsCount');
+    if (countBadge) countBadge.textContent = '0 Comments';
+});
+{% endif %}
+
+{% if order.ncm_order_id %}
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
+/**
+ * Format date/time for display
+ */
+function formatCommentTime(dateString) {
+    if (!dateString) return '';
+    try {
+        const d = new Date(dateString);
+        if (isNaN(d.getTime())) return dateString;
+
+        const now = new Date();
+        const diffMs = now - d;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return 'just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+
+        return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) +
+               ' ' + d.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+    } catch(e) {
+        return dateString;
+    }
+}
+
+/**
+ * Determine comment role and styling
+ */
+function getCommentRole(comment, author) {
+    const role = comment.role || '';
+    if (role === 'admin' || role === 'system') return role;
+
+    // Default to NCM if author name contains 'ncm'
+    if (author && author.toLowerCase().includes('ncm')) return 'ncm';
+    return 'admin';
+}
+
+/**
+ * Render a single comment element
+ */
+function createCommentElement(comment) {
+    const text = comment.comment || comment.comments || comment.text || comment.message || '';
+    const author = comment.created_by || comment.addedBy || comment.author || comment.user || comment.name || 'User';
+    const time = comment.created_at || comment.added_time || comment.addedtime || comment.date || comment.timestamp || '';
+    const statusLabel = comment.status || '';
+    const role = comment.is_ncm_staff ? 'ncm' : getCommentRole(comment, author);
+
+    const markerClass = role === 'ncm' ? 'marker-ncm' : (role === 'system' ? 'marker-system' : 'marker-admin');
+    const roleClass = role === 'ncm' ? 'role-ncm' : (role === 'system' ? 'role-system' : 'role-admin');
+    const roleLabel = role === 'ncm' ? 'NCM Staff' : (role === 'system' ? 'System' : 'You');
+    const initial = author.charAt(0).toUpperCase();
+    const timeDisplay = formatCommentTime(time);
+
+    const div = document.createElement('div');
+    div.className = 'ncm-comment-item';
+    div.innerHTML = `
+        <div class="ncm-comment-marker ${markerClass}">${initial}</div>
+        <div class="ncm-comment-body">
+            <div class="ncm-comment-meta">
+                <span class="ncm-comment-author">${escapeHtml(author)}</span>
+                <span class="ncm-comment-role-badge ${roleClass}">${roleLabel}</span>
+                ${statusLabel ? `<span class="ncm-comment-status-tag"><i class="fas fa-truck"></i> ${escapeHtml(statusLabel)}</span>` : ''}
+                ${timeDisplay ? `<span class="ncm-comment-time"><i class="fas fa-clock"></i> ${timeDisplay}</span>` : ''}
+            </div>
+            <div class="ncm-comment-text">${escapeHtml(text)}</div>
+        </div>
+    `;
+    return div;
+}
+
+/**
+ * Fetch NCM comments via AJAX
+ */
+function fetchNCMComments() {
+    const container = document.getElementById('ncmCommentsContainer');
+    const countBadge = document.getElementById('commentsCount');
+    const refreshBtn = document.querySelector('.btn-comments-refresh');
+
+    if (refreshBtn) refreshBtn.classList.add('spinning');
+
+    // Update last fetch time
+    lastCommentFetchTime = Date.now();
+
+    fetch(`/ncm/api/order/{{ order.id }}/comments/`)
+        .then(response => response.json())
+        .then(data => {
+            if (refreshBtn) refreshBtn.classList.remove('spinning');
+
+            if (data.success) {
+                const comments = data.comments || [];
+                countBadge.textContent = comments.length + ' Comment' + (comments.length !== 1 ? 's' : '');
+                renderComments(comments, container);
+            } else {
+                countBadge.textContent = '--';
+                if (container.innerHTML.trim() === '' || container.innerHTML.includes('ncm-comments-empty')) {
+                    container.innerHTML = `
+                        <div class="ncm-comments-error">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span>${escapeHtml(data.message || 'Failed to load comments')}</span>
+                        </div>
+                    `;
+                }
+            }
+        })
+        .catch(error => {
+            if (refreshBtn) refreshBtn.classList.remove('spinning');
+            countBadge.textContent = '--';
+            if (container.innerHTML.trim() === '' || container.innerHTML.includes('ncm-comments-empty')) {
+                container.innerHTML = `
+                    <div class="ncm-comments-error">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <span>Network error. Please try again.</span>
+                    </div>
+                `;
+            }
+            console.error('Error fetching comments:', error);
+        });
+}
+
+/**
+ * Render NCM comments list
+ */
+function renderComments(comments, container) {
+    if (!comments || comments.length === 0) {
+        container.innerHTML = `
+            <div class="ncm-comments-empty">
+                <div class="ncm-comments-empty-icon">
+                    <i class="fas fa-comment-slash"></i>
+                </div>
+                <h6>No Comments Yet</h6>
+                <p>Be the first to add a comment to this NCM order</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = '';
+
+    // Sort comments by date (oldest first)
+    const sortedComments = [...comments].sort((a, b) => {
+        const timeA = new Date(a.created_at || a.date || a.timestamp || 0);
+        const timeB = new Date(b.created_at || b.date || b.timestamp || 0);
+        return timeA - timeB;
+    });
+
+    sortedComments.forEach(comment => {
+        const element = createCommentElement(comment);
+        container.appendChild(element);
+    });
+}
+
+/**
+ * Submit a new NCM comment with optimistic UI update
+ */
+function submitNCMComment() {
+    const input = document.getElementById('ncmCommentInput');
+    const btn = document.getElementById('submitCommentBtn');
+    const container = document.getElementById('ncmCommentsContainer');
+    const countBadge = document.getElementById('commentsCount');
+    const commentText = input.value.trim();
+
+    if (!commentText) return;
+
+    // Prepare optimistic comment
+    const optimisticComment = {
+        comment: commentText,
+        created_by: 'You',
+        author: 'You',
+        created_at: new Date().toISOString(),
+        role: 'admin',
+        _optimistic: true
+    };
+
+    // Save original button state
+    const originalBtnHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+
+    // Immediately show the comment in the UI (optimistic update)
+    if (container.innerHTML.includes('ncm-comments-empty')) {
+        container.innerHTML = '';
+    }
+
+    const optimisticElement = createCommentElement(optimisticComment);
+    optimisticElement.style.opacity = '0.7';
+    optimisticElement.style.animation = 'slideInUp 0.3s ease-out';
+    container.appendChild(optimisticElement);
+
+    // Update comment count
+    const currentCount = parseInt(countBadge.textContent) || 0;
+    countBadge.textContent = (currentCount + 1) + ' Comment' + (currentCount !== 0 ? 's' : '');
+
+    // Clear input
+    input.value = '';
+    document.getElementById('charCount').textContent = '0';
+
+    // Send to server
+    fetch(`/ncm/api/order/{{ order.id }}/comments/add/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({ comment: commentText })
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHTML;
+
+        if (data.success) {
+            showNCMNotification('success', 'Comment sent successfully');
+
+            // Fetch fresh comments from server
+            setTimeout(() => {
+                fetchNCMComments();
+            }, 100);
+        } else {
+            optimisticElement.remove();
+            countBadge.textContent = Math.max(0, currentCount) + ' Comment' + (currentCount !== 1 ? 's' : '');
+            showNCMNotification('error', data.message || 'Failed to send comment');
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHTML;
+
+        optimisticElement.remove();
+        countBadge.textContent = Math.max(0, currentCount) + ' Comment' + (currentCount !== 1 ? 's' : '');
+
+        showNCMNotification('error', 'Network error. Please try again.');
+        console.error('Error submitting comment:', error);
+    });
+}
+
+// Auto-fetch comments on page load
+let lastCommentFetchTime = 0;
+const MIN_FETCH_INTERVAL = 5000;
+
+document.addEventListener('DOMContentLoaded', function() {
+    fetchNCMComments();
+
+    // Auto-refresh comments every 5 seconds
+    setInterval(function() {
+        const container = document.getElementById('ncmCommentsContainer');
+        const now = Date.now();
+
+        if ((now - lastCommentFetchTime) >= MIN_FETCH_INTERVAL &&
+            container && !container.querySelector('[style*="opacity"]')) {
+            fetchNCMComments();
+        }
+    }, 5000);
+});
+{% endif %}
 </script>
 
 {% endblock %}
