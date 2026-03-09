@@ -2987,6 +2987,14 @@
         }
     }
 
+    // Highlight matched search term within a text string
+    function highlightSearchTerm(text, term) {
+        if (!term || !text) return text;
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp('(' + escaped + ')', 'gi');
+        return String(text).replace(regex, '<mark style="background:#fef08a;color:#1a1a2e;padding:0 2px;border-radius:2px;font-weight:700;">$1</mark>');
+    }
+
     function displayNcmBranches(branches) {
         const listContainer = document.getElementById('ncmBranchesListContainer');
         const noResults = document.getElementById('ncmBranchNoResults');
@@ -3053,19 +3061,19 @@
                 <div>
                     ${matchIndicator}
                     <div style="font-weight: 600; color: #1a1a2e; margin-bottom: 5px;">
-                        <i class="fas fa-building" style="color: #667eea; margin-right: 8px;"></i>${branchName}
+                        <i class="fas fa-building" style="color: #667eea; margin-right: 8px;"></i>${highlightSearchTerm(branchName, searchTerm)}
                     </div>
                     <div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;">
-                        <strong>Code:</strong> <span style="font-family: monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">${branchCode}</span> 
-                        <strong style="margin-left: 10px;">Region:</strong> <span style="${branch.matchedField?.name === 'region' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchRegion}</span>
+                        <strong>Code:</strong> <span style="font-family: monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">${highlightSearchTerm(branchCode, searchTerm)}</span> 
+                        <strong style="margin-left: 10px;">Region:</strong> <span>${highlightSearchTerm(branchRegion, searchTerm)}</span>
                     </div>
                     <div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;">
-                        <strong>Municipality:</strong> <span style="${branch.matchedField?.name === 'municipality' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchMunicipality}</span> 
-                        <strong style="margin-left: 10px;">District:</strong> <span style="${branch.matchedField?.name === 'district' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchDistrict}</span>
+                        <strong>Municipality:</strong> <span>${highlightSearchTerm(branchMunicipality, searchTerm)}</span> 
+                        <strong style="margin-left: 10px;">District:</strong> <span>${highlightSearchTerm(branchDistrict, searchTerm)}</span>
                     </div>
-                    ${branchPhone && branchPhone !== 'N/A' ? `<div style="font-size: 0.85rem; color: #667eea; margin-bottom: 5px;"><i class="fas fa-phone"></i> <span style="${branch.matchedField?.name === 'phone' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchPhone}</span></div>` : ''}
-                    ${branchAddress && branchAddress !== 'N/A' ? `<div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;"><strong>Address:</strong> <span style="${branch.matchedField?.name === 'address' ? 'background: #fff3cd; padding: 2px 6px; border-radius: 3px;' : ''}">${branchAddress}</span></div>` : ''}
-                    ${branchAreas && branchAreas !== 'N/A' ? `<div style="font-size: 0.85rem; color: #10b981; margin-bottom: 5px;"><i class="fas fa-map" style="margin-right: 5px;"></i><strong>Areas:</strong> <span style="${branch.matchedField?.name === 'areas_covered' ? 'background: #dcfce7; padding: 2px 6px; border-radius: 3px; font-weight: 600;' : ''} word-wrap: break-word; word-break: break-word; white-space: normal; display: block; margin-top: 4px; line-height: 1.4;">${branchAreas}</span></div>` : ''}
+                    ${branchPhone && branchPhone !== 'N/A' ? `<div style="font-size: 0.85rem; color: #667eea; margin-bottom: 5px;"><i class="fas fa-phone"></i> ${highlightSearchTerm(branchPhone, searchTerm)}</div>` : ''}
+                    ${branchAddress && branchAddress !== 'N/A' ? `<div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;"><strong>Address:</strong> ${highlightSearchTerm(branchAddress, searchTerm)}</div>` : ''}
+                    ${branchAreas && branchAreas !== 'N/A' ? `<div style="font-size: 0.85rem; color: #10b981; margin-bottom: 5px;"><i class="fas fa-map" style="margin-right: 5px;"></i><strong>Areas:</strong> <span style="word-wrap: break-word; word-break: break-word; white-space: normal; display: block; margin-top: 4px; line-height: 1.4;">${highlightSearchTerm(branchAreas, searchTerm)}</span></div>` : ''}
                 </div>
             `;
 
