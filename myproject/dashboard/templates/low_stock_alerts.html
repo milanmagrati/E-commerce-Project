@@ -14,7 +14,7 @@
                 </h1>
                 <p class="header-subtitle">
                     {% if total_alert_count > 0 %}
-                        {{ total_alert_count }} product{{ total_alert_count|pluralize }} need{{ total_alert_count|pluralize:",s" }} attention
+                        {{ total_alert_count }} product{{ total_alert_count|pluralize }} need{{ total_alert_count|pluralize:"s," }} attention
                     {% else %}
                         All products are sufficiently stocked
                     {% endif %}

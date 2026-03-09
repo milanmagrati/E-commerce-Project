@@ -146,7 +146,19 @@
                     <option value="out_of_stock" {% if stock_filter == "out_of_stock" %}selected{% endif %}>Out of Stock</option>
                 </select>
             </div>
-            
+
+            <div class="col-lg-2 col-md-3">
+                <select class="form-select" name="sort">
+                    <option value="">Sort: Newest</option>
+                    <option value="trending" {% if sort_filter == "trending" %}selected{% endif %}>Trending (7 Days)</option>
+                    <option value="price_low" {% if sort_filter == "price_low" %}selected{% endif %}>Price: Low to High</option>
+                    <option value="price_high" {% if sort_filter == "price_high" %}selected{% endif %}>Price: High to Low</option>
+                    <option value="name_asc" {% if sort_filter == "name_asc" %}selected{% endif %}>Name: A-Z</option>
+                    <option value="name_desc" {% if sort_filter == "name_desc" %}selected{% endif %}>Name: Z-A</option>
+                    <option value="stock_low" {% if sort_filter == "stock_low" %}selected{% endif %}>Stock: Low First</option>
+                </select>
+            </div>
+
             <div class="col-lg-1 col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="fas fa-filter"></i>
@@ -228,14 +240,21 @@
                         <th style="width: 3%;">
                             <input type="checkbox" id="selectAll" class="form-check-input" onclick="toggleSelectAll(this)">
                         </th>
-                        <th style="width: 8%;">Image</th>
-                        <th style="width: 22%;">Name</th>
-                        <th style="width: 12%;">Category</th>
-                        <th style="width: 10%;">Price</th>
-                        <th style="width: 8%;">Stock</th>
-                        <th style="width: 8%;">Status</th>
-                        <th style="width: 12%;">Created</th>
-                        <th style="width: 17%;">Actions</th>
+                        {% if sort_filter == "trending" %}
+                        <th style="width: 4%;">Rank</th>
+                        {% endif %}
+                        <th style="width: {% if sort_filter == 'trending' %}6{% else %}8{% endif %}%;">Image</th>
+                        <th style="width: {% if sort_filter == 'trending' %}15{% else %}22{% endif %}%;">Name</th>
+                        <th style="width: {% if sort_filter == 'trending' %}8{% else %}12{% endif %}%;">Category</th>
+                        <th style="width: {% if sort_filter == 'trending' %}8{% else %}10{% endif %}%;">Price</th>
+                        {% if sort_filter == "trending" %}
+                        <th style="width: 8%;">Orders (7d)</th>
+                        <th style="width: 7%;">Qty Sold (7d)</th>
+                        {% endif %}
+                        <th style="width: {% if sort_filter == 'trending' %}7{% else %}8{% endif %}%;">Stock</th>
+                        <th style="width: {% if sort_filter == 'trending' %}7{% else %}8{% endif %}%;">Status</th>
+                        <th style="width: {% if sort_filter == 'trending' %}10{% else %}12{% endif %}%;">Created</th>
+                        <th style="width: {% if sort_filter == 'trending' %}14{% else %}17{% endif %}%;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -246,6 +265,11 @@
                                    name="product_ids" value="{{ product.id }}"
                                    onchange="updateBulkActions()">
                         </td>
+                        {% if sort_filter == "trending" %}
+                        <td>
+                            <span class="badge bg-dark fw-bold">#{{ forloop.counter|add:products.start_index|add:"-1" }}</span>
+                        </td>
+                        {% endif %}
                         <td>
                             {% if product.image %}
                             <img src="{{ product.image.url }}" alt="{{ product.name }}"
@@ -285,6 +309,22 @@
                             {% endif %}
                         </td>
                         <td><strong class="text-success">रू {{ product.price|floatformat:2 }}</strong></td>
+                        {% if sort_filter == "trending" %}
+                        <td>
+                            {% if product.order_count_7d %}
+                                <span class="badge bg-primary">{{ product.order_count_7d }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if product.total_sold_7d %}
+                                <span class="badge bg-info text-white">{{ product.total_sold_7d }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark">0</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
                         <td>
                             {% if product.product_type == 'bundle' %}
                                 {% if product.available_stock == 0 %}
@@ -336,7 +376,7 @@
                     </tr>
                     {% if product.product_type == 'variable' and product.variations.all %}
                     <tr class="variation-expand-row" style="display:none;">
-                        <td colspan="9" class="p-0">
+                        <td colspan="{% if sort_filter == 'trending' %}12{% else %}9{% endif %}" class="p-0">
                             <div class="variation-list-container">
                                 <div class="variation-list-header">
                                     <i class="fas fa-layer-group"></i> Variations of <strong>{{ product.name }}</strong>
@@ -391,7 +431,7 @@
                     {% endif %}
                     {% if product.product_type == 'bundle' and product.bundle_components.all %}
                     <tr class="variation-expand-row" style="display:none;">
-                        <td colspan="9" class="p-0">
+                        <td colspan="{% if sort_filter == 'trending' %}12{% else %}9{% endif %}" class="p-0">
                             <div class="variation-list-container" style="border-color: #8b5cf6;">
                                 <div class="variation-list-header" style="color: #8b5cf6; border-color: rgba(139,92,246,0.15);">
                                     <i class="fas fa-boxes-stacked"></i> Components of <strong>{{ product.name }}</strong>
@@ -432,7 +472,7 @@
                     {% endif %}
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center py-5">
+                        <td colspan="{% if sort_filter == 'trending' %}12{% else %}9{% endif %}" class="text-center py-5">
                             <i class="fas fa-box-open fa-3x text-muted mb-3 d-block"></i>
                             <p class="text-muted mb-3">No products found</p>
                             <a href="{% url 'product_add' %}" class="btn btn-primary">
@@ -455,7 +495,7 @@
                 <ul class="pagination pagination-sm mb-0">
                     {% if products.has_previous %}
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ products.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">
+                        <a class="page-link" href="?page={{ products.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if sort_filter %}&sort={{ sort_filter }}{% endif %}">
                             <i class="fas fa-chevron-left"></i>
                         </a>
                     </li>
@@ -470,14 +510,14 @@
                         <li class="page-item active"><span class="page-link">{{ num }}</span></li>
                         {% elif num > products.number|add:'-3' and num < products.number|add:'3' %}
                         <li class="page-item">
-                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">{{ num }}</a>
+                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if sort_filter %}&sort={{ sort_filter }}{% endif %}">{{ num }}</a>
                         </li>
                         {% endif %}
                     {% endfor %}
 
                     {% if products.has_next %}
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ products.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">
+                        <a class="page-link" href="?page={{ products.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if sort_filter %}&sort={{ sort_filter }}{% endif %}">
                             <i class="fas fa-chevron-right"></i>
                         </a>
                     </li>

@@ -989,13 +989,35 @@
                 <form method="get" id="filterForm" style="display: none;">
                     <input type="hidden" id="periodInput" name="period" value="{{ selected_period }}">
                     <input type="hidden" id="staffInput" name="staff_filter" value="{{ selected_staff }}">
+                    <input type="hidden" id="customStartInput" name="custom_start" value="{{ custom_start_date }}">
+                    <input type="hidden" id="customEndInput" name="custom_end" value="{{ custom_end_date }}">
                 </form>
-                <select id="periodFilter" onchange="updateFilters()">
+                <select id="periodFilter" onchange="onPeriodChange()">
                     <option value="today" {% if selected_period == 'today' %}selected{% endif %}>Today</option>
                     <option value="this_month" {% if selected_period == 'this_month' %}selected{% endif %}>This Month</option>
                     <option value="last_30_days" {% if selected_period == 'last_30_days' %}selected{% endif %}>Last 30 Days</option>
                     <option value="ytd" {% if selected_period == 'ytd' %}selected{% endif %}>Year to Date</option>
+                    <option value="custom" {% if selected_period == 'custom' %}selected{% endif %}>Custom Range</option>
                 </select>
+            </div>
+
+            <!-- Custom Date Range inputs (shown only when Custom Range is selected) -->
+            <div class="sp-filter-group" id="customDateGroup" style="display: {% if selected_period == 'custom' %}flex{% else %}none{% endif %}; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 140px;">
+                    <label for="customStartDate" style="display:block; font-weight:600; margin-bottom:0.5rem; font-size:0.95rem;">From</label>
+                    <input type="date" id="customStartDate" value="{{ custom_start_date }}" max="{{ today_date }}"
+                        style="width:100%;padding:0.75rem 1rem;border:2px solid rgba(255,255,255,0.3);border-radius:8px;background:rgba(255,255,255,0.95);color:#333;font-size:0.95rem;font-weight:500;cursor:pointer;"
+                        onchange="onCustomDateChange()">
+                </div>
+                <div style="flex: 1; min-width: 140px;">
+                    <label for="customEndDate" style="display:block; font-weight:600; margin-bottom:0.5rem; font-size:0.95rem;">To</label>
+                    <input type="date" id="customEndDate" value="{{ custom_end_date }}" max="{{ today_date }}"
+                        style="width:100%;padding:0.75rem 1rem;border:2px solid rgba(255,255,255,0.3);border-radius:8px;background:rgba(255,255,255,0.95);color:#333;font-size:0.95rem;font-weight:500;cursor:pointer;"
+                        onchange="onCustomDateChange()">
+                </div>
+                <button type="button" class="sp-filter-btn" onclick="applyCustomDate()" style="white-space:nowrap; margin-bottom:0;">
+                    <i class="fas fa-check"></i> Apply
+                </button>
             </div>
 
             <div class="sp-filter-group">
@@ -1869,15 +1891,59 @@
     }
 
     // Filter Management
-    function updateFilters() {
+    function buildParams() {
         const period = document.getElementById('periodFilter').value;
         const staffFilter = document.getElementById('staffFilter').value;
-        
         const params = new URLSearchParams();
         params.append('period', period);
         params.append('staff_filter', staffFilter);
-        
-        window.location.href = window.location.pathname + '?' + params.toString();
+        if (period === 'custom') {
+            const startVal = document.getElementById('customStartDate').value;
+            const endVal = document.getElementById('customEndDate').value;
+            if (startVal) params.append('custom_start', startVal);
+            if (endVal) params.append('custom_end', endVal);
+        }
+        return params;
+    }
+
+    function updateFilters() {
+        // Navigate with current filters (including custom dates if set)
+        window.location.href = window.location.pathname + '?' + buildParams().toString();
+    }
+
+    function onPeriodChange() {
+        const period = document.getElementById('periodFilter').value;
+        const customGroup = document.getElementById('customDateGroup');
+        if (period === 'custom') {
+            customGroup.style.display = 'flex';
+            // Wait for user to pick dates and click Apply — don't navigate yet
+        } else {
+            customGroup.style.display = 'none';
+            updateFilters();
+        }
+    }
+
+    function onCustomDateChange() {
+        // Auto-validate: ensure end date is not before start date
+        const start = document.getElementById('customStartDate').value;
+        const end = document.getElementById('customEndDate').value;
+        if (start && end && end < start) {
+            document.getElementById('customEndDate').value = start;
+        }
+    }
+
+    function applyCustomDate() {
+        const start = document.getElementById('customStartDate').value;
+        const end = document.getElementById('customEndDate').value;
+        if (!start || !end) {
+            alert('Please select both a start date and an end date.');
+            return;
+        }
+        if (end < start) {
+            alert('End date cannot be before start date.');
+            return;
+        }
+        window.location.href = window.location.pathname + '?' + buildParams().toString();
     }
 
     function resetFilters() {

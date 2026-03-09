@@ -942,6 +942,129 @@
         </div>
     </div>
 
+    <!-- Stock Count Section -->
+    <div class="stock-count-section">
+        <div class="alert-table-card stock-count-highlight">
+            <div class="card-header-dark alert-stock-count">
+                <h5><i class="fas fa-cubes pulse-icon"></i> Stock Count</h5>
+                <div class="header-right">
+                    <span class="count-badge stock-count-badge">{{ total_products }} products</span>
+                    <span class="count-badge stock-units-badge">{{ total_stock_units }} total units</span>
+                </div>
+            </div>
+            <div class="card-body-dark p-0">
+                <!-- Stock Count Search -->
+                <div class="stock-count-search-bar">
+                    <div class="stock-count-search-wrapper">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="stockCountSearch" placeholder="Search products..." onkeyup="filterStockCountTable()">
+                    </div>
+                    <div class="stock-count-filter-group">
+                        <select id="stockCountFilter" onchange="filterStockCountTable()">
+                            <option value="all">All Products</option>
+                            <option value="in_stock">In Stock (&gt;10)</option>
+                            <option value="low_stock">Low Stock (1-10)</option>
+                            <option value="out_of_stock">Out of Stock (0)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-container-dark" style="max-height: 600px;">
+                    <table class="table-dark" id="stockCountTable">
+                        <thead>
+                            <tr>
+                                <th width="5%">#</th>
+                                <th width="35%">Product</th>
+                                <th>Category</th>
+                                <th>SKU</th>
+                                <th class="text-center">Stock</th>
+                                <th class="text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in stock_count_products %}
+                            <tr class="table-row-hover stock-count-row"
+                                data-stock="{{ product.stock }}"
+                                data-name="{{ product.name|lower }}"
+                                data-sku="{{ product.slug|lower }}">
+                                <td class="text-center">{{ forloop.counter }}</td>
+                                <td>
+                                    <div class="product-cell">
+                                        {% if product.image %}
+                                        <img src="{{ product.image.url }}" alt="{{ product.name }}" class="product-img-dark">
+                                        {% else %}
+                                        <div class="product-img-placeholder">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <span class="product-name">{{ product.name|truncatewords:5 }}</span>
+                                            {% if product.product_type == 'bundle' %}
+                                            <br><span class="stock-count-type-label bundle-label">BUNDLE</span>
+                                            {% elif product.product_type == 'variable' %}
+                                            <br><span class="stock-count-type-label variable-label">VARIABLE</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="category-text">{{ product.category.name|default:"Uncategorized" }}</span>
+                                </td>
+                                <td>
+                                    <span class="sku-badge">{{ product.slug|upper }}</span>
+                                </td>
+                                <td class="text-center">
+                                    {% if product.stock == 0 %}
+                                        <span class="stock-badge danger">0</span>
+                                    {% elif product.stock <= 10 %}
+                                        <span class="stock-badge warning">{{ product.stock }}</span>
+                                    {% else %}
+                                        <span class="stock-badge success">{{ product.stock }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if product.stock == 0 %}
+                                        <span class="stock-status-pill status-out">Out of Stock</span>
+                                    {% elif product.stock <= 10 %}
+                                        <span class="stock-status-pill status-low">Low Stock</span>
+                                    {% else %}
+                                        <span class="stock-status-pill status-in">In Stock</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-5">
+                                    <i class="fas fa-cubes fa-3x empty-icon mb-3"></i>
+                                    <p class="empty-text">No products found</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Stock Count Summary Footer -->
+                <div class="stock-count-footer">
+                    <div class="stock-count-summary-item">
+                        <span class="summary-dot" style="background: var(--accent-green);"></span>
+                        <span>In Stock: <strong>{{ in_stock }}</strong></span>
+                    </div>
+                    <div class="stock-count-summary-item">
+                        <span class="summary-dot" style="background: var(--accent-orange);"></span>
+                        <span>Low Stock: <strong>{{ low_stock }}</strong></span>
+                    </div>
+                    <div class="stock-count-summary-item">
+                        <span class="summary-dot" style="background: var(--accent-red);"></span>
+                        <span>Out of Stock: <strong>{{ out_of_stock }}</strong></span>
+                    </div>
+                    <div class="stock-count-summary-item">
+                        <span class="summary-dot" style="background: var(--accent-purple);"></span>
+                        <span>Total Units: <strong>{{ total_stock_units }}</strong></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Damaged Inventory from Returns -->
     <div class="damaged-inventory-section">
         <div class="alert-table-card damaged-highlight">
@@ -2242,6 +2365,170 @@
     animation: pulse 2s ease-in-out infinite;
 }
 
+/* Stock Count Section */
+.stock-count-section {
+    margin-bottom: 2rem;
+}
+
+.stock-count-highlight {
+    box-shadow: 0 8px 24px rgba(14, 165, 233, 0.15) !important;
+    border: 2px solid rgba(14, 165, 233, 0.25) !important;
+}
+
+.alert-stock-count {
+    border-bottom: 3px solid #0ea5e9;
+    background: linear-gradient(to right, rgba(14, 165, 233, 0.08), transparent);
+}
+
+.stock-count-badge {
+    background: rgba(14, 165, 233, 0.2);
+    color: #0ea5e9;
+    border: 1px solid rgba(14, 165, 233, 0.4);
+}
+
+.stock-units-badge {
+    background: rgba(79, 70, 229, 0.2);
+    color: var(--accent-purple);
+    border: 1px solid rgba(79, 70, 229, 0.4);
+}
+
+.stock-count-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    background: rgba(14, 165, 233, 0.03);
+    border-bottom: 1px solid var(--dark-border);
+}
+
+.stock-count-search-wrapper {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.stock-count-search-wrapper i {
+    position: absolute;
+    left: 12px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.stock-count-search-wrapper input {
+    width: 100%;
+    padding: 0.6rem 1rem 0.6rem 2.25rem;
+    border: 1px solid var(--dark-border);
+    border-radius: 8px;
+    background: var(--dark-card);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    transition: all 0.3s;
+}
+
+.stock-count-search-wrapper input:focus {
+    outline: none;
+    border-color: #0ea5e9;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+}
+
+.stock-count-filter-group select {
+    padding: 0.6rem 2.5rem 0.6rem 1rem;
+    border: 1px solid var(--dark-border);
+    border-radius: 8px;
+    background: var(--dark-card);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231f2937' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 12px;
+}
+
+.stock-count-filter-group select:focus {
+    outline: none;
+    border-color: #0ea5e9;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+}
+
+.stock-status-pill {
+    padding: 0.3rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.stock-status-pill.status-in {
+    background: rgba(5, 150, 105, 0.15);
+    color: #059669;
+    border: 1px solid rgba(5, 150, 105, 0.3);
+}
+
+.stock-status-pill.status-low {
+    background: rgba(217, 119, 6, 0.15);
+    color: #d97706;
+    border: 1px solid rgba(217, 119, 6, 0.3);
+}
+
+.stock-status-pill.status-out {
+    background: rgba(220, 38, 38, 0.15);
+    color: #dc2626;
+    border: 1px solid rgba(220, 38, 38, 0.3);
+}
+
+.stock-count-type-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    display: inline-block;
+    margin-top: 2px;
+}
+
+.stock-count-type-label.bundle-label {
+    background: rgba(217, 119, 6, 0.12);
+    color: #d97706;
+    border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.stock-count-type-label.variable-label {
+    background: rgba(124, 58, 237, 0.12);
+    color: #7c3aed;
+    border: 1px solid rgba(124, 58, 237, 0.25);
+}
+
+.stock-count-footer {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    padding: 1rem 1.5rem;
+    background: rgba(14, 165, 233, 0.03);
+    border-top: 1px solid var(--dark-border);
+    flex-wrap: wrap;
+}
+
+.stock-count-summary-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+}
+
+.summary-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
 /* Damaged Inventory Section */
 .damaged-inventory-section {
     margin-bottom: 2rem;
@@ -2892,6 +3179,32 @@ function exportReport() {
 
 function refreshDashboard() {
     location.reload();
+}
+
+// Stock Count Table Filter
+function filterStockCountTable() {
+    var searchInput = document.getElementById('stockCountSearch').value.toLowerCase();
+    var filterValue = document.getElementById('stockCountFilter').value;
+    var rows = document.querySelectorAll('.stock-count-row');
+
+    rows.forEach(function(row) {
+        var name = row.getAttribute('data-name') || '';
+        var sku = row.getAttribute('data-sku') || '';
+        var stock = parseInt(row.getAttribute('data-stock')) || 0;
+
+        var matchesSearch = name.indexOf(searchInput) !== -1 || sku.indexOf(searchInput) !== -1;
+
+        var matchesFilter = true;
+        if (filterValue === 'in_stock') {
+            matchesFilter = stock > 10;
+        } else if (filterValue === 'low_stock') {
+            matchesFilter = stock > 0 && stock <= 10;
+        } else if (filterValue === 'out_of_stock') {
+            matchesFilter = stock === 0;
+        }
+
+        row.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
+    });
 }
 </script>
 {% endblock %}

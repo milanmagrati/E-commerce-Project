@@ -440,12 +440,38 @@ def products_view(request):
             except ValueError:
                 pass
     
+    # Sort filter
+    sort_filter = request.GET.get("sort", "")
+    if sort_filter == "trending":
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        products = products.annotate(
+            order_count_7d=Count(
+                'orderitem__order',
+                filter=Q(orderitem__order__created_at__gte=seven_days_ago),
+                distinct=True
+            ),
+            total_sold_7d=Sum(
+                'orderitem__quantity',
+                filter=Q(orderitem__order__created_at__gte=seven_days_ago)
+            )
+        ).order_by(F('order_count_7d').desc(nulls_last=True), F('total_sold_7d').desc(nulls_last=True))
+    elif sort_filter == "price_low":
+        products = products.order_by('price')
+    elif sort_filter == "price_high":
+        products = products.order_by('-price')
+    elif sort_filter == "name_asc":
+        products = products.order_by('name')
+    elif sort_filter == "name_desc":
+        products = products.order_by('-name')
+    elif sort_filter == "stock_low":
+        products = products.order_by('stock')
+
     # Calculate statistics (on all user products, not filtered)
     all_products = Product.objects.filter(is_deleted=False)
     active_count = all_products.filter(is_active=True).count()
     low_stock_count = all_products.filter(stock__lte=10, stock__gt=0).count()
     out_of_stock_count = all_products.filter(stock=0).count()
-    
+
     categories = Category.objects.all()
     trash_count = Product.objects.filter(is_deleted=True).count()
 
@@ -462,6 +488,7 @@ def products_view(request):
         "category_filter": category_filter,
         "status_filter": status_filter,
         "stock_filter": stock_filter,
+        "sort_filter": sort_filter,
         "date_filter": date_filter,
         "start_date": request.GET.get("start_date", ""),
         "end_date": request.GET.get("end_date", ""),
@@ -4400,13 +4427,13 @@ def api_bestselling_products(request):
     try:
         limit = int(request.GET.get("limit", 8))
         days = int(request.GET.get("days", 30))
-        
+
         # Calculate date range
         from django.utils import timezone
         from datetime import timedelta
-        
+
         days_ago = timezone.now() - timedelta(days=days)
-        
+
         # Get best-selling products based on order items
         bestselling_products = (
             Product.objects
@@ -4414,27 +4441,54 @@ def api_bestselling_products(request):
             .annotate(total_sold=Count('orderitem'))
             .order_by('-total_sold')[:limit]
         )
-        
+
+        bestselling_list = list(bestselling_products)
+        bestselling_ids = [p.id for p in bestselling_list]
+
+        # Ensure bundle products are included
+        bundle_products = list(
+            Product.objects
+            .filter(is_active=True, is_deleted=False, product_type='bundle')
+            .exclude(id__in=bestselling_ids)
+            .annotate(total_sold=Count(
+                'orderitem',
+                filter=Q(orderitem__order__created_at__gte=days_ago)
+            ))
+            .order_by('-total_sold')
+        )
+        for bp in bundle_products:
+            if len(bestselling_list) < limit:
+                bestselling_list.append(bp)
+            else:
+                # Replace the lowest-ranked non-bundle product
+                for i in range(len(bestselling_list) - 1, -1, -1):
+                    if bestselling_list[i].product_type != 'bundle':
+                        bestselling_list[i] = bp
+                        break
+
         # If not enough results, add popular products by stock/price
-        if bestselling_products.count() < limit:
-            remaining_count = limit - bestselling_products.count()
-            product_ids = list(bestselling_products.values_list('id', flat=True))
-            
+        if len(bestselling_list) < limit:
+            remaining_count = limit - len(bestselling_list)
+            existing_ids = [p.id for p in bestselling_list]
+
             additional_products = (
                 Product.objects
                 .filter(is_active=True, is_deleted=False)
-                .exclude(id__in=product_ids)
-                .order_by('-stock_quantity')[:remaining_count]
+                .exclude(id__in=existing_ids)
+                .order_by('-stock')[:remaining_count]
             )
-            
-            bestselling_products = list(bestselling_products) + list(additional_products)
-        
+
+            bestselling_list = bestselling_list + list(additional_products)
+
         data = []
-        for p in bestselling_products:
-            # Get stock
+        for p in bestselling_list:
+            # Get stock - use available_stock for bundle products
             try:
-                stock = p.stock_quantity if hasattr(p, 'stock_quantity') else (p.stock if hasattr(p, 'stock') else 0)
-            except AttributeError:
+                if p.product_type == 'bundle':
+                    stock = p.available_stock
+                else:
+                    stock = int(p.stock) if p.stock else 0
+            except (AttributeError, ValueError, TypeError):
                 stock = 0
             
             # Get SKU
@@ -4448,7 +4502,7 @@ def api_bestselling_products(request):
                 total_sold = p.total_sold if hasattr(p, 'total_sold') else 0
             except:
                 total_sold = 0
-            
+
             data.append({
                 "id": p.id,
                 "name": p.name,
@@ -6085,20 +6139,33 @@ def inventory_dashboard(request):
         
         # Stock Statistics
         total_products = products.count()
-        in_stock = products.filter(stock__gt=10).count()
-        low_stock = products.filter(
-            low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
-        ).count() or products.filter(stock__lte=10, stock__gt=0).count()
         out_of_stock = products.filter(stock=0).count()
+
+        # Low stock: use custom thresholds if any are set, otherwise fallback to stock <= 10
+        has_custom_thresholds = products.filter(low_stock_threshold__gt=0).exists()
+        if has_custom_thresholds:
+            low_stock = products.filter(
+                low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+            ).count()
+        else:
+            low_stock = products.filter(stock__lte=10, stock__gt=0).count()
+
+        in_stock = total_products - low_stock - out_of_stock
 
         # Product Variations Stock
         variations = ProductVariation.objects.filter(product__is_deleted=False)
         total_variations = variations.count()
-        variations_in_stock = variations.filter(stock__gt=10).count()
-        variations_low_stock = variations.filter(
-            low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
-        ).count() or variations.filter(stock__lte=10, stock__gt=0).count()
         variations_out_of_stock = variations.filter(stock=0).count()
+
+        has_var_thresholds = variations.filter(low_stock_threshold__gt=0).exists()
+        if has_var_thresholds:
+            variations_low_stock = variations.filter(
+                low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+            ).count()
+        else:
+            variations_low_stock = variations.filter(stock__lte=10, stock__gt=0).count()
+
+        variations_in_stock = total_variations - variations_low_stock - variations_out_of_stock
 
         # Calculate Total Stock Value
         total_stock_value = sum(p.stock * p.price for p in products if p.stock > 0)
@@ -6106,11 +6173,12 @@ def inventory_dashboard(request):
         # Total Stock Units
         total_stock_units = sum(p.stock for p in products)
 
-        # Low Stock Products (use custom thresholds if set)
-        low_stock_products = products.filter(
-            low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
-        ).order_by('stock')[:10]
-        if not low_stock_products.exists():
+        # Low Stock Products (use custom thresholds if any are set, else fallback)
+        if has_custom_thresholds:
+            low_stock_products = products.filter(
+                low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
+            ).order_by('stock')[:10]
+        else:
             low_stock_products = products.filter(stock__lte=10, stock__gt=0).order_by('stock')[:10]
         
         # Out of Stock Products
@@ -6396,6 +6464,9 @@ def inventory_dashboard(request):
             individual_count = 0
             total_restocked_qty = 0
 
+        # Stock Count - All products with stock info for the Stock Count section
+        stock_count_products = products.select_related('category').order_by('-stock')
+
         # Stock Status Distribution for Charts
         stock_chart_data = {
             'labels': ['In Stock', 'Low Stock', 'Out of Stock'],
@@ -6463,8 +6534,11 @@ def inventory_dashboard(request):
             'batch_count': batch_count,
             'individual_count': individual_count,
             'total_restocked_qty': total_restocked_qty,
+
+            # Stock Count
+            'stock_count_products': stock_count_products,
         }
-        
+
         return render(request, 'inventory_dashboard.html', context)
         
     except Exception as e:
@@ -10553,11 +10627,11 @@ def low_stock_settings(request):
     status_filter = request.GET.get('status', '')
     if status_filter == 'low':
         products = products.filter(
-            Q(stock__gt=0, stock__lte=F('low_stock_threshold')) |
-            Q(variations__stock__gt=0, variations__stock__lte=F('variations__low_stock_threshold'), variations__low_stock_threshold__gt=0)
+            Q(low_stock_threshold__gt=0, stock__gt=0, stock__lte=F('low_stock_threshold')) |
+            Q(variations__low_stock_threshold__gt=0, variations__stock__gt=0, variations__stock__lte=F('variations__low_stock_threshold'))
         ).distinct()
     elif status_filter == 'ok':
-        products = products.filter(
+        products = products.filter(stock__gt=0).filter(
             Q(stock__gt=F('low_stock_threshold')) | Q(low_stock_threshold=0)
         )
     elif status_filter == 'out':
@@ -10705,15 +10779,19 @@ def low_stock_alerts(request):
     low_var_count = low_stock_variations.count()
     out_var_count = out_of_stock_variations.count()
 
+    total_low = low_count + len(extra_low_products)
+    total_out = out_count + len(extra_out_products)
+    total_alert_count = total_low + total_out + low_var_count + out_var_count
+
     context = {
         'low_stock_products': list(low_stock_products) + extra_low_products,
         'out_of_stock_products': list(out_of_stock_products) + extra_out_products,
-        'low_count': low_count + len(extra_low_products),
-        'out_count': out_count + len(extra_out_products),
+        'low_count': total_low,
+        'out_count': total_out,
         'low_var_count': low_var_count,
         'out_var_count': out_var_count,
-        'total_alert_count': low_count + out_count + low_var_count + out_var_count,
-        'play_sound': low_count > 0 or out_count > 0 or low_var_count > 0 or out_var_count > 0,
+        'total_alert_count': total_alert_count,
+        'play_sound': total_alert_count > 0,
     }
 
     from django.shortcuts import render
@@ -11817,11 +11895,11 @@ def staff_performance_analytics(request):
     clear_filters = request.GET.get('clear_filters', 'false') == 'true'
     
     if clear_filters:
-        # Clear the session filters
-        if 'staff_performance_period' in request.session:
-            del request.session['staff_performance_period']
-        if 'staff_performance_filter' in request.session:
-            del request.session['staff_performance_filter']
+        # Clear the session filters (including custom date range)
+        for key in ('staff_performance_period', 'staff_performance_filter',
+                    'staff_performance_custom_start', 'staff_performance_custom_end'):
+            if key in request.session:
+                del request.session[key]
         request.session.modified = True
         # Redirect without the clear_filters param
         return redirect('staff_performance_analytics')
@@ -11829,20 +11907,38 @@ def staff_performance_analytics(request):
     # Get filter params from query string (prioritize GET over session)
     period = request.GET.get('period', None)
     staff_filter = request.GET.get('staff_filter', None)
+    custom_start_str = request.GET.get('custom_start', None)
+    custom_end_str = request.GET.get('custom_end', None)
     
     # Fall back to session if not in GET params
     if period is None:
         period = request.session.get('staff_performance_period', 'this_month')
     if staff_filter is None:
         staff_filter = request.session.get('staff_performance_filter', 'all')
+    if custom_start_str is None:
+        custom_start_str = request.session.get('staff_performance_custom_start', '')
+    if custom_end_str is None:
+        custom_end_str = request.session.get('staff_performance_custom_end', '')
     
     # Save current filters to session for future visits (1-hour timeout configured in settings)
     request.session['staff_performance_period'] = period
     request.session['staff_performance_filter'] = staff_filter
+    if custom_start_str:
+        request.session['staff_performance_custom_start'] = custom_start_str
+    if custom_end_str:
+        request.session['staff_performance_custom_end'] = custom_end_str
     request.session.modified = True  # Ensure session is saved
     
     # Calculate date range based on period
     today = timezone.now().date()
+
+    # Helper to safely parse YYYY-MM-DD date strings
+    def _parse_date(date_str):
+        try:
+            from datetime import date as _date
+            return _date.fromisoformat(date_str.strip())
+        except Exception:
+            return None
     
     if period == 'today':
         start_date = today
@@ -11857,6 +11953,18 @@ def staff_performance_analytics(request):
         end_date = today
         current_year = today.year
         date_range_text = f"YTD {current_year} ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b %Y')})"
+    elif period == 'custom':
+        parsed_start = _parse_date(custom_start_str) if custom_start_str else None
+        parsed_end = _parse_date(custom_end_str) if custom_end_str else None
+        if parsed_start and parsed_end:
+            # Ensure correct order and clamp end to today
+            start_date = min(parsed_start, parsed_end)
+            end_date = min(max(parsed_start, parsed_end), today)
+        else:
+            # Fallback to current month if custom dates are missing
+            start_date = today.replace(day=1)
+            end_date = today
+        date_range_text = f"{start_date.strftime('%d %b %Y')} \u2013 {end_date.strftime('%d %b %Y')} (Custom)"
     else:  # this_month
         start_date = today.replace(day=1)
         end_date = today
@@ -11923,11 +12031,12 @@ def staff_performance_analytics(request):
     ).count()
     
     # ========== STAFF PERFORMANCE DATA ==========
+    # Show ALL active users in the dropdown (not just sales/warehouse)
     staff_members = User.objects.filter(
         is_active=True,
         is_deleted=False,
-        role__in=['sales', 'warehouse']
-    ).order_by('first_name')
+        is_superuser=False,
+    ).order_by('first_name', 'last_name')
     
     # ✅ Create a separate list for filtering based on selected staff
     staff_to_show = staff_members
@@ -12124,23 +12233,12 @@ def staff_performance_analytics(request):
         top_products.append(product_data)
     
     # ========== PERFORMANCE TRENDS OVER TIME ==========
-    daily_data = Order.objects.filter(
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date,
-        is_deleted=False
-    ).values('created_at__date').annotate(
+    daily_data = orders_qs.values('created_at__date').annotate(
         daily_orders=Count('id'),
         daily_delivered=Count('id', filter=Q(status='delivered') | Q(order_status='delivered')),
         daily_revenue=Sum('total_amount')
     ).order_by('created_at__date')
-    
-    if staff_filter != 'all':
-        try:
-            staff_id = int(staff_filter)
-            daily_data = daily_data.filter(created_by_id=staff_id)
-        except (ValueError, TypeError):
-            pass
-    
+
     performance_trends = []
     for entry in daily_data:
         date = entry['created_at__date']
@@ -12252,6 +12350,9 @@ def staff_performance_analytics(request):
         'selected_period': period,
         'selected_staff': staff_filter,
         'date_range': date_range_text,
+        'custom_start_date': custom_start_str or '',
+        'custom_end_date': custom_end_str or '',
+        'today_date': today.strftime('%Y-%m-%d'),
         'status_breakdown': status_breakdown_json,
         'recent_returns': recent_returns,
         'return_stats': return_stats,
