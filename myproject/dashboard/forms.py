@@ -26,8 +26,8 @@ class ProductForm(forms.ModelForm):
     
     class Meta:
         model = Product
-        fields = ['name', 'slug', 'description', 'category', 'product_type', 
-                  'price', 'cost_price', 'stock', 'stock_status', 'image', 'is_active']
+        fields = ['name', 'slug', 'description', 'category', 'product_type',
+                  'price', 'cost_price', 'cost_price_type', 'stock', 'stock_status', 'image', 'is_active']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'slug': forms.TextInput(attrs={'class': 'form-control'}),
@@ -36,6 +36,7 @@ class ProductForm(forms.ModelForm):
             'product_type': forms.Select(attrs={'class': 'form-select'}),
             'price': forms.NumberInput(attrs={'class': 'form-control'}),
             'cost_price': forms.NumberInput(attrs={'class': 'form-control'}),
+            'cost_price_type': forms.HiddenInput(),
             'stock': forms.NumberInput(attrs={'class': 'form-control'}),
             'stock_status': forms.Select(attrs={'class': 'form-select'}),
             'image': forms.FileInput(attrs={'class': 'form-control'}),
@@ -93,8 +94,8 @@ class ProductAttributeValueForm(forms.ModelForm):
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ['name', 'slug', 'description', 'category', 'product_type', 
-                  'price', 'cost_price', 'stock', 'stock_status', 'image', 'is_active']
+        fields = ['name', 'slug', 'description', 'category', 'product_type',
+                  'price', 'cost_price', 'cost_price_type', 'stock', 'stock_status', 'image', 'is_active']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'slug': forms.TextInput(attrs={'class': 'form-control'}),
@@ -103,13 +104,14 @@ class ProductForm(forms.ModelForm):
             'product_type': forms.Select(attrs={'class': 'form-select'}),
             'price': forms.NumberInput(attrs={'class': 'form-control'}),
             'cost_price': forms.NumberInput(attrs={'class': 'form-control'}),
+            'cost_price_type': forms.HiddenInput(),
             'stock': forms.NumberInput(attrs={'class': 'form-control'}),
             'stock_status': forms.Select(attrs={'class': 'form-select'}),
             'image': forms.FileInput(attrs={'class': 'form-control'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 
-        
+
 class ProductImageForm(forms.ModelForm):
     class Meta:
         model = ProductImage

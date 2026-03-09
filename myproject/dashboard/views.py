@@ -4026,6 +4026,132 @@ def return_orders_list(request):
 
 @login_required
 @permission_required('can_view_orders')
+def on_hold_orders_list(request):
+    """Display list of orders with On Hold status"""
+    from django.db.models import Q, Sum
+    from decimal import Decimal
+
+    # Primary query: match both FK and string field for coverage
+    on_hold_setup = Setup.objects.filter(
+        setup_type='status',
+        name__iexact='on hold'
+    ).first()
+
+    if on_hold_setup:
+        orders = Order.objects.filter(
+            is_deleted=False
+        ).filter(
+            Q(status_setup_id=on_hold_setup.id) |
+            (Q(status_setup_id__isnull=True) & Q(order_status__iexact='on hold'))
+        )
+    else:
+        orders = Order.objects.filter(
+            is_deleted=False,
+            order_status__iexact='on hold'
+        )
+
+    orders = orders.select_related(
+        'customer', 'created_by', 'status_setup',
+        'payment_setup', 'payment_status_setup'
+    ).prefetch_related('items').order_by('-created_at')
+
+    # Filters
+    search_query = request.GET.get('search', '')
+    payment_filter = request.GET.get('payment', '')
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+
+    if search_query:
+        orders = orders.filter(
+            Q(order_number__icontains=search_query) |
+            Q(customer_name__icontains=search_query) |
+            Q(customer_phone__icontains=search_query) |
+            Q(customer_email__icontains=search_query)
+        )
+
+    if payment_filter:
+        try:
+            payment_setup = Setup.objects.filter(
+                setup_type='payment_status',
+                name__iexact=payment_filter.replace('_', ' ')
+            ).first()
+            if payment_setup:
+                orders = orders.filter(
+                    Q(payment_status_setup_id=payment_setup.id) |
+                    (Q(payment_status_setup_id__isnull=True) & Q(payment_status__iexact=payment_filter.replace('_', ' ')))
+                )
+            else:
+                orders = orders.filter(payment_status__iexact=payment_filter.replace('_', ' '))
+        except Exception:
+            orders = orders.filter(payment_status=payment_filter)
+
+    if start_date and end_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+        except ValueError:
+            pass
+
+    # Statistics
+    total_on_hold_orders = orders.count()
+    total_on_hold_amount = orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    pending_payment_count = orders.filter(payment_status__iexact='pending').count()
+    average_on_hold_value = (total_on_hold_amount / Decimal(total_on_hold_orders)) if total_on_hold_orders > 0 else Decimal('0')
+
+    # Pagination
+    per_page = request.GET.get('per_page', '50')
+    if per_page not in ('50', '100', '200'):
+        per_page = '50'
+    paginator = Paginator(orders, int(per_page))
+    page_number = request.GET.get('page')
+    orders_page = paginator.get_page(page_number)
+
+    for order in orders_page.object_list:
+        try:
+            fix_order_decimals(order)
+        except Exception:
+            pass
+
+    # Dynamic bulk action options
+    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+
+    order_status_bulk_options = [
+        (f'status_setup_{setup.id}', f'Mark as {setup.name}', '📋')
+        for setup in order_setups
+    ]
+    payment_status_bulk_options = [
+        (f'payment_status_setup_{setup.id}', f'Mark as {setup.name}', '💳')
+        for setup in payment_setups
+    ]
+    payment_status_choices = [
+        (setup.name.lower().replace(' ', '_'), setup.name)
+        for setup in payment_setups
+    ]
+
+    context = {
+        'orders': orders_page,
+        'total_on_hold_orders': total_on_hold_orders,
+        'total_on_hold_amount': total_on_hold_amount,
+        'pending_payment_count': pending_payment_count,
+        'average_on_hold_value': average_on_hold_value,
+        'search_query': search_query,
+        'payment_filter': payment_filter,
+        'start_date': start_date,
+        'end_date': end_date,
+        'per_page': per_page,
+        'payment_status_choices': payment_status_choices,
+        'order_status_bulk_options': order_status_bulk_options,
+        'payment_status_bulk_options': payment_status_bulk_options,
+        'page_obj': orders_page,
+    }
+
+    return render(request, 'on_hold_orders.html', context)
+
+
+@login_required
+@permission_required('can_view_orders')
 def order_invoice(request, order_id):
     order = get_object_or_404(Order, id=order_id, created_by=request.user)
     order_items = order.items.all()
@@ -4756,10 +4882,11 @@ def orders_bulk_action(request):
     if request.method == 'POST':
         order_ids = request.POST.getlist('order_ids')
         action = request.POST.get('bulk_action')
-        
+        redirect_to = request.POST.get('redirect_to', 'orders_list')
+
         if not order_ids:
             messages.error(request, 'No orders selected!')
-            return redirect('orders_list')
+            return redirect(redirect_to)
         
         try:
             # Removed user filter - show all orders
@@ -4771,7 +4898,7 @@ def orders_bulk_action(request):
             
             if count == 0:
                 messages.error(request, "No valid orders found!")
-                return redirect('orders_list')
+                return redirect(redirect_to)
             
             # NEW: HANDLE SEND TO NCM ACTION
             if action == 'send_to_ncm':
@@ -4944,8 +5071,8 @@ def orders_bulk_action(request):
                 
         except Exception as e:
             messages.error(request, f'Error performing bulk action: {str(e)}')
-    
-    return redirect('orders_list')
+
+    return redirect(request.POST.get('redirect_to', 'orders_list') if request.method == 'POST' else 'orders_list')
 
 
 @login_required
@@ -6440,10 +6567,11 @@ def stock_in_create(request):
                             cost_price=unit_cost_float,
                             quantity=quantity,
                         )
-                        # Sync cost_price field with the new weighted average
-                        product.refresh_from_db()
-                        product.cost_price = product.average_cost
-                        product.save(update_fields=['cost_price'])
+                        # Only sync cost_price field for variable cost price products
+                        if product.cost_price_type == 'variable':
+                            product.refresh_from_db()
+                            product.cost_price = product.average_cost
+                            product.save(update_fields=['cost_price'])
 
                     total_qty += quantity
                     total_cost += item_total
@@ -12677,10 +12805,11 @@ def purchase_create(request):
                             cost_price=rate,
                             quantity=qty,
                         )
-                        # Sync cost_price field with the new weighted average
-                        product.refresh_from_db()
-                        product.cost_price = product.average_cost
-                        product.save(update_fields=['cost_price'])
+                        # Only sync cost_price field for variable cost price products
+                        if product.cost_price_type == 'variable':
+                            product.refresh_from_db()
+                            product.cost_price = product.average_cost
+                            product.save(update_fields=['cost_price'])
                 except (Product.DoesNotExist, ValueError, InvalidOperation):
                     continue
 

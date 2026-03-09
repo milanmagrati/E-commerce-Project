@@ -75,6 +75,9 @@ urlpatterns = [
     
     # Return Orders
     path('orders/returns/', views.return_orders_list, name='return_orders_list'),
+
+    # On Hold Orders
+    path('orders/on-hold/', views.on_hold_orders_list, name='on_hold_orders_list'),
     
     
     

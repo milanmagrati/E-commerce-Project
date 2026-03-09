@@ -308,7 +308,14 @@
               <small class="text-muted d-block mb-1">Bundle Cost <i class="fas fa-calculator" title="Auto-calculated from components"></i></small>
               <h4 class="text-danger mb-0">रू {{ product.average_cost|floatformat:2 }}</h4>
               {% else %}
-              <small class="text-muted d-block mb-1">Cost Price</small>
+              <small class="text-muted d-block mb-1">
+                Cost Price
+                {% if product.cost_price_type == 'variable' %}
+                <span class="badge bg-primary" style="font-size: 0.6rem; vertical-align: middle;"><i class="fas fa-chart-line"></i> Variable</span>
+                {% else %}
+                <span class="badge bg-success" style="font-size: 0.6rem; vertical-align: middle;"><i class="fas fa-lock"></i> Fixed</span>
+                {% endif %}
+              </small>
               <h4 class="text-danger mb-0">रू {{ product.average_cost|floatformat:2 }}</h4>
               {% endif %}
             </div>

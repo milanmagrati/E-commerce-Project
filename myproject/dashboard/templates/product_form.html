@@ -144,7 +144,34 @@
                     </div>
                     <div class="col-md-4 mb-3" id="costPriceField">
                         <label class="form-label fw-bold">Cost Price (रू) <span class="text-danger">*</span></label>
-                        {{ form.cost_price }}
+
+                        <!-- Cost Price Type Toggle -->
+                        <div class="cost-price-toggle mb-2" id="costPriceToggle">
+                            {{ form.cost_price_type }}
+                            <div class="btn-group btn-group-sm w-100" role="group">
+                                <button type="button" class="btn cost-type-btn" data-type="fixed" id="btnFixedCost">
+                                    <i class="fas fa-lock"></i> Fixed
+                                </button>
+                                <button type="button" class="btn cost-type-btn" data-type="variable" id="btnVariableCost">
+                                    <i class="fas fa-chart-line"></i> Variable
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Fixed cost price input -->
+                        <div id="fixedCostPriceInput">
+                            {{ form.cost_price }}
+                        </div>
+
+                        <!-- Variable cost price info -->
+                        <div id="variableCostPriceInfo" style="display: none;">
+                            <div class="input-group">
+                                <span class="input-group-text bg-info-subtle"><i class="fas fa-chart-line"></i></span>
+                                <input type="text" class="form-control fw-bold" id="variableCostDisplay" readonly placeholder="Auto-calculated" value="">
+                            </div>
+                            <small class="text-info"><i class="fas fa-info-circle"></i> Auto-calculated from purchase history (weighted average)</small>
+                        </div>
+
                         <!-- Bundle auto-calculated cost display -->
                         <div id="bundleCostDisplay" style="display: none;">
                             <div class="input-group">
@@ -718,6 +745,46 @@
         color: #7c3aed;
         background-color: #ede9fe;
     }
+
+    /* Cost Price Type Toggle */
+    .cost-price-toggle .btn-group {
+        border-radius: 8px;
+        overflow: hidden;
+        border: 2px solid #dee2e6;
+    }
+
+    .cost-type-btn {
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 4px 12px;
+        border: none;
+        background: #f8f9fa;
+        color: #6c757d;
+        transition: all 0.2s ease;
+    }
+
+    .cost-type-btn:hover {
+        background: #e9ecef;
+        color: #495057;
+    }
+
+    .cost-type-btn.active-fixed {
+        background: linear-gradient(135deg, #198754, #20c997);
+        color: #fff;
+        box-shadow: 0 2px 6px rgba(25, 135, 84, 0.3);
+    }
+
+    .cost-type-btn.active-variable {
+        background: linear-gradient(135deg, #0d6efd, #6ea8fe);
+        color: #fff;
+        box-shadow: 0 2px 6px rgba(13, 110, 253, 0.3);
+    }
+
+    .bg-info-subtle {
+        background-color: #cfe2ff !important;
+        color: #0d6efd;
+        border-color: #9ec5fe;
+    }
 </style>
 
 <script>
@@ -1114,6 +1181,55 @@
     const costPriceInput = document.querySelector('[name="cost_price"]');
     const bundleCostDisplay = document.getElementById('bundleCostDisplay');
 
+    // ========== COST PRICE TYPE TOGGLE ==========
+    const costPriceTypeInput = document.querySelector('[name="cost_price_type"]');
+    const btnFixedCost = document.getElementById('btnFixedCost');
+    const btnVariableCost = document.getElementById('btnVariableCost');
+    const fixedCostPriceInput = document.getElementById('fixedCostPriceInput');
+    const variableCostPriceInfo = document.getElementById('variableCostPriceInfo');
+    const variableCostDisplay = document.getElementById('variableCostDisplay');
+    const costPriceToggle = document.getElementById('costPriceToggle');
+
+    // Current variable cost from server (weighted average)
+    const serverVariableCost = '{{ product.average_cost|default:"0.00" }}';
+
+    function setCostPriceType(type) {
+        if (!costPriceTypeInput) return;
+        costPriceTypeInput.value = type;
+
+        // Update toggle button styles
+        if (btnFixedCost) {
+            btnFixedCost.classList.remove('active-fixed', 'active-variable');
+            if (type === 'fixed') btnFixedCost.classList.add('active-fixed');
+        }
+        if (btnVariableCost) {
+            btnVariableCost.classList.remove('active-fixed', 'active-variable');
+            if (type === 'variable') btnVariableCost.classList.add('active-variable');
+        }
+
+        if (type === 'fixed') {
+            if (fixedCostPriceInput) fixedCostPriceInput.style.display = 'block';
+            if (variableCostPriceInfo) variableCostPriceInfo.style.display = 'none';
+        } else {
+            if (fixedCostPriceInput) fixedCostPriceInput.style.display = 'none';
+            if (variableCostPriceInfo) variableCostPriceInfo.style.display = 'block';
+            if (variableCostDisplay) variableCostDisplay.value = 'Rs. ' + parseFloat(serverVariableCost || '0').toFixed(2);
+        }
+    }
+
+    if (btnFixedCost) {
+        btnFixedCost.addEventListener('click', function() { setCostPriceType('fixed'); });
+    }
+    if (btnVariableCost) {
+        btnVariableCost.addEventListener('click', function() { setCostPriceType('variable'); });
+    }
+
+    // Initialize cost price type from form value
+    function initCostPriceType() {
+        const currentType = costPriceTypeInput ? costPriceTypeInput.value : 'fixed';
+        setCostPriceType(currentType);
+    }
+
     function toggleVariations() {
         const type = productTypeSelect ? productTypeSelect.value : 'simple';
         if (variationsCard) variationsCard.style.display = (type === 'variable') ? 'block' : 'none';
@@ -1123,14 +1239,17 @@
         // Hide stock field for bundles (stock is auto-calculated from components)
         if (stockField) stockField.style.display = (type === 'bundle') ? 'none' : 'block';
 
-        // Toggle cost price: show auto-calculated display for bundles, original input for others
+        // Toggle cost price: show auto-calculated display for bundles, toggle for others
         if (type === 'bundle') {
-            if (costPriceInput) costPriceInput.style.display = 'none';
+            if (fixedCostPriceInput) fixedCostPriceInput.style.display = 'none';
+            if (variableCostPriceInfo) variableCostPriceInfo.style.display = 'none';
+            if (costPriceToggle) costPriceToggle.style.display = 'none';
             if (bundleCostDisplay) bundleCostDisplay.style.display = 'block';
             recalcBundleCost();
         } else {
-            if (costPriceInput) costPriceInput.style.display = 'block';
+            if (costPriceToggle) costPriceToggle.style.display = 'block';
             if (bundleCostDisplay) bundleCostDisplay.style.display = 'none';
+            initCostPriceType();
         }
     }
 

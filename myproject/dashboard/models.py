@@ -59,6 +59,11 @@ class Product(models.Model):
         ('low_stock', 'Low Stock'),
     )
 
+    COST_PRICE_TYPE = (
+        ('fixed', 'Fixed Cost Price'),
+        ('variable', 'Variable Cost Price'),
+    )
+
     # User/Owner
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='products')
     
@@ -74,6 +79,7 @@ class Product(models.Model):
     # Pricing
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    cost_price_type = models.CharField(max_length=10, choices=COST_PRICE_TYPE, default='fixed')
     
     # Inventory
     stock = models.IntegerField(default=0)
@@ -108,9 +114,14 @@ class Product(models.Model):
 
     @property
     def average_cost(self):
-        """Calculate weighted average cost from ProductPurchase records.
-        Falls back to the static cost_price field if no purchases exist.
+        """Calculate cost based on cost_price_type setting.
+        - fixed: always returns the static cost_price field.
+        - variable: returns weighted average from ProductPurchase records,
+          falls back to cost_price if no purchases exist.
         """
+        if self.cost_price_type == 'fixed':
+            return self.cost_price
+        # Variable cost price: weighted average from purchase history
         purchases = self.product_purchases.all()
         if not purchases.exists():
             return self.cost_price
