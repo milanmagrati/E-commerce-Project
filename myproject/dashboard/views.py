@@ -12669,6 +12669,18 @@ def purchase_create(request):
                     if product.stock > 0:
                         product.stock_status = 'in_stock'
                     product.save(update_fields=['stock', 'stock_status'])
+
+                    # Create ProductPurchase record to keep average_cost dynamic
+                    if rate > 0:
+                        ProductPurchase.objects.create(
+                            product=product,
+                            cost_price=rate,
+                            quantity=qty,
+                        )
+                        # Sync cost_price field with the new weighted average
+                        product.refresh_from_db()
+                        product.cost_price = product.average_cost
+                        product.save(update_fields=['cost_price'])
                 except (Product.DoesNotExist, ValueError, InvalidOperation):
                     continue
 
@@ -12700,6 +12712,7 @@ def purchase_create(request):
     context = {
         'suppliers': suppliers,
         'products': products,
+        'today': timezone.now().date().isoformat(),
     }
     return render(request, 'purchase/purchase_form.html', context)
 
