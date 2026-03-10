@@ -192,6 +192,7 @@ def login_view(request):
         
         if user is not None:
             login(request, user)
+            request.session.set_expiry(43200)  # 12-hour session per user
             return redirect('dashboard')
         else:
             messages.error(request, 'Invalid username or password')
@@ -11976,19 +11977,31 @@ def staff_performance_analytics(request):
     if clear_filters:
         # Clear the session filters (including custom date range)
         for key in ('staff_performance_period', 'staff_performance_filter',
-                    'staff_performance_custom_start', 'staff_performance_custom_end'):
+                    'staff_performance_custom_start', 'staff_performance_custom_end',
+                    'staff_performance_filters_saved_at'):
             if key in request.session:
                 del request.session[key]
         request.session.modified = True
         # Redirect without the clear_filters param
         return redirect('staff_performance_analytics')
-    
+
+    # Auto-clear staff performance filters after 1 hour
+    import time as _time
+    filters_saved_at = request.session.get('staff_performance_filters_saved_at')
+    if filters_saved_at and (_time.time() - filters_saved_at) > 3600:
+        for key in ('staff_performance_period', 'staff_performance_filter',
+                    'staff_performance_custom_start', 'staff_performance_custom_end',
+                    'staff_performance_filters_saved_at'):
+            if key in request.session:
+                del request.session[key]
+        request.session.modified = True
+
     # Get filter params from query string (prioritize GET over session)
     period = request.GET.get('period', None)
     staff_filter = request.GET.get('staff_filter', None)
     custom_start_str = request.GET.get('custom_start', None)
     custom_end_str = request.GET.get('custom_end', None)
-    
+
     # Fall back to session if not in GET params
     if period is None:
         period = request.session.get('staff_performance_period', 'this_month')
@@ -11998,14 +12011,15 @@ def staff_performance_analytics(request):
         custom_start_str = request.session.get('staff_performance_custom_start', '')
     if custom_end_str is None:
         custom_end_str = request.session.get('staff_performance_custom_end', '')
-    
-    # Save current filters to session for future visits (1-hour timeout configured in settings)
+
+    # Save current filters to session with timestamp (1-hour expiry)
     request.session['staff_performance_period'] = period
     request.session['staff_performance_filter'] = staff_filter
     if custom_start_str:
         request.session['staff_performance_custom_start'] = custom_start_str
     if custom_end_str:
         request.session['staff_performance_custom_end'] = custom_end_str
+    request.session['staff_performance_filters_saved_at'] = _time.time()
     request.session.modified = True  # Ensure session is saved
     
     # Calculate date range based on period
