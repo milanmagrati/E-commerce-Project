@@ -34,7 +34,7 @@ from django.core.files.storage import default_storage
 from django.core.files.base import File
 from django.conf import settings
 from django.utils.text import slugify
-from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem, StaffTarget
+from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem, StaffTarget, OrderFollowUp
 
 # IMPORT DECORATORS
 from accounts.decorators import permission_required, admin_only
@@ -4052,7 +4052,7 @@ def return_orders_list(request):
 
 
 @login_required
-@permission_required('can_view_orders')
+@permission_required('can_view_on_hold_orders')
 def on_hold_orders_list(request):
     """Display list of orders with On Hold status"""
     from django.db.models import Q, Sum
@@ -4080,7 +4080,7 @@ def on_hold_orders_list(request):
     orders = orders.select_related(
         'customer', 'created_by', 'status_setup',
         'payment_setup', 'payment_status_setup'
-    ).prefetch_related('items').order_by('-created_at')
+    ).prefetch_related('items', 'followups', 'followups__user').order_by('-created_at')
 
     # Filters
     search_query = request.GET.get('search', '')
@@ -4134,11 +4134,22 @@ def on_hold_orders_list(request):
     page_number = request.GET.get('page')
     orders_page = paginator.get_page(page_number)
 
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    followup_meta = {}
     for order in orders_page.object_list:
         try:
             fix_order_decimals(order)
         except Exception:
             pass
+        # Build follow-up metadata for template
+        latest = order.followups.first()  # already ordered by -created_at
+        followup_meta[order.id] = {
+            'has_followups': order.followups.exists(),
+            'count': order.followups.count(),
+            'last_user': (latest.user.get_full_name() or latest.user.username) if latest and latest.user else None,
+            'last_date': latest.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if latest else None,
+            'last_type': latest.get_followup_type_display() if latest else None,
+        }
 
     # Dynamic bulk action options
     order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
@@ -4172,9 +4183,77 @@ def on_hold_orders_list(request):
         'order_status_bulk_options': order_status_bulk_options,
         'payment_status_bulk_options': payment_status_bulk_options,
         'page_obj': orders_page,
+        'followup_meta': followup_meta,
     }
 
     return render(request, 'on_hold_orders.html', context)
+
+
+@login_required
+@permission_required('can_view_on_hold_orders')
+@require_POST
+def add_order_followup(request, order_id):
+    """AJAX endpoint to add a follow-up comment to an order"""
+    order = get_object_or_404(Order, id=order_id, is_deleted=False)
+
+    comment = request.POST.get('comment', '').strip()
+    followup_type = request.POST.get('followup_type', 'custom_note')
+
+    if not comment:
+        return JsonResponse({'success': False, 'error': 'Comment cannot be empty.'}, status=400)
+
+    valid_types = dict(OrderFollowUp.FOLLOWUP_TYPE_CHOICES)
+    if followup_type not in valid_types:
+        followup_type = 'custom_note'
+
+    followup = OrderFollowUp.objects.create(
+        order=order,
+        user=request.user,
+        followup_type=followup_type,
+        comment=comment
+    )
+
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    created_local = followup.created_at.astimezone(nepal_tz)
+
+    return JsonResponse({
+        'success': True,
+        'followup': {
+            'id': followup.id,
+            'user': request.user.get_full_name() or request.user.username,
+            'followup_type': followup.get_followup_type_display(),
+            'followup_type_key': followup.followup_type,
+            'comment': followup.comment,
+            'created_at': created_local.strftime('%b %d, %Y %I:%M %p'),
+        }
+    })
+
+
+@login_required
+@permission_required('can_view_on_hold_orders')
+def get_order_followups(request, order_id):
+    """AJAX endpoint to get all follow-ups for an order"""
+    order = get_object_or_404(Order, id=order_id, is_deleted=False)
+    followups = order.followups.select_related('user').all()
+
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    followup_list = []
+    for f in followups:
+        created_local = f.created_at.astimezone(nepal_tz)
+        followup_list.append({
+            'id': f.id,
+            'user': f.user.get_full_name() or f.user.username if f.user else 'Unknown',
+            'followup_type': f.get_followup_type_display(),
+            'followup_type_key': f.followup_type,
+            'comment': f.comment,
+            'created_at': created_local.strftime('%b %d, %Y %I:%M %p'),
+        })
+
+    return JsonResponse({
+        'success': True,
+        'followups': followup_list,
+        'count': len(followup_list)
+    })
 
 
 @login_required
@@ -12567,15 +12646,22 @@ def product_sales_report(request):
     active_filter = ''
     if from_date_str and to_date_str:
         today_str = now.strftime('%Y-%m-%d')
-        day_of_week = now.weekday()
-        week_start = (now - timedelta(days=day_of_week)).strftime('%Y-%m-%d')
-        month_start = now.replace(day=1).strftime('%Y-%m-%d')
+        seven_days_ago = (now - timedelta(days=6)).strftime('%Y-%m-%d')
+        fifteen_days_ago = (now - timedelta(days=14)).strftime('%Y-%m-%d')
+        one_month_ago = (now.replace(day=now.day) - timedelta(days=0))
+        try:
+            one_month_ago = now.replace(month=now.month - 1)
+        except ValueError:
+            one_month_ago = now.replace(year=now.year - 1, month=12)
+        one_month_ago_str = one_month_ago.strftime('%Y-%m-%d')
         if from_date_str == today_str and to_date_str == today_str:
             active_filter = 'today'
-        elif from_date_str == week_start and to_date_str == today_str:
-            active_filter = 'week'
-        elif from_date_str == month_start and to_date_str == today_str:
-            active_filter = 'month'
+        elif from_date_str == seven_days_ago and to_date_str == today_str:
+            active_filter = '7days'
+        elif from_date_str == fifteen_days_ago and to_date_str == today_str:
+            active_filter = '15days'
+        elif from_date_str == one_month_ago_str and to_date_str == today_str:
+            active_filter = '1month'
 
     context = {
         'products': products,

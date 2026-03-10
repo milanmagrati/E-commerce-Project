@@ -78,6 +78,10 @@ urlpatterns = [
 
     # On Hold Orders
     path('orders/on-hold/', views.on_hold_orders_list, name='on_hold_orders_list'),
+
+    # Order Follow-Up System
+    path('orders/<int:order_id>/followup/add/', views.add_order_followup, name='add_order_followup'),
+    path('orders/<int:order_id>/followups/', views.get_order_followups, name='get_order_followups'),
     
     
     

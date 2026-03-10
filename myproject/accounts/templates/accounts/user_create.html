@@ -183,6 +183,10 @@
                                                 <input type="checkbox" class="form-check-input" name="can_cancel_orders" id="can_cancel_orders">
                                                 <label for="can_cancel_orders">Cancel Orders</label>
                                             </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_on_hold_orders" id="can_view_on_hold_orders">
+                                                <label for="can_view_on_hold_orders">View On Hold Orders</label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -881,7 +885,7 @@ const roleDefaults = {
     'warehouse': {
         permissions: [
             'can_view_dashboard',
-            'can_view_orders', 'can_view_products', 'can_view_customers',
+            'can_view_orders', 'can_view_on_hold_orders', 'can_view_products', 'can_view_customers',
             'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
             'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
             'can_view_returns', 'can_view_own_targets',

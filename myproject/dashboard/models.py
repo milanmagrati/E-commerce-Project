@@ -1296,3 +1296,41 @@ class SupplierPayment(models.Model):
         super().save(*args, **kwargs)
         if self.purchase:
             self.purchase.update_payment_status()
+
+
+class OrderFollowUp(models.Model):
+    """Internal follow-up / comment system for orders"""
+    FOLLOWUP_TYPE_CHOICES = [
+        ('called_no_answer', 'Called - No Answer'),
+        ('called_answered', 'Called - Answered'),
+        ('whatsapp_sent', 'WhatsApp Sent'),
+        ('email_sent', 'Email Sent'),
+        ('custom_note', 'Custom Note'),
+    ]
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='followups'
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='order_followups'
+    )
+    followup_type = models.CharField(
+        max_length=30,
+        choices=FOLLOWUP_TYPE_CHOICES,
+        default='custom_note'
+    )
+    comment = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Order Follow-Up'
+        verbose_name_plural = 'Order Follow-Ups'
+
+    def __str__(self):
+        return f"Follow-up on {self.order.order_number} by {self.user} ({self.get_followup_type_display()})"

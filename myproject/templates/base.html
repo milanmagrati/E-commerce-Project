@@ -536,15 +536,17 @@
                         <i class="fas fa-chevron-down float-end mt-1"></i>
                     </a>
                     <ul class="collapse list-unstyled" id="ordersMenu">
-                        <li class="{% if request.resolver_match.url_name == 'orders_list' %}active{% endif %}">
-                            <a href="{% url 'orders_list' %}">All Orders</a>
-                        </li>
-                        <li class="{% if request.resolver_match.url_name == 'on_hold_orders_list' %}active{% endif %}">
-                            <a href="{% url 'on_hold_orders_list' %}">On Hold Orders</a>
-                        </li>
                         {% if user.is_superuser or user.role == 'administrator' or user.can_create_orders %}
                         <li class="{% if request.resolver_match.url_name == 'order_create' %}active{% endif %}">
                             <a href="{% url 'order_create' %}">Create Order</a>
+                        </li>
+                        {% endif %}
+                        <li class="{% if request.resolver_match.url_name == 'orders_list' %}active{% endif %}">
+                            <a href="{% url 'orders_list' %}">All Orders</a>
+                        </li>
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_on_hold_orders %}
+                        <li class="{% if request.resolver_match.url_name == 'on_hold_orders_list' %}active{% endif %}">
+                            <a href="{% url 'on_hold_orders_list' %}">On Hold Orders</a>
                         </li>
                         {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_delete_orders %}
@@ -587,17 +589,17 @@
                         <li class="{% if request.resolver_match.url_name == 'returns_dashboard' %}active{% endif %}">
                             <a href="{% url 'returns_dashboard' %}">Dashboard</a>
                         </li>
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_create_returns %}
+                        <li class="{% if request.resolver_match.url_name == 'return_create' %}active{% endif %}">
+                            <a href="{% url 'return_create' %}">Create Return</a>
+                        </li>
+                        {% endif %}
                         <li class="{% if request.resolver_match.url_name == 'returns_list' %}active{% endif %}">
                             <a href="{% url 'returns_list' %}">All Returns</a>
                         </li>
                         <li class="{% if request.resolver_match.url_name == 'return_orders_list' %}active{% endif %}">
                             <a href="{% url 'return_orders_list' %}">Return Orders</a>
                         </li>
-                        {% if user.is_superuser or user.role == 'administrator' or user.can_create_returns %}
-                        <li class="{% if request.resolver_match.url_name == 'return_create' %}active{% endif %}">
-                            <a href="{% url 'return_create' %}">Create Return</a>
-                        </li>
-                        {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_delete_returns %}
                         <li class="{% if request.resolver_match.url_name == 'returns_trash_list' %}active{% endif %}">
                             <a href="{% url 'returns_trash_list' %}">Trash</a>

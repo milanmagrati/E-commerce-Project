@@ -230,21 +230,22 @@
 .quick-filters .btn-quick {
     padding: 7px 18px;
     border-radius: 10px;
-    border: 1.5px solid #e5e7eb;
-    background: #fff;
-    color: #6b7280;
+    border: 1.5px solid #ef4444;
+    background: #fef2f2;
+    color: #dc2626;
     font-size: .82rem;
     font-weight: 600;
     cursor: pointer;
     transition: all .2s;
 }
 .quick-filters .btn-quick:hover {
-    border-color: #6366f1;
-    color: #6366f1;
+    background: #fee2e2;
+    border-color: #dc2626;
+    color: #b91c1c;
 }
 .quick-filters .btn-quick.active {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    border-color: #6366f1;
+    background: linear-gradient(135deg, #f59e0b, #eab308);
+    border-color: #f59e0b;
     color: #fff;
 }
 
@@ -391,8 +392,9 @@
             </div>
             <div class="quick-filters">
                 <button type="button" class="btn-quick{% if active_filter == 'today' %} active{% endif %}" data-filter="today">Today</button>
-                <button type="button" class="btn-quick{% if active_filter == 'week' %} active{% endif %}" data-filter="week">This Week</button>
-                <button type="button" class="btn-quick{% if active_filter == 'month' %} active{% endif %}" data-filter="month">This Month</button>
+                <button type="button" class="btn-quick{% if active_filter == '7days' %} active{% endif %}" data-filter="7days">7 Days</button>
+                <button type="button" class="btn-quick{% if active_filter == '15days' %} active{% endif %}" data-filter="15days">15 Days</button>
+                <button type="button" class="btn-quick{% if active_filter == '1month' %} active{% endif %}" data-filter="1month">1 Month</button>
             </div>
         </div>
 
@@ -714,7 +716,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 
-    // ========== Quick Filter Buttons (Today / Week / Month) ==========
+    // ========== Quick Filter Buttons (Today / 7 Days / 15 Days) ==========
     document.querySelectorAll('.btn-quick[data-filter]').forEach(function(btn) {
         btn.addEventListener('click', function() {
             var filter = this.dataset.filter;
@@ -723,12 +725,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (filter === 'today') {
                 fromDate = today;
-            } else if (filter === 'week') {
-                var day = today.getDay();
-                var diff = day === 0 ? 6 : day - 1;
-                fromDate.setDate(today.getDate() - diff);
-            } else if (filter === 'month') {
-                fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
+            } else if (filter === '7days') {
+                fromDate.setDate(today.getDate() - 6);
+            } else if (filter === '15days') {
+                fromDate.setDate(today.getDate() - 14);
+            } else if (filter === '1month') {
+                fromDate = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
             }
 
             var fmt = function(d) {

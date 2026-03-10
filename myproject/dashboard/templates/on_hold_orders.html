@@ -195,6 +195,7 @@
                     <th>Amount</th>
                     <th>Order Status</th>
                     <th>Payment Status</th>
+                    <th>Last Follow-Up</th>
                     <th>Date</th>
                     <th>Actions</th>
                 </tr>
@@ -252,6 +253,30 @@
                             </small>
                         </td>
                         <td>
+                            {% with meta=followup_meta|default:"" %}
+                            {% if meta %}
+                                {% for key, val in meta.items %}
+                                    {% if key == order.id %}
+                                        {% if val.has_followups %}
+                                        <div class="followup-badge-cell">
+                                            <span class="badge bg-light text-dark border followup-last-badge" title="Last follow-up">
+                                                <i class="fas fa-comment-dots text-primary"></i>
+                                                {{ val.last_type }}<br>
+                                                <small class="text-muted">{{ val.last_date }}</small><br>
+                                                <small class="text-muted">by {{ val.last_user }}</small>
+                                            </span>
+                                        </div>
+                                        {% else %}
+                                        <span class="text-muted small">No follow-ups</span>
+                                        {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted small">—</span>
+                            {% endif %}
+                            {% endwith %}
+                        </td>
+                        <td>
                             <span class="small text-muted">{{ order.created_at|date:"M d, Y" }}</span>
                         </td>
                         <td>
@@ -262,6 +287,17 @@
                                 <a href="{% url 'order_edit' order.id %}" class="btn btn-outline-info" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
+                                <button type="button" class="btn btn-outline-warning followup-toggle-btn position-relative"
+                                        onclick="toggleFollowUp({{ order.id }})"
+                                        title="Follow-Up Notes"
+                                        id="followupBtn-{{ order.id }}">
+                                    💬
+                                    {% for key, val in followup_meta.items %}
+                                        {% if key == order.id and val.has_followups %}
+                                        <span class="followup-red-dot" id="redDot-{{ order.id }}"></span>
+                                        {% endif %}
+                                    {% endfor %}
+                                </button>
                                 <button type="button" class="btn btn-outline-danger"
                                         onclick="moveToTrash({{ order.id }}, '{{ order.order_number }}')"
                                         title="Move to Trash">
@@ -270,10 +306,55 @@
                             </div>
                         </td>
                     </tr>
+                    <!-- Follow-Up Expandable Panel Row -->
+                    <tr class="followup-panel-row" id="followupPanel-{{ order.id }}" style="display: none;">
+                        <td colspan="10" class="p-0">
+                            <div class="followup-panel">
+                                <div class="followup-panel-header">
+                                    <h6 class="mb-0"><i class="fas fa-comments text-warning"></i> Follow-Up Notes — {{ order.order_number }}</h6>
+                                </div>
+                                <div class="followup-panel-body">
+                                    <!-- Add Follow-Up Form -->
+                                    <div class="followup-form mb-3">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-md-3">
+                                                <label class="form-label small fw-bold">Type</label>
+                                                <select class="form-select form-select-sm" id="followupType-{{ order.id }}">
+                                                    <option value="called_no_answer">📞 Called - No Answer</option>
+                                                    <option value="called_answered">📞 Called - Answered</option>
+                                                    <option value="whatsapp_sent">💬 WhatsApp Sent</option>
+                                                    <option value="email_sent">📧 Email Sent</option>
+                                                    <option value="custom_note" selected>📝 Custom Note</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-7">
+                                                <label class="form-label small fw-bold">Comment</label>
+                                                <input type="text" class="form-control form-control-sm"
+                                                       id="followupComment-{{ order.id }}"
+                                                       placeholder="Add a follow-up note...">
+                                            </div>
+                                            <div class="col-md-2">
+                                                <button type="button" class="btn btn-sm btn-primary w-100"
+                                                        onclick="submitFollowUp({{ order.id }})">
+                                                    <i class="fas fa-plus"></i> Add
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Follow-Up History -->
+                                    <div class="followup-history" id="followupHistory-{{ order.id }}">
+                                        <div class="text-center text-muted py-3" id="followupLoading-{{ order.id }}">
+                                            <i class="fas fa-spinner fa-spin"></i> Loading follow-ups...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="9" class="text-center py-5">
+                        <td colspan="10" class="text-center py-5">
                             <div class="empty-state">
                                 <i class="fas fa-pause-circle fa-3x text-muted mb-3" style="display: block;"></i>
                                 <h5 class="text-muted">No On Hold Orders Found</h5>
@@ -372,6 +453,99 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
+    /* Follow-Up Panel Styles */
+    .followup-panel {
+        background: #fefce8;
+        border-top: 2px solid #fbbf24;
+        border-bottom: 2px solid #fbbf24;
+    }
+    .followup-panel-header {
+        background: #fef3c7;
+        padding: 0.6rem 1rem;
+        border-bottom: 1px solid #fde68a;
+    }
+    .followup-panel-body {
+        padding: 1rem;
+    }
+    .followup-form {
+        background: #fff;
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        border: 1px solid #e5e7eb;
+    }
+    .followup-history {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    .followup-entry {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+        padding: 0.6rem 0.8rem;
+        margin-bottom: 0.5rem;
+        transition: box-shadow 0.15s;
+    }
+    .followup-entry:hover {
+        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .followup-entry .followup-meta {
+        font-size: 0.78rem;
+        color: #6b7280;
+    }
+    .followup-entry .followup-type-badge {
+        font-size: 0.72rem;
+        padding: 0.15em 0.5em;
+        border-radius: 0.25rem;
+        font-weight: 600;
+    }
+    .followup-type-called_no_answer { background: #fee2e2; color: #dc2626; }
+    .followup-type-called_answered { background: #d1fae5; color: #059669; }
+    .followup-type-whatsapp_sent { background: #dcfce7; color: #16a34a; }
+    .followup-type-email_sent { background: #dbeafe; color: #2563eb; }
+    .followup-type-custom_note { background: #f3f4f6; color: #4b5563; }
+    .followup-entry .followup-comment {
+        font-size: 0.88rem;
+        margin-top: 0.25rem;
+    }
+    .followup-red-dot {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 9px;
+        height: 9px;
+        background: #ef4444;
+        border-radius: 50%;
+        border: 1.5px solid #fff;
+        display: inline-block;
+    }
+    .followup-toggle-btn {
+        font-size: 1rem;
+        line-height: 1;
+    }
+    .followup-last-badge {
+        font-size: 0.72rem;
+        line-height: 1.3;
+        max-width: 160px;
+        white-space: normal;
+        text-align: left;
+    }
+    .followup-panel-row td {
+        background: #fefce8;
+    }
+    .followup-empty {
+        text-align: center;
+        color: #9ca3af;
+        padding: 1.5rem 0;
+        font-size: 0.9rem;
+    }
+    .followup-new-highlight {
+        animation: followupHighlight 1.5s ease;
+    }
+    @keyframes followupHighlight {
+        0% { background-color: #fef08a; }
+        100% { background-color: #fff; }
+    }
+
     .btn-group-sm .btn {
         padding: 0.25rem 0.5rem;
         font-size: 0.875rem;
@@ -462,6 +636,180 @@ function moveToTrash(orderId, orderNumber) {
         document.body.appendChild(form);
         form.submit();
     }
+}
+
+// ========== FOLLOW-UP SYSTEM ==========
+const followUpLoadedOrders = {};
+
+function getCSRFToken() {
+    const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+    if (cookie) return cookie.split('=')[1];
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? el.value : '';
+}
+
+function toggleFollowUp(orderId) {
+    const panel = document.getElementById('followupPanel-' + orderId);
+    if (!panel) return;
+
+    const isVisible = panel.style.display !== 'none';
+    // Close all other panels
+    document.querySelectorAll('.followup-panel-row').forEach(row => {
+        row.style.display = 'none';
+    });
+
+    if (isVisible) {
+        panel.style.display = 'none';
+    } else {
+        panel.style.display = 'table-row';
+        if (!followUpLoadedOrders[orderId]) {
+            loadFollowUps(orderId);
+        }
+    }
+}
+
+function loadFollowUps(orderId) {
+    const historyDiv = document.getElementById('followupHistory-' + orderId);
+    const loadingDiv = document.getElementById('followupLoading-' + orderId);
+    if (loadingDiv) loadingDiv.style.display = 'block';
+
+    fetch(`/orders/${orderId}/followups/`)
+        .then(resp => resp.json())
+        .then(data => {
+            if (loadingDiv) loadingDiv.style.display = 'none';
+            if (data.success) {
+                followUpLoadedOrders[orderId] = true;
+                renderFollowUps(orderId, data.followups);
+            } else {
+                historyDiv.innerHTML = '<div class="text-danger small">Failed to load follow-ups.</div>';
+            }
+        })
+        .catch(() => {
+            if (loadingDiv) loadingDiv.style.display = 'none';
+            historyDiv.innerHTML = '<div class="text-danger small">Error loading follow-ups.</div>';
+        });
+}
+
+function renderFollowUps(orderId, followups) {
+    const historyDiv = document.getElementById('followupHistory-' + orderId);
+    if (!followups.length) {
+        historyDiv.innerHTML = '<div class="followup-empty"><i class="fas fa-comment-slash"></i> No follow-ups yet. Add one above.</div>';
+        return;
+    }
+    let html = '';
+    followups.forEach(f => {
+        html += `
+        <div class="followup-entry">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="followup-type-badge followup-type-${f.followup_type_key}">${f.followup_type}</span>
+                    <span class="followup-meta ms-2"><i class="fas fa-user-circle"></i> ${f.user}</span>
+                </div>
+                <span class="followup-meta"><i class="fas fa-clock"></i> ${f.created_at}</span>
+            </div>
+            <div class="followup-comment">${escapeHtml(f.comment)}</div>
+        </div>`;
+    });
+    historyDiv.innerHTML = html;
+}
+
+function submitFollowUp(orderId) {
+    const typeEl = document.getElementById('followupType-' + orderId);
+    const commentEl = document.getElementById('followupComment-' + orderId);
+    const comment = commentEl.value.trim();
+    const followupType = typeEl.value;
+
+    if (!comment) {
+        commentEl.classList.add('is-invalid');
+        setTimeout(() => commentEl.classList.remove('is-invalid'), 2000);
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('comment', comment);
+    formData.append('followup_type', followupType);
+
+    fetch(`/orders/${orderId}/followup/add/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCSRFToken(),
+        },
+        body: formData
+    })
+    .then(resp => resp.json())
+    .then(data => {
+        if (data.success) {
+            commentEl.value = '';
+            // Prepend new entry to history
+            const historyDiv = document.getElementById('followupHistory-' + orderId);
+            const emptyMsg = historyDiv.querySelector('.followup-empty');
+            if (emptyMsg) emptyMsg.remove();
+
+            const f = data.followup;
+            const newEntry = document.createElement('div');
+            newEntry.className = 'followup-entry followup-new-highlight';
+            newEntry.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="followup-type-badge followup-type-${f.followup_type_key}">${f.followup_type}</span>
+                        <span class="followup-meta ms-2"><i class="fas fa-user-circle"></i> ${f.user}</span>
+                    </div>
+                    <span class="followup-meta"><i class="fas fa-clock"></i> ${f.created_at}</span>
+                </div>
+                <div class="followup-comment">${escapeHtml(f.comment)}</div>`;
+
+            const loadingDiv = document.getElementById('followupLoading-' + orderId);
+            if (loadingDiv) loadingDiv.style.display = 'none';
+            historyDiv.insertBefore(newEntry, historyDiv.firstChild);
+
+            // Show red dot
+            let dot = document.getElementById('redDot-' + orderId);
+            if (!dot) {
+                const btn = document.getElementById('followupBtn-' + orderId);
+                if (btn) {
+                    dot = document.createElement('span');
+                    dot.className = 'followup-red-dot';
+                    dot.id = 'redDot-' + orderId;
+                    btn.appendChild(dot);
+                }
+            }
+
+            // Update the Last Follow-Up badge cell in the same row
+            updateLastFollowUpCell(orderId, f);
+
+            followUpLoadedOrders[orderId] = true;
+        } else {
+            alert(data.error || 'Failed to add follow-up.');
+        }
+    })
+    .catch(() => {
+        alert('Network error. Please try again.');
+    });
+}
+
+function updateLastFollowUpCell(orderId, f) {
+    // Find the order row and update the Last Follow-Up column (8th td, index 7)
+    const row = document.querySelector(`tr.order-row[data-order-id="${orderId}"]`);
+    if (!row) return;
+    const cells = row.querySelectorAll('td');
+    // Last Follow-Up is the 8th column (index 7)
+    if (cells.length >= 8) {
+        cells[7].innerHTML = `
+            <div class="followup-badge-cell">
+                <span class="badge bg-light text-dark border followup-last-badge" title="Last follow-up">
+                    <i class="fas fa-comment-dots text-primary"></i>
+                    ${f.followup_type}<br>
+                    <small class="text-muted">${f.created_at}</small><br>
+                    <small class="text-muted">by ${escapeHtml(f.user)}</small>
+                </span>
+            </div>`;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function confirmBulkAction() {

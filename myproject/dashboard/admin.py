@@ -3,6 +3,7 @@ from .models import Product, Order, OrderItem, Category, Customer, Branch, Staff
 from .models import ProductAttribute, ProductAttributeValue, ProductVariation, VariationAttributeValue
 from .models import ReturnRequest, ReturnItem, ReturnActivityLog
 from .models import BundleComponent, ProductPurchase
+from .models import OrderFollowUp
 
 
 @admin.register(Category)
@@ -205,3 +206,12 @@ class ReturnActivityLogAdmin(admin.ModelAdmin):
     list_filter = ['action_type', 'created_at']
     search_fields = ['return_request__rma_number', 'description']
     readonly_fields = ['created_at']
+
+
+@admin.register(OrderFollowUp)
+class OrderFollowUpAdmin(admin.ModelAdmin):
+    list_display = ['order', 'user', 'followup_type', 'comment', 'created_at']
+    list_filter = ['followup_type', 'created_at']
+    search_fields = ['order__order_number', 'comment', 'user__username']
+    readonly_fields = ['created_at']
+    raw_id_fields = ['order', 'user']

@@ -57,6 +57,7 @@ class CustomUser(AbstractUser):
     can_edit_orders = models.BooleanField(default=False)
     can_delete_orders = models.BooleanField(default=False)
     can_cancel_orders = models.BooleanField(default=False)
+    can_view_on_hold_orders = models.BooleanField(default=False)
     
     # PRODUCT PERMISSIONS
     can_view_products = models.BooleanField(default=True)
@@ -183,6 +184,7 @@ class CustomUser(AbstractUser):
             self.can_view_dashboard = True
             self.can_view_orders = True
             self.can_edit_orders = True
+            self.can_view_on_hold_orders = True
             self.can_view_dispatch = True
             self.can_manage_dispatch = True
             self.can_delete_dispatch = True
