@@ -11005,6 +11005,7 @@ def sales_report(request):
     # ── 3. Top 10 Products ──
     top_products_raw = (
         items_qs
+        .filter(product__isnull=False)
         .values('product__id', 'product__name', 'product__cost_price', 'product__stock',
                 'product__product_type', 'product_variation__id', 'product_variation__variation_name',
                 'product_variation__stock')
@@ -11017,12 +11018,45 @@ def sales_report(request):
     top_product_labels = []
     top_product_data = []
     top_products_table = []
+
+    # Pre-fetch per-product 30-day daily sales for smart_daily_rate
+    # Used by BOTH top products (Section 3) AND stock alerts (Section 6)
+    from inventory.forecasting import (
+        exponential_smoothing, smart_daily_rate,
+        days_of_stock_remaining, restock_urgency,
+    )
+    _30d_start = today_start - timedelta(days=30)
+    _all_daily_raw = (
+        OrderItem.objects.filter(
+            order__is_deleted=False,
+            order__created_at__gte=_30d_start,
+            product__isnull=False,
+        )
+        .annotate(day=TruncDate('order__created_at'))
+        .values('product__id', 'product_variation__id', 'day')
+        .annotate(day_qty=Sum('quantity'))
+        .order_by('product__id', 'product_variation__id', 'day')
+    )
+    _all_day_map = defaultdict(dict)
+    for _r in _all_daily_raw:
+        _key = (_r['product__id'], _r['product_variation__id'])
+        _all_day_map[_key][_r['day']] = _r['day_qty'] or 0
+
+    def _build_sales_list(prod_id, var_id):
+        """Build a 30-element daily sales list (oldest→newest, 0-fill)."""
+        dm = _all_day_map.get((prod_id, var_id), {})
+        sl = []
+        for _off in range(30):
+            _d = (_30d_start + timedelta(days=_off)).date()
+            sl.append(dm.get(_d, 0))
+        return sl
+
     for p in top_products_raw:
-        label = p['product__name'] or 'Unknown'
+        label = p['product__name'] or ''
         variant = p['product_variation__variation_name'] or ''
         if variant:
             label = f"{label} ({variant})"
-        top_product_labels.append(label[:25])
+        top_product_labels.append((label or 'Unnamed')[:25])
         top_product_data.append(float(p['revenue'] or 0))
 
         cost = float(p['product__cost_price'] or 0)
@@ -11032,21 +11066,27 @@ def sales_report(request):
         stock = p['product_variation__stock'] if p['product_variation__id'] else p['product__stock']
         stock = stock or 0
 
-        # Days until stockout
-        avg_daily = qty / period_days if period_days > 0 else 0
-        days_left = math.ceil(stock / avg_daily) if avg_daily > 0 else 999
+        # Days until stockout — hybrid EWS + spike detection
+        _sales = _build_sales_list(p['product__id'], p['product_variation__id'])
+        _rate = smart_daily_rate(_sales)
+        days_left = days_of_stock_remaining(stock, _sales)
+        _urgency = restock_urgency(days_left, lead_time_days=3)
 
         top_products_table.append({
-            'name': p['product__name'] or 'Unknown',
+            'name': p['product__name'] or 'Unnamed Product',
             'variant': variant,
             'product_type': p['product__product_type'] or 'simple',
             'qty_sold': qty,
             'revenue': rev,
             'profit_pct': profit_pct,
             'stock': stock,
-            'avg_daily': round(avg_daily, 1),
+            'avg_daily': round(_rate, 1),
             'days_left': days_left,
+            'urgency': _urgency,
         })
+
+    # Sort top products by days_left ascending (most urgent first)
+    top_products_table.sort(key=lambda x: x['days_left'])
 
     # ── 4. Sales by Category ──
     category_sales = (
@@ -11081,59 +11121,105 @@ def sales_report(request):
     best_hour = max(range(24), key=lambda h: hourly_map.get(h, {}).get('count', 0)) if hourly_map else 14
     best_hour_end = best_hour + 1 if best_hour < 23 else 23
 
-    # ── 6. AI Predictions & Insights ──
-    # Use last 30 days for prediction baseline
-    last_30_orders = Order.objects.filter(
-        is_deleted=False,
-        created_at__gte=today_start - timedelta(days=30),
-        created_at__lte=now,
-    )
-    last_30_revenue = last_30_orders.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
-    last_30_count = last_30_orders.count()
+    # ── 6. AI Predictions & Insights (Hybrid EWS + Spike Detection) ──
+    # (forecasting functions already imported in Section 3)
 
-    avg_daily_revenue = float(last_30_revenue) / 30
-    avg_daily_orders = last_30_count / 30
+    # --- Revenue forecast using EWS on 30-day daily revenue ---
+    last_30_start = _30d_start  # reuse from Section 3
+    daily_rev_30 = (
+        Order.objects.filter(
+            is_deleted=False,
+            created_at__gte=last_30_start,
+            created_at__lte=now,
+        )
+        .annotate(day=TruncDate('created_at'))
+        .values('day')
+        .annotate(rev=Sum('total_amount'), cnt=Count('id'))
+        .order_by('day')
+    )
+    # Build a full 30-day list (0 for days with no orders)
+    rev_by_day = {r['day']: float(r['rev'] or 0) for r in daily_rev_30}
+    cnt_by_day = {r['day']: r['cnt'] for r in daily_rev_30}
+    revenue_series = []
+    orders_series = []
+    for offset in range(30):
+        d = (last_30_start + timedelta(days=offset)).date()
+        revenue_series.append(rev_by_day.get(d, 0.0))
+        orders_series.append(cnt_by_day.get(d, 0))
+
+    avg_daily_revenue = exponential_smoothing(revenue_series, alpha=0.4)
+    avg_daily_orders = exponential_smoothing(orders_series, alpha=0.4)
 
     forecast_7_revenue = round(avg_daily_revenue * 7, 2)
     forecast_30_revenue = round(avg_daily_revenue * 30, 2)
 
-    # Stock runout alerts — all products with sales in last 30 days
+    # --- Stock runout alerts with EWS + spike detection ---
     stock_alerts = []
-    recent_product_sales = (
+
+    # Get per-product name + stock via a lightweight query (FK fields only,
+    # no denormalized fields — avoids GROUP BY split when product was renamed)
+    product_stock_raw = (
         OrderItem.objects.filter(
             order__is_deleted=False,
-            order__created_at__gte=today_start - timedelta(days=30),
+            order__created_at__gte=last_30_start,
+            product__isnull=False,
         )
-        .values('product__id', 'product__name', 'product__stock', 'product__product_type',
-                'product_variation__id', 'product_variation__variation_name', 'product_variation__stock')
-        .annotate(qty_sold=Sum('quantity'))
-        .order_by('-qty_sold')
+        .values(
+            'product__id', 'product__name', 'product__stock',
+            'product_variation__id', 'product_variation__variation_name',
+            'product_variation__stock',
+        )
+        .annotate(_cnt=Count('id'))  # force distinct grouping
+        .order_by('product__id', 'product_variation__id')
     )
-    for ps in recent_product_sales:
-        stock = ps['product_variation__stock'] if ps['product_variation__id'] else ps['product__stock']
-        stock = stock or 0
-        qty = ps['qty_sold'] or 0
-        avg_daily_sale = qty / 30
-        if avg_daily_sale > 0:
-            days_left = math.ceil(stock / avg_daily_sale)
-            if days_left <= 14:
-                name = ps['product__name'] or 'Unknown'
-                variant = ps['product_variation__variation_name'] or ''
-                display_name = f"{name} ({variant})" if variant else name
 
-                # Smart reorder suggestion
-                reorder_qty = math.ceil(avg_daily_sale * 30)  # 30-day supply
-                reorder_date = (now + timedelta(days=max(days_left - 3, 0))).strftime('%b %d')
+    # Build meta lookup (name + stock) keyed by (product_id, variation_id)
+    product_meta = {}
+    for row in product_stock_raw:
+        key = (row['product__id'], row['product_variation__id'])
+        if key not in product_meta:
+            stock = (row['product_variation__stock']
+                     if row['product_variation__id']
+                     else row['product__stock']) or 0
+            name = row['product__name'] or ''
+            variant = row['product_variation__variation_name'] or ''
+            display = f"{name} ({variant})" if variant else name
+            product_meta[key] = {
+                'name': display or 'Unnamed Product',
+                'stock': stock,
+            }
 
-                stock_alerts.append({
-                    'name': display_name,
-                    'stock': stock,
-                    'days_left': days_left,
-                    'avg_daily': round(avg_daily_sale, 1),
-                    'reorder_qty': reorder_qty,
-                    'reorder_date': reorder_date,
-                    'severity': 'danger' if days_left <= 5 else 'warning',
-                })
+    # Iterate products that had any sales in the last 30 days
+    # (reuse _all_day_map built in Section 3 — no duplicate query)
+    for key, day_map in _all_day_map.items():
+        meta = product_meta.get(key)
+        if not meta:
+            continue
+
+        sales_list = _build_sales_list(key[0], key[1])
+
+        rate = smart_daily_rate(sales_list)
+        if rate <= 0:
+            continue
+
+        dl = days_of_stock_remaining(meta['stock'], sales_list)
+        urgency = restock_urgency(dl, lead_time_days=3)
+
+        if urgency != 'ok':
+            reorder_qty = math.ceil(rate * 30)  # 30-day supply
+            reorder_date = (now + timedelta(days=max(dl - 3, 0))).strftime('%b %d')
+
+            stock_alerts.append({
+                'name': meta['name'],
+                'stock': meta['stock'],
+                'days_left': dl,
+                'avg_daily': round(rate, 1),
+                'reorder_qty': reorder_qty,
+                'reorder_date': reorder_date,
+                'severity': 'danger' if urgency == 'critical' else (
+                    'warning' if urgency in ('urgent', 'low') else 'warning'),
+                'urgency': urgency,
+            })
     stock_alerts.sort(key=lambda x: x['days_left'])
 
     # Trending products — compare last 7 days vs previous 7 days
@@ -11141,12 +11227,14 @@ def sales_report(request):
     last_7_start = today_start - timedelta(days=7)
     prev_7_start = today_start - timedelta(days=14)
     last_7_sales = (
-        OrderItem.objects.filter(order__is_deleted=False, order__created_at__gte=last_7_start)
+        OrderItem.objects.filter(order__is_deleted=False, order__created_at__gte=last_7_start,
+                                 product__isnull=False)
         .values('product__id', 'product__name', 'product_variation__variation_name')
         .annotate(qty=Sum('quantity'))
     )
     prev_7_sales = (
-        OrderItem.objects.filter(order__is_deleted=False, order__created_at__gte=prev_7_start, order__created_at__lt=last_7_start)
+        OrderItem.objects.filter(order__is_deleted=False, order__created_at__gte=prev_7_start,
+                                 order__created_at__lt=last_7_start, product__isnull=False)
         .values('product__id', 'product__name', 'product_variation__variation_name')
         .annotate(qty=Sum('quantity'))
     )
@@ -11162,10 +11250,11 @@ def sales_report(request):
         else:
             growth = 0
         if growth > 20:
-            name = item['product__name'] or 'Unknown'
+            name = item['product__name'] or ''
             variant = item['product_variation__variation_name'] or ''
+            display = f"{name} ({variant})" if variant else name
             trending_products.append({
-                'name': f"{name} ({variant})" if variant else name,
+                'name': display or 'Unnamed Product',
                 'current_qty': curr_qty,
                 'prev_qty': prev_qty,
                 'growth': growth,
@@ -11244,21 +11333,21 @@ def sales_report(request):
         })
 
     # Stock alert insight
-    critical_alerts = [a for a in stock_alerts if a['severity'] == 'danger']
+    critical_alerts = [a for a in stock_alerts if a['urgency'] == 'critical']
     if critical_alerts:
         insights.append({
             'icon': 'exclamation-triangle',
             'color': 'danger',
-            'text': f'{len(critical_alerts)} product(s) will run out within 5 days!',
+            'text': f'{len(critical_alerts)} product(s) will run out within 3 days — restock immediately!',
         })
 
-    # ── 7. Forecast data for chart ──
+    # ── 7. Forecast data for chart (EWS-based) ──
     forecast_labels = []
     forecast_data = []
     for i in range(1, 8):
         future_date = now + timedelta(days=i)
         forecast_labels.append(future_date.strftime('%b %d'))
-        forecast_data.append(round(avg_daily_revenue, 2))
+        forecast_data.append(round(avg_daily_revenue, 2))  # EWS-weighted daily avg
 
     # ── Build Context ──
     context = {

@@ -492,7 +492,7 @@
         <div class="pred-card forecast">
             <div class="pred-title"><i class="fas fa-crystal-ball" style="color:var(--sr-purple)"></i> Revenue Forecast</div>
             <div class="pred-value">Rs. {{ forecast_7_revenue|floatformat:0 }}</div>
-            <div style="color:#6b7280;font-size:.85rem;margin-top:4px;">Next 7 days (based on 30-day avg: Rs. {{ avg_daily_revenue|floatformat:0 }}/day)</div>
+            <div style="color:#6b7280;font-size:.85rem;margin-top:4px;">Next 7 days (EWS daily rate: Rs. {{ avg_daily_revenue|floatformat:0 }}/day)</div>
             <hr style="border-color:#e5e7eb;margin:12px 0;">
             <div style="font-size:.95rem;color:#374151;"><strong>30-day forecast:</strong> Rs. {{ forecast_30_revenue|floatformat:0 }}</div>
         </div>
@@ -502,7 +502,14 @@
             {% for alert in stock_alerts|slice:":3" %}
             <div class="alert-bar {{ alert.severity }}">
                 <i class="fas fa-{% if alert.severity == 'danger' %}fire{% else %}exclamation-circle{% endif %}"></i>
-                <span><strong>{{ alert.name }}</strong> will run out in <strong>{{ alert.days_left }} days</strong> ({{ alert.stock }} left)</span>
+                <span>
+                    <strong>{{ alert.name }}</strong> will run out in <strong>{{ alert.days_left }} days</strong>
+                    ({{ alert.stock }} left)
+                    {% if alert.urgency == 'critical' %}<span class="badge-danger" style="margin-left:6px;">CRITICAL</span>
+                    {% elif alert.urgency == 'urgent' %}<span class="badge-warning" style="margin-left:6px;">URGENT</span>
+                    {% elif alert.urgency == 'low' %}<span class="badge-info" style="margin-left:6px;">LOW</span>
+                    {% endif %}
+                </span>
             </div>
             {% endfor %}
             {% if stock_alerts|length > 3 %}
@@ -538,10 +545,12 @@
             <div class="alert-bar {{ alert.severity }}" style="justify-content:space-between;">
                 <span>
                     <i class="fas fa-redo-alt"></i>
+                    {% if alert.urgency == 'critical' %}<strong style="color:var(--sr-red);">[CRITICAL]</strong>{% endif %}
+                    {% if alert.urgency == 'urgent' %}<strong style="color:var(--sr-orange);">[URGENT]</strong>{% endif %}
                     Reorder <strong>{{ alert.name }}</strong> by {{ alert.reorder_date }}
                     (recommended qty: <strong>{{ alert.reorder_qty }}</strong>)
                 </span>
-                <span style="font-size:.8rem;">{{ alert.avg_daily }} sold/day | {{ alert.stock }} in stock</span>
+                <span style="font-size:.8rem;">{{ alert.avg_daily }} sold/day (EWS) | {{ alert.stock }} in stock</span>
             </div>
             {% endfor %}
         </div>
@@ -668,7 +677,7 @@
     <div class="chart-card">
         <div class="chart-header">
             <h5><i class="fas fa-magic" style="color:var(--sr-purple)"></i> Revenue Forecast (Next 7 Days)</h5>
-            <span style="font-size:.8rem;color:#9ca3af;">Based on 30-day moving average</span>
+            <span style="font-size:.8rem;color:#9ca3af;">Based on exponential weighted smoothing (EWS)</span>
         </div>
         <div class="chart-body">
             <canvas id="forecastChart" height="180"></canvas>
@@ -718,10 +727,12 @@
                                 </td>
                                 <td>{{ p.stock }}</td>
                                 <td>
-                                    {% if p.days_left <= 5 %}
-                                    <span class="badge-danger">Out in {{ p.days_left }} days</span>
-                                    {% elif p.days_left <= 14 %}
-                                    <span class="badge-warning">{{ p.days_left }} days left</span>
+                                    {% if p.urgency == 'critical' %}
+                                    <span class="badge-danger">Critical — {{ p.days_left }}d</span>
+                                    {% elif p.urgency == 'urgent' %}
+                                    <span class="badge-warning">Urgent — {{ p.days_left }}d</span>
+                                    {% elif p.urgency == 'low' %}
+                                    <span class="badge-info">Low — {{ p.days_left }}d</span>
                                     {% else %}
                                     <span class="badge-success">OK</span>
                                     {% endif %}
