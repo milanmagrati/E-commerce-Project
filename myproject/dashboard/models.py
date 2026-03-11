@@ -362,6 +362,21 @@ class Order(models.Model):
     
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
+
+    next_followup_date = models.DateField(null=True, blank=True, help_text="Scheduled next follow-up date")
+    FOLLOWUP_TYPE_CHOICES = [
+        ('call', 'Call'),
+        ('whatsapp', 'WhatsApp'),
+        ('email', 'Email'),
+        ('visit', 'Visit'),
+    ]
+    followup_type = models.CharField(max_length=20, choices=FOLLOWUP_TYPE_CHOICES, null=True, blank=True)
+    followup_assigned_to = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='assigned_followups'
+    )
+    followup_done = models.BooleanField(default=False)
+
     def __str__(self):
         return self.order_number
     

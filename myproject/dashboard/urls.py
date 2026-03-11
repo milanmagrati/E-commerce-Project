@@ -82,6 +82,7 @@ urlpatterns = [
     # Order Follow-Up System
     path('orders/<int:order_id>/followup/add/', views.add_order_followup, name='add_order_followup'),
     path('orders/<int:order_id>/followups/', views.get_order_followups, name='get_order_followups'),
+    path('orders/<int:order_id>/next-followup/', views.update_order_next_followup, name='update_order_next_followup'),
     
     
     

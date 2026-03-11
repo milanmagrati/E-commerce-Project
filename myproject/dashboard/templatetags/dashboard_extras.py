@@ -1,6 +1,7 @@
 from django import template
 from decimal import Decimal
 from django.utils import timezone
+from datetime import date, timedelta
 import pytz
 
 register = template.Library()
@@ -252,3 +253,34 @@ def current_nepali_datetime():
     """Get current date and time in Nepali timezone"""
     now = timezone.now().astimezone(NEPALI_TZ)
     return now.strftime('%b %d, %Y %I:%M %p')
+
+
+@register.filter(name='followup_urgency')
+def followup_urgency(date_value):
+    """Return CSS class based on follow-up date urgency vs today."""
+    if not date_value:
+        return 'not-set'
+    today = date.today()
+    if isinstance(date_value, str):
+        return 'not-set'
+    delta = (date_value - today).days
+    if delta < 0:
+        return 'overdue'
+    elif delta == 0:
+        return 'today'
+    elif delta == 1:
+        return 'tomorrow'
+    else:
+        return 'upcoming'
+
+
+@register.filter(name='followup_type_icon')
+def followup_type_icon(ftype):
+    """Return emoji icon for follow-up type."""
+    icons = {
+        'call': '\U0001F4DE',
+        'whatsapp': '\U0001F4AC',
+        'email': '\U0001F4E7',
+        'visit': '\U0001F3EA',
+    }
+    return icons.get(ftype, '')

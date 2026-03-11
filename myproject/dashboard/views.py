@@ -4080,7 +4080,7 @@ def on_hold_orders_list(request):
 
     orders = orders.select_related(
         'customer', 'created_by', 'status_setup',
-        'payment_setup', 'payment_status_setup'
+        'payment_setup', 'payment_status_setup', 'followup_assigned_to'
     ).prefetch_related('items', 'followups', 'followups__user').order_by('-created_at')
 
     # Filters
@@ -4169,6 +4169,12 @@ def on_hold_orders_list(request):
         for setup in payment_setups
     ]
 
+    # Staff members for follow-up assignment
+    User = get_user_model()
+    staff_members = User.objects.filter(
+        is_active=True, is_deleted=False
+    ).order_by('first_name', 'last_name')
+
     context = {
         'orders': orders_page,
         'total_on_hold_orders': total_on_hold_orders,
@@ -4185,6 +4191,7 @@ def on_hold_orders_list(request):
         'payment_status_bulk_options': payment_status_bulk_options,
         'page_obj': orders_page,
         'followup_meta': followup_meta,
+        'staff_members': staff_members,
     }
 
     return render(request, 'on_hold_orders.html', context)
@@ -4254,6 +4261,99 @@ def get_order_followups(request, order_id):
         'success': True,
         'followups': followup_list,
         'count': len(followup_list)
+    })
+
+
+@login_required
+@permission_required('can_view_on_hold_orders')
+@require_POST
+def update_order_next_followup(request, order_id):
+    """AJAX endpoint to set/update next follow-up date, type, assigned staff, and done status"""
+    from datetime import datetime as dt
+
+    order = get_object_or_404(Order, id=order_id, is_deleted=False)
+    User = get_user_model()
+
+    action = request.POST.get('action', 'update')
+    update_fields = []
+
+    if action == 'mark_done':
+        order.followup_done = True
+        update_fields.append('followup_done')
+        order.save(update_fields=update_fields)
+
+        return JsonResponse({
+            'success': True,
+            'followup_done': True,
+            'message': 'Follow-up marked as done. Set a new date for the next cycle.',
+        })
+
+    # Handle date
+    date_str = request.POST.get('next_followup_date', '').strip()
+    if date_str:
+        try:
+            parsed_date = dt.strptime(date_str, '%Y-%m-%d').date()
+            order.next_followup_date = parsed_date
+        except ValueError:
+            return JsonResponse({'success': False, 'error': 'Invalid date format.'}, status=400)
+    else:
+        order.next_followup_date = None
+    update_fields.append('next_followup_date')
+
+    # Handle type
+    followup_type = request.POST.get('followup_type', '').strip()
+    valid_types = dict(Order.FOLLOWUP_TYPE_CHOICES)
+    if followup_type in valid_types:
+        order.followup_type = followup_type
+    else:
+        order.followup_type = None
+    update_fields.append('followup_type')
+
+    # Handle assigned staff
+    assigned_to_id = request.POST.get('followup_assigned_to', '').strip()
+    if assigned_to_id:
+        try:
+            staff = User.objects.get(id=int(assigned_to_id), is_active=True)
+            order.followup_assigned_to = staff
+        except (User.DoesNotExist, ValueError):
+            order.followup_assigned_to = None
+    else:
+        order.followup_assigned_to = None
+    update_fields.append('followup_assigned_to')
+
+    # When setting a new date, reset done status
+    if order.next_followup_date:
+        order.followup_done = False
+        update_fields.append('followup_done')
+
+    order.save(update_fields=update_fields)
+
+    # Build response
+    from datetime import date as date_cls
+    urgency = 'not-set'
+    if order.next_followup_date:
+        delta = (order.next_followup_date - date_cls.today()).days
+        if delta < 0:
+            urgency = 'overdue'
+        elif delta == 0:
+            urgency = 'today'
+        elif delta == 1:
+            urgency = 'tomorrow'
+        else:
+            urgency = 'upcoming'
+
+    return JsonResponse({
+        'success': True,
+        'next_followup_date': order.next_followup_date.strftime('%Y-%m-%d') if order.next_followup_date else None,
+        'display_date': order.next_followup_date.strftime('%b %d, %Y') if order.next_followup_date else '',
+        'followup_type': order.followup_type or '',
+        'followup_type_display': dict(Order.FOLLOWUP_TYPE_CHOICES).get(order.followup_type, ''),
+        'followup_assigned_to_id': order.followup_assigned_to_id or '',
+        'followup_assigned_to_name': (
+            order.followup_assigned_to.get_full_name() or order.followup_assigned_to.username
+        ) if order.followup_assigned_to else '',
+        'followup_done': order.followup_done,
+        'urgency': urgency,
     })
 
 
