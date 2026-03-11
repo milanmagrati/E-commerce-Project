@@ -59,12 +59,16 @@
                     <span class="badge bg-white text-info ms-2" id="syncCountBadge">0</span>
                 </button>
 
-                <button class="btn btn-success btn-lg" id="exportExcelButton" 
+                <button class="btn btn-success btn-lg" id="exportExcelButton"
                         onclick="exportSelectedOrders()" style="display: none;">
                     <i class="fas fa-file-excel"></i> Export to Excel
                     <span class="badge bg-white text-success ms-2" id="exportCountBadge">0</span>
                 </button>
-                
+
+                <button class="btn btn-warning btn-lg" data-bs-toggle="modal" data-bs-target="#importExcelModal">
+                    <i class="fas fa-file-import"></i> Import Excel
+                </button>
+
                 <a href="{% url 'orders_trash' %}" class="btn btn-danger btn-lg">
                     <i class="fas fa-trash-alt"></i> Trash
                 </a>
@@ -2176,6 +2180,116 @@ document.addEventListener('keydown', function(e) {
             alertify.notify('✅ Auto-sync enabled', 'success', 3);
         }
     }
+});
+</script>
+
+<!-- Import Excel Modal -->
+<div class="modal fade" id="importExcelModal" tabindex="-1" aria-labelledby="importExcelModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" action="{% url 'import_orders_excel' %}" enctype="multipart/form-data" id="importExcelForm">
+                {% csrf_token %}
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title" id="importExcelModalLabel">
+                        <i class="fas fa-file-import"></i> Import Orders from Excel
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="excelFileInput" class="form-label fw-bold">Select Excel File (.xlsx)</label>
+                        <input type="file" class="form-control form-control-lg" id="excelFileInput"
+                               name="excel_file" accept=".xlsx,.xls" required>
+                        <div class="form-text text-muted mt-2">
+                            <i class="fas fa-info-circle"></i>
+                            Use the same format as the exported Excel file. Required columns:
+                            <strong>Customer Name, Phone Number, Shipping Address, Branch/City, Grand Total</strong>.
+                        </div>
+                    </div>
+                    <div class="alert alert-info mb-0" role="alert">
+                        <i class="fas fa-lightbulb"></i> <strong>Tip:</strong>
+                        Export some orders first to get the correct Excel template format, then fill in your data following that format and import it back.
+                    </div>
+                    <!-- File info preview -->
+                    <div id="importFileInfo" class="mt-3" style="display:none;">
+                        <div class="d-flex align-items-center gap-2 p-2 bg-light rounded">
+                            <i class="fas fa-file-excel text-success fa-2x"></i>
+                            <div>
+                                <div class="fw-bold" id="importFileName"></div>
+                                <small class="text-muted" id="importFileSize"></small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger ms-auto" onclick="clearImportFile()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-warning" id="importSubmitBtn" disabled>
+                        <i class="fas fa-file-import"></i> Import Orders
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Import Excel file handling
+document.getElementById('excelFileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    const fileInfo = document.getElementById('importFileInfo');
+    const submitBtn = document.getElementById('importSubmitBtn');
+
+    if (file) {
+        // Validate extension
+        const validExts = ['.xlsx', '.xls'];
+        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        if (!validExts.includes(ext)) {
+            alert('Invalid file format. Please select an Excel file (.xlsx or .xls).');
+            e.target.value = '';
+            fileInfo.style.display = 'none';
+            submitBtn.disabled = true;
+            return;
+        }
+
+        // Validate size (10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            alert('File too large. Maximum file size is 10MB.');
+            e.target.value = '';
+            fileInfo.style.display = 'none';
+            submitBtn.disabled = true;
+            return;
+        }
+
+        // Show file info
+        document.getElementById('importFileName').textContent = file.name;
+        const sizeKB = (file.size / 1024).toFixed(1);
+        document.getElementById('importFileSize').textContent = sizeKB > 1024
+            ? (sizeKB / 1024).toFixed(2) + ' MB'
+            : sizeKB + ' KB';
+        fileInfo.style.display = 'block';
+        submitBtn.disabled = false;
+    } else {
+        fileInfo.style.display = 'none';
+        submitBtn.disabled = true;
+    }
+});
+
+function clearImportFile() {
+    document.getElementById('excelFileInput').value = '';
+    document.getElementById('importFileInfo').style.display = 'none';
+    document.getElementById('importSubmitBtn').disabled = true;
+}
+
+// Show loading state on submit
+document.getElementById('importExcelForm').addEventListener('submit', function() {
+    const btn = document.getElementById('importSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...';
 });
 </script>
 

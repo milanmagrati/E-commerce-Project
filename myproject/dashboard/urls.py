@@ -95,6 +95,7 @@ urlpatterns = [
      # Export URLs
     path('orders/export/selected/', views.export_selected_orders_excel, name='export_selected_orders_excel'),
     path('orders/<int:order_id>/export/', views.export_order_details, name='export_order_details'),
+    path('orders/import/excel/', views.import_orders_excel, name='import_orders_excel'),
     
     
        # Gallery uploads/deletes

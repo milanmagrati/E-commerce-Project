@@ -4984,6 +4984,340 @@ def export_order_details(request, order_id):
         traceback.print_exc()
         return HttpResponse(f"Error exporting order: {str(e)}", status=500)
 
+@login_required
+@require_http_methods(["POST"])
+def import_orders_excel(request):
+    """Import orders from an Excel file (same format as the export)"""
+    from openpyxl import load_workbook
+    import re
+
+    excel_file = request.FILES.get('excel_file')
+    if not excel_file:
+        messages.error(request, "No file selected. Please choose an Excel file.")
+        return redirect('orders_list')
+
+    # Validate file extension
+    if not excel_file.name.endswith(('.xlsx', '.xls')):
+        messages.error(request, "Invalid file format. Please upload an Excel file (.xlsx or .xls).")
+        return redirect('orders_list')
+
+    # Validate file size (max 10MB)
+    if excel_file.size > 10 * 1024 * 1024:
+        messages.error(request, "File too large. Maximum file size is 10MB.")
+        return redirect('orders_list')
+
+    try:
+        wb = load_workbook(excel_file, read_only=True, data_only=True)
+        ws = wb.active
+
+        rows = list(ws.iter_rows(min_row=1, values_only=True))
+        if len(rows) < 2:
+            messages.error(request, "The Excel file is empty or has no data rows (only header found).")
+            return redirect('orders_list')
+
+        # Parse header row - normalize to lowercase stripped
+        raw_headers = rows[0]
+        headers = [str(h).strip().lower() if h else '' for h in raw_headers]
+
+        # Map expected columns to their indices
+        COLUMN_MAP = {
+            'order number': None,
+            'order date': None,
+            'order status': None,
+            'payment status': None,
+            'payment method': None,
+            'customer name': None,
+            'phone number': None,
+            'email address': None,
+            'shipping address': None,
+            'branch/city': None,
+            'landmark': None,
+            'in/out': None,
+            'products (with qty)': None,
+            'sku': None,
+            'quantities': None,
+            'unit price(s)': None,
+            'total price(s)': None,
+            'grand total': None,
+        }
+
+        for idx, header in enumerate(headers):
+            for key in COLUMN_MAP:
+                if key in header:
+                    COLUMN_MAP[key] = idx
+                    break
+
+        # Check required columns exist
+        required_cols = ['customer name', 'phone number', 'shipping address', 'branch/city', 'grand total']
+        missing_cols = [col for col in required_cols if COLUMN_MAP.get(col) is None]
+        if missing_cols:
+            messages.error(
+                request,
+                f"Missing required columns in Excel: {', '.join(c.title() for c in missing_cols)}. "
+                f"Please use the same format as the exported Excel file."
+            )
+            return redirect('orders_list')
+
+        def get_cell(row, col_name):
+            """Get cell value by column name, returns None if column not mapped"""
+            idx = COLUMN_MAP.get(col_name)
+            if idx is not None and idx < len(row):
+                val = row[idx]
+                if val is not None:
+                    return str(val).strip()
+            return None
+
+        def parse_price(price_str):
+            """Extract numeric value from price string like 'रू 1,234.56'"""
+            if not price_str:
+                return Decimal('0')
+            cleaned = re.sub(r'[^\d.]', '', str(price_str).replace(',', ''))
+            try:
+                return Decimal(cleaned) if cleaned else Decimal('0')
+            except (InvalidOperation, ValueError):
+                return Decimal('0')
+
+        success_count = 0
+        error_rows = []
+        skipped_duplicates = []
+
+        data_rows = rows[1:]
+
+        for row_num, row in enumerate(data_rows, start=2):
+            # Skip completely empty rows
+            if not row or all(cell is None or str(cell).strip() == '' for cell in row):
+                continue
+
+            try:
+                customer_name = get_cell(row, 'customer name') or ''
+                customer_phone = get_cell(row, 'phone number') or ''
+                customer_email = get_cell(row, 'email address') or ''
+                shipping_address = get_cell(row, 'shipping address') or ''
+                branch_city = get_cell(row, 'branch/city') or ''
+                landmark = get_cell(row, 'landmark') or ''
+                in_out_raw = get_cell(row, 'in/out') or 'in'
+                in_out = 'in' if in_out_raw.lower().strip() in ('in', 'valley', 'in valley') else 'out'
+
+                order_status_raw = get_cell(row, 'order status') or 'processing'
+                payment_status_raw = get_cell(row, 'payment status') or 'pending'
+                payment_method_raw = get_cell(row, 'payment method') or ''
+
+                grand_total_raw = get_cell(row, 'grand total')
+                grand_total = parse_price(grand_total_raw)
+
+                # Validate required fields
+                row_errors = []
+                if not customer_name:
+                    row_errors.append('Customer Name is empty')
+                if not customer_phone:
+                    row_errors.append('Phone Number is empty')
+                if not shipping_address:
+                    row_errors.append('Shipping Address is empty')
+                if not branch_city:
+                    row_errors.append('Branch/City is empty')
+                if grand_total <= 0:
+                    row_errors.append('Grand Total must be greater than 0')
+
+                if row_errors:
+                    error_rows.append(f"Row {row_num}: {'; '.join(row_errors)}")
+                    continue
+
+                # Check for duplicate by order number if provided
+                order_number_raw = get_cell(row, 'order number')
+                if order_number_raw and Order.objects.filter(order_number=order_number_raw, is_deleted=False).exists():
+                    skipped_duplicates.append(f"Row {row_num}: Order #{order_number_raw} already exists")
+                    continue
+
+                # Parse product items from combined fields
+                products_raw = get_cell(row, 'products (with qty)') or ''
+                skus_raw = get_cell(row, 'sku') or ''
+                quantities_raw = get_cell(row, 'quantities') or ''
+                unit_prices_raw = get_cell(row, 'unit price(s)') or ''
+
+                # Parse semicolon/comma separated values
+                product_entries = [p.strip() for p in products_raw.split(';') if p.strip()] if products_raw else []
+                sku_entries = [s.strip() for s in skus_raw.split(';') if s.strip()] if skus_raw else []
+                qty_entries = [q.strip() for q in quantities_raw.split(',') if q.strip()] if quantities_raw else []
+                price_entries = [p.strip() for p in unit_prices_raw.split(',') if p.strip()] if unit_prices_raw else []
+
+                with transaction.atomic():
+                    # Normalize status strings
+                    order_status = order_status_raw.lower().replace(' ', '_')
+                    payment_status = payment_status_raw.lower().replace(' ', '_')
+                    payment_method = payment_method_raw.lower().replace(' ', '_')
+
+                    # Get or create customer
+                    customer, _ = Customer.objects.get_or_create(
+                        phone=customer_phone,
+                        defaults={
+                            'name': customer_name,
+                            'email': customer_email or None,
+                            'city': branch_city,
+                            'address': shipping_address,
+                            'landmark': landmark,
+                        }
+                    )
+
+                    # Get or create city
+                    City.objects.get_or_create(
+                        name=branch_city,
+                        defaults={
+                            'valley_status': 'valley' if in_out == 'in' else 'out_valley',
+                            'is_active': True
+                        }
+                    )
+
+                    # Generate unique order number
+                    new_order_number = None
+                    for attempt in range(100):
+                        last_order = Order.objects.filter(
+                            order_number__startswith='T'
+                        ).order_by('-order_number').first()
+
+                        if last_order:
+                            try:
+                                n = int(last_order.order_number[1:])
+                                new_order_number = f"T{n + 1:03d}"
+                            except (ValueError, AttributeError, IndexError):
+                                new_order_number = f"T{Order.objects.filter(order_number__startswith='T').count() + 1:03d}"
+                        else:
+                            new_order_number = "T001"
+
+                        if not Order.objects.filter(order_number=new_order_number).exists():
+                            break
+
+                    # Create the order
+                    order = Order.objects.create(
+                        order_number=new_order_number,
+                        created_by=request.user,
+                        customer=customer,
+                        customer_name=customer_name,
+                        customer_phone=customer_phone,
+                        customer_email=customer_email,
+                        branch_city=branch_city,
+                        in_out=in_out,
+                        shipping_address=shipping_address,
+                        landmark=landmark,
+                        order_from='excel_import',
+                        order_status=order_status,
+                        payment_status=payment_status,
+                        payment_method=payment_method,
+                        total_amount=safe_decimal(grand_total, max_digits=18, decimal_places=2),
+                        discount_amount=Decimal('0'),
+                        shipping_charge=Decimal('0'),
+                        tax_percent=Decimal('0'),
+                    )
+
+                    # Sync status with Setup model
+                    order = sync_order_status_setup(order)
+
+                    # Create order items
+                    if product_entries:
+                        num_items = len(product_entries)
+                        for i in range(num_items):
+                            # Parse product name and quantity from "Product Name (Qty: 2)"
+                            product_text = product_entries[i] if i < len(product_entries) else ''
+                            qty_match = re.search(r'\(Qty:\s*(\d+)\)', product_text)
+                            if qty_match:
+                                item_qty = int(qty_match.group(1))
+                                product_name = re.sub(r'\s*\(Qty:\s*\d+\)', '', product_text).strip()
+                            else:
+                                # Fallback to quantities column
+                                try:
+                                    item_qty = int(qty_entries[i]) if i < len(qty_entries) else 1
+                                except (ValueError, IndexError):
+                                    item_qty = 1
+                                product_name = product_text.strip()
+
+                            item_sku = sku_entries[i] if i < len(sku_entries) else ''
+                            item_price = parse_price(price_entries[i]) if i < len(price_entries) else Decimal('0')
+                            item_total = item_price * item_qty
+
+                            # Try to find product by SKU
+                            product_obj = None
+                            variation_obj = None
+                            variation_name = None
+
+                            if item_sku and item_sku != 'N/A':
+                                # Try product variation first
+                                variation_obj = ProductVariation.objects.filter(sku=item_sku).first()
+                                if variation_obj:
+                                    product_obj = variation_obj.product
+                                    variation_name = getattr(variation_obj, 'variation_name', None) or variation_obj.sku
+                                else:
+                                    # Try product by barcode
+                                    product_obj = Product.objects.filter(barcode=item_sku).first()
+
+                            if not product_obj and product_name:
+                                product_obj = Product.objects.filter(name__iexact=product_name).first()
+
+                            OrderItem.objects.create(
+                                order=order,
+                                product=product_obj,
+                                product_variation=variation_obj,
+                                product_name=product_name or 'Imported Product',
+                                product_sku=item_sku if item_sku != 'N/A' else '',
+                                variation_name=variation_name,
+                                quantity=item_qty,
+                                price=safe_decimal(item_price, max_digits=18, decimal_places=2),
+                                total=safe_decimal(item_total, max_digits=18, decimal_places=2),
+                            )
+                    else:
+                        # No product info - create a placeholder item
+                        OrderItem.objects.create(
+                            order=order,
+                            product=None,
+                            product_name='Imported Item',
+                            product_sku='',
+                            quantity=1,
+                            price=safe_decimal(grand_total, max_digits=18, decimal_places=2),
+                            total=safe_decimal(grand_total, max_digits=18, decimal_places=2),
+                        )
+
+                    # Log activity
+                    OrderActivityLog.objects.create(
+                        order=order,
+                        action_type='created',
+                        user=request.user,
+                        description=f"Order imported from Excel file: {excel_file.name}"
+                    )
+
+                    success_count += 1
+
+            except Exception as e:
+                error_rows.append(f"Row {row_num}: {str(e)}")
+                continue
+
+        wb.close()
+
+        # Build result message
+        if success_count > 0:
+            messages.success(request, f"Successfully imported {success_count} order(s) from Excel.")
+
+        if skipped_duplicates:
+            messages.warning(
+                request,
+                f"Skipped {len(skipped_duplicates)} duplicate order(s): {'; '.join(skipped_duplicates[:5])}"
+                + (f" and {len(skipped_duplicates) - 5} more..." if len(skipped_duplicates) > 5 else "")
+            )
+
+        if error_rows:
+            messages.error(
+                request,
+                f"Failed to import {len(error_rows)} row(s): {'; '.join(error_rows[:5])}"
+                + (f" and {len(error_rows) - 5} more..." if len(error_rows) > 5 else "")
+            )
+
+        if success_count == 0 and not error_rows and not skipped_duplicates:
+            messages.warning(request, "No orders found in the Excel file.")
+
+    except Exception as e:
+        logger.error(f"Excel import error: {str(e)}")
+        messages.error(request, f"Error reading Excel file: {str(e)}")
+
+    return redirect('orders_list')
+
+
 # new
 
 @login_required
