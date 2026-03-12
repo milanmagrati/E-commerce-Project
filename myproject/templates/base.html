@@ -676,6 +676,21 @@
                 </li>
                 {% endif %}
 
+                <!-- ==================== PICK AND DROP LOGISTICS ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="{% if 'pick_and_drop' in request.resolver_match.url_name|default:'' or 'pnd' in request.resolver_match.url_name|default:'' %}active{% endif %}">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#pndMenu" aria-expanded="false">
+                        <i class="fas fa-truck-moving"></i> Pick & Drop
+                        <i class="fas fa-chevron-down float-end mt-1"></i>
+                    </a>
+                    <ul class="collapse list-unstyled" id="pndMenu">
+                        <li>
+                            <a href="{% url 'pick_and_drop:bulk_sync' %}">Bulk Logs</a>
+                        </li>
+                    </ul>
+                </li>
+                {% endif %}
+
                 <!-- ==================== INVENTORY ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_inventory %}
                 <li class="{% if 'inventory' in request.resolver_match.url_name or 'stock' in request.resolver_match.url_name %}active{% endif %}">

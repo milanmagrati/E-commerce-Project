@@ -13986,3 +13986,344 @@ def _calculate_achievement(target):
         return float(count)
 
     return 0
+
+
+# ===================== PICK AND DROP LOGISTICS =====================
+
+def send_single_order_to_pnd(request, order, default_weight=1.0):
+    """
+    Helper function to send single order to Pick and Drop
+    Returns: dict with 'status' and 'message'
+    """
+    import requests
+    from django.conf import settings
+    from django.utils import timezone
+
+    try:
+        # CHECK 1: Already sent?
+        if hasattr(order, 'pnd_order_id') and order.pnd_order_id:
+            return {
+                'status': 'skipped',
+                'message': f'Already sent (PND ID: {order.pnd_order_id})'
+            }
+
+        # CHECK 2: Required fields
+        missing = []
+        if not getattr(order, 'customer_name', None):
+            missing.append('customer_name')
+        if not getattr(order, 'customer_phone', None):
+            missing.append('customer_phone')
+        if not getattr(order, 'shipping_address', None):
+            missing.append('shipping_address')
+
+        if missing:
+            return {
+                'status': 'skipped',
+                'message': f'Missing required fields: {", ".join(missing)}'
+            }
+
+        # Get product description
+        product_name = 'General Items'
+        try:
+            if hasattr(order, 'items'):
+                items = order.items.select_related('product_variation').all()[:3]
+                if items:
+                    parts = []
+                    for item in items:
+                        qty = getattr(item, 'quantity', 1) or 1
+                        name = item.product_name or 'Item'
+                        var_name = item.variation_name or (item.product_variation.variation_name if item.product_variation else None)
+                        if var_name:
+                            name = f"{name} ({var_name})"
+                        parts.append(f"{qty}x {name}")
+                    product_name = ', '.join(parts)
+                    total_items = order.items.count()
+                    if total_items > 3:
+                        product_name += f' and {total_items - 3} more'
+        except Exception:
+            pass
+
+        # Get weight
+        weight = default_weight
+        if hasattr(order, 'package_weight') and order.package_weight:
+            try:
+                weight = float(order.package_weight)
+            except Exception:
+                weight = default_weight
+
+        # Get destination branch
+        destination_branch = 'KATHMANDU VALLEY'
+        if hasattr(order, 'branch_city') and order.branch_city:
+            destination_branch = str(order.branch_city)
+
+        # Get API credentials
+        api_key = getattr(settings, 'PND_API_KEY', None)
+        api_secret = getattr(settings, 'PND_API_SECRET', None)
+        base_url = getattr(settings, 'PND_API_BASE_URL', None)
+
+        if not base_url or not api_key or not api_secret:
+            return {
+                'status': 'error',
+                'message': 'Pick and Drop API not configured in settings'
+            }
+
+        # Build API URL
+        base_url = base_url.rstrip('/')
+        api_url = f"{base_url}/api/method/logi360.api.create_order"
+
+        # Sanitize phone number: PND API requires exactly 10 digits
+        import re
+        raw_phone = str(order.customer_phone or '')
+        digits_only = re.sub(r'\D', '', raw_phone)
+        # If number starts with country code 977, strip it
+        if digits_only.startswith('977') and len(digits_only) == 13:
+            digits_only = digits_only[3:]
+        # Take last 10 digits if longer
+        if len(digits_only) > 10:
+            digits_only = digits_only[-10:]
+        if len(digits_only) != 10:
+            return {
+                'status': 'error',
+                'message': f'Phone number must be 10 digits. Got: {raw_phone} ({len(digits_only)} digits)'
+            }
+
+        # Build payload
+        payload = {
+            "customerName": str(order.customer_name)[:50],
+            "primaryMobileNo": digits_only,
+            "destinationBranch": destination_branch,
+            "destinationCityArea": str(order.shipping_address or destination_branch)[:200],
+            "codAmount": float(order.total_amount or 0),
+            "orderDescription": str(product_name)[:200],
+            "vendorTrackingNumber": str(order.order_number),
+            "landmark": str(order.landmark or order.shipping_address or 'N/A')[:200],
+            "weight": str(weight),
+            "orderType": "Regular",
+            "instruction": str(order.notes or ''),
+        }
+
+        # Call Pick and Drop API
+        response = requests.post(
+            api_url,
+            json=payload,
+            headers={
+                'Authorization': f'token {api_key}:{api_secret}',
+                'Content-Type': 'application/json'
+            },
+            timeout=30
+        )
+
+        # Handle response
+        if response.status_code == 200:
+            try:
+                data = response.json()
+            except Exception:
+                return {
+                    'status': 'error',
+                    'message': 'Invalid JSON response from Pick and Drop'
+                }
+
+            # Success: {"message": {"status": "success", "data": {...}}}
+            msg = data.get('message', {})
+            if isinstance(msg, dict) and msg.get('status') == 'success':
+                response_data = msg.get('data', {})
+                pnd_order_id = response_data.get('orderID', '')
+                tracking_url = response_data.get('tracking_url', '')
+
+                # Update order
+                order.pnd_order_id = str(pnd_order_id)
+                order.pnd_status = response_data.get('status', 'Order Created')
+                order.pnd_created_at = timezone.now()
+                order.pnd_destination_branch = destination_branch
+                order.pnd_tracking_url = tracking_url or ''
+                order.save()
+
+                # Log activity
+                try:
+                    from dashboard.models import OrderActivityLog
+                    OrderActivityLog.objects.create(
+                        order=order,
+                        user=request.user if request else None,
+                        action_type='status_changed',
+                        description=f'Sent to Pick and Drop Logistics (ID: {pnd_order_id})'
+                    )
+                except Exception:
+                    pass
+
+                return {
+                    'status': 'success',
+                    'message': f'Sent to Pick and Drop (ID: {pnd_order_id})'
+                }
+            else:
+                if isinstance(msg, dict):
+                    error_msg = msg.get('message', str(msg))
+                elif isinstance(msg, str):
+                    error_msg = msg
+                else:
+                    error_msg = str(data)
+                return {
+                    'status': 'error',
+                    'message': f'Pick and Drop error: {error_msg}'
+                }
+        else:
+            return {
+                'status': 'error',
+                'message': f'Pick and Drop API error (HTTP {response.status_code})'
+            }
+
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }
+
+
+def orders_bulk_pnd_send(request):
+    """
+    Bulk send multiple orders to Pick and Drop logistics
+    """
+    from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder, PNDBulkLogDetail
+
+    if request.method != 'POST':
+        messages.error(request, 'Invalid request method')
+        return redirect('orders_list')
+
+    try:
+        # Get form data
+        order_ids = request.POST.getlist('order_ids')
+        default_weight = float(request.POST.get('default_weight', 1.0))
+        auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
+
+        if not order_ids:
+            messages.error(request, 'No orders selected')
+            return redirect('orders_list')
+
+        # Get orders
+        orders = Order.objects.filter(id__in=order_ids, is_deleted=False)
+
+        if not orders.exists():
+            messages.error(request, 'No valid orders found')
+            return redirect('orders_list')
+
+        count = orders.count()
+
+        # Create PND Bulk Log
+        bulk_log = PNDBulkLog.objects.create(
+            batch_number=PNDBulkLog.generate_batch_number(),
+            total_orders=count,
+            status='processing',
+            created_by=request.user,
+        )
+        PNDBulkLogDetail.objects.create(
+            batch=bulk_log,
+            action='batch_started',
+            message=f'Bulk send started with {count} order(s)',
+            user=request.user,
+        )
+
+        # Track results
+        success_count = 0
+        skip_count = 0
+        error_count = 0
+        error_details = []
+
+        # Process each order
+        for order in orders:
+            result = send_single_order_to_pnd(
+                request,
+                order,
+                default_weight=default_weight
+            )
+
+            if result['status'] == 'success':
+                success_count += 1
+                log_status = 'success'
+                log_action = 'order_sent'
+                # Auto-set logistics if enabled
+                if auto_set_logistics and order.logistics != 'pick_and_drop':
+                    order.logistics = 'pick_and_drop'
+                    order.save()
+            elif result['status'] == 'skipped':
+                skip_count += 1
+                log_status = 'skipped'
+                log_action = 'order_skipped'
+            else:
+                error_count += 1
+                log_status = 'failed'
+                log_action = 'order_failed'
+                error_details.append(f"#{order.order_number}: {result.get('message', 'Unknown error')}")
+
+            # Create log entry for this order
+            order.refresh_from_db()
+            PNDBulkLogOrder.objects.create(
+                batch=bulk_log,
+                order=order,
+                order_number=order.order_number or '',
+                customer_name=order.customer_name or '',
+                customer_phone=order.customer_phone or '',
+                shipping_address=order.shipping_address or '',
+                cod_amount=order.total_amount or 0,
+                destination_branch=order.branch_city or '',
+                pnd_order_id=order.pnd_order_id,
+                status=log_status,
+                message=result.get('message', ''),
+            )
+            PNDBulkLogDetail.objects.create(
+                batch=bulk_log,
+                action=log_action,
+                order_number=order.order_number or '',
+                message=result.get('message', ''),
+                user=request.user,
+            )
+
+        # Update bulk log with final counts and status
+        if error_count == count:
+            final_status = 'failed'
+        elif success_count == count:
+            final_status = 'completed'
+        elif success_count > 0:
+            final_status = 'partial'
+        else:
+            final_status = 'failed'
+
+        bulk_log.success_count = success_count
+        bulk_log.failed_count = error_count
+        bulk_log.skipped_count = skip_count
+        bulk_log.status = final_status
+        bulk_log.completed_at = timezone.now()
+        bulk_log.save()
+
+        PNDBulkLogDetail.objects.create(
+            batch=bulk_log,
+            action='batch_completed',
+            message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
+            user=request.user,
+        )
+
+        # Show results
+        if success_count > 0:
+            messages.success(
+                request,
+                f"Successfully sent {success_count} order(s) to Pick and Drop."
+            )
+
+        if skip_count > 0:
+            messages.warning(
+                request,
+                f"Skipped {skip_count} order(s) (Already sent or missing info)."
+            )
+
+        if error_count > 0:
+            detail_str = '; '.join(error_details[:5])
+            extra = f' (+{error_count - 5} more)' if error_count > 5 else ''
+            messages.error(
+                request,
+                f"Failed {error_count} order(s): {detail_str}{extra}"
+            )
+
+    except Exception as e:
+        messages.error(request, f'Bulk send error: {str(e)}')
+        import traceback
+        traceback.print_exc()
+
+    return redirect('orders_list')

@@ -24,6 +24,7 @@ urlpatterns = [
     path('', include('dashboard.urls')),
     path('accounts/', include('accounts.urls')),
     path('ncm/', include('ncm.urls')),
+    path('pnd/', include('pick_and_drop.urls')),
     path('chat/', include('chat.urls')),
 
 ] 

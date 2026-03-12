@@ -464,13 +464,14 @@
                             <select name="logistics" class="form-select form-select-lg" id="logisticsSelect">
                                 <option value="">-- Select Logistics --</option>
                                 <option value="ncm" {% if order.logistics == 'ncm' %}selected{% endif %}>🚛 NCM</option>
+                                <option value="pick_and_drop" {% if order.logistics == 'pick_and_drop' %}selected{% endif %}>🚚 Pick and Drop</option>
                                 <option value="sundarijal" {% if order.logistics == 'sundarijal' %}selected{% endif %}>Sundarijal</option>
                                 <option value="express" {% if order.logistics == 'express' %}selected{% endif %}>Express</option>
                                 <option value="local" {% if order.logistics == 'local' %}selected{% endif %}>Local Delivery</option>
                                 <option value="other" {% if order.logistics == 'other' %}selected{% endif %}>Other</option>
                             </select>
                             <small class="text-info d-block mt-1">
-                                <i class="fas fa-info-circle"></i> Select <strong>NCM</strong> to enable NCM Logistics integration below
+                                <i class="fas fa-info-circle"></i> Select <strong>NCM</strong> or <strong>Pick and Drop</strong> to enable logistics integration below
                             </small>
                         </div>
                         <div class="col-md-6">
@@ -691,6 +692,144 @@
         </div>
         {% endif %}
         <!-- ✅✅✅ NCM INTEGRATION SECTION ENDS ✅✅✅ -->
+
+        <!-- ✅✅✅ PICK AND DROP LOGISTICS INTEGRATION SECTION ✅✅✅ -->
+        {% if order.logistics == 'pick_and_drop' %}
+        <div class="card shadow-sm" style="border-left: 4px solid #e67e22;">
+            <div class="card-header" style="background: linear-gradient(135deg, #e67e22, #d35400); color: white;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-truck-moving"></i> Pick and Drop Logistics
+                    </h5>
+                    <span class="badge bg-light text-dark">
+                        <i class="fas fa-shipping-fast"></i> PND
+                    </span>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if order.pnd_order_id %}
+                    <!-- Order EXISTS in Pick and Drop -->
+                    <div class="alert alert-success">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-check-circle fa-2x me-3"></i>
+                            <div>
+                                <strong>Active in Pick and Drop System</strong>
+                                <div class="mt-2">
+                                    <div class="mb-1">
+                                        <i class="fas fa-hashtag"></i> <strong>PND Order ID:</strong>
+                                        <span class="badge bg-primary">{{ order.pnd_order_id }}</span>
+                                    </div>
+                                    <div class="mb-1">
+                                        <i class="fas fa-info-circle"></i> <strong>Status:</strong>
+                                        <span class="badge bg-info">{{ order.pnd_status|default:"Unknown" }}</span>
+                                    </div>
+                                    <div class="mb-1">
+                                        <i class="fas fa-calendar-alt"></i> <strong>Created:</strong>
+                                        {{ order.pnd_created_at|date:"M d, Y h:i A"|default:"N/A" }}
+                                    </div>
+                                    <div class="mb-1">
+                                        <i class="fas fa-map-pin"></i> <strong>Destination:</strong>
+                                        {{ order.pnd_destination_branch|default:"Not set" }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PND Actions -->
+                    <div class="d-flex gap-2 mt-3 flex-wrap">
+                        {% if order.pnd_tracking_url %}
+                        <a href="{{ order.pnd_tracking_url }}" class="btn btn-info" target="_blank">
+                            <i class="fas fa-map-marker-alt"></i> Track Order
+                        </a>
+                        {% endif %}
+                        <a href="{% url 'pick_and_drop:sync_status' order.id %}" class="btn btn-outline-primary">
+                            <i class="fas fa-sync-alt"></i> Sync Status
+                        </a>
+                        {% if order.pnd_status != 'Cancelled' %}
+                        <form method="POST" action="{% url 'pick_and_drop:cancel_order' order.id %}" class="d-inline"
+                              onsubmit="return confirm('Are you sure you want to cancel this order in Pick and Drop? This action cannot be undone.');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-danger">
+                                <i class="fas fa-times-circle"></i> Cancel Order
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+
+                {% else %}
+                    <!-- Order NOT in Pick and Drop -->
+                    <div class="alert alert-warning">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-exclamation-triangle fa-2x me-3"></i>
+                            <div>
+                                <strong>Not Yet Created in Pick and Drop</strong>
+                                <p class="mb-0 mt-1">This order hasn't been sent to Pick and Drop yet. Click below to create the shipment.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pre-flight Check -->
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <i class="fas fa-clipboard-check"></i> Pre-flight Check
+                        </div>
+                        <div class="card-body">
+                            <div class="{% if order.customer_name %}text-success{% else %}text-danger{% endif %} mb-1">
+                                <i class="fas {% if order.customer_name %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                Customer Name: {% if order.customer_name %}{{ order.customer_name }}{% else %}<span class="text-danger">Missing</span>{% endif %}
+                            </div>
+                            <div class="{% if order.customer_phone %}text-success{% else %}text-danger{% endif %} mb-1">
+                                <i class="fas {% if order.customer_phone %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                Phone Number: {% if order.customer_phone %}{{ order.customer_phone }}{% else %}<span class="text-danger">Missing</span>{% endif %}
+                            </div>
+                            <div class="{% if order.shipping_address %}text-success{% else %}text-danger{% endif %} mb-1">
+                                <i class="fas {% if order.shipping_address %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                Shipping Address: {% if order.shipping_address %}Provided{% else %}<span class="text-danger">Missing</span>{% endif %}
+                            </div>
+                            <div class="{% if order.total_amount %}text-success{% else %}text-danger{% endif %} mb-1">
+                                <i class="fas {% if order.total_amount %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                COD Amount: {% if order.total_amount %}Rs. {{ order.total_amount }}{% else %}<span class="text-danger">Missing</span>{% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Create in Pick and Drop -->
+                    <form method="POST" action="{% url 'pick_and_drop:create_shipment' order.id %}" id="pndCreateForm">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-map-pin"></i> Destination Branch
+                            </label>
+                            <input type="text" name="pnd_destination_branch" class="form-control form-control-lg"
+                                   value="{{ order.branch_city|default:'KATHMANDU VALLEY' }}"
+                                   placeholder="e.g. KATHMANDU VALLEY">
+                            <small class="text-muted d-block mt-1">
+                                <i class="fas fa-info-circle"></i> Enter the destination branch for Pick and Drop delivery
+                            </small>
+                        </div>
+
+                        <button type="submit"
+                                class="btn btn-lg w-100"
+                                style="background: linear-gradient(135deg, #e67e22, #d35400); color: white; border: none;"
+                                id="pndCreateBtn"
+                                {% if not order.customer_name or not order.customer_phone or not order.shipping_address %}disabled{% endif %}>
+                            <i class="fas fa-plus-circle"></i>
+                            <span>Create Shipment in Pick and Drop</span>
+                        </button>
+                    </form>
+
+                    {% if not order.customer_name or not order.customer_phone or not order.shipping_address %}
+                    <small class="text-danger d-block mt-2 text-center">
+                        <i class="fas fa-info-circle"></i> Please fill all required fields before creating Pick and Drop shipment
+                    </small>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        <!-- ✅✅✅ PICK AND DROP INTEGRATION SECTION ENDS ✅✅✅ -->
 
     </div>
 

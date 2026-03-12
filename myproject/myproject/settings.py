@@ -46,6 +46,7 @@ EXTERNAL_APPS = [
      "dashboard",
     "accounts",
     "ncm",
+    "pick_and_drop",
     "chat",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
@@ -173,6 +174,11 @@ NCM_API_BASE_URL_V2 = config('NCM_API_BASE_URL_V2')
 # ===================== Webhook Configuration =====================
 # Webhook Security: Set this in your .env file
 NCM_WEBHOOK_SECRET = config('NCM_WEBHOOK_SECRET', default=None)
+
+# ===================== Pick and Drop API Configuration =====================
+PND_API_KEY = config('PND_API_KEY', default='adfe61efa5c52c6')
+PND_API_SECRET = config('PND_API_SECRET', default='228689edbe6b937')
+PND_API_BASE_URL = config('PND_API_BASE_URL', default='https://pickndropnepal.com')
 
 # ===================== SMS Configuration =====================
 # SMS Provider: 'console', 'twilio', 'sparrow', 'atuha'

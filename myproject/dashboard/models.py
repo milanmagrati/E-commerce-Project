@@ -268,6 +268,7 @@ class OrderManager(models.Manager):
 class Order(models.Model):
     LOGISTICS_CHOICES = [
         ('ncm', 'NCM'),
+        ('pick_and_drop', 'Pick and Drop'),
         ('sundarijal', 'Sundarijal'),
         ('express', 'Express'),
         ('local', 'Local Delivery'),
@@ -400,8 +401,15 @@ class Order(models.Model):
     
     # Weight for shipping calculation
     package_weight = models.DecimalField(max_digits=8, decimal_places=2, default=1.0, help_text="Weight in kg")
-    
-    
+
+    # Pick and Drop Integration Fields
+    pnd_order_id = models.CharField(max_length=100, blank=True, null=True, unique=True, db_index=True)
+    pnd_status = models.CharField(max_length=100, blank=True)
+    pnd_created_at = models.DateTimeField(blank=True, null=True)
+    pnd_destination_branch = models.CharField(max_length=100, blank=True)
+    pnd_tracking_url = models.URLField(max_length=500, blank=True)
+
+
     def calculate_totals(self):
         """Calculate order totals based on items, discount, shipping, and tax"""
         from decimal import Decimal
@@ -938,6 +946,7 @@ class Dispatch(models.Model):
     
     LOGISTICS_CHOICES = [
         ('ncm', 'NCM'),
+        ('pick_and_drop', 'Pick and Drop'),
         ('sundarijal', 'Sundarijal'),
         ('express', 'Express'),
         ('local', 'Local Delivery'),

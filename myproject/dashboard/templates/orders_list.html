@@ -46,12 +46,25 @@
                         </li>
                     </ul>
                 </div>
-                
-                <button class="btn btn-gradient-ncm btn-lg" id="bulkNCMButton" 
-                        onclick="openNCMModal()" style="display: none;">
-                    <i class="fas fa-truck-loading"></i> Bulk Send to NCM
-                    <span class="badge bg-white text-primary ms-2" id="ncmCountBadge">0</span>
-                </button>
+
+                <div class="btn-group" id="bulkLogisticsDropdown" style="display: none;">
+                    <button type="button" class="btn btn-primary btn-lg dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-shipping-fast"></i> Bulk Send to Logistics
+                        <span class="badge bg-white text-primary ms-2" id="logisticsCountBadge">0</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <a class="dropdown-item py-2" href="#" onclick="openNCMModal(); return false;">
+                                <i class="fas fa-truck-loading text-primary me-2"></i> NCM Logistics
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item py-2" href="#" onclick="openPNDModal(); return false;">
+                                <i class="fas fa-truck-moving me-2" style="color: #e67e22;"></i> Pick & Drop
+                            </a>
+                        </li>
+                    </ul>
+                </div>
                 
                 <button class="btn btn-info btn-lg" id="bulkSyncButton" 
                         onclick="bulkSyncSelectedOrders()" style="display: none;">
@@ -572,6 +585,102 @@
             <div class="ncm-spinner-ball"></div>
         </div>
         <p class="ncm-loading-text">Sending to NCM...</p>
+    </div>
+</div>
+
+<!-- ✅ PICK AND DROP MODAL -->
+<div class="modal fade" id="pndLogisticsModal" tabindex="-1" aria-labelledby="pndModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header text-white" style="background: linear-gradient(135deg, #e67e22, #d35400);">
+                <h5 class="modal-title" id="pndModalLabel">
+                    <i class="fas fa-truck-moving"></i> Send Orders to Pick and Drop
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="pndBulkSendForm" method="post" action="{% url 'orders_bulk_pnd_send' %}">
+                    {% csrf_token %}
+
+                    <div class="alert alert-info mb-4">
+                        <div class="d-flex align-items-center gap-3">
+                            <div>
+                                <i class="fas fa-boxes fa-2x"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-1 fw-bold">
+                                    <span id="pndModalSelectedCount">0</span> Orders Selected
+                                </h6>
+                                <p class="mb-0 small">Ready to be sent to Pick and Drop</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-weight text-warning"></i> Default Weight (kg)
+                            </label>
+                            <input type="number" name="default_weight" class="form-control form-control-lg"
+                                   value="1.0" step="0.1" min="0.1" required>
+                            <small class="text-muted d-block mt-1">
+                                <i class="fas fa-info-circle"></i> For orders without specified weight
+                            </small>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-check form-switch pt-4">
+                                <input class="form-check-input" type="checkbox" id="pndAutoSetLogistics"
+                                       name="auto_set_logistics" checked>
+                                <label class="form-check-label fw-bold" for="pndAutoSetLogistics">
+                                    <i class="fas fa-magic text-primary"></i> Auto-set Logistics to Pick and Drop
+                                </label>
+                            </div>
+                            <small class="text-muted d-block mt-2 ms-4">
+                                <i class="fas fa-check-circle text-success"></i> Recommended: Updates logistics field automatically
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning mb-0">
+                        <h6 class="alert-heading">
+                            <i class="fas fa-exclamation-triangle"></i> Important Notes
+                        </h6>
+                        <ul class="mb-0 ps-3 small">
+                            <li>Verify all customer details (name, phone, address) are correct</li>
+                            <li>Orders already sent to Pick and Drop will be skipped automatically</li>
+                            <li>Orders missing required information will be skipped</li>
+                            <li>Destination branch will be auto-detected from order's branch city</li>
+                        </ul>
+                    </div>
+
+                    <div id="pndOrderIdsContainer"></div>
+                </form>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary btn-lg" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="button" id="pndSubmitBtn" class="btn btn-lg px-4" onclick="submitPNDBulkSend()"
+                        style="background: linear-gradient(135deg, #e67e22, #d35400); color: white; border: none;">
+                    <i class="fas fa-paper-plane"></i> Send to Pick & Drop Now
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ PND PROFESSIONAL LOADING OVERLAY -->
+<div id="pndLoadingOverlay" class="pnd-loading-overlay" style="display: none;">
+    <div class="pnd-loading-container">
+        <div class="pnd-spinner">
+            <div class="pnd-spinner-ball"></div>
+            <div class="pnd-spinner-ball"></div>
+            <div class="pnd-spinner-ball"></div>
+            <div class="pnd-spinner-ball"></div>
+            <div class="pnd-spinner-ball"></div>
+        </div>
+        <p class="pnd-loading-text">Sending to Pick and Drop...</p>
     </div>
 </div>
 
@@ -1146,6 +1255,103 @@
             opacity: 1;
         }
     }
+
+    /* ✅ PND PROFESSIONAL LOADING ANIMATION */
+    .pnd-loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        backdrop-filter: blur(3px);
+    }
+
+    .pnd-loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 25px;
+        background: white;
+        padding: 50px 60px;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        max-width: 400px;
+    }
+
+    .pnd-spinner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 80px;
+    }
+
+    .pnd-spinner-ball {
+        width: 14px;
+        height: 60px;
+        border-radius: 50%;
+        background: linear-gradient(to bottom, #e67e22, #d35400);
+        animation: pndPulse 1.2s ease-in-out infinite;
+    }
+
+    .pnd-spinner-ball:nth-child(1) {
+        animation-delay: -0.5s;
+        background: linear-gradient(to bottom, #d35400, #c0392b);
+    }
+
+    .pnd-spinner-ball:nth-child(2) {
+        animation-delay: -0.4s;
+        background: linear-gradient(to bottom, #e67e22, #d35400);
+    }
+
+    .pnd-spinner-ball:nth-child(3) {
+        animation-delay: -0.3s;
+        background: linear-gradient(to bottom, #f39c12, #e67e22);
+    }
+
+    .pnd-spinner-ball:nth-child(4) {
+        animation-delay: -0.2s;
+        background: linear-gradient(to bottom, #f1c40f, #f39c12);
+    }
+
+    .pnd-spinner-ball:nth-child(5) {
+        animation-delay: -0.1s;
+        background: linear-gradient(to bottom, #e67e22, #d35400);
+    }
+
+    @keyframes pndPulse {
+        0%, 100% {
+            transform: scaleY(0.4);
+            opacity: 0.5;
+        }
+        50% {
+            transform: scaleY(1);
+            opacity: 1;
+        }
+    }
+
+    .pnd-loading-text {
+        font-size: 18px;
+        font-weight: 700;
+        color: #2c3e50;
+        margin: 0;
+        letter-spacing: 0.5px;
+        animation: pndPulseText 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pndPulseText {
+        0%, 100% {
+            opacity: 0.6;
+        }
+        50% {
+            opacity: 1;
+        }
+    }
 </style>
 
 <script>
@@ -1440,8 +1646,8 @@ function updateBulkActions() {
     const count = checkedBoxes.length;
     const bulkBar = document.getElementById('bulkActionsBar');
     const selectedCount = document.getElementById('selectedCount');
-    const bulkNCMButton = document.getElementById('bulkNCMButton');
-    const ncmCountBadge = document.getElementById('ncmCountBadge');
+    const bulkLogisticsDropdown = document.getElementById('bulkLogisticsDropdown');
+    const logisticsCountBadge = document.getElementById('logisticsCountBadge');
     const bulkSyncButton = document.getElementById('bulkSyncButton');
     const syncCountBadge = document.getElementById('syncCountBadge');
     const exportExcelButton = document.getElementById('exportExcelButton');
@@ -1452,9 +1658,9 @@ function updateBulkActions() {
         bulkBar.style.display = 'block';
         selectedCount.textContent = `${count} order${count > 1 ? 's' : ''} selected`;
         
-        // Show NCM button
-        bulkNCMButton.style.display = 'inline-block';
-        ncmCountBadge.textContent = count;
+        // Show Logistics dropdown
+        bulkLogisticsDropdown.style.display = 'inline-block';
+        logisticsCountBadge.textContent = count;
         
         // Show Sync button
         bulkSyncButton.style.display = 'inline-block';
@@ -1485,7 +1691,7 @@ function updateBulkActions() {
         }
     } else {
         bulkBar.style.display = 'none';
-        bulkNCMButton.style.display = 'none';
+        bulkLogisticsDropdown.style.display = 'none';
         bulkSyncButton.style.display = 'none';
         exportExcelButton.style.display = 'none';
         const selectAllCb = document.getElementById('selectAll');
@@ -1774,6 +1980,103 @@ function sendSingleOrderToNCM(orderId, orderNumber) {
         }, 1000);
         
         form.submit();
+    }
+}
+
+// ===================== PICK AND DROP FUNCTIONS =====================
+
+function openPNDModal() {
+    const checkedBoxes = document.querySelectorAll('.order-checkbox:checked');
+    const count = checkedBoxes.length;
+
+    if (count === 0) {
+        alert('Please select at least one order');
+        return;
+    }
+
+    // Update count display in modal
+    const selectedCountElement = document.getElementById('pndModalSelectedCount');
+    if (selectedCountElement) {
+        selectedCountElement.textContent = count;
+    }
+
+    // Inject hidden inputs into PND form
+    const container = document.getElementById('pndOrderIdsContainer');
+    if (container) {
+        container.innerHTML = '';
+        checkedBoxes.forEach(cb => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'order_ids';
+            input.value = cb.value;
+            container.appendChild(input);
+        });
+    } else {
+        console.error('PND Order IDs container not found!');
+        return;
+    }
+
+    // Show Modal
+    try {
+        const modalElement = document.getElementById('pndLogisticsModal');
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    } catch (error) {
+        console.error('Error showing PND modal:', error);
+        alert('Could not open modal. Please reload the page.');
+    }
+}
+
+// ✅ FLAG TO PREVENT DOUBLE CLICKS
+let pndSendInProgress = false;
+
+function submitPNDBulkSend() {
+    // Prevent double-click/double-tap
+    if (pndSendInProgress) {
+        console.warn('PND send already in progress, ignoring click');
+        return;
+    }
+
+    const form = document.getElementById('pndBulkSendForm');
+    const submitBtn = document.getElementById('pndSubmitBtn');
+
+    if (form && form.checkValidity()) {
+        // ✅ SET FLAG TO PREVENT FURTHER CLICKS
+        pndSendInProgress = true;
+
+        // ✅ DISABLE THE BUTTON AND SHOW LOADING STATE
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Sending to Pick & Drop...';
+        }
+
+        // ✅ SHOW PROFESSIONAL LOADING OVERLAY
+        const loadingOverlay = document.getElementById('pndLoadingOverlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'flex';
+        }
+
+        // ✅ AUTO-ENABLE BUTTON AFTER 10 SECONDS (SAFETY TIMEOUT)
+        const timeout = setTimeout(() => {
+            pndSendInProgress = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send to Pick & Drop Now';
+            }
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
+            }
+            console.warn('PND send timeout - button re-enabled');
+        }, 10000); // 10 seconds
+
+        // ✅ SUBMIT THE FORM
+        form.addEventListener('submit', function() {
+            clearTimeout(timeout);
+        }, { once: true });
+
+        form.submit();
+    } else {
+        form.reportValidity();
     }
 }
 
