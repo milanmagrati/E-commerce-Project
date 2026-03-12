@@ -203,20 +203,24 @@ class NCMService:
     
     @staticmethod
     def map_ncm_status_to_system(ncm_status: str) -> str:
-        """Map NCM status to your system status"""
+        """Map NCM status to system status.
+
+        This mapping is aligned with NCMWebhookHandler.STATUS_MAPPING to ensure
+        consistent behavior between webhook updates and manual sync operations.
+        """
         mapping = {
             'Pickup Order Created': 'processing',
             'Drop off Order Created': 'processing',
-            'Pickup Complete': 'processing',
-            'Drop off Order Collected': 'processing',
-            'Dispatched': 'shipped',
-            'In Transit': 'shipped',
-            'Arrived': 'shipped',
-            'Sent for Delivery': 'shipped',
-            'Out for Delivery': 'shipped',
+            'Pickup Complete': 'in_transit',
+            'Drop off Order Collected': 'in_transit',
+            'Dispatched': 'in_transit',
+            'In Transit': 'in_transit',
+            'Arrived': 'in_transit',
+            'Sent for Delivery': 'in_transit',
+            'Out for Delivery': 'in_transit',
             'Delivered': 'delivered',
             'Confirmed': 'delivered',
-            'Returned': 'return',
+            'Returned': 'returned',
             'Return Initiated': 'return_initiated',
             'Return Approved': 'return_approved',
         }

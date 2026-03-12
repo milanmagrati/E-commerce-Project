@@ -26,9 +26,6 @@ from ncm.models import WebhookLog
 import json
 import logging
 import hmac
-import hashlib
-from datetime import datetime
-from decimal import Decimal
 
 logger = logging.getLogger('ncm')
 ncm_service = NCMService()
@@ -71,30 +68,33 @@ def get_client_ip(request):
     return ip
 
 
-def verify_ncm_webhook_signature(request, payload_bytes):
+def verify_ncm_webhook(request, payload_bytes):
     """
-    Verify NCM webhook signature if configured.
-    Checks HMAC-SHA256 signature against a configured secret.
+    Verify NCM webhook request authenticity.
+
+    NCM does NOT send HMAC signatures. Authentication can be done via:
+    1. Query parameter token in the webhook URL (e.g., ?token=your-secret)
+    2. Checking the User-Agent header (NCM-Webhook/1.0)
+
+    If NCM_WEBHOOK_SECRET is configured and the webhook URL includes a token
+    query parameter, the token is validated against the secret.
     """
+    # Verify User-Agent header (NCM sends 'NCM-Webhook/1.0')
+    user_agent = request.META.get('HTTP_USER_AGENT', '')
+    if user_agent and 'NCM-Webhook' not in user_agent:
+        logger.warning(f"Unexpected User-Agent for NCM webhook: {user_agent}")
+
+    # If a token query parameter is present, validate against the secret
     webhook_secret = getattr(settings, 'NCM_WEBHOOK_SECRET', None)
-    if not webhook_secret:
-        logger.warning("NCM_WEBHOOK_SECRET not configured. Skipping signature verification.")
-        return True
-    
-    signature_header = request.META.get('HTTP_X_NCM_SIGNATURE', '')
-    if not signature_header:
-        logger.error("Missing X-NCM-Signature header")
-        return False
-    
-    # Compute expected signature
-    expected_signature = hmac.new(
-        webhook_secret.encode(),
-        payload_bytes,
-        hashlib.sha256
-    ).hexdigest()
-    
-    # Compare signatures (constant-time comparison to prevent timing attacks)
-    return hmac.compare_digest(signature_header, expected_signature)
+    token = request.GET.get('token', '')
+
+    if webhook_secret and token:
+        if not hmac.compare_digest(token, webhook_secret):
+            logger.error("Webhook token verification failed")
+            return False
+        logger.info("Webhook token verified successfully")
+
+    return True
 
 
 def get_or_create_system_user():
@@ -372,30 +372,16 @@ def sync_ncm_status(request, order_id):
 @require_POST
 def ncm_webhook(request):
     """
-    Enhanced NCM Webhook Endpoint
-    
-    Receives POST requests from NCM with order status updates
-    Features:
-    - CSRF exemption for external webhooks
-    - Signature verification using X-NCM-Signature header
-    - HMAC-SHA256 validation
-    - Idempotency checking (prevents duplicate processing)
-    - Transaction safety (atomic updates)
-    - Comprehensive error handling and logging
-    - SMS notifications to customers
-    - Real-time status updates
-    
-    Payload format:
-    {
-        'webhook_id': 'unique_identifier',
-        'event': 'order_status_update',
-        'order_id': ncm_order_id or 'order_ids': [list],
-        'status': 'Delivered|In Transit|Returned|COD Collected',
-        'delivery_date': '2024-02-16',
-        'cod_amount': 1500.00,
-        'timestamp': '2024-02-16T10:30:00Z',
-        'test': False
-    }
+    NCM Webhook Endpoint
+
+    Receives POST requests from NCM with order status updates.
+
+    NCM Payload format (per documentation):
+    Single: {"order_id": "123456", "status": "Delivered", "timestamp": "...", "event": "delivery_completed"}
+    Bulk:   {"order_ids": ["123456", ...], "status": "Dispatched", "timestamp": "...", "event": "order_dispatched"}
+    Test:   {"event": "order.status.changed", "order_id": "TEST-123456", "status": "In Transit", "timestamp": "...", "test": true}
+
+    NCM Headers: Content-Type: application/json, User-Agent: NCM-Webhook/1.0
     """
     payload_bytes = request.body
     
@@ -406,13 +392,13 @@ def ncm_webhook(request):
         logger.info(f"Client IP: {get_client_ip(request)}")
         logger.info(f"Headers: {dict(request.META)}")
         
-        # 1. VERIFY SIGNATURE
-        if not verify_ncm_webhook_signature(request, payload_bytes):
-            logger.error("❌ Webhook signature verification FAILED")
+        # 1. VERIFY WEBHOOK AUTHENTICITY
+        if not verify_ncm_webhook(request, payload_bytes):
+            logger.error("Webhook verification FAILED")
             return JsonResponse({
                 'success': False,
-                'message': 'Signature verification failed',
-                'error_code': 'INVALID_SIGNATURE'
+                'message': 'Webhook verification failed',
+                'error_code': 'INVALID_TOKEN'
             }, status=401)
         
         logger.info("✓ Webhook signature verified successfully")

@@ -1488,3 +1488,4 @@ Created system user for webhook operations
 [ERROR] 2026-03-08 19:53:47 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18855684
 [ERROR] 2026-03-08 19:53:47 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=18855684
 [ERROR] 2026-03-09 13:44:38 ncm_service._make_request:37 NCM API error: 502 Server Error: Bad Gateway for url: https://portal.nepalcanmove.com/api/v1/order?id=18514304
+[INFO] 2026-03-12 14:08:49 webhook_handler.process_webhook:144 Test webhook received and acknowledged
