@@ -10963,6 +10963,29 @@ def setup_delete(request, setup_id):
     return redirect('setup_management')
 
 
+@login_required
+@permission_required('can_create_orders')
+def setup_toggle_default(request, setup_id):
+    """Toggle default status for a setup item. Only one default per setup_type."""
+    from .models import Setup
+    
+    setup = get_object_or_404(Setup, id=setup_id)
+    
+    if setup.is_default:
+        # Unset default
+        setup.is_default = False
+        setup.save()
+        messages.success(request, f'✅ {setup.name} is no longer the default.')
+    else:
+        # Clear any existing default for this setup_type, then set this one
+        Setup.objects.filter(setup_type=setup.setup_type, is_default=True).update(is_default=False)
+        setup.is_default = True
+        setup.save()
+        messages.success(request, f'⭐ {setup.name} is now the default {setup.get_setup_type_display().lower()}.')
+    
+    return redirect('setup_management')
+
+
 # ==================== NCM BULK ORDER LOG VIEWS ====================
 
 @login_required

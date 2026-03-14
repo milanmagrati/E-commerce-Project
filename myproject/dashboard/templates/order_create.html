@@ -2223,7 +2223,7 @@
                         <select name="status_setup" id="statusSetup" class="form-select">
                             {% for setup in status_setups %}
                                 <option value="{{ setup.id }}" 
-                                    {% if setup.name|lower == 'confirmed' %}selected data-default="true"{% endif %}>
+                                    {% if setup.is_default %}selected data-default="true"{% endif %}>
                                     {{ setup.name }}
                                 </option>
                             {% endfor %}
@@ -2234,7 +2234,7 @@
                         <select name="payment_status_setup" id="paymentStatusSetup" class="form-select">
                             {% for setup in payment_status_setups %}
                                 <option value="{{ setup.id }}"
-                                    {% if setup.name|lower == 'pending' %}selected data-default="true"{% endif %}>
+                                    {% if setup.is_default %}selected data-default="true"{% endif %}>
                                     {{ setup.name }}
                                 </option>
                             {% endfor %}
@@ -2245,7 +2245,7 @@
                         <select name="payment_setup" id="paymentSetup" class="form-select" onchange="handlePaymentChange()">
                             {% for setup in payment_setups %}
                                 <option value="{{ setup.id }}"
-                                    {% if setup.name|lower == 'cash on delivery' %}selected data-default="true"{% endif %}>
+                                    {% if setup.is_default %}selected data-default="true"{% endif %}>
                                     {{ setup.name }}
                                 </option>
                             {% endfor %}
@@ -3887,6 +3887,9 @@
 
     // ✅ HIDE FLOATING BUTTON
 
+    // Track which setup fields the user manually changed (not auto-set by defaults)
+    let userChangedSetups = { paymentSetup: false, statusSetup: false, paymentStatusSetup: false };
+
     function saveFormData() {
         try {
             // Safe element getter with fallback
@@ -3912,9 +3915,9 @@
                 shipping: getValueSafe('shipping'),
                 orderNotes: getValueSafe('orderNotes'),
                 customerPhone: getValueSafe('customerPhone'),
-                paymentSetup: getValueSafe('paymentSetup'),
-                statusSetup: getValueSafe('statusSetup'),
-                paymentStatusSetup: getValueSafe('paymentStatusSetup'),
+                paymentSetup: userChangedSetups.paymentSetup ? getValueSafe('paymentSetup') : null,
+                statusSetup: userChangedSetups.statusSetup ? getValueSafe('statusSetup') : null,
+                paymentStatusSetup: userChangedSetups.paymentStatusSetup ? getValueSafe('paymentStatusSetup') : null,
                 taxPercent: getValueSafe('taxPercent') || '0',
                 inOut: getValueSafe('inOutSelect'),
                 orderFrom: getQueryValueSafe('select[name="order_from"]'),
@@ -3976,9 +3979,19 @@
             setValueSafe('shipping', formData.shipping || '0');
             setValueSafe('orderNotes', formData.orderNotes);
             setValueSafe('customerPhone', formData.customerPhone);
-            setValueSafe('paymentSetup', formData.paymentSetup);
-            setValueSafe('statusSetup', formData.statusSetup);
-            setValueSafe('paymentStatusSetup', formData.paymentStatusSetup);
+            // Restore setup dropdowns only if user had manually changed them (non-null in draft)
+            if (formData.paymentSetup) {
+                setValueSafe('paymentSetup', formData.paymentSetup);
+                userChangedSetups.paymentSetup = true;
+            }
+            if (formData.statusSetup) {
+                setValueSafe('statusSetup', formData.statusSetup);
+                userChangedSetups.statusSetup = true;
+            }
+            if (formData.paymentStatusSetup) {
+                setValueSafe('paymentStatusSetup', formData.paymentStatusSetup);
+                userChangedSetups.paymentStatusSetup = true;
+            }
             setValueSafe('taxPercent', formData.taxPercent || '0');
             setValueSafe('inOutSelect', formData.inOut || 'in');
 
@@ -4076,9 +4089,13 @@
         setValueSafe('orderNotes', '');
         setValueSafe('customerPhone', '');
         setValueSafe('phoneSearch', '');
-        setValueSafe('paymentSetup', '');
         setValueSafe('taxPercent', '0');
         setValueSafe('inOutSelect', 'in');
+        
+        // Restore default selections from Setup model
+        userChangedSetups = { paymentSetup: false, statusSetup: false, paymentStatusSetup: false };
+        initializeDefaultValues();
+        handlePaymentChange();
         
         syncSearchableSelectUI('select[name="order_from"]', '');
         setQueryValueSafe('select[name="order_status"]', 'processing');
@@ -4113,12 +4130,12 @@
         const formInputs = [
             'customerName', 'customerEmailInput', 'branchCity', 'customerAddress', 
             'customerLandmark', 'createdBy', 'discount', 'shipping', 
-            'orderNotes', 'customerPhone', 'paymentSetup', 'taxPercent', 'inOutSelect'
+            'orderNotes', 'customerPhone', 'taxPercent', 'inOutSelect'
         ];
 
         formInputs.forEach(id => {
             const element = document.getElementById(id);
-            if (element) {
+            if (element) {    
                 element.addEventListener('input', saveFormData);
                 element.addEventListener('change', saveFormData);
             }
@@ -4362,35 +4379,19 @@
 
     // ✅ INITIALIZE DEFAULT VALUES FOR ORDER FORM
     function initializeDefaultValues() {
-        const statusSetup = document.getElementById('statusSetup');
-        const paymentStatusSetup = document.getElementById('paymentStatusSetup');
-        const paymentSetup = document.getElementById('paymentSetup');
+        const selects = [
+            document.getElementById('statusSetup'),
+            document.getElementById('paymentStatusSetup'),
+            document.getElementById('paymentSetup'),
+        ];
 
-        // Find and select the default option for Status: "confirmed"
-        const confirmedOption = Array.from(statusSetup.options).find(opt => 
-            opt.dataset.default === 'true' || opt.textContent.toLowerCase().includes('confirmed')
-        );
-        if (confirmedOption) {
-            statusSetup.value = confirmedOption.value;
-        }
-
-        // Find and select the default option for Payment Status: "pending"
-        const pendingOption = Array.from(paymentStatusSetup.options).find(opt => 
-            opt.dataset.default === 'true' || opt.textContent.toLowerCase().includes('pending')
-        );
-        if (pendingOption) {
-            paymentStatusSetup.value = pendingOption.value;
-        }
-
-        // Find and select the default option for Payment Method: "cash on delivery"
-        const cashOption = Array.from(paymentSetup.options).find(opt => 
-            opt.dataset.default === 'true' || opt.textContent.toLowerCase().includes('cash on delivery')
-        );
-        if (cashOption) {
-            paymentSetup.value = cashOption.value;
-            // Trigger payment change handler if exists
-            handlePaymentChange();
-        }
+        selects.forEach(select => {
+            if (!select) return;
+            const defaultOpt = Array.from(select.options).find(opt => opt.dataset.default === 'true');
+            if (defaultOpt) {
+                select.value = defaultOpt.value;
+            }
+        });
     }
 
     // ✅ DOM CONTENT LOADED
@@ -4553,15 +4554,29 @@
             }
         }
 
+        // ✅ 1) Apply starred defaults first
+        initializeDefaultValues();
+
+        // ✅ 2) Load draft — only overrides the 3 setup fields if user had manually changed them
         const hasDraft = loadFormData();
+        handlePaymentChange();  // sync payment UI state
         
         if (hasDraft) {
             showFloatingButton();
         } else {
             hideFloatingButton();
-            // ✅ INITIALIZE DEFAULT VALUES WHEN NO DRAFT EXISTS
-            initializeDefaultValues();
         }
+
+        // ✅ 3) Listen for manual changes on setup dropdowns to mark them as user-changed
+        ['statusSetup', 'paymentStatusSetup', 'paymentSetup'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', function() {
+                    userChangedSetups[id] = true;
+                    saveFormData();
+                });
+            }
+        });
 
         setupAutoSave();
 

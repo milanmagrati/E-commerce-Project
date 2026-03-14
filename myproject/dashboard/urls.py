@@ -156,6 +156,7 @@ urlpatterns = [
     path('setup/add/', views.setup_add, name='setup_add'),
     path('setup/<int:setup_id>/edit/', views.setup_edit, name='setup_edit'),
     path('setup/<int:setup_id>/delete/', views.setup_delete, name='setup_delete'),
+    path('setup/<int:setup_id>/toggle-default/', views.setup_toggle_default, name='setup_toggle_default'),
     
     
        # ==================== 🆕 RETURN MANAGEMENT ====================

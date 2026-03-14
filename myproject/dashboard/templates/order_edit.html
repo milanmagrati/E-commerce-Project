@@ -1275,7 +1275,7 @@
                             <option value="">Select Order Status</option>
                             {% for setup in status_setups %}
                                 <option value="{{ setup.id }}" data-status-name="{{ setup.name|lower }}"
-                                    {% if order.status_setup and order.status_setup.id == setup.id %}selected{% elif not order.status_setup and order.order_status and order.order_status == setup.name|lower|cut:' ' %}selected{% endif %}>
+                                    {% if order.status_setup and order.status_setup.id == setup.id %}selected{% elif not order.status_setup and order.order_status and order.order_status == setup.name|lower|cut:' ' %}selected{% elif not order.status_setup and not order.order_status and setup.is_default %}selected{% endif %}>
                                     {{ setup.name }}
                                 </option>
                             {% endfor %}
@@ -1290,7 +1290,7 @@
                             <option value="">Select Payment Status</option>
                             {% for setup in payment_status_setups %}
                                 <option value="{{ setup.id }}"
-                                    {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% elif not order.payment_status_setup and order.payment_status and order.payment_status == setup.name|lower|cut:' ' %}selected{% endif %}>
+                                    {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% elif not order.payment_status_setup and order.payment_status and order.payment_status == setup.name|lower|cut:' ' %}selected{% elif not order.payment_status_setup and not order.payment_status and setup.is_default %}selected{% endif %}>
                                     {{ setup.name }}
                                 </option>
                             {% endfor %}
@@ -1305,7 +1305,7 @@
                             <option value="">Select Payment Method</option>
                             {% for setup in payment_setups %}
                                 <option value="{{ setup.id }}"
-                                    {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% elif not order.payment_setup and order.payment_method and order.payment_method == setup.name|lower|cut:' ' %}selected{% endif %}>
+                                    {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% elif not order.payment_setup and order.payment_method and order.payment_method == setup.name|lower|cut:' ' %}selected{% elif not order.payment_setup and not order.payment_method and setup.is_default %}selected{% endif %}>
                                     {{ setup.name }}
                                 </option>
                             {% endfor %}

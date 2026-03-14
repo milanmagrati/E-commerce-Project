@@ -218,6 +218,36 @@
         background: #fef3c7;
     }
 
+    .btn-default {
+        color: #9ca3af;
+        position: relative;
+    }
+
+    .btn-default:hover {
+        background: #fef3c7;
+        color: #f59e0b;
+    }
+
+    .btn-default.is-default {
+        color: #f59e0b;
+        background: #fef3c7;
+        border-color: #f59e0b;
+    }
+
+    .btn-default.is-default:hover {
+        background: #fde68a;
+    }
+
+    .badge-default {
+        background: #fef3c7;
+        color: #92400e;
+        font-size: 0.7rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 20px;
+        font-weight: 600;
+        margin-left: 0.25rem;
+    }
+
     .setup-badge {
         display: inline-block;
         padding: 0.25rem 0.75rem;
@@ -418,12 +448,16 @@
                                     <span class="setup-badge {% if setup.is_active %}badge-active{% else %}badge-inactive{% endif %}">
                                         {% if setup.is_active %}Active{% else %}Inactive{% endif %}
                                     </span>
+                                    {% if setup.is_default %}<span class="badge-default">⭐ Default</span>{% endif %}
                                 </div>
                                 {% if setup.description %}
                                     <div class="setup-item-desc">{{ setup.description }}</div>
                                 {% endif %}
                             </div>
                             <div class="setup-item-actions">
+                                <a href="{% url 'setup_toggle_default' setup.id %}" class="btn-icon btn-default {% if setup.is_default %}is-default{% endif %}" title="{% if setup.is_default %}Remove Default{% else %}Set as Default{% endif %}">
+                                    <i class="fas fa-star"></i>
+                                </a>
                                 <button class="btn-icon btn-edit" data-bs-toggle="modal" data-bs-target="#editPaymentModal{{ setup.id }}" title="Edit">
                                     <i class="fas fa-edit"></i>
                                     Edit
@@ -505,12 +539,16 @@
                                     <span class="setup-badge {% if setup.is_active %}badge-active{% else %}badge-inactive{% endif %}">
                                         {% if setup.is_active %}Active{% else %}Inactive{% endif %}
                                     </span>
+                                    {% if setup.is_default %}<span class="badge-default">⭐ Default</span>{% endif %}
                                 </div>
                                 {% if setup.description %}
                                     <div class="setup-item-desc">{{ setup.description }}</div>
                                 {% endif %}
                             </div>
                             <div class="setup-item-actions">
+                                <a href="{% url 'setup_toggle_default' setup.id %}" class="btn-icon btn-default {% if setup.is_default %}is-default{% endif %}" title="{% if setup.is_default %}Remove Default{% else %}Set as Default{% endif %}">
+                                    <i class="fas fa-star"></i>
+                                </a>
                                 <button class="btn-icon btn-edit" data-bs-toggle="modal" data-bs-target="#editStatusModal{{ setup.id }}" title="Edit">
                                     <i class="fas fa-edit"></i>
                                     Edit
@@ -592,12 +630,16 @@
                                     <span class="setup-badge {% if setup.is_active %}badge-active{% else %}badge-inactive{% endif %}">
                                         {% if setup.is_active %}Active{% else %}Inactive{% endif %}
                                     </span>
+                                    {% if setup.is_default %}<span class="badge-default">⭐ Default</span>{% endif %}
                                 </div>
                                 {% if setup.description %}
                                     <div class="setup-item-desc">{{ setup.description }}</div>
                                 {% endif %}
                             </div>
                             <div class="setup-item-actions">
+                                <a href="{% url 'setup_toggle_default' setup.id %}" class="btn-icon btn-default {% if setup.is_default %}is-default{% endif %}" title="{% if setup.is_default %}Remove Default{% else %}Set as Default{% endif %}">
+                                    <i class="fas fa-star"></i>
+                                </a>
                                 <button class="btn-icon btn-edit" data-bs-toggle="modal" data-bs-target="#editPaymentStatusModal{{ setup.id }}" title="Edit">
                                     <i class="fas fa-edit"></i>
                                     Edit
