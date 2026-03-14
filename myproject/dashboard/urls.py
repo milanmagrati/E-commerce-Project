@@ -218,6 +218,15 @@ urlpatterns = [
     path('ncm-bulk-logs/<int:log_id>/trash/', views.ncm_bulk_log_trash, name='ncm_bulk_log_trash'),
     path('ncm-bulk-logs/bulk-action/', views.ncm_bulk_logs_bulk_action, name='ncm_bulk_logs_bulk_action'),
 
+    # ✅ PICK AND DROP ORDERS MANAGEMENT
+    path('pnd-orders/', views.pnd_orders_list, name='pnd_orders_list'),
+
+    # ✅ PND BULK ORDER LOGS
+    path('pnd-bulk-logs/', views.pnd_bulk_logs_list, name='pnd_bulk_logs_list'),
+    path('pnd-bulk-logs/<int:log_id>/', views.pnd_bulk_log_detail, name='pnd_bulk_log_detail'),
+    path('pnd-bulk-logs/<int:log_id>/trash/', views.pnd_bulk_log_trash, name='pnd_bulk_log_trash'),
+    path('pnd-bulk-logs/bulk-action/', views.pnd_bulk_logs_bulk_action, name='pnd_bulk_logs_bulk_action'),
+
     # Financial Report
     path('financial-report/', views.financial_report, name='financial_report'),
     path('financial-report/data/', views.financial_report_data, name='financial_report_data'),

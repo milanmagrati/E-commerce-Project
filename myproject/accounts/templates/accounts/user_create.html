@@ -867,7 +867,7 @@ document.getElementById('userCreateForm').addEventListener('submit', function(e)
         return false;
     }
 
-    // All validations passed - submit form
+    // All validations passed - submit via AJAX to preserve form data on errors
     Swal.fire({
         title: 'Creating User...',
         text: 'Please wait',
@@ -877,7 +877,46 @@ document.getElementById('userCreateForm').addEventListener('submit', function(e)
         }
     });
 
-    this.submit();
+    const formData = new FormData(this);
+
+    fetch(window.location.href, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'User Created!',
+                text: 'User has been created successfully.',
+                confirmButtonColor: '#667eea',
+                timer: 1500,
+                showConfirmButton: false
+            }).then(() => {
+                window.location.href = data.redirect || '{% url "user_list" %}';
+            });
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: data.error || 'Something went wrong. Please try again.',
+                confirmButtonColor: '#667eea'
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Network Error',
+            text: 'Could not connect to the server. Please try again.',
+            confirmButtonColor: '#667eea'
+        });
+    });
 });
 
 // Role permissions configuration

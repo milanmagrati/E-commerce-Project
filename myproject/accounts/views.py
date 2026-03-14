@@ -1,4 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from django.contrib.auth import get_user_model
@@ -175,6 +176,8 @@ def user_trash(request):
 @administrator_required
 def user_create(request):
     """Create new user with custom permissions"""
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     if request.method == 'POST':
         username = request.POST.get('username')
         email = request.POST.get('email')
@@ -187,17 +190,26 @@ def user_create(request):
         
         # Validation
         if not username or not password or not email:
-            messages.error(request, '❌ Username, email, and password are required!')
+            error_msg = '❌ Username, email, and password are required!'
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': error_msg})
+            messages.error(request, error_msg)
             return render(request, 'accounts/user_create.html', {
                 'roles': Role.objects.all(),
             })
         
         if User.objects.filter(username=username).exists():
-            messages.error(request, f'❌ Username "{username}" already exists!')
+            error_msg = f'❌ Username "{username}" already exists!'
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': error_msg})
+            messages.error(request, error_msg)
             return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
 
         if User.objects.filter(email=email).exists():
-            messages.error(request, f'❌ Email "{email}" is already registered!')
+            error_msg = f'❌ Email "{email}" is already registered!'
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': error_msg})
+            messages.error(request, error_msg)
             return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
         
         try:
@@ -395,10 +407,16 @@ def user_create(request):
             user.save()
             
             messages.success(request, f'✅ User "{username}" created successfully with role: {role.title()}!')
+            if is_ajax:
+                from django.urls import reverse
+                return JsonResponse({'success': True, 'redirect': reverse('user_list')})
             return redirect('user_list')
         
         except Exception as e:
-            messages.error(request, f'❌ Error creating user: {str(e)}')
+            error_msg = f'❌ Error creating user: {str(e)}'
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': error_msg})
+            messages.error(request, error_msg)
             return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
 
     # GET request - show form
