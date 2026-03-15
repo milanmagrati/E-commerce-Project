@@ -9564,134 +9564,6 @@ def create_custom_product(request):
 
 @login_required
 @permission_required('can_view_ncm_orders')
-def ncm_orders_list(request):
-    """
-    NCM Orders Management Page - Shows all orders sent to NCM with details and activity logs
-    """
-    # Get all NCM orders (orders with ncm_order_id)
-    orders = Order.objects.select_related('customer', 'created_by').filter(
-        is_deleted=False,
-        logistics='ncm',
-        ncm_order_id__isnull=False
-    ).order_by('-ncm_created_at')
-    
-    # Get filter parameters
-    search_query = request.GET.get('search', '').strip()
-    branch_filter = request.GET.get('branch', '').strip()
-    status_filter = request.GET.get('status', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
-    
-    # Search filter
-    if search_query:
-        orders = orders.filter(
-            Q(order_number__icontains=search_query) |
-            Q(ncm_order_id__icontains=search_query) |
-            Q(customer_name__icontains=search_query) |
-            Q(customer_phone__icontains=search_query)
-        )
-    
-    # Branch filter
-    if branch_filter:
-        orders = orders.filter(ncm_from_branch=branch_filter)
-    
-    # Status filter
-    if status_filter:
-        orders = orders.filter(ncm_status=status_filter)
-    
-    # Date range filter
-    if date_from:
-        try:
-            orders = orders.filter(ncm_created_at__date__gte=date_from)
-        except:
-            pass
-    
-    if date_to:
-        try:
-            orders = orders.filter(ncm_created_at__date__lte=date_to)
-        except:
-            pass
-    
-    # Get total count before pagination
-    total_orders = orders.count()
-    
-    # Get unique branches and statuses for filter dropdowns
-    branches = Order.objects.filter(
-        is_deleted=False,
-        logistics='ncm'
-    ).exclude(
-        ncm_from_branch__isnull=True
-    ).exclude(
-        ncm_from_branch=''
-    ).values_list('ncm_from_branch', flat=True).distinct().order_by('ncm_from_branch')
-    
-    statuses = Order.objects.filter(
-        is_deleted=False,
-        logistics='ncm'
-    ).exclude(
-        ncm_status__isnull=True
-    ).exclude(
-        ncm_status=''
-    ).values_list('ncm_status', flat=True).distinct().order_by('ncm_status')
-    
-    # Pagination
-    paginator = Paginator(orders, 25)
-    page_number = request.GET.get('page', 1)
-    orders_page = paginator.get_page(page_number)
-    
-    # Get product names for paginated orders
-    order_products = {}
-    for order in orders_page:
-        try:
-            first_item = order.items.first()
-            if first_item:
-                order_products[order.id] = first_item.product_name
-            else:
-                order_products[order.id] = "No products"
-        except:
-            order_products[order.id] = "No products"
-    
-    # GET ACTIVITY LOGS FOR PAGINATED ORDERS
-    activity_logs = {}
-    try:
-        from dashboard.models import OrderActivityLog
-        
-        order_ids = [order.id for order in orders_page]
-        all_logs = OrderActivityLog.objects.filter(
-            order_id__in=order_ids
-        ).select_related('user', 'order').order_by('-created_at')
-        
-        # Group logs by order_id
-        for log in all_logs:
-            if log.order_id not in activity_logs:
-                activity_logs[log.order_id] = []
-            activity_logs[log.order_id].append(log)
-        
-        # Limit to 10 most recent logs per order
-        for order_id in activity_logs:
-            activity_logs[order_id] = activity_logs[order_id][:10]
-    except Exception as e:
-        activity_logs = {}
-    
-    context = {
-        'orders': orders_page,
-        'total_orders': total_orders,
-        'search_query': search_query,
-        'branch_filter': branch_filter,
-        'status_filter': status_filter,
-        'date_from': date_from,
-        'date_to': date_to,
-        'branches': list(branches),
-        'statuses': list(statuses),
-        'order_products': order_products,
-        'activity_logs': activity_logs,
-    }
-    
-    return render(request, 'ncm_orders_list.html', context)
-
-
-@login_required
-@permission_required('can_view_ncm_orders')
 def ncm_order_detail(request, order_id):
     """
     View detailed information about NCM order with activity logs
@@ -9783,7 +9655,7 @@ def ncm_track_order(request, order_id):
         # Check if order has NCM ID
         if not order.ncm_order_id:
             messages.error(request, f'❌ Order {order.order_number} has not been sent to NCM yet.')
-            return redirect('ncm_orders_list')
+            return redirect('logistics_orders_list')
         
         # Get NCM API settings
         base_url = getattr(settings, 'NCM_API_BASE_URL', None)
@@ -9887,7 +9759,7 @@ def ncm_sync_all_statuses(request):
     """
     if not request.user.is_staff:
         messages.error(request, '❌ Admin access required')
-        return redirect('ncm_orders_list')
+        return redirect('logistics_orders_list')
     
     try:
         from services.ncm_service import NCMService
@@ -9978,8 +9850,8 @@ def ncm_sync_all_statuses(request):
     except Exception as e:
         messages.error(request, f'❌ Sync failed: {str(e)}')
         logger.error(f"Error in ncm_sync_all_statuses: {str(e)}")
-    
-    return redirect('ncm_orders_list')
+
+    return redirect('logistics_orders_list')
 
 
 @login_required
@@ -10688,8 +10560,8 @@ def ncm_order_move_to_trash(request, order_id):
     
     # Check referer to redirect appropriately
     referer = request.META.get('HTTP_REFERER', '')
-    if 'ncm-orders' in referer:
-        return redirect('ncm_orders_list')
+    if 'ncm-orders' in referer or 'logistics/orders' in referer:
+        return redirect('logistics_orders_list')
     else:
         return redirect('orders_list')
 
@@ -10990,104 +10862,6 @@ def setup_toggle_default(request, setup_id):
 
 @login_required
 @permission_required('can_view_ncm_bulk_logs')
-def ncm_bulk_logs_list(request):
-    """List all NCM bulk send logs with filtering and AJAX expand"""
-    from ncm.models import NCMBulkLog, NCMBulkLogOrder
-
-    # Handle AJAX request for expandable order rows
-    ajax_batch_id = request.GET.get('ajax_batch_orders')
-    if ajax_batch_id:
-        try:
-            batch_orders = NCMBulkLogOrder.objects.filter(batch_id=ajax_batch_id)
-            orders_data = []
-            for o in batch_orders:
-                orders_data.append({
-                    'order_number': o.order_number,
-                    'customer_name': o.customer_name,
-                    'customer_phone': o.customer_phone,
-                    'address': o.shipping_address[:80] if o.shipping_address else '',
-                    'cod_amount': str(o.cod_amount),
-                    'branch': o.destination_branch or '-',
-                    'ncm_order_id': o.ncm_order_id,
-                    'status': o.status,
-                    'status_display': o.get_status_display(),
-                })
-            return JsonResponse({'orders': orders_data})
-        except Exception:
-            return JsonResponse({'orders': []})
-
-    # Filters
-    search_query = request.GET.get('search', '').strip()
-    branch_filter = request.GET.get('branch', '').strip()
-    status_filter = request.GET.get('status', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
-
-    logs = NCMBulkLog.objects.filter(is_deleted=False)
-
-    if search_query:
-        logs = logs.filter(
-            Q(batch_number__icontains=search_query) |
-            Q(orders__order_number__icontains=search_query) |
-            Q(orders__customer_name__icontains=search_query)
-        ).distinct()
-
-    if branch_filter:
-        logs = logs.filter(from_branch=branch_filter)
-
-    if status_filter:
-        logs = logs.filter(status=status_filter)
-
-    if date_from:
-        try:
-            logs = logs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
-        except ValueError:
-            pass
-
-    if date_to:
-        try:
-            logs = logs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
-        except ValueError:
-            pass
-
-    # Statistics
-    all_logs = NCMBulkLog.objects.filter(is_deleted=False)
-    total_batches = all_logs.count()
-    total_orders_sent = all_logs.aggregate(t=Sum('total_orders'))['t'] or 0
-    total_success = all_logs.aggregate(t=Sum('success_count'))['t'] or 0
-    total_failed = all_logs.aggregate(t=Sum('failed_count'))['t'] or 0
-
-    # Branches for filter dropdown
-    branches = list(
-        NCMBulkLog.objects.filter(is_deleted=False)
-        .values_list('from_branch', flat=True)
-        .distinct()
-        .order_by('from_branch')
-    )
-
-    # Pagination
-    paginator = Paginator(logs, 20)
-    page = request.GET.get('page', 1)
-    logs = paginator.get_page(page)
-
-    context = {
-        'logs': logs,
-        'total_batches': total_batches,
-        'total_orders_sent': total_orders_sent,
-        'total_success': total_success,
-        'total_failed': total_failed,
-        'branches': branches,
-        'search_query': search_query,
-        'branch_filter': branch_filter,
-        'status_filter': status_filter,
-        'date_from': date_from,
-        'date_to': date_to,
-    }
-    return render(request, 'ncm_bulk_logs.html', context)
-
-
-@login_required
-@permission_required('can_view_ncm_bulk_logs')
 def ncm_bulk_log_detail(request, log_id):
     """View details of a single NCM bulk send batch"""
     from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
@@ -11117,7 +10891,7 @@ def ncm_bulk_log_trash(request, log_id):
         bulk_log.save()
         messages.success(request, f'Batch "{bulk_log.batch_number}" moved to trash.')
 
-    return redirect('ncm_bulk_logs_list')
+    return redirect('logistics_bulk_logs_list')
 
 
 @login_required
@@ -11132,7 +10906,7 @@ def ncm_bulk_logs_bulk_action(request):
 
         if not log_ids:
             messages.warning(request, 'No batches selected.')
-            return redirect('ncm_bulk_logs_list')
+            return redirect('logistics_bulk_logs_list')
 
         if action == 'move_to_trash':
             count = NCMBulkLog.objects.filter(id__in=log_ids, is_deleted=False).update(
@@ -11141,7 +10915,7 @@ def ncm_bulk_logs_bulk_action(request):
             )
             messages.success(request, f'{count} batch(es) moved to trash.')
 
-    return redirect('ncm_bulk_logs_list')
+    return redirect('logistics_bulk_logs_list')
 
 
 # ==================== LOW STOCK ALERT SETTINGS ====================
@@ -14352,234 +14126,6 @@ def orders_bulk_pnd_send(request):
     return redirect('orders_list')
 
 
-# ==================== PICK AND DROP ORDERS MANAGEMENT ====================
-
-@login_required
-def pnd_orders_list(request):
-    """
-    Pick and Drop Orders Management Page - Shows all orders sent to Pick and Drop with details and activity logs
-    """
-    # Get all PND orders (orders with pnd_order_id)
-    orders = Order.objects.select_related('customer', 'created_by').filter(
-        is_deleted=False,
-        logistics='pick_and_drop',
-        pnd_order_id__isnull=False
-    ).order_by('-pnd_created_at')
-
-    # Get filter parameters
-    search_query = request.GET.get('search', '').strip()
-    branch_filter = request.GET.get('branch', '').strip()
-    status_filter = request.GET.get('status', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
-
-    # Search filter
-    if search_query:
-        orders = orders.filter(
-            Q(order_number__icontains=search_query) |
-            Q(pnd_order_id__icontains=search_query) |
-            Q(customer_name__icontains=search_query) |
-            Q(customer_phone__icontains=search_query)
-        )
-
-    # Branch filter
-    if branch_filter:
-        orders = orders.filter(pnd_destination_branch=branch_filter)
-
-    # Status filter
-    if status_filter:
-        orders = orders.filter(pnd_status=status_filter)
-
-    # Date range filter
-    if date_from:
-        try:
-            orders = orders.filter(pnd_created_at__date__gte=date_from)
-        except:
-            pass
-
-    if date_to:
-        try:
-            orders = orders.filter(pnd_created_at__date__lte=date_to)
-        except:
-            pass
-
-    # Get total count before pagination
-    total_orders = orders.count()
-
-    # Get unique branches and statuses for filter dropdowns
-    branches = Order.objects.filter(
-        is_deleted=False,
-        logistics='pick_and_drop'
-    ).exclude(
-        pnd_destination_branch__isnull=True
-    ).exclude(
-        pnd_destination_branch=''
-    ).values_list('pnd_destination_branch', flat=True).distinct().order_by('pnd_destination_branch')
-
-    statuses = Order.objects.filter(
-        is_deleted=False,
-        logistics='pick_and_drop'
-    ).exclude(
-        pnd_status__isnull=True
-    ).exclude(
-        pnd_status=''
-    ).values_list('pnd_status', flat=True).distinct().order_by('pnd_status')
-
-    # Pagination
-    paginator = Paginator(orders, 25)
-    page_number = request.GET.get('page', 1)
-    orders_page = paginator.get_page(page_number)
-
-    # Get product names for paginated orders
-    order_products = {}
-    for order in orders_page:
-        try:
-            first_item = order.items.first()
-            if first_item:
-                order_products[order.id] = first_item.product_name
-            else:
-                order_products[order.id] = "No products"
-        except:
-            order_products[order.id] = "No products"
-
-    # GET ACTIVITY LOGS FOR PAGINATED ORDERS
-    activity_logs = {}
-    try:
-        from dashboard.models import OrderActivityLog
-
-        order_ids = [order.id for order in orders_page]
-        all_logs = OrderActivityLog.objects.filter(
-            order_id__in=order_ids
-        ).select_related('user', 'order').order_by('-created_at')
-
-        # Group logs by order_id
-        for log in all_logs:
-            if log.order_id not in activity_logs:
-                activity_logs[log.order_id] = []
-            activity_logs[log.order_id].append(log)
-
-        # Limit to 10 most recent logs per order
-        for order_id in activity_logs:
-            activity_logs[order_id] = activity_logs[order_id][:10]
-    except Exception as e:
-        activity_logs = {}
-
-    context = {
-        'orders': orders_page,
-        'total_orders': total_orders,
-        'search_query': search_query,
-        'branch_filter': branch_filter,
-        'status_filter': status_filter,
-        'date_from': date_from,
-        'date_to': date_to,
-        'branches': list(branches),
-        'statuses': list(statuses),
-        'order_products': order_products,
-        'activity_logs': activity_logs,
-    }
-
-    return render(request, 'pnd_orders_list.html', context)
-
-
-# ==================== PND BULK ORDER LOG VIEWS ====================
-
-@login_required
-def pnd_bulk_logs_list(request):
-    """List all PND bulk send logs with filtering and AJAX expand"""
-    from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder
-
-    # Handle AJAX request for expandable order rows
-    ajax_batch_id = request.GET.get('ajax_batch_orders')
-    if ajax_batch_id:
-        try:
-            batch_orders = PNDBulkLogOrder.objects.filter(batch_id=ajax_batch_id)
-            orders_data = []
-            for o in batch_orders:
-                orders_data.append({
-                    'order_number': o.order_number,
-                    'customer_name': o.customer_name,
-                    'customer_phone': o.customer_phone,
-                    'address': o.shipping_address[:80] if o.shipping_address else '',
-                    'cod_amount': str(o.cod_amount),
-                    'branch': o.destination_branch or '-',
-                    'pnd_order_id': o.pnd_order_id or '',
-                    'status': o.status,
-                    'status_display': o.get_status_display(),
-                })
-            return JsonResponse({'orders': orders_data})
-        except Exception:
-            return JsonResponse({'orders': []})
-
-    # Filters
-    search_query = request.GET.get('search', '').strip()
-    branch_filter = request.GET.get('branch', '').strip()
-    status_filter = request.GET.get('status', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
-
-    logs = PNDBulkLog.objects.filter(is_deleted=False)
-
-    if search_query:
-        logs = logs.filter(
-            Q(batch_number__icontains=search_query) |
-            Q(orders__order_number__icontains=search_query) |
-            Q(orders__customer_name__icontains=search_query)
-        ).distinct()
-
-    if branch_filter:
-        logs = logs.filter(destination_branch=branch_filter)
-
-    if status_filter:
-        logs = logs.filter(status=status_filter)
-
-    if date_from:
-        try:
-            logs = logs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
-        except ValueError:
-            pass
-
-    if date_to:
-        try:
-            logs = logs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
-        except ValueError:
-            pass
-
-    # Statistics
-    all_logs = PNDBulkLog.objects.filter(is_deleted=False)
-    total_batches = all_logs.count()
-    total_orders_sent = all_logs.aggregate(t=Sum('total_orders'))['t'] or 0
-    total_success = all_logs.aggregate(t=Sum('success_count'))['t'] or 0
-    total_failed = all_logs.aggregate(t=Sum('failed_count'))['t'] or 0
-
-    # Branches for filter dropdown
-    branches = list(
-        PNDBulkLog.objects.filter(is_deleted=False)
-        .values_list('destination_branch', flat=True)
-        .distinct()
-        .order_by('destination_branch')
-    )
-
-    # Pagination
-    paginator = Paginator(logs, 20)
-    page = request.GET.get('page', 1)
-    logs = paginator.get_page(page)
-
-    context = {
-        'logs': logs,
-        'total_batches': total_batches,
-        'total_orders_sent': total_orders_sent,
-        'total_success': total_success,
-        'total_failed': total_failed,
-        'branches': branches,
-        'search_query': search_query,
-        'branch_filter': branch_filter,
-        'status_filter': status_filter,
-        'date_from': date_from,
-        'date_to': date_to,
-    }
-    return render(request, 'pnd_bulk_logs.html', context)
-
-
 @login_required
 def pnd_bulk_log_detail(request, log_id):
     """View details of a single PND bulk send batch"""
@@ -14609,7 +14155,7 @@ def pnd_bulk_log_trash(request, log_id):
         bulk_log.save()
         messages.success(request, f'Batch "{bulk_log.batch_number}" moved to trash.')
 
-    return redirect('pnd_bulk_logs_list')
+    return redirect('logistics_bulk_logs_list')
 
 
 @login_required
@@ -14623,7 +14169,7 @@ def pnd_bulk_logs_bulk_action(request):
 
         if not log_ids:
             messages.warning(request, 'No batches selected.')
-            return redirect('pnd_bulk_logs_list')
+            return redirect('logistics_bulk_logs_list')
 
         if action == 'move_to_trash':
             count = PNDBulkLog.objects.filter(id__in=log_ids, is_deleted=False).update(
@@ -14632,4 +14178,620 @@ def pnd_bulk_logs_bulk_action(request):
             )
             messages.success(request, f'{count} batch(es) moved to trash.')
 
-    return redirect('pnd_bulk_logs_list')
+    return redirect('logistics_bulk_logs_list')
+
+
+# ==================== UNIFIED LOGISTICS VIEWS ====================
+
+@login_required
+def logistics_orders_list(request):
+    """
+    Unified Logistics Orders Page - Shows NCM and/or PND orders with a provider toggle filter
+    """
+    provider = request.GET.get('provider', 'all').strip()
+
+    # Build base queryset based on provider filter
+    if provider == 'ncm':
+        orders = Order.objects.select_related('customer', 'created_by').filter(
+            is_deleted=False,
+            logistics='ncm',
+            ncm_order_id__isnull=False
+        ).order_by('-ncm_created_at')
+    elif provider == 'pnd':
+        orders = Order.objects.select_related('customer', 'created_by').filter(
+            is_deleted=False,
+            logistics='pick_and_drop',
+            pnd_order_id__isnull=False
+        ).order_by('-pnd_created_at')
+    else:
+        # All logistics orders
+        ncm_orders = Order.objects.select_related('customer', 'created_by').filter(
+            is_deleted=False,
+            logistics='ncm',
+            ncm_order_id__isnull=False
+        )
+        pnd_orders = Order.objects.select_related('customer', 'created_by').filter(
+            is_deleted=False,
+            logistics='pick_and_drop',
+            pnd_order_id__isnull=False
+        )
+        orders = (ncm_orders | pnd_orders).order_by('-created_at')
+
+    # Get filter parameters
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    # Search filter
+    if search_query:
+        if provider == 'ncm':
+            orders = orders.filter(
+                Q(order_number__icontains=search_query) |
+                Q(ncm_order_id__icontains=search_query) |
+                Q(customer_name__icontains=search_query) |
+                Q(customer_phone__icontains=search_query)
+            )
+        elif provider == 'pnd':
+            orders = orders.filter(
+                Q(order_number__icontains=search_query) |
+                Q(pnd_order_id__icontains=search_query) |
+                Q(customer_name__icontains=search_query) |
+                Q(customer_phone__icontains=search_query)
+            )
+        else:
+            orders = orders.filter(
+                Q(order_number__icontains=search_query) |
+                Q(ncm_order_id__icontains=search_query) |
+                Q(pnd_order_id__icontains=search_query) |
+                Q(customer_name__icontains=search_query) |
+                Q(customer_phone__icontains=search_query)
+            )
+
+    # Branch filter
+    if branch_filter:
+        if provider == 'ncm':
+            orders = orders.filter(ncm_from_branch=branch_filter)
+        elif provider == 'pnd':
+            orders = orders.filter(pnd_destination_branch=branch_filter)
+        else:
+            orders = orders.filter(
+                Q(ncm_from_branch=branch_filter) | Q(pnd_destination_branch=branch_filter)
+            )
+
+    # Status filter
+    if status_filter:
+        if provider == 'ncm':
+            orders = orders.filter(ncm_status=status_filter)
+        elif provider == 'pnd':
+            orders = orders.filter(pnd_status=status_filter)
+        else:
+            orders = orders.filter(
+                Q(ncm_status=status_filter) | Q(pnd_status=status_filter)
+            )
+
+    # Date range filter
+    if date_from:
+        try:
+            if provider == 'ncm':
+                orders = orders.filter(ncm_created_at__date__gte=date_from)
+            elif provider == 'pnd':
+                orders = orders.filter(pnd_created_at__date__gte=date_from)
+            else:
+                orders = orders.filter(created_at__date__gte=date_from)
+        except:
+            pass
+
+    if date_to:
+        try:
+            if provider == 'ncm':
+                orders = orders.filter(ncm_created_at__date__lte=date_to)
+            elif provider == 'pnd':
+                orders = orders.filter(pnd_created_at__date__lte=date_to)
+            else:
+                orders = orders.filter(created_at__date__lte=date_to)
+        except:
+            pass
+
+    # Get total count before pagination
+    total_orders = orders.count()
+
+    # Get unique branches and statuses for filter dropdowns based on provider
+    if provider == 'ncm':
+        branches = list(Order.objects.filter(
+            is_deleted=False, logistics='ncm'
+        ).exclude(ncm_from_branch__isnull=True).exclude(ncm_from_branch='').values_list(
+            'ncm_from_branch', flat=True
+        ).distinct().order_by('ncm_from_branch'))
+        statuses = list(Order.objects.filter(
+            is_deleted=False, logistics='ncm'
+        ).exclude(ncm_status__isnull=True).exclude(ncm_status='').values_list(
+            'ncm_status', flat=True
+        ).distinct().order_by('ncm_status'))
+    elif provider == 'pnd':
+        branches = list(Order.objects.filter(
+            is_deleted=False, logistics='pick_and_drop'
+        ).exclude(pnd_destination_branch__isnull=True).exclude(pnd_destination_branch='').values_list(
+            'pnd_destination_branch', flat=True
+        ).distinct().order_by('pnd_destination_branch'))
+        statuses = list(Order.objects.filter(
+            is_deleted=False, logistics='pick_and_drop'
+        ).exclude(pnd_status__isnull=True).exclude(pnd_status='').values_list(
+            'pnd_status', flat=True
+        ).distinct().order_by('pnd_status'))
+    else:
+        ncm_branches = list(Order.objects.filter(
+            is_deleted=False, logistics='ncm'
+        ).exclude(ncm_from_branch__isnull=True).exclude(ncm_from_branch='').values_list(
+            'ncm_from_branch', flat=True
+        ).distinct())
+        pnd_branches = list(Order.objects.filter(
+            is_deleted=False, logistics='pick_and_drop'
+        ).exclude(pnd_destination_branch__isnull=True).exclude(pnd_destination_branch='').values_list(
+            'pnd_destination_branch', flat=True
+        ).distinct())
+        branches = sorted(set(ncm_branches + pnd_branches))
+
+        ncm_statuses = list(Order.objects.filter(
+            is_deleted=False, logistics='ncm'
+        ).exclude(ncm_status__isnull=True).exclude(ncm_status='').values_list(
+            'ncm_status', flat=True
+        ).distinct())
+        pnd_statuses = list(Order.objects.filter(
+            is_deleted=False, logistics='pick_and_drop'
+        ).exclude(pnd_status__isnull=True).exclude(pnd_status='').values_list(
+            'pnd_status', flat=True
+        ).distinct())
+        statuses = sorted(set(ncm_statuses + pnd_statuses))
+
+    # Count per provider
+    ncm_count = Order.objects.filter(is_deleted=False, logistics='ncm', ncm_order_id__isnull=False).count()
+    pnd_count = Order.objects.filter(is_deleted=False, logistics='pick_and_drop', pnd_order_id__isnull=False).count()
+
+    # Pagination
+    paginator = Paginator(orders, 25)
+    page_number = request.GET.get('page', 1)
+    orders_page = paginator.get_page(page_number)
+
+    # Get product names for paginated orders
+    order_products = {}
+    for order in orders_page:
+        try:
+            first_item = order.items.first()
+            if first_item:
+                order_products[order.id] = first_item.product_name
+            else:
+                order_products[order.id] = "No products"
+        except:
+            order_products[order.id] = "No products"
+
+    # GET ACTIVITY LOGS FOR PAGINATED ORDERS
+    activity_logs = {}
+    try:
+        from dashboard.models import OrderActivityLog
+
+        order_ids = [order.id for order in orders_page]
+        all_logs = OrderActivityLog.objects.filter(
+            order_id__in=order_ids
+        ).select_related('user', 'order').order_by('-created_at')
+
+        for log in all_logs:
+            if log.order_id not in activity_logs:
+                activity_logs[log.order_id] = []
+            activity_logs[log.order_id].append(log)
+
+        for order_id in activity_logs:
+            activity_logs[order_id] = activity_logs[order_id][:10]
+    except Exception:
+        activity_logs = {}
+
+    # Trash count for NCM
+    trash_count = Order.objects.filter(is_deleted=True, logistics='ncm').count()
+
+    context = {
+        'orders': orders_page,
+        'total_orders': total_orders,
+        'search_query': search_query,
+        'branch_filter': branch_filter,
+        'status_filter': status_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+        'branches': branches,
+        'statuses': statuses,
+        'order_products': order_products,
+        'activity_logs': activity_logs,
+        'provider': provider,
+        'ncm_count': ncm_count,
+        'pnd_count': pnd_count,
+        'trash_count': trash_count,
+    }
+
+    return render(request, 'logistics_orders_list.html', context)
+
+
+@login_required
+def logistics_bulk_logs_list(request):
+    """
+    Unified Bulk Logs Page - Shows NCM and/or PND bulk logs with a provider toggle filter.
+    Supports provider=all (default), ncm, or pnd.
+    """
+    from ncm.models import NCMBulkLog, NCMBulkLogOrder
+    from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder
+    from itertools import chain
+
+    provider = request.GET.get('provider', 'all').strip()
+    if provider not in ('all', 'ncm', 'pnd'):
+        provider = 'all'
+
+    # Handle AJAX request for expandable order rows
+    ajax_batch_id = request.GET.get('ajax_batch_orders')
+    ajax_provider = request.GET.get('ajax_provider', '').strip()
+    if ajax_batch_id:
+        try:
+            # Determine which model to query based on ajax_provider param
+            if ajax_provider == 'pnd':
+                batch_orders = PNDBulkLogOrder.objects.filter(batch_id=ajax_batch_id)
+                orders_data = []
+                for o in batch_orders:
+                    orders_data.append({
+                        'order_number': o.order_number,
+                        'customer_name': o.customer_name,
+                        'customer_phone': o.customer_phone,
+                        'address': o.shipping_address[:80] if o.shipping_address else '',
+                        'cod_amount': str(o.cod_amount),
+                        'branch': o.destination_branch or '-',
+                        'logistics_order_id': o.pnd_order_id or '',
+                        'status': o.status,
+                        'status_display': o.get_status_display(),
+                    })
+            else:
+                batch_orders = NCMBulkLogOrder.objects.filter(batch_id=ajax_batch_id)
+                orders_data = []
+                for o in batch_orders:
+                    orders_data.append({
+                        'order_number': o.order_number,
+                        'customer_name': o.customer_name,
+                        'customer_phone': o.customer_phone,
+                        'address': o.shipping_address[:80] if o.shipping_address else '',
+                        'cod_amount': str(o.cod_amount),
+                        'branch': o.destination_branch or '-',
+                        'logistics_order_id': o.ncm_order_id or '',
+                        'status': o.status,
+                        'status_display': o.get_status_display(),
+                    })
+            return JsonResponse({'orders': orders_data})
+        except Exception:
+            return JsonResponse({'orders': []})
+
+    # Filters
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    def apply_filters(qs, branch_field):
+        """Apply common filters to a queryset."""
+        nonlocal search_query, branch_filter, status_filter, date_from, date_to
+        if search_query:
+            qs = qs.filter(
+                Q(batch_number__icontains=search_query) |
+                Q(orders__order_number__icontains=search_query) |
+                Q(orders__customer_name__icontains=search_query)
+            ).distinct()
+        if branch_filter:
+            qs = qs.filter(**{branch_field: branch_filter})
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if date_from:
+            try:
+                qs = qs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        return qs
+
+    branches = []
+
+    if provider == 'ncm':
+        ncm_logs = apply_filters(NCMBulkLog.objects.filter(is_deleted=False), 'from_branch')
+        all_logs_ncm = NCMBulkLog.objects.filter(is_deleted=False)
+        all_logs_pnd = PNDBulkLog.objects.none()
+        branches = list(
+            NCMBulkLog.objects.filter(is_deleted=False)
+            .values_list('from_branch', flat=True)
+            .distinct().order_by('from_branch')
+        )
+        # Annotate provider for template
+        combined_logs = list(ncm_logs.order_by('-created_at'))
+        for log in combined_logs:
+            log.log_provider = 'ncm'
+            log.branch_display = log.from_branch
+
+    elif provider == 'pnd':
+        pnd_logs = apply_filters(PNDBulkLog.objects.filter(is_deleted=False), 'destination_branch')
+        all_logs_ncm = NCMBulkLog.objects.none()
+        all_logs_pnd = PNDBulkLog.objects.filter(is_deleted=False)
+        branches = list(
+            PNDBulkLog.objects.filter(is_deleted=False)
+            .values_list('destination_branch', flat=True)
+            .distinct().order_by('destination_branch')
+        )
+        combined_logs = list(pnd_logs.order_by('-created_at'))
+        for log in combined_logs:
+            log.log_provider = 'pnd'
+            log.branch_display = log.destination_branch
+
+    else:
+        # ALL - combine both
+        ncm_logs = apply_filters(NCMBulkLog.objects.filter(is_deleted=False), 'from_branch')
+        pnd_logs = apply_filters(PNDBulkLog.objects.filter(is_deleted=False), 'destination_branch')
+        all_logs_ncm = NCMBulkLog.objects.filter(is_deleted=False)
+        all_logs_pnd = PNDBulkLog.objects.filter(is_deleted=False)
+
+        ncm_branches = list(
+            NCMBulkLog.objects.filter(is_deleted=False)
+            .values_list('from_branch', flat=True)
+            .distinct()
+        )
+        pnd_branches = list(
+            PNDBulkLog.objects.filter(is_deleted=False)
+            .values_list('destination_branch', flat=True)
+            .distinct()
+        )
+        branches = sorted(set(ncm_branches + pnd_branches))
+
+        ncm_list = list(ncm_logs)
+        for log in ncm_list:
+            log.log_provider = 'ncm'
+            log.branch_display = log.from_branch
+
+        pnd_list = list(pnd_logs)
+        for log in pnd_list:
+            log.log_provider = 'pnd'
+            log.branch_display = log.destination_branch
+
+        combined_logs = sorted(
+            chain(ncm_list, pnd_list),
+            key=lambda x: x.created_at,
+            reverse=True
+        )
+
+    # Statistics (across the selected provider scope, unfiltered)
+    ncm_stats = all_logs_ncm.aggregate(
+        batches=Count('id'),
+        orders=Sum('total_orders'),
+        success=Sum('success_count'),
+        failed=Sum('failed_count'),
+    ) if provider in ('ncm', 'all') else {'batches': 0, 'orders': 0, 'success': 0, 'failed': 0}
+
+    pnd_stats = all_logs_pnd.aggregate(
+        batches=Count('id'),
+        orders=Sum('total_orders'),
+        success=Sum('success_count'),
+        failed=Sum('failed_count'),
+    ) if provider in ('pnd', 'all') else {'batches': 0, 'orders': 0, 'success': 0, 'failed': 0}
+
+    total_batches = (ncm_stats.get('batches') or 0) + (pnd_stats.get('batches') or 0)
+    total_orders_sent = (ncm_stats.get('orders') or 0) + (pnd_stats.get('orders') or 0)
+    total_success = (ncm_stats.get('success') or 0) + (pnd_stats.get('success') or 0)
+    total_failed = (ncm_stats.get('failed') or 0) + (pnd_stats.get('failed') or 0)
+
+    # Manual pagination for combined list
+    page_number = request.GET.get('page', 1)
+    paginator = Paginator(combined_logs, 20)
+    logs = paginator.get_page(page_number)
+
+    context = {
+        'logs': logs,
+        'total_batches': total_batches,
+        'total_orders_sent': total_orders_sent,
+        'total_success': total_success,
+        'total_failed': total_failed,
+        'branches': branches,
+        'search_query': search_query,
+        'branch_filter': branch_filter,
+        'status_filter': status_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+        'provider': provider,
+    }
+    return render(request, 'logistics_bulk_logs.html', context)
+
+
+@login_required
+def logistics_branches(request):
+    """
+    Unified Logistics Branches page - currently shows NCM branches.
+    Delegates to ncm_branches_json which renders ncm_branches.html for browser requests.
+    """
+    return ncm_branches_json(request)
+
+
+# ==================== LOGISTICS BULK LOGS TRASH ====================
+
+@login_required
+def logistics_bulk_logs_trash(request):
+    """
+    Unified Bulk Logs Trash - Shows soft-deleted NCM and PND bulk logs
+    """
+    from ncm.models import NCMBulkLog
+    from pick_and_drop.models import PNDBulkLog
+    from itertools import chain
+
+    search_query = request.GET.get('search', '').strip()
+
+    # Get deleted NCM logs
+    ncm_logs = NCMBulkLog.objects.filter(is_deleted=True)
+    if search_query:
+        ncm_logs = ncm_logs.filter(
+            Q(batch_number__icontains=search_query) |
+            Q(created_by__username__icontains=search_query)
+        )
+
+    # Get deleted PND logs
+    pnd_logs = PNDBulkLog.objects.filter(is_deleted=True)
+    if search_query:
+        pnd_logs = pnd_logs.filter(
+            Q(batch_number__icontains=search_query) |
+            Q(created_by__username__icontains=search_query)
+        )
+
+    ncm_list = list(ncm_logs)
+    for log in ncm_list:
+        log.log_provider = 'ncm'
+        log.branch_display = log.from_branch
+
+    pnd_list = list(pnd_logs)
+    for log in pnd_list:
+        log.log_provider = 'pnd'
+        log.branch_display = log.destination_branch
+
+    combined_logs = sorted(
+        chain(ncm_list, pnd_list),
+        key=lambda x: x.deleted_at or x.created_at,
+        reverse=True
+    )
+
+    total_trashed = len(combined_logs)
+
+    # Pagination
+    paginator = Paginator(combined_logs, 25)
+    page_number = request.GET.get('page', 1)
+    logs = paginator.get_page(page_number)
+
+    context = {
+        'logs': logs,
+        'total_trashed': total_trashed,
+        'search_query': search_query,
+    }
+    return render(request, 'logistics_bulk_logs_trash.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def logistics_bulk_log_restore(request, provider, log_id):
+    """Restore a bulk log from trash"""
+    from ncm.models import NCMBulkLog
+    from pick_and_drop.models import PNDBulkLog
+
+    try:
+        if provider == 'pnd':
+            log = get_object_or_404(PNDBulkLog, id=log_id, is_deleted=True)
+        else:
+            log = get_object_or_404(NCMBulkLog, id=log_id, is_deleted=True)
+
+        log.is_deleted = False
+        log.deleted_at = None
+        log.save()
+        messages.success(request, f'Batch "{log.batch_number}" restored successfully.')
+    except Exception as e:
+        messages.error(request, f'Error restoring batch: {str(e)}')
+
+    return redirect('logistics_bulk_logs_trash')
+
+
+@login_required
+@require_http_methods(["POST"])
+def logistics_bulk_log_permanent_delete(request, provider, log_id):
+    """Permanently delete a bulk log (cannot be undone)"""
+    from ncm.models import NCMBulkLog
+    from pick_and_drop.models import PNDBulkLog
+
+    try:
+        if provider == 'pnd':
+            log = get_object_or_404(PNDBulkLog, id=log_id, is_deleted=True)
+        else:
+            log = get_object_or_404(NCMBulkLog, id=log_id, is_deleted=True)
+
+        batch_number = log.batch_number
+        log.delete()
+        messages.success(request, f'Batch "{batch_number}" permanently deleted.')
+    except Exception as e:
+        messages.error(request, f'Error deleting batch: {str(e)}')
+
+    return redirect('logistics_bulk_logs_trash')
+
+
+@login_required
+@require_http_methods(["POST"])
+def logistics_bulk_logs_trash_bulk_action(request):
+    """Bulk actions on trashed bulk logs: restore or permanent delete"""
+    from ncm.models import NCMBulkLog
+    from pick_and_drop.models import PNDBulkLog
+
+    action = request.POST.get('bulk_action')
+    # IDs come as "ncm-123" or "pnd-456"
+    item_keys = request.POST.getlist('item_ids')
+
+    if not item_keys:
+        messages.warning(request, 'No batches selected.')
+        return redirect('logistics_bulk_logs_trash')
+
+    if not action:
+        messages.warning(request, 'No action selected.')
+        return redirect('logistics_bulk_logs_trash')
+
+    ncm_ids = []
+    pnd_ids = []
+    for key in item_keys:
+        if key.startswith('pnd-'):
+            pnd_ids.append(int(key.replace('pnd-', '')))
+        elif key.startswith('ncm-'):
+            ncm_ids.append(int(key.replace('ncm-', '')))
+
+    count = 0
+    if action == 'restore':
+        if ncm_ids:
+            updated = NCMBulkLog.objects.filter(id__in=ncm_ids, is_deleted=True).update(
+                is_deleted=False, deleted_at=None
+            )
+            count += updated
+        if pnd_ids:
+            updated = PNDBulkLog.objects.filter(id__in=pnd_ids, is_deleted=True).update(
+                is_deleted=False, deleted_at=None
+            )
+            count += updated
+        messages.success(request, f'{count} batch(es) restored successfully.')
+
+    elif action == 'permanent_delete':
+        if ncm_ids:
+            deleted, _ = NCMBulkLog.objects.filter(id__in=ncm_ids, is_deleted=True).delete()
+            count += deleted
+        if pnd_ids:
+            deleted, _ = PNDBulkLog.objects.filter(id__in=pnd_ids, is_deleted=True).delete()
+            count += deleted
+        messages.success(request, f'{count} batch(es) permanently deleted.')
+
+    return redirect('logistics_bulk_logs_trash')
+
+
+@login_required
+@require_http_methods(["POST"])
+def logistics_bulk_logs_empty_trash(request):
+    """Permanently delete ALL trashed bulk logs"""
+    from ncm.models import NCMBulkLog
+    from pick_and_drop.models import PNDBulkLog
+
+    if not request.user.is_staff:
+        messages.error(request, 'Admin access required.')
+        return redirect('logistics_bulk_logs_trash')
+
+    try:
+        ncm_count, _ = NCMBulkLog.objects.filter(is_deleted=True).delete()
+        pnd_count, _ = PNDBulkLog.objects.filter(is_deleted=True).delete()
+        total = ncm_count + pnd_count
+
+        if total == 0:
+            messages.info(request, 'Trash is already empty.')
+        else:
+            messages.success(request, f'Trash emptied! {total} batch(es) permanently deleted.')
+    except Exception as e:
+        messages.error(request, f'Error emptying trash: {str(e)}')
+
+    return redirect('logistics_bulk_logs_trash')

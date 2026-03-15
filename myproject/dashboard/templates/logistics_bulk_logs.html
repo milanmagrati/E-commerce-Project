@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
-{% block title %}NCM Bulk Order Logs{% endblock %}
+{% block title %}Logistics Bulk Logs{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
         <div>
-            <h2 class="mb-1"><i class="fas fa-clipboard-list"></i> NCM Bulk Order Logs</h2>
+            <h2 class="mb-1"><i class="fas fa-clipboard-list"></i> Logistics Bulk Order Logs</h2>
             <p class="text-muted mb-0">
                 <span class="badge bg-primary fs-6">
                     <i class="fas fa-layer-group"></i> {{ total_batches }} Total Batch{{ total_batches|pluralize:"es" }}
@@ -20,12 +20,38 @@
             </p>
         </div>
         <div class="d-flex gap-2">
-            <a href="{% url 'ncm_orders_list' %}" class="btn btn-outline-primary">
-                <i class="fas fa-truck-loading"></i> NCM Orders
+            <a href="{% url 'logistics_bulk_logs_trash' %}" class="btn btn-danger">
+                <i class="fas fa-trash-alt"></i> Trash
+            </a>
+            <a href="{% url 'logistics_orders_list' %}" class="btn btn-outline-primary">
+                <i class="fas fa-shipping-fast"></i> Logistics Orders
             </a>
             <a href="{% url 'orders_list' %}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Orders
             </a>
+        </div>
+    </div>
+
+    <!-- Provider Toggle -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body py-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-bold text-muted me-2"><i class="fas fa-filter"></i> Provider:</span>
+                <div class="btn-group" role="group">
+                    <a href="{% url 'logistics_bulk_logs_list' %}?provider=all"
+                       class="btn {% if provider == 'all' %}btn-all-active{% else %}btn-outline-secondary{% endif %}">
+                        <i class="fas fa-layer-group"></i> All
+                    </a>
+                    <a href="{% url 'logistics_bulk_logs_list' %}?provider=ncm"
+                       class="btn {% if provider == 'ncm' %}btn-ncm-active{% else %}btn-outline-secondary{% endif %}">
+                        <i class="fas fa-truck-loading"></i> NCM
+                    </a>
+                    <a href="{% url 'logistics_bulk_logs_list' %}?provider=pnd"
+                       class="btn {% if provider == 'pnd' %}btn-pnd-active{% else %}btn-outline-secondary{% endif %}">
+                        <i class="fas fa-truck-moving"></i> Pick & Drop
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -81,6 +107,7 @@
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <form method="get" class="row g-3">
+                <input type="hidden" name="provider" value="{{ provider }}">
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">Search</label>
                     <input type="text" name="search" class="form-control"
@@ -125,7 +152,7 @@
             </form>
             {% if search_query or branch_filter or status_filter or date_from or date_to %}
             <div class="mt-2">
-                <a href="{% url 'ncm_bulk_logs_list' %}" class="btn btn-sm btn-outline-secondary">
+                <a href="{% url 'logistics_bulk_logs_list' %}?provider={{ provider }}" class="btn btn-sm btn-outline-secondary">
                     <i class="fas fa-times-circle"></i> Clear Filters
                 </a>
             </div>
@@ -134,7 +161,7 @@
     </div>
 
     <!-- Bulk Actions -->
-    <form method="post" action="{% url 'ncm_bulk_logs_bulk_action' %}" id="bulkActionForm">
+    <form method="post" action="{% if provider == 'pnd' %}{% url 'pnd_bulk_logs_bulk_action' %}{% elif provider == 'ncm' %}{% url 'ncm_bulk_logs_bulk_action' %}{% else %}#{% endif %}" id="bulkActionForm">
         {% csrf_token %}
         <div class="card shadow-sm mb-3">
             <div class="card-body py-2">
@@ -143,7 +170,6 @@
                         <select name="bulk_action" class="form-select form-select-sm">
                             <option value="">-- Select Bulk Action --</option>
                             <option value="move_to_trash">Move to Trash</option>
-                            <option value="export_excel">Export to Excel</option>
                         </select>
                     </div>
                     <div class="col-md-3">
@@ -169,6 +195,9 @@
                                     <input type="checkbox" class="form-check-input" id="selectAll">
                                 </th>
                                 <th>Batch Number</th>
+                                {% if provider == 'all' %}
+                                <th>Provider</th>
+                                {% endif %}
                                 <th class="text-center">Orders</th>
                                 <th class="text-center">Success</th>
                                 <th class="text-center">Failed</th>
@@ -181,16 +210,32 @@
                         </thead>
                         <tbody>
                             {% for log in logs %}
-                            <tr class="batch-row" data-batch-id="{{ log.id }}">
+                            <tr class="batch-row" data-batch-id="{{ log.id }}" data-provider="{{ log.log_provider }}">
                                 <td onclick="event.stopPropagation();">
                                     <input type="checkbox" class="form-check-input log-checkbox"
-                                           name="log_ids" value="{{ log.id }}">
+                                           name="log_ids" value="{{ log.id }}"
+                                           data-provider="{{ log.log_provider }}">
                                 </td>
                                 <td>
+                                    {% if log.log_provider == 'pnd' %}
+                                    <a href="{% url 'pnd_bulk_log_detail' log.id %}" class="text-decoration-none">
+                                        <strong class="text-primary">{{ log.batch_number }}</strong>
+                                    </a>
+                                    {% else %}
                                     <a href="{% url 'ncm_bulk_log_detail' log.id %}" class="text-decoration-none">
                                         <strong class="text-primary">{{ log.batch_number }}</strong>
                                     </a>
+                                    {% endif %}
                                 </td>
+                                {% if provider == 'all' %}
+                                <td>
+                                    {% if log.log_provider == 'ncm' %}
+                                    <span class="badge bg-ncm-provider"><i class="fas fa-truck-loading"></i> NCM</span>
+                                    {% else %}
+                                    <span class="badge bg-pnd-provider"><i class="fas fa-truck-moving"></i> PND</span>
+                                    {% endif %}
+                                </td>
+                                {% endif %}
                                 <td class="text-center">
                                     <span class="badge bg-dark">{{ log.total_orders }}</span>
                                 </td>
@@ -220,7 +265,7 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <span class="badge bg-info">{{ log.from_branch }}</span>
+                                    <span class="badge bg-info">{{ log.branch_display }}</span>
                                 </td>
                                 <td>
                                     <small>{{ log.created_by.username|default:"System" }}</small>
@@ -232,16 +277,23 @@
                                 <td onclick="event.stopPropagation();">
                                     <div class="btn-group btn-group-sm">
                                         <button type="button" class="btn btn-outline-primary btn-sm"
-                                                onclick="toggleExpandRow({{ log.id }})"
+                                                onclick="toggleExpandRow({{ log.id }}, '{{ log.log_provider }}')"
                                                 title="Expand Orders">
-                                            <i class="fas fa-chevron-down" id="expand-icon-{{ log.id }}"></i>
+                                            <i class="fas fa-chevron-down" id="expand-icon-{{ log.log_provider }}-{{ log.id }}"></i>
                                         </button>
+                                        {% if log.log_provider == 'pnd' %}
+                                        <a href="{% url 'pnd_bulk_log_detail' log.id %}"
+                                           class="btn btn-outline-info btn-sm" title="View Details">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        {% else %}
                                         <a href="{% url 'ncm_bulk_log_detail' log.id %}"
                                            class="btn btn-outline-info btn-sm" title="View Details">
                                             <i class="fas fa-eye"></i>
                                         </a>
+                                        {% endif %}
                                         <button type="button" class="btn btn-outline-danger btn-sm"
-                                                onclick="trashBatch({{ log.id }}, '{{ log.batch_number|escapejs }}')"
+                                                onclick="trashBatch({{ log.id }}, '{{ log.batch_number|escapejs }}', '{{ log.log_provider }}')"
                                                 title="Move to Trash">
                                             <i class="fas fa-trash-alt"></i>
                                         </button>
@@ -250,8 +302,8 @@
                             </tr>
 
                             <!-- Expandable Orders Row -->
-                            <tr class="expand-row" id="expand-row-{{ log.id }}" style="display: none;">
-                                <td colspan="10" class="p-0">
+                            <tr class="expand-row" id="expand-row-{{ log.log_provider }}-{{ log.id }}" style="display: none;">
+                                <td colspan="{% if provider == 'all' %}11{% else %}10{% endif %}" class="p-0">
                                     <div class="expand-container">
                                         <div class="expand-header">
                                             <h6 class="mb-0">
@@ -260,11 +312,11 @@
                                                 <span class="badge bg-light text-dark ms-2">{{ log.total_orders }}</span>
                                             </h6>
                                             <button type="button" class="btn-close-expand"
-                                                    onclick="toggleExpandRow({{ log.id }})">
+                                                    onclick="toggleExpandRow({{ log.id }}, '{{ log.log_provider }}')">
                                                 <i class="fas fa-times"></i>
                                             </button>
                                         </div>
-                                        <div class="expand-body" id="expand-body-{{ log.id }}">
+                                        <div class="expand-body" id="expand-body-{{ log.log_provider }}-{{ log.id }}">
                                             <div class="text-center py-3">
                                                 <i class="fas fa-spinner fa-spin"></i> Loading orders...
                                             </div>
@@ -274,10 +326,10 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="10" class="text-center py-5">
+                                <td colspan="{% if provider == 'all' %}11{% else %}10{% endif %}" class="text-center py-5">
                                     <i class="fas fa-inbox fa-3x text-muted mb-3 d-block"></i>
                                     <p class="text-muted">No bulk order logs found</p>
-                                    <p class="text-muted small">Bulk logs are created when you send orders to NCM in bulk.</p>
+                                    <p class="text-muted small">Bulk logs are created when you send orders in bulk.</p>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -293,7 +345,7 @@
                     <ul class="pagination justify-content-center mb-0">
                         {% if logs.has_previous %}
                         <li class="page-item">
-                            <a class="page-link" href="?page={{ logs.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">Previous</a>
+                            <a class="page-link" href="?page={{ logs.previous_page_number }}&provider={{ provider }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">Previous</a>
                         </li>
                         {% endif %}
                         {% for num in logs.paginator.page_range %}
@@ -301,13 +353,13 @@
                         <li class="page-item active"><span class="page-link">{{ num }}</span></li>
                         {% elif num > logs.number|add:'-3' and num < logs.number|add:'3' %}
                         <li class="page-item">
-                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">{{ num }}</a>
+                            <a class="page-link" href="?page={{ num }}&provider={{ provider }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">{{ num }}</a>
                         </li>
                         {% endif %}
                         {% endfor %}
                         {% if logs.has_next %}
                         <li class="page-item">
-                            <a class="page-link" href="?page={{ logs.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">Next</a>
+                            <a class="page-link" href="?page={{ logs.next_page_number }}&provider={{ provider }}{% if search_query %}&search={{ search_query }}{% endif %}{% if branch_filter %}&branch={{ branch_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">Next</a>
                         </li>
                         {% endif %}
                     </ul>
@@ -324,6 +376,35 @@
 </form>
 
 <style>
+    /* Provider Toggle */
+    .btn-all-active {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border: none;
+    }
+    .btn-all-active:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        color: white;
+    }
+    .btn-ncm-active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+    }
+    .btn-ncm-active:hover {
+        background: linear-gradient(135deg, #5a6fd6 0%, #6a4292 100%);
+        color: white;
+    }
+    .btn-pnd-active {
+        background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+        color: white;
+        border: none;
+    }
+    .btn-pnd-active:hover {
+        background: linear-gradient(135deg, #ea580c 0%, #dc2626 100%);
+        color: white;
+    }
+
     /* ==================== STAT CARDS ==================== */
     .bulk-stat-card {
         display: flex;
@@ -342,156 +423,55 @@
     .bulk-stat-success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
     .bulk-stat-info { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
     .bulk-stat-danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
-
-    .bulk-stat-icon {
-        font-size: 2.5rem;
-        margin-right: 1.25rem;
-        opacity: 0.85;
-    }
-    .bulk-stat-content h3 {
-        margin: 0;
-        font-size: 2rem;
-        font-weight: 700;
-        line-height: 1;
-    }
-    .bulk-stat-content p {
-        margin: 0.3rem 0 0;
-        font-size: 0.85rem;
-        opacity: 0.9;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
+    .bulk-stat-icon { font-size: 2.5rem; margin-right: 1.25rem; opacity: 0.85; }
+    .bulk-stat-content h3 { margin: 0; font-size: 2rem; font-weight: 700; line-height: 1; }
+    .bulk-stat-content p { margin: 0.3rem 0 0; font-size: 0.85rem; opacity: 0.9; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
 
     /* ==================== STATUS BADGES ==================== */
-    .bulk-badge-completed {
-        background: linear-gradient(135deg, #10b981, #059669);
-        color: white;
-        padding: 5px 12px;
-        font-size: 0.78rem;
-    }
-    .bulk-badge-partial {
-        background: linear-gradient(135deg, #f59e0b, #d97706);
-        color: white;
-        padding: 5px 12px;
-        font-size: 0.78rem;
-    }
-    .bulk-badge-failed {
-        background: linear-gradient(135deg, #ef4444, #dc2626);
-        color: white;
-        padding: 5px 12px;
-        font-size: 0.78rem;
-    }
-    .bulk-badge-processing {
-        background: linear-gradient(135deg, #3b82f6, #2563eb);
-        color: white;
-        padding: 5px 12px;
-        font-size: 0.78rem;
-    }
+    .bulk-badge-completed { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 5px 12px; font-size: 0.78rem; }
+    .bulk-badge-partial { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 5px 12px; font-size: 0.78rem; }
+    .bulk-badge-failed { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 5px 12px; font-size: 0.78rem; }
+    .bulk-badge-processing { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 5px 12px; font-size: 0.78rem; }
+
+    /* ==================== PROVIDER BADGES ==================== */
+    .bg-ncm-provider { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 5px 10px; font-size: 0.75rem; }
+    .bg-pnd-provider { background: linear-gradient(135deg, #f97316, #ea580c); color: white; padding: 5px 10px; font-size: 0.75rem; }
 
     /* ==================== TABLE ==================== */
-    .bulk-logs-table th {
-        font-weight: 600;
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: #6c757d;
-        background: #f8f9fa;
-        white-space: nowrap;
-    }
-    .bulk-logs-table td {
-        vertical-align: middle;
-        font-size: 0.9rem;
-    }
-    .batch-row {
-        transition: background-color 0.2s ease;
-        cursor: pointer;
-    }
-    .batch-row:hover {
-        background-color: rgba(102, 126, 234, 0.04);
-    }
+    .bulk-logs-table th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6c757d; background: #f8f9fa; white-space: nowrap; }
+    .bulk-logs-table td { vertical-align: middle; font-size: 0.9rem; }
+    .batch-row { transition: background-color 0.2s ease; cursor: pointer; }
+    .batch-row:hover { background-color: rgba(102, 126, 234, 0.04); }
 
     /* ==================== EXPANDABLE ROWS ==================== */
-    .expand-row {
-        background: #f8f9fa !important;
-        border-top: 2px solid #667eea !important;
-    }
-    .expand-container {
-        animation: expandSlideDown 0.3s ease;
-    }
-    @keyframes expandSlideDown {
-        from { opacity: 0; max-height: 0; }
-        to { opacity: 1; max-height: 600px; }
-    }
+    .expand-row { background: #f8f9fa !important; border-top: 2px solid #667eea !important; }
+    .expand-container { animation: expandSlideDown 0.3s ease; }
+    @keyframes expandSlideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 600px; } }
     .expand-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 12px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;
     }
-    .expand-header h6 {
-        font-weight: 600;
-        margin: 0;
-    }
-    .btn-close-expand {
-        background: rgba(255,255,255,0.2);
-        border: none;
-        color: white;
-        padding: 4px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-    .btn-close-expand:hover {
-        background: rgba(255,255,255,0.3);
-    }
-    .expand-body {
-        padding: 15px 20px;
-        max-height: 400px;
-        overflow-y: auto;
-        background: white;
-    }
+    .expand-header h6 { font-weight: 600; margin: 0; }
+    .btn-close-expand { background: rgba(255,255,255,0.2); border: none; color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; transition: all 0.2s ease; }
+    .btn-close-expand:hover { background: rgba(255,255,255,0.3); }
+    .expand-body { padding: 15px 20px; max-height: 400px; overflow-y: auto; background: white; }
 
-    /* Inner orders table */
-    .inner-orders-table {
-        margin: 0;
-        font-size: 0.85rem;
-    }
-    .inner-orders-table th {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: #6c757d;
-        padding: 8px 10px;
-        background: #f1f5f9;
-        border: none;
-    }
-    .inner-orders-table td {
-        padding: 8px 10px;
-        vertical-align: middle;
-        border-color: #f1f5f9;
-    }
-    .inner-orders-table tr:hover {
-        background: #f8fafc;
-    }
+    .inner-orders-table { margin: 0; font-size: 0.85rem; }
+    .inner-orders-table th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6c757d; padding: 8px 10px; background: #f1f5f9; border: none; }
+    .inner-orders-table td { padding: 8px 10px; vertical-align: middle; border-color: #f1f5f9; }
+    .inner-orders-table tr:hover { background: #f8fafc; }
 
-    /* Order status in inner table */
     .order-status-success { color: #059669; font-weight: 600; }
     .order-status-failed { color: #dc2626; font-weight: 600; }
     .order-status-skipped { color: #d97706; font-weight: 600; }
 
-    /* Scrollbar */
     .expand-body::-webkit-scrollbar { width: 6px; }
     .expand-body::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
     .expand-body::-webkit-scrollbar-thumb { background: #667eea; border-radius: 3px; }
 
-    /* ==================== CHECKBOX ==================== */
     .form-check-input { cursor: pointer; width: 17px; height: 17px; }
     .form-check-input:checked { background-color: #667eea; border-color: #667eea; }
 
-    /* ==================== RESPONSIVE ==================== */
     @media (max-width: 768px) {
         .bulk-stat-card { margin-bottom: 0.75rem; }
         .bulk-stat-icon { font-size: 1.8rem; margin-right: 1rem; }
@@ -500,35 +480,32 @@
 </style>
 
 <script>
-// ==================== EXPAND ROW FUNCTIONALITY ====================
-function toggleExpandRow(batchId) {
-    const expandRow = document.getElementById('expand-row-' + batchId);
-    const expandIcon = document.getElementById('expand-icon-' + batchId);
-    const expandBody = document.getElementById('expand-body-' + batchId);
+const currentProvider = '{{ provider }}';
+
+function toggleExpandRow(batchId, logProvider) {
+    const key = logProvider + '-' + batchId;
+    const expandRow = document.getElementById('expand-row-' + key);
+    const expandIcon = document.getElementById('expand-icon-' + key);
+    const expandBody = document.getElementById('expand-body-' + key);
 
     if (expandRow.style.display === 'none') {
-        // Close all other expand rows
-        document.querySelectorAll('.expand-row').forEach(row => {
-            row.style.display = 'none';
-        });
+        document.querySelectorAll('.expand-row').forEach(row => { row.style.display = 'none'; });
         document.querySelectorAll('[id^="expand-icon-"]').forEach(icon => {
             icon.classList.remove('fa-chevron-up');
             icon.classList.add('fa-chevron-down');
         });
 
-        // Open this one and load orders via AJAX
         expandRow.style.display = 'table-row';
         expandIcon.classList.remove('fa-chevron-down');
         expandIcon.classList.add('fa-chevron-up');
 
-        // Fetch orders for this batch
-        fetch(`{% url 'ncm_bulk_logs_list' %}?ajax_batch_orders=${batchId}`)
+        fetch(`{% url 'logistics_bulk_logs_list' %}?provider=${currentProvider}&ajax_provider=${logProvider}&ajax_batch_orders=${batchId}`)
             .then(response => response.json())
             .then(data => {
                 if (data.orders && data.orders.length > 0) {
                     let html = '<table class="table inner-orders-table"><thead><tr>';
                     html += '<th>Order ID</th><th>Receiver</th><th>Phone</th><th>Address</th>';
-                    html += '<th>COD</th><th>Branch</th><th>NCM ID</th><th>Status</th></tr></thead><tbody>';
+                    html += '<th>COD</th><th>Branch</th><th>Logistics ID</th><th>Status</th></tr></thead><tbody>';
                     data.orders.forEach(order => {
                         let statusClass = 'order-status-' + order.status;
                         html += `<tr>`;
@@ -538,7 +515,7 @@ function toggleExpandRow(batchId) {
                         html += `<td><small>${order.address}</small></td>`;
                         html += `<td><strong class="text-success">${order.cod_amount}</strong></td>`;
                         html += `<td><span class="badge bg-info">${order.branch}</span></td>`;
-                        html += `<td>${order.ncm_order_id || '-'}</td>`;
+                        html += `<td>${order.logistics_order_id || '-'}</td>`;
                         html += `<td><span class="${statusClass}">${order.status_display}</span></td>`;
                         html += `</tr>`;
                     });
@@ -558,18 +535,16 @@ function toggleExpandRow(batchId) {
     }
 }
 
-// ==================== CLICKABLE ROW ====================
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.batch-row').forEach(row => {
         row.addEventListener('click', function(e) {
             if (!e.target.closest('input') && !e.target.closest('.btn') && !e.target.closest('.btn-group') && !e.target.closest('a')) {
-                toggleExpandRow(this.dataset.batchId);
+                toggleExpandRow(this.dataset.batchId, this.dataset.provider);
             }
         });
     });
 });
 
-// ==================== SELECT ALL ====================
 document.getElementById('selectAll')?.addEventListener('change', function() {
     document.querySelectorAll('.log-checkbox').forEach(cb => { cb.checked = this.checked; });
     updateSelectedCount();
@@ -581,36 +556,86 @@ document.querySelectorAll('.log-checkbox').forEach(cb => {
 
 function updateSelectedCount() {
     const count = document.querySelectorAll('.log-checkbox:checked').length;
-    document.getElementById('selectedCount').textContent = count;
+    const el = document.getElementById('selectedCount');
+    if (el) el.textContent = count;
 }
 
-// ==================== BULK ACTION FORM ====================
 document.getElementById('bulkActionForm')?.addEventListener('submit', function(e) {
+    e.preventDefault();
     const checked = document.querySelectorAll('.log-checkbox:checked');
     if (checked.length === 0) {
-        e.preventDefault();
         alert('Please select at least one batch.');
         return false;
     }
     const action = document.querySelector('select[name="bulk_action"]').value;
     if (!action) {
-        e.preventDefault();
         alert('Please select a bulk action.');
         return false;
     }
     if (action === 'move_to_trash') {
         if (!confirm(`Move ${checked.length} batch(es) to trash?`)) {
-            e.preventDefault();
             return false;
         }
     }
+
+    if (currentProvider !== 'all') {
+        // Single provider - submit normally
+        this.submit();
+    } else {
+        // All mode - split by provider and submit separately
+        const ncmIds = [];
+        const pndIds = [];
+        checked.forEach(cb => {
+            if (cb.dataset.provider === 'pnd') {
+                pndIds.push(cb.value);
+            } else {
+                ncmIds.push(cb.value);
+            }
+        });
+
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const promises = [];
+
+        if (ncmIds.length > 0) {
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            formData.append('bulk_action', action);
+            ncmIds.forEach(id => formData.append('log_ids', id));
+            promises.push(fetch('{% url "ncm_bulk_logs_bulk_action" %}', {
+                method: 'POST',
+                body: formData,
+                redirect: 'manual'
+            }));
+        }
+
+        if (pndIds.length > 0) {
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            formData.append('bulk_action', action);
+            pndIds.forEach(id => formData.append('log_ids', id));
+            promises.push(fetch('{% url "pnd_bulk_logs_bulk_action" %}', {
+                method: 'POST',
+                body: formData,
+                redirect: 'manual'
+            }));
+        }
+
+        Promise.all(promises).then(() => {
+            window.location.href = '{% url "logistics_bulk_logs_list" %}?provider=all';
+        }).catch(() => {
+            window.location.href = '{% url "logistics_bulk_logs_list" %}?provider=all';
+        });
+    }
 });
 
-// ==================== TRASH SINGLE BATCH ====================
-function trashBatch(id, batchNumber) {
+function trashBatch(id, batchNumber, logProvider) {
     if (confirm(`Move batch "${batchNumber}" to trash?`)) {
         const form = document.getElementById('trashForm');
-        form.action = `/ncm-bulk-logs/${id}/trash/`;
+        if (logProvider === 'pnd') {
+            form.action = `/pnd-bulk-logs/${id}/trash/`;
+        } else {
+            form.action = `/ncm-bulk-logs/${id}/trash/`;
+        }
         form.submit();
     }
 }

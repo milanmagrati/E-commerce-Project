@@ -196,8 +196,8 @@ urlpatterns = [
     path('reports/daily-sales/', views.daily_sales_report, name='daily_sales_report'),
     path('reports/product-sales/', views.product_sales_report, name='product_sales_report'),
 
-      # ✅ NCM ORDERS MANAGEMENT (already exists in your code)
-    path('ncm-orders/', views.ncm_orders_list, name='ncm_orders_list'),
+      # ✅ NCM ORDERS MANAGEMENT
+    # ncm_orders_list removed - use logistics/orders/?provider=ncm instead
     path('ncm-orders/<int:order_id>/', views.ncm_order_detail, name='ncm_order_detail'),
     path('ncm-orders/track/<int:order_id>/', views.ncm_track_order, name='ncm_track_order'),
     path('ncm-orders/sync-all/', views.ncm_sync_all_statuses, name='ncm_sync_all_statuses'),
@@ -214,19 +214,29 @@ urlpatterns = [
     path('api/ncm-branches/', views.ncm_branches_json, name='ncm_branches_json'),
 
     # ✅ NCM BULK ORDER LOGS
-    path('ncm-bulk-logs/', views.ncm_bulk_logs_list, name='ncm_bulk_logs_list'),
+    # ncm_bulk_logs_list removed - use logistics/bulk-logs/?provider=ncm instead
     path('ncm-bulk-logs/<int:log_id>/', views.ncm_bulk_log_detail, name='ncm_bulk_log_detail'),
     path('ncm-bulk-logs/<int:log_id>/trash/', views.ncm_bulk_log_trash, name='ncm_bulk_log_trash'),
     path('ncm-bulk-logs/bulk-action/', views.ncm_bulk_logs_bulk_action, name='ncm_bulk_logs_bulk_action'),
 
     # ✅ PICK AND DROP ORDERS MANAGEMENT
-    path('pnd-orders/', views.pnd_orders_list, name='pnd_orders_list'),
+    # pnd_orders_list removed - use logistics/orders/?provider=pnd instead
 
     # ✅ PND BULK ORDER LOGS
-    path('pnd-bulk-logs/', views.pnd_bulk_logs_list, name='pnd_bulk_logs_list'),
+    # pnd_bulk_logs_list removed - use logistics/bulk-logs/?provider=pnd instead
     path('pnd-bulk-logs/<int:log_id>/', views.pnd_bulk_log_detail, name='pnd_bulk_log_detail'),
     path('pnd-bulk-logs/<int:log_id>/trash/', views.pnd_bulk_log_trash, name='pnd_bulk_log_trash'),
     path('pnd-bulk-logs/bulk-action/', views.pnd_bulk_logs_bulk_action, name='pnd_bulk_logs_bulk_action'),
+
+    # UNIFIED LOGISTICS
+    path('logistics/orders/', views.logistics_orders_list, name='logistics_orders_list'),
+    path('logistics/bulk-logs/', views.logistics_bulk_logs_list, name='logistics_bulk_logs_list'),
+    path('logistics/bulk-logs/trash/', views.logistics_bulk_logs_trash, name='logistics_bulk_logs_trash'),
+    path('logistics/bulk-logs/trash/<str:provider>/<int:log_id>/restore/', views.logistics_bulk_log_restore, name='logistics_bulk_log_restore'),
+    path('logistics/bulk-logs/trash/<str:provider>/<int:log_id>/permanent-delete/', views.logistics_bulk_log_permanent_delete, name='logistics_bulk_log_permanent_delete'),
+    path('logistics/bulk-logs/trash/bulk-action/', views.logistics_bulk_logs_trash_bulk_action, name='logistics_bulk_logs_trash_bulk_action'),
+    path('logistics/bulk-logs/trash/empty/', views.logistics_bulk_logs_empty_trash, name='logistics_bulk_logs_empty_trash'),
+    path('logistics/branches/', views.logistics_branches, name='logistics_branches'),
 
     # Financial Report
     path('financial-report/', views.financial_report, name='financial_report'),

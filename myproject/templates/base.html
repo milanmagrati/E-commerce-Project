@@ -247,13 +247,13 @@
             50% { opacity: 0.8; }
         }
 
-        /* ==================== NCM MENU HIGHLIGHT ==================== */
-        .sidebar li.ncm-menu > a {
+        /* ==================== LOGISTICS MENU HIGHLIGHT ==================== */
+        .sidebar li.logistics-menu > a {
             background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
             border-left: 3px solid #667eea;
         }
 
-        .sidebar li.ncm-menu:hover > a {
+        .sidebar li.logistics-menu:hover > a {
             background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
             border-left-color: #764ba2;
         }
@@ -635,61 +635,43 @@
                 </li>
                 {% endif %}
 
-                <!-- ==================== ✅ NCM LOGISTICS (UPDATED WITH NCM ORDERS) ==================== -->
+                <!-- ==================== LOGISTICS (UNIFIED NCM + PICK & DROP) ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_orders or user.can_view_ncm_bulk_logs or user.can_view_ncm_trash or user.can_sync_ncm_orders or user.can_view_ncm_branches %}
-                <li class="ncm-menu {% if 'ncm' in request.resolver_match.url_name %}active{% endif %}">
-                    <a href="#" data-bs-toggle="collapse" data-bs-target="#ncmMenu" aria-expanded="false">
-                        <i class="fas fa-truck-loading"></i> NCM Logistics
+                <li class="logistics-menu {% if 'logistics' in request.resolver_match.url_name|default:'' or 'ncm' in request.resolver_match.url_name|default:'' or 'pnd' in request.resolver_match.url_name|default:'' %}active{% endif %}">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#logisticsMenu" aria-expanded="{% if 'logistics' in request.resolver_match.url_name|default:'' or 'ncm' in request.resolver_match.url_name|default:'' or 'pnd' in request.resolver_match.url_name|default:'' %}true{% else %}false{% endif %}">
+                        <i class="fas fa-shipping-fast"></i> Logistics
                         <i class="fas fa-chevron-down float-end mt-1"></i>
                     </a>
-                    <ul class="collapse list-unstyled" id="ncmMenu">
+                    <ul class="collapse {% if 'logistics' in request.resolver_match.url_name|default:'' or 'ncm' in request.resolver_match.url_name|default:'' or 'pnd' in request.resolver_match.url_name|default:'' %}show{% endif %} list-unstyled" id="logisticsMenu">
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_orders %}
-                        <li class="{% if request.resolver_match.url_name == 'ncm_orders_list' %}active{% endif %}">
-                            <a href="{% url 'ncm_orders_list' %}">NCM Orders</a>
+                        <li class="{% if request.resolver_match.url_name == 'logistics_orders_list' or request.resolver_match.url_name == 'ncm_order_detail' %}active{% endif %}">
+                            <a href="{% url 'logistics_orders_list' %}"><i class="fas fa-truck-loading me-1"></i> Logistics Orders</a>
                         </li>
                         {% endif %}
-                        
+
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_bulk_logs %}
-                        <li class="{% if request.resolver_match.url_name == 'ncm_bulk_logs_list' or request.resolver_match.url_name == 'ncm_bulk_log_detail' %}active{% endif %}">
-                            <a href="{% url 'ncm_bulk_logs_list' %}">Bulk Logs</a>
+                        <li class="{% if request.resolver_match.url_name == 'logistics_bulk_logs_list' or request.resolver_match.url_name == 'ncm_bulk_log_detail' or request.resolver_match.url_name == 'pnd_bulk_log_detail' %}active{% endif %}">
+                            <a href="{% url 'logistics_bulk_logs_list' %}"><i class="fas fa-clipboard-list me-1"></i> Bulk Logs</a>
                         </li>
                         {% endif %}
-                        
+
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_trash %}
                         <li class="{% if request.resolver_match.url_name == 'ncm_orders_trash' %}active{% endif %}">
-                            <a href="{% url 'ncm_orders_trash' %}">NCM Trash</a>
+                            <a href="{% url 'ncm_orders_trash' %}"><i class="fas fa-trash-alt me-1"></i> Trash</a>
                         </li>
                         {% endif %}
-                   
+
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_branches %}
+                        <li class="{% if request.resolver_match.url_name == 'logistics_branches' or request.resolver_match.url_name == 'ncm_branches_json' %}active{% endif %}">
+                            <a href="{% url 'logistics_branches' %}"><i class="fas fa-code-branch me-1"></i> Branches</a>
+                        </li>
+                        {% endif %}
+
                         {% if user.is_superuser or user.role == 'administrator' or user.can_sync_ncm_orders %}
                         <li class="{% if request.resolver_match.url_name == 'ncm:bulk_sync' %}active{% endif %}">
-                            <a href="{% url 'ncm:bulk_sync' %}">Sync Orders</a>
+                            <a href="{% url 'ncm:bulk_sync' %}"><i class="fas fa-sync-alt me-1"></i> Sync Orders</a>
                         </li>
                         {% endif %}
-                        
-                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_branches %}
-                        <li class="{% if request.resolver_match.url_name == 'ncm_branches_json' %}active{% endif %}">
-                            <a href="{% url 'ncm_branches_json' %}" target="_blank">NCM Branches</a>
-                        </li>
-                        {% endif %}
-                    </ul>
-                </li>
-                {% endif %}
-
-                <!-- ==================== PICK AND DROP LOGISTICS ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
-                <li class="{% if 'pick_and_drop' in request.resolver_match.url_name|default:'' or 'pnd' in request.resolver_match.url_name|default:'' %}active{% endif %}">
-                    <a href="#" data-bs-toggle="collapse" data-bs-target="#pndMenu" aria-expanded="false">
-                        <i class="fas fa-truck-moving"></i> Pick & Drop
-                        <i class="fas fa-chevron-down float-end mt-1"></i>
-                    </a>
-                    <ul class="collapse list-unstyled" id="pndMenu">
-                        <li class="{% if request.resolver_match.url_name == 'pnd_orders_list' %}active{% endif %}">
-                            <a href="{% url 'pnd_orders_list' %}">PND Orders</a>
-                        </li>
-                        <li class="{% if request.resolver_match.url_name == 'pnd_bulk_logs_list' or request.resolver_match.url_name == 'pnd_bulk_log_detail' %}active{% endif %}">
-                            <a href="{% url 'pnd_bulk_logs_list' %}">Bulk Logs</a>
-                        </li>
                     </ul>
                 </li>
                 {% endif %}

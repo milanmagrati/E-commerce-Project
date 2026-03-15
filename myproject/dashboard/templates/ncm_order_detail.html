@@ -11,8 +11,8 @@
                 <span class="badge bg-primary ms-2">{{ order.ncm_order_id }}</span>
             </h2>
             <div class="d-flex gap-2 flex-wrap">
-                <a href="{% url 'ncm_orders_list' %}" class="btn btn-secondary">
-                    <i class="fas fa-arrow-left"></i> Back to NCM Orders
+                <a href="{% url 'logistics_orders_list' %}?provider=ncm" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Logistics Orders
                 </a>
                 <button type="button" class="btn btn-success" id="syncNCMStatusBtn" onclick="syncNCMStatusAJAX({{ order.id }})">
                     <i class="fas fa-sync-alt"></i>

@@ -1,15 +1,15 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
-{% block title %}NCM Orders Trash{% endblock %}
+{% block title %}Logistics Trash{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h2><i class="fas fa-trash-alt"></i> NCM Orders Trash</h2>
+            <h2><i class="fas fa-trash-alt"></i> Logistics Trash</h2>
             <div class="d-flex gap-2">
-                <a href="{% url 'ncm_orders_list' %}" class="btn btn-secondary btn-lg">
-                    <i class="fas fa-arrow-left"></i> Back to NCM Orders
+                <a href="{% url 'logistics_orders_list' %}" class="btn btn-secondary btn-lg">
+                    <i class="fas fa-arrow-left"></i> Back to Logistics Orders
                 </a>
                 {% if total_orders > 0 %}
                 <button type="button" class="btn btn-danger btn-lg" onclick="emptyTrash()">
@@ -212,8 +212,8 @@
                         <td colspan="11" class="text-center py-5">
                             <i class="fas fa-trash-alt fa-3x text-muted mb-3 d-block"></i>
                             <p class="text-muted mb-3">Trash is empty</p>
-                            <a href="{% url 'ncm_orders_list' %}" class="btn btn-primary">
-                                <i class="fas fa-arrow-left"></i> Go to NCM Orders
+                            <a href="{% url 'logistics_orders_list' %}" class="btn btn-primary">
+                                <i class="fas fa-arrow-left"></i> Go to Logistics Orders
                             </a>
                         </td>
                     </tr>
