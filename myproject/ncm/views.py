@@ -28,6 +28,7 @@ import logging
 import hmac
 
 logger = logging.getLogger('ncm')
+webhook_logger = logging.getLogger('webhook')
 ncm_service = NCMService()
 webhook_handler = NCMWebhookHandler()
 
@@ -82,7 +83,7 @@ def verify_ncm_webhook(request, payload_bytes):
     # Verify User-Agent header (NCM sends 'NCM-Webhook/1.0')
     user_agent = request.META.get('HTTP_USER_AGENT', '')
     if user_agent and 'NCM-Webhook' not in user_agent:
-        logger.warning(f"Unexpected User-Agent for NCM webhook: {user_agent}")
+        webhook_logger.warning(f"Unexpected User-Agent for NCM webhook: {user_agent}")
 
     # If a token query parameter is present, validate against the secret
     webhook_secret = getattr(settings, 'NCM_WEBHOOK_SECRET', None)
@@ -90,9 +91,9 @@ def verify_ncm_webhook(request, payload_bytes):
 
     if webhook_secret and token:
         if not hmac.compare_digest(token, webhook_secret):
-            logger.error("Webhook token verification failed")
+            webhook_logger.error("Webhook token verification failed")
             return False
-        logger.info("Webhook token verified successfully")
+        webhook_logger.info("Webhook token verified successfully")
 
     return True
 
@@ -386,56 +387,61 @@ def ncm_webhook(request):
     payload_bytes = request.body
     
     try:
-        logger.info("=" * 70)
-        logger.info("🔔 NCM WEBHOOK RECEIVED")
-        logger.info("=" * 70)
-        logger.info(f"Client IP: {get_client_ip(request)}")
-        logger.info(f"Headers: {dict(request.META)}")
-        
+        webhook_logger.info("=" * 70)
+        webhook_logger.info("NCM WEBHOOK RECEIVED")
+        webhook_logger.info("=" * 70)
+        webhook_logger.info(f"Client IP: {get_client_ip(request)}")
+        webhook_logger.info(f"Method: {request.method}")
+        webhook_logger.info(f"Content-Type: {request.content_type}")
+        webhook_logger.info(f"User-Agent: {request.META.get('HTTP_USER_AGENT', 'N/A')}")
+        webhook_logger.info(f"Query String: {request.META.get('QUERY_STRING', '')}")
+
         # 1. VERIFY WEBHOOK AUTHENTICITY
         if not verify_ncm_webhook(request, payload_bytes):
-            logger.error("Webhook verification FAILED")
+            webhook_logger.error("Webhook verification FAILED")
             return JsonResponse({
                 'success': False,
                 'message': 'Webhook verification failed',
                 'error_code': 'INVALID_TOKEN'
             }, status=401)
-        
-        logger.info("✓ Webhook signature verified successfully")
-        
+
+        webhook_logger.info("Webhook verification passed")
+
         # 2. PARSE JSON PAYLOAD
         payload = json.loads(payload_bytes)
-        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
-        
+        webhook_logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+
         # 3. PROCESS WEBHOOK USING HANDLER
         response = webhook_handler.process_webhook(payload, request)
-        
-        logger.info("=" * 70)
-        logger.info(f"✅ Webhook processing completed: {response.get('message')}")
-        logger.info("=" * 70)
+
+        webhook_logger.info("=" * 70)
+        webhook_logger.info(f"Webhook processing completed: {response.get('message')}")
+        webhook_logger.info("=" * 70)
         
         return JsonResponse(response, status=200)
         
     except json.JSONDecodeError as e:
-        logger.error(f"❌ Invalid JSON in webhook payload: {str(e)}")
+        webhook_logger.error(f"Invalid JSON in webhook payload: {str(e)}")
+        webhook_logger.error(f"Raw body: {payload_bytes[:500]}")
         return JsonResponse({
             'success': False,
             'message': 'Invalid JSON payload',
             'error_code': 'INVALID_JSON',
-            'error': str(e)
         }, status=400)
-    
+
     except Exception as e:
-        logger.error(f"❌ Webhook processing error: {str(e)}")
+        webhook_logger.error(f"Webhook processing error: {str(e)}")
         import traceback
-        traceback.print_exc()
-        
+        webhook_logger.error(traceback.format_exc())
+
+        # Always return 200 to acknowledge receipt.
+        # Returning 500 can cause NCM to consider delivery failed
+        # and stop sending future webhooks or flag the endpoint.
         return JsonResponse({
             'success': False,
-            'message': 'Internal server error',
-            'error_code': 'INTERNAL_ERROR',
-            'error': str(e)
-        }, status=500)
+            'message': 'Webhook received but processing encountered an error',
+            'error_code': 'PROCESSING_ERROR',
+        }, status=200)
 
 
 @login_required

@@ -16,6 +16,7 @@ import hmac
 import hashlib
 
 logger = logging.getLogger('ncm')
+webhook_logger = logging.getLogger('webhook')
 User = get_user_model()
 
 class NCMWebhookHandler:
@@ -141,7 +142,7 @@ class NCMWebhookHandler:
         try:
             # Handle test webhooks
             if payload.get('test'):
-                logger.info("Test webhook received and acknowledged")
+                webhook_logger.info("Test webhook received and acknowledged")
                 return {
                     'success': True,
                     'message': 'Test webhook acknowledged',
@@ -151,7 +152,7 @@ class NCMWebhookHandler:
             # Resolve status from event if status field is empty/missing
             if not status and event:
                 status = self.EVENT_TO_STATUS.get(event, '')
-                logger.info(f"Resolved status '{status}' from event '{event}'")
+                webhook_logger.info(f"Resolved status '{status}' from event '{event}'")
 
             # Extract order IDs
             order_ids = []
@@ -174,17 +175,26 @@ class NCMWebhookHandler:
             webhook_id = hashlib.sha256(raw_key.encode()).hexdigest()
 
             # Check for duplicate/idempotency
+            source_ip = None
+            if request:
+                x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+                if x_forwarded_for:
+                    source_ip = x_forwarded_for.split(',')[0].strip()
+                else:
+                    source_ip = request.META.get('REMOTE_ADDR')
+
             webhook_log, created = WebhookLog.objects.get_or_create(
                 webhook_id=webhook_id,
                 defaults={
                     'event': event,
                     'payload': payload,
                     'status': 'processing',
+                    'source_ip': source_ip,
                 }
             )
 
             if not created:
-                logger.info(f"Duplicate webhook detected: {webhook_id}")
+                webhook_logger.info(f"Duplicate webhook detected: {webhook_id}")
                 return {
                     'success': True,
                     'message': 'Webhook already processed',
@@ -192,13 +202,14 @@ class NCMWebhookHandler:
                     'status': 'duplicate'
                 }
 
-            # Process updates
+            # Process updates - each order in its own transaction so one
+            # failure doesn't roll back updates to other orders.
             updated_orders = []
             failed_orders = []
 
-            with transaction.atomic():
-                for ncm_order_id in order_ids:
-                    try:
+            for ncm_order_id in order_ids:
+                try:
+                    with transaction.atomic():
                         # Get order with row-level locking
                         order = Order.objects.select_for_update().get(
                             ncm_order_id=ncm_order_id,
@@ -219,18 +230,18 @@ class NCMWebhookHandler:
                         else:
                             failed_orders.append(result)
 
-                    except Order.DoesNotExist:
-                        logger.warning(f"Order not found: NCM ID {ncm_order_id}")
-                        failed_orders.append({
-                            'ncm_order_id': ncm_order_id,
-                            'error': 'Order not found'
-                        })
-                    except Exception as e:
-                        logger.error(f"Error processing order {ncm_order_id}: {str(e)}")
-                        failed_orders.append({
-                            'ncm_order_id': ncm_order_id,
-                            'error': str(e)
-                        })
+                except Order.DoesNotExist:
+                    webhook_logger.warning(f"Order not found: NCM ID {ncm_order_id}")
+                    failed_orders.append({
+                        'ncm_order_id': ncm_order_id,
+                        'error': 'Order not found'
+                    })
+                except Exception as e:
+                    webhook_logger.error(f"Error processing order {ncm_order_id}: {str(e)}")
+                    failed_orders.append({
+                        'ncm_order_id': ncm_order_id,
+                        'error': str(e)
+                    })
 
             # Update webhook log
             webhook_log.status = 'completed'
@@ -243,7 +254,7 @@ class NCMWebhookHandler:
             }
             webhook_log.save()
 
-            logger.info(f"Webhook {webhook_id}: {len(updated_orders)} updated, {len(failed_orders)} failed")
+            webhook_logger.info(f"Webhook {webhook_id}: {len(updated_orders)} updated, {len(failed_orders)} failed")
 
             return {
                 'success': True,
@@ -258,13 +269,17 @@ class NCMWebhookHandler:
             }
 
         except Exception as e:
-            logger.error(f"Webhook processing error: {str(e)}")
+            webhook_logger.error(f"Webhook processing error: {str(e)}")
             if webhook_log:
                 webhook_log.status = 'failed'
                 webhook_log.error_message = str(e)
                 webhook_log.save()
 
-            raise
+            return {
+                'success': False,
+                'message': f'Webhook processing failed: {str(e)}',
+                'error': str(e)
+            }
     
     def _update_order_from_webhook(self, order: Order, status: str,
                                    payload: dict = None) -> dict:
