@@ -754,6 +754,9 @@
                                 HR Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
                             </a>
                             <ul class="collapse list-unstyled ps-3" id="hrmHrManagement">
+                                <li class="{% if request.resolver_match.url_name == 'branch_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:branch_list' %}">Branches</a>
+                                </li>
                                 <li class="{% if request.resolver_match.url_name == 'department_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:department_list' %}">Department</a>
                                 </li>

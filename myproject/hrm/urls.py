@@ -8,7 +8,18 @@ urlpatterns = [
     path('', views.hrm_dashboard, name='dashboard'),
 
     # HR Management
+    path('branches/', views.branch_list, name='branch_list'),
+    path('branches/create/', views.branch_create, name='branch_create'),
+    path('branches/<int:branch_id>/', views.branch_detail, name='branch_detail'),
+    path('branches/<int:branch_id>/update/', views.branch_update, name='branch_update'),
+    path('branches/<int:branch_id>/delete/', views.branch_delete, name='branch_delete'),
+    path('branches/<int:branch_id>/toggle-status/', views.branch_toggle_status, name='branch_toggle_status'),
     path('departments/', views.department_list, name='department_list'),
+    path('departments/create/', views.department_create, name='department_create'),
+    path('departments/<int:department_id>/', views.department_detail, name='department_detail'),
+    path('departments/<int:department_id>/update/', views.department_update, name='department_update'),
+    path('departments/<int:department_id>/delete/', views.department_delete, name='department_delete'),
+    path('departments/<int:department_id>/toggle-status/', views.department_toggle_status, name='department_toggle_status'),
     path('designations/', views.designation_list, name='designation_list'),
     path('document-types/', views.document_type_list, name='document_type_list'),
     path('employees/', views.employee_list, name='employee_list'),

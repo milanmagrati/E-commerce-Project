@@ -1,7 +1,12 @@
 import json
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
+from django.http import JsonResponse
+from django.db.models import Q
+from django.core.paginator import Paginator
+
+from .models import Branch, Department
 
 
 @login_required
@@ -115,11 +120,256 @@ def hrm_dashboard(request):
 # ==================== HR Management ====================
 
 @login_required
+def branch_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+
+    branches = Branch.objects.all()
+
+    if search_query:
+        branches = branches.filter(
+            Q(name__icontains=search_query) |
+            Q(address__icontains=search_query) |
+            Q(city__icontains=search_query) |
+            Q(phone__icontains=search_query) |
+            Q(email__icontains=search_query)
+        )
+
+    paginator = Paginator(branches, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'page_title': 'Branches',
+        'branches': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'total_branches': paginator.count,
+    }
+    return render(request, 'hrm/branch_list.html', context)
+
+
+@login_required
+def branch_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Branch name is required.'})
+
+        branch = Branch(
+            name=name,
+            address=request.POST.get('address', '').strip(),
+            city=request.POST.get('city', '').strip(),
+            state=request.POST.get('state', '').strip(),
+            country=request.POST.get('country', '').strip(),
+            zip_code=request.POST.get('zip_code', '').strip(),
+            phone=request.POST.get('phone', '').strip(),
+            email=request.POST.get('email', '').strip(),
+            status=request.POST.get('status', 'active'),
+        )
+        branch.save()
+        return JsonResponse({'success': True, 'message': f'Branch "{branch.name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def branch_detail(request, branch_id):
+    branch = get_object_or_404(Branch, id=branch_id)
+    return JsonResponse({
+        'success': True,
+        'branch': {
+            'id': branch.id,
+            'name': branch.name,
+            'address': branch.address,
+            'city': branch.city,
+            'state': branch.state,
+            'country': branch.country,
+            'zip_code': branch.zip_code,
+            'phone': branch.phone,
+            'email': branch.email,
+            'status': branch.status,
+            'created_at': branch.created_at.strftime('%Y-%m-%d'),
+            'updated_at': branch.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def branch_update(request, branch_id):
+    branch = get_object_or_404(Branch, id=branch_id)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Branch name is required.'})
+
+        branch.name = name
+        branch.address = request.POST.get('address', '').strip()
+        branch.city = request.POST.get('city', '').strip()
+        branch.state = request.POST.get('state', '').strip()
+        branch.country = request.POST.get('country', '').strip()
+        branch.zip_code = request.POST.get('zip_code', '').strip()
+        branch.phone = request.POST.get('phone', '').strip()
+        branch.email = request.POST.get('email', '').strip()
+        branch.status = request.POST.get('status', branch.status)
+        branch.save()
+        return JsonResponse({'success': True, 'message': f'Branch "{branch.name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def branch_delete(request, branch_id):
+    branch = get_object_or_404(Branch, id=branch_id)
+
+    if request.method == 'POST':
+        branch_name = branch.name
+        branch.delete()
+        return JsonResponse({'success': True, 'message': f'Branch "{branch_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def branch_toggle_status(request, branch_id):
+    branch = get_object_or_404(Branch, id=branch_id)
+
+    if request.method == 'POST':
+        branch.status = 'inactive' if branch.status == 'active' else 'active'
+        branch.save()
+        return JsonResponse({'success': True, 'message': f'Branch "{branch.name}" is now {branch.get_status_display()}.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
 def department_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+    branch_filter = request.GET.get('branch', '')
+
+    departments = Department.objects.select_related('branch').all()
+
+    if search_query:
+        departments = departments.filter(
+            Q(name__icontains=search_query) |
+            Q(branch__name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if status_filter:
+        departments = departments.filter(status=status_filter)
+
+    if branch_filter:
+        departments = departments.filter(branch_id=branch_filter)
+
+    paginator = Paginator(departments, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Departments',
+        'departments': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'branch_filter': branch_filter,
+        'total_departments': paginator.count,
+        'branches': Branch.objects.filter(status='active').order_by('name'),
     }
     return render(request, 'hrm/department_list.html', context)
+
+
+@login_required
+def department_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        branch_id = request.POST.get('branch', '').strip()
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Department name is required.'})
+        if not branch_id:
+            return JsonResponse({'success': False, 'error': 'Branch is required.'})
+
+        branch = get_object_or_404(Branch, id=branch_id)
+        department = Department(
+            name=name,
+            branch=branch,
+            description=request.POST.get('description', '').strip(),
+            status=request.POST.get('status', 'active'),
+        )
+        department.save()
+        return JsonResponse({'success': True, 'message': f'Department "{department.name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def department_detail(request, department_id):
+    department = get_object_or_404(Department.objects.select_related('branch'), id=department_id)
+    return JsonResponse({
+        'success': True,
+        'department': {
+            'id': department.id,
+            'name': department.name,
+            'branch_id': department.branch.id,
+            'branch_name': department.branch.name,
+            'description': department.description,
+            'status': department.status,
+            'created_at': department.created_at.strftime('%Y-%m-%d'),
+            'updated_at': department.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def department_update(request, department_id):
+    department = get_object_or_404(Department, id=department_id)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        branch_id = request.POST.get('branch', '').strip()
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Department name is required.'})
+        if not branch_id:
+            return JsonResponse({'success': False, 'error': 'Branch is required.'})
+
+        branch = get_object_or_404(Branch, id=branch_id)
+        department.name = name
+        department.branch = branch
+        department.description = request.POST.get('description', '').strip()
+        department.status = request.POST.get('status', department.status)
+        department.save()
+        return JsonResponse({'success': True, 'message': f'Department "{department.name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def department_delete(request, department_id):
+    department = get_object_or_404(Department, id=department_id)
+
+    if request.method == 'POST':
+        dept_name = department.name
+        department.delete()
+        return JsonResponse({'success': True, 'message': f'Department "{dept_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def department_toggle_status(request, department_id):
+    department = get_object_or_404(Department, id=department_id)
+
+    if request.method == 'POST':
+        department.status = 'inactive' if department.status == 'active' else 'active'
+        department.save()
+        return JsonResponse({'success': True, 'message': f'Department "{department.name}" is now {department.get_status_display()}.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
 
 @login_required

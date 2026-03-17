@@ -1,0 +1,383 @@
+{% extends 'base.html' %}
+{% block title %}Branches - HRM{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-code-branch me-2"></i>Branches</h2>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#branchModal" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Branch
+        </button>
+    </div>
+</div>
+
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    {% for val in "10,25,50,100"|make_list %}{% endfor %}
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Branches Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Name <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
+                        <th>Address</th>
+                        <th>Phone | Email</th>
+                        <th>Status</th>
+                        <th>Created At <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for branch in branches %}
+                    <tr>
+                        <td>{{ forloop.counter|add:branches.start_index|add:"-1" }}</td>
+                        <td><strong>{{ branch.name }}</strong></td>
+                        <td>
+                            {{ branch.address }}{% if branch.city %}, {{ branch.city }}{% endif %}{% if branch.state %}, {{ branch.state }}{% endif %}
+                        </td>
+                        <td>
+                            {% if branch.phone %}{{ branch.phone }}{% endif %}
+                            {% if branch.phone and branch.email %} | {% endif %}
+                            {% if branch.email %}{{ branch.email }}{% endif %}
+                            {% if not branch.phone and not branch.email %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if branch.status == 'active' %}
+                            <span class="badge bg-success" style="cursor:pointer;" onclick="toggleStatus({{ branch.id }})" title="Click to toggle">Active</span>
+                            {% else %}
+                            <span class="badge bg-danger" style="cursor:pointer;" onclick="toggleStatus({{ branch.id }})" title="Click to toggle">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ branch.created_at|date:"Y-m-d" }}</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewBranch({{ branch.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editBranch({{ branch.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary me-1" title="Toggle Status" onclick="toggleStatus({{ branch.id }})">
+                                <i class="fas fa-lock{% if branch.status == 'active' %}-open{% endif %}"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ branch.id }}, '{{ branch.name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No branches found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if branches %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ branches.start_index }} to {{ branches.end_index }} of {{ total_branches }} branches
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if branches.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ branches.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in branches.paginator.page_range %}
+                    <li class="page-item {% if branches.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if branches.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ branches.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Add / Edit Branch Modal -->
+<div class="modal fade" id="branchModal" tabindex="-1" aria-labelledby="branchModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="branchModalLabel">Add New Branch</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="branchForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="branchId" value="">
+
+                    <div class="mb-3">
+                        <label for="branchName" class="form-label">Branch Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="branchName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="branchAddress" class="form-label">Address</label>
+                        <textarea class="form-control" id="branchAddress" name="address" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="branchCity" class="form-label">City</label>
+                        <input type="text" class="form-control" id="branchCity" name="city">
+                    </div>
+                    <div class="mb-3">
+                        <label for="branchState" class="form-label">State/Province</label>
+                        <input type="text" class="form-control" id="branchState" name="state">
+                    </div>
+                    <div class="mb-3">
+                        <label for="branchCountry" class="form-label">Country</label>
+                        <input type="text" class="form-control" id="branchCountry" name="country">
+                    </div>
+                    <div class="mb-3">
+                        <label for="branchZip" class="form-label">ZIP/Postal Code</label>
+                        <input type="text" class="form-control" id="branchZip" name="zip_code">
+                    </div>
+                    <div class="mb-3">
+                        <label for="branchPhone" class="form-label">Phone</label>
+                        <input type="text" class="form-control" id="branchPhone" name="phone">
+                    </div>
+                    <div class="mb-3">
+                        <label for="branchEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="branchEmail" name="email">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="saveBranch()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Branch Modal -->
+<div class="modal fade" id="viewBranchModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-code-branch me-2"></i>Branch Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewBranchBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete branch <strong id="deleteBranchName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const branchModalEl = document.getElementById('branchModal');
+    const branchModal = new bootstrap.Modal(branchModalEl);
+
+    function openAddModal() {
+        document.getElementById('branchModalLabel').textContent = 'Add New Branch';
+        document.getElementById('branchForm').reset();
+        document.getElementById('branchId').value = '';
+    }
+
+    function saveBranch() {
+        const form = document.getElementById('branchForm');
+        const branchId = document.getElementById('branchId').value;
+        const name = document.getElementById('branchName').value.trim();
+
+        if (!name) {
+            showToast('Branch name is required.', 'error');
+            document.getElementById('branchName').focus();
+            return;
+        }
+
+        const formData = new FormData(form);
+        const url = branchId
+            ? `{% url 'hrm:branch_list' %}${branchId}/update/`
+            : `{% url 'hrm:branch_create' %}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                branchModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error. Please try again.', 'error'));
+    }
+
+    function viewBranch(id) {
+        fetch(`{% url 'hrm:branch_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const b = data.branch;
+                    document.getElementById('viewBranchBody').innerHTML = `
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:35%">Branch Name</th><td>${b.name}</td></tr>
+                            <tr><th>Address</th><td>${b.address || '—'}</td></tr>
+                            <tr><th>City</th><td>${b.city || '—'}</td></tr>
+                            <tr><th>State/Province</th><td>${b.state || '—'}</td></tr>
+                            <tr><th>Country</th><td>${b.country || '—'}</td></tr>
+                            <tr><th>ZIP/Postal Code</th><td>${b.zip_code || '—'}</td></tr>
+                            <tr><th>Phone</th><td>${b.phone || '—'}</td></tr>
+                            <tr><th>Email</th><td>${b.email || '—'}</td></tr>
+                            <tr><th>Status</th><td><span class="badge bg-${b.status === 'active' ? 'success' : 'danger'}">${b.status.charAt(0).toUpperCase() + b.status.slice(1)}</span></td></tr>
+                            <tr><th>Created At</th><td>${b.created_at}</td></tr>
+                            <tr><th>Updated At</th><td>${b.updated_at}</td></tr>
+                        </table>
+                    `;
+                    new bootstrap.Modal(document.getElementById('viewBranchModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load branch details.', 'error'));
+    }
+
+    function editBranch(id) {
+        fetch(`{% url 'hrm:branch_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const b = data.branch;
+                    document.getElementById('branchModalLabel').textContent = 'Edit Branch';
+                    document.getElementById('branchId').value = b.id;
+                    document.getElementById('branchName').value = b.name;
+                    document.getElementById('branchAddress').value = b.address;
+                    document.getElementById('branchCity').value = b.city;
+                    document.getElementById('branchState').value = b.state;
+                    document.getElementById('branchCountry').value = b.country;
+                    document.getElementById('branchZip').value = b.zip_code;
+                    document.getElementById('branchPhone').value = b.phone;
+                    document.getElementById('branchEmail').value = b.email;
+                    branchModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load branch data.', 'error'));
+    }
+
+    function toggleStatus(id) {
+        fetch(`{% url 'hrm:branch_list' %}${id}/toggle-status/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deleteBranchName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch(`{% url 'hrm:branch_list' %}${deleteId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    function showToast(message, type) {
+        const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed; top: 20px; right: 20px; background: ${colors[type] || colors.info};
+            color: white; padding: 12px 20px; border-radius: 8px; z-index: 10050;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 8px;
+            font-size: 14px; animation: slideIn 0.3s ease;
+        `;
+        toast.innerHTML = `<i class="fas fa-${icons[type] || icons.info}"></i> ${message}`;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+    }
+</script>
+<style>
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
+{% endblock %}
