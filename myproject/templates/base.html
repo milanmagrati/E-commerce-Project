@@ -1392,11 +1392,14 @@
             if (!lastActiveItem) {
                 lastActiveItem = document.querySelector('.sidebar > .components > li.active');
             }
-            // Scroll the sidebar so the active item is visible
+            // Scroll sidebar so the active item is visible (instant, no animation)
             if (lastActiveItem) {
                 var scrollContainer = document.querySelector('.sidebar .components');
                 if (scrollContainer) {
-                    lastActiveItem.scrollIntoView({ block: 'center' });
+                    var itemRect = lastActiveItem.getBoundingClientRect();
+                    var containerRect = scrollContainer.getBoundingClientRect();
+                    var offset = itemRect.top - containerRect.top + scrollContainer.scrollTop;
+                    scrollContainer.scrollTop = offset - (scrollContainer.clientHeight / 2) + (lastActiveItem.offsetHeight / 2);
                 }
             }
 
