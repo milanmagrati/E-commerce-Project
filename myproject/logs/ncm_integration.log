@@ -1512,3 +1512,8 @@ Created system user for webhook operations
 [ERROR] 2026-03-15 10:38:46 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=18802475
 [ERROR] 2026-03-15 10:38:51 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18802475
 [ERROR] 2026-03-15 10:38:51 ncm_service._make_request:37 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=18802475
+[ERROR] 2026-03-17 22:45:30 ncm_service._make_request:37 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514300
+[ERROR] 2026-03-17 22:45:31 ncm_service._make_request:37 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514302
+[ERROR] 2026-03-17 22:45:31 ncm_service._make_request:37 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/status?id=18514304
+[INFO] 2026-03-17 22:45:31 views.bulk_sync_ncm_orders:592 Bulk sync: 10 orders
+[INFO] 2026-03-17 22:45:35 views.bulk_sync_ncm_orders:592 Bulk sync: 10 orders

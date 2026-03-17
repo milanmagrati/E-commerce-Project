@@ -1373,16 +1373,30 @@
                 });
             }
 
-            const activeMenuItem = document.querySelector('.sidebar .active');
-            if (activeMenuItem) {
-                const parentCollapse = activeMenuItem.closest('.collapse');
-                if (parentCollapse) {
-                    parentCollapse.classList.add('show');
-                    const toggleButton = document.querySelector(`[data-bs-target="#${parentCollapse.id}"]`);
+            // Auto-expand all submenus that contain an active item and scroll into view
+            var lastActiveItem = null;
+            document.querySelectorAll('.sidebar .collapse .active').forEach(function(activeMenuItem) {
+                lastActiveItem = activeMenuItem;
+                var el = activeMenuItem.closest('.collapse');
+                while (el) {
+                    el.classList.add('show');
+                    var toggleButton = document.querySelector('[data-bs-target="#' + el.id + '"]');
                     if (toggleButton) {
                         toggleButton.setAttribute('aria-expanded', 'true');
                         toggleButton.classList.add('active');
                     }
+                    el = el.parentElement ? el.parentElement.closest('.collapse') : null;
+                }
+            });
+            // Also check for top-level active items (not inside collapse)
+            if (!lastActiveItem) {
+                lastActiveItem = document.querySelector('.sidebar > .components > li.active');
+            }
+            // Scroll the sidebar so the active item is visible
+            if (lastActiveItem) {
+                var scrollContainer = document.querySelector('.sidebar .components');
+                if (scrollContainer) {
+                    lastActiveItem.scrollIntoView({ block: 'center' });
                 }
             }
 
