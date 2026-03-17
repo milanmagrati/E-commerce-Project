@@ -4150,6 +4150,7 @@ def on_hold_orders_list(request):
             'last_user': (latest.user.get_full_name() or latest.user.username) if latest and latest.user else None,
             'last_date': latest.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if latest else None,
             'last_type': latest.get_followup_type_display() if latest else None,
+            'last_comment': latest.comment if latest else None,
         }
 
     # Dynamic bulk action options

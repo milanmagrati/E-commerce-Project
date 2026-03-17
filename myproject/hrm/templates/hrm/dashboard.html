@@ -1,111 +1,562 @@
 {% extends 'base.html' %}
 {% block title %}HRM Dashboard - Admin Panel{% endblock %}
 
+{% block extra_css %}
+<style>
+    .hrm-stat-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 20px 24px;
+        background: #fff;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .hrm-stat-card:hover {
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        transform: translateY(-2px);
+    }
+    .hrm-stat-card .stat-label {
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-bottom: 4px;
+    }
+    .hrm-stat-card .stat-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #111827;
+    }
+    .hrm-stat-card .stat-sub {
+        font-size: 0.78rem;
+        margin-top: 2px;
+    }
+    .hrm-stat-card .stat-icon-circle {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+    }
+    .icon-blue { background: #dbeafe; color: #3b82f6; }
+    .icon-green { background: #d1fae5; color: #10b981; }
+    .icon-purple { background: #f3e8ff; color: #a855f7; }
+    .icon-yellow { background: #fef3c7; color: #f59e0b; }
+    .icon-red { background: #fee2e2; color: #ef4444; }
+    .icon-indigo { background: #e0e7ff; color: #6366f1; }
+
+    .hrm-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        background: #fff;
+        overflow: hidden;
+    }
+    .hrm-card-header {
+        padding: 16px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .hrm-card-header h6 {
+        font-weight: 600;
+        margin: 0;
+        font-size: 0.95rem;
+        color: #111827;
+    }
+    .hrm-card-header .header-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .count-badge {
+        background: #f3f4f6;
+        color: #6b7280;
+        border-radius: 6px;
+        padding: 2px 10px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .view-all-btn {
+        font-size: 0.78rem;
+        padding: 3px 12px;
+        border-radius: 6px;
+        border: 1px solid #3b82f6;
+        color: #3b82f6;
+        background: #eff6ff;
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .view-all-btn:hover {
+        background: #3b82f6;
+        color: #fff;
+    }
+    .hrm-list-body {
+        max-height: 320px;
+        overflow-y: auto;
+    }
+    .hrm-list-item {
+        padding: 12px 20px;
+        border-top: 1px solid #f3f4f6;
+        transition: background 0.15s;
+    }
+    .hrm-list-item:hover {
+        background: #f9fafb;
+    }
+    .hrm-list-item .item-name {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: #111827;
+    }
+    .hrm-list-item .item-detail {
+        font-size: 0.8rem;
+        color: #9ca3af;
+        margin-top: 2px;
+    }
+    .status-badge {
+        font-size: 0.7rem;
+        padding: 2px 10px;
+        border-radius: 20px;
+        font-weight: 600;
+        display: inline-block;
+    }
+    .badge-approved { background: #d1fae5; color: #059669; }
+    .badge-pending { background: #fef3c7; color: #d97706; }
+    .badge-rejected { background: #fee2e2; color: #dc2626; }
+    .badge-offer { background: #fee2e2; color: #dc2626; }
+    .badge-interview { background: #f3e8ff; color: #7c3aed; }
+    .badge-screening { background: #d1fae5; color: #059669; }
+    .badge-new { background: #dbeafe; color: #2563eb; }
+    .badge-scheduled { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .badge-completed { background: #d1fae5; color: #059669; }
+    .badge-high { background: #ef4444; color: #fff; }
+    .badge-medium { background: #f59e0b; color: #fff; }
+    .badge-low { background: #10b981; color: #fff; }
+
+    .chart-container {
+        padding: 20px;
+        position: relative;
+    }
+    .chart-container canvas {
+        max-height: 260px;
+    }
+
+    .refresh-btn {
+        border: 1px solid #d1d5db;
+        background: #fff;
+        color: #374151;
+        border-radius: 8px;
+        padding: 6px 16px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .refresh-btn:hover {
+        background: #f9fafb;
+        border-color: #9ca3af;
+    }
+
+    .hrm-list-body::-webkit-scrollbar { width: 4px; }
+    .hrm-list-body::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h2 class="mb-4"><i class="fas fa-users-cog me-2"></i>HRM Dashboard</h2>
-    </div>
+<!-- Dashboard Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="mb-0 fw-bold">Dashboard</h5>
+    <button class="refresh-btn" onclick="location.reload()">
+        <i class="fas fa-sync-alt me-1"></i> Refresh
+    </button>
 </div>
 
 <!-- Statistics Cards -->
-<div class="row g-4 mb-4">
-    <div class="col-xl-3 col-md-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Total Employees</p>
-                        <h3 class="mb-0">0</h3>
-                    </div>
-                    <div class="stat-icon bg-primary">
-                        <i class="fas fa-users"></i>
-                    </div>
+<div class="row g-3 mb-4">
+    <div class="col-xl-4 col-md-6">
+        <div class="hrm-stat-card" style="border-left: 3px solid #3b82f6;">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Total Employees</div>
+                    <div class="stat-value">{{ stats.total_employees }}</div>
+                    <div class="stat-sub text-success">+{{ stats.employees_this_month }} this month</div>
+                </div>
+                <div class="stat-icon-circle icon-blue">
+                    <i class="fas fa-users"></i>
                 </div>
             </div>
         </div>
     </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Departments</p>
-                        <h3 class="mb-0">0</h3>
-                    </div>
-                    <div class="stat-icon bg-success">
-                        <i class="fas fa-building"></i>
-                    </div>
+    <div class="col-xl-4 col-md-6">
+        <div class="hrm-stat-card" style="border-left: 3px solid #10b981;">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Branches</div>
+                    <div class="stat-value">{{ stats.branches }}</div>
+                    <div class="stat-sub text-muted">{{ stats.departments }} departments</div>
+                </div>
+                <div class="stat-icon-circle icon-green">
+                    <i class="fas fa-building"></i>
                 </div>
             </div>
         </div>
     </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Present Today</p>
-                        <h3 class="mb-0">0</h3>
-                    </div>
-                    <div class="stat-icon bg-info">
-                        <i class="fas fa-calendar-check"></i>
-                    </div>
+    <div class="col-xl-4 col-md-6">
+        <div class="hrm-stat-card" style="border-left: 3px solid #a855f7;">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Attendance Rate</div>
+                    <div class="stat-value">{{ stats.attendance_rate }}%</div>
+                    <div class="stat-sub text-muted">{{ stats.present_today }} present today</div>
+                </div>
+                <div class="stat-icon-circle icon-purple">
+                    <i class="fas fa-clock"></i>
                 </div>
             </div>
         </div>
     </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Pending Payroll</p>
-                        <h3 class="mb-0">0</h3>
-                    </div>
-                    <div class="stat-icon bg-warning">
-                        <i class="fas fa-money-bill-wave"></i>
-                    </div>
+    <div class="col-xl-4 col-md-6">
+        <div class="hrm-stat-card" style="border-left: 3px solid #f59e0b;">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Pending Leaves</div>
+                    <div class="stat-value">{{ stats.pending_leaves }}</div>
+                    <div class="stat-sub text-muted">{{ stats.on_leave_today }} on leave today</div>
+                </div>
+                <div class="stat-icon-circle icon-yellow">
+                    <i class="fas fa-calendar-minus"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4 col-md-6">
+        <div class="hrm-stat-card" style="border-left: 3px solid #ef4444;">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Active Jobs</div>
+                    <div class="stat-value">{{ stats.active_jobs }}</div>
+                    <div class="stat-sub text-success">+{{ stats.jobs_this_month }} this month</div>
+                </div>
+                <div class="stat-icon-circle icon-red">
+                    <i class="fas fa-briefcase"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4 col-md-6">
+        <div class="hrm-stat-card" style="border-left: 3px solid #6366f1;">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Total Candidates</div>
+                    <div class="stat-value">{{ stats.total_candidates }}</div>
+                    <div class="stat-sub text-success">+{{ stats.candidates_this_month }} this month</div>
+                </div>
+                <div class="stat-icon-circle icon-indigo">
+                    <i class="fas fa-user-plus"></i>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Quick Access Cards -->
-<div class="row g-4">
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body text-center py-4">
-                <i class="fas fa-user-tie fa-3x text-primary mb-3"></i>
-                <h5>HR Management</h5>
-                <p class="text-muted">Manage departments, employees, awards, and more</p>
-                <a href="{% url 'hrm:employee_list' %}" class="btn btn-outline-primary btn-sm">View Employees</a>
+<!-- Charts Row 1 -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-chart-bar me-2 text-muted"></i>Department Distribution</h6>
+            </div>
+            <div class="chart-container">
+                <canvas id="departmentChart"></canvas>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body text-center py-4">
-                <i class="fas fa-calendar-alt fa-3x text-success mb-3"></i>
-                <h5>Attendance</h5>
-                <p class="text-muted">Track employee attendance and working hours</p>
-                <a href="{% url 'hrm:attendance_dashboard' %}" class="btn btn-outline-success btn-sm">View Attendance</a>
+    <div class="col-lg-6">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-chart-line me-2 text-muted"></i>Hiring Trend (6 Months)</h6>
             </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body text-center py-4">
-                <i class="fas fa-money-bill-wave fa-3x text-warning mb-3"></i>
-                <h5>Payroll</h5>
-                <p class="text-muted">Process salaries, deductions, and payslips</p>
-                <a href="{% url 'hrm:payroll_management' %}" class="btn btn-outline-warning btn-sm">View Payroll</a>
+            <div class="chart-container">
+                <canvas id="hiringTrendChart"></canvas>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Charts Row 2 -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-user-friends me-2 text-muted"></i>Candidate Status</h6>
+            </div>
+            <div class="chart-container">
+                <canvas id="candidateStatusChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-calendar me-2 text-muted"></i>Leave Types</h6>
+            </div>
+            <div class="chart-container">
+                <canvas id="leaveTypesChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Lists Row -->
+<div class="row g-3 mb-4">
+    <!-- Recent Leave Applications -->
+    <div class="col-lg-6">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-calendar-minus me-2 text-muted"></i>Recent Leave Applications</h6>
+                <div class="header-right">
+                    <span class="count-badge">{{ total_leaves }}</span>
+                    <a href="#" class="view-all-btn">View All</a>
+                </div>
+            </div>
+            <div class="hrm-list-body">
+                {% for leave in recent_leaves %}
+                <div class="hrm-list-item">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="item-name">{{ leave.employee }}</span>
+                        <span class="status-badge badge-{{ leave.status|lower }}">{{ leave.status }}</span>
+                    </div>
+                    <div class="item-detail">{{ leave.leave_type }} &middot; {{ leave.start_date }} &ndash; {{ leave.end_date }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Candidates -->
+    <div class="col-lg-6">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-user-plus me-2 text-muted"></i>Recent Candidates</h6>
+                <div class="header-right">
+                    <span class="count-badge">{{ total_candidates_list }}</span>
+                    <a href="#" class="view-all-btn">View All</a>
+                </div>
+            </div>
+            <div class="hrm-list-body">
+                {% for candidate in recent_candidates %}
+                <div class="hrm-list-item">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="item-name">{{ candidate.name }}</span>
+                        <span class="status-badge badge-{{ candidate.status|lower }}">{{ candidate.status }}</span>
+                    </div>
+                    <div class="item-detail">{{ candidate.position }} &middot; {{ candidate.date }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Announcements & Meetings Row -->
+<div class="row g-3 mb-4">
+    <!-- Recent Announcements -->
+    <div class="col-lg-6">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-bullhorn me-2 text-muted"></i>Recent Announcements</h6>
+                <div class="header-right">
+                    <span class="count-badge">{{ total_announcements }}</span>
+                    <a href="#" class="view-all-btn">View All</a>
+                </div>
+            </div>
+            <div class="hrm-list-body">
+                {% for ann in recent_announcements %}
+                <div class="hrm-list-item">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="item-name">{{ ann.title }}</span>
+                        <span class="status-badge badge-{{ ann.priority|lower }}">{{ ann.priority }} Priority</span>
+                    </div>
+                    <div class="item-detail">{{ ann.category }} &middot; {{ ann.date }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Meetings -->
+    <div class="col-lg-6">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-handshake me-2 text-muted"></i>Recent Meetings</h6>
+                <div class="header-right">
+                    <span class="count-badge">{{ total_meetings }}</span>
+                    <a href="#" class="view-all-btn">View All</a>
+                </div>
+            </div>
+            <div class="hrm-list-body">
+                {% for meeting in recent_meetings %}
+                <div class="hrm-list-item">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="item-name">{{ meeting.title }}</span>
+                        <span class="status-badge badge-{{ meeting.status|lower }}">{{ meeting.status }}</span>
+                    </div>
+                    <div class="item-detail">{{ meeting.date }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Employee Growth Chart -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="hrm-card">
+            <div class="hrm-card-header">
+                <h6><i class="fas fa-chart-area me-2 text-muted"></i>Employee Growth (2026)</h6>
+            </div>
+            <div class="chart-container" style="padding: 20px;">
+                <canvas id="employeeGrowthChart" style="max-height: 350px;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const deptData = {{ department_distribution|safe }};
+    const hiringData = {{ hiring_trend|safe }};
+    const candidateData = {{ candidate_status|safe }};
+    const leaveData = {{ leave_types|safe }};
+    const growthData = {{ employee_growth|safe }};
+
+    // Department Distribution - Donut
+    new Chart(document.getElementById('departmentChart'), {
+        type: 'doughnut',
+        data: {
+            labels: deptData.labels,
+            datasets: [{
+                data: deptData.data,
+                backgroundColor: deptData.colors,
+                borderWidth: 0,
+                hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            cutout: '55%',
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+
+    // Hiring Trend - Bar Chart
+    new Chart(document.getElementById('hiringTrendChart'), {
+        type: 'bar',
+        data: {
+            labels: hiringData.labels,
+            datasets: [{
+                data: hiringData.data,
+                backgroundColor: '#3b82f6',
+                borderRadius: 4,
+                barThickness: 40
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { stepSize: 5 } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+
+    // Candidate Status - Pie Chart
+    new Chart(document.getElementById('candidateStatusChart'), {
+        type: 'pie',
+        data: {
+            labels: candidateData.labels,
+            datasets: [{
+                data: candidateData.data,
+                backgroundColor: candidateData.colors,
+                borderWidth: 0,
+                hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { usePointStyle: true, padding: 15, font: { size: 12 } }
+                }
+            }
+        }
+    });
+
+    // Leave Types - Donut Chart
+    new Chart(document.getElementById('leaveTypesChart'), {
+        type: 'doughnut',
+        data: {
+            labels: leaveData.labels,
+            datasets: [{
+                data: leaveData.data,
+                backgroundColor: leaveData.colors,
+                borderWidth: 0,
+                hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            cutout: '55%',
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { usePointStyle: true, padding: 10, font: { size: 11 } }
+                }
+            }
+        }
+    });
+
+    // Employee Growth - Area/Line Chart
+    new Chart(document.getElementById('employeeGrowthChart'), {
+        type: 'line',
+        data: {
+            labels: growthData.labels,
+            datasets: [{
+                label: 'employees',
+                data: growthData.data,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#fff',
+                pointBorderColor: '#3b82f6',
+                pointBorderWidth: 2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { stepSize: 15 } },
+                x: { grid: { color: '#f9fafb' } }
+            },
+            interaction: { intersect: false, mode: 'index' }
+        }
+    });
+});
+</script>
 {% endblock %}

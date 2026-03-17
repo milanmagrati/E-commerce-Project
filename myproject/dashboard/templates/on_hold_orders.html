@@ -194,7 +194,7 @@
                     <th>Items</th>
                     <th>Amount</th>
                     <th>Order Status</th>
-                    <th>Payment Status</th>
+                    <th>Last Comment</th>
                     <th>Last Follow-Up</th>
                     <th>Next Follow Up</th>
                     <th>Date</th>
@@ -220,7 +220,15 @@
                             </div>
                         </td>
                         <td>
-                            <span class="badge bg-info">{{ order.items.count }} items</span>
+                            <div class="small" style="max-width: 180px;">
+                                {% for item in order.items.all %}
+                                <div class="text-nowrap text-truncate" title="{{ item.quantity }}x {{ item.product_name }}{% if item.variation_name %} ({{ item.variation_name }}){% endif %}">
+                                    <span class="fw-semibold">{{ item.quantity }}x</span> {{ item.product_name }}{% if item.variation_name %} <span class="text-muted">({{ item.variation_name }})</span>{% endif %}
+                                </div>
+                                {% empty %}
+                                <span class="text-muted">No items</span>
+                                {% endfor %}
+                            </div>
                         </td>
                         <td>
                             <span class="fw-bold text-success">Rs. {{ order.total_amount|floatformat:2 }}</span>
@@ -237,21 +245,21 @@
                             </span>
                         </td>
                         <td>
-                            <strong class="payment-status-{{ order.payment_status }}">
-                                {% if order.payment_status_setup %}
-                                    {{ order.payment_status_setup.name|replace:"_: "|upper }}
-                                {% else %}
-                                    {{ order.payment_status|replace:"_: "|upper }}
-                                {% endif %}
-                            </strong>
-                            <br>
-                            <small class="text-muted">
-                                {% if order.payment_setup %}
-                                    {{ order.payment_setup.name|replace:"_: "|upper }}
-                                {% elif order.payment_method %}
-                                    {{ order.payment_method|replace:"_: "|upper }}
-                                {% endif %}
-                            </small>
+                            {% with meta=followup_meta|default:"" %}
+                            {% if meta %}
+                                {% for key, val in meta.items %}
+                                    {% if key == order.id %}
+                                        {% if val.last_comment %}
+                                        <span class="small" title="{{ val.last_comment }}">{{ val.last_comment|truncatewords:8 }}</span>
+                                        {% else %}
+                                        <span class="text-muted small">No comments</span>
+                                        {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted small">—</span>
+                            {% endif %}
+                            {% endwith %}
                         </td>
                         <td>
                             {% with meta=followup_meta|default:"" %}
@@ -953,11 +961,17 @@ function submitFollowUp(orderId) {
 }
 
 function updateLastFollowUpCell(orderId, f) {
-    // Find the order row and update the Last Follow-Up column (8th td, index 7)
+    // Find the order row and update columns
     const row = document.querySelector(`tr.order-row[data-order-id="${orderId}"]`);
     if (!row) return;
     const cells = row.querySelectorAll('td');
-    // Last Follow-Up is the 8th column (index 7)
+    // Last Comment is column index 6
+    if (cells.length >= 7) {
+        const comment = f.comment || '';
+        const truncated = comment.split(/\s+/).slice(0, 8).join(' ') + (comment.split(/\s+/).length > 8 ? ' …' : '');
+        cells[6].innerHTML = `<span class="small" title="${escapeHtml(comment)}">${escapeHtml(truncated)}</span>`;
+    }
+    // Last Follow-Up is column index 7
     if (cells.length >= 8) {
         cells[7].innerHTML = `
             <div class="followup-badge-cell">
