@@ -48,6 +48,7 @@ EXTERNAL_APPS = [
     "ncm",
     "pick_and_drop",
     "chat",
+    "hrm",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 

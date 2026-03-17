@@ -735,6 +735,119 @@
                 </li>
                 {% endif %}
 
+                <!-- ==================== HRM ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="hrm-menu {% if '/hrm/' in request.path %}active{% endif %}">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmMenu" aria-expanded="false">
+                        <i class="fas fa-users-cog"></i> HRM
+                        <i class="fas fa-chevron-down float-end mt-1"></i>
+                    </a>
+                    <ul class="collapse list-unstyled" id="hrmMenu">
+                        <!-- Dashboard -->
+                        <li class="{% if request.resolver_match.url_name == 'dashboard' and '/hrm/' in request.path %}active{% endif %}">
+                            <a href="{% url 'hrm:dashboard' %}">Dashboard</a>
+                        </li>
+
+                        <!-- HR Management (nested submenu) -->
+                        <li>
+                            <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmHrManagement" aria-expanded="false" class="d-flex justify-content-between align-items-center">
+                                HR Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
+                            </a>
+                            <ul class="collapse list-unstyled ps-3" id="hrmHrManagement">
+                                <li class="{% if request.resolver_match.url_name == 'department_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:department_list' %}">Department</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'designation_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:designation_list' %}">Designation</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'document_type_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:document_type_list' %}">Document Type</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'employee_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:employee_list' %}">Employees</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'award_type_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:award_type_list' %}">Award Type</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'award_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:award_list' %}">Award</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'promotion_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:promotion_list' %}">Promotion</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'resignation_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:resignation_list' %}">Resignation</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'termination_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:termination_list' %}">Termination</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'warning_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:warning_list' %}">Warning</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'complaint_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:complaint_list' %}">Complaints</a>
+                                </li>
+                                <!-- Asset Management (nested submenu) -->
+                                <li>
+                                    <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAssetManagement" aria-expanded="false" class="d-flex justify-content-between align-items-center">
+                                        Asset Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
+                                    </a>
+                                    <ul class="collapse list-unstyled ps-3" id="hrmAssetManagement">
+                                        <li class="{% if request.resolver_match.url_name == 'asset_type_list' %}active{% endif %}">
+                                            <a href="{% url 'hrm:asset_type_list' %}">Asset Types</a>
+                                        </li>
+                                        <li class="{% if request.resolver_match.url_name == 'asset_list' %}active{% endif %}">
+                                            <a href="{% url 'hrm:asset_list' %}">Assets</a>
+                                        </li>
+                                        <li class="{% if request.resolver_match.url_name == 'asset_dashboard' %}active{% endif %}">
+                                            <a href="{% url 'hrm:asset_dashboard' %}">Dashboard</a>
+                                        </li>
+                                        <li class="{% if request.resolver_match.url_name == 'asset_depreciation' %}active{% endif %}">
+                                            <a href="{% url 'hrm:asset_depreciation' %}">Depreciation</a>
+                                        </li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </li>
+
+                        <!-- Contract Management -->
+                        <li class="{% if request.resolver_match.url_name == 'contract_list' %}active{% endif %}">
+                            <a href="{% url 'hrm:contract_list' %}">Contract Management</a>
+                        </li>
+
+                        <!-- Document Management -->
+                        <li class="{% if request.resolver_match.url_name == 'document_list' %}active{% endif %}">
+                            <a href="{% url 'hrm:document_list' %}">Document Management</a>
+                        </li>
+
+                        <!-- Attendance (nested submenu) -->
+                        <li>
+                            <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAttendance" aria-expanded="false" class="d-flex justify-content-between align-items-center">
+                                Attendance <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
+                            </a>
+                            <ul class="collapse list-unstyled ps-3" id="hrmAttendance">
+                                <li class="{% if request.resolver_match.url_name == 'attendance_dashboard' %}active{% endif %}">
+                                    <a href="{% url 'hrm:attendance_dashboard' %}">Dashboard</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'attendance_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:attendance_list' %}">All Records</a>
+                                </li>
+                            </ul>
+                        </li>
+
+                        <!-- Biometric Attendance -->
+                        <li class="{% if request.resolver_match.url_name == 'biometric_attendance' %}active{% endif %}">
+                            <a href="{% url 'hrm:biometric_attendance' %}">Biometric Attendance</a>
+                        </li>
+
+                        <!-- Payroll Management -->
+                        <li class="{% if request.resolver_match.url_name == 'payroll_management' %}active{% endif %}">
+                            <a href="{% url 'hrm:payroll_management' %}">Payroll Management</a>
+                        </li>
+                    </ul>
+                </li>
+                {% endif %}
+
                 <!-- ==================== STAFF PERFORMANCE ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_staff_performance %}
                 <li class="staff-performance-menu {% if request.resolver_match.url_name == 'staff_performance_analytics' %}active{% endif %}">

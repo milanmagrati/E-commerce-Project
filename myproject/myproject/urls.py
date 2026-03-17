@@ -26,6 +26,7 @@ urlpatterns = [
     path('ncm/', include('ncm.urls')),
     path('pnd/', include('pick_and_drop.urls')),
     path('chat/', include('chat.urls')),
+    path('hrm/', include('hrm.urls')),
 
 ] 
 # Serve media files in development
