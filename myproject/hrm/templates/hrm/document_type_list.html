@@ -5,33 +5,393 @@
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-file-alt me-2"></i>Document Types</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Add Document Type</button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#docTypeModal" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Document Type
+        </button>
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if required_filter or status_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-3">
+                        <select name="required" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All (Required)</option>
+                            <option value="yes" {% if required_filter == 'yes' %}selected{% endif %}>Required</option>
+                            <option value="no" {% if required_filter == 'no' %}selected{% endif %}>Not Required</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Status</option>
+                            <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                            <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:document_type_list' %}" class="btn btn-sm btn-outline-danger w-100">
+                            <i class="fas fa-times me-1"></i>Clear
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Document Types Table -->
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Document Type</th>
+                        <th>
+                            <a href="?search={{ search_query }}&per_page={{ per_page }}&required={{ required_filter }}&status={{ status_filter }}&sort={% if current_sort == 'name' %}-name{% else %}name{% endif %}" class="text-decoration-none text-dark">
+                                Name <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i>
+                            </a>
+                        </th>
                         <th>Required</th>
                         <th>Status</th>
-                        <th>Actions</th>
+                        <th>
+                            <a href="?search={{ search_query }}&per_page={{ per_page }}&required={{ required_filter }}&status={{ status_filter }}&sort={% if current_sort == 'created_at' %}-created_at{% else %}created_at{% endif %}" class="text-decoration-none text-dark">
+                                Created At <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i>
+                            </a>
+                        </th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% for doc_type in document_types %}
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-4">
-                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No document types found. Functionality will be added soon.
+                        <td>{{ forloop.counter|add:document_types.start_index|add:"-1" }}</td>
+                        <td><strong>{{ doc_type.name }}</strong></td>
+                        <td>
+                            {% if doc_type.is_required %}
+                            <span class="badge bg-info">Required</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Optional</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if doc_type.is_active %}
+                            <span class="badge bg-success" style="cursor:pointer;" onclick="toggleStatus({{ doc_type.id }})" title="Click to toggle">Active</span>
+                            {% else %}
+                            <span class="badge bg-danger" style="cursor:pointer;" onclick="toggleStatus({{ doc_type.id }})" title="Click to toggle">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ doc_type.created_at|date:"Y-m-d" }}</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewDocType({{ doc_type.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editDocType({{ doc_type.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ doc_type.id }}, '{{ doc_type.name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No document types found.
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        {% if document_types %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ document_types.start_index }} to {{ document_types.end_index }} of {{ total_document_types }} document types
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if document_types.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ document_types.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&required={{ required_filter }}&status={{ status_filter }}&sort={{ current_sort }}">Previous</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Previous</span></li>
+                    {% endif %}
+                    {% for num in document_types.paginator.page_range %}
+                    <li class="page-item {% if document_types.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&required={{ required_filter }}&status={{ status_filter }}&sort={{ current_sort }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if document_types.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ document_types.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&required={{ required_filter }}&status={{ status_filter }}&sort={{ current_sort }}">Next</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Next</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<!-- Add / Edit Document Type Modal -->
+<div class="modal fade" id="docTypeModal" tabindex="-1" aria-labelledby="docTypeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="docTypeModalLabel">Add New Document Type</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="docTypeForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="docTypeId" value="">
+
+                    <div class="mb-3">
+                        <label for="docTypeName" class="form-label">Document Type Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="docTypeName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="docTypeDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="docTypeDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Required</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="docTypeRequired" name="is_required">
+                            <label class="form-check-label" for="docTypeRequired" id="requiredLabel">No</label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="saveDocType()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Document Type Modal -->
+<div class="modal fade" id="viewDocTypeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-alt me-2"></i>Document Type Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewDocTypeBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete document type <strong id="deleteDocTypeName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const docTypeModalEl = document.getElementById('docTypeModal');
+    const docTypeModal = new bootstrap.Modal(docTypeModalEl);
+
+    // Toggle label for required switch
+    document.getElementById('docTypeRequired').addEventListener('change', function() {
+        document.getElementById('requiredLabel').textContent = this.checked ? 'Yes' : 'No';
+    });
+
+    function openAddModal() {
+        document.getElementById('docTypeModalLabel').textContent = 'Add New Document Type';
+        document.getElementById('docTypeForm').reset();
+        document.getElementById('docTypeId').value = '';
+        document.getElementById('requiredLabel').textContent = 'No';
+    }
+
+    function saveDocType() {
+        const form = document.getElementById('docTypeForm');
+        const docTypeId = document.getElementById('docTypeId').value;
+        const name = document.getElementById('docTypeName').value.trim();
+
+        if (!name) {
+            showToast('Document type name is required.', 'error');
+            document.getElementById('docTypeName').focus();
+            return;
+        }
+
+        const formData = new FormData(form);
+        const url = docTypeId
+            ? `{% url 'hrm:document_type_list' %}${docTypeId}/update/`
+            : `{% url 'hrm:document_type_create' %}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                docTypeModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error. Please try again.', 'error'));
+    }
+
+    function viewDocType(id) {
+        fetch(`{% url 'hrm:document_type_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const d = data.document_type;
+                    document.getElementById('viewDocTypeBody').innerHTML = `
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:35%">Name</th><td>${d.name}</td></tr>
+                            <tr><th>Description</th><td>${d.description || '—'}</td></tr>
+                            <tr><th>Required</th><td><span class="badge bg-${d.is_required ? 'info' : 'secondary'}">${d.is_required ? 'Required' : 'Optional'}</span></td></tr>
+                            <tr><th>Status</th><td><span class="badge bg-${d.is_active ? 'success' : 'danger'}">${d.is_active ? 'Active' : 'Inactive'}</span></td></tr>
+                            <tr><th>Created At</th><td>${d.created_at}</td></tr>
+                            <tr><th>Updated At</th><td>${d.updated_at}</td></tr>
+                        </table>
+                    `;
+                    new bootstrap.Modal(document.getElementById('viewDocTypeModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load document type details.', 'error'));
+    }
+
+    function editDocType(id) {
+        fetch(`{% url 'hrm:document_type_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const d = data.document_type;
+                    document.getElementById('docTypeModalLabel').textContent = 'Edit Document Type';
+                    document.getElementById('docTypeId').value = d.id;
+                    document.getElementById('docTypeName').value = d.name;
+                    document.getElementById('docTypeDescription').value = d.description;
+                    document.getElementById('docTypeRequired').checked = d.is_required;
+                    document.getElementById('requiredLabel').textContent = d.is_required ? 'Yes' : 'No';
+                    docTypeModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load document type data.', 'error'));
+    }
+
+    function toggleStatus(id) {
+        fetch(`{% url 'hrm:document_type_list' %}${id}/toggle-status/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deleteDocTypeName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch(`{% url 'hrm:document_type_list' %}${deleteId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    function showToast(message, type) {
+        const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed; top: 20px; right: 20px; background: ${colors[type] || colors.info};
+            color: white; padding: 12px 20px; border-radius: 8px; z-index: 10050;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 8px;
+            font-size: 14px; animation: slideIn 0.3s ease;
+        `;
+        toast.innerHTML = `<i class="fas fa-${icons[type] || icons.info}"></i> ${message}`;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+    }
+</script>
+<style>
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
 {% endblock %}

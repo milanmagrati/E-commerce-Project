@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.db.models import Q
 from django.core.paginator import Paginator
 
-from .models import Branch, Department, Designation
+from .models import Branch, Department, Designation, DocumentType
 
 
 @login_required
@@ -504,10 +504,135 @@ def designation_toggle_status(request, designation_id):
 
 @login_required
 def document_type_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    required_filter = request.GET.get('required', '')
+    status_filter = request.GET.get('status', '')
+    sort = request.GET.get('sort', '-created_at')
+
+    allowed_sorts = ['name', '-name', 'created_at', '-created_at']
+    if sort not in allowed_sorts:
+        sort = '-created_at'
+
+    document_types = DocumentType.objects.all()
+
+    if search_query:
+        document_types = document_types.filter(
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if required_filter == 'yes':
+        document_types = document_types.filter(is_required=True)
+    elif required_filter == 'no':
+        document_types = document_types.filter(is_required=False)
+
+    if status_filter == 'active':
+        document_types = document_types.filter(is_active=True)
+    elif status_filter == 'inactive':
+        document_types = document_types.filter(is_active=False)
+
+    document_types = document_types.order_by(sort)
+
+    paginator = Paginator(document_types, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Document Types',
+        'document_types': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'required_filter': required_filter,
+        'status_filter': status_filter,
+        'current_sort': sort,
+        'total_document_types': paginator.count,
     }
     return render(request, 'hrm/document_type_list.html', context)
+
+
+@login_required
+def document_type_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Document type name is required.'})
+
+        if DocumentType.objects.filter(name__iexact=name).exists():
+            return JsonResponse({'success': False, 'error': f'Document type "{name}" already exists.'})
+
+        doc_type = DocumentType(
+            name=name,
+            description=request.POST.get('description', '').strip(),
+            is_required=request.POST.get('is_required') == 'on',
+        )
+        doc_type.save()
+        return JsonResponse({'success': True, 'message': f'Document type "{doc_type.name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def document_type_detail(request, pk):
+    doc_type = get_object_or_404(DocumentType, id=pk)
+    return JsonResponse({
+        'success': True,
+        'document_type': {
+            'id': doc_type.id,
+            'name': doc_type.name,
+            'description': doc_type.description,
+            'is_required': doc_type.is_required,
+            'is_active': doc_type.is_active,
+            'created_at': doc_type.created_at.strftime('%Y-%m-%d'),
+            'updated_at': doc_type.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def document_type_update(request, pk):
+    doc_type = get_object_or_404(DocumentType, id=pk)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Document type name is required.'})
+
+        if DocumentType.objects.filter(name__iexact=name).exclude(id=pk).exists():
+            return JsonResponse({'success': False, 'error': f'Document type "{name}" already exists.'})
+
+        doc_type.name = name
+        doc_type.description = request.POST.get('description', '').strip()
+        doc_type.is_required = request.POST.get('is_required') == 'on'
+        doc_type.save()
+        return JsonResponse({'success': True, 'message': f'Document type "{doc_type.name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def document_type_delete(request, pk):
+    doc_type = get_object_or_404(DocumentType, id=pk)
+
+    if request.method == 'POST':
+        doc_name = doc_type.name
+        doc_type.delete()
+        return JsonResponse({'success': True, 'message': f'Document type "{doc_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def document_type_toggle_status(request, pk):
+    doc_type = get_object_or_404(DocumentType, id=pk)
+
+    if request.method == 'POST':
+        doc_type.is_active = not doc_type.is_active
+        doc_type.save()
+        status_text = 'Active' if doc_type.is_active else 'Inactive'
+        return JsonResponse({'success': True, 'message': f'Document type "{doc_type.name}" is now {status_text}.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
 
 @login_required
