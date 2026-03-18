@@ -5,33 +5,398 @@
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-id-badge me-2"></i>Designations</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Add Designation</button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#designationModal" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Designation
+        </button>
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if status_filter or department_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-3">
+                        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Status</option>
+                            <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                            <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select name="department" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Departments</option>
+                            {% for dept in departments %}
+                            <option value="{{ dept.id }}" {% if department_filter == dept.id|stringformat:"d" %}selected{% endif %}>{{ dept.name }} ({{ dept.branch.name }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:designation_list' %}" class="btn btn-sm btn-outline-danger w-100">Clear Filters</a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Designations Table -->
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Designation</th>
+                        <th>Name <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
                         <th>Department</th>
-                        <th>Total Employees</th>
-                        <th>Actions</th>
+                        <th>Status</th>
+                        <th>Created At <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% for designation in designations %}
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-4">
-                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No designations found. Functionality will be added soon.
+                        <td>{{ forloop.counter|add:designations.start_index|add:"-1" }}</td>
+                        <td><strong>{{ designation.name }}</strong></td>
+                        <td>
+                            {{ designation.department.name }}
+                            <br><small class="text-muted">Branch: {{ designation.department.branch.name }}</small>
+                        </td>
+                        <td>
+                            {% if designation.status == 'active' %}
+                            <span class="badge bg-success" style="cursor:pointer;" onclick="toggleStatus({{ designation.id }})" title="Click to toggle">Active</span>
+                            {% else %}
+                            <span class="badge bg-danger" style="cursor:pointer;" onclick="toggleStatus({{ designation.id }})" title="Click to toggle">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ designation.created_at|date:"Y-m-d" }}</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewDesignation({{ designation.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editDesignation({{ designation.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary me-1" title="Toggle Status" onclick="toggleStatus({{ designation.id }})">
+                                <i class="fas fa-lock{% if designation.status == 'active' %}-open{% endif %}"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ designation.id }}, '{{ designation.name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No designations found.
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        {% if designations %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ designations.start_index }} to {{ designations.end_index }} of {{ total_designations }} designations
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if designations.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ designations.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&department={{ department_filter }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in designations.paginator.page_range %}
+                    <li class="page-item {% if designations.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&department={{ department_filter }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if designations.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ designations.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&department={{ department_filter }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<!-- Add / Edit Designation Modal -->
+<div class="modal fade" id="designationModal" tabindex="-1" aria-labelledby="designationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="designationModalLabel">Add New Designation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="designationForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="designationId" value="">
+
+                    <div class="mb-3">
+                        <label for="designationName" class="form-label">Designation Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="designationName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="designationDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="designationDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="designationDepartment" class="form-label">Department <span class="text-danger">*</span></label>
+                        <select class="form-select" id="designationDepartment" name="department" required>
+                            <option value="">Select Department</option>
+                            {% for dept in departments %}
+                            <option value="{{ dept.id }}">{{ dept.name }} ({{ dept.branch.name }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="designationStatus" class="form-label">Status</label>
+                        <select class="form-select" id="designationStatus" name="status">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="saveDesignation()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Designation Modal -->
+<div class="modal fade" id="viewDesignationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-id-badge me-2"></i>Designation Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewDesignationBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete designation <strong id="deleteDesigName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const desigModalEl = document.getElementById('designationModal');
+    const desigModal = new bootstrap.Modal(desigModalEl);
+
+    function openAddModal() {
+        document.getElementById('designationModalLabel').textContent = 'Add New Designation';
+        document.getElementById('designationForm').reset();
+        document.getElementById('designationId').value = '';
+        document.getElementById('designationStatus').value = 'active';
+    }
+
+    function saveDesignation() {
+        const form = document.getElementById('designationForm');
+        const desigId = document.getElementById('designationId').value;
+        const name = document.getElementById('designationName').value.trim();
+        const department = document.getElementById('designationDepartment').value;
+
+        if (!name) {
+            showToast('Designation name is required.', 'error');
+            document.getElementById('designationName').focus();
+            return;
+        }
+        if (!department) {
+            showToast('Please select a department.', 'error');
+            document.getElementById('designationDepartment').focus();
+            return;
+        }
+
+        const formData = new FormData(form);
+        const url = desigId
+            ? `{% url 'hrm:designation_list' %}${desigId}/update/`
+            : `{% url 'hrm:designation_create' %}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                desigModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error. Please try again.', 'error'));
+    }
+
+    function viewDesignation(id) {
+        fetch(`{% url 'hrm:designation_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const d = data.designation;
+                    document.getElementById('viewDesignationBody').innerHTML = `
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:35%">Designation Name</th><td>${escapeHtml(d.name)}</td></tr>
+                            <tr><th>Department</th><td>${escapeHtml(d.department_name)}</td></tr>
+                            <tr><th>Branch</th><td>${escapeHtml(d.branch_name)}</td></tr>
+                            <tr><th>Description</th><td>${escapeHtml(d.description) || '—'}</td></tr>
+                            <tr><th>Status</th><td><span class="badge bg-${d.status === 'active' ? 'success' : 'danger'}">${d.status.charAt(0).toUpperCase() + d.status.slice(1)}</span></td></tr>
+                            <tr><th>Created At</th><td>${d.created_at}</td></tr>
+                            <tr><th>Updated At</th><td>${d.updated_at}</td></tr>
+                        </table>
+                    `;
+                    new bootstrap.Modal(document.getElementById('viewDesignationModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load designation details.', 'error'));
+    }
+
+    function editDesignation(id) {
+        fetch(`{% url 'hrm:designation_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const d = data.designation;
+                    document.getElementById('designationModalLabel').textContent = 'Edit Designation';
+                    document.getElementById('designationId').value = d.id;
+                    document.getElementById('designationName').value = d.name;
+                    document.getElementById('designationDepartment').value = d.department_id;
+                    document.getElementById('designationDescription').value = d.description;
+                    document.getElementById('designationStatus').value = d.status;
+                    desigModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load designation data.', 'error'));
+    }
+
+    function toggleStatus(id) {
+        fetch(`{% url 'hrm:designation_list' %}${id}/toggle-status/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deleteDesigName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch(`{% url 'hrm:designation_list' %}${deleteId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showToast(message, type) {
+        const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed; top: 20px; right: 20px; background: ${colors[type] || colors.info};
+            color: white; padding: 12px 20px; border-radius: 8px; z-index: 10050;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 8px;
+            font-size: 14px; animation: slideIn 0.3s ease;
+        `;
+        toast.innerHTML = `<i class="fas fa-${icons[type] || icons.info}"></i> ${escapeHtml(message)}`;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+    }
+</script>
+<style>
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
 {% endblock %}

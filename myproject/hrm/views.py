@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.db.models import Q
 from django.core.paginator import Paginator
 
-from .models import Branch, Department
+from .models import Branch, Department, Designation
 
 
 @login_required
@@ -374,10 +374,132 @@ def department_toggle_status(request, department_id):
 
 @login_required
 def designation_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+    department_filter = request.GET.get('department', '')
+
+    designations = Designation.objects.select_related('department', 'department__branch').all()
+
+    if search_query:
+        designations = designations.filter(
+            Q(name__icontains=search_query) |
+            Q(department__name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if status_filter:
+        designations = designations.filter(status=status_filter)
+
+    if department_filter:
+        designations = designations.filter(department_id=department_filter)
+
+    paginator = Paginator(designations, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Designations',
+        'designations': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'department_filter': department_filter,
+        'total_designations': paginator.count,
+        'departments': Department.objects.filter(status='active').select_related('branch').order_by('name'),
     }
     return render(request, 'hrm/designation_list.html', context)
+
+
+@login_required
+def designation_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        department_id = request.POST.get('department', '').strip()
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Designation name is required.'})
+        if not department_id:
+            return JsonResponse({'success': False, 'error': 'Department is required.'})
+
+        department = get_object_or_404(Department, id=department_id)
+        designation = Designation(
+            name=name,
+            department=department,
+            description=request.POST.get('description', '').strip(),
+            status=request.POST.get('status', 'active'),
+        )
+        designation.save()
+        return JsonResponse({'success': True, 'message': f'Designation "{designation.name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def designation_detail(request, designation_id):
+    designation = get_object_or_404(Designation.objects.select_related('department', 'department__branch'), id=designation_id)
+    return JsonResponse({
+        'success': True,
+        'designation': {
+            'id': designation.id,
+            'name': designation.name,
+            'department_id': designation.department.id,
+            'department_name': designation.department.name,
+            'branch_name': designation.department.branch.name,
+            'description': designation.description,
+            'status': designation.status,
+            'created_at': designation.created_at.strftime('%Y-%m-%d'),
+            'updated_at': designation.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def designation_update(request, designation_id):
+    designation = get_object_or_404(Designation, id=designation_id)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        department_id = request.POST.get('department', '').strip()
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Designation name is required.'})
+        if not department_id:
+            return JsonResponse({'success': False, 'error': 'Department is required.'})
+
+        department = get_object_or_404(Department, id=department_id)
+        designation.name = name
+        designation.department = department
+        designation.description = request.POST.get('description', '').strip()
+        designation.status = request.POST.get('status', designation.status)
+        designation.save()
+        return JsonResponse({'success': True, 'message': f'Designation "{designation.name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def designation_delete(request, designation_id):
+    designation = get_object_or_404(Designation, id=designation_id)
+
+    if request.method == 'POST':
+        desig_name = designation.name
+        designation.delete()
+        return JsonResponse({'success': True, 'message': f'Designation "{desig_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def designation_toggle_status(request, designation_id):
+    designation = get_object_or_404(Designation, id=designation_id)
+
+    if request.method == 'POST':
+        designation.status = 'inactive' if designation.status == 'active' else 'active'
+        designation.save()
+        return JsonResponse({'success': True, 'message': f'Designation "{designation.name}" is now {designation.get_status_display()}.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
 
 @login_required
