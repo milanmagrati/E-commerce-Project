@@ -260,6 +260,129 @@
         </div>
     </div>
 
+    <!-- Stock Count Section -->
+    <div class="stock-count-section">
+        <div class="alert-table-card stock-count-highlight">
+            <div class="card-header-dark alert-stock-count">
+                <h5><i class="fas fa-cubes pulse-icon"></i> Stock Count</h5>
+                <div class="header-right">
+                    <span class="count-badge stock-count-badge">{{ total_products }} products</span>
+                    <span class="count-badge stock-units-badge">{{ total_stock_units }} total units</span>
+                </div>
+            </div>
+            <div class="card-body-dark p-0">
+                <!-- Stock Count Search -->
+                <div class="stock-count-search-bar">
+                    <div class="stock-count-search-wrapper">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="stockCountSearch" placeholder="Search products..." onkeyup="filterStockCountTable()">
+                    </div>
+                    <div class="stock-count-filter-group">
+                        <select id="stockCountFilter" onchange="filterStockCountTable()">
+                            <option value="all">All Products</option>
+                            <option value="in_stock">In Stock (&gt;10)</option>
+                            <option value="low_stock">Low Stock (1-10)</option>
+                            <option value="out_of_stock">Out of Stock (0)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-container-dark" style="max-height: 600px;">
+                    <table class="table-dark" id="stockCountTable">
+                        <thead>
+                            <tr>
+                                <th width="5%">#</th>
+                                <th width="35%">Product</th>
+                                <th>Category</th>
+                                <th>SKU</th>
+                                <th class="text-center">Stock</th>
+                                <th class="text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in stock_count_products %}
+                            <tr class="table-row-hover stock-count-row"
+                                data-stock="{{ product.stock }}"
+                                data-name="{{ product.name|lower }}"
+                                data-sku="{{ product.slug|lower }}">
+                                <td class="text-center">{{ forloop.counter }}</td>
+                                <td>
+                                    <div class="product-cell">
+                                        {% if product.image %}
+                                        <img src="{{ product.image.url }}" alt="{{ product.name }}" class="product-img-dark">
+                                        {% else %}
+                                        <div class="product-img-placeholder">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <span class="product-name">{{ product.name|truncatewords:5 }}</span>
+                                            {% if product.product_type == 'bundle' %}
+                                            <br><span class="stock-count-type-label bundle-label">BUNDLE</span>
+                                            {% elif product.product_type == 'variable' %}
+                                            <br><span class="stock-count-type-label variable-label">VARIABLE</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="category-text">{{ product.category.name|default:"Uncategorized" }}</span>
+                                </td>
+                                <td>
+                                    <span class="sku-badge">{{ product.slug|upper }}</span>
+                                </td>
+                                <td class="text-center">
+                                    {% if product.stock == 0 %}
+                                        <span class="stock-badge danger">0</span>
+                                    {% elif product.stock <= 10 %}
+                                        <span class="stock-badge warning">{{ product.stock }}</span>
+                                    {% else %}
+                                        <span class="stock-badge success">{{ product.stock }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if product.stock == 0 %}
+                                        <span class="stock-status-pill status-out">Out of Stock</span>
+                                    {% elif product.stock <= 10 %}
+                                        <span class="stock-status-pill status-low">Low Stock</span>
+                                    {% else %}
+                                        <span class="stock-status-pill status-in">In Stock</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-5">
+                                    <i class="fas fa-cubes fa-3x empty-icon mb-3"></i>
+                                    <p class="empty-text">No products found</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Stock Count Summary Footer -->
+                <div class="stock-count-footer">
+                    <div class="stock-count-summary-item">
+                        <span class="summary-dot" style="background: var(--accent-green);"></span>
+                        <span>In Stock: <strong>{{ in_stock }}</strong></span>
+                    </div>
+                    <div class="stock-count-summary-item">
+                        <span class="summary-dot" style="background: var(--accent-orange);"></span>
+                        <span>Low Stock: <strong>{{ low_stock }}</strong></span>
+                    </div>
+                    <div class="stock-count-summary-item">
+                        <span class="summary-dot" style="background: var(--accent-red);"></span>
+                        <span>Out of Stock: <strong>{{ out_of_stock }}</strong></span>
+                    </div>
+                    <div class="stock-count-summary-item">
+                        <span class="summary-dot" style="background: var(--accent-purple);"></span>
+                        <span>Total Units: <strong>{{ total_stock_units }}</strong></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Recent Stock In Transactions -->
     <div class="stock-in-section">
         <div class="alert-table-card stock-in-highlight">
@@ -937,129 +1060,6 @@
                             {% endfor %}
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Stock Count Section -->
-    <div class="stock-count-section">
-        <div class="alert-table-card stock-count-highlight">
-            <div class="card-header-dark alert-stock-count">
-                <h5><i class="fas fa-cubes pulse-icon"></i> Stock Count</h5>
-                <div class="header-right">
-                    <span class="count-badge stock-count-badge">{{ total_products }} products</span>
-                    <span class="count-badge stock-units-badge">{{ total_stock_units }} total units</span>
-                </div>
-            </div>
-            <div class="card-body-dark p-0">
-                <!-- Stock Count Search -->
-                <div class="stock-count-search-bar">
-                    <div class="stock-count-search-wrapper">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="stockCountSearch" placeholder="Search products..." onkeyup="filterStockCountTable()">
-                    </div>
-                    <div class="stock-count-filter-group">
-                        <select id="stockCountFilter" onchange="filterStockCountTable()">
-                            <option value="all">All Products</option>
-                            <option value="in_stock">In Stock (&gt;10)</option>
-                            <option value="low_stock">Low Stock (1-10)</option>
-                            <option value="out_of_stock">Out of Stock (0)</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="table-container-dark" style="max-height: 600px;">
-                    <table class="table-dark" id="stockCountTable">
-                        <thead>
-                            <tr>
-                                <th width="5%">#</th>
-                                <th width="35%">Product</th>
-                                <th>Category</th>
-                                <th>SKU</th>
-                                <th class="text-center">Stock</th>
-                                <th class="text-center">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for product in stock_count_products %}
-                            <tr class="table-row-hover stock-count-row"
-                                data-stock="{{ product.stock }}"
-                                data-name="{{ product.name|lower }}"
-                                data-sku="{{ product.slug|lower }}">
-                                <td class="text-center">{{ forloop.counter }}</td>
-                                <td>
-                                    <div class="product-cell">
-                                        {% if product.image %}
-                                        <img src="{{ product.image.url }}" alt="{{ product.name }}" class="product-img-dark">
-                                        {% else %}
-                                        <div class="product-img-placeholder">
-                                            <i class="fas fa-image"></i>
-                                        </div>
-                                        {% endif %}
-                                        <div>
-                                            <span class="product-name">{{ product.name|truncatewords:5 }}</span>
-                                            {% if product.product_type == 'bundle' %}
-                                            <br><span class="stock-count-type-label bundle-label">BUNDLE</span>
-                                            {% elif product.product_type == 'variable' %}
-                                            <br><span class="stock-count-type-label variable-label">VARIABLE</span>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <span class="category-text">{{ product.category.name|default:"Uncategorized" }}</span>
-                                </td>
-                                <td>
-                                    <span class="sku-badge">{{ product.slug|upper }}</span>
-                                </td>
-                                <td class="text-center">
-                                    {% if product.stock == 0 %}
-                                        <span class="stock-badge danger">0</span>
-                                    {% elif product.stock <= 10 %}
-                                        <span class="stock-badge warning">{{ product.stock }}</span>
-                                    {% else %}
-                                        <span class="stock-badge success">{{ product.stock }}</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-center">
-                                    {% if product.stock == 0 %}
-                                        <span class="stock-status-pill status-out">Out of Stock</span>
-                                    {% elif product.stock <= 10 %}
-                                        <span class="stock-status-pill status-low">Low Stock</span>
-                                    {% else %}
-                                        <span class="stock-status-pill status-in">In Stock</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="6" class="text-center py-5">
-                                    <i class="fas fa-cubes fa-3x empty-icon mb-3"></i>
-                                    <p class="empty-text">No products found</p>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                <!-- Stock Count Summary Footer -->
-                <div class="stock-count-footer">
-                    <div class="stock-count-summary-item">
-                        <span class="summary-dot" style="background: var(--accent-green);"></span>
-                        <span>In Stock: <strong>{{ in_stock }}</strong></span>
-                    </div>
-                    <div class="stock-count-summary-item">
-                        <span class="summary-dot" style="background: var(--accent-orange);"></span>
-                        <span>Low Stock: <strong>{{ low_stock }}</strong></span>
-                    </div>
-                    <div class="stock-count-summary-item">
-                        <span class="summary-dot" style="background: var(--accent-red);"></span>
-                        <span>Out of Stock: <strong>{{ out_of_stock }}</strong></span>
-                    </div>
-                    <div class="stock-count-summary-item">
-                        <span class="summary-dot" style="background: var(--accent-purple);"></span>
-                        <span>Total Units: <strong>{{ total_stock_units }}</strong></span>
-                    </div>
                 </div>
             </div>
         </div>
