@@ -2,16 +2,88 @@
 
 {% block title %}New Purchase - Purchase Management{% endblock %}
 
+{% block extra_css %}
+<style>
+    .toast-error-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        max-width: 420px;
+    }
+    .toast-error {
+        background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+        color: #fff;
+        border-radius: 12px;
+        padding: 16px 20px;
+        box-shadow: 0 8px 32px rgba(238, 90, 36, 0.35);
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        animation: slideInRight 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        margin-bottom: 10px;
+    }
+    .toast-error .toast-icon {
+        font-size: 1.3rem;
+        margin-top: 1px;
+        flex-shrink: 0;
+    }
+    .toast-error .toast-body {
+        flex: 1;
+        font-size: 0.92rem;
+        font-weight: 500;
+        line-height: 1.4;
+    }
+    .toast-error .toast-close {
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.8);
+        font-size: 1.1rem;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+        flex-shrink: 0;
+        transition: color 0.2s;
+    }
+    .toast-error .toast-close:hover { color: #fff; }
+    @keyframes slideInRight {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes fadeOutRight {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+    }
+    .toast-error.hiding {
+        animation: fadeOutRight 0.3s ease forwards;
+    }
+    .field-error {
+        border-color: #e74c3c !important;
+        box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.15) !important;
+    }
+    .messages-container { display: none !important; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
+    <!-- Toast Errors -->
+    {% if messages %}
+    <div class="toast-error-container" id="toastContainer">
+        {% for message in messages %}
+        {% if message.tags == 'error' and 'permission_denied' not in message.tags %}
+        <div class="toast-error" role="alert">
+            <i class="fas fa-exclamation-triangle toast-icon"></i>
+            <div class="toast-body">{{ message }}</div>
+            <button type="button" class="toast-close" onclick="dismissToast(this)">&times;</button>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="mb-4">
         <h4 class="mb-1"><i class="fas fa-file-invoice me-2 text-primary"></i>Create New Purchase</h4>
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb mb-0">
-                <li class="breadcrumb-item"><a href="{% url 'purchase_dashboard' %}">Purchase Management</a></li>
-                <li class="breadcrumb-item active">New Purchase</li>
-            </ol>
-        </nav>
     </div>
 
     <form method="POST" id="purchaseForm">
@@ -30,35 +102,35 @@
                                 <select name="supplier" class="form-select" required>
                                     <option value="">-- Select Supplier --</option>
                                     {% for s in suppliers %}
-                                    <option value="{{ s.id }}">{{ s.name }}</option>
+                                    <option value="{{ s.id }}" {% if form_data.supplier_id|stringformat:"s" == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-medium">Invoice Number <span class="text-danger">*</span></label>
-                                <input type="text" name="invoice_number" class="form-control" required>
+                                <input type="text" name="invoice_number" class="form-control" value="{{ form_data.invoice_number|default:'' }}" required>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-medium">Purchase Date</label>
-                                <input type="date" name="purchase_date" class="form-control" value="{{ today }}">
+                                <input type="date" name="purchase_date" class="form-control" value="{{ form_data.purchase_date|default:today }}">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-medium">Payment Method</label>
                                 <select name="payment_method" class="form-select">
                                     <option value="">-- Select --</option>
-                                    <option value="Cash">Cash</option>
-                                    <option value="Bank Transfer">Bank Transfer</option>
-                                    <option value="Cheque">Cheque</option>
-                                    <option value="Credit">Credit</option>
+                                    <option value="Cash" {% if form_data.payment_method == 'Cash' %}selected{% endif %}>Cash</option>
+                                    <option value="Bank Transfer" {% if form_data.payment_method == 'Bank Transfer' %}selected{% endif %}>Bank Transfer</option>
+                                    <option value="Cheque" {% if form_data.payment_method == 'Cheque' %}selected{% endif %}>Cheque</option>
+                                    <option value="Credit" {% if form_data.payment_method == 'Credit' %}selected{% endif %}>Credit</option>
                                 </select>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-medium">Payment Amount (Rs.)</label>
-                                <input type="number" step="0.01" name="payment_amount" class="form-control" placeholder="Leave empty if unpaid">
+                                <input type="number" step="0.01" name="payment_amount" class="form-control" value="{{ form_data.payment_amount|default:'' }}" placeholder="Leave empty if unpaid">
                             </div>
                             <div class="col-12">
                                 <label class="form-label fw-medium">Notes</label>
-                                <textarea name="notes" class="form-control" rows="2"></textarea>
+                                <textarea name="notes" class="form-control" rows="2">{{ form_data.notes|default:'' }}</textarea>
                             </div>
                         </div>
                     </div>
@@ -85,6 +157,28 @@
                                     </tr>
                                 </thead>
                                 <tbody id="itemsBody">
+                                    {% if form_data.item_rows %}
+                                        {% for item in form_data.item_rows %}
+                                        <tr class="item-row">
+                                            <td>
+                                                <select name="product_id[]" class="form-select form-select-sm product-select" required>
+                                                    <option value="">-- Select Product --</option>
+                                                    {% for p in products %}
+                                                    <option value="{{ p.id }}" {% if item.product_id|stringformat:"s" == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </td>
+                                            <td><input type="number" name="quantity[]" class="form-control form-control-sm text-center qty-input" value="{{ item.quantity }}" min="1" placeholder="Qty" required></td>
+                                            <td><input type="number" step="0.01" name="rate[]" class="form-control form-control-sm text-end rate-input" value="{{ item.rate }}" min="0" placeholder="0.00" required></td>
+                                            <td class="text-end fw-bold row-total pt-3">0.00</td>
+                                            <td class="text-center">
+                                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)" title="Remove">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
                                     <tr class="item-row">
                                         <td>
                                             <select name="product_id[]" class="form-select form-select-sm product-select" required>
@@ -94,8 +188,8 @@
                                                 {% endfor %}
                                             </select>
                                         </td>
-                                        <td><input type="number" name="quantity[]" class="form-control form-control-sm text-center qty-input" value="1" min="1" required></td>
-                                        <td><input type="number" step="0.01" name="rate[]" class="form-control form-control-sm text-end rate-input" value="0" min="0" required></td>
+                                        <td><input type="number" name="quantity[]" class="form-control form-control-sm text-center qty-input" min="1" placeholder="Qty" required></td>
+                                        <td><input type="number" step="0.01" name="rate[]" class="form-control form-control-sm text-end rate-input" min="0" placeholder="0.00" required></td>
                                         <td class="text-end fw-bold row-total pt-3">0.00</td>
                                         <td class="text-center">
                                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)" title="Remove">
@@ -103,6 +197,7 @@
                                             </button>
                                         </td>
                                     </tr>
+                                    {% endif %}
                                 </tbody>
                                 <tfoot class="table-light">
                                     <tr>
@@ -130,7 +225,7 @@
                         </div>
                         <div class="d-flex justify-content-between mb-2">
                             <span class="text-muted">Total Quantity:</span>
-                            <span class="fw-bold" id="totalQty">1</span>
+                            <span class="fw-bold" id="totalQty">0</span>
                         </div>
                         <hr>
                         <div class="d-flex justify-content-between">
@@ -153,13 +248,31 @@
 
 {% block extra_js %}
 <script>
+function dismissToast(btn) {
+    const toast = btn.closest('.toast-error');
+    toast.classList.add('hiding');
+    setTimeout(() => toast.remove(), 300);
+}
+
+// Auto-dismiss toasts after 6 seconds
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.toast-error').forEach(function(toast) {
+        setTimeout(function() {
+            if (toast.parentNode) {
+                toast.classList.add('hiding');
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, 6000);
+    });
+});
+
 function addItemRow() {
     const tbody = document.getElementById('itemsBody');
     const firstRow = tbody.querySelector('.item-row');
     const newRow = firstRow.cloneNode(true);
     newRow.querySelector('.product-select').value = '';
-    newRow.querySelector('.qty-input').value = '1';
-    newRow.querySelector('.rate-input').value = '0';
+    newRow.querySelector('.qty-input').value = '';
+    newRow.querySelector('.rate-input').value = '';
     newRow.querySelector('.row-total').textContent = '0.00';
     tbody.appendChild(newRow);
     attachEvents(newRow);
@@ -202,11 +315,18 @@ function updateSummary() {
     document.getElementById('totalQty').textContent = totalQty;
 }
 
-// Attach events to initial row
+// Attach events to all rows and recalculate on load
 document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.item-row').forEach(attachEvents);
+    document.querySelectorAll('.item-row').forEach(function(row) {
+        attachEvents(row);
+        // Recalculate row totals for preserved data
+        const qty = parseFloat(row.querySelector('.qty-input').value) || 0;
+        const rate = parseFloat(row.querySelector('.rate-input').value) || 0;
+        row.querySelector('.row-total').textContent = (qty * rate).toFixed(2);
+    });
+    updateSummary();
 
-    // Set today's date
+    // Set today's date only if empty
     const dateInput = document.querySelector('input[name="purchase_date"]');
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split('T')[0];

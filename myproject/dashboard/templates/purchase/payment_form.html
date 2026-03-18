@@ -2,16 +2,84 @@
 
 {% block title %}Record Payment - Purchase Management{% endblock %}
 
+{% block extra_css %}
+<style>
+    .toast-error-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        max-width: 420px;
+    }
+    .toast-error {
+        background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+        color: #fff;
+        border-radius: 12px;
+        padding: 16px 20px;
+        box-shadow: 0 8px 32px rgba(238, 90, 36, 0.35);
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        animation: slideInRight 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        margin-bottom: 10px;
+    }
+    .toast-error .toast-icon {
+        font-size: 1.3rem;
+        margin-top: 1px;
+        flex-shrink: 0;
+    }
+    .toast-error .toast-body {
+        flex: 1;
+        font-size: 0.92rem;
+        font-weight: 500;
+        line-height: 1.4;
+    }
+    .toast-error .toast-close {
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.8);
+        font-size: 1.1rem;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+        flex-shrink: 0;
+        transition: color 0.2s;
+    }
+    .toast-error .toast-close:hover { color: #fff; }
+    @keyframes slideInRight {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes fadeOutRight {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+    }
+    .toast-error.hiding {
+        animation: fadeOutRight 0.3s ease forwards;
+    }
+    .messages-container { display: none !important; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
+    <!-- Toast Errors -->
+    {% if messages %}
+    <div class="toast-error-container" id="toastContainer">
+        {% for message in messages %}
+        {% if message.tags == 'error' and 'permission_denied' not in message.tags %}
+        <div class="toast-error" role="alert">
+            <i class="fas fa-exclamation-triangle toast-icon"></i>
+            <div class="toast-body">{{ message }}</div>
+            <button type="button" class="toast-close" onclick="dismissToast(this)">&times;</button>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="mb-4">
         <h4 class="mb-1"><i class="fas fa-money-bill-wave me-2 text-success"></i>Record Supplier Payment</h4>
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb mb-0">
-                <li class="breadcrumb-item"><a href="{% url 'purchase_dashboard' %}">Purchase Management</a></li>
-                <li class="breadcrumb-item active">Record Payment</li>
-            </ol>
-        </nav>
     </div>
 
     <div class="row justify-content-center">
@@ -36,37 +104,37 @@
                             <select name="purchase" id="purchaseSelect" class="form-select">
                                 <option value="">-- General Payment --</option>
                                 {% for p in purchases %}
-                                <option value="{{ p.id }}">{{ p.invoice_number }} (Remaining: Rs. {{ p.get_remaining|floatformat:2 }})</option>
+                                <option value="{{ p.id }}" {% if form_data.purchase_id|stringformat:"s" == p.id|stringformat:"s" %}selected{% endif %}>{{ p.invoice_number }} (Remaining: Rs. {{ p.get_remaining|floatformat:2 }})</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-medium">Amount (Rs.) <span class="text-danger">*</span></label>
-                            <input type="number" step="0.01" name="amount" class="form-control" required>
+                            <input type="number" step="0.01" name="amount" class="form-control" value="{{ form_data.amount|default:'' }}" required>
                         </div>
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label fw-medium">Payment Date</label>
-                                <input type="date" name="payment_date" class="form-control" id="paymentDate">
+                                <input type="date" name="payment_date" class="form-control" id="paymentDate" value="{{ form_data.payment_date|default:'' }}">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-medium">Payment Method</label>
                                 <select name="payment_method" class="form-select">
                                     <option value="">-- Select --</option>
-                                    <option value="Cash">Cash</option>
-                                    <option value="Bank Transfer">Bank Transfer</option>
-                                    <option value="Cheque">Cheque</option>
-                                    <option value="UPI">UPI</option>
+                                    <option value="Cash" {% if form_data.payment_method == 'Cash' %}selected{% endif %}>Cash</option>
+                                    <option value="Bank Transfer" {% if form_data.payment_method == 'Bank Transfer' %}selected{% endif %}>Bank Transfer</option>
+                                    <option value="Cheque" {% if form_data.payment_method == 'Cheque' %}selected{% endif %}>Cheque</option>
+                                    <option value="UPI" {% if form_data.payment_method == 'UPI' %}selected{% endif %}>UPI</option>
                                 </select>
                             </div>
                         </div>
                         <div class="mb-3 mt-3">
                             <label class="form-label fw-medium">Reference No</label>
-                            <input type="text" name="reference_no" class="form-control" placeholder="Cheque no, Transaction ID, etc.">
+                            <input type="text" name="reference_no" class="form-control" value="{{ form_data.reference_no|default:'' }}" placeholder="Cheque no, Transaction ID, etc.">
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-medium">Notes</label>
-                            <textarea name="notes" class="form-control" rows="2"></textarea>
+                            <textarea name="notes" class="form-control" rows="2">{{ form_data.notes|default:'' }}</textarea>
                         </div>
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-success">
@@ -84,8 +152,24 @@
 
 {% block extra_js %}
 <script>
+function dismissToast(btn) {
+    const toast = btn.closest('.toast-error');
+    toast.classList.add('hiding');
+    setTimeout(() => toast.remove(), 300);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-    // Set today's date
+    // Auto-dismiss toasts
+    document.querySelectorAll('.toast-error').forEach(function(toast) {
+        setTimeout(function() {
+            if (toast.parentNode) {
+                toast.classList.add('hiding');
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, 6000);
+    });
+
+    // Set today's date only if empty
     const dateInput = document.getElementById('paymentDate');
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split('T')[0];

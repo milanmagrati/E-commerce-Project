@@ -13117,7 +13117,8 @@ def supplier_add(request):
 
         if not name:
             messages.error(request, "Supplier name is required.")
-            return redirect('supplier_add')
+            form_supplier = type('obj', (object,), {'name': name, 'phone': phone, 'address': address, 'opening_balance': opening_balance})()
+            return render(request, 'purchase/supplier_form.html', {'action': 'Add', 'supplier': form_supplier})
 
         try:
             opening_balance = Decimal(opening_balance) if opening_balance else Decimal('0')
@@ -13260,21 +13261,50 @@ def purchase_create(request):
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         return redirect('dashboard')
 
+    suppliers = Supplier.objects.filter(is_active=True)
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
     if request.method == 'POST':
         supplier_id = request.POST.get('supplier')
         purchase_date = request.POST.get('purchase_date', '')
         invoice_number = request.POST.get('invoice_number', '').strip()
         payment_method = request.POST.get('payment_method', '').strip()
+        payment_amount = request.POST.get('payment_amount', '').strip()
         notes = request.POST.get('notes', '').strip()
+        product_ids = request.POST.getlist('product_id[]')
+        quantities = request.POST.getlist('quantity[]')
+        rates = request.POST.getlist('rate[]')
+
+        # Build context for re-rendering on error
+        form_data = {
+            'supplier_id': supplier_id,
+            'invoice_number': invoice_number,
+            'purchase_date': purchase_date,
+            'payment_method': payment_method,
+            'payment_amount': payment_amount,
+            'notes': notes,
+            'item_rows': [
+                {'product_id': product_ids[i] if i < len(product_ids) else '',
+                 'quantity': quantities[i] if i < len(quantities) else '1',
+                 'rate': rates[i] if i < len(rates) else '0'}
+                for i in range(max(len(product_ids), 1))
+            ],
+        }
+        error_context = {
+            'suppliers': suppliers,
+            'products': products,
+            'today': timezone.now().date().isoformat(),
+            'form_data': form_data,
+        }
 
         if not supplier_id or not invoice_number:
             messages.error(request, "Supplier and Invoice Number are required.")
-            return redirect('purchase_create')
+            return render(request, 'purchase/purchase_form.html', error_context)
 
         # Check duplicate invoice
         if Purchase.objects.filter(invoice_number=invoice_number).exists():
             messages.error(request, f"Invoice number '{invoice_number}' already exists.")
-            return redirect('purchase_create')
+            return render(request, 'purchase/purchase_form.html', error_context)
 
         supplier = get_object_or_404(Supplier, id=supplier_id)
 
@@ -13358,8 +13388,6 @@ def purchase_create(request):
         messages.success(request, f"Purchase {invoice_number} created successfully.")
         return redirect('purchase_dashboard')
 
-    suppliers = Supplier.objects.filter(is_active=True)
-    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
     context = {
         'suppliers': suppliers,
         'products': products,
@@ -13407,9 +13435,25 @@ def supplier_payment_add(request):
         reference_no = request.POST.get('reference_no', '').strip()
         notes = request.POST.get('notes', '').strip()
 
+        # Build context for re-rendering on error
+        all_suppliers = Supplier.objects.filter(is_active=True)
+        error_context = {
+            'suppliers': all_suppliers,
+            'selected_supplier': supplier_id or '',
+            'purchases': Purchase.objects.filter(supplier_id=supplier_id).order_by('-purchase_date') if supplier_id else [],
+            'form_data': {
+                'amount': amount,
+                'payment_date': payment_date,
+                'payment_method': payment_method,
+                'reference_no': reference_no,
+                'notes': notes,
+                'purchase_id': purchase_id,
+            },
+        }
+
         if not supplier_id or not amount:
             messages.error(request, "Supplier and amount are required.")
-            return redirect('supplier_payment_add')
+            return render(request, 'purchase/payment_form.html', error_context)
 
         supplier = get_object_or_404(Supplier, id=supplier_id)
 
@@ -13417,7 +13461,7 @@ def supplier_payment_add(request):
             pay_amount = Decimal(amount)
         except (InvalidOperation, ValueError):
             messages.error(request, "Invalid amount.")
-            return redirect('supplier_payment_add')
+            return render(request, 'purchase/payment_form.html', error_context)
 
         try:
             p_date = datetime.strptime(payment_date, '%Y-%m-%d').date() if payment_date else timezone.now().date()
