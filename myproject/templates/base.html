@@ -35,12 +35,16 @@
             flex-direction: column;
         }
 
-        /* Sidebar scrollable content area */
+        /* Sidebar scrollable content area - hidden until JS positions it */
         .sidebar .components {
             flex: 1;
             overflow-y: auto;
             overflow-x: hidden;
             padding-bottom: 1rem;
+            visibility: hidden;
+        }
+        .sidebar .components.sidebar-ready {
+            visibility: visible;
         }
 
         /* Custom scrollbar for sidebar */
@@ -1376,7 +1380,10 @@
                 });
             }
 
-            // Auto-expand all submenus that contain an active item and scroll into view
+            // --- Sidebar: expand active submenus, restore scroll, then reveal ---
+            var scrollContainer = document.querySelector('.sidebar .components');
+
+            // 1. Expand all submenus that contain an active item (no animation since sidebar is hidden)
             var lastActiveItem = null;
             document.querySelectorAll('.sidebar .collapse .active').forEach(function(activeMenuItem) {
                 lastActiveItem = activeMenuItem;
@@ -1391,19 +1398,32 @@
                     el = el.parentElement ? el.parentElement.closest('.collapse') : null;
                 }
             });
-            // Also check for top-level active items (not inside collapse)
             if (!lastActiveItem) {
                 lastActiveItem = document.querySelector('.sidebar > .components > li.active');
             }
-            // Scroll sidebar so the active item is visible (instant, no animation)
-            if (lastActiveItem) {
-                var scrollContainer = document.querySelector('.sidebar .components');
-                if (scrollContainer) {
+
+            // 2. Restore saved scroll position or center on active item
+            if (scrollContainer) {
+                var savedScroll = sessionStorage.getItem('sidebarScrollPos');
+                if (savedScroll !== null) {
+                    scrollContainer.scrollTop = parseInt(savedScroll, 10);
+                } else if (lastActiveItem) {
                     var itemRect = lastActiveItem.getBoundingClientRect();
                     var containerRect = scrollContainer.getBoundingClientRect();
                     var offset = itemRect.top - containerRect.top + scrollContainer.scrollTop;
                     scrollContainer.scrollTop = offset - (scrollContainer.clientHeight / 2) + (lastActiveItem.offsetHeight / 2);
                 }
+                // 3. Reveal sidebar now that everything is positioned
+                scrollContainer.classList.add('sidebar-ready');
+            }
+
+            // 4. Save scroll position before navigating away
+            if (scrollContainer) {
+                document.querySelectorAll('.sidebar a[href]').forEach(function(link) {
+                    link.addEventListener('click', function() {
+                        sessionStorage.setItem('sidebarScrollPos', scrollContainer.scrollTop);
+                    });
+                });
             }
 
             const permissionModal = document.getElementById('permissionDeniedModal');
