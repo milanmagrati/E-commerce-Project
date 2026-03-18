@@ -1,0 +1,677 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{{ page_title }} - HRM{% endblock %}
+
+{% block content %}
+<style>
+    .error-banner {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        color: #fff;
+        border-radius: 10px;
+        padding: 16px 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 15px rgba(238, 90, 36, 0.3);
+        animation: slideDown 0.4s ease-out;
+    }
+    .error-banner .error-icon {
+        font-size: 1.5rem;
+        margin-right: 12px;
+    }
+    .error-banner ul {
+        margin-bottom: 0;
+        padding-left: 20px;
+    }
+    .error-banner ul li {
+        margin-bottom: 2px;
+        font-size: 0.9rem;
+    }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20%, 60% { transform: translateX(-4px); }
+        40%, 80% { transform: translateX(4px); }
+    }
+    .field-error-wrapper .form-control.is-invalid,
+    .field-error-wrapper .form-select.is-invalid {
+        border-color: #dc3545 !important;
+        box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.15) !important;
+        animation: shake 0.4s ease;
+    }
+    .field-error-msg {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: #dc3545;
+        font-size: 0.82rem;
+        margin-top: 4px;
+        font-weight: 500;
+    }
+    .field-error-msg i {
+        font-size: 0.75rem;
+    }
+    .card-error {
+        border-left: 4px solid #dc3545 !important;
+    }
+    .gender-error {
+        border: 2px solid #dc3545;
+        border-radius: 8px;
+        padding: 8px 12px;
+        background: rgba(220, 53, 69, 0.04);
+    }
+</style>
+
+<div class="row">
+    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1">
+                    <li class="breadcrumb-item"><a href="{% url 'hrm:dashboard' %}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="#">HR Management</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'hrm:employee_list' %}">Employees</a></li>
+                    <li class="breadcrumb-item active">{{ page_title }}</li>
+                </ol>
+            </nav>
+            <h2>{{ page_title }}</h2>
+        </div>
+        <a href="{% url 'hrm:employee_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back
+        </a>
+    </div>
+</div>
+
+<!-- Error Banner -->
+{% if form.errors %}
+<div class="error-banner" id="errorBanner">
+    <div class="d-flex align-items-start">
+        <i class="fas fa-exclamation-triangle error-icon mt-1"></i>
+        <div class="flex-grow-1">
+            <h6 class="mb-1 fw-bold">Please fix the following errors:</h6>
+            <ul class="mb-0">
+                {% for field, errors in form.errors.items %}
+                    {% for error in errors %}
+                    <li>
+                        {% if field == '__all__' %}{{ error }}{% else %}<strong>{{ field|title }}:</strong> {{ error }}{% endif %}
+                    </li>
+                    {% endfor %}
+                {% endfor %}
+            </ul>
+        </div>
+        <button type="button" class="btn-close btn-close-white ms-3" onclick="document.getElementById('errorBanner').remove()"></button>
+    </div>
+</div>
+{% endif %}
+
+{% if messages %}
+{% for message in messages %}
+<div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+    <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}exclamation-circle{% else %}info-circle{% endif %} me-2"></i>
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" id="employeeForm" novalidate>
+    {% csrf_token %}
+
+    <!-- Basic Information -->
+    <div class="card mb-4 {% if form.full_name.errors or form.employee_id.errors or form.employee_code.errors or form.email.errors or form.password.errors or form.phone.errors or form.date_of_birth.errors or form.gender.errors or form.profile_image.errors %}card-error{% endif %}">
+        <div class="card-body">
+            <h5 class="card-title mb-4 fw-bold">Basic Information</h5>
+            <div class="row g-3">
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Full Name <span class="text-danger">*</span></label>
+                    {{ form.full_name }}
+                    {% if form.full_name.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.full_name.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Employee ID</label>
+                    {{ form.employee_id }}
+                    <small class="text-muted">Employee ID will be auto-generated</small>
+                    {% if form.employee_id.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_id.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Employee Code <span class="text-danger">*</span></label>
+                    {{ form.employee_code }}
+                    <small class="text-muted">This ID will be used to map employee with biometric device.</small>
+                    {% if form.employee_code.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_code.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Email <span class="text-danger">*</span></label>
+                    {{ form.email }}
+                    {% if form.email.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.email.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Password <span class="text-danger">*</span></label>
+                    {{ form.password }}
+                    {% if form.password.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.password.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                    {{ form.phone }}
+                    {% if form.phone.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.phone.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Date of Birth <span class="text-danger">*</span></label>
+                    {{ form.date_of_birth }}
+                    {% if form.date_of_birth.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.date_of_birth.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Gender <span class="text-danger">*</span></label>
+                    <div class="d-flex gap-4 mt-1 {% if form.gender.errors %}gender-error{% endif %}">
+                        {% for radio in form.gender %}
+                        <div class="form-check">
+                            {{ radio.tag }}
+                            <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if form.gender.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.gender.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-12 field-error-wrapper">
+                    <label class="form-label">Profile Image</label>
+                    <div class="border rounded p-4 text-center mb-2 {% if form.profile_image.errors %}border-danger{% endif %}" id="imagePreviewArea" style="min-height:120px; cursor:pointer;" onclick="document.getElementById('id_profile_image_input').click()">
+                        {% if employee and employee.profile_image %}
+                        <img src="{{ employee.profile_image.url }}" alt="Preview" id="imagePreview" class="rounded" style="max-height:100px;max-width:200px;object-fit:cover;">
+                        {% else %}
+                        <div id="imagePlaceholder">
+                            <i class="fas fa-image fa-2x text-muted mb-2 d-block"></i>
+                            <span class="text-muted">Image</span><br>
+                            <small class="text-muted">No image selected</small>
+                        </div>
+                        <img src="" alt="Preview" id="imagePreview" class="rounded d-none" style="max-height:100px;max-width:200px;object-fit:cover;">
+                        {% endif %}
+                    </div>
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Select profile image..." readonly id="imageFileName"
+                            {% if employee and employee.profile_image %}value="{{ employee.profile_image.name }}"{% endif %}>
+                        <label class="btn btn-outline-secondary" for="id_profile_image_input">
+                            <i class="fas fa-image me-1"></i>Browse
+                        </label>
+                    </div>
+                    <input type="file" name="profile_image" id="id_profile_image_input" class="d-none" accept="image/*" onchange="previewImage(this)">
+                    {% if form.profile_image.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.profile_image.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Employment Details -->
+    <div class="card mb-4 {% if form.branch.errors or form.department.errors or form.designation.errors or form.date_of_joining.errors or form.employment_type.errors or form.employee_status.errors %}card-error{% endif %}">
+        <div class="card-body">
+            <h5 class="card-title mb-4 fw-bold">Employment Details</h5>
+            <div class="row g-3">
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Branch <span class="text-danger">*</span></label>
+                    {{ form.branch }}
+                    {% if form.branch.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.branch.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Department <span class="text-danger">*</span></label>
+                    {{ form.department }}
+                    {% if form.department.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.department.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Designation <span class="text-danger">*</span></label>
+                    {{ form.designation }}
+                    {% if form.designation.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.designation.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Date of Joining <span class="text-danger">*</span></label>
+                    {{ form.date_of_joining }}
+                    {% if form.date_of_joining.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.date_of_joining.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Employment Type <span class="text-danger">*</span></label>
+                    {{ form.employment_type }}
+                    {% if form.employment_type.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employment_type.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Employee Status <span class="text-danger">*</span></label>
+                    {{ form.employee_status }}
+                    {% if form.employee_status.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_status.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Shift</label>
+                    {{ form.shift }}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Attendance Policy</label>
+                    {{ form.attendance_policy }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contact Information -->
+    <div class="card mb-4 {% if form.address_line_1.errors or form.city.errors or form.state.errors or form.country.errors or form.postal_code.errors or form.emergency_contact_name.errors or form.emergency_contact_relationship.errors or form.emergency_contact_phone.errors %}card-error{% endif %}">
+        <div class="card-body">
+            <h5 class="card-title mb-4 fw-bold">Contact Information</h5>
+            <div class="row g-3">
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Address Line 1 <span class="text-danger">*</span></label>
+                    {{ form.address_line_1 }}
+                    {% if form.address_line_1.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.address_line_1.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Address Line 2</label>
+                    {{ form.address_line_2 }}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">City <span class="text-danger">*</span></label>
+                    {{ form.city }}
+                    {% if form.city.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.city.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">State/Province <span class="text-danger">*</span></label>
+                    {{ form.state }}
+                    {% if form.state.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.state.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Country <span class="text-danger">*</span></label>
+                    {{ form.country }}
+                    {% if form.country.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.country.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Postal/Zip Code <span class="text-danger">*</span></label>
+                    {{ form.postal_code }}
+                    {% if form.postal_code.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.postal_code.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <h6 class="mt-4 mb-3 fw-bold">Emergency Contact</h6>
+            <div class="row g-3">
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_name }}
+                    {% if form.emergency_contact_name.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_name.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Relationship <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_relationship }}
+                    {% if form.emergency_contact_relationship.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_relationship.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_phone }}
+                    {% if form.emergency_contact_phone.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_phone.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Banking Information -->
+    <div class="card mb-4 {% if form.bank_name.errors or form.account_holder_name.errors or form.account_number.errors or form.bank_identifier_code.errors or form.bank_branch.errors or form.base_salary.errors %}card-error{% endif %}">
+        <div class="card-body">
+            <h5 class="card-title mb-4 fw-bold">Banking Information</h5>
+            <div class="row g-3">
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Bank Name <span class="text-danger">*</span></label>
+                    {{ form.bank_name }}
+                    {% if form.bank_name.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_name.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Account Holder Name <span class="text-danger">*</span></label>
+                    {{ form.account_holder_name }}
+                    {% if form.account_holder_name.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.account_holder_name.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Account Number <span class="text-danger">*</span></label>
+                    {{ form.account_number }}
+                    {% if form.account_number.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.account_number.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Bank Identifier Code (BIC/SWIFT) <span class="text-danger">*</span></label>
+                    {{ form.bank_identifier_code }}
+                    {% if form.bank_identifier_code.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_identifier_code.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Bank Branch <span class="text-danger">*</span></label>
+                    {{ form.bank_branch }}
+                    {% if form.bank_branch.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_branch.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Tax Payer ID</label>
+                    {{ form.tax_payer_id }}
+                </div>
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Base Salary <span class="text-danger">*</span></label>
+                    {{ form.base_salary }}
+                    {% if form.base_salary.errors %}
+                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.base_salary.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Documents Section -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title mb-4 fw-bold">Documents</h5>
+
+            {% if employee and documents %}
+            <div class="table-responsive mb-3">
+                <table class="table table-sm table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>File</th>
+                            <th>Uploaded</th>
+                            <th style="width:80px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for doc in documents %}
+                        <tr id="doc-row-{{ doc.id }}">
+                            <td>{{ doc.title }}</td>
+                            <td><a href="{{ doc.file.url }}" target="_blank" class="text-primary"><i class="fas fa-file me-1"></i>View</a></td>
+                            <td>{{ doc.uploaded_at|date:"Y-m-d" }}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteDocument({{ doc.id }})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            <div id="documentContainer">
+                <!-- Dynamic document rows go here -->
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addDocumentRow()">
+                <i class="fas fa-plus me-1"></i>Add Document
+            </button>
+        </div>
+    </div>
+
+    <!-- Form Actions -->
+    <div class="d-flex justify-content-end gap-2 mb-4">
+        <a href="{% url 'hrm:employee_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        <button type="submit" class="btn btn-success" id="submitBtn">
+            <i class="fas fa-save me-1"></i>Save Employee
+        </button>
+    </div>
+</form>
+
+<script>
+// Image preview
+function previewImage(input) {
+    const preview = document.getElementById('imagePreview');
+    const placeholder = document.getElementById('imagePlaceholder');
+    const fileName = document.getElementById('imageFileName');
+
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.src = e.target.result;
+            preview.classList.remove('d-none');
+            if (placeholder) placeholder.classList.add('d-none');
+        };
+        reader.readAsDataURL(input.files[0]);
+        fileName.value = input.files[0].name;
+    }
+}
+
+// Cascading dropdowns: Branch -> Department -> Designation
+document.getElementById('id_branch').addEventListener('change', function() {
+    const branchId = this.value;
+    const deptSelect = document.getElementById('id_department');
+    const desigSelect = document.getElementById('id_designation');
+
+    deptSelect.innerHTML = '<option value="">Select Department</option>';
+    desigSelect.innerHTML = '<option value="">Select Department First</option>';
+
+    if (branchId) {
+        fetch(`/hrm/api/departments-by-branch/?branch_id=${encodeURIComponent(branchId)}`)
+            .then(r => r.json())
+            .then(data => {
+                data.departments.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.id;
+                    opt.textContent = d.name;
+                    deptSelect.appendChild(opt);
+                });
+            });
+    }
+});
+
+document.getElementById('id_department').addEventListener('change', function() {
+    const deptId = this.value;
+    const desigSelect = document.getElementById('id_designation');
+
+    desigSelect.innerHTML = '<option value="">Select Designation</option>';
+
+    if (deptId) {
+        fetch(`/hrm/api/designations-by-department/?department_id=${encodeURIComponent(deptId)}`)
+            .then(r => r.json())
+            .then(data => {
+                data.designations.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.id;
+                    opt.textContent = d.name;
+                    desigSelect.appendChild(opt);
+                });
+            });
+    }
+});
+
+// Dynamic document rows
+let docRowCount = 0;
+function addDocumentRow() {
+    docRowCount++;
+    const container = document.getElementById('documentContainer');
+    const row = document.createElement('div');
+    row.className = 'row g-2 mb-2 align-items-end';
+    row.id = `doc-new-row-${docRowCount}`;
+    row.innerHTML = `
+        <div class="col-md-5">
+            <label class="form-label">Document Title</label>
+            <input type="text" name="doc_title" class="form-control" placeholder="Enter document title">
+        </div>
+        <div class="col-md-5">
+            <label class="form-label">File</label>
+            <input type="file" name="doc_file" class="form-control">
+        </div>
+        <div class="col-md-2">
+            <button type="button" class="btn btn-outline-danger btn-sm w-100" onclick="removeDocumentRow('doc-new-row-${docRowCount}')">
+                <i class="fas fa-times me-1"></i>Remove
+            </button>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+function removeDocumentRow(rowId) {
+    document.getElementById(rowId).remove();
+}
+
+function deleteDocument(docId) {
+    if (confirm('Are you sure you want to delete this document?')) {
+        fetch(`/hrm/employees/document/${docId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById(`doc-row-${docId}`).remove();
+                if (typeof alertify !== 'undefined') alertify.success(data.message);
+            } else {
+                if (typeof alertify !== 'undefined') alertify.error(data.error);
+            }
+        });
+    }
+}
+
+// Client-side validation before submit
+document.getElementById('employeeForm').addEventListener('submit', function(e) {
+    // Clear previous client-side errors
+    this.querySelectorAll('.client-error').forEach(el => el.remove());
+    this.querySelectorAll('.is-invalid-client').forEach(el => el.classList.remove('is-invalid-client', 'is-invalid'));
+
+    const requiredFields = [
+        {id: 'id_full_name', label: 'Full Name'},
+        {id: 'id_employee_code', label: 'Employee Code'},
+        {id: 'id_email', label: 'Email'},
+        {id: 'id_password', label: 'Password'},
+        {id: 'id_phone', label: 'Phone Number'},
+        {id: 'id_date_of_birth', label: 'Date of Birth'},
+        {id: 'id_branch', label: 'Branch'},
+        {id: 'id_department', label: 'Department'},
+        {id: 'id_designation', label: 'Designation'},
+        {id: 'id_date_of_joining', label: 'Date of Joining'},
+        {id: 'id_address_line_1', label: 'Address Line 1'},
+        {id: 'id_city', label: 'City'},
+        {id: 'id_state', label: 'State/Province'},
+        {id: 'id_country', label: 'Country'},
+        {id: 'id_postal_code', label: 'Postal/Zip Code'},
+        {id: 'id_emergency_contact_name', label: 'Emergency Contact Name'},
+        {id: 'id_emergency_contact_relationship', label: 'Emergency Contact Relationship'},
+        {id: 'id_emergency_contact_phone', label: 'Emergency Contact Phone'},
+        {id: 'id_bank_name', label: 'Bank Name'},
+        {id: 'id_account_holder_name', label: 'Account Holder Name'},
+        {id: 'id_account_number', label: 'Account Number'},
+        {id: 'id_bank_identifier_code', label: 'Bank Identifier Code'},
+        {id: 'id_bank_branch', label: 'Bank Branch'},
+        {id: 'id_base_salary', label: 'Base Salary'},
+    ];
+
+    let missingFields = [];
+
+    requiredFields.forEach(f => {
+        const el = document.getElementById(f.id);
+        if (el && !el.value.trim()) {
+            el.classList.add('is-invalid', 'is-invalid-client');
+            missingFields.push(f.label);
+            // Add inline message
+            const msg = document.createElement('div');
+            msg.className = 'field-error-msg client-error';
+            msg.innerHTML = '<i class="fas fa-exclamation-circle"></i> This field is required.';
+            el.parentElement.appendChild(msg);
+        }
+    });
+
+    // Check gender radio
+    const genderChecked = this.querySelector('input[name="gender"]:checked');
+    if (!genderChecked) {
+        missingFields.push('Gender');
+        const genderWrap = this.querySelector('.d-flex.gap-4');
+        if (genderWrap) {
+            genderWrap.classList.add('gender-error');
+            const msg = document.createElement('div');
+            msg.className = 'field-error-msg client-error';
+            msg.innerHTML = '<i class="fas fa-exclamation-circle"></i> Please select a gender.';
+            genderWrap.parentElement.appendChild(msg);
+        }
+    }
+
+    if (missingFields.length > 0) {
+        e.preventDefault();
+
+        // Scroll to first error
+        const firstInvalid = this.querySelector('.is-invalid, .gender-error');
+        if (firstInvalid) {
+            firstInvalid.scrollIntoView({behavior: 'smooth', block: 'center'});
+        }
+
+        // Show alert
+        if (typeof alertify !== 'undefined') {
+            alertify.error(`Please fill in ${missingFields.length} required field(s): ${missingFields.slice(0, 3).join(', ')}${missingFields.length > 3 ? '...' : ''}`);
+        }
+    }
+});
+
+// Clear client-side error on input
+document.querySelectorAll('#employeeForm input, #employeeForm select').forEach(el => {
+    el.addEventListener('input', function() {
+        this.classList.remove('is-invalid', 'is-invalid-client');
+        const clientErr = this.parentElement.querySelector('.client-error');
+        if (clientErr) clientErr.remove();
+    });
+    el.addEventListener('change', function() {
+        this.classList.remove('is-invalid', 'is-invalid-client');
+        const clientErr = this.parentElement.querySelector('.client-error');
+        if (clientErr) clientErr.remove();
+    });
+});
+
+// Scroll to error banner on page load if errors exist
+{% if form.errors %}
+document.addEventListener('DOMContentLoaded', function() {
+    const banner = document.getElementById('errorBanner');
+    if (banner) {
+        banner.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
+    if (typeof alertify !== 'undefined') {
+        alertify.error('Please fix the errors highlighted below.');
+    }
+});
+{% endif %}
+</script>
+{% endblock %}

@@ -5,8 +5,10 @@ from django.utils import timezone
 from django.http import JsonResponse
 from django.db.models import Q
 from django.core.paginator import Paginator
+from django.contrib import messages
 
-from .models import Branch, Department, Designation, DocumentType
+from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument
+from .forms import EmployeeForm, EmployeeDocumentForm
 
 
 @login_required
@@ -637,10 +639,183 @@ def document_type_toggle_status(request, pk):
 
 @login_required
 def employee_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+    department_filter = request.GET.get('department', '')
+    branch_filter = request.GET.get('branch', '')
+    sort = request.GET.get('sort', 'full_name')
+
+    allowed_sorts = ['full_name', '-full_name', 'employee_id', '-employee_id',
+                     'date_of_joining', '-date_of_joining', 'created_at', '-created_at']
+    if sort not in allowed_sorts:
+        sort = 'full_name'
+
+    employees = Employee.objects.select_related('branch', 'department', 'designation').all()
+
+    if search_query:
+        employees = employees.filter(
+            Q(full_name__icontains=search_query) |
+            Q(employee_id__icontains=search_query) |
+            Q(email__icontains=search_query) |
+            Q(phone__icontains=search_query) |
+            Q(department__name__icontains=search_query) |
+            Q(designation__name__icontains=search_query)
+        )
+
+    if status_filter:
+        employees = employees.filter(employee_status=status_filter)
+
+    if department_filter:
+        employees = employees.filter(department_id=department_filter)
+
+    if branch_filter:
+        employees = employees.filter(branch_id=branch_filter)
+
+    employees = employees.order_by(sort)
+
+    paginator = Paginator(employees, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Employees',
+        'employees': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'department_filter': department_filter,
+        'branch_filter': branch_filter,
+        'current_sort': sort,
+        'total_employees': paginator.count,
+        'branches': Branch.objects.filter(status='active').order_by('name'),
+        'departments': Department.objects.filter(status='active').order_by('name'),
     }
     return render(request, 'hrm/employee_list.html', context)
+
+
+@login_required
+def employee_create(request):
+    if request.method == 'POST':
+        form = EmployeeForm(request.POST, request.FILES)
+        if form.is_valid():
+            employee = form.save()
+            # Handle document uploads
+            doc_titles = request.POST.getlist('doc_title')
+            doc_files = request.FILES.getlist('doc_file')
+            for title, file in zip(doc_titles, doc_files):
+                if title and file:
+                    EmployeeDocument.objects.create(
+                        employee=employee,
+                        title=title,
+                        file=file,
+                    )
+            messages.success(request, f'Employee "{employee.full_name}" created successfully!')
+            return redirect('hrm:employee_list')
+    else:
+        form = EmployeeForm(initial={'employee_id': Employee.generate_employee_id()})
+
+    context = {
+        'page_title': 'Create Employee',
+        'form': form,
+    }
+    return render(request, 'hrm/employee_form.html', context)
+
+
+@login_required
+def employee_detail(request, employee_id):
+    employee = get_object_or_404(
+        Employee.objects.select_related('branch', 'department', 'designation'),
+        id=employee_id
+    )
+    documents = employee.documents.all()
+    context = {
+        'page_title': f'Employee: {employee.full_name}',
+        'employee': employee,
+        'documents': documents,
+    }
+    return render(request, 'hrm/employee_detail.html', context)
+
+
+@login_required
+def employee_edit(request, employee_id):
+    employee = get_object_or_404(Employee, id=employee_id)
+    if request.method == 'POST':
+        form = EmployeeForm(request.POST, request.FILES, instance=employee)
+        if form.is_valid():
+            employee = form.save()
+            # Handle new document uploads
+            doc_titles = request.POST.getlist('doc_title')
+            doc_files = request.FILES.getlist('doc_file')
+            for title, file in zip(doc_titles, doc_files):
+                if title and file:
+                    EmployeeDocument.objects.create(
+                        employee=employee,
+                        title=title,
+                        file=file,
+                    )
+            messages.success(request, f'Employee "{employee.full_name}" updated successfully!')
+            return redirect('hrm:employee_list')
+    else:
+        form = EmployeeForm(instance=employee)
+
+    documents = employee.documents.all()
+    context = {
+        'page_title': f'Edit Employee: {employee.full_name}',
+        'form': form,
+        'employee': employee,
+        'documents': documents,
+    }
+    return render(request, 'hrm/employee_form.html', context)
+
+
+@login_required
+def employee_delete(request, employee_id):
+    employee = get_object_or_404(Employee, id=employee_id)
+    if request.method == 'POST':
+        emp_name = employee.full_name
+        employee.delete()
+        return JsonResponse({'success': True, 'message': f'Employee "{emp_name}" deleted successfully!'})
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def employee_toggle_status(request, employee_id):
+    employee = get_object_or_404(Employee, id=employee_id)
+    if request.method == 'POST':
+        employee.employee_status = 'inactive' if employee.employee_status == 'active' else 'active'
+        employee.save()
+        return JsonResponse({'success': True, 'message': f'Employee "{employee.full_name}" is now {employee.get_employee_status_display()}.'})
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def employee_document_delete(request, doc_id):
+    doc = get_object_or_404(EmployeeDocument, id=doc_id)
+    if request.method == 'POST':
+        doc.delete()
+        return JsonResponse({'success': True, 'message': 'Document deleted successfully!'})
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def get_departments_by_branch(request):
+    branch_id = request.GET.get('branch_id')
+    if branch_id:
+        departments = Department.objects.filter(branch_id=branch_id, status='active').order_by('name')
+        data = [{'id': d.id, 'name': d.name} for d in departments]
+        return JsonResponse({'departments': data})
+    return JsonResponse({'departments': []})
+
+
+@login_required
+def get_designations_by_department(request):
+    department_id = request.GET.get('department_id')
+    if department_id:
+        designations = Designation.objects.filter(department_id=department_id, status='active').order_by('name')
+        data = [{'id': d.id, 'name': d.name} for d in designations]
+        return JsonResponse({'designations': data})
+    return JsonResponse({'designations': []})
 
 
 @login_required

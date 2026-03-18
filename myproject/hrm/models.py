@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 
 
 class Branch(models.Model):
@@ -80,3 +81,106 @@ class DocumentType(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Employee(models.Model):
+    GENDER_CHOICES = [
+        ('male', 'Male'),
+        ('female', 'Female'),
+        ('other', 'Other'),
+    ]
+    EMPLOYMENT_TYPE_CHOICES = [
+        ('full-time', 'Full-time'),
+        ('part-time', 'Part-time'),
+        ('contract', 'Contract'),
+        ('intern', 'Intern'),
+        ('freelance', 'Freelance'),
+    ]
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+        ('on_leave', 'On Leave'),
+        ('terminated', 'Terminated'),
+        ('resigned', 'Resigned'),
+    ]
+
+    # Basic Information
+    full_name = models.CharField(max_length=255)
+    employee_id = models.CharField(max_length=20, unique=True)
+    employee_code = models.CharField(max_length=50, blank=True, default='')
+    email = models.EmailField(unique=True)
+    phone = models.CharField(max_length=20)
+    password = models.CharField(max_length=128)
+    date_of_birth = models.DateField()
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
+    profile_image = models.ImageField(upload_to='employee_images/', blank=True, null=True)
+
+    # Employment Details
+    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, related_name='employees')
+    department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, related_name='employees')
+    designation = models.ForeignKey(Designation, on_delete=models.SET_NULL, null=True, related_name='employees')
+    date_of_joining = models.DateField()
+    employment_type = models.CharField(max_length=20, choices=EMPLOYMENT_TYPE_CHOICES, default='full-time')
+    employee_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    shift = models.CharField(max_length=100, blank=True, default='')
+    attendance_policy = models.CharField(max_length=100, blank=True, default='')
+
+    # Contact Information
+    address_line_1 = models.CharField(max_length=255)
+    address_line_2 = models.CharField(max_length=255, blank=True, default='')
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    country = models.CharField(max_length=100)
+    postal_code = models.CharField(max_length=20)
+
+    # Emergency Contact
+    emergency_contact_name = models.CharField(max_length=255)
+    emergency_contact_relationship = models.CharField(max_length=100)
+    emergency_contact_phone = models.CharField(max_length=20)
+
+    # Banking Information
+    bank_name = models.CharField(max_length=255)
+    account_holder_name = models.CharField(max_length=255)
+    account_number = models.CharField(max_length=50)
+    bank_identifier_code = models.CharField(max_length=50)
+    bank_branch = models.CharField(max_length=255)
+    tax_payer_id = models.CharField(max_length=50, blank=True, default='')
+    base_salary = models.DecimalField(max_digits=12, decimal_places=2)
+
+    # User link (optional)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='employee_profile')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.full_name} ({self.employee_id})"
+
+    @staticmethod
+    def generate_employee_id():
+        last = Employee.objects.order_by('-id').first()
+        if last:
+            # Extract numeric part from employee_id
+            try:
+                num = int(''.join(filter(str.isdigit, last.employee_id)))
+                return f"EMP{num + 1:06d}"
+            except ValueError:
+                pass
+        return "EMP000001"
+
+
+class EmployeeDocument(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='documents')
+    document_type = models.ForeignKey(DocumentType, on_delete=models.SET_NULL, null=True, blank=True)
+    title = models.CharField(max_length=255)
+    file = models.FileField(upload_to='employee_documents/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return f"{self.title} - {self.employee.full_name}"
