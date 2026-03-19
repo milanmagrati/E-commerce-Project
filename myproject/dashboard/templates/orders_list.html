@@ -2505,13 +2505,17 @@ document.addEventListener('keydown', function(e) {
                                name="excel_file" accept=".xlsx,.xls" required>
                         <div class="form-text text-muted mt-2">
                             <i class="fas fa-info-circle"></i>
-                            Use the same format as the exported Excel file. Required columns:
-                            <strong>Customer Name, Phone Number, Shipping Address, Branch/City, Grand Total</strong>.
+                            Required columns:
+                            <strong>Customer Name, Phone Number, Products [with Qty], Total Price(s), Branch/City, Shipping</strong>.
                         </div>
                     </div>
                     <div class="alert alert-info mb-0" role="alert">
-                        <i class="fas fa-lightbulb"></i> <strong>Tip:</strong>
-                        Export some orders first to get the correct Excel template format, then fill in your data following that format and import it back.
+                        <i class="fas fa-lightbulb"></i> <strong>Tips:</strong>
+                        <ul class="mb-0 mt-1 small">
+                            <li>Order Number is <strong>auto-generated</strong> — no need to include it.</li>
+                            <li>Optional columns: <strong>Order From</strong>, <strong>Staff Name</strong> (or Created By), Quantities.</li>
+                            <li>Products can include qty like <strong>"2pcs adibasi oil"</strong> or <strong>"Product (Qty: 2)"</strong>.</li>
+                        </ul>
                     </div>
                     <!-- File info preview -->
                     <div id="importFileInfo" class="mt-3" style="display:none;">

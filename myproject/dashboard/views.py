@@ -4988,8 +4988,17 @@ def export_order_details(request, order_id):
 @login_required
 @require_http_methods(["POST"])
 def import_orders_excel(request):
-    """Import orders from an Excel file (same format as the export)"""
+    """
+    Import orders from an Excel file.
+    
+    Required columns (red columns): Customer Name, Phone Number, Products (with Qty),
+    Total Price(s), Branch/City, Shipping Address.
+    
+    Optional columns: Quantities, Order From, Staff Name / Created By.
+    Ignored columns: Order Number, Order Date (order number is always auto-generated).
+    """
     from openpyxl import load_workbook
+    from accounts.models import CustomUser
     import re
 
     excel_file = request.FILES.get('excel_file')
@@ -5016,46 +5025,66 @@ def import_orders_excel(request):
             messages.error(request, "The Excel file is empty or has no data rows (only header found).")
             return redirect('orders_list')
 
-        # Parse header row - normalize to lowercase stripped
+        # Parse header row - normalize to lowercase stripped, replace brackets
         raw_headers = rows[0]
-        headers = [str(h).strip().lower() if h else '' for h in raw_headers]
+        headers = []
+        for h in raw_headers:
+            if h:
+                # Normalize: lowercase, strip, replace square brackets with parentheses
+                normalized = str(h).strip().lower().replace('[', '(').replace(']', ')')
+                headers.append(normalized)
+            else:
+                headers.append('')
 
         # Map expected columns to their indices
+        # Keys use normalized format (parentheses, lowercase)
         COLUMN_MAP = {
-            'order number': None,
-            'order date': None,
+            'customer name': None,
+            'phone number': None,
+            'products': None,          # matches "products (with qty)", "products [with qty]", "products"
+            'quantities': None,
+            'total price': None,       # matches "total price(s)", "total price"
+            'branch/city': None,
+            'shipping': None,          # matches "shipping", "shipping address"
+            'order from': None,
+            'staff name': None,
+            'created by': None,
+            'sku': None,
+            'unit price': None,        # matches "unit price(s)", "unit price"
+            'grand total': None,
+            'email': None,             # matches "email", "email address"
+            'landmark': None,
+            'in/out': None,
             'order status': None,
             'payment status': None,
             'payment method': None,
-            'customer name': None,
-            'phone number': None,
-            'email address': None,
-            'shipping address': None,
-            'branch/city': None,
-            'landmark': None,
-            'in/out': None,
-            'products (with qty)': None,
-            'sku': None,
-            'quantities': None,
-            'unit price(s)': None,
-            'total price(s)': None,
-            'grand total': None,
         }
 
         for idx, header in enumerate(headers):
+            if not header:
+                continue
             for key in COLUMN_MAP:
-                if key in header:
+                if COLUMN_MAP[key] is not None:
+                    continue  # Already mapped
+                if key in header or header in key:
                     COLUMN_MAP[key] = idx
                     break
 
         # Check required columns exist
-        required_cols = ['customer name', 'phone number', 'shipping address', 'branch/city', 'grand total']
+        required_cols = ['customer name', 'phone number', 'branch/city', 'shipping']
         missing_cols = [col for col in required_cols if COLUMN_MAP.get(col) is None]
+
+        # Need at least one price column: 'total price' or 'grand total'
+        has_price_col = COLUMN_MAP.get('total price') is not None or COLUMN_MAP.get('grand total') is not None
+        if not has_price_col:
+            missing_cols.append('total price(s)')
+
         if missing_cols:
             messages.error(
                 request,
                 f"Missing required columns in Excel: {', '.join(c.title() for c in missing_cols)}. "
-                f"Please use the same format as the exported Excel file."
+                f"Required columns: Customer Name, Phone Number, Products (with Qty), "
+                f"Total Price(s), Branch/City, Shipping."
             )
             return redirect('orders_list')
 
@@ -5069,7 +5098,7 @@ def import_orders_excel(request):
             return None
 
         def parse_price(price_str):
-            """Extract numeric value from price string like 'रू 1,234.56'"""
+            """Extract numeric value from price string like 'रू 1,234.56' or '1300'"""
             if not price_str:
                 return Decimal('0')
             cleaned = re.sub(r'[^\d.]', '', str(price_str).replace(',', ''))
@@ -5077,6 +5106,66 @@ def import_orders_excel(request):
                 return Decimal(cleaned) if cleaned else Decimal('0')
             except (InvalidOperation, ValueError):
                 return Decimal('0')
+
+        def parse_quantity_from_product(product_text):
+            """
+            Parse quantity from product text.
+            Supports formats:
+            - "Product Name (Qty: 2)" -> qty=2, name="Product Name"
+            - "2pcs product name" -> qty=2, name="product name"
+            - "3 pcs product name" -> qty=3, name="product name"
+            - "product name" -> qty=1, name="product name"
+            """
+            if not product_text:
+                return '', 1
+
+            # Try "(Qty: N)" format first
+            qty_match = re.search(r'\(Qty:\s*(\d+)\)', product_text)
+            if qty_match:
+                qty = int(qty_match.group(1))
+                name = re.sub(r'\s*\(Qty:\s*\d+\)', '', product_text).strip()
+                return name, qty
+
+            # Try "Npcs" or "N pcs" prefix format
+            pcs_match = re.match(r'^(\d+)\s*pcs?\s+(.+)$', product_text.strip(), re.IGNORECASE)
+            if pcs_match:
+                qty = int(pcs_match.group(1))
+                name = pcs_match.group(2).strip()
+                return name, qty
+
+            return product_text.strip(), 1
+
+        def find_staff_user(staff_name):
+            """Look up a CustomUser by username, first_name, or last_name (case-insensitive)"""
+            if not staff_name:
+                return None
+            name = staff_name.strip()
+            if not name:
+                return None
+            # Try exact username match
+            user = CustomUser.objects.filter(username__iexact=name, is_deleted=False, is_active=True).first()
+            if user:
+                return user
+            # Try first_name match
+            user = CustomUser.objects.filter(first_name__iexact=name, is_deleted=False, is_active=True).first()
+            if user:
+                return user
+            # Try last_name match
+            user = CustomUser.objects.filter(last_name__iexact=name, is_deleted=False, is_active=True).first()
+            if user:
+                return user
+            return None
+
+        # === Load default Setup records (same as order create page uses) ===
+        from .models import Setup
+        default_status_setup = Setup.objects.filter(setup_type='status', is_active=True, is_default=True).first()
+        default_payment_status_setup = Setup.objects.filter(setup_type='payment_status', is_active=True, is_default=True).first()
+        default_payment_setup = Setup.objects.filter(setup_type='payment', is_active=True, is_default=True).first()
+
+        # Derive string defaults from Setup defaults (fallback to hardcoded if no default set)
+        default_order_status = default_status_setup.name.lower().replace(' ', '_') if default_status_setup else 'processing'
+        default_payment_status = default_payment_status_setup.name.lower().replace(' ', '_') if default_payment_status_setup else 'pending'
+        default_payment_method = default_payment_setup.name.lower().replace(' ', '_') if default_payment_setup else ''
 
         success_count = 0
         error_rows = []
@@ -5090,21 +5179,53 @@ def import_orders_excel(request):
                 continue
 
             try:
+                # === Core required fields ===
                 customer_name = get_cell(row, 'customer name') or ''
                 customer_phone = get_cell(row, 'phone number') or ''
-                customer_email = get_cell(row, 'email address') or ''
-                shipping_address = get_cell(row, 'shipping address') or ''
+                shipping_address = get_cell(row, 'shipping') or ''
                 branch_city = get_cell(row, 'branch/city') or ''
+
+                # === Optional fields ===
+                customer_email = get_cell(row, 'email') or ''
                 landmark = get_cell(row, 'landmark') or ''
                 in_out_raw = get_cell(row, 'in/out') or 'in'
                 in_out = 'in' if in_out_raw.lower().strip() in ('in', 'valley', 'in valley') else 'out'
 
-                order_status_raw = get_cell(row, 'order status') or 'processing'
-                payment_status_raw = get_cell(row, 'payment status') or 'pending'
+                # === Status fields: use Setup defaults if not provided in Excel ===
+                order_status_raw = get_cell(row, 'order status') or ''
+                payment_status_raw = get_cell(row, 'payment status') or ''
                 payment_method_raw = get_cell(row, 'payment method') or ''
 
+                # === Price: prefer 'grand total', fallback to 'total price(s)' ===
                 grand_total_raw = get_cell(row, 'grand total')
+                if not grand_total_raw or parse_price(grand_total_raw) <= 0:
+                    grand_total_raw = get_cell(row, 'total price')
                 grand_total = parse_price(grand_total_raw)
+
+                # === Optional: Order From ===
+                order_from_raw = get_cell(row, 'order from') or ''
+                order_from_value = order_from_raw.strip().lower() if order_from_raw.strip() else ''
+
+                # === Optional: Staff Name / Created By ===
+                staff_name_raw = get_cell(row, 'staff name') or get_cell(row, 'created by') or ''
+                staff_user = find_staff_user(staff_name_raw)
+                if not staff_user and staff_name_raw.strip():
+                    # Auto-create staff user if name provided in Excel but doesn't exist
+                    staff_username = staff_name_raw.strip().lower().replace(' ', '_')
+                    # Check if username already exists (may have been created earlier in this import)
+                    staff_user = CustomUser.objects.filter(username=staff_username).first()
+                    if not staff_user:
+                        import uuid
+                        staff_user = CustomUser.objects.create(
+                            username=staff_username,
+                            first_name=staff_name_raw.strip().title(),
+                            email=f"{staff_username}_{uuid.uuid4().hex[:8]}@staff.local",
+                            role='sales',
+                            is_active=True,
+                        )
+                        staff_user.set_unusable_password()
+                        staff_user.save()
+                created_by_user = staff_user if staff_user else request.user
 
                 # Validate required fields
                 row_errors = []
@@ -5113,27 +5234,21 @@ def import_orders_excel(request):
                 if not customer_phone:
                     row_errors.append('Phone Number is empty')
                 if not shipping_address:
-                    row_errors.append('Shipping Address is empty')
+                    row_errors.append('Shipping is empty')
                 if not branch_city:
                     row_errors.append('Branch/City is empty')
                 if grand_total <= 0:
-                    row_errors.append('Grand Total must be greater than 0')
+                    row_errors.append('Total Price must be greater than 0')
 
                 if row_errors:
                     error_rows.append(f"Row {row_num}: {'; '.join(row_errors)}")
                     continue
 
-                # Check for duplicate by order number if provided
-                order_number_raw = get_cell(row, 'order number')
-                if order_number_raw and Order.objects.filter(order_number=order_number_raw, is_deleted=False).exists():
-                    skipped_duplicates.append(f"Row {row_num}: Order #{order_number_raw} already exists")
-                    continue
-
                 # Parse product items from combined fields
-                products_raw = get_cell(row, 'products (with qty)') or ''
+                products_raw = get_cell(row, 'products') or ''
                 skus_raw = get_cell(row, 'sku') or ''
                 quantities_raw = get_cell(row, 'quantities') or ''
-                unit_prices_raw = get_cell(row, 'unit price(s)') or ''
+                unit_prices_raw = get_cell(row, 'unit price') or ''
 
                 # Parse semicolon/comma separated values
                 product_entries = [p.strip() for p in products_raw.split(';') if p.strip()] if products_raw else []
@@ -5142,10 +5257,37 @@ def import_orders_excel(request):
                 price_entries = [p.strip() for p in unit_prices_raw.split(',') if p.strip()] if unit_prices_raw else []
 
                 with transaction.atomic():
-                    # Normalize status strings
-                    order_status = order_status_raw.lower().replace(' ', '_')
-                    payment_status = payment_status_raw.lower().replace(' ', '_')
-                    payment_method = payment_method_raw.lower().replace(' ', '_')
+                    # Resolve status/payment values: use Excel value if provided, otherwise Setup defaults
+                    if order_status_raw.strip():
+                        order_status = order_status_raw.lower().replace(' ', '_')
+                        # Look up matching Setup record
+                        row_status_setup = Setup.objects.filter(
+                            setup_type='status', is_active=True,
+                            name__iexact=order_status_raw.strip().replace('_', ' ')
+                        ).first()
+                    else:
+                        order_status = default_order_status
+                        row_status_setup = default_status_setup
+
+                    if payment_status_raw.strip():
+                        payment_status = payment_status_raw.lower().replace(' ', '_')
+                        row_payment_status_setup = Setup.objects.filter(
+                            setup_type='payment_status', is_active=True,
+                            name__iexact=payment_status_raw.strip().replace('_', ' ')
+                        ).first()
+                    else:
+                        payment_status = default_payment_status
+                        row_payment_status_setup = default_payment_status_setup
+
+                    if payment_method_raw.strip():
+                        payment_method = payment_method_raw.lower().replace(' ', '_')
+                        row_payment_setup = Setup.objects.filter(
+                            setup_type='payment', is_active=True,
+                            name__iexact=payment_method_raw.strip().replace('_', ' ')
+                        ).first()
+                    else:
+                        payment_method = default_payment_method
+                        row_payment_setup = default_payment_setup
 
                     # Get or create customer
                     customer, _ = Customer.objects.get_or_create(
@@ -5168,19 +5310,22 @@ def import_orders_excel(request):
                         }
                     )
 
-                    # Generate unique order number
+                    # Generate unique order number (T001, T002, ...)
                     new_order_number = None
                     for attempt in range(100):
                         last_order = Order.objects.filter(
-                            order_number__startswith='T'
-                        ).order_by('-order_number').first()
+                            order_number__regex=r'^T\d+$'
+                        ).extra(
+                            select={'num': "CAST(SUBSTR(order_number, 2) AS INTEGER)"}
+                        ).order_by('-num').first()
 
                         if last_order:
                             try:
                                 n = int(last_order.order_number[1:])
                                 new_order_number = f"T{n + 1:03d}"
                             except (ValueError, AttributeError, IndexError):
-                                new_order_number = f"T{Order.objects.filter(order_number__startswith='T').count() + 1:03d}"
+                                count = Order.objects.filter(order_number__regex=r'^T\d+$').count()
+                                new_order_number = f"T{count + 1:03d}"
                         else:
                             new_order_number = "T001"
 
@@ -5190,7 +5335,7 @@ def import_orders_excel(request):
                     # Create the order
                     order = Order.objects.create(
                         order_number=new_order_number,
-                        created_by=request.user,
+                        created_by=created_by_user,
                         customer=customer,
                         customer_name=customer_name,
                         customer_phone=customer_phone,
@@ -5199,40 +5344,57 @@ def import_orders_excel(request):
                         in_out=in_out,
                         shipping_address=shipping_address,
                         landmark=landmark,
-                        order_from='excel_import',
+                        order_from=order_from_value,
                         order_status=order_status,
                         payment_status=payment_status,
                         payment_method=payment_method,
+                        status_setup=row_status_setup,
+                        payment_status_setup=row_payment_status_setup,
+                        payment_setup=row_payment_setup,
                         total_amount=safe_decimal(grand_total, max_digits=18, decimal_places=2),
                         discount_amount=Decimal('0'),
                         shipping_charge=Decimal('0'),
                         tax_percent=Decimal('0'),
                     )
 
-                    # Sync status with Setup model
+                    # Sync status with Setup model (creates any missing Setup records)
                     order = sync_order_status_setup(order)
 
                     # Create order items
                     if product_entries:
                         num_items = len(product_entries)
                         for i in range(num_items):
-                            # Parse product name and quantity from "Product Name (Qty: 2)"
                             product_text = product_entries[i] if i < len(product_entries) else ''
-                            qty_match = re.search(r'\(Qty:\s*(\d+)\)', product_text)
-                            if qty_match:
-                                item_qty = int(qty_match.group(1))
-                                product_name = re.sub(r'\s*\(Qty:\s*\d+\)', '', product_text).strip()
+
+                            # Parse product name and quantity from text
+                            product_name, parsed_qty = parse_quantity_from_product(product_text)
+
+                            # If qty was parsed from product name, use it; otherwise use quantities column
+                            if parsed_qty > 1:
+                                item_qty = parsed_qty
                             else:
-                                # Fallback to quantities column
                                 try:
                                     item_qty = int(qty_entries[i]) if i < len(qty_entries) else 1
                                 except (ValueError, IndexError):
                                     item_qty = 1
-                                product_name = product_text.strip()
+                                # Final fallback: ensure at least 1
+                                if item_qty < 1:
+                                    item_qty = 1
 
                             item_sku = sku_entries[i] if i < len(sku_entries) else ''
-                            item_price = parse_price(price_entries[i]) if i < len(price_entries) else Decimal('0')
-                            item_total = item_price * item_qty
+
+                            # Calculate item price
+                            if i < len(price_entries):
+                                item_price = parse_price(price_entries[i])
+                                item_total = item_price * item_qty
+                            elif num_items == 1:
+                                # Single product: total price = grand total
+                                item_total = grand_total
+                                item_price = grand_total / item_qty if item_qty > 0 else grand_total
+                            else:
+                                # Multiple products without individual prices: distribute evenly
+                                item_total = grand_total / num_items
+                                item_price = item_total / item_qty if item_qty > 0 else item_total
 
                             # Try to find product by SKU
                             product_obj = None
@@ -5240,13 +5402,11 @@ def import_orders_excel(request):
                             variation_name = None
 
                             if item_sku and item_sku != 'N/A':
-                                # Try product variation first
                                 variation_obj = ProductVariation.objects.filter(sku=item_sku).first()
                                 if variation_obj:
                                     product_obj = variation_obj.product
                                     variation_name = getattr(variation_obj, 'variation_name', None) or variation_obj.sku
                                 else:
-                                    # Try product by barcode
                                     product_obj = Product.objects.filter(barcode=item_sku).first()
 
                             if not product_obj and product_name:
