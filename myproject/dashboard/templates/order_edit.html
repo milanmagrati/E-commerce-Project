@@ -1256,7 +1256,7 @@
                             {% else %}
                                 <option value="" disabled>No sources configured — add in Setup Management</option>
                             {% endif %}
-                            {% if order.order_from %}
+                            {% if order.order_from and not order_source_setups %}
                             <option value="{{ order.order_from }}" selected style="display:none">{{ order.order_from }}</option>
                             {% endif %}
                         </select>
@@ -1375,18 +1375,6 @@
                             data-bs-target="#productModal">
                             <i class="fas fa-plus-circle"></i> Add Products
                         </button>
-                    </div>
-                </div>
-
-                <!-- Row 4: Notes -->
-                <div class="row g-2 mb-1">
-                    <div class="col-md-6">
-                        <label class="form-label">Order Note</label>
-                        <textarea name="notes" id="orderNotes" class="form-control" placeholder="Note...">{{ order.notes }}</textarea>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Admin Notes</label>
-                        <textarea name="admin_notes" id="adminNotes" class="form-control" placeholder="Type a new admin note and save..."></textarea>
                     </div>
                 </div>
 

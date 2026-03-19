@@ -2112,6 +2112,287 @@
     .search-clear-btn:hover {
         color: #667eea;
     }
+
+    /* ✨ SEARCH ORDERS MODAL STYLES */
+    #searchOrdersModal .modal-header {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    #searchOrdersModal .modal-title {
+        color: white;
+        font-weight: 700;
+    }
+    #searchOrdersModal .modal-body {
+        background: #f8f9fa;
+        padding: 20px;
+    }
+    #searchOrdersModal .btn-close {
+        filter: invert(1);
+    }
+    .search-orders-input {
+        border: 2px solid #f59e0b;
+        border-radius: 8px;
+        padding: 12px 15px;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+    }
+    .search-orders-input:focus {
+        border-color: #d97706;
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+    }
+    .search-orders-filters {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+    }
+    .search-orders-filters select,
+    .search-orders-filters input[type="date"] {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 0.85rem;
+        background: white;
+        min-width: 130px;
+    }
+    .search-orders-filters select:focus,
+    .search-orders-filters input[type="date"]:focus {
+        border-color: #f59e0b;
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15);
+    }
+    .search-orders-stats {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+    .search-orders-stat {
+        padding: 6px 14px;
+        background: white;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #f59e0b;
+        border: 1px solid #e2e8f0;
+    }
+    .search-orders-stat i {
+        margin-right: 4px;
+    }
+    .search-orders-list {
+        background: white;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        max-height: 450px;
+        overflow-y: auto;
+    }
+    .search-orders-list::-webkit-scrollbar {
+        width: 6px;
+    }
+    .search-orders-list::-webkit-scrollbar-track {
+        background: #f1f5f9;
+    }
+    .search-orders-list::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+    }
+    .search-orders-list .table {
+        margin-bottom: 0;
+    }
+    .search-orders-list .table thead th {
+        border-bottom: 2px solid #e2e8f0;
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    }
+    .search-orders-list .table tbody tr {
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .search-orders-list .table tbody tr:last-child {
+        border-bottom: none;
+    }
+    .search-orders-list .btn-group .btn {
+        padding: 4px 8px;
+        font-size: 0.78rem;
+    }
+    .search-orders-list .btn-info {
+        background: #06b6d4; border-color: #06b6d4; color: white;
+    }
+    .search-orders-list .btn-warning {
+        background: #f59e0b; border-color: #f59e0b; color: white;
+    }
+    .search-orders-list .btn-primary {
+        background: #3b82f6; border-color: #3b82f6; color: white;
+    }
+    .search-orders-list .btn-secondary {
+        background: #64748b; border-color: #64748b; color: white;
+    }
+    .search-order-no-results {
+        padding: 50px 20px;
+        text-align: center;
+        color: #999;
+    }
+    .search-order-no-results i {
+        font-size: 2.5rem;
+        margin-bottom: 15px;
+        display: block;
+        opacity: 0.4;
+    }
+    .search-order-loading {
+        padding: 50px 20px;
+        text-align: center;
+        color: #f59e0b;
+    }
+    .search-order-loading i {
+        font-size: 2rem;
+        margin-bottom: 15px;
+        display: block;
+    }
+    .search-orders-load-more {
+        text-align: center;
+        padding: 12px;
+        border-top: 1px solid #e2e8f0;
+    }
+    .search-orders-load-more .btn {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 6px 24px;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+    .search-orders-load-more .btn:hover {
+        opacity: 0.9;
+    }
+    /* Order Detail View inside modal */
+    .order-detail-panel {
+        background: white;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        overflow: hidden;
+    }
+    .order-detail-back-bar {
+        padding: 12px 18px;
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 2px solid #f59e0b;
+    }
+    .order-detail-back-btn {
+        background: white;
+        border: 1px solid #d97706;
+        color: #d97706;
+        border-radius: 6px;
+        padding: 6px 16px;
+        font-weight: 600;
+        font-size: 0.88rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .order-detail-back-btn:hover {
+        background: #d97706;
+        color: white;
+    }
+    .order-detail-title {
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: #92400e;
+    }
+    .order-detail-body {
+        padding: 20px;
+    }
+    .order-detail-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    .order-detail-card {
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 16px;
+        border: 1px solid #e2e8f0;
+    }
+    .order-detail-card h6 {
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #d97706;
+        font-weight: 700;
+        margin-bottom: 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid #fef3c7;
+    }
+    .detail-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 5px 0;
+        font-size: 0.88rem;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .detail-row:last-child {
+        border-bottom: none;
+    }
+    .detail-label {
+        color: #666;
+        font-weight: 500;
+    }
+    .detail-value {
+        color: #1a1a2e;
+        font-weight: 600;
+        text-align: right;
+    }
+    .order-detail-items-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+    }
+    .order-detail-items-table thead {
+        background: linear-gradient(135deg, #fef3c7, #fde68a);
+    }
+    .order-detail-items-table th {
+        padding: 10px 14px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #92400e;
+    }
+    .order-detail-items-table td {
+        padding: 10px 14px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .order-detail-items-table tbody tr:hover {
+        background: #fffbeb;
+    }
+    .order-detail-actions-bar {
+        display: flex;
+        gap: 8px;
+        padding: 16px 20px;
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+        flex-wrap: wrap;
+    }
+    .order-detail-actions-bar .btn {
+        font-size: 0.85rem;
+        padding: 6px 16px;
+        border-radius: 6px;
+        font-weight: 600;
+    }
+    @media (max-width: 768px) {
+        .order-detail-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    .search-order-match-tag {
+        display: inline-block;
+        font-size: 0.7rem;
+        background: #f59e0b;
+        color: white;
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
 </style>
 {% endblock %}
 
@@ -2125,6 +2406,9 @@
                 Create Order - POS
             </h4>
             <div class="d-flex gap-2">
+                <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#searchOrdersModal">
+                    <i class="fas fa-search"></i> Search Orders
+                </button>
                 <button type="button" class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#ncmBranchesSearchModal">
                     <i class="fas fa-city"></i> Search NCM Branches
                 </button>
@@ -2733,6 +3017,93 @@
     </div>
 </div>
 
+<!-- ✨ SEARCH ORDERS MODAL -->
+<div class="modal fade" id="searchOrdersModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;">
+                <h5 class="modal-title" style="color: white; font-weight: 700;">
+                    <i class="fas fa-search"></i> Search Orders
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter: invert(1);"></button>
+            </div>
+            <div class="modal-body" style="background: #f8f9fa;">
+                <!-- Search Input -->
+                <div class="mb-2">
+                    <input type="text" id="searchOrdersInput" class="form-control search-orders-input" 
+                           placeholder="Search by order number, customer name, phone, email, address, tracking number..." autocomplete="off">
+                </div>
+
+                <!-- Filters Row -->
+                <div class="search-orders-filters">
+                    <select id="searchOrdersStatus">
+                        <option value="">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="processing">Processing</option>
+                        <option value="completed">Completed</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="returned">Returned</option>
+                        <option value="on hold">On Hold</option>
+                    </select>
+                    <select id="searchOrdersPayment">
+                        <option value="">All Payments</option>
+                        <option value="paid">Paid</option>
+                        <option value="unpaid">Unpaid</option>
+                        <option value="partial">Partial</option>
+                        <option value="pending">Pending</option>
+                        <option value="cod">COD</option>
+                    </select>
+                    <input type="date" id="searchOrdersDateFrom" title="From date">
+                    <input type="date" id="searchOrdersDateTo" title="To date">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="searchOrdersClearFilters" title="Clear all filters">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+
+                <!-- Stats -->
+                <div class="search-orders-stats">
+                    <div class="search-orders-stat">
+                        <i class="fas fa-list"></i> <span id="searchOrdersResultCount">0</span> results
+                    </div>
+                    <div class="search-orders-stat" style="color: #10b981;">
+                        <i class="fas fa-database"></i> <span id="searchOrdersTotalCount">0</span> total orders
+                    </div>
+                </div>
+
+                <!-- Search Results Panel -->
+                <div id="searchOrdersSearchPanel">
+                    <!-- Results List -->
+                    <div class="search-orders-list" id="searchOrdersListContainer">
+                        <div class="search-order-loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Search orders by typing above...</p>
+                        </div>
+                    </div>
+
+                    <!-- Load More -->
+                    <div class="search-orders-load-more" id="searchOrdersLoadMore" style="display: none;">
+                        <button type="button" class="btn" id="searchOrdersLoadMoreBtn">
+                            <i class="fas fa-arrow-down"></i> Load More
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Order Detail Panel (hidden by default) -->
+                <div id="orderDetailViewContainer" style="display:none;"></div>
+            </div>
+            <div class="modal-footer" style="background: #f8f9fa; justify-content: space-between;">
+                <div style="font-size: 0.82rem; color: #999;">
+                    <i class="fas fa-info-circle"></i> Click an order to view details
+                </div>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ✨ NCM BRANCHES SEARCH MODAL -->
 <div class="modal fade" id="ncmBranchesSearchModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -2780,7 +3151,7 @@
 
 <script>
     let cart = [];
-    let productModal, variationModal, partialPaymentModal, customProductModal, bestsellingProductDetailModal, ncmBranchesSearchModal;
+    let productModal, variationModal, partialPaymentModal, customProductModal, bestsellingProductDetailModal, ncmBranchesSearchModal, searchOrdersModal;
     let isPartialPaymentSelected = false;
     let currentCityDetectionInProgress = false;
     let isProductLoading = false;
@@ -2840,6 +3211,468 @@
             // Fallback if audio context not supported
             console.log('Audio context not available');
         }
+    }
+
+    // ✨ SEARCH ORDERS FUNCTIONALITY
+    function initializeSearchOrders() {
+        const searchInput = document.getElementById('searchOrdersInput');
+        const statusFilter = document.getElementById('searchOrdersStatus');
+        const paymentFilter = document.getElementById('searchOrdersPayment');
+        const dateFrom = document.getElementById('searchOrdersDateFrom');
+        const dateTo = document.getElementById('searchOrdersDateTo');
+        const clearBtn = document.getElementById('searchOrdersClearFilters');
+        const listContainer = document.getElementById('searchOrdersListContainer');
+        const resultCount = document.getElementById('searchOrdersResultCount');
+        const totalCount = document.getElementById('searchOrdersTotalCount');
+        const loadMoreContainer = document.getElementById('searchOrdersLoadMore');
+        const loadMoreBtn = document.getElementById('searchOrdersLoadMoreBtn');
+
+        let currentPage = 1;
+        let isLoading = false;
+        let currentOrders = [];
+
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        function fetchOrders(page, append) {
+            if (isLoading) return;
+            isLoading = true;
+
+            const query = searchInput.value.trim();
+            const status = statusFilter.value;
+            const payment = paymentFilter.value;
+            const dfrom = dateFrom.value;
+            const dto = dateTo.value;
+
+            const params = new URLSearchParams();
+            if (query) params.set('q', query);
+            if (status) params.set('status', status);
+            if (payment) params.set('payment', payment);
+            if (dfrom) params.set('date_from', dfrom);
+            if (dto) params.set('date_to', dto);
+            params.set('page', page);
+            params.set('per_page', 30);
+
+            if (!append) {
+                listContainer.innerHTML = '<div class="search-order-loading"><i class="fas fa-spinner fa-spin"></i><p>Searching orders...</p></div>';
+                loadMoreContainer.style.display = 'none';
+            } else {
+                loadMoreBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+                loadMoreBtn.disabled = true;
+            }
+
+            fetch('{% url "api_search_orders" %}?' + params.toString(), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                credentials: 'same-origin'
+            })
+            .then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(data => {
+                isLoading = false;
+                if (!data.success) {
+                    listContainer.innerHTML = '<div class="search-order-no-results"><i class="fas fa-exclamation-circle"></i><p>Error loading orders</p></div>';
+                    return;
+                }
+
+                totalCount.textContent = data.total;
+
+                if (append) {
+                    currentOrders = currentOrders.concat(data.orders);
+                } else {
+                    currentOrders = data.orders;
+                }
+
+                resultCount.textContent = currentOrders.length;
+                renderOrders(currentOrders, query);
+
+                if (data.has_more) {
+                    loadMoreContainer.style.display = 'block';
+                    loadMoreBtn.innerHTML = '<i class="fas fa-arrow-down"></i> Load More (' + (data.total - currentOrders.length) + ' remaining)';
+                    loadMoreBtn.disabled = false;
+                } else {
+                    loadMoreContainer.style.display = 'none';
+                }
+            })
+            .catch(err => {
+                isLoading = false;
+                console.error('Search orders error:', err);
+                if (!append) {
+                    listContainer.innerHTML = '<div class="search-order-no-results"><i class="fas fa-exclamation-triangle"></i><p>Error: ' + err.message + '</p></div>';
+                }
+                loadMoreBtn.innerHTML = '<i class="fas fa-arrow-down"></i> Load More';
+                loadMoreBtn.disabled = false;
+            });
+        }
+
+        function getStatusBadgeClass(status) {
+            if (!status) return 'status-default';
+            const s = status.toLowerCase();
+            if (s.includes('pending')) return 'status-pending';
+            if (s.includes('processing')) return 'status-processing';
+            if (s.includes('completed') || s.includes('delivered')) return 'status-completed';
+            if (s.includes('cancelled') || s.includes('canceled')) return 'status-cancelled';
+            return 'status-default';
+        }
+
+        function getPaymentBadgeClass(status) {
+            if (!status) return 'payment-default';
+            const s = status.toLowerCase();
+            if (s.includes('paid') && !s.includes('un')) return 'payment-paid';
+            if (s.includes('unpaid')) return 'payment-unpaid';
+            if (s.includes('partial')) return 'payment-partial';
+            return 'payment-default';
+        }
+
+        function highlightTerm(text, term) {
+            if (!term || !text) return text || '';
+            const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp('(' + escaped + ')', 'gi');
+            return String(text).replace(regex, '<mark style="background:#fef08a;color:#1a1a2e;padding:0 2px;border-radius:2px;font-weight:700;">$1</mark>');
+        }
+
+        function renderOrders(orders, searchTerm) {
+            if (!orders || orders.length === 0) {
+                listContainer.innerHTML = '<div class="search-order-no-results"><i class="fas fa-inbox"></i><p>No orders found matching your search</p><small style="color:#bbb;">Try different keywords or adjust filters</small></div>';
+                return;
+            }
+
+            // Build table matching orders_list page layout
+            let html = '<div style="overflow-x:auto;">';
+            html += '<table class="table table-hover mb-0" style="font-size:0.9rem;">';
+            html += '<thead style="background:#f8f9fa;position:sticky;top:0;z-index:1;">';
+            html += '<tr>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="8%">Order #</th>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="15%">Customer</th>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="12%">Date</th>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="18%">Product</th>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="10%">Amount</th>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="10%">Payment</th>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="7%">Status</th>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="20%">Actions</th>';
+            html += '</tr></thead><tbody>';
+
+            orders.forEach(function(order, orderIdx) {
+                const statusClass = getStatusBadgeClass(order.status);
+                const paymentClass = getPaymentBadgeClass(order.payment_status);
+
+                // Products column
+                let productsHtml = '';
+                if (order.items && order.items.length > 0) {
+                    order.items.forEach(function(it) {
+                        let label = highlightTerm(it.product_name, searchTerm);
+                        if (it.variation_name) label += ' <small>(' + it.variation_name + ')</small>';
+                        productsHtml += '<span class="badge bg-light text-dark" style="max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;margin:1px 2px;font-size:0.78rem;" title="' + (it.product_name || '') + ' x' + it.quantity + '">';
+                        productsHtml += '<i class="fas fa-box" style="color:#d97706;"></i> ' + label + ' <small class="ms-1">x' + it.quantity + '</small></span>';
+                    });
+                } else {
+                    productsHtml = '<span class="text-muted">No products</span>';
+                }
+
+                // Payment status color
+                let paymentStatusColor = '#666';
+                const ps = (order.payment_status || '').toLowerCase();
+                if (ps.includes('paid') && !ps.includes('un')) paymentStatusColor = '#10b981';
+                else if (ps.includes('unpaid')) paymentStatusColor = '#ef4444';
+                else if (ps.includes('partial')) paymentStatusColor = '#f59e0b';
+
+                // Order status color
+                let orderStatusColor = '#f59e0b';
+                const os = (order.status || '').toLowerCase();
+                if (os.includes('completed') || os.includes('delivered')) orderStatusColor = '#10b981';
+                else if (os.includes('processing')) orderStatusColor = '#3b82f6';
+                else if (os.includes('cancelled') || os.includes('canceled')) orderStatusColor = '#ef4444';
+
+                html += '<tr style="cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background=\'#fffbeb\'" onmouseout="this.style.background=\'white\'">';
+
+                // Order #
+                html += '<td style="padding:12px;vertical-align:middle;"><strong style="color:#d97706;">' + highlightTerm(order.order_number, searchTerm) + '</strong></td>';
+
+                // Customer
+                html += '<td style="padding:12px;vertical-align:middle;"><div><strong>' + highlightTerm(order.customer_name, searchTerm) + '</strong><br><small class="text-muted"><i class="fas fa-phone"></i> ' + highlightTerm(order.customer_phone, searchTerm) + '</small></div></td>';
+
+                // Date
+                html += '<td style="padding:12px;vertical-align:middle;"><span class="text-muted" style="font-size:0.85rem;">' + order.created_at + '</span></td>';
+
+                // Products
+                html += '<td style="padding:12px;vertical-align:middle;">' + productsHtml + '</td>';
+
+                // Amount
+                html += '<td style="padding:12px;vertical-align:middle;"><strong style="color:#10b981;">रू ' + parseFloat(order.total_amount).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</strong></td>';
+
+                // Payment
+                html += '<td style="padding:12px;vertical-align:middle;"><strong style="color:' + paymentStatusColor + ';">' + (order.payment_status || '').toUpperCase() + '</strong><br><small class="text-muted">' + (order.payment_method || '').toUpperCase() + '</small></td>';
+
+                // Status
+                html += '<td style="padding:12px;vertical-align:middle;"><strong style="color:' + orderStatusColor + ';font-weight:700;">' + (order.status || 'Pending') + '</strong></td>';
+
+                // Actions
+                html += '<td style="padding:12px;vertical-align:middle;"><div class="btn-group btn-group-sm">';
+                html += '<button type="button" class="btn btn-info search-order-view-btn" data-order-idx="' + orderIdx + '" title="View Details"><i class="fas fa-eye"></i></button>';
+                html += '<a href="/orders/' + order.id + '/edit/" class="btn btn-warning" title="Edit" target="_blank"><i class="fas fa-edit"></i></a>';
+                html += '<a href="/orders/' + order.id + '/invoice/" class="btn btn-primary" title="Invoice" target="_blank"><i class="fas fa-file-invoice"></i></a>';
+                html += '<button type="button" class="btn btn-secondary" title="Copy Order #" onclick="event.stopPropagation();navigator.clipboard.writeText(\'' + order.order_number + '\');this.innerHTML=\'<i class=\\\'fas fa-check\\\'></i>\';setTimeout(()=>{this.innerHTML=\'<i class=\\\'fas fa-copy\\\'></i>\'},1200);"><i class="fas fa-copy"></i></button>';
+                html += '</div></td>';
+
+                html += '</tr>';
+            });
+
+            html += '</tbody></table></div>';
+            listContainer.innerHTML = html;
+
+            // Store orders reference for view buttons
+            listContainer._ordersData = orders;
+
+            // Add row click handlers (show detail in modal)
+            listContainer.querySelectorAll('tbody tr').forEach(function(row, idx) {
+                row.addEventListener('click', function(e) {
+                    if (e.target.closest('a') || e.target.closest('button')) return;
+                    showOrderDetailInModal(orders[idx]);
+                });
+            });
+
+            // Add view button click handlers
+            listContainer.querySelectorAll('.search-order-view-btn').forEach(function(btn, idx) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    showOrderDetailInModal(orders[idx]);
+                });
+            });
+        }
+
+        // Debounced search
+        let searchTimeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(function() {
+                currentPage = 1;
+                fetchOrders(1, false);
+            }, 400);
+        });
+
+        // Filter changes
+        statusFilter.addEventListener('change', function() { currentPage = 1; fetchOrders(1, false); });
+        paymentFilter.addEventListener('change', function() { currentPage = 1; fetchOrders(1, false); });
+        dateFrom.addEventListener('change', function() { currentPage = 1; fetchOrders(1, false); });
+        dateTo.addEventListener('change', function() { currentPage = 1; fetchOrders(1, false); });
+
+        // Clear filters
+        clearBtn.addEventListener('click', function() {
+            searchInput.value = '';
+            statusFilter.value = '';
+            paymentFilter.value = '';
+            dateFrom.value = '';
+            dateTo.value = '';
+            currentPage = 1;
+            currentOrders = [];
+            resultCount.textContent = '0';
+            totalCount.textContent = '0';
+            loadMoreContainer.style.display = 'none';
+            listContainer.innerHTML = '<div class="search-order-loading"><i class="fas fa-search" style="opacity:0.3;"></i><p>Search orders by typing above...</p></div>';
+        });
+
+        // Load more
+        loadMoreBtn.addEventListener('click', function() {
+            currentPage++;
+            fetchOrders(currentPage, true);
+        });
+
+        // Auto-focus search input when modal opens
+        const modalEl = document.getElementById('searchOrdersModal');
+        modalEl.addEventListener('shown.bs.modal', function() {
+            searchInput.focus();
+            // Load initial orders (recent) on first open
+            if (currentOrders.length === 0) {
+                fetchOrders(1, false);
+            }
+        });
+
+        // Keyboard shortcut: Enter to search
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                clearTimeout(searchTimeout);
+                currentPage = 1;
+                fetchOrders(1, false);
+            }
+        });
+    }
+
+    // Show order detail inside the modal
+    function showOrderDetailInModal(order) {
+        const searchPanel = document.getElementById('searchOrdersSearchPanel');
+        const detailContainer = document.getElementById('orderDetailViewContainer');
+        const modalSearchInput = document.querySelector('#searchOrdersModal .search-orders-input');
+        const modalFilters = document.querySelector('#searchOrdersModal .search-orders-filters');
+        const modalStats = document.querySelector('#searchOrdersModal .search-orders-stats');
+        const modalFooterInfo = document.querySelector('#searchOrdersModal .modal-footer div');
+
+        // Hide search panel elements
+        searchPanel.style.display = 'none';
+        if (modalSearchInput) modalSearchInput.parentElement.style.display = 'none';
+        if (modalFilters) modalFilters.style.display = 'none';
+        if (modalStats) modalStats.style.display = 'none';
+        if (modalFooterInfo) modalFooterInfo.innerHTML = '<button class="btn btn-sm" style="background:#d97706;color:white;font-weight:600;border-radius:6px;" onclick="backToSearchResults()"><i class="fas fa-arrow-left"></i> Back to Search Results</button>';
+
+        // Payment status color
+        let paymentStatusColor = '#666';
+        const ps = (order.payment_status || '').toLowerCase();
+        if (ps.includes('paid') && !ps.includes('un')) paymentStatusColor = '#10b981';
+        else if (ps.includes('unpaid')) paymentStatusColor = '#ef4444';
+        else if (ps.includes('partial')) paymentStatusColor = '#f59e0b';
+
+        // Order status color
+        let orderStatusColor = '#f59e0b';
+        const os = (order.status || '').toLowerCase();
+        if (os.includes('completed') || os.includes('delivered')) orderStatusColor = '#10b981';
+        else if (os.includes('processing')) orderStatusColor = '#3b82f6';
+        else if (os.includes('cancelled') || os.includes('canceled')) orderStatusColor = '#ef4444';
+
+        // Build items table
+        let itemsHtml = '';
+        if (order.items && order.items.length > 0) {
+            itemsHtml += '<table class="order-detail-items-table">';
+            itemsHtml += '<thead><tr><th>Product</th><th>Variant</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Price</th><th style="text-align:right;">Total</th></tr></thead>';
+            itemsHtml += '<tbody>';
+            let subtotal = 0;
+            order.items.forEach(function(item) {
+                const itemTotal = parseFloat(item.total) || 0;
+                subtotal += itemTotal;
+                itemsHtml += '<tr>';
+                itemsHtml += '<td><i class="fas fa-box" style="color:#d97706;margin-right:6px;"></i><strong>' + (item.product_name || '') + '</strong></td>';
+                itemsHtml += '<td>' + (item.variation_name || '<span class="text-muted">-</span>') + '</td>';
+                itemsHtml += '<td style="text-align:center;">' + item.quantity + '</td>';
+                itemsHtml += '<td style="text-align:right;">रू ' + parseFloat(item.price).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>';
+                itemsHtml += '<td style="text-align:right;font-weight:600;">रू ' + itemTotal.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>';
+                itemsHtml += '</tr>';
+            });
+            itemsHtml += '</tbody>';
+            itemsHtml += '<tfoot style="background:#fef3c7;font-weight:700;">';
+            itemsHtml += '<tr><td colspan="4" style="text-align:right;padding:10px 14px;">Subtotal:</td><td style="text-align:right;padding:10px 14px;">रू ' + subtotal.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td></tr>';
+            if (parseFloat(order.discount_amount) > 0) {
+                itemsHtml += '<tr><td colspan="4" style="text-align:right;padding:6px 14px;color:#ef4444;">Discount:</td><td style="text-align:right;padding:6px 14px;color:#ef4444;">- रू ' + parseFloat(order.discount_amount).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td></tr>';
+            }
+            if (parseFloat(order.shipping_charge) > 0) {
+                itemsHtml += '<tr><td colspan="4" style="text-align:right;padding:6px 14px;color:#3b82f6;">Shipping:</td><td style="text-align:right;padding:6px 14px;color:#3b82f6;">+ रू ' + parseFloat(order.shipping_charge).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td></tr>';
+            }
+            itemsHtml += '<tr style="font-size:1.05rem;"><td colspan="4" style="text-align:right;padding:10px 14px;color:#1a1a2e;">Total:</td><td style="text-align:right;padding:10px 14px;color:#10b981;">रू ' + parseFloat(order.total_amount).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td></tr>';
+            itemsHtml += '</tfoot></table>';
+        } else {
+            itemsHtml = '<div style="text-align:center;padding:20px;color:#999;"><i class="fas fa-box-open" style="font-size:1.5rem;margin-bottom:8px;display:block;"></i>No items in this order</div>';
+        }
+
+        let html = '<div class="order-detail-panel">';
+        // Back bar
+        html += '<div class="order-detail-back-bar">';
+        html += '<button class="order-detail-back-btn" onclick="backToSearchResults()"><i class="fas fa-arrow-left"></i> Back to Results</button>';
+        html += '<span class="order-detail-title"><i class="fas fa-receipt"></i> Order ' + (order.order_number || '') + '</span>';
+        html += '<div style="display:flex;gap:6px;">';
+        html += '<a href="/orders/' + order.id + '/" class="btn btn-sm btn-info" target="_blank" title="Open full page"><i class="fas fa-external-link-alt"></i> Full Page</a>';
+        html += '<a href="/orders/' + order.id + '/edit/" class="btn btn-sm btn-warning" target="_blank" title="Edit order"><i class="fas fa-edit"></i> Edit</a>';
+        html += '<a href="/orders/' + order.id + '/invoice/" class="btn btn-sm btn-primary" target="_blank" title="View invoice"><i class="fas fa-file-invoice"></i> Invoice</a>';
+        html += '</div></div>';
+
+        // Body
+        html += '<div class="order-detail-body">';
+
+        // Info grid
+        html += '<div class="order-detail-grid">';
+
+        // Customer Info card
+        html += '<div class="order-detail-card">';
+        html += '<h6><i class="fas fa-user"></i> Customer Information</h6>';
+        html += '<div class="detail-row"><span class="detail-label">Name</span><span class="detail-value">' + (order.customer_name || '-') + '</span></div>';
+        html += '<div class="detail-row"><span class="detail-label">Phone</span><span class="detail-value">' + (order.customer_phone || '-') + '</span></div>';
+        if (order.customer_email) {
+            html += '<div class="detail-row"><span class="detail-label">Email</span><span class="detail-value">' + order.customer_email + '</span></div>';
+        }
+        html += '<div class="detail-row"><span class="detail-label">Address</span><span class="detail-value">' + (order.shipping_address || '-') + '</span></div>';
+        html += '<div class="detail-row"><span class="detail-label">City/Branch</span><span class="detail-value">' + (order.branch_city || '-') + '</span></div>';
+        if (order.in_out) {
+            const ioColor = order.in_out.toLowerCase() === 'in' ? '#10b981' : '#ef4444';
+            html += '<div class="detail-row"><span class="detail-label">In/Out</span><span class="detail-value" style="color:' + ioColor + ';font-weight:700;">' + order.in_out.toUpperCase() + '</span></div>';
+        }
+        html += '</div>';
+
+        // Order Info card
+        html += '<div class="order-detail-card">';
+        html += '<h6><i class="fas fa-info-circle"></i> Order Information</h6>';
+        html += '<div class="detail-row"><span class="detail-label">Order #</span><span class="detail-value" style="color:#d97706;font-weight:700;">' + (order.order_number || '-') + '</span></div>';
+        html += '<div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">' + (order.created_at || '-') + '</span></div>';
+        html += '<div class="detail-row"><span class="detail-label">Status</span><span class="detail-value" style="color:' + orderStatusColor + ';font-weight:700;">' + (order.status || 'Pending') + '</span></div>';
+        html += '<div class="detail-row"><span class="detail-label">Payment</span><span class="detail-value" style="color:' + paymentStatusColor + ';font-weight:700;">' + (order.payment_status || '-').toUpperCase() + '</span></div>';
+        html += '<div class="detail-row"><span class="detail-label">Method</span><span class="detail-value">' + (order.payment_method || '-') + '</span></div>';
+        if (order.tracking_number) {
+            html += '<div class="detail-row"><span class="detail-label">Tracking</span><span class="detail-value">' + order.tracking_number + '</span></div>';
+        }
+        if (order.created_by) {
+            html += '<div class="detail-row"><span class="detail-label">Created By</span><span class="detail-value">' + order.created_by + '</span></div>';
+        }
+        html += '</div>';
+
+        html += '</div>'; // end grid
+
+        // Notes
+        if (order.notes) {
+            html += '<div class="order-detail-card" style="margin-bottom:20px;">';
+            html += '<h6><i class="fas fa-sticky-note"></i> Notes</h6>';
+            html += '<div style="font-size:0.88rem;color:#555;line-height:1.5;">' + order.notes + '</div>';
+            html += '</div>';
+        }
+
+        // Items table
+        html += '<div class="order-detail-card" style="padding:0;overflow:hidden;">';
+        html += '<h6 style="padding:16px 16px 12px;margin-bottom:0;"><i class="fas fa-box"></i> Order Items (' + (order.items ? order.items.length : 0) + ')</h6>';
+        html += itemsHtml;
+        html += '</div>';
+
+        html += '</div>'; // end body
+        html += '</div>'; // end panel
+
+        detailContainer.innerHTML = html;
+        detailContainer.style.display = 'block';
+
+        // Scroll to top of modal body
+        const modalBody = document.querySelector('#searchOrdersModal .modal-body');
+        if (modalBody) modalBody.scrollTop = 0;
+    }
+
+    // Back to search results from detail view
+    function backToSearchResults() {
+        const searchPanel = document.getElementById('searchOrdersSearchPanel');
+        const detailContainer = document.getElementById('orderDetailViewContainer');
+        const modalSearchInput = document.querySelector('#searchOrdersModal .search-orders-input');
+        const modalFilters = document.querySelector('#searchOrdersModal .search-orders-filters');
+        const modalStats = document.querySelector('#searchOrdersModal .search-orders-stats');
+        const modalFooterInfo = document.querySelector('#searchOrdersModal .modal-footer div');
+
+        // Restore search panel
+        detailContainer.style.display = 'none';
+        detailContainer.innerHTML = '';
+        searchPanel.style.display = 'block';
+        if (modalSearchInput) modalSearchInput.parentElement.style.display = '';
+        if (modalFilters) modalFilters.style.display = '';
+        if (modalStats) modalStats.style.display = '';
+        if (modalFooterInfo) modalFooterInfo.innerHTML = '<i class="fas fa-info-circle"></i> Click an order to view details';
     }
 
     // ✨ NCM BRANCHES SEARCH FUNCTIONALITY
@@ -4402,6 +5235,10 @@
         customProductModal = new bootstrap.Modal(document.getElementById('customProductModal'));
         bestsellingProductDetailModal = new bootstrap.Modal(document.getElementById('bestsellingProductDetailModal'));
         ncmBranchesSearchModal = new bootstrap.Modal(document.getElementById('ncmBranchesSearchModal'));
+        searchOrdersModal = new bootstrap.Modal(document.getElementById('searchOrdersModal'));
+
+        // ✨ Initialize Search Orders
+        initializeSearchOrders();
 
         // ✨ Initialize NCM Branches Search
         initializeNcmBranchesSearch();

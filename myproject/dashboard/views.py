@@ -4433,6 +4433,132 @@ def api_get_product(request, product_id):
     
 
 @login_required
+def api_search_orders(request):
+    """API endpoint to search orders for the POS Search Orders modal"""
+    from django.db.models import Q
+    from decimal import Decimal
+    
+    query = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    payment_filter = request.GET.get('payment', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+    page = int(request.GET.get('page', 1))
+    per_page = int(request.GET.get('per_page', 30))
+    
+    orders = Order.objects.filter(is_deleted=False).select_related(
+        'customer', 'created_by', 'status_setup', 'payment_setup', 'payment_status_setup'
+    ).prefetch_related('items').order_by('-created_at')
+    
+    if query:
+        orders = orders.filter(
+            Q(order_number__icontains=query) |
+            Q(customer_name__icontains=query) |
+            Q(customer_phone__icontains=query) |
+            Q(customer_email__icontains=query) |
+            Q(shipping_address__icontains=query) |
+            Q(branch_city__icontains=query) |
+            Q(notes__icontains=query) |
+            Q(tracking_number__icontains=query) |
+            Q(barcode__icontains=query)
+        )
+    
+    if status_filter:
+        orders = orders.filter(
+            Q(order_status__iexact=status_filter) |
+            Q(status_setup__name__iexact=status_filter.replace('_', ' '))
+        )
+    
+    if payment_filter:
+        orders = orders.filter(
+            Q(payment_status__iexact=payment_filter) |
+            Q(payment_status_setup__name__iexact=payment_filter.replace('_', ' '))
+        )
+    
+    if date_from:
+        try:
+            from datetime import datetime
+            dt_from = datetime.strptime(date_from, '%Y-%m-%d')
+            orders = orders.filter(created_at__date__gte=dt_from.date())
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            from datetime import datetime
+            dt_to = datetime.strptime(date_to, '%Y-%m-%d')
+            orders = orders.filter(created_at__date__lte=dt_to.date())
+        except ValueError:
+            pass
+    
+    total_count = orders.count()
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_orders = orders[start:end]
+    
+    results = []
+    for order in paginated_orders:
+        items_list = []
+        for item in order.items.all():
+            items_list.append({
+                'product_name': item.product_name or '',
+                'variation_name': item.variation_name or '',
+                'quantity': item.quantity,
+                'price': str(item.price),
+                'total': str(item.total),
+            })
+        
+        status_display = order.order_status or 'N/A'
+        if order.status_setup:
+            status_display = order.status_setup.name
+        
+        payment_status_display = order.payment_status or 'N/A'
+        if order.payment_status_setup:
+            payment_status_display = order.payment_status_setup.name
+        
+        payment_method_display = order.payment_method or 'N/A'
+        if order.payment_setup:
+            payment_method_display = order.payment_setup.name
+        
+        created_by_name = ''
+        if order.created_by:
+            created_by_name = order.created_by.get_full_name() or order.created_by.username
+        
+        results.append({
+            'id': order.id,
+            'order_number': order.order_number,
+            'customer_name': order.customer_name or '',
+            'customer_phone': order.customer_phone or '',
+            'customer_email': order.customer_email or '',
+            'shipping_address': order.shipping_address or '',
+            'branch_city': order.branch_city or '',
+            'in_out': order.in_out or '',
+            'status': status_display,
+            'payment_status': payment_status_display,
+            'payment_method': payment_method_display,
+            'total_amount': str(order.total_amount or 0),
+            'discount_amount': str(order.discount_amount or 0),
+            'shipping_charge': str(order.shipping_charge or 0),
+            'tracking_number': order.tracking_number or '',
+            'notes': order.notes or '',
+            'created_by': created_by_name,
+            'created_at': order.created_at.strftime('%b %d, %Y %I:%M %p') if order.created_at else '',
+            'items': items_list,
+            'items_count': len(items_list),
+            'items_summary': ', '.join([f"{i['product_name']} x{i['quantity']}" for i in items_list[:3]]),
+        })
+    
+    return JsonResponse({
+        'success': True,
+        'orders': results,
+        'total': total_count,
+        'page': page,
+        'per_page': per_page,
+        'has_more': end < total_count,
+    })
+
+
+@login_required
 def api_search_products(request):
     """
     Returns products for POS modal grid.
