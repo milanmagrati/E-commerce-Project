@@ -301,7 +301,7 @@
                         <tbody>
                             {% for product in stock_count_products %}
                             <tr class="table-row-hover stock-count-row"
-                                data-stock="{{ product.stock }}"
+                                data-stock="{% if product.product_type == 'bundle' %}{{ product.available_stock }}{% else %}{{ product.stock }}{% endif %}"
                                 data-name="{{ product.name|lower }}"
                                 data-sku="{{ product.slug|lower }}">
                                 <td class="text-center">{{ forloop.counter }}</td>
@@ -331,21 +331,41 @@
                                     <span class="sku-badge">{{ product.slug|upper }}</span>
                                 </td>
                                 <td class="text-center">
-                                    {% if product.stock == 0 %}
-                                        <span class="stock-badge danger">0</span>
-                                    {% elif product.stock <= 10 %}
-                                        <span class="stock-badge warning">{{ product.stock }}</span>
+                                    {% if product.product_type == 'bundle' %}
+                                        {% if product.available_stock == 0 %}
+                                            <span class="stock-badge danger">0</span>
+                                        {% elif product.available_stock <= 10 %}
+                                            <span class="stock-badge warning">{{ product.available_stock }}</span>
+                                        {% else %}
+                                            <span class="stock-badge success">{{ product.available_stock }}</span>
+                                        {% endif %}
                                     {% else %}
-                                        <span class="stock-badge success">{{ product.stock }}</span>
+                                        {% if product.stock == 0 %}
+                                            <span class="stock-badge danger">0</span>
+                                        {% elif product.stock <= 10 %}
+                                            <span class="stock-badge warning">{{ product.stock }}</span>
+                                        {% else %}
+                                            <span class="stock-badge success">{{ product.stock }}</span>
+                                        {% endif %}
                                     {% endif %}
                                 </td>
                                 <td class="text-center">
-                                    {% if product.stock == 0 %}
-                                        <span class="stock-status-pill status-out">Out of Stock</span>
-                                    {% elif product.stock <= 10 %}
-                                        <span class="stock-status-pill status-low">Low Stock</span>
+                                    {% if product.product_type == 'bundle' %}
+                                        {% if product.available_stock == 0 %}
+                                            <span class="stock-status-pill status-out">Out of Stock</span>
+                                        {% elif product.available_stock <= 10 %}
+                                            <span class="stock-status-pill status-low">Low Stock</span>
+                                        {% else %}
+                                            <span class="stock-status-pill status-in">In Stock</span>
+                                        {% endif %}
                                     {% else %}
-                                        <span class="stock-status-pill status-in">In Stock</span>
+                                        {% if product.stock == 0 %}
+                                            <span class="stock-status-pill status-out">Out of Stock</span>
+                                        {% elif product.stock <= 10 %}
+                                            <span class="stock-status-pill status-low">Low Stock</span>
+                                        {% else %}
+                                            <span class="stock-status-pill status-in">In Stock</span>
+                                        {% endif %}
                                     {% endif %}
                                 </td>
                             </tr>
@@ -503,7 +523,11 @@
                                 </td>
                                 <td><span class="sku-badge">{{ product.slug|upper }}</span></td>
                                 <td class="text-center">
+                                    {% if product.product_type == 'bundle' %}
+                                    <span class="stock-badge warning pulse">{{ product.available_stock }}</span>
+                                    {% else %}
                                     <span class="stock-badge warning pulse">{{ product.stock }}</span>
+                                    {% endif %}
                                 </td>
                                 <td class="text-end">
                                     <a href="{% url 'stock_in_create' %}" class="btn-action warning">

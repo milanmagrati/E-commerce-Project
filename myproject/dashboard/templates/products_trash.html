@@ -160,9 +160,15 @@
               </td>
 
               <td>
+                {% if product.product_type == 'bundle' %}
+                <span class="badge bg-{% if product.available_stock > 10 %}success{% elif product.available_stock > 0 %}warning{% else %}danger{% endif %}">
+                  {{ product.available_stock }}
+                </span>
+                {% else %}
                 <span class="badge bg-{% if product.stock > 10 %}success{% elif product.stock > 0 %}warning{% else %}danger{% endif %}">
                   {{ product.stock }}
                 </span>
+                {% endif %}
               </td>
 
               <td>

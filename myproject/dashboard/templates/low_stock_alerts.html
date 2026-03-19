@@ -123,7 +123,7 @@
                         </td>
                         <td><span class="category-badge">{{ product.category.name|default:"Uncategorized" }}</span></td>
                         <td class="text-center">
-                            <span class="stock-count stock-low">{{ product.stock }}</span>
+                            <span class="stock-count stock-low">{% if product.product_type == 'bundle' %}{{ product.available_stock }}{% else %}{{ product.stock }}{% endif %}</span>
                         </td>
                         <td class="text-center">
                             <span class="threshold-val">{{ product.low_stock_threshold }}</span>
@@ -135,6 +135,17 @@
                             </span>
                         </td>
                         <td class="text-center">
+                            {% if product.product_type == 'bundle' %}
+                            {% if product.available_stock <= 5 %}
+                            <span class="urgency-badge urgency-critical">
+                                <i class="fas fa-fire"></i> Critical
+                            </span>
+                            {% else %}
+                            <span class="urgency-badge urgency-warning">
+                                <i class="fas fa-exclamation"></i> Warning
+                            </span>
+                            {% endif %}
+                            {% else %}
                             {% if product.stock <= 5 %}
                             <span class="urgency-badge urgency-critical">
                                 <i class="fas fa-fire"></i> Critical
@@ -143,6 +154,7 @@
                             <span class="urgency-badge urgency-warning">
                                 <i class="fas fa-exclamation"></i> Warning
                             </span>
+                            {% endif %}
                             {% endif %}
                         </td>
                     </tr>

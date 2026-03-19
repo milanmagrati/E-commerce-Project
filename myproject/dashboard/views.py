@@ -467,11 +467,24 @@ def products_view(request):
     elif sort_filter == "stock_low":
         products = products.order_by('stock')
 
-    # Calculate statistics (on all user products, not filtered)
+    # Calculate statistics (on all user products, not filtered) — bundle-aware
     all_products = Product.objects.filter(is_deleted=False)
     active_count = all_products.filter(is_active=True).count()
-    low_stock_count = all_products.filter(stock__lte=10, stock__gt=0).count()
-    out_of_stock_count = all_products.filter(stock=0).count()
+
+    # Non-bundle stats via DB
+    nb_products = all_products.exclude(product_type='bundle')
+    low_stock_count_nb = nb_products.filter(stock__lte=10, stock__gt=0).count()
+    out_of_stock_count_nb = nb_products.filter(stock=0).count()
+
+    # Bundle stats via Python
+    b_products = all_products.filter(product_type='bundle').prefetch_related(
+        'bundle_components__component_product'
+    )
+    low_stock_count_b = sum(1 for bp in b_products if 0 < bp.available_stock <= 10)
+    out_of_stock_count_b = sum(1 for bp in b_products if bp.available_stock == 0)
+
+    low_stock_count = low_stock_count_nb + low_stock_count_b
+    out_of_stock_count = out_of_stock_count_nb + out_of_stock_count_b
 
     categories = Category.objects.all()
     trash_count = Product.objects.filter(is_deleted=True).count()
@@ -1506,12 +1519,16 @@ def products_trash(request):
     if request.user.is_superuser or request.user.role == 'admin':
         trashed_products = Product.objects.filter(
             is_deleted=True
-        ).select_related('category').order_by('-deleted_at')
+        ).select_related('category').prefetch_related(
+            'bundle_components__component_product'
+        ).order_by('-deleted_at')
     else:
         trashed_products = Product.objects.filter(
             user=request.user,
             is_deleted=True
-        ).select_related('category').order_by('-deleted_at')
+        ).select_related('category').prefetch_related(
+            'bundle_components__component_product'
+        ).order_by('-deleted_at')
 
     # Search functionality
     search_query = request.GET.get("search", "")
@@ -6938,19 +6955,40 @@ def inventory_dashboard(request):
         # Get all products (role-based access is handled by @permission_required)
         products = Product.objects.filter(is_deleted=False)
         
-        # Stock Statistics
+        # Stock Statistics — account for bundle products using available_stock
         total_products = products.count()
-        out_of_stock = products.filter(stock=0).count()
-
-        # Low stock: use custom thresholds if any are set, otherwise fallback to stock <= 10
         has_custom_thresholds = products.filter(low_stock_threshold__gt=0).exists()
+
+        # For accurate stats, evaluate each product's effective stock
+        # (bundle products derive stock from components via available_stock)
+        non_bundle_products = products.exclude(product_type='bundle')
+        bundle_products = products.filter(product_type='bundle').prefetch_related(
+            'bundle_components__component_product'
+        )
+
+        # Non-bundle stats via DB queries
+        out_of_stock_non_bundle = non_bundle_products.filter(stock=0).count()
         if has_custom_thresholds:
-            low_stock = products.filter(
+            low_stock_non_bundle = non_bundle_products.filter(
                 low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
             ).count()
         else:
-            low_stock = products.filter(stock__lte=10, stock__gt=0).count()
+            low_stock_non_bundle = non_bundle_products.filter(stock__lte=10, stock__gt=0).count()
 
+        # Bundle stats via Python (available_stock is a computed property)
+        out_of_stock_bundle = 0
+        low_stock_bundle = 0
+        for bp in bundle_products:
+            bstock = bp.available_stock
+            if bstock == 0:
+                out_of_stock_bundle += 1
+            elif has_custom_thresholds and bp.low_stock_threshold > 0 and bstock <= bp.low_stock_threshold:
+                low_stock_bundle += 1
+            elif not has_custom_thresholds and 0 < bstock <= 10:
+                low_stock_bundle += 1
+
+        out_of_stock = out_of_stock_non_bundle + out_of_stock_bundle
+        low_stock = low_stock_non_bundle + low_stock_bundle
         in_stock = total_products - low_stock - out_of_stock
 
         # Product Variations Stock
@@ -6968,25 +7006,53 @@ def inventory_dashboard(request):
 
         variations_in_stock = total_variations - variations_low_stock - variations_out_of_stock
 
-        # Calculate Total Stock Value
-        total_stock_value = sum(p.stock * p.price for p in products if p.stock > 0)
+        # Calculate Total Stock Value — use available_stock for bundles
+        all_products_list = list(non_bundle_products) + list(bundle_products)
+        total_stock_value = sum(
+            p.available_stock * p.price for p in all_products_list if p.available_stock > 0
+        )
 
         # Total Stock Units
-        total_stock_units = sum(p.stock for p in products)
+        total_stock_units = sum(p.available_stock for p in all_products_list)
 
-        # Low Stock Products (use custom thresholds if any are set, else fallback)
+        # Low Stock Products — combine non-bundle DB query + bundle Python filter
         if has_custom_thresholds:
-            low_stock_products = products.filter(
+            low_stock_products_nb = list(non_bundle_products.filter(
                 low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
-            ).order_by('stock')[:10]
+            ).order_by('stock')[:10])
         else:
-            low_stock_products = products.filter(stock__lte=10, stock__gt=0).order_by('stock')[:10]
-        
-        # Out of Stock Products
-        out_of_stock_products = products.filter(stock=0).order_by('name')[:10]
-        
-        # Top Products by Stock Value
-        products_with_value = [{'product': p, 'value': p.stock * p.price} for p in products if p.stock > 0]
+            low_stock_products_nb = list(non_bundle_products.filter(
+                stock__lte=10, stock__gt=0
+            ).order_by('stock')[:10])
+
+        low_stock_products_b = []
+        for bp in bundle_products:
+            bstock = bp.available_stock
+            if has_custom_thresholds and bp.low_stock_threshold > 0 and 0 < bstock <= bp.low_stock_threshold:
+                low_stock_products_b.append(bp)
+            elif not has_custom_thresholds and 0 < bstock <= 10:
+                low_stock_products_b.append(bp)
+        low_stock_products_b.sort(key=lambda p: p.available_stock)
+
+        low_stock_products = sorted(
+            low_stock_products_nb + low_stock_products_b[:10],
+            key=lambda p: p.available_stock
+        )[:10]
+
+        # Out of Stock Products — combine non-bundle + bundle
+        out_of_stock_products_nb = list(non_bundle_products.filter(stock=0).order_by('name')[:10])
+        out_of_stock_products_b = [bp for bp in bundle_products if bp.available_stock == 0]
+        out_of_stock_products_b.sort(key=lambda p: p.name)
+        out_of_stock_products = sorted(
+            out_of_stock_products_nb + out_of_stock_products_b[:10],
+            key=lambda p: p.name
+        )[:10]
+
+        # Top Products by Stock Value — use available_stock
+        products_with_value = [
+            {'product': p, 'value': p.available_stock * p.price}
+            for p in all_products_list if p.available_stock > 0
+        ]
         top_products = sorted(products_with_value, key=lambda x: x['value'], reverse=True)[:10]
         
         # Recent Dispatched Orders — query via DispatchItem for accuracy
@@ -7014,9 +7080,11 @@ def inventory_dashboard(request):
         total_category_value = 0
         
         for cat in categories:
-            cat_products = products.filter(category=cat)
-            cat_stock = sum(p.stock for p in cat_products)
-            cat_value = sum(p.stock * p.price for p in cat_products if p.stock > 0)
+            cat_products = products.filter(category=cat).prefetch_related(
+                'bundle_components__component_product'
+            )
+            cat_stock = sum(p.available_stock for p in cat_products)
+            cat_value = sum(p.available_stock * p.price for p in cat_products if p.available_stock > 0)
             
             if cat_stock > 0:
                 category_stock.append({
@@ -7266,7 +7334,9 @@ def inventory_dashboard(request):
             total_restocked_qty = 0
 
         # Stock Count - All products with stock info for the Stock Count section
-        stock_count_products = products.select_related('category').order_by('-stock')
+        stock_count_products = products.select_related('category').prefetch_related(
+            'bundle_components__component_product'
+        ).order_by('-stock')
 
         # Stock Status Distribution for Charts
         stock_chart_data = {
@@ -11209,7 +11279,9 @@ def ncm_bulk_logs_bulk_action(request):
 @login_required
 def low_stock_settings(request):
     """Display all products (with variations) with editable low stock threshold inputs"""
-    products = Product.objects.filter(is_deleted=False).prefetch_related('variations').order_by('name')
+    products = Product.objects.filter(is_deleted=False).prefetch_related(
+        'variations', 'bundle_components__component_product'
+    ).order_by('name')
 
     search = request.GET.get('search', '')
     if search:
@@ -11237,18 +11309,37 @@ def low_stock_settings(request):
 
     categories = Category.objects.all()
 
-    # Counts for summary (products + variations)
+    # Counts for summary (products + variations) — bundle-aware
     all_products = Product.objects.filter(is_deleted=False)
     all_variations = ProductVariation.objects.filter(product__is_deleted=False)
     total = all_products.count()
     total_variations = all_variations.count()
-    low_count = all_products.filter(
+
+    # Non-bundle counts via DB
+    non_bundle_all = all_products.exclude(product_type='bundle')
+    low_count_nb = non_bundle_all.filter(
         low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
     ).count()
+    out_count_nb = non_bundle_all.filter(stock=0).count()
+
+    # Bundle counts via Python
+    bundle_all = all_products.filter(product_type='bundle').prefetch_related(
+        'bundle_components__component_product'
+    )
+    low_count_b = 0
+    out_count_b = 0
+    for bp in bundle_all:
+        bstock = bp.available_stock
+        if bstock == 0:
+            out_count_b += 1
+        elif bp.low_stock_threshold > 0 and bstock <= bp.low_stock_threshold:
+            low_count_b += 1
+
+    low_count = low_count_nb + low_count_b
     low_variation_count = all_variations.filter(
         low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
     ).count()
-    out_count = all_products.filter(stock=0).count()
+    out_count = out_count_nb + out_count_b
 
     paginator = Paginator(products, 50)
     page = request.GET.get('page', 1)
@@ -11308,17 +11399,41 @@ def save_low_stock_thresholds(request):
 @login_required
 def low_stock_alerts(request):
     """Display all products and variations that are currently below their low stock threshold"""
-    low_stock_products = Product.objects.filter(
+    # Non-bundle low stock products via DB
+    low_stock_products_nb = list(Product.objects.filter(
         is_deleted=False,
         low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
-    ).annotate(
+    ).exclude(product_type='bundle').annotate(
         deficit=F('low_stock_threshold') - F('stock')
-    ).select_related('category').order_by('stock')
+    ).select_related('category').order_by('stock'))
 
-    out_of_stock_products = Product.objects.filter(
+    # Bundle low stock products via Python
+    bundle_products_alert = Product.objects.filter(
+        is_deleted=False, product_type='bundle', low_stock_threshold__gt=0
+    ).prefetch_related('bundle_components__component_product').select_related('category')
+    bundle_low = []
+    bundle_out = []
+    for bp in bundle_products_alert:
+        bstock = bp.available_stock
+        if bstock == 0:
+            bp.deficit = bp.low_stock_threshold
+            bundle_out.append(bp)
+        elif bstock <= bp.low_stock_threshold:
+            bp.deficit = bp.low_stock_threshold - bstock
+            bundle_low.append(bp)
+
+    low_stock_products = sorted(
+        low_stock_products_nb + bundle_low, key=lambda p: p.available_stock
+    )
+
+    out_of_stock_products_nb = list(Product.objects.filter(
         is_deleted=False, stock=0,
         low_stock_threshold__gt=0
-    ).select_related('category').order_by('name')
+    ).exclude(product_type='bundle').select_related('category').order_by('name'))
+
+    out_of_stock_products = sorted(
+        out_of_stock_products_nb + bundle_out, key=lambda p: p.name
+    )
 
     # Variation alerts
     low_stock_variations = ProductVariation.objects.filter(
@@ -11372,8 +11487,8 @@ def low_stock_alerts(request):
             product.alert_variations = vars_list
             extra_out_products.append(product)
 
-    low_count = low_stock_products.count()
-    out_count = out_of_stock_products.count()
+    low_count = len(low_stock_products)
+    out_count = len(out_of_stock_products)
     low_var_count = low_stock_variations.count()
     out_var_count = out_of_stock_variations.count()
 
