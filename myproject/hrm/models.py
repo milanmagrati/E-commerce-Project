@@ -184,3 +184,41 @@ class EmployeeDocument(models.Model):
 
     def __str__(self):
         return f"{self.title} - {self.employee.full_name}"
+
+
+class AwardType(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.name
+
+
+class Award(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='awards')
+    award_type = models.ForeignKey(AwardType, on_delete=models.CASCADE, related_name='awards')
+    date = models.DateField()
+    gift = models.CharField(max_length=255, blank=True, default='')
+    monetary_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    description = models.TextField(blank=True, default='')
+    certificate = models.FileField(upload_to='award_certificates/', blank=True, null=True)
+    photo = models.ImageField(upload_to='award_photos/', blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.employee.full_name} - {self.award_type.name}"

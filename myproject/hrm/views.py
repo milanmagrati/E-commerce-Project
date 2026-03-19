@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.core.paginator import Paginator
 from django.contrib import messages
 
-from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument
+from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, AwardType, Award
 from .forms import EmployeeForm, EmployeeDocumentForm
 
 
@@ -820,18 +820,263 @@ def get_designations_by_department(request):
 
 @login_required
 def award_type_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+
+    award_types = AwardType.objects.all()
+
+    if search_query:
+        award_types = award_types.filter(
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if status_filter:
+        award_types = award_types.filter(status=status_filter)
+
+    paginator = Paginator(award_types, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Award Types',
+        'award_types': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'total_award_types': paginator.count,
     }
     return render(request, 'hrm/award_type_list.html', context)
 
 
 @login_required
+def award_type_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Award type name is required.'})
+
+        award_type = AwardType(
+            name=name,
+            description=request.POST.get('description', '').strip(),
+            status=request.POST.get('status', 'active'),
+        )
+        award_type.save()
+        return JsonResponse({'success': True, 'message': f'Award type "{award_type.name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def award_type_detail(request, pk):
+    award_type = get_object_or_404(AwardType, id=pk)
+    return JsonResponse({
+        'success': True,
+        'award_type': {
+            'id': award_type.id,
+            'name': award_type.name,
+            'description': award_type.description,
+            'status': award_type.status,
+            'created_at': award_type.created_at.strftime('%Y-%m-%d'),
+            'updated_at': award_type.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def award_type_update(request, pk):
+    award_type = get_object_or_404(AwardType, id=pk)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Award type name is required.'})
+
+        award_type.name = name
+        award_type.description = request.POST.get('description', '').strip()
+        award_type.status = request.POST.get('status', award_type.status)
+        award_type.save()
+        return JsonResponse({'success': True, 'message': f'Award type "{award_type.name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def award_type_delete(request, pk):
+    award_type = get_object_or_404(AwardType, id=pk)
+
+    if request.method == 'POST':
+        type_name = award_type.name
+        award_type.delete()
+        return JsonResponse({'success': True, 'message': f'Award type "{type_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def award_type_toggle_status(request, pk):
+    award_type = get_object_or_404(AwardType, id=pk)
+
+    if request.method == 'POST':
+        award_type.status = 'inactive' if award_type.status == 'active' else 'active'
+        award_type.save()
+        return JsonResponse({'success': True, 'message': f'Award type "{award_type.name}" is now {award_type.status}.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
 def award_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    award_type_filter = request.GET.get('award_type', '')
+    employee_filter = request.GET.get('employee', '')
+
+    awards = Award.objects.select_related('employee', 'award_type').all()
+
+    if search_query:
+        awards = awards.filter(
+            Q(employee__full_name__icontains=search_query) |
+            Q(award_type__name__icontains=search_query) |
+            Q(gift__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if award_type_filter:
+        awards = awards.filter(award_type_id=award_type_filter)
+
+    if employee_filter:
+        awards = awards.filter(employee_id=employee_filter)
+
+    paginator = Paginator(awards, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Awards',
+        'awards': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'award_type_filter': award_type_filter,
+        'employee_filter': employee_filter,
+        'total_awards': paginator.count,
+        'employees': Employee.objects.filter(employee_status='active').order_by('full_name'),
+        'award_types': AwardType.objects.filter(status='active').order_by('name'),
     }
     return render(request, 'hrm/award_list.html', context)
+
+
+@login_required
+def award_create(request):
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '').strip()
+        award_type_id = request.POST.get('award_type', '').strip()
+        date = request.POST.get('date', '').strip()
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not award_type_id:
+            return JsonResponse({'success': False, 'error': 'Award type is required.'})
+        if not date:
+            return JsonResponse({'success': False, 'error': 'Award date is required.'})
+
+        employee = get_object_or_404(Employee, id=employee_id)
+        award_type = get_object_or_404(AwardType, id=award_type_id)
+
+        monetary_value = request.POST.get('monetary_value', '').strip()
+
+        award = Award(
+            employee=employee,
+            award_type=award_type,
+            date=date,
+            gift=request.POST.get('gift', '').strip(),
+            monetary_value=monetary_value if monetary_value else None,
+            description=request.POST.get('description', '').strip(),
+        )
+
+        if request.FILES.get('certificate'):
+            award.certificate = request.FILES['certificate']
+        if request.FILES.get('photo'):
+            award.photo = request.FILES['photo']
+
+        award.save()
+        return JsonResponse({'success': True, 'message': f'Award for "{employee.full_name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def award_detail(request, pk):
+    award = get_object_or_404(Award.objects.select_related('employee', 'award_type'), id=pk)
+    return JsonResponse({
+        'success': True,
+        'award': {
+            'id': award.id,
+            'employee_id': award.employee.id,
+            'employee_name': award.employee.full_name,
+            'employee_code': award.employee.employee_id,
+            'award_type_id': award.award_type.id,
+            'award_type_name': award.award_type.name,
+            'date': award.date.strftime('%Y-%m-%d'),
+            'gift': award.gift,
+            'monetary_value': str(award.monetary_value) if award.monetary_value else '',
+            'description': award.description,
+            'certificate_url': award.certificate.url if award.certificate else '',
+            'photo_url': award.photo.url if award.photo else '',
+            'created_at': award.created_at.strftime('%Y-%m-%d'),
+            'updated_at': award.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def award_update(request, pk):
+    award = get_object_or_404(Award, id=pk)
+
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '').strip()
+        award_type_id = request.POST.get('award_type', '').strip()
+        date = request.POST.get('date', '').strip()
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not award_type_id:
+            return JsonResponse({'success': False, 'error': 'Award type is required.'})
+        if not date:
+            return JsonResponse({'success': False, 'error': 'Award date is required.'})
+
+        award.employee = get_object_or_404(Employee, id=employee_id)
+        award.award_type = get_object_or_404(AwardType, id=award_type_id)
+        award.date = date
+        award.gift = request.POST.get('gift', '').strip()
+        monetary_value = request.POST.get('monetary_value', '').strip()
+        award.monetary_value = monetary_value if monetary_value else None
+        award.description = request.POST.get('description', '').strip()
+
+        if request.FILES.get('certificate'):
+            award.certificate = request.FILES['certificate']
+        if request.FILES.get('photo'):
+            award.photo = request.FILES['photo']
+
+        award.save()
+        return JsonResponse({'success': True, 'message': f'Award for "{award.employee.full_name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def award_delete(request, pk):
+    award = get_object_or_404(Award.objects.select_related('employee'), id=pk)
+
+    if request.method == 'POST':
+        emp_name = award.employee.full_name
+        award.delete()
+        return JsonResponse({'success': True, 'message': f'Award for "{emp_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
 
 @login_required
