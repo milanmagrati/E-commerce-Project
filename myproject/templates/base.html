@@ -722,7 +722,7 @@
                             <a href="{% url 'purchase_create' %}">New Purchase</a>
                         </li>
                         {% endif %}
-                        <li class="{% if request.resolver_match.url_name == 'supplier_list' %}active{% endif %}">
+                        <li class="{% if request.resolver_match.url_name == 'supplier_list' or request.resolver_match.url_name == 'supplier_add' or request.resolver_match.url_name == 'supplier_edit' or request.resolver_match.url_name == 'supplier_detail' %}active{% endif %}">
                             <a href="{% url 'supplier_list' %}">Suppliers</a>
                         </li>
                         <li class="{% if request.resolver_match.url_name == 'purchase_report' %}active{% endif %}">
