@@ -13426,6 +13426,359 @@ def product_sales_report(request):
     return render(request, 'product_sales_report.html', context)
 
 
+# ==================== PURCHASE REPORT ====================
+@login_required
+def purchase_report(request):
+    """Purchase-level analytics with supplier ranking, product breakdown and trend charts"""
+    from django.db.models.functions import TruncDate, Coalesce
+    from django.db.models import Avg
+
+    suppliers = Supplier.objects.filter(is_active=True).order_by('name')
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
+    selected_supplier_id = request.GET.get('supplier_id', '')
+    selected_product_id = request.GET.get('product_id', '')
+    selected_variation_id = request.GET.get('variation_id', '')
+    from_date_str = request.GET.get('from_date', '')
+    to_date_str = request.GET.get('to_date', '')
+    payment_status_filter = request.GET.get('payment_status', '')
+
+    now = timezone.now()
+
+    # Parse date range (default: last 30 days)
+    try:
+        from_date = timezone.make_aware(datetime.strptime(from_date_str, '%Y-%m-%d')) if from_date_str else now - timedelta(days=30)
+    except ValueError:
+        from_date = now - timedelta(days=30)
+
+    try:
+        to_date = timezone.make_aware(datetime.strptime(to_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)) if to_date_str else now
+    except ValueError:
+        to_date = now
+
+    # Base querysets
+    purchases_qs = Purchase.objects.filter(
+        purchase_date__gte=from_date.date(),
+        purchase_date__lte=to_date.date(),
+    )
+    items_qs = PurchaseItem.objects.filter(
+        purchase__purchase_date__gte=from_date.date(),
+        purchase__purchase_date__lte=to_date.date(),
+    )
+
+    # Apply filters
+    if selected_supplier_id:
+        purchases_qs = purchases_qs.filter(supplier_id=selected_supplier_id)
+        items_qs = items_qs.filter(purchase__supplier_id=selected_supplier_id)
+
+    if selected_product_id:
+        # For bundle products, also include component products
+        try:
+            filter_product = Product.objects.get(id=selected_product_id, is_deleted=False)
+        except Product.DoesNotExist:
+            filter_product = None
+
+        if filter_product and filter_product.product_type == 'bundle':
+            component_ids = list(
+                BundleComponent.objects.filter(bundle_product=filter_product)
+                .values_list('component_product_id', flat=True)
+            )
+            product_ids = [filter_product.id] + component_ids
+            items_qs = items_qs.filter(product_id__in=product_ids)
+        else:
+            items_qs = items_qs.filter(product_id=selected_product_id)
+            # Filter by specific variation if selected
+            if selected_variation_id and filter_product and filter_product.product_type == 'variable':
+                items_qs = items_qs.filter(product_variation_id=selected_variation_id)
+        purchases_qs = purchases_qs.filter(id__in=items_qs.values_list('purchase_id', flat=True))
+
+    if payment_status_filter:
+        purchases_qs = purchases_qs.filter(payment_status=payment_status_filter)
+        items_qs = items_qs.filter(purchase__payment_status=payment_status_filter)
+
+    # Summary cards
+    purchase_agg = purchases_qs.aggregate(
+        total_purchases=Count('id'),
+        total_amount=Coalesce(Sum('total_amount'), Decimal('0')),
+    )
+    items_agg = items_qs.aggregate(
+        total_qty=Coalesce(Sum('quantity'), 0),
+        total_items_value=Coalesce(Sum('total'), Decimal('0')),
+    )
+
+    # Scope payments to the filtered purchases
+    total_paid = SupplierPayment.objects.filter(
+        payment_date__gte=from_date.date(),
+        payment_date__lte=to_date.date(),
+    )
+    if selected_supplier_id:
+        total_paid = total_paid.filter(supplier_id=selected_supplier_id)
+    # When filtered by product or payment status, restrict to matching purchases only
+    filtered_purchase_ids = list(purchases_qs.values_list('id', flat=True))
+    if selected_product_id or payment_status_filter:
+        total_paid = total_paid.filter(purchase_id__in=filtered_purchase_ids)
+    total_paid_amount = total_paid.aggregate(total=Coalesce(Sum('amount'), Decimal('0')))['total']
+
+    summary = {
+        'total_purchases': purchase_agg['total_purchases'],
+        'total_amount': purchase_agg['total_amount'],
+        'total_qty': items_agg['total_qty'],
+        'total_paid': total_paid_amount,
+        'outstanding': purchase_agg['total_amount'] - total_paid_amount,
+    }
+
+    # Supplier ranking
+    supplier_data = (
+        purchases_qs
+        .values('supplier__id', 'supplier__name')
+        .annotate(
+            purchase_count=Count('id'),
+            total_value=Coalesce(Sum('total_amount'), Decimal('0')),
+            last_purchase=Max('purchase_date'),
+        )
+        .order_by('-total_value')
+    )
+    supplier_ranking = []
+    supplier_chart_labels = []
+    supplier_chart_data = []
+    for rank, row in enumerate(supplier_data, start=1):
+        name = row['supplier__name'] or 'Unknown'
+        supplier_ranking.append({
+            'rank': rank,
+            'name': name,
+            'purchase_count': row['purchase_count'],
+            'total_value': row['total_value'],
+            'last_purchase': row['last_purchase'],
+        })
+        supplier_chart_labels.append(name)
+        supplier_chart_data.append(float(row['total_value']))
+
+    # Product breakdown
+    product_data = (
+        items_qs
+        .values('product__id', 'product__name', 'product__product_type')
+        .annotate(
+            total_qty=Sum('quantity'),
+            total_value=Sum('total'),
+            avg_rate=Coalesce(Avg('rate'), Decimal('0')),
+        )
+        .order_by('-total_qty')
+    )
+    product_breakdown = []
+    product_chart_labels = []
+    product_chart_data = []
+    for row in product_data:
+        pname = row['product__name'] or 'Unknown'
+        product_breakdown.append({
+            'name': pname,
+            'product_type': row['product__product_type'] or 'simple',
+            'total_qty': row['total_qty'],
+            'total_value': row['total_value'],
+            'avg_rate': round(row['avg_rate'], 2),
+        })
+        product_chart_labels.append(pname)
+        product_chart_data.append(row['total_qty'])
+
+    # Payment status breakdown
+    status_data = (
+        purchases_qs
+        .values('payment_status')
+        .annotate(count=Count('id'), value=Coalesce(Sum('total_amount'), Decimal('0')))
+        .order_by('-count')
+    )
+    payment_status_labels = []
+    payment_status_data = []
+    for row in status_data:
+        label = (row['payment_status'] or 'unknown').replace('_', ' ').title()
+        payment_status_labels.append(label)
+        payment_status_data.append(row['count'])
+
+    # Daily trend chart
+    daily = (
+        purchases_qs
+        .values('purchase_date')
+        .annotate(
+            count=Count('id'),
+            amount=Coalesce(Sum('total_amount'), Decimal('0')),
+        )
+        .order_by('purchase_date')
+    )
+    chart_labels = []
+    chart_count_data = []
+    chart_amount_data = []
+    for entry in daily:
+        chart_labels.append(entry['purchase_date'].strftime('%b %d'))
+        chart_count_data.append(int(entry['count']))
+        chart_amount_data.append(float(entry['amount']))
+
+    # Staff (created_by) ranking for purchases
+    staff_data = (
+        purchases_qs
+        .filter(created_by__isnull=False)
+        .values('created_by__id', 'created_by__first_name', 'created_by__last_name', 'created_by__username')
+        .annotate(
+            purchase_count=Count('id'),
+            total_value=Coalesce(Sum('total_amount'), Decimal('0')),
+            last_purchase=Max('purchase_date'),
+        )
+        .order_by('-total_value')
+    )
+    staff_ranking = []
+    staff_chart_labels = []
+    staff_chart_data = []
+    for rank, row in enumerate(staff_data, start=1):
+        first = row['created_by__first_name'] or ''
+        last = row['created_by__last_name'] or ''
+        name = f"{first} {last}".strip() or row['created_by__username'] or 'Unknown'
+        staff_ranking.append({
+            'rank': rank,
+            'name': name,
+            'purchase_count': row['purchase_count'],
+            'total_value': row['total_value'],
+            'last_purchase': row['last_purchase'],
+        })
+        staff_chart_labels.append(name)
+        staff_chart_data.append(float(row['total_value']))
+
+    # Determine active quick filter
+    active_filter = ''
+    if from_date_str and to_date_str:
+        today_str = now.strftime('%Y-%m-%d')
+        seven_days_ago = (now - timedelta(days=6)).strftime('%Y-%m-%d')
+        fifteen_days_ago = (now - timedelta(days=14)).strftime('%Y-%m-%d')
+        try:
+            one_month_ago = now.replace(month=now.month - 1)
+        except ValueError:
+            one_month_ago = now.replace(year=now.year - 1, month=12)
+        one_month_ago_str = one_month_ago.strftime('%Y-%m-%d')
+        if from_date_str == today_str and to_date_str == today_str:
+            active_filter = 'today'
+        elif from_date_str == seven_days_ago and to_date_str == today_str:
+            active_filter = '7days'
+        elif from_date_str == fifteen_days_ago and to_date_str == today_str:
+            active_filter = '15days'
+        elif from_date_str == one_month_ago_str and to_date_str == today_str:
+            active_filter = '1month'
+
+    # Get selected objects for display
+    selected_supplier = None
+    selected_product = None
+    if selected_supplier_id:
+        try:
+            selected_supplier = Supplier.objects.get(id=selected_supplier_id)
+        except Supplier.DoesNotExist:
+            pass
+    if selected_product_id:
+        try:
+            selected_product = Product.objects.get(id=selected_product_id, is_deleted=False)
+        except Product.DoesNotExist:
+            pass
+
+    # Variation support for variable products
+    variations = []
+    selected_variation = None
+    variant_breakdown = []
+    variant_chart_labels = []
+    variant_chart_data = []
+    is_variable = False
+
+    if selected_product and selected_product.product_type == 'variable':
+        is_variable = True
+        variations = list(selected_product.variations.filter(is_active=True).order_by('variation_name'))
+
+        if selected_variation_id:
+            try:
+                selected_variation = ProductVariation.objects.get(
+                    id=selected_variation_id, product=selected_product
+                )
+            except ProductVariation.DoesNotExist:
+                selected_variation = None
+
+        # Variant breakdown (when no specific variant selected)
+        if not selected_variation:
+            variant_data = (
+                items_qs
+                .filter(product=selected_product)
+                .values('product_variation__id', 'product_variation__variation_name')
+                .annotate(
+                    total_qty=Sum('quantity'),
+                    total_value=Sum('total'),
+                    avg_rate=Coalesce(Avg('rate'), Decimal('0')),
+                )
+                .order_by('-total_qty')
+            )
+            for row in variant_data:
+                vname = row['product_variation__variation_name'] or 'No Variant'
+                v_stock = 0
+                for v in variations:
+                    if v.id == row['product_variation__id']:
+                        v_stock = v.stock
+                        break
+                variant_breakdown.append({
+                    'name': vname,
+                    'total_qty': row['total_qty'],
+                    'total_value': row['total_value'],
+                    'avg_rate': round(row['avg_rate'], 2),
+                    'stock': v_stock,
+                })
+                variant_chart_labels.append(vname)
+                variant_chart_data.append(row['total_qty'])
+
+    # Bundle component info for selected bundle product
+    is_bundle = False
+    bundle_components_info = []
+    if selected_product and selected_product.product_type == 'bundle':
+        is_bundle = True
+        components = selected_product.bundle_components.select_related('component_product').all()
+        for comp in components:
+            bundle_components_info.append({
+                'name': comp.component_product.name,
+                'qty_required': comp.quantity_required,
+                'stock': comp.component_product.stock,
+            })
+
+    has_filters = bool(selected_supplier_id or selected_product_id or payment_status_filter)
+
+    context = {
+        'suppliers': suppliers,
+        'products': products,
+        'selected_supplier': selected_supplier,
+        'selected_supplier_id': selected_supplier_id,
+        'selected_product': selected_product,
+        'selected_product_id': selected_product_id,
+        'selected_variation': selected_variation,
+        'selected_variation_id': selected_variation_id,
+        'variations': variations,
+        'is_variable': is_variable,
+        'is_bundle': is_bundle,
+        'bundle_components_info': bundle_components_info,
+        'variant_breakdown': variant_breakdown,
+        'variant_chart_labels': json.dumps(variant_chart_labels),
+        'variant_chart_data': json.dumps(variant_chart_data),
+        'payment_status_filter': payment_status_filter,
+        'from_date': from_date.strftime('%Y-%m-%d'),
+        'to_date': to_date.strftime('%Y-%m-%d'),
+        'summary': summary,
+        'has_filters': has_filters,
+        'supplier_ranking': supplier_ranking,
+        'product_breakdown': product_breakdown,
+        'staff_ranking': staff_ranking,
+        'chart_labels': json.dumps(chart_labels),
+        'chart_count_data': json.dumps(chart_count_data),
+        'chart_amount_data': json.dumps(chart_amount_data),
+        'supplier_chart_labels': json.dumps(supplier_chart_labels),
+        'supplier_chart_data': json.dumps(supplier_chart_data),
+        'product_chart_labels': json.dumps(product_chart_labels),
+        'product_chart_data': json.dumps(product_chart_data),
+        'payment_status_labels': json.dumps(payment_status_labels),
+        'payment_status_data': json.dumps(payment_status_data),
+        'staff_chart_labels': json.dumps(staff_chart_labels),
+        'staff_chart_data': json.dumps(staff_chart_data),
+        'active_filter': active_filter,
+    }
+    return render(request, 'purchase/purchase_report.html', context)
+
+
 # ==================== PURCHASE MANAGEMENT VIEWS ====================
 
 @login_required
@@ -13675,6 +14028,7 @@ def purchase_create(request):
         product_ids = request.POST.getlist('product_id[]')
         quantities = request.POST.getlist('quantity[]')
         rates = request.POST.getlist('rate[]')
+        variation_ids = request.POST.getlist('variation_id[]')
 
         # Build context for re-rendering on error
         form_data = {
@@ -13728,6 +14082,7 @@ def purchase_create(request):
             product_ids = request.POST.getlist('product_id[]')
             quantities = request.POST.getlist('quantity[]')
             rates = request.POST.getlist('rate[]')
+            variation_ids = request.POST.getlist('variation_id[]')
 
             total_amount = Decimal('0')
             for i in range(len(product_ids)):
@@ -13737,32 +14092,74 @@ def purchase_create(request):
                     product = Product.objects.get(id=product_ids[i])
                     qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 1
                     rate = Decimal(rates[i]) if i < len(rates) and rates[i] else Decimal('0')
+
+                    # Resolve variation for variable products
+                    variation = None
+                    variation_id_val = variation_ids[i] if i < len(variation_ids) else ''
+                    if variation_id_val and product.product_type == 'variable':
+                        try:
+                            variation = ProductVariation.objects.get(id=int(variation_id_val), product=product)
+                        except (ProductVariation.DoesNotExist, ValueError):
+                            variation = None
+
                     item = PurchaseItem.objects.create(
                         purchase=purchase,
                         product=product,
+                        product_variation=variation,
                         quantity=qty,
                         rate=rate,
                     )
                     total_amount += item.total
 
-                    # Update product stock
-                    product.stock += qty
-                    if product.stock > 0:
-                        product.stock_status = 'in_stock'
-                    product.save(update_fields=['stock', 'stock_status'])
+                    # Update stock based on product type
+                    if product.product_type == 'bundle':
+                        # Bundle: update each component product's stock
+                        components = product.bundle_components.select_related('component_product').all()
+                        for comp in components:
+                            comp_product = comp.component_product
+                            add_qty = comp.quantity_required * qty
+                            comp_product.stock += add_qty
+                            if comp_product.stock > 0:
+                                comp_product.stock_status = 'in_stock'
+                            comp_product.save(update_fields=['stock', 'stock_status'])
 
-                    # Create ProductPurchase record to keep average_cost dynamic
-                    if rate > 0:
-                        ProductPurchase.objects.create(
-                            product=product,
-                            cost_price=rate,
-                            quantity=qty,
-                        )
-                        # Only sync cost_price field for variable cost price products
-                        if product.cost_price_type == 'variable':
-                            product.refresh_from_db()
-                            product.cost_price = product.average_cost
-                            product.save(update_fields=['cost_price'])
+                            # Create ProductPurchase per component for accurate average cost
+                            if rate > 0 and components.count() > 0:
+                                # Distribute cost proportionally across components
+                                comp_rate = rate / components.count()
+                                ProductPurchase.objects.create(
+                                    product=comp_product,
+                                    cost_price=comp_rate,
+                                    quantity=add_qty,
+                                )
+                                if comp_product.cost_price_type == 'variable':
+                                    comp_product.refresh_from_db()
+                                    comp_product.cost_price = comp_product.average_cost
+                                    comp_product.save(update_fields=['cost_price'])
+                    else:
+                        # Simple / Variable: update product stock directly
+                        if variation:
+                            variation.stock += qty
+                            if variation.stock > 0:
+                                variation.status = 'active'
+                            variation.save(update_fields=['stock', 'status'])
+                        product.stock += qty
+                        if product.stock > 0:
+                            product.stock_status = 'in_stock'
+                        product.save(update_fields=['stock', 'stock_status'])
+
+                        # Create ProductPurchase record to keep average_cost dynamic
+                        if rate > 0:
+                            ProductPurchase.objects.create(
+                                product=product,
+                                cost_price=rate,
+                                quantity=qty,
+                            )
+                            # Only sync cost_price field for variable cost price products
+                            if product.cost_price_type == 'variable':
+                                product.refresh_from_db()
+                                product.cost_price = product.average_cost
+                                product.save(update_fields=['cost_price'])
                 except (Product.DoesNotExist, ValueError, InvalidOperation):
                     continue
 
@@ -13789,10 +14186,36 @@ def purchase_create(request):
         messages.success(request, f"Purchase {invoice_number} created successfully.")
         return redirect('purchase_dashboard')
 
+    # Build product variations map for JS
+    variable_products = products.filter(product_type='variable').prefetch_related('variations')
+    product_variations_map = {}
+    for vp in variable_products:
+        product_variations_map[vp.id] = [
+            {'id': v.id, 'name': v.variation_name or v.sku, 'sku': v.sku, 'stock': v.stock}
+            for v in vp.variations.filter(is_active=True).order_by('variation_name')
+        ]
+
+    # Build bundle components map for JS
+    bundle_products = products.filter(product_type='bundle').prefetch_related(
+        'bundle_components__component_product'
+    )
+    bundle_components_map = {}
+    for bp in bundle_products:
+        bundle_components_map[bp.id] = [
+            {
+                'name': comp.component_product.name,
+                'qty': comp.quantity_required,
+                'stock': comp.component_product.stock,
+            }
+            for comp in bp.bundle_components.select_related('component_product').all()
+        ]
+
     context = {
         'suppliers': suppliers,
         'products': products,
         'today': timezone.now().date().isoformat(),
+        'product_variations_json': json.dumps(product_variations_map),
+        'bundle_components_json': json.dumps(bundle_components_map),
     }
     return render(request, 'purchase/purchase_form.html', context)
 

@@ -1278,6 +1278,10 @@ class PurchaseItem(models.Model):
     """Individual items in a purchase"""
     purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name='purchase_items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='purchase_items')
+    product_variation = models.ForeignKey(
+        'ProductVariation', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='purchase_items', help_text="Specific variation for variable products"
+    )
     quantity = models.IntegerField(default=1)
     rate = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=18, decimal_places=2, default=0)

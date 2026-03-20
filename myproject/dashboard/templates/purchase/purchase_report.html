@@ -1,0 +1,1429 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dashboard_extras %}
+
+{% block title %}Purchase Report{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+<li class="breadcrumb-item"><a href="{% url 'purchase_dashboard' %}">Purchase Management</a></li>
+<li class="breadcrumb-item active">Purchase Report</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.psr-page { background: #f5f7fa; min-height: 100vh; }
+
+/* Filter Bar */
+.filter-bar {
+    background: #fff;
+    border-radius: 14px;
+    padding: 20px 28px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    margin-bottom: 24px;
+}
+.filter-bar .form-label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+}
+.filter-bar .form-select,
+.filter-bar .form-control {
+    border-radius: 10px;
+    border: 1.5px solid #e5e7eb;
+    padding: 10px 14px;
+    font-size: .9rem;
+    transition: border-color .2s;
+}
+.filter-bar .form-select:focus,
+.filter-bar .form-control:focus {
+    border-color: #ea580c;
+    box-shadow: 0 0 0 3px rgba(234,88,12,.12);
+}
+.filter-bar .btn-apply {
+    background: linear-gradient(135deg, #ea580c, #dc2626);
+    border: none;
+    color: #fff;
+    border-radius: 10px;
+    padding: 10px 28px;
+    font-weight: 600;
+    font-size: .9rem;
+    transition: transform .15s, box-shadow .15s;
+}
+.filter-bar .btn-apply:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(234,88,12,.35);
+}
+.filter-bar .btn-reset {
+    background: #f3f4f6;
+    border: 1.5px solid #e5e7eb;
+    color: #6b7280;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-weight: 600;
+    font-size: .9rem;
+}
+
+/* Summary Cards */
+.summary-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 22px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    position: relative;
+    overflow: hidden;
+    transition: transform .2s, box-shadow .2s;
+}
+.summary-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.1);
+}
+.summary-card .card-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    margin-bottom: 14px;
+}
+.summary-card .card-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #111827;
+    line-height: 1.2;
+}
+.summary-card .card-label {
+    font-size: .8rem;
+    color: #9ca3af;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-top: 4px;
+}
+.icon-blue { background: #eff6ff; color: #3b82f6; }
+.icon-green { background: #ecfdf5; color: #10b981; }
+.icon-purple { background: #f5f3ff; color: #8b5cf6; }
+.icon-amber { background: #fffbeb; color: #f59e0b; }
+.icon-red { background: #fef2f2; color: #ef4444; }
+
+/* Staff/Ranking Table */
+.staff-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    overflow: hidden;
+}
+.staff-card .card-header-custom {
+    padding: 18px 24px;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.staff-card .card-header-custom h6 {
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+    font-size: 1rem;
+}
+.staff-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+.staff-table thead th {
+    background: #f9fafb;
+    padding: 12px 16px;
+    font-size: .75rem;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    border-bottom: 1px solid #f3f4f6;
+}
+.staff-table tbody td {
+    padding: 14px 16px;
+    font-size: .88rem;
+    color: #374151;
+    border-bottom: 1px solid #f9fafb;
+    vertical-align: middle;
+}
+.staff-table tbody tr:hover {
+    background: #f9fafb;
+}
+.staff-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Rank badges */
+.rank-badge {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: .8rem;
+}
+.rank-gold {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(245,158,11,.4);
+}
+.rank-silver { background: #e5e7eb; color: #374151; }
+.rank-bronze { background: #fed7aa; color: #9a3412; }
+.rank-default { background: #f3f4f6; color: #6b7280; }
+.top-seller-row { background: #fffbeb !important; }
+.top-seller-row td:first-child { border-left: 3px solid #f59e0b; }
+
+/* Chart Card */
+.chart-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    padding: 24px;
+}
+.chart-card .card-header-custom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.chart-card .card-header-custom h6 {
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+    font-size: 1rem;
+}
+.toggle-btns .btn-toggle {
+    padding: 6px 16px;
+    border-radius: 8px;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+    color: #6b7280;
+    font-size: .8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+}
+.toggle-btns .btn-toggle.active {
+    background: #ea580c;
+    border-color: #ea580c;
+    color: #fff;
+}
+.toggle-btns .btn-toggle:hover:not(.active) {
+    border-color: #ea580c;
+    color: #ea580c;
+}
+
+/* Quick Filter Buttons */
+.quick-filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.quick-filters .btn-quick {
+    padding: 7px 18px;
+    border-radius: 10px;
+    border: 1.5px solid #ea580c;
+    background: #fff7ed;
+    color: #ea580c;
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+}
+.quick-filters .btn-quick:hover {
+    background: #fed7aa;
+    border-color: #dc2626;
+    color: #b91c1c;
+}
+.quick-filters .btn-quick.active {
+    background: linear-gradient(135deg, #ea580c, #dc2626);
+    border-color: #ea580c;
+    color: #fff;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+}
+.empty-state i {
+    font-size: 3rem;
+    color: #d1d5db;
+    margin-bottom: 16px;
+}
+.empty-state h5 {
+    color: #6b7280;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.empty-state p {
+    color: #9ca3af;
+    font-size: .9rem;
+}
+
+/* Filter info badge */
+.selected-filter-info {
+    background: linear-gradient(135deg, #fff7ed, #fef3c7);
+    border: 1.5px solid #fed7aa;
+    border-radius: 12px;
+    padding: 14px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.selected-filter-info .filter-label {
+    font-weight: 700;
+    color: #1f2937;
+    font-size: 1.05rem;
+}
+.selected-filter-info .filter-meta {
+    font-size: .82rem;
+    color: #6b7280;
+}
+
+/* Search dropdown */
+.search-wrapper { position: relative; }
+.search-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1.5px solid #e5e7eb;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    max-height: 260px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    box-shadow: 0 8px 20px rgba(0,0,0,.12);
+}
+.search-dropdown.show { display: block; }
+.search-dropdown .dropdown-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: .88rem;
+    color: #374151;
+    border-bottom: 1px solid #f9fafb;
+    transition: background .15s;
+}
+.search-dropdown .dropdown-item:hover,
+.search-dropdown .dropdown-item.highlighted {
+    background: #fff7ed;
+    color: #ea580c;
+}
+.search-dropdown .no-results {
+    padding: 14px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: .85rem;
+}
+
+/* Chart empty */
+.chart-empty {
+    padding: 40px;
+    text-align: center;
+    color: #9ca3af;
+}
+.chart-empty i {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    display: block;
+}
+
+/* Doughnut legend */
+.doughnut-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+    justify-content: center;
+}
+.doughnut-legend .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .78rem;
+    color: #6b7280;
+    font-weight: 500;
+}
+.doughnut-legend .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    .filter-bar { padding: 16px; }
+    .summary-card .card-value { font-size: 1.3rem; }
+    .staff-table { font-size: .82rem; }
+    .selected-filter-info { flex-direction: column; align-items: flex-start; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="psr-page">
+    <div class="container-fluid py-3">
+
+        <!-- Page Header -->
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <div>
+                <h4 class="fw-bold mb-1" style="color:#1f2937;">Purchase Report</h4>
+                <p class="text-muted mb-0" style="font-size:.88rem;">Analyze purchase activity, supplier rankings & spending trends</p>
+            </div>
+            <div class="quick-filters">
+                <button type="button" class="btn-quick{% if active_filter == 'today' %} active{% endif %}" data-filter="today">Today</button>
+                <button type="button" class="btn-quick{% if active_filter == '7days' %} active{% endif %}" data-filter="7days">7 Days</button>
+                <button type="button" class="btn-quick{% if active_filter == '15days' %} active{% endif %}" data-filter="15days">15 Days</button>
+                <button type="button" class="btn-quick{% if active_filter == '1month' %} active{% endif %}" data-filter="1month">1 Month</button>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <form method="get" class="filter-bar" id="filterForm">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label">Supplier</label>
+                    <div class="search-wrapper">
+                        <input type="text" class="form-control" id="supplierSearch"
+                               placeholder="Type to search suppliers..."
+                               autocomplete="off"
+                               value="{% if selected_supplier %}{{ selected_supplier.name }}{% endif %}">
+                        <input type="hidden" name="supplier_id" id="supplierIdInput" value="{{ selected_supplier_id }}">
+                        <div class="search-dropdown" id="supplierDropdown">
+                            {% for s in suppliers %}
+                            <div class="dropdown-item" data-id="{{ s.id }}" data-name="{{ s.name }}">
+                                {{ s.name }}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <label class="form-label">Product</label>
+                    <div class="search-wrapper">
+                        <input type="text" class="form-control" id="productSearch"
+                               placeholder="Type to search products..."
+                               autocomplete="off"
+                               value="{% if selected_product %}{{ selected_product.name }}{% endif %}">
+                        <input type="hidden" name="product_id" id="productIdInput" value="{{ selected_product_id }}">
+                        <div class="search-dropdown" id="productDropdown">
+                            {% for p in products %}
+                            <div class="dropdown-item" data-id="{{ p.id }}" data-name="{{ p.name }}" data-type="{{ p.product_type }}">
+                                {{ p.name }}
+                                {% if p.product_type == 'variable' %}<span class="badge bg-info text-white ms-1" style="font-size:.6rem; vertical-align:middle;">VARIABLE</span>
+                                {% elif p.product_type == 'bundle' %}<span class="badge bg-warning text-dark ms-1" style="font-size:.6rem; vertical-align:middle;">BUNDLE</span>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-6" id="variationFilterCol" style="{% if not is_variable %}display:none;{% endif %}">
+                    <label class="form-label">Variant</label>
+                    <select class="form-select" name="variation_id" id="variationSelect">
+                        <option value="">All Variants</option>
+                        {% for v in variations %}
+                        <option value="{{ v.id }}" {% if selected_variation_id|stringformat:"s" == v.id|stringformat:"s" %}selected{% endif %}>{{ v.variation_name|default:v.sku }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label">Payment Status</label>
+                    <select class="form-select" name="payment_status">
+                        <option value="">All</option>
+                        <option value="paid" {% if payment_status_filter == 'paid' %}selected{% endif %}>Paid</option>
+                        <option value="partial" {% if payment_status_filter == 'partial' %}selected{% endif %}>Partial</option>
+                        <option value="unpaid" {% if payment_status_filter == 'unpaid' %}selected{% endif %}>Unpaid</option>
+                    </select>
+                </div>
+                <div class="col-lg-1 col-md-3 col-6">
+                    <label class="form-label">From</label>
+                    <input type="date" class="form-control" name="from_date" value="{{ from_date }}">
+                </div>
+                <div class="col-lg-1 col-md-3 col-6">
+                    <label class="form-label">To</label>
+                    <input type="date" class="form-control" name="to_date" value="{{ to_date }}">
+                </div>
+                <div class="col-lg-3 col-md-12 d-flex gap-2">
+                    <button type="submit" class="btn btn-apply">
+                        <i class="fas fa-search me-1"></i> Generate Report
+                    </button>
+                    <a href="{% url 'purchase_report' %}" class="btn btn-reset">
+                        <i class="fas fa-undo me-1"></i> Reset
+                    </a>
+                </div>
+            </div>
+        </form>
+
+        {% if has_filters %}
+        <!-- Active Filters Info -->
+        <div class="selected-filter-info">
+            <i class="fas fa-filter" style="font-size:1.3rem; color:#ea580c;"></i>
+            <div>
+                <div class="filter-label">
+                    Filtered Report
+                    {% if selected_supplier %}<span class="badge bg-warning text-dark ms-1" style="font-size:.7rem;">{{ selected_supplier.name }}</span>{% endif %}
+                    {% if selected_product %}<span class="badge bg-info text-white ms-1" style="font-size:.7rem;">{{ selected_product.name }}</span>{% endif %}
+                    {% if selected_variation %}<span class="badge bg-purple text-white ms-1" style="font-size:.7rem; background:#8b5cf6;">{{ selected_variation.variation_name|default:selected_variation.sku }}</span>{% endif %}
+                    {% if payment_status_filter %}<span class="badge bg-secondary text-white ms-1" style="font-size:.7rem;">{{ payment_status_filter|title }}</span>{% endif %}
+                </div>
+                <div class="filter-meta">
+                    {{ from_date }} to {{ to_date }}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Summary Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-xl col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-blue"><i class="fas fa-file-invoice"></i></div>
+                    <div class="card-value">{{ summary.total_purchases|default:"0" }}</div>
+                    <div class="card-label">Total Purchases</div>
+                </div>
+            </div>
+            <div class="col-xl col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-green"><i class="fas fa-money-bill-wave"></i></div>
+                    <div class="card-value">{{ summary.total_amount|currency }}</div>
+                    <div class="card-label">Total Amount</div>
+                </div>
+            </div>
+            <div class="col-xl col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-purple"><i class="fas fa-boxes-stacked"></i></div>
+                    <div class="card-value">{{ summary.total_qty|default:"0" }}</div>
+                    <div class="card-label">Items Purchased</div>
+                </div>
+            </div>
+            <div class="col-xl col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-amber"><i class="fas fa-check-circle"></i></div>
+                    <div class="card-value">{{ summary.total_paid|currency }}</div>
+                    <div class="card-label">Total Paid</div>
+                </div>
+            </div>
+            <div class="col-xl col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-red"><i class="fas fa-exclamation-circle"></i></div>
+                    <div class="card-value">{{ summary.outstanding|currency }}</div>
+                    <div class="card-label">Outstanding</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Product Breakdown Table + Product Doughnut -->
+        <div class="row g-4 mb-4">
+            <div class="col-lg-7">
+                <div class="staff-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-box me-2" style="color:#8b5cf6;"></i>Product Breakdown</h6>
+                        <span class="badge bg-light text-dark" style="font-size:.75rem;">{{ product_breakdown|length }} product{{ product_breakdown|length|pluralize }}</span>
+                    </div>
+                    {% if product_breakdown %}
+                    <div class="table-responsive">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Qty Purchased</th>
+                                    <th>Total Value</th>
+                                    <th>Avg Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pb in product_breakdown %}
+                                <tr {% if forloop.first %}class="top-seller-row"{% endif %}>
+                                    <td>
+                                        <strong>{{ pb.name }}</strong>
+                                        {% if forloop.first %}<span class="badge bg-success ms-1" style="font-size:.6rem;">TOP</span>{% endif %}
+                                        {% if pb.product_type == 'variable' %}<span class="badge bg-info text-white ms-1" style="font-size:.55rem;">VARIABLE</span>
+                                        {% elif pb.product_type == 'bundle' %}<span class="badge bg-warning text-dark ms-1" style="font-size:.55rem;">BUNDLE</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><strong>{{ pb.total_qty }}</strong></td>
+                                    <td>{{ pb.total_value|currency }}</td>
+                                    <td>{{ pb.avg_rate|currency }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-box"></i>
+                        No product purchase data found for this date range.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="chart-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-chart-pie me-2" style="color:#8b5cf6;"></i>Products by Quantity</h6>
+                    </div>
+                    {% if product_chart_labels != "[]" %}
+                    <div style="position:relative; height:240px; width:100%;">
+                        <canvas id="productDoughnut"></canvas>
+                    </div>
+                    <div id="productLegend" class="doughnut-legend"></div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-chart-pie"></i>
+                        No product data available.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Variant Breakdown (only for variable products without specific variant selected) -->
+        {% if is_variable and variant_breakdown and not selected_variation %}
+        <div class="row g-4 mb-4">
+            <div class="col-lg-7">
+                <div class="staff-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-layer-group me-2" style="color:#06b6d4;"></i>Variant Breakdown — {{ selected_product.name }}</h6>
+                        <span class="badge bg-light text-dark" style="font-size:.75rem;">{{ variant_breakdown|length }} variant{{ variant_breakdown|length|pluralize }}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>Variant</th>
+                                    <th>Qty Purchased</th>
+                                    <th>Total Value</th>
+                                    <th>Avg Rate</th>
+                                    <th>Current Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for vb in variant_breakdown %}
+                                <tr {% if forloop.first %}class="top-seller-row"{% endif %}>
+                                    <td>
+                                        <strong>{{ vb.name }}</strong>
+                                        {% if forloop.first %}<span class="badge bg-success ms-1" style="font-size:.6rem;">TOP</span>{% endif %}
+                                    </td>
+                                    <td><strong>{{ vb.total_qty }}</strong></td>
+                                    <td>{{ vb.total_value|currency }}</td>
+                                    <td>{{ vb.avg_rate|currency }}</td>
+                                    <td>
+                                        {% if vb.stock > 0 %}
+                                        <span class="badge bg-success">{{ vb.stock }}</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">0</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="chart-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-chart-pie me-2" style="color:#06b6d4;"></i>Variants by Quantity</h6>
+                    </div>
+                    {% if variant_chart_labels != "[]" %}
+                    <div style="position:relative; height:240px; width:100%;">
+                        <canvas id="variantDoughnut"></canvas>
+                    </div>
+                    <div id="variantLegend" class="doughnut-legend"></div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-chart-pie"></i>
+                        No variant data available.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Bundle Components Info (only for bundle products) -->
+        {% if is_bundle and bundle_components_info %}
+        <div class="row g-4 mb-4">
+            <div class="col-lg-7">
+                <div class="staff-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-cubes me-2" style="color:#d97706;"></i>Bundle Components — {{ selected_product.name }}</h6>
+                        <span class="badge bg-warning text-dark" style="font-size:.75rem;">{{ bundle_components_info|length }} component{{ bundle_components_info|length|pluralize }}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>Component Product</th>
+                                    <th>Qty Per Bundle</th>
+                                    <th>Current Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for comp in bundle_components_info %}
+                                <tr>
+                                    <td><strong>{{ comp.name }}</strong></td>
+                                    <td><strong>{{ comp.qty_required }}</strong></td>
+                                    <td>
+                                        {% if comp.stock > 0 %}
+                                        <span class="badge bg-success">{{ comp.stock }}</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">0</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="p-3 bg-light border-top" style="font-size:.82rem;">
+                        <i class="fas fa-info-circle text-warning me-1"></i>
+                        <strong>Note:</strong> Purchasing this bundle restocks each component product. Stock is added to components proportionally (qty × component requirement).
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Purchase Trend (full width line chart with dual y-axis) -->
+        <div class="row g-4 mb-4">
+            <div class="col-12">
+                <div class="chart-card">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-chart-line me-2" style="color:#ea580c;"></i>Purchase Trend</h6>
+                        <div class="toggle-btns">
+                            <button type="button" class="btn-toggle active" data-mode="both" data-chart="trend">Both</button>
+                            <button type="button" class="btn-toggle" data-mode="count" data-chart="trend">Purchases</button>
+                            <button type="button" class="btn-toggle" data-mode="amount" data-chart="trend">Amount</button>
+                        </div>
+                    </div>
+                    {% if chart_labels != "[]" %}
+                    <div style="position:relative; height:300px; width:100%;">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-chart-area"></i>
+                        No purchase data available for this date range.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Supplier Ranking + Doughnut Charts -->
+        <div class="row g-4 mb-4">
+            <!-- Supplier Ranking -->
+            <div class="col-lg-6">
+                <div class="staff-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-trophy me-2" style="color:#f59e0b;"></i>Supplier Ranking</h6>
+                        <span class="badge bg-light text-dark" style="font-size:.75rem;">{{ supplier_ranking|length }} supplier{{ supplier_ranking|length|pluralize }}</span>
+                    </div>
+                    {% if supplier_ranking %}
+                    <div class="table-responsive">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>Rank</th>
+                                    <th>Supplier</th>
+                                    <th>Purchases</th>
+                                    <th>Total Value</th>
+                                    <th>Last Purchase</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sr in supplier_ranking %}
+                                <tr class="{% if sr.rank == 1 %}top-seller-row{% endif %}">
+                                    <td>
+                                        <span class="rank-badge {% if sr.rank == 1 %}rank-gold{% elif sr.rank == 2 %}rank-silver{% elif sr.rank == 3 %}rank-bronze{% else %}rank-default{% endif %}">
+                                            {% if sr.rank == 1 %}<i class="fas fa-crown" style="font-size:.7rem;"></i>{% else %}{{ sr.rank }}{% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <strong>{{ sr.name }}</strong>
+                                        {% if sr.rank == 1 %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">TOP SUPPLIER</span>{% endif %}
+                                    </td>
+                                    <td><strong>{{ sr.purchase_count }}</strong></td>
+                                    <td>{{ sr.total_value|currency }}</td>
+                                    <td style="font-size:.82rem; color:#9ca3af;">{{ sr.last_purchase }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-truck"></i>
+                        No supplier data found for this date range.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Doughnut Charts Column -->
+            <div class="col-lg-6">
+                <div class="row g-4">
+                    <!-- Supplier Contribution Doughnut -->
+                    <div class="col-12">
+                        <div class="chart-card">
+                            <div class="card-header-custom">
+                                <h6><i class="fas fa-truck me-2" style="color:#ea580c;"></i>Supplier Contribution</h6>
+                            </div>
+                            {% if supplier_chart_labels != "[]" %}
+                            <div style="position:relative; height:240px; width:100%;">
+                                <canvas id="supplierDoughnut"></canvas>
+                            </div>
+                            <div id="supplierLegend" class="doughnut-legend"></div>
+                            {% else %}
+                            <div class="chart-empty">
+                                <i class="fas fa-chart-pie"></i>
+                                No supplier data available.
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <!-- Payment Status Doughnut -->
+                    <div class="col-12">
+                        <div class="chart-card">
+                            <div class="card-header-custom">
+                                <h6><i class="fas fa-credit-card me-2" style="color:#059669;"></i>Payment Status Breakdown</h6>
+                            </div>
+                            {% if payment_status_labels != "[]" %}
+                            <div style="position:relative; height:240px; width:100%;">
+                                <canvas id="paymentStatusDoughnut"></canvas>
+                            </div>
+                            <div id="paymentStatusLegend" class="doughnut-legend"></div>
+                            {% else %}
+                            <div class="chart-empty">
+                                <i class="fas fa-chart-pie"></i>
+                                No payment status data available.
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Staff Ranking + Staff Doughnut -->
+        {% if staff_ranking %}
+        <div class="row g-4 mb-4">
+            <div class="col-lg-6">
+                <div class="staff-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-users me-2" style="color:#6366f1;"></i>Staff Purchase Ranking</h6>
+                        <span class="badge bg-light text-dark" style="font-size:.75rem;">{{ staff_ranking|length }} staff</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>Rank</th>
+                                    <th>Staff Name</th>
+                                    <th>Purchases</th>
+                                    <th>Total Value</th>
+                                    <th>Last Purchase</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for s in staff_ranking %}
+                                <tr class="{% if s.rank == 1 %}top-seller-row{% endif %}">
+                                    <td>
+                                        <span class="rank-badge {% if s.rank == 1 %}rank-gold{% elif s.rank == 2 %}rank-silver{% elif s.rank == 3 %}rank-bronze{% else %}rank-default{% endif %}">
+                                            {% if s.rank == 1 %}<i class="fas fa-crown" style="font-size:.7rem;"></i>{% else %}{{ s.rank }}{% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <strong>{{ s.name }}</strong>
+                                        {% if s.rank == 1 %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">TOP</span>{% endif %}
+                                    </td>
+                                    <td><strong>{{ s.purchase_count }}</strong></td>
+                                    <td>{{ s.total_value|currency }}</td>
+                                    <td style="font-size:.82rem; color:#9ca3af;">{{ s.last_purchase }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="chart-card" style="height:100%;">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-users me-2" style="color:#6366f1;"></i>Staff Contribution</h6>
+                    </div>
+                    {% if staff_chart_labels != "[]" %}
+                    <div style="position:relative; height:280px; width:100%;">
+                        <canvas id="staffDoughnut"></canvas>
+                    </div>
+                    <div id="staffLegend" class="doughnut-legend"></div>
+                    {% else %}
+                    <div class="chart-empty">
+                        <i class="fas fa-chart-pie"></i>
+                        No staff data available.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    // ========== Quick Filter Buttons ==========
+    document.querySelectorAll('.btn-quick[data-filter]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var filter = this.dataset.filter;
+            var today = new Date();
+            var fromDate = new Date();
+
+            if (filter === 'today') {
+                fromDate = today;
+            } else if (filter === '7days') {
+                fromDate.setDate(today.getDate() - 6);
+            } else if (filter === '15days') {
+                fromDate.setDate(today.getDate() - 14);
+            } else if (filter === '1month') {
+                fromDate = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+            }
+
+            var fmt = function(d) {
+                var y = d.getFullYear();
+                var m = String(d.getMonth() + 1).padStart(2, '0');
+                var dd = String(d.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + dd;
+            };
+
+            var form = document.getElementById('filterForm');
+            var fromInput = form.querySelector('input[name="from_date"]');
+            var toInput = form.querySelector('input[name="to_date"]');
+            fromInput.value = fmt(fromDate);
+            toInput.value = fmt(today);
+            form.submit();
+        });
+    });
+
+    // ========== Supplier Search Dropdown ==========
+    setupSearchDropdown('supplierSearch', 'supplierDropdown', 'supplierIdInput');
+
+    // ========== Product Search Dropdown ==========
+    setupSearchDropdown('productSearch', 'productDropdown', 'productIdInput');
+
+    function setupSearchDropdown(inputId, dropdownId, hiddenId) {
+        var searchInput = document.getElementById(inputId);
+        var dropdown = document.getElementById(dropdownId);
+        var hiddenInput = document.getElementById(hiddenId);
+        var items = dropdown.querySelectorAll('.dropdown-item');
+        var highlighted = -1;
+
+        searchInput.addEventListener('focus', function() {
+            filterItems(this.value);
+            dropdown.classList.add('show');
+        });
+
+        searchInput.addEventListener('input', function() {
+            hiddenInput.value = '';
+            filterItems(this.value);
+            highlighted = -1;
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            var visible = dropdown.querySelectorAll('.dropdown-item:not([style*="display: none"])');
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                highlighted = Math.min(highlighted + 1, visible.length - 1);
+                updateHL(visible);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                highlighted = Math.max(highlighted - 1, 0);
+                updateHL(visible);
+            } else if (e.key === 'Enter' && highlighted >= 0) {
+                e.preventDefault();
+                visible[highlighted].click();
+            } else if (e.key === 'Escape') {
+                dropdown.classList.remove('show');
+            }
+        });
+
+        items.forEach(function(item) {
+            item.addEventListener('click', function() {
+                searchInput.value = this.dataset.name;
+                hiddenInput.value = this.dataset.id;
+                dropdown.classList.remove('show');
+            });
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+
+        function filterItems(query) {
+            var q = query.toLowerCase();
+            var hasResults = false;
+            items.forEach(function(item) {
+                var match = item.dataset.name.toLowerCase().includes(q);
+                item.style.display = match ? '' : 'none';
+                if (match) hasResults = true;
+            });
+            var old = dropdown.querySelector('.no-results');
+            if (old) old.remove();
+            if (!hasResults) {
+                var div = document.createElement('div');
+                div.className = 'no-results';
+                div.textContent = 'No results found';
+                dropdown.appendChild(div);
+            }
+            dropdown.classList.add('show');
+        }
+
+        function updateHL(visible) {
+            visible.forEach(function(el, i) {
+                el.classList.toggle('highlighted', i === highlighted);
+                if (i === highlighted) el.scrollIntoView({ block: 'nearest' });
+            });
+        }
+    }
+
+    // ========== Charts ==========
+    var COLORS = ['#ea580c','#dc2626','#8b5cf6','#3b82f6','#059669','#d97706','#ec4899','#06b6d4','#84cc16','#f97316'];
+    var PAYMENT_COLORS = { 'Paid':'#10b981','Partial':'#f59e0b','Unpaid':'#ef4444' };
+
+    // ---------- 1. Purchase Trend (Dual-Axis Line) ----------
+    {% if chart_labels != "[]" %}
+    (function() {
+        var labels = {{ chart_labels|safe }};
+        var countData = {{ chart_count_data|safe }};
+        var amountData = {{ chart_amount_data|safe }};
+        var ctx = document.getElementById('trendChart').getContext('2d');
+
+        var trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Purchases',
+                        data: countData,
+                        borderColor: '#ea580c',
+                        backgroundColor: 'rgba(234,88,12,0.08)',
+                        fill: true,
+                        yAxisID: 'y',
+                        borderWidth: 2.5,
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
+                        pointBackgroundColor: '#ea580c',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        tension: 0.4,
+                    },
+                    {
+                        label: 'Amount (Rs.)',
+                        data: amountData,
+                        borderColor: '#8b5cf6',
+                        backgroundColor: 'rgba(139,92,246,0.08)',
+                        fill: true,
+                        yAxisID: 'y1',
+                        borderWidth: 2,
+                        borderDash: [6, 3],
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#8b5cf6',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        tension: 0.4,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { usePointStyle: true, font: { size: 12, weight: '600' }, padding: 20, color: '#6b7280' }
+                    },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { size: 13, weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                if (c.datasetIndex === 1) return ' Amount: Rs ' + c.parsed.y.toLocaleString();
+                                return ' Purchases: ' + c.parsed.y;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11, weight: '500' }, color: '#9ca3af' }
+                    },
+                    y: {
+                        type: 'linear',
+                        position: 'left',
+                        beginAtZero: true,
+                        title: { display: true, text: 'Purchases', font: { size: 11, weight: '600' }, color: '#ea580c' },
+                        grid: { color: '#f3f4f6' },
+                        ticks: { font: { size: 11 }, color: '#9ca3af', stepSize: 1 }
+                    },
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        title: { display: true, text: 'Amount (Rs.)', font: { size: 11, weight: '600' }, color: '#8b5cf6' },
+                        grid: { drawOnChartArea: false },
+                        ticks: {
+                            font: { size: 11 },
+                            color: '#9ca3af',
+                            callback: function(v) { return 'Rs ' + (v >= 1000 ? (v/1000).toFixed(1) + 'K' : v); }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Toggle buttons
+        document.querySelectorAll('.btn-toggle[data-chart="trend"]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.btn-toggle[data-chart="trend"]').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                var mode = this.dataset.mode;
+                trendChart.data.datasets[0].hidden = (mode === 'amount');
+                trendChart.data.datasets[1].hidden = (mode === 'count');
+                trendChart.options.scales.y.display = (mode !== 'amount');
+                trendChart.options.scales.y1.display = (mode !== 'count');
+                trendChart.update();
+            });
+        });
+    })();
+    {% endif %}
+
+    // ---------- 2. Supplier Contribution Doughnut ----------
+    {% if supplier_chart_labels != "[]" %}
+    (function() {
+        var sLabels = {{ supplier_chart_labels|safe }};
+        var sData = {{ supplier_chart_data|safe }};
+        var sColors = sLabels.map(function(_, i) { return COLORS[i % COLORS.length]; });
+        var total = sData.reduce(function(a, b) { return a + b; }, 0);
+
+        var ctx = document.getElementById('supplierDoughnut').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: sLabels,
+                datasets: [{
+                    data: sData,
+                    backgroundColor: sColors,
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                var pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : 0;
+                                return ' ' + c.label + ': Rs ' + c.parsed.toLocaleString() + ' (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        var legendEl = document.getElementById('supplierLegend');
+        sLabels.forEach(function(label, i) {
+            var pct = total > 0 ? ((sData[i] / total) * 100).toFixed(1) : 0;
+            legendEl.innerHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + sColors[i] + '"></span>' + label + ' (' + pct + '%)</div>';
+        });
+    })();
+    {% endif %}
+
+    // ---------- 3. Payment Status Doughnut ----------
+    {% if payment_status_labels != "[]" %}
+    (function() {
+        var psLabels = {{ payment_status_labels|safe }};
+        var psData = {{ payment_status_data|safe }};
+        var psColors = psLabels.map(function(label) {
+            return PAYMENT_COLORS[label] || COLORS[psLabels.indexOf(label) % COLORS.length];
+        });
+        var total = psData.reduce(function(a, b) { return a + b; }, 0);
+
+        var ctx = document.getElementById('paymentStatusDoughnut').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: psLabels,
+                datasets: [{
+                    data: psData,
+                    backgroundColor: psColors,
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                var pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : 0;
+                                return ' ' + c.label + ': ' + c.parsed + ' purchases (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        var legendEl = document.getElementById('paymentStatusLegend');
+        psLabels.forEach(function(label, i) {
+            var pct = total > 0 ? ((psData[i] / total) * 100).toFixed(1) : 0;
+            legendEl.innerHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + psColors[i] + '"></span>' + label + ' (' + pct + '%)</div>';
+        });
+    })();
+    {% endif %}
+
+    // ---------- 4. Product Doughnut ----------
+    {% if product_chart_labels != "[]" %}
+    (function() {
+        var pLabels = {{ product_chart_labels|safe }};
+        var pData = {{ product_chart_data|safe }};
+        var PRODUCT_COLORS = ['#8b5cf6','#6366f1','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#84cc16','#f97316'];
+        var pColors = pLabels.map(function(_, i) { return PRODUCT_COLORS[i % PRODUCT_COLORS.length]; });
+        var total = pData.reduce(function(a, b) { return a + b; }, 0);
+
+        var ctx = document.getElementById('productDoughnut').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: pLabels,
+                datasets: [{
+                    data: pData,
+                    backgroundColor: pColors,
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                var pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : 0;
+                                return ' ' + c.label + ': ' + c.parsed + ' units (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        var legendEl = document.getElementById('productLegend');
+        pLabels.forEach(function(label, i) {
+            var pct = total > 0 ? ((pData[i] / total) * 100).toFixed(1) : 0;
+            legendEl.innerHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + pColors[i] + '"></span>' + label + ' (' + pct + '%)</div>';
+        });
+    })();
+    {% endif %}
+
+    // ---------- 5. Staff Doughnut ----------
+    {% if staff_chart_labels != "[]" %}
+    (function() {
+        var stLabels = {{ staff_chart_labels|safe }};
+        var stData = {{ staff_chart_data|safe }};
+        var stColors = stLabels.map(function(_, i) { return COLORS[i % COLORS.length]; });
+        var total = stData.reduce(function(a, b) { return a + b; }, 0);
+
+        var ctx = document.getElementById('staffDoughnut').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: stLabels,
+                datasets: [{
+                    data: stData,
+                    backgroundColor: stColors,
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                var pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : 0;
+                                return ' ' + c.label + ': Rs ' + c.parsed.toLocaleString() + ' (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        var legendEl = document.getElementById('staffLegend');
+        stLabels.forEach(function(label, i) {
+            var pct = total > 0 ? ((stData[i] / total) * 100).toFixed(1) : 0;
+            legendEl.innerHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + stColors[i] + '"></span>' + label + ' (' + pct + '%)</div>';
+        });
+    })();
+    {% endif %}
+
+    // ---------- 6. Variant Doughnut ----------
+    {% if variant_chart_labels != "[]" %}
+    (function() {
+        var vLabels = {{ variant_chart_labels|safe }};
+        var vData = {{ variant_chart_data|safe }};
+        var VARIANT_COLORS = ['#06b6d4','#0891b2','#0e7490','#155e75','#164e63','#22d3ee','#67e8f9','#a5f3fc','#0284c7','#0369a1'];
+        var vColors = vLabels.map(function(_, i) { return VARIANT_COLORS[i % VARIANT_COLORS.length]; });
+        var total = vData.reduce(function(a, b) { return a + b; }, 0);
+
+        var ctx = document.getElementById('variantDoughnut').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: vLabels,
+                datasets: [{
+                    data: vData,
+                    backgroundColor: vColors,
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleFont: { weight: '600' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(c) {
+                                var pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : 0;
+                                return ' ' + c.label + ': ' + c.parsed + ' units (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        var legendEl = document.getElementById('variantLegend');
+        vLabels.forEach(function(label, i) {
+            var pct = total > 0 ? ((vData[i] / total) * 100).toFixed(1) : 0;
+            legendEl.innerHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + vColors[i] + '"></span>' + label + ' (' + pct + '%)</div>';
+        });
+    })();
+    {% endif %}
+
+    // ---------- Show/Hide Variation Filter on Product Selection ----------
+    (function() {
+        var productDropdown = document.getElementById('productDropdown');
+        var variationCol = document.getElementById('variationFilterCol');
+        var variationSelect = document.getElementById('variationSelect');
+        if (!productDropdown || !variationCol) return;
+
+        productDropdown.querySelectorAll('.dropdown-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                var productType = this.dataset.type || '';
+                if (productType === 'variable') {
+                    variationCol.style.display = '';
+                } else {
+                    variationCol.style.display = 'none';
+                    if (variationSelect) variationSelect.value = '';
+                }
+            });
+        });
+
+        // Also hide when product is cleared
+        var productSearch = document.getElementById('productSearch');
+        if (productSearch) {
+            productSearch.addEventListener('input', function() {
+                if (!this.value) {
+                    variationCol.style.display = 'none';
+                    if (variationSelect) variationSelect.value = '';
+                }
+            });
+        }
+    })();
+});
+</script>
+{% endblock %}

@@ -725,11 +725,9 @@
                         <li class="{% if request.resolver_match.url_name == 'supplier_list' %}active{% endif %}">
                             <a href="{% url 'supplier_list' %}">Suppliers</a>
                         </li>
-                        {% if user.is_superuser or user.role == 'administrator' or user.can_manage_suppliers %}
-                        <li class="{% if request.resolver_match.url_name == 'supplier_add' %}active{% endif %}">
-                            <a href="{% url 'supplier_add' %}">Add Supplier</a>
+                        <li class="{% if request.resolver_match.url_name == 'purchase_report' %}active{% endif %}">
+                            <a href="{% url 'purchase_report' %}">Purchase Report</a>
                         </li>
-                        {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_make_supplier_payments %}
                         <li class="{% if request.resolver_match.url_name == 'supplier_payment_add' %}active{% endif %}">
                             <a href="{% url 'supplier_payment_add' %}">Record Payment</a>

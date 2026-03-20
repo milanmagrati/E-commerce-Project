@@ -149,10 +149,11 @@
                             <table class="table table-hover mb-0" id="itemsTable">
                                 <thead class="table-light">
                                     <tr>
-                                        <th style="width:40%">Product</th>
-                                        <th style="width:15%" class="text-center">Quantity</th>
-                                        <th style="width:20%" class="text-end">Rate (Rs.)</th>
-                                        <th style="width:20%" class="text-end">Total (Rs.)</th>
+                                        <th style="width:30%">Product</th>
+                                        <th style="width:20%">Variant</th>
+                                        <th style="width:12%" class="text-center">Quantity</th>
+                                        <th style="width:16%" class="text-end">Rate (Rs.)</th>
+                                        <th style="width:17%" class="text-end">Total (Rs.)</th>
                                         <th style="width:5%"></th>
                                     </tr>
                                 </thead>
@@ -164,9 +165,16 @@
                                                 <select name="product_id[]" class="form-select form-select-sm product-select" required>
                                                     <option value="">-- Select Product --</option>
                                                     {% for p in products %}
-                                                    <option value="{{ p.id }}" {% if item.product_id|stringformat:"s" == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>
+                                                    <option value="{{ p.id }}" data-type="{{ p.product_type }}" {% if item.product_id|stringformat:"s" == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}{% if p.product_type == 'variable' %} [Variable]{% elif p.product_type == 'bundle' %} [Bundle]{% endif %}</option>
                                                     {% endfor %}
                                                 </select>
+                                            </td>
+                                            <td>
+                                                <select name="variation_id[]" class="form-select form-select-sm variation-select" style="display:none;">
+                                                    <option value="">-- Select Variant --</option>
+                                                </select>
+                                                <div class="bundle-info" style="display:none; font-size:.75rem;"></div>
+                                                <span class="text-muted variation-na" style="font-size:.8rem;">N/A</span>
                                             </td>
                                             <td><input type="number" name="quantity[]" class="form-control form-control-sm text-center qty-input" value="{{ item.quantity }}" min="1" placeholder="Qty" required></td>
                                             <td><input type="number" step="0.01" name="rate[]" class="form-control form-control-sm text-end rate-input" value="{{ item.rate }}" min="0" placeholder="0.00" required></td>
@@ -184,9 +192,16 @@
                                             <select name="product_id[]" class="form-select form-select-sm product-select" required>
                                                 <option value="">-- Select Product --</option>
                                                 {% for p in products %}
-                                                <option value="{{ p.id }}">{{ p.name }}</option>
+                                                <option value="{{ p.id }}" data-type="{{ p.product_type }}">{{ p.name }}{% if p.product_type == 'variable' %} [Variable]{% elif p.product_type == 'bundle' %} [Bundle]{% endif %}</option>
                                                 {% endfor %}
                                             </select>
+                                        </td>
+                                        <td>
+                                            <select name="variation_id[]" class="form-select form-select-sm variation-select" style="display:none;">
+                                                <option value="">-- Select Variant --</option>
+                                            </select>
+                                            <div class="bundle-info" style="display:none; font-size:.75rem;"></div>
+                                            <span class="text-muted variation-na" style="font-size:.8rem;">N/A</span>
                                         </td>
                                         <td><input type="number" name="quantity[]" class="form-control form-control-sm text-center qty-input" min="1" placeholder="Qty" required></td>
                                         <td><input type="number" step="0.01" name="rate[]" class="form-control form-control-sm text-end rate-input" min="0" placeholder="0.00" required></td>
@@ -201,7 +216,7 @@
                                 </tbody>
                                 <tfoot class="table-light">
                                     <tr>
-                                        <td colspan="3" class="text-end fw-bold">Grand Total:</td>
+                                        <td colspan="4" class="text-end fw-bold">Grand Total:</td>
                                         <td class="text-end fw-bold fs-5 text-primary" id="grandTotal">Rs. 0.00</td>
                                         <td></td>
                                     </tr>
@@ -274,6 +289,15 @@ function addItemRow() {
     newRow.querySelector('.qty-input').value = '';
     newRow.querySelector('.rate-input').value = '';
     newRow.querySelector('.row-total').textContent = '0.00';
+    // Reset variation selector
+    var varSelect = newRow.querySelector('.variation-select');
+    varSelect.innerHTML = '<option value="">-- Select Variant --</option>';
+    varSelect.style.display = 'none';
+    // Reset bundle info
+    var bundleInfo = newRow.querySelector('.bundle-info');
+    if (bundleInfo) { bundleInfo.style.display = 'none'; bundleInfo.innerHTML = ''; }
+    var varNa = newRow.querySelector('.variation-na');
+    if (varNa) varNa.style.display = '';
     tbody.appendChild(newRow);
     attachEvents(newRow);
     updateSummary();
@@ -290,6 +314,7 @@ function removeItemRow(btn) {
 function attachEvents(row) {
     row.querySelector('.qty-input').addEventListener('input', calculateRow);
     row.querySelector('.rate-input').addEventListener('input', calculateRow);
+    row.querySelector('.product-select').addEventListener('change', handleProductChange);
 }
 
 function calculateRow(e) {
@@ -323,6 +348,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const qty = parseFloat(row.querySelector('.qty-input').value) || 0;
         const rate = parseFloat(row.querySelector('.rate-input').value) || 0;
         row.querySelector('.row-total').textContent = (qty * rate).toFixed(2);
+        // Trigger variation check for pre-selected products
+        handleProductChangeForRow(row);
     });
     updateSummary();
 
@@ -332,5 +359,56 @@ document.addEventListener('DOMContentLoaded', function() {
         dateInput.value = new Date().toISOString().split('T')[0];
     }
 });
+
+// Product variations data from server
+var PRODUCT_VARIATIONS = {{ product_variations_json|safe }};
+var BUNDLE_COMPONENTS = {{ bundle_components_json|safe }};
+
+function handleProductChange(e) {
+    handleProductChangeForRow(e.target.closest('.item-row'));
+}
+
+function handleProductChangeForRow(row) {
+    var productSelect = row.querySelector('.product-select');
+    var varSelect = row.querySelector('.variation-select');
+    var bundleInfo = row.querySelector('.bundle-info');
+    var varNa = row.querySelector('.variation-na');
+    var selectedOption = productSelect.options[productSelect.selectedIndex];
+    var productType = selectedOption ? selectedOption.dataset.type : '';
+    var productId = productSelect.value;
+
+    // Reset all
+    varSelect.innerHTML = '<option value="">-- Select Variant --</option>';
+    varSelect.style.display = 'none';
+    varSelect.value = '';
+    if (bundleInfo) { bundleInfo.style.display = 'none'; bundleInfo.innerHTML = ''; }
+    if (varNa) varNa.style.display = '';
+
+    if (productType === 'variable' && productId && PRODUCT_VARIATIONS[productId]) {
+        var variations = PRODUCT_VARIATIONS[productId];
+        variations.forEach(function(v) {
+            var opt = document.createElement('option');
+            opt.value = v.id;
+            opt.textContent = v.name + ' (Stock: ' + v.stock + ')';
+            varSelect.appendChild(opt);
+        });
+        varSelect.style.display = '';
+        if (varNa) varNa.style.display = 'none';
+    } else if (productType === 'bundle' && productId && BUNDLE_COMPONENTS[productId]) {
+        var components = BUNDLE_COMPONENTS[productId];
+        if (components.length > 0 && bundleInfo) {
+            var html = '<div class="text-warning fw-bold mb-1"><i class="fas fa-cubes me-1"></i>Components:</div>';
+            components.forEach(function(c) {
+                var stockBadge = c.stock > 0
+                    ? '<span class="badge bg-success ms-1">' + c.stock + '</span>'
+                    : '<span class="badge bg-danger ms-1">0</span>';
+                html += '<div class="ps-2">' + c.name + ' x' + c.qty + ' ' + stockBadge + '</div>';
+            });
+            bundleInfo.innerHTML = html;
+            bundleInfo.style.display = '';
+            if (varNa) varNa.style.display = 'none';
+        }
+    }
+}
 </script>
 {% endblock %}

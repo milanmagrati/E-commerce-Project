@@ -196,6 +196,7 @@ urlpatterns = [
     path('reports/sales/', views.sales_report, name='sales_report'),
     path('reports/daily-sales/', views.daily_sales_report, name='daily_sales_report'),
     path('reports/product-sales/', views.product_sales_report, name='product_sales_report'),
+    path('reports/purchase/', views.purchase_report, name='purchase_report'),
 
       # ✅ NCM ORDERS MANAGEMENT
     # ncm_orders_list removed - use logistics/orders/?provider=ncm instead
