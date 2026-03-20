@@ -7011,6 +7011,9 @@ def inventory_dashboard(request):
         total_stock_value = sum(
             p.available_stock * p.price for p in all_products_list if p.available_stock > 0
         )
+        total_stock_cost_value = sum(
+            p.available_stock * p.cost_price for p in all_products_list if p.available_stock > 0
+        )
 
         # Total Stock Units
         total_stock_units = sum(p.available_stock for p in all_products_list)
@@ -7048,12 +7051,13 @@ def inventory_dashboard(request):
             key=lambda p: p.name
         )[:10]
 
-        # Top Products by Stock Value — use available_stock
+        # Products by Stock Value — use available_stock, show ALL products
+        can_view_product_value = request.user.is_administrator or getattr(request.user, 'can_view_product_value', False)
         products_with_value = [
-            {'product': p, 'value': p.available_stock * p.price}
+            {'product': p, 'value': p.available_stock * p.price, 'cost_price': p.cost_price}
             for p in all_products_list if p.available_stock > 0
         ]
-        top_products = sorted(products_with_value, key=lambda x: x['value'], reverse=True)[:10]
+        top_products = sorted(products_with_value, key=lambda x: x['value'], reverse=True)
         
         # Recent Dispatched Orders — query via DispatchItem for accuracy
         # (orders are linked to dispatches whether or not order_status was updated)
@@ -7360,6 +7364,7 @@ def inventory_dashboard(request):
             
             # Value Stats
             'total_stock_value': total_stock_value,
+            'total_stock_cost_value': total_stock_cost_value,
             'total_stock_units': total_stock_units,
             'stock_turnover_rate': stock_turnover_rate,
             'dead_stock_count': dead_stock_count,
@@ -7368,6 +7373,7 @@ def inventory_dashboard(request):
             'low_stock_products': low_stock_products,
             'out_of_stock_products': out_of_stock_products,
             'top_products': top_products,
+            'can_view_product_value': can_view_product_value,
             'recent_dispatched_orders': recent_dispatched_orders,
             'dispatched_page_obj': dispatched_page_obj,
             'dispatched_total_count': dispatched_order_ids.count(),

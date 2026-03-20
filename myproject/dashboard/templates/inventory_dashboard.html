@@ -160,28 +160,48 @@
         <!-- Stock Value Card -->
         <div class="chart-card">
             <div class="card-header-dark">
-                <h5><i class="fas fa-dollar-sign"></i> Total Stock Value</h5>
+                <h5><i class="fas fa-dollar-sign"></i> Stock Valuation</h5>
                 <div class="header-actions-small">
-                    <button class="btn-icon">
-                        <i class="fas fa-chart-line"></i>
+                    <button class="btn-icon" id="btnSellingVal" onclick="toggleValuation('selling')">
+                        <i class="fas fa-tags"></i>
+                    </button>
+                    <button class="btn-icon" id="btnCostVal" onclick="toggleValuation('cost')">
+                        <i class="fas fa-coins"></i>
                     </button>
                 </div>
             </div>
             <div class="card-body-dark">
+                <div class="stock-valuation-tabs">
+                    <button class="valuation-tab active" onclick="toggleValuation('selling')" id="tabSelling">
+                        <i class="fas fa-tags"></i> By Selling Price
+                    </button>
+                    <button class="valuation-tab" onclick="toggleValuation('cost')" id="tabCost">
+                        <i class="fas fa-coins"></i> By Cost Price
+                    </button>
+                </div>
                 <div class="value-display-container">
-                    <div class="value-display">
-                        <span class="currency">Rs</span>
-                        <span class="amount" id="stockValue">{{ total_stock_value|floatformat:0 }}</span>
-                    </div>
-                    <p class="value-subtitle">Current inventory valuation</p>
-                    <div class="value-stats">
-                        <div class="value-stat">
-                            <i class="fas fa-chart-line text-success"></i>
-                            <span>+15% vs last month</span>
+                    <div id="sellingValuation">
+                        <div class="value-display">
+                            <span class="currency">Rs</span>
+                            <span class="amount" id="stockValue">{{ total_stock_value|floatformat:0 }}</span>
                         </div>
+                        <p class="value-subtitle">Retail inventory valuation</p>
+                    </div>
+                    <div id="costValuation" style="display: none;">
+                        <div class="value-display">
+                            <span class="currency cost-currency">Rs</span>
+                            <span class="amount cost-amount" id="stockCostValue">{{ total_stock_cost_value|floatformat:0 }}</span>
+                        </div>
+                        <p class="value-subtitle">Cost-based inventory valuation</p>
+                    </div>
+                    <div class="value-stats">
                         <div class="value-stat">
                             <i class="fas fa-boxes text-info"></i>
                             <span>{{ total_products }} SKUs</span>
+                        </div>
+                        <div class="value-stat">
+                            <i class="fas fa-cubes text-success"></i>
+                            <span>{{ total_stock_units }} Units</span>
                         </div>
                     </div>
                 </div>
@@ -610,15 +630,31 @@
     <div class="top-products-section">
         <div class="chart-card">
             <div class="card-header-dark">
-                <h5><i class="fas fa-trophy"></i> Top 10 Products by Stock Value</h5>
+                <h5><i class="fas fa-trophy"></i> Products by Stock Value</h5>
+                <span class="count-badge success">{{ top_products|length }} products</span>
             </div>
             <div class="card-body-dark p-0">
-                <div class="table-container-dark">
-                    <table class="table-dark">
-                        <thead>
+                <div class="table-container-dark" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table-dark products-value-table">
+                        <colgroup>
+                            <col style="width: 45px;">
+                            {% if can_view_product_value %}
+                            <col style="width: 200px;">
+                            <col style="width: 120px;">
+                            {% else %}
+                            <col style="width: 350px;">
+                            {% endif %}
+                            <col style="width: 110px;">
+                            <col style="width: 120px;">
+                            <col style="width: 150px;">
+                        </colgroup>
+                        <thead style="position: sticky; top: 0; z-index: 1;">
                             <tr>
-                                <th width="5%">#</th>
-                                <th width="45%">Product</th>
+                                <th>#</th>
+                                <th>Product</th>
+                                {% if can_view_product_value %}
+                                <th class="text-right">Cost Price</th>
+                                {% endif %}
                                 <th class="text-center">Stock Qty</th>
                                 <th class="text-right">Unit Price</th>
                                 <th class="text-right">Total Value</th>
@@ -646,6 +682,11 @@
                                         <span class="product-name">{{ item.product.name }}</span>
                                     </div>
                                 </td>
+                                {% if can_view_product_value %}
+                                <td class="text-right">
+                                    <strong>Rs {{ item.cost_price|floatformat:2 }}</strong>
+                                </td>
+                                {% endif %}
                                 <td class="text-center">
                                     <span class="stock-badge success">{{ item.product.stock }}</span>
                                 </td>
@@ -658,7 +699,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="5" class="text-center py-4">
+                                <td colspan="{% if can_view_product_value %}6{% else %}5{% endif %}" class="text-center py-4">
                                     <p class="text-muted">No products with stock</p>
                                 </td>
                             </tr>
@@ -1523,6 +1564,57 @@
     margin-bottom: 1.5rem;
 }
 
+/* Stock Valuation Tabs */
+.stock-valuation-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 10px;
+    padding: 4px;
+}
+
+.valuation-tab {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+}
+
+.valuation-tab:hover {
+    color: var(--text-primary);
+}
+
+.valuation-tab.active {
+    background: white;
+    color: var(--accent-green);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.valuation-tab.active-cost {
+    background: white;
+    color: var(--accent-purple);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.cost-currency {
+    color: var(--accent-purple) !important;
+}
+
+.cost-amount {
+    color: var(--accent-purple) !important;
+}
+
 .value-stats {
     display: flex;
     justify-content: center;
@@ -2126,6 +2218,18 @@
 .product-name {
     font-weight: 600;
     color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.products-value-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.products-value-table .product-cell {
+    overflow: hidden;
 }
 
 .sku-badge {
@@ -2991,6 +3095,32 @@ function animateCounter(element) {
             element.textContent = Math.floor(current);
         }
     }, 16);
+}
+
+// Toggle Stock Valuation view
+function toggleValuation(type) {
+    const sellingDiv = document.getElementById('sellingValuation');
+    const costDiv = document.getElementById('costValuation');
+    const tabSelling = document.getElementById('tabSelling');
+    const tabCost = document.getElementById('tabCost');
+    const btnSelling = document.getElementById('btnSellingVal');
+    const btnCost = document.getElementById('btnCostVal');
+
+    if (type === 'selling') {
+        sellingDiv.style.display = 'block';
+        costDiv.style.display = 'none';
+        tabSelling.className = 'valuation-tab active';
+        tabCost.className = 'valuation-tab';
+        if (btnSelling) btnSelling.classList.add('active');
+        if (btnCost) btnCost.classList.remove('active');
+    } else {
+        sellingDiv.style.display = 'none';
+        costDiv.style.display = 'block';
+        tabCost.className = 'valuation-tab active-cost';
+        tabSelling.className = 'valuation-tab';
+        if (btnCost) btnCost.classList.add('active');
+        if (btnSelling) btnSelling.classList.remove('active');
+    }
 }
 
 // Initialize all charts
