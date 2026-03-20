@@ -14519,7 +14519,9 @@ def manage_targets(request):
     # ========== STAFF ORDERS FOR TARGETS PAGE ==========
     target_orders_qs = Order.objects.filter(
         is_deleted=False,
-    ).select_related('created_by', 'customer', 'branch').prefetch_related('items__product').order_by('-created_at')
+    ).select_related(
+        'created_by', 'customer', 'branch', 'status_setup', 'payment_status_setup'
+    ).prefetch_related('items__product').order_by('-created_at')
 
     if staff_filter:
         target_orders_qs = target_orders_qs.filter(created_by_id=staff_filter)
@@ -14528,12 +14530,27 @@ def manage_targets(request):
     if target_orders_status:
         target_orders_qs = target_orders_qs.filter(status=target_orders_status)
 
+    # Date filter: today (default), 7, 15, 30
+    orders_date_filter = request.GET.get('orders_date', 'today')
+    if orders_date_filter == 'today':
+        target_orders_qs = target_orders_qs.filter(created_at__date=today)
+    elif orders_date_filter == '7':
+        target_orders_qs = target_orders_qs.filter(created_at__date__gte=today - timedelta(days=7))
+    elif orders_date_filter == '15':
+        target_orders_qs = target_orders_qs.filter(created_at__date__gte=today - timedelta(days=15))
+    elif orders_date_filter == '30':
+        target_orders_qs = target_orders_qs.filter(created_at__date__gte=today - timedelta(days=30))
+
     target_orders_paginator = Paginator(target_orders_qs, 15)
     target_orders_page = target_orders_paginator.get_page(request.GET.get('orders_page', 1))
 
-    target_orders_statuses = list(
-        Order.objects.filter(is_deleted=False).values_list('status', flat=True).distinct().order_by('status')
-    )
+    # Use Setup model for proper status display names (same as orders_list)
+    from .models import Setup as SetupModel
+    order_status_setups = SetupModel.objects.filter(setup_type='status', is_active=True).order_by('name')
+    target_orders_statuses = [
+        (setup.name.lower().replace(' ', '_'), setup.name)
+        for setup in order_status_setups
+    ]
 
     context = {
         'targets_data': targets_data,
@@ -14549,6 +14566,7 @@ def manage_targets(request):
         'target_orders_page': target_orders_page,
         'target_orders_statuses': target_orders_statuses,
         'selected_orders_status': target_orders_status,
+        'selected_orders_date': orders_date_filter,
     }
     return render(request, 'staff_targets.html', context)
 
@@ -14600,18 +14618,35 @@ def my_targets(request):
     my_orders_qs = Order.objects.filter(
         created_by=user,
         is_deleted=False,
-    ).select_related('created_by', 'customer', 'branch').prefetch_related('items__product').order_by('-created_at')
+    ).select_related(
+        'created_by', 'customer', 'branch', 'status_setup', 'payment_status_setup'
+    ).prefetch_related('items__product').order_by('-created_at')
 
     my_orders_status = request.GET.get('orders_status', '')
     if my_orders_status:
         my_orders_qs = my_orders_qs.filter(status=my_orders_status)
 
+    # Date filter: today (default), 7, 15, 30
+    orders_date_filter = request.GET.get('orders_date', 'today')
+    if orders_date_filter == 'today':
+        my_orders_qs = my_orders_qs.filter(created_at__date=today)
+    elif orders_date_filter == '7':
+        my_orders_qs = my_orders_qs.filter(created_at__date__gte=today - timedelta(days=7))
+    elif orders_date_filter == '15':
+        my_orders_qs = my_orders_qs.filter(created_at__date__gte=today - timedelta(days=15))
+    elif orders_date_filter == '30':
+        my_orders_qs = my_orders_qs.filter(created_at__date__gte=today - timedelta(days=30))
+
     my_orders_paginator = Paginator(my_orders_qs, 15)
     my_orders_page = my_orders_paginator.get_page(request.GET.get('orders_page', 1))
 
-    my_orders_statuses = list(
-        Order.objects.filter(created_by=user, is_deleted=False).values_list('status', flat=True).distinct().order_by('status')
-    )
+    # Use Setup model for proper status display names (same as orders_list)
+    from .models import Setup as SetupModel2
+    order_status_setups = SetupModel2.objects.filter(setup_type='status', is_active=True).order_by('name')
+    my_orders_statuses = [
+        (setup.name.lower().replace(' ', '_'), setup.name)
+        for setup in order_status_setups
+    ]
 
     # Summary KPIs for my orders
     my_orders_total = my_orders_qs.count()
@@ -14623,6 +14658,15 @@ def my_targets(request):
         Q(status='delivered') | Q(order_status='delivered')
     ).count()
 
+    # Today's orders for the "Today Orders" section (always today, independent of date filter)
+    today_orders = Order.objects.filter(
+        created_by=user,
+        is_deleted=False,
+        created_at__date=today,
+    ).select_related(
+        'status_setup', 'payment_status_setup'
+    ).prefetch_related('items__product').order_by('-created_at')
+
     context = {
         'targets_data': targets_data,
         'active_targets': active_targets,
@@ -14631,9 +14675,10 @@ def my_targets(request):
         'target_orders_page': my_orders_page,
         'target_orders_statuses': my_orders_statuses,
         'selected_orders_status': my_orders_status,
+        'selected_orders_date': orders_date_filter,
         'my_orders_total': my_orders_total,
-        'my_orders_revenue': my_orders_revenue,
         'my_orders_delivered': my_orders_delivered,
+        'today_orders': today_orders,
     }
     return render(request, 'staff_targets.html', context)
 

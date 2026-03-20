@@ -1,13 +1,23 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load dashboard_extras %}
+{% load humanize %}
 
 {% block title %}{% if is_admin_view %}Manage Staff Targets{% else %}My Targets{% endif %}{% endblock %}
 
 {% block extra_css %}
 <style>
 .st-page { background: #f5f7fa; min-height: 100vh; }
-
+</style>
+<script>
+// Prevent flicker: hide page instantly if we need to scroll to orders section
+(function() {
+    if (sessionStorage.getItem('scrollToOrders')) {
+        document.documentElement.style.opacity = '0';
+    }
+})();
+</script>
+<style>
 /* Page Header */
 .st-header {
     background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
@@ -558,6 +568,39 @@
     box-shadow: 0 0 0 3px rgba(99,102,241,.12);
 }
 
+.st-date-filters {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #f3f4f6;
+    border-radius: 8px;
+    padding: 3px;
+}
+
+.st-date-btn {
+    padding: 5px 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: .8rem;
+    font-weight: 500;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all .2s;
+    white-space: nowrap;
+}
+
+.st-date-btn:hover {
+    color: #374151;
+    background: #e5e7eb;
+}
+
+.st-date-btn.active {
+    background: #6366f1;
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(99,102,241,.3);
+}
+
 .st-orders-toolbar .st-toolbar-count {
     font-size: .82rem;
     color: #6b7280;
@@ -615,26 +658,25 @@
     margin-top: 2px;
 }
 
-/* Order status pills */
-.st-status-pill {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: .72rem;
-    font-weight: 600;
-    text-transform: capitalize;
-}
+/* Order status colors - synced with orders_list.html */
+strong[class^="order-status-"] { color: #1f2937; font-size: .9rem; font-weight: 700; }
+.order-status-pending { color: #f59e0b !important; }
+.order-status-processing { color: #3b82f6 !important; }
+.order-status-confirmed { color: #8b5cf6 !important; }
+.order-status-packed { color: #6366f1 !important; }
+.order-status-shipped { color: #06b6d4 !important; }
+.order-status-delivered { color: #10b981 !important; }
+.order-status-cancelled, .order-status-return, .order-status-returned { color: #ef4444 !important; }
+.order-status-dispatched { color: #8b5cf6 !important; }
+.order-status-on_hold { color: #f59e0b !important; }
 
-.st-status-processing { background: #dbeafe; color: #1e40af; }
-.st-status-pending { background: #fef3c7; color: #92400e; }
-.st-status-delivered { background: #d1fae5; color: #065f46; }
-.st-status-dispatched { background: #e0e7ff; color: #3730a3; }
-.st-status-cancelled { background: #f3f4f6; color: #374151; }
-.st-status-returned { background: #fee2e2; color: #991b1b; }
-.st-status-on_hold { background: #fef3c7; color: #78350f; }
-.st-status-confirmed { background: #ccfbf1; color: #0f766e; }
-.st-status-shipped { background: #e0e7ff; color: #3730a3; }
-.st-status-packed { background: #ede9fe; color: #5b21b6; }
+/* Payment status colors - synced with orders_list.html */
+.payment-status-pending { color: #f59e0b !important; font-weight: 700; }
+.payment-status-paid { color: #10b981 !important; font-weight: 700; }
+.payment-status-partial { color: #f59e0b !important; font-weight: 700; }
+.payment-status-failed { color: #ef4444 !important; font-weight: 700; }
+.payment-status-cod { color: #3b82f6 !important; font-weight: 700; }
+.payment-status-refunded { color: #8b5cf6 !important; font-weight: 700; }
 
 .st-source-badge {
     display: inline-block;
@@ -1212,7 +1254,345 @@
         </div>
 
         <!-- ========== ADMIN: STAFF ORDERS LOG ========== -->
-        {% include 'partials/target_orders_section.html' %}
+        <!-- ========== ORDERS MADE SECTION ========== -->
+<div class="st-orders-card" id="target-orders-log">
+    <div class="st-orders-header">
+        <h5>
+            <i class="fas fa-shopping-cart me-2"></i>
+            {% if is_admin_view %}Staff Orders Log{% else %}My Orders{% endif %}
+            <span class="st-order-count">
+                ({{ target_orders_page.paginator.count }} order{{ target_orders_page.paginator.count|pluralize }})
+            </span>
+        </h5>
+    </div>
+
+    {% if not is_admin_view and my_orders_total is not None %}
+    <!-- My Orders KPI Strip -->
+    <div class="st-my-orders-kpi">
+        <div class="st-mokpi">
+            <div class="st-mokpi-val">{{ my_orders_total }}</div>
+            <div class="st-mokpi-lbl">Total Orders</div>
+        </div>
+        <div class="st-mokpi">
+            <div class="st-mokpi-val">{{ my_orders_delivered }}</div>
+            <div class="st-mokpi-lbl">Delivered</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Toolbar -->
+    <div class="st-orders-toolbar">
+        <div class="st-toolbar-left">
+            <div class="st-date-filters">
+                <button type="button" class="st-date-btn {% if selected_orders_date == 'today' %}active{% endif %}" onclick="filterByDate('today')">Today</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '7' %}active{% endif %}" onclick="filterByDate('7')">1 Week</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '15' %}active{% endif %}" onclick="filterByDate('15')">15 Days</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '30' %}active{% endif %}" onclick="filterByDate('30')">1 Month</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == 'all' %}active{% endif %}" onclick="filterByDate('all')">All Time</button>
+            </div>
+            <select id="targetOrdersStatusFilter" onchange="filterTargetOrders()">
+                <option value="">All Statuses</option>
+                {% for st_val, st_name in target_orders_statuses %}
+                <option value="{{ st_val }}" {% if selected_orders_status == st_val %}selected{% endif %}>{{ st_name }}</option>
+                {% endfor %}
+            </select>
+            {% if target_orders_page.paginator.count > 0 %}
+            <span class="st-toolbar-count">
+                Showing <strong>{{ target_orders_page.start_index }}&ndash;{{ target_orders_page.end_index }}</strong> of <strong>{{ target_orders_page.paginator.count }}</strong>
+            </span>
+            {% endif %}
+        </div>
+        {% if selected_orders_status or selected_orders_date != 'today' %}
+        <button class="st-btn-clear" onclick="clearTargetOrdersFilter()">
+            <i class="fas fa-times me-1"></i> Clear Filter
+        </button>
+        {% endif %}
+    </div>
+
+    <!-- Orders Table -->
+    <div style="overflow-x: auto;">
+        <table class="table table-hover mb-0" style="font-size:.85rem;">
+            <thead style="background:#f9fafb;">
+                <tr>
+                    <th style="width:11%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Order #</th>
+                    {% if is_admin_view %}
+                    <th style="width:13%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Created By</th>
+                    {% endif %}
+                    <th style="width:14%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Customer</th>
+                    <th style="width:22%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Items</th>
+                    <th style="width:9%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:center;">Status</th>
+                    <th style="width:8%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:center;">Source</th>
+                    <th style="width:11%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:right;">Amount</th>
+                    <th style="width:12%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in target_orders_page %}
+                <tr class="st-order-row" onclick="toggleTargetOrderDetail(this, 'target-od-{{ order.id }}')">
+                    <td style="padding:10px 14px;">
+                        <span class="st-expand-icon"><i class="fas fa-chevron-right"></i></span>
+                        <a href="{% url 'order_detail' order.id %}" style="color:#6366f1; font-weight:600; text-decoration:none;" onclick="event.stopPropagation();">
+                            {{ order.order_number }}
+                        </a>
+                    </td>
+                    {% if is_admin_view %}
+                    <td style="padding:10px 14px;">
+                        {% if order.created_by %}
+                            <strong style="font-size:.85rem;">
+                                {% if order.created_by.first_name %}{{ order.created_by.first_name }} {{ order.created_by.last_name }}{% else %}{{ order.created_by.username }}{% endif %}
+                            </strong>
+                            <br><span style="font-size:.72rem; color:#9ca3af;">{{ order.created_by.get_role_display }}</span>
+                        {% else %}
+                            <span style="color:#9ca3af;">System</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    <td style="padding:10px 14px;">
+                        <span style="font-weight:500;">{{ order.customer_name }}</span>
+                        {% if order.customer_phone %}
+                        <br><span style="font-size:.78rem; color:#999;">{{ order.customer_phone }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px 14px;">
+                        <div class="st-items-preview">
+                            {% for item in order.items.all|slice:":3" %}
+                            <span class="st-iline">
+                                {{ item.product_name }}
+                                <span class="st-iqty">&times;{{ item.quantity }}</span>
+                            </span>
+                            {% endfor %}
+                            {% if order.items.count > 3 %}
+                            <span class="st-imore">+ {{ order.items.count|add:"-3" }} more item{{ order.items.count|add:"-3"|pluralize }}</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td style="text-align:center; padding:10px 14px;">
+                        <strong class="order-status-{{ order.order_status|default:'pending' }}" style="font-weight:700;">
+                            {% if order.status_setup %}
+                                {{ order.status_setup.name|replace:"_: "|capfirst }}
+                            {% elif order.order_status %}
+                                {{ order.order_status|replace:"_: "|capfirst }}
+                            {% else %}
+                                Pending
+                            {% endif %}
+                        </strong>
+                    </td>
+                    <td style="text-align:center; padding:10px 14px;">
+                        <span class="st-source-badge">{{ order.order_from|default:"-"|upper }}</span>
+                    </td>
+                    <td style="text-align:right; padding:10px 14px;">
+                        <strong>Rs. {{ order.total_amount|floatformat:2 }}</strong>
+                        {% if order.payment_method %}
+                        <br><span style="font-size:.72rem; color:#999; text-transform:uppercase;">{{ order.payment_method }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px 14px;">
+                        <span style="font-size:.85rem; color:#666;">{{ order.created_at|date:"M d, Y" }}</span>
+                        <br><span style="font-size:.75rem; color:#999;">{{ order.created_at|date:"H:i" }}</span>
+                    </td>
+                </tr>
+
+                <!-- Expandable Detail Row -->
+                <tr class="st-order-detail-row" id="target-od-{{ order.id }}">
+                    <td colspan="{% if is_admin_view %}8{% else %}7{% endif %}" style="padding:0;">
+                        <div class="st-detail-panel">
+                            <!-- Info Grid -->
+                            <div class="st-detail-grid">
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Shipping Address</span>
+                                    <span class="st-dvalue">{{ order.shipping_address|default:"-" }}</span>
+                                    {% if order.landmark %}
+                                    <span style="font-size:.78rem; color:#9ca3af;">Landmark: {{ order.landmark }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Branch</span>
+                                    <span class="st-dvalue">{% if order.branch %}{{ order.branch }}{% else %}-{% endif %}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Customer Email</span>
+                                    <span class="st-dvalue">{{ order.customer_email|default:"-" }}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Logistics</span>
+                                    <span class="st-dvalue">
+                                        {% if order.logistics %}
+                                        <span class="st-source-badge" style="font-size:.78rem;">{{ order.get_logistics_display }}</span>
+                                        {% else %}-{% endif %}
+                                    </span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Tracking Number</span>
+                                    <span class="st-dvalue">{{ order.tracking_number|default:"-" }}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Payment Status</span>
+                                    <span class="st-dvalue">
+                                        <strong class="payment-status-{{ order.payment_status|default:'pending' }}" style="font-weight:700;">
+                                            {% if order.payment_status_setup %}
+                                                {{ order.payment_status_setup.name|replace:"_: "|upper }}
+                                            {% else %}
+                                                {{ order.payment_status|default:"pending"|replace:"_: "|upper }}
+                                            {% endif %}
+                                        </strong>
+                                    </span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">In / Out</span>
+                                    <span class="st-dvalue">
+                                        <span class="st-source-badge">{{ order.in_out|upper }}</span>
+                                    </span>
+                                </div>
+                                {% if order.delivered_at %}
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Delivered At</span>
+                                    <span class="st-dvalue">{{ order.delivered_at|date:"M d, Y H:i" }}</span>
+                                </div>
+                                {% endif %}
+                                {% if order.dispatch_date %}
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Dispatch Date</span>
+                                    <span class="st-dvalue">{{ order.dispatch_date|date:"M d, Y H:i" }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Items Table -->
+                            <div class="st-detail-section-title">
+                                <i class="fas fa-boxes"></i> Order Items ({{ order.items.count }})
+                            </div>
+                            <table class="st-items-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:40%;">Product</th>
+                                        <th style="width:15%;">SKU</th>
+                                        <th style="width:10%; text-align:center;">Qty</th>
+                                        <th style="width:15%; text-align:right;">Price</th>
+                                        <th style="width:20%; text-align:right;">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in order.items.all %}
+                                    <tr>
+                                        <td>
+                                            {{ item.product_name }}
+                                            {% if item.variation_name %}
+                                            <br><span style="font-size:.75rem; color:#8b5cf6;">{{ item.variation_name }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td><span style="font-size:.78rem; color:#9ca3af;">{{ item.product_sku|default:"-" }}</span></td>
+                                        <td style="text-align:center;"><span style="color:#6366f1; font-weight:700;">&times;{{ item.quantity }}</span></td>
+                                        <td style="text-align:right;">Rs. {{ item.price|floatformat:2 }}</td>
+                                        <td style="text-align:right;">Rs. {{ item.total|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    {% if order.discount_amount > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#ef4444;">Discount</td>
+                                        <td style="text-align:right; color:#ef4444;">- Rs. {{ order.discount_amount|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    {% if order.shipping_charge > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#6b7280; font-weight:500;">Shipping</td>
+                                        <td style="text-align:right; color:#6b7280;">Rs. {{ order.shipping_charge|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    {% if order.delivery_charge > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#6b7280; font-weight:500;">Delivery Charge</td>
+                                        <td style="text-align:right; color:#6b7280;">Rs. {{ order.delivery_charge|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right;">Grand Total</td>
+                                        <td style="text-align:right; font-size:1rem;">Rs. {{ order.total_amount|floatformat:2 }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+
+                            <!-- Notes -->
+                            {% if order.notes %}
+                            <div style="margin-top:1rem;">
+                                <div class="st-detail-section-title">
+                                    <i class="fas fa-sticky-note"></i> Order Notes
+                                </div>
+                                <div class="st-detail-notes">{{ order.notes }}</div>
+                            </div>
+                            {% endif %}
+                            {% if order.admin_notes %}
+                            <div style="margin-top:.75rem;">
+                                <div class="st-detail-section-title">
+                                    <i class="fas fa-user-shield"></i> Admin Notes
+                                </div>
+                                <div class="st-detail-notes">{{ order.admin_notes }}</div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Footer -->
+                            <div class="st-detail-footer">
+                                <a href="{% url 'order_detail' order.id %}" onclick="event.stopPropagation();">
+                                    <i class="fas fa-external-link-alt"></i> View Full Order
+                                </a>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="{% if is_admin_view %}8{% else %}7{% endif %}" style="text-align:center; padding:3rem 1rem; color:#9ca3af;">
+                        <i class="fas fa-shopping-cart" style="font-size:2rem; margin-bottom:.5rem; display:block; opacity:.4;"></i>
+                        No orders found
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if target_orders_page.has_other_pages %}
+    <div class="st-pagination">
+        {% if target_orders_page.has_previous %}
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage(1)" class="st-pg-nav" title="First">
+            <i class="fas fa-angle-double-left"></i>
+        </a>
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.previous_page_number }})" class="st-pg-nav" title="Previous">
+            <i class="fas fa-angle-left"></i>
+        </a>
+        {% else %}
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-double-left"></i></span>
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-left"></i></span>
+        {% endif %}
+
+        {% for pg in target_orders_page.paginator.page_range %}
+            {% if target_orders_page.number == pg %}
+                <span class="st-pg-current">{{ pg }}</span>
+            {% elif pg > target_orders_page.number|add:"-4" and pg < target_orders_page.number|add:"4" %}
+                <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ pg }})">{{ pg }}</a>
+            {% elif pg == 1 or pg == target_orders_page.paginator.num_pages %}
+                <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ pg }})">{{ pg }}</a>
+            {% elif pg == target_orders_page.number|add:"-4" or pg == target_orders_page.number|add:"4" %}
+                <span class="st-pg-ellipsis">&hellip;</span>
+            {% endif %}
+        {% endfor %}
+
+        {% if target_orders_page.has_next %}
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.next_page_number }})" class="st-pg-nav" title="Next">
+            <i class="fas fa-angle-right"></i>
+        </a>
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.paginator.num_pages }})" class="st-pg-nav" title="Last">
+            <i class="fas fa-angle-double-right"></i>
+        </a>
+        {% else %}
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-right"></i></span>
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-double-right"></i></span>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
 
         {% else %}
 
@@ -1298,6 +1678,93 @@
         </div>
         {% endif %}
 
+        <!-- ========== TODAY ORDERS SECTION ========== -->
+        {% if not is_admin_view %}
+        <div class="st-orders-card" style="margin-top:24px;">
+            <div class="st-orders-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                <h5>
+                    <i class="fas fa-calendar-day me-2"></i>
+                    Today's Orders
+                    <span class="st-order-count">
+                        ({{ today_orders|length }} order{{ today_orders|length|pluralize }})
+                    </span>
+                </h5>
+            </div>
+
+            {% if today_orders %}
+            <div style="overflow-x: auto;">
+                <table class="table table-hover mb-0" style="font-size:.85rem;">
+                    <thead style="background:#f9fafb;">
+                        <tr>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Order #</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Customer</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Items</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:center;">Status</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:right;">Amount</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in today_orders %}
+                        <tr style="border-bottom:1px solid #f3f4f6;">
+                            <td style="padding:10px 14px;">
+                                <a href="{% url 'order_detail' order.id %}" style="color:#6366f1; font-weight:600; text-decoration:none;">
+                                    {{ order.order_number }}
+                                </a>
+                            </td>
+                            <td style="padding:10px 14px;">
+                                <span style="font-weight:500;">{{ order.customer_name }}</span>
+                                {% if order.customer_phone %}
+                                <br><span style="font-size:.78rem; color:#999;">{{ order.customer_phone }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:10px 14px;">
+                                <div class="st-items-preview">
+                                    {% for item in order.items.all|slice:":2" %}
+                                    <span class="st-iline">
+                                        {{ item.product_name }}
+                                        <span class="st-iqty">&times;{{ item.quantity }}</span>
+                                    </span>
+                                    {% endfor %}
+                                    {% if order.items.count > 2 %}
+                                    <span class="st-imore">+ {{ order.items.count|add:"-2" }} more</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td style="text-align:center; padding:10px 14px;">
+                                <strong class="order-status-{{ order.order_status|default:'pending' }}" style="font-weight:700;">
+                                    {% if order.status_setup %}
+                                        {{ order.status_setup.name|replace:"_: "|capfirst }}
+                                    {% elif order.order_status %}
+                                        {{ order.order_status|replace:"_: "|capfirst }}
+                                    {% else %}
+                                        Pending
+                                    {% endif %}
+                                </strong>
+                            </td>
+                            <td style="text-align:right; padding:10px 14px;">
+                                <strong>Rs. {{ order.total_amount|floatformat:2 }}</strong>
+                                {% if order.payment_method %}
+                                <br><span style="font-size:.72rem; color:#999; text-transform:uppercase;">{{ order.payment_method }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:10px 14px;">
+                                <span style="font-size:.85rem; color:#666;">{{ order.created_at|date:"H:i" }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div style="text-align:center; padding:30px 20px; color:#9ca3af;">
+                <i class="fas fa-inbox" style="font-size:1.5rem; margin-bottom:8px; display:block; color:#d1d5db;"></i>
+                <p style="margin:0; font-size:.88rem;">No orders created today yet.</p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
         <!-- Performance History Table -->
         <div class="st-history-card">
             <div class="st-table-header">
@@ -1341,7 +1808,345 @@
         </div>
 
         <!-- ========== STAFF: MY ORDERS LOG ========== -->
-        {% include 'partials/target_orders_section.html' %}
+        <!-- ========== ORDERS MADE SECTION ========== -->
+<div class="st-orders-card" id="target-orders-log">
+    <div class="st-orders-header">
+        <h5>
+            <i class="fas fa-shopping-cart me-2"></i>
+            {% if is_admin_view %}Staff Orders Log{% else %}My Orders{% endif %}
+            <span class="st-order-count">
+                ({{ target_orders_page.paginator.count }} order{{ target_orders_page.paginator.count|pluralize }})
+            </span>
+        </h5>
+    </div>
+
+    {% if not is_admin_view and my_orders_total is not None %}
+    <!-- My Orders KPI Strip -->
+    <div class="st-my-orders-kpi">
+        <div class="st-mokpi">
+            <div class="st-mokpi-val">{{ my_orders_total }}</div>
+            <div class="st-mokpi-lbl">Total Orders</div>
+        </div>
+        <div class="st-mokpi">
+            <div class="st-mokpi-val">{{ my_orders_delivered }}</div>
+            <div class="st-mokpi-lbl">Delivered</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Toolbar -->
+    <div class="st-orders-toolbar">
+        <div class="st-toolbar-left">
+            <div class="st-date-filters">
+                <button type="button" class="st-date-btn {% if selected_orders_date == 'today' %}active{% endif %}" onclick="filterByDate('today')">Today</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '7' %}active{% endif %}" onclick="filterByDate('7')">1 Week</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '15' %}active{% endif %}" onclick="filterByDate('15')">15 Days</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '30' %}active{% endif %}" onclick="filterByDate('30')">1 Month</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == 'all' %}active{% endif %}" onclick="filterByDate('all')">All Time</button>
+            </div>
+            <select id="targetOrdersStatusFilter" onchange="filterTargetOrders()">
+                <option value="">All Statuses</option>
+                {% for st_val, st_name in target_orders_statuses %}
+                <option value="{{ st_val }}" {% if selected_orders_status == st_val %}selected{% endif %}>{{ st_name }}</option>
+                {% endfor %}
+            </select>
+            {% if target_orders_page.paginator.count > 0 %}
+            <span class="st-toolbar-count">
+                Showing <strong>{{ target_orders_page.start_index }}&ndash;{{ target_orders_page.end_index }}</strong> of <strong>{{ target_orders_page.paginator.count }}</strong>
+            </span>
+            {% endif %}
+        </div>
+        {% if selected_orders_status or selected_orders_date != 'today' %}
+        <button class="st-btn-clear" onclick="clearTargetOrdersFilter()">
+            <i class="fas fa-times me-1"></i> Clear Filter
+        </button>
+        {% endif %}
+    </div>
+
+    <!-- Orders Table -->
+    <div style="overflow-x: auto;">
+        <table class="table table-hover mb-0" style="font-size:.85rem;">
+            <thead style="background:#f9fafb;">
+                <tr>
+                    <th style="width:11%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Order #</th>
+                    {% if is_admin_view %}
+                    <th style="width:13%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Created By</th>
+                    {% endif %}
+                    <th style="width:14%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Customer</th>
+                    <th style="width:22%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Items</th>
+                    <th style="width:9%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:center;">Status</th>
+                    <th style="width:8%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:center;">Source</th>
+                    <th style="width:11%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:right;">Amount</th>
+                    <th style="width:12%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in target_orders_page %}
+                <tr class="st-order-row" onclick="toggleTargetOrderDetail(this, 'target-od-{{ order.id }}')">
+                    <td style="padding:10px 14px;">
+                        <span class="st-expand-icon"><i class="fas fa-chevron-right"></i></span>
+                        <a href="{% url 'order_detail' order.id %}" style="color:#6366f1; font-weight:600; text-decoration:none;" onclick="event.stopPropagation();">
+                            {{ order.order_number }}
+                        </a>
+                    </td>
+                    {% if is_admin_view %}
+                    <td style="padding:10px 14px;">
+                        {% if order.created_by %}
+                            <strong style="font-size:.85rem;">
+                                {% if order.created_by.first_name %}{{ order.created_by.first_name }} {{ order.created_by.last_name }}{% else %}{{ order.created_by.username }}{% endif %}
+                            </strong>
+                            <br><span style="font-size:.72rem; color:#9ca3af;">{{ order.created_by.get_role_display }}</span>
+                        {% else %}
+                            <span style="color:#9ca3af;">System</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    <td style="padding:10px 14px;">
+                        <span style="font-weight:500;">{{ order.customer_name }}</span>
+                        {% if order.customer_phone %}
+                        <br><span style="font-size:.78rem; color:#999;">{{ order.customer_phone }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px 14px;">
+                        <div class="st-items-preview">
+                            {% for item in order.items.all|slice:":3" %}
+                            <span class="st-iline">
+                                {{ item.product_name }}
+                                <span class="st-iqty">&times;{{ item.quantity }}</span>
+                            </span>
+                            {% endfor %}
+                            {% if order.items.count > 3 %}
+                            <span class="st-imore">+ {{ order.items.count|add:"-3" }} more item{{ order.items.count|add:"-3"|pluralize }}</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td style="text-align:center; padding:10px 14px;">
+                        <strong class="order-status-{{ order.order_status|default:'pending' }}" style="font-weight:700;">
+                            {% if order.status_setup %}
+                                {{ order.status_setup.name|replace:"_: "|capfirst }}
+                            {% elif order.order_status %}
+                                {{ order.order_status|replace:"_: "|capfirst }}
+                            {% else %}
+                                Pending
+                            {% endif %}
+                        </strong>
+                    </td>
+                    <td style="text-align:center; padding:10px 14px;">
+                        <span class="st-source-badge">{{ order.order_from|default:"-"|upper }}</span>
+                    </td>
+                    <td style="text-align:right; padding:10px 14px;">
+                        <strong>Rs. {{ order.total_amount|floatformat:2 }}</strong>
+                        {% if order.payment_method %}
+                        <br><span style="font-size:.72rem; color:#999; text-transform:uppercase;">{{ order.payment_method }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px 14px;">
+                        <span style="font-size:.85rem; color:#666;">{{ order.created_at|date:"M d, Y" }}</span>
+                        <br><span style="font-size:.75rem; color:#999;">{{ order.created_at|date:"H:i" }}</span>
+                    </td>
+                </tr>
+
+                <!-- Expandable Detail Row -->
+                <tr class="st-order-detail-row" id="target-od-{{ order.id }}">
+                    <td colspan="{% if is_admin_view %}8{% else %}7{% endif %}" style="padding:0;">
+                        <div class="st-detail-panel">
+                            <!-- Info Grid -->
+                            <div class="st-detail-grid">
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Shipping Address</span>
+                                    <span class="st-dvalue">{{ order.shipping_address|default:"-" }}</span>
+                                    {% if order.landmark %}
+                                    <span style="font-size:.78rem; color:#9ca3af;">Landmark: {{ order.landmark }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Branch</span>
+                                    <span class="st-dvalue">{% if order.branch %}{{ order.branch }}{% else %}-{% endif %}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Customer Email</span>
+                                    <span class="st-dvalue">{{ order.customer_email|default:"-" }}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Logistics</span>
+                                    <span class="st-dvalue">
+                                        {% if order.logistics %}
+                                        <span class="st-source-badge" style="font-size:.78rem;">{{ order.get_logistics_display }}</span>
+                                        {% else %}-{% endif %}
+                                    </span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Tracking Number</span>
+                                    <span class="st-dvalue">{{ order.tracking_number|default:"-" }}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Payment Status</span>
+                                    <span class="st-dvalue">
+                                        <strong class="payment-status-{{ order.payment_status|default:'pending' }}" style="font-weight:700;">
+                                            {% if order.payment_status_setup %}
+                                                {{ order.payment_status_setup.name|replace:"_: "|upper }}
+                                            {% else %}
+                                                {{ order.payment_status|default:"pending"|replace:"_: "|upper }}
+                                            {% endif %}
+                                        </strong>
+                                    </span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">In / Out</span>
+                                    <span class="st-dvalue">
+                                        <span class="st-source-badge">{{ order.in_out|upper }}</span>
+                                    </span>
+                                </div>
+                                {% if order.delivered_at %}
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Delivered At</span>
+                                    <span class="st-dvalue">{{ order.delivered_at|date:"M d, Y H:i" }}</span>
+                                </div>
+                                {% endif %}
+                                {% if order.dispatch_date %}
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Dispatch Date</span>
+                                    <span class="st-dvalue">{{ order.dispatch_date|date:"M d, Y H:i" }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Items Table -->
+                            <div class="st-detail-section-title">
+                                <i class="fas fa-boxes"></i> Order Items ({{ order.items.count }})
+                            </div>
+                            <table class="st-items-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:40%;">Product</th>
+                                        <th style="width:15%;">SKU</th>
+                                        <th style="width:10%; text-align:center;">Qty</th>
+                                        <th style="width:15%; text-align:right;">Price</th>
+                                        <th style="width:20%; text-align:right;">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in order.items.all %}
+                                    <tr>
+                                        <td>
+                                            {{ item.product_name }}
+                                            {% if item.variation_name %}
+                                            <br><span style="font-size:.75rem; color:#8b5cf6;">{{ item.variation_name }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td><span style="font-size:.78rem; color:#9ca3af;">{{ item.product_sku|default:"-" }}</span></td>
+                                        <td style="text-align:center;"><span style="color:#6366f1; font-weight:700;">&times;{{ item.quantity }}</span></td>
+                                        <td style="text-align:right;">Rs. {{ item.price|floatformat:2 }}</td>
+                                        <td style="text-align:right;">Rs. {{ item.total|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    {% if order.discount_amount > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#ef4444;">Discount</td>
+                                        <td style="text-align:right; color:#ef4444;">- Rs. {{ order.discount_amount|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    {% if order.shipping_charge > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#6b7280; font-weight:500;">Shipping</td>
+                                        <td style="text-align:right; color:#6b7280;">Rs. {{ order.shipping_charge|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    {% if order.delivery_charge > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#6b7280; font-weight:500;">Delivery Charge</td>
+                                        <td style="text-align:right; color:#6b7280;">Rs. {{ order.delivery_charge|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right;">Grand Total</td>
+                                        <td style="text-align:right; font-size:1rem;">Rs. {{ order.total_amount|floatformat:2 }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+
+                            <!-- Notes -->
+                            {% if order.notes %}
+                            <div style="margin-top:1rem;">
+                                <div class="st-detail-section-title">
+                                    <i class="fas fa-sticky-note"></i> Order Notes
+                                </div>
+                                <div class="st-detail-notes">{{ order.notes }}</div>
+                            </div>
+                            {% endif %}
+                            {% if order.admin_notes %}
+                            <div style="margin-top:.75rem;">
+                                <div class="st-detail-section-title">
+                                    <i class="fas fa-user-shield"></i> Admin Notes
+                                </div>
+                                <div class="st-detail-notes">{{ order.admin_notes }}</div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Footer -->
+                            <div class="st-detail-footer">
+                                <a href="{% url 'order_detail' order.id %}" onclick="event.stopPropagation();">
+                                    <i class="fas fa-external-link-alt"></i> View Full Order
+                                </a>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="{% if is_admin_view %}8{% else %}7{% endif %}" style="text-align:center; padding:3rem 1rem; color:#9ca3af;">
+                        <i class="fas fa-shopping-cart" style="font-size:2rem; margin-bottom:.5rem; display:block; opacity:.4;"></i>
+                        No orders found
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if target_orders_page.has_other_pages %}
+    <div class="st-pagination">
+        {% if target_orders_page.has_previous %}
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage(1)" class="st-pg-nav" title="First">
+            <i class="fas fa-angle-double-left"></i>
+        </a>
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.previous_page_number }})" class="st-pg-nav" title="Previous">
+            <i class="fas fa-angle-left"></i>
+        </a>
+        {% else %}
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-double-left"></i></span>
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-left"></i></span>
+        {% endif %}
+
+        {% for pg in target_orders_page.paginator.page_range %}
+            {% if target_orders_page.number == pg %}
+                <span class="st-pg-current">{{ pg }}</span>
+            {% elif pg > target_orders_page.number|add:"-4" and pg < target_orders_page.number|add:"4" %}
+                <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ pg }})">{{ pg }}</a>
+            {% elif pg == 1 or pg == target_orders_page.paginator.num_pages %}
+                <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ pg }})">{{ pg }}</a>
+            {% elif pg == target_orders_page.number|add:"-4" or pg == target_orders_page.number|add:"4" %}
+                <span class="st-pg-ellipsis">&hellip;</span>
+            {% endif %}
+        {% endfor %}
+
+        {% if target_orders_page.has_next %}
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.next_page_number }})" class="st-pg-nav" title="Next">
+            <i class="fas fa-angle-right"></i>
+        </a>
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.paginator.num_pages }})" class="st-pg-nav" title="Last">
+            <i class="fas fa-angle-double-right"></i>
+        </a>
+        {% else %}
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-right"></i></span>
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-double-right"></i></span>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
 
         {% else %}
         <div class="st-empty">
@@ -1350,8 +2155,433 @@
             <p>You don't have any targets assigned yet. Your administrator will set targets for you.</p>
         </div>
 
+        <!-- ========== TODAY ORDERS (NO TARGETS BRANCH) ========== -->
+        {% if not is_admin_view %}
+        <div class="st-orders-card" style="margin-top:24px;">
+            <div class="st-orders-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                <h5>
+                    <i class="fas fa-calendar-day me-2"></i>
+                    Today's Orders
+                    <span class="st-order-count">
+                        ({{ today_orders|length }} order{{ today_orders|length|pluralize }})
+                    </span>
+                </h5>
+            </div>
+
+            {% if today_orders %}
+            <div style="overflow-x: auto;">
+                <table class="table table-hover mb-0" style="font-size:.85rem;">
+                    <thead style="background:#f9fafb;">
+                        <tr>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Order #</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Customer</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Items</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:center;">Status</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:right;">Amount</th>
+                            <th style="padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in today_orders %}
+                        <tr style="border-bottom:1px solid #f3f4f6;">
+                            <td style="padding:10px 14px;">
+                                <a href="{% url 'order_detail' order.id %}" style="color:#6366f1; font-weight:600; text-decoration:none;">
+                                    {{ order.order_number }}
+                                </a>
+                            </td>
+                            <td style="padding:10px 14px;">
+                                <span style="font-weight:500;">{{ order.customer_name }}</span>
+                                {% if order.customer_phone %}
+                                <br><span style="font-size:.78rem; color:#999;">{{ order.customer_phone }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:10px 14px;">
+                                <div class="st-items-preview">
+                                    {% for item in order.items.all|slice:":2" %}
+                                    <span class="st-iline">
+                                        {{ item.product_name }}
+                                        <span class="st-iqty">&times;{{ item.quantity }}</span>
+                                    </span>
+                                    {% endfor %}
+                                    {% if order.items.count > 2 %}
+                                    <span class="st-imore">+ {{ order.items.count|add:"-2" }} more</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td style="text-align:center; padding:10px 14px;">
+                                <strong class="order-status-{{ order.order_status|default:'pending' }}" style="font-weight:700;">
+                                    {% if order.status_setup %}
+                                        {{ order.status_setup.name|replace:"_: "|capfirst }}
+                                    {% elif order.order_status %}
+                                        {{ order.order_status|replace:"_: "|capfirst }}
+                                    {% else %}
+                                        Pending
+                                    {% endif %}
+                                </strong>
+                            </td>
+                            <td style="text-align:right; padding:10px 14px;">
+                                <strong>Rs. {{ order.total_amount|floatformat:2 }}</strong>
+                                {% if order.payment_method %}
+                                <br><span style="font-size:.72rem; color:#999; text-transform:uppercase;">{{ order.payment_method }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:10px 14px;">
+                                <span style="font-size:.85rem; color:#666;">{{ order.created_at|date:"H:i" }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div style="text-align:center; padding:30px 20px; color:#9ca3af;">
+                <i class="fas fa-inbox" style="font-size:1.5rem; margin-bottom:8px; display:block; color:#d1d5db;"></i>
+                <p style="margin:0; font-size:.88rem;">No orders created today yet.</p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
         <!-- Even without targets, show orders -->
-        {% include 'partials/target_orders_section.html' %}
+        <!-- ========== ORDERS MADE SECTION ========== -->
+<div class="st-orders-card" id="target-orders-log">
+    <div class="st-orders-header">
+        <h5>
+            <i class="fas fa-shopping-cart me-2"></i>
+            {% if is_admin_view %}Staff Orders Log{% else %}My Orders{% endif %}
+            <span class="st-order-count">
+                ({{ target_orders_page.paginator.count }} order{{ target_orders_page.paginator.count|pluralize }})
+            </span>
+        </h5>
+    </div>
+
+    {% if not is_admin_view and my_orders_total is not None %}
+    <!-- My Orders KPI Strip -->
+    <div class="st-my-orders-kpi">
+        <div class="st-mokpi">
+            <div class="st-mokpi-val">{{ my_orders_total }}</div>
+            <div class="st-mokpi-lbl">Total Orders</div>
+        </div>
+        <div class="st-mokpi">
+            <div class="st-mokpi-val">{{ my_orders_delivered }}</div>
+            <div class="st-mokpi-lbl">Delivered</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Toolbar -->
+    <div class="st-orders-toolbar">
+        <div class="st-toolbar-left">
+            <div class="st-date-filters">
+                <button type="button" class="st-date-btn {% if selected_orders_date == 'today' %}active{% endif %}" onclick="filterByDate('today')">Today</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '7' %}active{% endif %}" onclick="filterByDate('7')">1 Week</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '15' %}active{% endif %}" onclick="filterByDate('15')">15 Days</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == '30' %}active{% endif %}" onclick="filterByDate('30')">1 Month</button>
+                <button type="button" class="st-date-btn {% if selected_orders_date == 'all' %}active{% endif %}" onclick="filterByDate('all')">All Time</button>
+            </div>
+            <select id="targetOrdersStatusFilter" onchange="filterTargetOrders()">
+                <option value="">All Statuses</option>
+                {% for st_val, st_name in target_orders_statuses %}
+                <option value="{{ st_val }}" {% if selected_orders_status == st_val %}selected{% endif %}>{{ st_name }}</option>
+                {% endfor %}
+            </select>
+            {% if target_orders_page.paginator.count > 0 %}
+            <span class="st-toolbar-count">
+                Showing <strong>{{ target_orders_page.start_index }}&ndash;{{ target_orders_page.end_index }}</strong> of <strong>{{ target_orders_page.paginator.count }}</strong>
+            </span>
+            {% endif %}
+        </div>
+        {% if selected_orders_status or selected_orders_date != 'today' %}
+        <button class="st-btn-clear" onclick="clearTargetOrdersFilter()">
+            <i class="fas fa-times me-1"></i> Clear Filter
+        </button>
+        {% endif %}
+    </div>
+
+    <!-- Orders Table -->
+    <div style="overflow-x: auto;">
+        <table class="table table-hover mb-0" style="font-size:.85rem;">
+            <thead style="background:#f9fafb;">
+                <tr>
+                    <th style="width:11%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Order #</th>
+                    {% if is_admin_view %}
+                    <th style="width:13%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Created By</th>
+                    {% endif %}
+                    <th style="width:14%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Customer</th>
+                    <th style="width:22%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Items</th>
+                    <th style="width:9%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:center;">Status</th>
+                    <th style="width:8%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:center;">Source</th>
+                    <th style="width:11%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600; text-align:right;">Amount</th>
+                    <th style="width:12%; padding:10px 14px; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:600;">Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in target_orders_page %}
+                <tr class="st-order-row" onclick="toggleTargetOrderDetail(this, 'target-od-{{ order.id }}')">
+                    <td style="padding:10px 14px;">
+                        <span class="st-expand-icon"><i class="fas fa-chevron-right"></i></span>
+                        <a href="{% url 'order_detail' order.id %}" style="color:#6366f1; font-weight:600; text-decoration:none;" onclick="event.stopPropagation();">
+                            {{ order.order_number }}
+                        </a>
+                    </td>
+                    {% if is_admin_view %}
+                    <td style="padding:10px 14px;">
+                        {% if order.created_by %}
+                            <strong style="font-size:.85rem;">
+                                {% if order.created_by.first_name %}{{ order.created_by.first_name }} {{ order.created_by.last_name }}{% else %}{{ order.created_by.username }}{% endif %}
+                            </strong>
+                            <br><span style="font-size:.72rem; color:#9ca3af;">{{ order.created_by.get_role_display }}</span>
+                        {% else %}
+                            <span style="color:#9ca3af;">System</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    <td style="padding:10px 14px;">
+                        <span style="font-weight:500;">{{ order.customer_name }}</span>
+                        {% if order.customer_phone %}
+                        <br><span style="font-size:.78rem; color:#999;">{{ order.customer_phone }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px 14px;">
+                        <div class="st-items-preview">
+                            {% for item in order.items.all|slice:":3" %}
+                            <span class="st-iline">
+                                {{ item.product_name }}
+                                <span class="st-iqty">&times;{{ item.quantity }}</span>
+                            </span>
+                            {% endfor %}
+                            {% if order.items.count > 3 %}
+                            <span class="st-imore">+ {{ order.items.count|add:"-3" }} more item{{ order.items.count|add:"-3"|pluralize }}</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td style="text-align:center; padding:10px 14px;">
+                        <strong class="order-status-{{ order.order_status|default:'pending' }}" style="font-weight:700;">
+                            {% if order.status_setup %}
+                                {{ order.status_setup.name|replace:"_: "|capfirst }}
+                            {% elif order.order_status %}
+                                {{ order.order_status|replace:"_: "|capfirst }}
+                            {% else %}
+                                Pending
+                            {% endif %}
+                        </strong>
+                    </td>
+                    <td style="text-align:center; padding:10px 14px;">
+                        <span class="st-source-badge">{{ order.order_from|default:"-"|upper }}</span>
+                    </td>
+                    <td style="text-align:right; padding:10px 14px;">
+                        <strong>Rs. {{ order.total_amount|floatformat:2 }}</strong>
+                        {% if order.payment_method %}
+                        <br><span style="font-size:.72rem; color:#999; text-transform:uppercase;">{{ order.payment_method }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px 14px;">
+                        <span style="font-size:.85rem; color:#666;">{{ order.created_at|date:"M d, Y" }}</span>
+                        <br><span style="font-size:.75rem; color:#999;">{{ order.created_at|date:"H:i" }}</span>
+                    </td>
+                </tr>
+
+                <!-- Expandable Detail Row -->
+                <tr class="st-order-detail-row" id="target-od-{{ order.id }}">
+                    <td colspan="{% if is_admin_view %}8{% else %}7{% endif %}" style="padding:0;">
+                        <div class="st-detail-panel">
+                            <!-- Info Grid -->
+                            <div class="st-detail-grid">
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Shipping Address</span>
+                                    <span class="st-dvalue">{{ order.shipping_address|default:"-" }}</span>
+                                    {% if order.landmark %}
+                                    <span style="font-size:.78rem; color:#9ca3af;">Landmark: {{ order.landmark }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Branch</span>
+                                    <span class="st-dvalue">{% if order.branch %}{{ order.branch }}{% else %}-{% endif %}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Customer Email</span>
+                                    <span class="st-dvalue">{{ order.customer_email|default:"-" }}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Logistics</span>
+                                    <span class="st-dvalue">
+                                        {% if order.logistics %}
+                                        <span class="st-source-badge" style="font-size:.78rem;">{{ order.get_logistics_display }}</span>
+                                        {% else %}-{% endif %}
+                                    </span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Tracking Number</span>
+                                    <span class="st-dvalue">{{ order.tracking_number|default:"-" }}</span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Payment Status</span>
+                                    <span class="st-dvalue">
+                                        <strong class="payment-status-{{ order.payment_status|default:'pending' }}" style="font-weight:700;">
+                                            {% if order.payment_status_setup %}
+                                                {{ order.payment_status_setup.name|replace:"_: "|upper }}
+                                            {% else %}
+                                                {{ order.payment_status|default:"pending"|replace:"_: "|upper }}
+                                            {% endif %}
+                                        </strong>
+                                    </span>
+                                </div>
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">In / Out</span>
+                                    <span class="st-dvalue">
+                                        <span class="st-source-badge">{{ order.in_out|upper }}</span>
+                                    </span>
+                                </div>
+                                {% if order.delivered_at %}
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Delivered At</span>
+                                    <span class="st-dvalue">{{ order.delivered_at|date:"M d, Y H:i" }}</span>
+                                </div>
+                                {% endif %}
+                                {% if order.dispatch_date %}
+                                <div class="st-detail-block">
+                                    <span class="st-dlabel">Dispatch Date</span>
+                                    <span class="st-dvalue">{{ order.dispatch_date|date:"M d, Y H:i" }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Items Table -->
+                            <div class="st-detail-section-title">
+                                <i class="fas fa-boxes"></i> Order Items ({{ order.items.count }})
+                            </div>
+                            <table class="st-items-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:40%;">Product</th>
+                                        <th style="width:15%;">SKU</th>
+                                        <th style="width:10%; text-align:center;">Qty</th>
+                                        <th style="width:15%; text-align:right;">Price</th>
+                                        <th style="width:20%; text-align:right;">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in order.items.all %}
+                                    <tr>
+                                        <td>
+                                            {{ item.product_name }}
+                                            {% if item.variation_name %}
+                                            <br><span style="font-size:.75rem; color:#8b5cf6;">{{ item.variation_name }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td><span style="font-size:.78rem; color:#9ca3af;">{{ item.product_sku|default:"-" }}</span></td>
+                                        <td style="text-align:center;"><span style="color:#6366f1; font-weight:700;">&times;{{ item.quantity }}</span></td>
+                                        <td style="text-align:right;">Rs. {{ item.price|floatformat:2 }}</td>
+                                        <td style="text-align:right;">Rs. {{ item.total|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    {% if order.discount_amount > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#ef4444;">Discount</td>
+                                        <td style="text-align:right; color:#ef4444;">- Rs. {{ order.discount_amount|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    {% if order.shipping_charge > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#6b7280; font-weight:500;">Shipping</td>
+                                        <td style="text-align:right; color:#6b7280;">Rs. {{ order.shipping_charge|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    {% if order.delivery_charge > 0 %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; color:#6b7280; font-weight:500;">Delivery Charge</td>
+                                        <td style="text-align:right; color:#6b7280;">Rs. {{ order.delivery_charge|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    <tr>
+                                        <td colspan="4" style="text-align:right;">Grand Total</td>
+                                        <td style="text-align:right; font-size:1rem;">Rs. {{ order.total_amount|floatformat:2 }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+
+                            <!-- Notes -->
+                            {% if order.notes %}
+                            <div style="margin-top:1rem;">
+                                <div class="st-detail-section-title">
+                                    <i class="fas fa-sticky-note"></i> Order Notes
+                                </div>
+                                <div class="st-detail-notes">{{ order.notes }}</div>
+                            </div>
+                            {% endif %}
+                            {% if order.admin_notes %}
+                            <div style="margin-top:.75rem;">
+                                <div class="st-detail-section-title">
+                                    <i class="fas fa-user-shield"></i> Admin Notes
+                                </div>
+                                <div class="st-detail-notes">{{ order.admin_notes }}</div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Footer -->
+                            <div class="st-detail-footer">
+                                <a href="{% url 'order_detail' order.id %}" onclick="event.stopPropagation();">
+                                    <i class="fas fa-external-link-alt"></i> View Full Order
+                                </a>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="{% if is_admin_view %}8{% else %}7{% endif %}" style="text-align:center; padding:3rem 1rem; color:#9ca3af;">
+                        <i class="fas fa-shopping-cart" style="font-size:2rem; margin-bottom:.5rem; display:block; opacity:.4;"></i>
+                        No orders found
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if target_orders_page.has_other_pages %}
+    <div class="st-pagination">
+        {% if target_orders_page.has_previous %}
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage(1)" class="st-pg-nav" title="First">
+            <i class="fas fa-angle-double-left"></i>
+        </a>
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.previous_page_number }})" class="st-pg-nav" title="Previous">
+            <i class="fas fa-angle-left"></i>
+        </a>
+        {% else %}
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-double-left"></i></span>
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-left"></i></span>
+        {% endif %}
+
+        {% for pg in target_orders_page.paginator.page_range %}
+            {% if target_orders_page.number == pg %}
+                <span class="st-pg-current">{{ pg }}</span>
+            {% elif pg > target_orders_page.number|add:"-4" and pg < target_orders_page.number|add:"4" %}
+                <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ pg }})">{{ pg }}</a>
+            {% elif pg == 1 or pg == target_orders_page.paginator.num_pages %}
+                <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ pg }})">{{ pg }}</a>
+            {% elif pg == target_orders_page.number|add:"-4" or pg == target_orders_page.number|add:"4" %}
+                <span class="st-pg-ellipsis">&hellip;</span>
+            {% endif %}
+        {% endfor %}
+
+        {% if target_orders_page.has_next %}
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.next_page_number }})" class="st-pg-nav" title="Next">
+            <i class="fas fa-angle-right"></i>
+        </a>
+        <a href="javascript:void(0)" onclick="goToTargetOrdersPage({{ target_orders_page.paginator.num_pages }})" class="st-pg-nav" title="Last">
+            <i class="fas fa-angle-double-right"></i>
+        </a>
+        {% else %}
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-right"></i></span>
+        <span class="st-pg-nav disabled"><i class="fas fa-angle-double-right"></i></span>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
 
         {% endif %}
 
@@ -1381,28 +2611,48 @@ document.addEventListener('DOMContentLoaded', function() {
         var params = new URLSearchParams(window.location.search);
         // Remove orders-specific params so we can set them fresh
         params.delete('orders_status');
+        params.delete('orders_date');
         params.delete('orders_page');
         return params;
     }
 
+    window.filterByDate = function(dateVal) {
+        var params = buildTargetParams();
+        var statusEl = document.getElementById('targetOrdersStatusFilter');
+        var status = statusEl ? statusEl.value : '';
+        if (status) params.set('orders_status', status);
+        if (dateVal && dateVal !== 'today') params.set('orders_date', dateVal);
+        sessionStorage.setItem('scrollToOrders', '1');
+        window.location.href = window.location.pathname + '?' + params.toString();
+    };
+
     window.filterTargetOrders = function() {
         var params = buildTargetParams();
-        var status = document.getElementById('targetOrdersStatusFilter').value;
+        var statusEl = document.getElementById('targetOrdersStatusFilter');
+        var status = statusEl ? statusEl.value : '';
         if (status) params.set('orders_status', status);
-        window.location.href = window.location.pathname + '?' + params.toString() + '#target-orders-log';
+        var currentDate = new URLSearchParams(window.location.search).get('orders_date') || 'today';
+        if (currentDate && currentDate !== 'today') params.set('orders_date', currentDate);
+        sessionStorage.setItem('scrollToOrders', '1');
+        window.location.href = window.location.pathname + '?' + params.toString();
     };
 
     window.clearTargetOrdersFilter = function() {
         var params = buildTargetParams();
-        window.location.href = window.location.pathname + '?' + params.toString() + '#target-orders-log';
+        sessionStorage.setItem('scrollToOrders', '1');
+        window.location.href = window.location.pathname + '?' + params.toString();
     };
 
     window.goToTargetOrdersPage = function(page) {
         var params = buildTargetParams();
         params.set('orders_page', page);
-        var status = document.getElementById('targetOrdersStatusFilter').value;
+        var statusEl = document.getElementById('targetOrdersStatusFilter');
+        var status = statusEl ? statusEl.value : '';
         if (status) params.set('orders_status', status);
-        window.location.href = window.location.pathname + '?' + params.toString() + '#target-orders-log';
+        var currentDate = new URLSearchParams(window.location.search).get('orders_date') || 'today';
+        if (currentDate && currentDate !== 'today') params.set('orders_date', currentDate);
+        sessionStorage.setItem('scrollToOrders', '1');
+        window.location.href = window.location.pathname + '?' + params.toString();
     };
 
     {% if is_admin_view %}
@@ -1500,5 +2750,18 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     {% endif %}
 });
+
+// Scroll restoration: scroll to orders section and reveal page
+(function() {
+    if (sessionStorage.getItem('scrollToOrders')) {
+        sessionStorage.removeItem('scrollToOrders');
+        var el = document.getElementById('target-orders-log');
+        if (el) {
+            el.scrollIntoView({ behavior: 'instant', block: 'start' });
+            window.scrollBy(0, -20);
+        }
+        document.documentElement.style.opacity = '1';
+    }
+})();
 </script>
 {% endblock %}
