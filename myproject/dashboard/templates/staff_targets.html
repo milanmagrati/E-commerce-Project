@@ -490,6 +490,419 @@
     .st-kpi-row { grid-template-columns: repeat(2, 1fr); }
     .st-target-card .target-value { font-size: 1.3rem; }
 }
+
+/* ========== STAFF ORDERS LOG ========== */
+.st-orders-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+    overflow: hidden;
+    margin-top: 24px;
+}
+
+.st-orders-header {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    color: #fff;
+    padding: 16px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.st-orders-header h5 {
+    margin: 0;
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+.st-orders-header .st-order-count {
+    font-weight: 400;
+    font-size: .85rem;
+    opacity: .9;
+}
+
+.st-orders-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .75rem;
+    padding: 12px 22px;
+    background: #f9fafb;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.st-orders-toolbar .st-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+
+.st-orders-toolbar select {
+    padding: 7px 12px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: .85rem;
+    font-weight: 500;
+    background: #fff;
+    cursor: pointer;
+    min-width: 130px;
+}
+
+.st-orders-toolbar select:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+
+.st-orders-toolbar .st-toolbar-count {
+    font-size: .82rem;
+    color: #6b7280;
+}
+
+.st-orders-toolbar .st-toolbar-count strong {
+    color: #1f2937;
+}
+
+.st-orders-toolbar .st-btn-clear {
+    padding: 6px 14px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    color: #6b7280;
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+}
+
+.st-orders-toolbar .st-btn-clear:hover {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+/* My orders KPI strip */
+.st-my-orders-kpi {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    padding: 14px 22px;
+    background: #f0f5ff;
+    border-bottom: 1px solid #e0e7ff;
+}
+
+.st-my-orders-kpi .st-mokpi {
+    text-align: center;
+    padding: 8px;
+}
+
+.st-my-orders-kpi .st-mokpi-val {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #1e40af;
+    line-height: 1.2;
+}
+
+.st-my-orders-kpi .st-mokpi-lbl {
+    font-size: .68rem;
+    color: #6b7280;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-top: 2px;
+}
+
+/* Order status pills */
+.st-status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: .72rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.st-status-processing { background: #dbeafe; color: #1e40af; }
+.st-status-pending { background: #fef3c7; color: #92400e; }
+.st-status-delivered { background: #d1fae5; color: #065f46; }
+.st-status-dispatched { background: #e0e7ff; color: #3730a3; }
+.st-status-cancelled { background: #f3f4f6; color: #374151; }
+.st-status-returned { background: #fee2e2; color: #991b1b; }
+.st-status-on_hold { background: #fef3c7; color: #78350f; }
+.st-status-confirmed { background: #ccfbf1; color: #0f766e; }
+.st-status-shipped { background: #e0e7ff; color: #3730a3; }
+.st-status-packed { background: #ede9fe; color: #5b21b6; }
+
+.st-source-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: .68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    background: #f3f4f6;
+    color: #6b7280;
+    letter-spacing: .3px;
+}
+
+/* Expandable order row */
+.st-order-row {
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s;
+}
+
+.st-order-row:hover {
+    background: #f5f3ff !important;
+}
+
+.st-order-row .st-expand-icon {
+    display: inline-block;
+    transition: transform .25s ease;
+    color: #6366f1;
+    font-size: .7rem;
+    margin-right: 6px;
+}
+
+.st-order-row.expanded .st-expand-icon {
+    transform: rotate(90deg);
+}
+
+.st-order-detail-row {
+    display: none;
+}
+
+.st-order-detail-row.show {
+    display: table-row;
+    animation: stSlide .25s ease;
+}
+
+@keyframes stSlide {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.st-detail-panel {
+    background: #fafbfc;
+    border-left: 4px solid #6366f1;
+    padding: 18px 22px;
+}
+
+.st-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+    .st-detail-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+    .st-detail-grid { grid-template-columns: 1fr; }
+}
+
+.st-detail-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.st-detail-block .st-dlabel {
+    font-size: .68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: #9ca3af;
+}
+
+.st-detail-block .st-dvalue {
+    font-size: .85rem;
+    color: #1f2937;
+    font-weight: 500;
+}
+
+.st-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .82rem;
+    margin-top: 4px;
+}
+
+.st-items-table thead th {
+    background: #eef2ff;
+    padding: 6px 10px;
+    text-align: left;
+    font-size: .68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: #6366f1;
+    border-bottom: 1px solid #c7d2fe;
+}
+
+.st-items-table thead th:last-child { text-align: right; }
+
+.st-items-table tbody td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #374151;
+}
+
+.st-items-table tbody td:last-child {
+    text-align: right;
+    font-weight: 600;
+}
+
+.st-items-table tfoot td {
+    padding: 8px 10px;
+    font-weight: 700;
+    border-top: 2px solid #c7d2fe;
+    color: #1f2937;
+}
+
+.st-items-table tfoot td:last-child { text-align: right; }
+
+.st-detail-section-title {
+    font-size: .78rem;
+    font-weight: 700;
+    color: #4b5563;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.st-detail-section-title i {
+    color: #6366f1;
+    font-size: .82rem;
+}
+
+.st-detail-notes {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: .8rem;
+    color: #6b7280;
+    font-style: italic;
+    margin-top: 4px;
+}
+
+.st-detail-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.st-detail-footer a {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: .78rem;
+    font-weight: 600;
+    text-decoration: none;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    transition: all .2s;
+}
+
+.st-detail-footer a:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99,102,241,.3);
+}
+
+/* Order items preview in table */
+.st-items-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.st-items-preview .st-iline {
+    font-size: .8rem;
+    color: #555;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+
+.st-items-preview .st-iline .st-iqty {
+    font-weight: 700;
+    color: #6366f1;
+}
+
+.st-items-preview .st-imore {
+    font-size: .72rem;
+    color: #6366f1;
+    font-weight: 600;
+}
+
+/* Pagination */
+.st-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 14px 22px;
+    border-top: 1px solid #f3f4f6;
+    flex-wrap: wrap;
+}
+
+.st-pagination a,
+.st-pagination span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    font-size: .82rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all .2s;
+}
+
+.st-pagination a {
+    background: #fff;
+    color: #4b5563;
+    border: 1.5px solid #e5e7eb;
+}
+
+.st-pagination a:hover {
+    background: #f5f3ff;
+    border-color: #6366f1;
+    color: #6366f1;
+}
+
+.st-pagination .st-pg-current {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    border: 1.5px solid transparent;
+}
+
+.st-pagination .st-pg-ellipsis {
+    color: #9ca3af;
+    border: none;
+}
+
+.st-pagination .st-pg-nav {
+    padding: 0 8px;
+}
+
+.st-pagination .st-pg-nav.disabled {
+    opacity: .35;
+    pointer-events: none;
+}
 </style>
 {% endblock %}
 
@@ -798,8 +1211,10 @@
             </div>
         </div>
 
+        <!-- ========== ADMIN: STAFF ORDERS LOG ========== -->
+        {% include 'partials/target_orders_section.html' %}
+
         {% else %}
-        <!-- ==================== STAFF VIEW ==================== -->
 
         {% if targets_data %}
 
@@ -925,12 +1340,19 @@
             </div>
         </div>
 
+        <!-- ========== STAFF: MY ORDERS LOG ========== -->
+        {% include 'partials/target_orders_section.html' %}
+
         {% else %}
         <div class="st-empty">
             <i class="fas fa-bullseye"></i>
             <h5>No Targets Assigned</h5>
             <p>You don't have any targets assigned yet. Your administrator will set targets for you.</p>
         </div>
+
+        <!-- Even without targets, show orders -->
+        {% include 'partials/target_orders_section.html' %}
+
         {% endif %}
 
         {% endif %}
@@ -946,6 +1368,42 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize Bootstrap tooltips
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.forEach(function(el) { new bootstrap.Tooltip(el); });
+
+    // ========== TARGET ORDERS: Toggle / Filter / Pagination ==========
+    window.toggleTargetOrderDetail = function(row, detailId) {
+        var detailRow = document.getElementById(detailId);
+        if (!detailRow) return;
+        row.classList.toggle('expanded');
+        detailRow.classList.toggle('show');
+    };
+
+    function buildTargetParams() {
+        var params = new URLSearchParams(window.location.search);
+        // Remove orders-specific params so we can set them fresh
+        params.delete('orders_status');
+        params.delete('orders_page');
+        return params;
+    }
+
+    window.filterTargetOrders = function() {
+        var params = buildTargetParams();
+        var status = document.getElementById('targetOrdersStatusFilter').value;
+        if (status) params.set('orders_status', status);
+        window.location.href = window.location.pathname + '?' + params.toString() + '#target-orders-log';
+    };
+
+    window.clearTargetOrdersFilter = function() {
+        var params = buildTargetParams();
+        window.location.href = window.location.pathname + '?' + params.toString() + '#target-orders-log';
+    };
+
+    window.goToTargetOrdersPage = function(page) {
+        var params = buildTargetParams();
+        params.set('orders_page', page);
+        var status = document.getElementById('targetOrdersStatusFilter').value;
+        if (status) params.set('orders_status', status);
+        window.location.href = window.location.pathname + '?' + params.toString() + '#target-orders-log';
+    };
 
     {% if is_admin_view %}
     // ========== Auto-fill target type based on staff role ==========

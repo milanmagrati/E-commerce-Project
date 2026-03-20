@@ -13154,6 +13154,40 @@ def staff_performance_analytics(request):
         count=Count('id')
     ).order_by('-count')
 
+    # ========== STAFF ORDERS LOG ==========
+    staff_orders_qs = orders_qs.select_related(
+        'created_by', 'customer', 'branch'
+    ).prefetch_related('items__product').order_by('-created_at')
+
+    # Staff orders status filter
+    staff_orders_status = request.GET.get('orders_status', '')
+    if staff_orders_status:
+        staff_orders_qs = staff_orders_qs.filter(status=staff_orders_status)
+
+    # Pagination
+    staff_orders_page_num = request.GET.get('orders_page', 1)
+    staff_orders_paginator = Paginator(staff_orders_qs, 15)
+    staff_orders_page = staff_orders_paginator.get_page(staff_orders_page_num)
+
+    # Collect distinct statuses for filter dropdown
+    staff_orders_statuses = list(
+        orders_qs.values_list('status', flat=True)
+        .distinct()
+        .order_by('status')
+    )
+
+    # Per-staff order count summary
+    from django.db.models.functions import Coalesce
+    staff_order_summary = (
+        orders_qs
+        .values('created_by__id', 'created_by__first_name', 'created_by__last_name', 'created_by__username', 'created_by__role')
+        .annotate(
+            order_count=Count('id'),
+            total_rev=Coalesce(Sum('total_amount'), Decimal('0')),
+        )
+        .order_by('-order_count')
+    )
+
     # ========== CONTEXT ==========
     context = {
         'total_orders': total_orders,
@@ -13179,6 +13213,10 @@ def staff_performance_analytics(request):
         'return_stats': return_stats,
         'returned_products_summary': returned_products_summary,
         'return_reason_breakdown': return_reason_breakdown,
+        'staff_orders_page': staff_orders_page,
+        'staff_orders_statuses': staff_orders_statuses,
+        'selected_orders_status': staff_orders_status,
+        'staff_order_summary': staff_order_summary,
     }
     
     return render(request, 'staff_performance.html', context)
@@ -14478,6 +14516,25 @@ def manage_targets(request):
         'not_met': sum(1 for t in targets_data if t['status'] == 'not_met'),
     }
 
+    # ========== STAFF ORDERS FOR TARGETS PAGE ==========
+    target_orders_qs = Order.objects.filter(
+        is_deleted=False,
+    ).select_related('created_by', 'customer', 'branch').prefetch_related('items__product').order_by('-created_at')
+
+    if staff_filter:
+        target_orders_qs = target_orders_qs.filter(created_by_id=staff_filter)
+
+    target_orders_status = request.GET.get('orders_status', '')
+    if target_orders_status:
+        target_orders_qs = target_orders_qs.filter(status=target_orders_status)
+
+    target_orders_paginator = Paginator(target_orders_qs, 15)
+    target_orders_page = target_orders_paginator.get_page(request.GET.get('orders_page', 1))
+
+    target_orders_statuses = list(
+        Order.objects.filter(is_deleted=False).values_list('status', flat=True).distinct().order_by('status')
+    )
+
     context = {
         'targets_data': targets_data,
         'staff_members': staff_members,
@@ -14489,6 +14546,9 @@ def manage_targets(request):
         'can_edit': is_admin or user.can_edit_targets,
         'can_delete': is_admin or user.can_delete_targets,
         'kpi': kpi,
+        'target_orders_page': target_orders_page,
+        'target_orders_statuses': target_orders_statuses,
+        'selected_orders_status': target_orders_status,
     }
     return render(request, 'staff_targets.html', context)
 
@@ -14536,11 +14596,44 @@ def my_targets(request):
 
     active_targets = [t for t in targets_data if t['status'] == 'in_progress']
 
+    # ========== MY ORDERS ==========
+    my_orders_qs = Order.objects.filter(
+        created_by=user,
+        is_deleted=False,
+    ).select_related('created_by', 'customer', 'branch').prefetch_related('items__product').order_by('-created_at')
+
+    my_orders_status = request.GET.get('orders_status', '')
+    if my_orders_status:
+        my_orders_qs = my_orders_qs.filter(status=my_orders_status)
+
+    my_orders_paginator = Paginator(my_orders_qs, 15)
+    my_orders_page = my_orders_paginator.get_page(request.GET.get('orders_page', 1))
+
+    my_orders_statuses = list(
+        Order.objects.filter(created_by=user, is_deleted=False).values_list('status', flat=True).distinct().order_by('status')
+    )
+
+    # Summary KPIs for my orders
+    my_orders_total = my_orders_qs.count()
+    from django.db.models.functions import Coalesce
+    my_orders_revenue = my_orders_qs.aggregate(
+        total=Coalesce(Sum('total_amount'), Decimal('0'))
+    )['total']
+    my_orders_delivered = my_orders_qs.filter(
+        Q(status='delivered') | Q(order_status='delivered')
+    ).count()
+
     context = {
         'targets_data': targets_data,
         'active_targets': active_targets,
         'is_admin_view': False,
         'kpi': kpi,
+        'target_orders_page': my_orders_page,
+        'target_orders_statuses': my_orders_statuses,
+        'selected_orders_status': my_orders_status,
+        'my_orders_total': my_orders_total,
+        'my_orders_revenue': my_orders_revenue,
+        'my_orders_delivered': my_orders_delivered,
     }
     return render(request, 'staff_targets.html', context)
 
