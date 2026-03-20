@@ -13222,6 +13222,8 @@ def product_sales_report(request):
     variant_chart_labels = []
     variant_chart_data = []
     is_variable = False
+    is_bundle = False
+    bundle_components_data = []
 
     if selected_product_id:
         try:
@@ -13231,6 +13233,7 @@ def product_sales_report(request):
 
     if selected_product:
         is_variable = selected_product.product_type == 'variable'
+        is_bundle = selected_product.product_type == 'bundle'
 
         # Load variations for variable products
         if is_variable:
@@ -13264,12 +13267,14 @@ def product_sales_report(request):
             avg_price=Coalesce(Avg('price'), Decimal('0')),
         )
 
-        # Stock: for variable products sum all variation stocks, for simple use product stock
+        # Stock: for variable products sum all variation stocks, for bundles use available_stock, for simple use product stock
         if is_variable:
             if selected_variation:
                 current_stock = selected_variation.stock
             else:
                 current_stock = sum(v.stock for v in variations)
+        elif is_bundle:
+            current_stock = selected_product.available_stock
         else:
             current_stock = selected_product.stock
 
@@ -13279,6 +13284,22 @@ def product_sales_report(request):
             'avg_price': round(agg['avg_price'], 2),
             'current_stock': current_stock,
         }
+
+        # -- Bundle component breakdown (for bundle products) --
+        if is_bundle:
+            components = BundleComponent.objects.filter(
+                bundle_product=selected_product
+            ).select_related('component_product')
+            total_bundles_sold = agg['total_qty'] or 0
+            for comp in components:
+                consumed = total_bundles_sold * comp.quantity_required
+                bundle_components_data.append({
+                    'name': comp.component_product.name,
+                    'qty_required': comp.quantity_required,
+                    'consumed': consumed,
+                    'stock': comp.component_product.stock,
+                    'component_id': comp.component_product.id,
+                })
 
         # -- Variant breakdown (only for variable products, when no specific variant selected) --
         if is_variable and not selected_variation:
@@ -13376,6 +13397,8 @@ def product_sales_report(request):
             'variant_chart_labels': variant_chart_labels,
             'variant_chart_data': variant_chart_data,
             'is_variable': is_variable,
+            'is_bundle': is_bundle,
+            'bundle_components_data': bundle_components_data,
         }, safe=False)
 
     # Determine active quick filter
@@ -13417,6 +13440,8 @@ def product_sales_report(request):
         'status_chart_labels': json.dumps(status_chart_labels),
         'status_chart_data': json.dumps(status_chart_data),
         'is_variable': is_variable,
+        'is_bundle': is_bundle,
+        'bundle_components_data': bundle_components_data,
         'variations': variations,
         'variant_breakdown': variant_breakdown,
         'variant_chart_labels': json.dumps(variant_chart_labels),

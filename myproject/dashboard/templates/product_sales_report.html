@@ -414,6 +414,7 @@
                             <div class="dropdown-item" data-id="{{ p.id }}" data-name="{{ p.name }}" data-type="{{ p.product_type }}">
                                 {{ p.name }}
                                 {% if p.product_type == 'variable' %}<span class="badge bg-info text-white ms-1" style="font-size:.6rem; vertical-align:middle;">VARIABLE</span>{% endif %}
+                                {% if p.product_type == 'bundle' %}<span class="badge text-white ms-1" style="font-size:.6rem; vertical-align:middle; background:#f59e0b;">BUNDLE</span>{% endif %}
                                 <span class="stock-info">Stock: {{ p.stock }}</span>
                             </div>
                             {% endfor %}
@@ -460,6 +461,8 @@
                     {{ selected_product.name }}
                     {% if is_variable %}
                         <span class="badge bg-info text-white ms-1" style="font-size:.65rem; vertical-align:middle;">VARIABLE</span>
+                    {% elif is_bundle %}
+                        <span class="badge text-white ms-1" style="font-size:.65rem; vertical-align:middle; background:#f59e0b;">BUNDLE</span>
                     {% else %}
                         <span class="badge bg-secondary text-white ms-1" style="font-size:.65rem; vertical-align:middle;">SIMPLE</span>
                     {% endif %}
@@ -472,6 +475,7 @@
                     &middot; Price: {% if selected_variation %}{{ selected_variation.price|currency }}{% else %}{{ selected_product.price|currency }}{% endif %}
                     &middot; SKU: {% if selected_variation %}{{ selected_variation.sku|default:"N/A" }}{% else %}{{ selected_product.barcode|default:"N/A" }}{% endif %}
                     {% if is_variable and not selected_variation %}&middot; {{ variations|length }} variant{{ variations|length|pluralize }}{% endif %}
+                    {% if is_bundle %}&middot; {{ bundle_components_data|length }} component{{ bundle_components_data|length|pluralize }}{% endif %}
                 </div>
             </div>
         </div>
@@ -573,6 +577,54 @@
                         No variant data available.
                     </div>
                     {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Bundle Component Breakdown (only for bundle products) -->
+        {% if is_bundle and bundle_components_data %}
+        <div class="row g-4 mb-4">
+            <div class="col-12">
+                <div class="staff-card">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-cubes me-2" style="color:#f59e0b;"></i>Bundle Component Breakdown</h6>
+                        <span class="badge bg-light text-dark" style="font-size:.75rem;">{{ bundle_components_data|length }} component{{ bundle_components_data|length|pluralize }}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Component Product</th>
+                                    <th class="text-center">Qty Per Bundle</th>
+                                    <th class="text-center">Bundles Sold</th>
+                                    <th class="text-center">Total Consumed</th>
+                                    <th class="text-center">Current Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for comp in bundle_components_data %}
+                                <tr>
+                                    <td>{{ forloop.counter }}</td>
+                                    <td><strong>{{ comp.name }}</strong></td>
+                                    <td class="text-center">
+                                        <span class="badge bg-light text-dark">× {{ comp.qty_required }}</span>
+                                    </td>
+                                    <td class="text-center">{{ summary.total_qty|default:"0" }}</td>
+                                    <td class="text-center">
+                                        <span class="fw-bold text-primary">{{ comp.consumed }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-{% if comp.stock > 10 %}success{% elif comp.stock > 0 %}warning{% else %}danger{% endif %}">
+                                            {{ comp.stock }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
