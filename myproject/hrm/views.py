@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.core.paginator import Paginator
 from django.contrib import messages
 
-from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, AwardType, Award, Promotion
+from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, AwardType, Award, Promotion, Resignation, Termination, Warning
 from .forms import EmployeeForm, EmployeeDocumentForm
 
 
@@ -1272,26 +1272,525 @@ def get_employee_designation(request):
 
 @login_required
 def resignation_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+    employee_filter = request.GET.get('employee', '')
+
+    resignations = Resignation.objects.select_related('employee').all()
+
+    if search_query:
+        resignations = resignations.filter(
+            Q(employee__full_name__icontains=search_query) |
+            Q(reason__icontains=search_query) |
+            Q(notice_period__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if status_filter:
+        resignations = resignations.filter(status=status_filter)
+
+    if employee_filter:
+        resignations = resignations.filter(employee_id=employee_filter)
+
+    paginator = Paginator(resignations, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Resignations',
+        'resignations': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'employee_filter': employee_filter,
+        'total_resignations': paginator.count,
+        'employees': Employee.objects.filter(employee_status='active').order_by('full_name'),
     }
     return render(request, 'hrm/resignation_list.html', context)
 
 
 @login_required
+def resignation_create(request):
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '').strip()
+        resignation_date = request.POST.get('resignation_date', '').strip()
+        last_working_day = request.POST.get('last_working_day', '').strip()
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not resignation_date:
+            return JsonResponse({'success': False, 'error': 'Resignation date is required.'})
+        if not last_working_day:
+            return JsonResponse({'success': False, 'error': 'Last working day is required.'})
+
+        employee = get_object_or_404(Employee, id=employee_id)
+
+        resignation = Resignation(
+            employee=employee,
+            resignation_date=resignation_date,
+            last_working_day=last_working_day,
+            notice_period=request.POST.get('notice_period', '').strip(),
+            reason=request.POST.get('reason', '').strip(),
+            description=request.POST.get('description', '').strip(),
+        )
+
+        if request.FILES.get('document'):
+            resignation.document = request.FILES['document']
+
+        resignation.save()
+        return JsonResponse({'success': True, 'message': f'Resignation for "{employee.full_name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def resignation_detail(request, pk):
+    resignation = get_object_or_404(Resignation.objects.select_related('employee'), id=pk)
+    return JsonResponse({
+        'success': True,
+        'resignation': {
+            'id': resignation.id,
+            'employee_id': resignation.employee.id,
+            'employee_name': resignation.employee.full_name,
+            'employee_code': resignation.employee.employee_id,
+            'resignation_date': resignation.resignation_date.strftime('%Y-%m-%d'),
+            'last_working_day': resignation.last_working_day.strftime('%Y-%m-%d'),
+            'notice_period': resignation.notice_period,
+            'reason': resignation.reason,
+            'description': resignation.description,
+            'status': resignation.status,
+            'document_url': resignation.document.url if resignation.document else '',
+            'created_at': resignation.created_at.strftime('%Y-%m-%d'),
+            'updated_at': resignation.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def resignation_update(request, pk):
+    resignation = get_object_or_404(Resignation, id=pk)
+
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '').strip()
+        resignation_date = request.POST.get('resignation_date', '').strip()
+        last_working_day = request.POST.get('last_working_day', '').strip()
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not resignation_date:
+            return JsonResponse({'success': False, 'error': 'Resignation date is required.'})
+        if not last_working_day:
+            return JsonResponse({'success': False, 'error': 'Last working day is required.'})
+
+        resignation.employee = get_object_or_404(Employee, id=employee_id)
+        resignation.resignation_date = resignation_date
+        resignation.last_working_day = last_working_day
+        resignation.notice_period = request.POST.get('notice_period', '').strip()
+        resignation.reason = request.POST.get('reason', '').strip()
+        resignation.description = request.POST.get('description', '').strip()
+        resignation.status = request.POST.get('status', resignation.status).strip()
+
+        if request.FILES.get('document'):
+            resignation.document = request.FILES['document']
+
+        resignation.save()
+        return JsonResponse({'success': True, 'message': f'Resignation for "{resignation.employee.full_name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def resignation_delete(request, pk):
+    resignation = get_object_or_404(Resignation.objects.select_related('employee'), id=pk)
+
+    if request.method == 'POST':
+        emp_name = resignation.employee.full_name
+        resignation.delete()
+        return JsonResponse({'success': True, 'message': f'Resignation for "{emp_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def resignation_toggle_status(request, pk):
+    resignation = get_object_or_404(Resignation, id=pk)
+
+    if request.method == 'POST':
+        new_status = request.POST.get('status', '').strip()
+        if new_status not in ['pending', 'approved', 'rejected', 'completed']:
+            return JsonResponse({'success': False, 'error': 'Invalid status.'})
+        resignation.status = new_status
+        resignation.save()
+        return JsonResponse({'success': True, 'message': f'Resignation status updated to "{resignation.get_status_display()}"!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
 def termination_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+    type_filter = request.GET.get('type', '')
+    employee_filter = request.GET.get('employee', '')
+
+    terminations = Termination.objects.select_related('employee').all()
+
+    if search_query:
+        terminations = terminations.filter(
+            Q(employee__full_name__icontains=search_query) |
+            Q(reason__icontains=search_query) |
+            Q(notice_period__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if status_filter:
+        terminations = terminations.filter(status=status_filter)
+
+    if type_filter:
+        terminations = terminations.filter(termination_type=type_filter)
+
+    if employee_filter:
+        terminations = terminations.filter(employee_id=employee_filter)
+
+    paginator = Paginator(terminations, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Terminations',
+        'terminations': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'type_filter': type_filter,
+        'employee_filter': employee_filter,
+        'total_terminations': paginator.count,
+        'employees': Employee.objects.filter(employee_status='active').order_by('full_name'),
     }
     return render(request, 'hrm/termination_list.html', context)
 
 
 @login_required
+def termination_create(request):
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '').strip()
+        termination_type = request.POST.get('termination_type', '').strip()
+        notice_date = request.POST.get('notice_date', '').strip()
+        termination_date = request.POST.get('termination_date', '').strip()
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not termination_type:
+            return JsonResponse({'success': False, 'error': 'Termination type is required.'})
+        if not notice_date:
+            return JsonResponse({'success': False, 'error': 'Notice date is required.'})
+        if not termination_date:
+            return JsonResponse({'success': False, 'error': 'Termination date is required.'})
+
+        valid_types = [c[0] for c in Termination.TYPE_CHOICES]
+        if termination_type not in valid_types:
+            return JsonResponse({'success': False, 'error': 'Invalid termination type.'})
+
+        employee = get_object_or_404(Employee, id=employee_id)
+
+        termination = Termination(
+            employee=employee,
+            termination_type=termination_type,
+            termination_date=termination_date,
+            notice_date=notice_date,
+            notice_period=request.POST.get('notice_period', '').strip(),
+            reason=request.POST.get('reason', '').strip(),
+            description=request.POST.get('description', '').strip(),
+        )
+
+        if request.FILES.get('document'):
+            termination.document = request.FILES['document']
+
+        termination.save()
+        return JsonResponse({'success': True, 'message': f'Termination for "{employee.full_name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def termination_detail(request, pk):
+    termination = get_object_or_404(Termination.objects.select_related('employee'), id=pk)
+    return JsonResponse({
+        'success': True,
+        'termination': {
+            'id': termination.id,
+            'employee_id': termination.employee.id,
+            'employee_name': termination.employee.full_name,
+            'employee_code': termination.employee.employee_id,
+            'termination_type': termination.termination_type,
+            'termination_type_display': termination.get_termination_type_display(),
+            'termination_date': termination.termination_date.strftime('%Y-%m-%d'),
+            'notice_date': termination.notice_date.strftime('%Y-%m-%d'),
+            'notice_period': termination.notice_period,
+            'reason': termination.reason,
+            'description': termination.description,
+            'status': termination.status,
+            'status_display': termination.get_status_display(),
+            'document_url': termination.document.url if termination.document else '',
+            'created_at': termination.created_at.strftime('%Y-%m-%d'),
+            'updated_at': termination.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def termination_update(request, pk):
+    termination = get_object_or_404(Termination, id=pk)
+
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '').strip()
+        termination_type = request.POST.get('termination_type', '').strip()
+        notice_date = request.POST.get('notice_date', '').strip()
+        termination_date = request.POST.get('termination_date', '').strip()
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not termination_type:
+            return JsonResponse({'success': False, 'error': 'Termination type is required.'})
+        if not notice_date:
+            return JsonResponse({'success': False, 'error': 'Notice date is required.'})
+        if not termination_date:
+            return JsonResponse({'success': False, 'error': 'Termination date is required.'})
+
+        valid_types = [c[0] for c in Termination.TYPE_CHOICES]
+        if termination_type not in valid_types:
+            return JsonResponse({'success': False, 'error': 'Invalid termination type.'})
+
+        termination.employee = get_object_or_404(Employee, id=employee_id)
+        termination.termination_type = termination_type
+        termination.termination_date = termination_date
+        termination.notice_date = notice_date
+        termination.notice_period = request.POST.get('notice_period', '').strip()
+        termination.reason = request.POST.get('reason', '').strip()
+        termination.description = request.POST.get('description', '').strip()
+        termination.status = request.POST.get('status', termination.status).strip()
+
+        if request.FILES.get('document'):
+            termination.document = request.FILES['document']
+
+        termination.save()
+        return JsonResponse({'success': True, 'message': f'Termination for "{termination.employee.full_name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def termination_delete(request, pk):
+    termination = get_object_or_404(Termination.objects.select_related('employee'), id=pk)
+
+    if request.method == 'POST':
+        emp_name = termination.employee.full_name
+        termination.delete()
+        return JsonResponse({'success': True, 'message': f'Termination for "{emp_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def termination_toggle_status(request, pk):
+    termination = get_object_or_404(Termination, id=pk)
+
+    if request.method == 'POST':
+        new_status = request.POST.get('status', '').strip()
+        if new_status not in ['pending', 'in_progress', 'completed', 'revoked']:
+            return JsonResponse({'success': False, 'error': 'Invalid status.'})
+        termination.status = new_status
+        termination.save()
+        return JsonResponse({'success': True, 'message': f'Termination status updated to "{termination.get_status_display()}"!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
 def warning_list(request):
+    warnings_qs = Warning.objects.select_related('employee', 'warning_by').all()
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+
+    search_query = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    type_filter = request.GET.get('type', '').strip()
+    severity_filter = request.GET.get('severity', '').strip()
+    employee_filter = request.GET.get('employee', '').strip()
+    per_page = request.GET.get('per_page', '10')
+
+    if search_query:
+        warnings_qs = warnings_qs.filter(
+            Q(employee__first_name__icontains=search_query) |
+            Q(employee__last_name__icontains=search_query) |
+            Q(employee__employee_id__icontains=search_query) |
+            Q(subject__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+    if status_filter:
+        warnings_qs = warnings_qs.filter(status=status_filter)
+    if type_filter:
+        warnings_qs = warnings_qs.filter(warning_type=type_filter)
+    if severity_filter:
+        warnings_qs = warnings_qs.filter(severity=severity_filter)
+    if employee_filter:
+        warnings_qs = warnings_qs.filter(employee_id=employee_filter)
+
+    paginator = Paginator(warnings_qs, int(per_page) if per_page.isdigit() else 10)
+    page_number = request.GET.get('page', 1)
+    warnings = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Warnings',
+        'warnings': warnings,
+        'total_warnings': paginator.count,
+        'employees': employees,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'type_filter': type_filter,
+        'severity_filter': severity_filter,
+        'employee_filter': employee_filter,
+        'per_page': per_page,
     }
     return render(request, 'hrm/warning_list.html', context)
+
+
+@login_required
+def warning_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    try:
+        employee_id = request.POST.get('employee', '').strip()
+        warning_by_id = request.POST.get('warning_by', '').strip()
+        warning_type = request.POST.get('warning_type', '').strip()
+        subject = request.POST.get('subject', '').strip()
+        severity = request.POST.get('severity', '').strip()
+        warning_date = request.POST.get('warning_date', '').strip()
+        description = request.POST.get('description', '').strip()
+        improvement_plan = request.POST.get('improvement_plan') == 'on'
+        document = request.FILES.get('document')
+
+        if not all([employee_id, warning_type, subject, severity, warning_date]):
+            return JsonResponse({'success': False, 'error': 'Please fill in all required fields.'})
+
+        employee = get_object_or_404(Employee, id=employee_id)
+        warning_by = None
+        if warning_by_id:
+            warning_by = get_object_or_404(Employee, id=warning_by_id)
+
+        warning = Warning.objects.create(
+            employee=employee,
+            warning_by=warning_by,
+            warning_type=warning_type,
+            subject=subject,
+            severity=severity,
+            warning_date=warning_date,
+            description=description,
+            improvement_plan=improvement_plan,
+            document=document,
+        )
+        return JsonResponse({'success': True, 'message': f'Warning for "{employee.full_name}" created successfully!'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def warning_detail(request, pk):
+    warning = get_object_or_404(Warning.objects.select_related('employee', 'warning_by'), id=pk)
+    data = {
+        'success': True,
+        'warning': {
+            'id': warning.id,
+            'employee_id': warning.employee_id,
+            'employee_name': warning.employee.full_name,
+            'employee_code': warning.employee.employee_id,
+            'warning_by_id': warning.warning_by_id if warning.warning_by else '',
+            'warning_by_name': warning.warning_by.full_name if warning.warning_by else '',
+            'warning_type': warning.warning_type,
+            'warning_type_display': warning.get_warning_type_display(),
+            'subject': warning.subject,
+            'severity': warning.severity,
+            'severity_display': warning.get_severity_display(),
+            'warning_date': str(warning.warning_date),
+            'description': warning.description,
+            'improvement_plan': warning.improvement_plan,
+            'status': warning.status,
+            'status_display': warning.get_status_display(),
+            'document_url': warning.document.url if warning.document else '',
+            'created_at': warning.created_at.strftime('%Y-%m-%d %H:%M'),
+            'updated_at': warning.updated_at.strftime('%Y-%m-%d %H:%M'),
+        }
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def warning_update(request, pk):
+    warning = get_object_or_404(Warning, id=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    try:
+        employee_id = request.POST.get('employee', '').strip()
+        warning_by_id = request.POST.get('warning_by', '').strip()
+        warning_type = request.POST.get('warning_type', '').strip()
+        subject = request.POST.get('subject', '').strip()
+        severity = request.POST.get('severity', '').strip()
+        warning_date = request.POST.get('warning_date', '').strip()
+        description = request.POST.get('description', '').strip()
+        improvement_plan = request.POST.get('improvement_plan') == 'on'
+        status = request.POST.get('status', '').strip()
+        document = request.FILES.get('document')
+
+        if not all([employee_id, warning_type, subject, severity, warning_date]):
+            return JsonResponse({'success': False, 'error': 'Please fill in all required fields.'})
+
+        employee = get_object_or_404(Employee, id=employee_id)
+        warning_by = None
+        if warning_by_id:
+            warning_by = get_object_or_404(Employee, id=warning_by_id)
+
+        warning.employee = employee
+        warning.warning_by = warning_by
+        warning.warning_type = warning_type
+        warning.subject = subject
+        warning.severity = severity
+        warning.warning_date = warning_date
+        warning.description = description
+        warning.improvement_plan = improvement_plan
+        if status:
+            warning.status = status
+        if document:
+            warning.document = document
+        warning.save()
+        return JsonResponse({'success': True, 'message': f'Warning for "{employee.full_name}" updated successfully!'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def warning_delete(request, pk):
+    warning = get_object_or_404(Warning, id=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+    name = warning.employee.full_name
+    warning.delete()
+    return JsonResponse({'success': True, 'message': f'Warning for "{name}" deleted successfully!'})
+
+
+@login_required
+def warning_toggle_status(request, pk):
+    warning = get_object_or_404(Warning, id=pk)
+    if request.method == 'POST':
+        new_status = request.POST.get('status', '').strip()
+        if new_status not in ['draft', 'issued', 'acknowledged', 'resolved', 'escalated']:
+            return JsonResponse({'success': False, 'error': 'Invalid status.'})
+        warning.status = new_status
+        warning.save()
+        return JsonResponse({'success': True, 'message': f'Warning status updated to "{warning.get_status_display()}"!'})
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
 
 @login_required

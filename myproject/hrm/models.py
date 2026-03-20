@@ -248,3 +248,106 @@ class Award(models.Model):
 
     def __str__(self):
         return f"{self.employee.full_name} - {self.award_type.name}"
+
+
+class Resignation(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('completed', 'Completed'),
+    ]
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='resignations')
+    resignation_date = models.DateField()
+    last_working_day = models.DateField()
+    notice_period = models.CharField(max_length=100, blank=True, default='')
+    reason = models.CharField(max_length=255, blank=True, default='')
+    description = models.TextField(blank=True, default='')
+    document = models.FileField(upload_to='resignation_documents/', blank=True, null=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.employee.full_name} - {self.resignation_date}"
+
+
+class Termination(models.Model):
+    TYPE_CHOICES = [
+        ('involuntary', 'Involuntary'),
+        ('voluntary', 'Voluntary'),
+        ('retirement', 'Retirement'),
+        ('contract_end', 'Contract End'),
+        ('misconduct', 'Misconduct'),
+        ('layoff', 'Layoff'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('revoked', 'Revoked'),
+    ]
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='terminations')
+    termination_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    termination_date = models.DateField()
+    notice_date = models.DateField()
+    notice_period = models.CharField(max_length=100, blank=True, default='')
+    reason = models.CharField(max_length=255, blank=True, default='')
+    description = models.TextField(blank=True, default='')
+    document = models.FileField(upload_to='termination_documents/', blank=True, null=True)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.employee.full_name} - {self.get_termination_type_display()} ({self.termination_date})"
+
+
+class Warning(models.Model):
+    TYPE_CHOICES = [
+        ('performance', 'Performance'),
+        ('attendance', 'Attendance'),
+        ('conduct', 'Conduct'),
+        ('policy_violation', 'Policy Violation'),
+        ('safety', 'Safety'),
+        ('other', 'Other'),
+    ]
+    SEVERITY_CHOICES = [
+        ('verbal', 'Verbal'),
+        ('written', 'Written'),
+        ('final', 'Final'),
+    ]
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('issued', 'Issued'),
+        ('acknowledged', 'Acknowledged'),
+        ('resolved', 'Resolved'),
+        ('escalated', 'Escalated'),
+    ]
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='warnings')
+    warning_by = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name='warnings_issued')
+    warning_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    subject = models.CharField(max_length=255)
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default='verbal')
+    warning_date = models.DateField()
+    description = models.TextField(blank=True, default='')
+    improvement_plan = models.BooleanField(default=False)
+    document = models.FileField(upload_to='warning_documents/', blank=True, null=True)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='draft')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.employee.full_name} - {self.subject} ({self.warning_date})"

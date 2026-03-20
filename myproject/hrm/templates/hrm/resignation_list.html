@@ -5,36 +5,644 @@
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-door-open me-2"></i>Resignations</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Add Resignation</button>
+        <button class="btn btn-primary" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Resignation
+        </button>
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if status_filter or employee_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-3">
+                        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Statuses</option>
+                            <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                            <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+                            <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+                            <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select name="employee" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Employees</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}" {% if employee_filter == emp.id|stringformat:"d" %}selected{% endif %}>{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:resignation_list' %}" class="btn btn-sm btn-outline-danger w-100">Clear Filters</a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Resignations Table -->
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th>#</th>
                         <th>Employee</th>
-                        <th>Department</th>
                         <th>Resignation Date</th>
                         <th>Last Working Day</th>
+                        <th>Notice Period</th>
                         <th>Reason</th>
                         <th>Status</th>
-                        <th>Actions</th>
+                        <th>Documents</th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% for resignation in resignations %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
-                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No resignations found. Functionality will be added soon.
+                        <td>{{ forloop.counter|add:resignations.start_index|add:"-1" }}</td>
+                        <td>
+                            <strong>{{ resignation.employee.full_name }}</strong>
+                            <br><small class="text-muted">{{ resignation.employee.employee_id }}</small>
+                        </td>
+                        <td>{{ resignation.resignation_date|date:"Y-m-d" }}</td>
+                        <td>{{ resignation.last_working_day|date:"Y-m-d" }}</td>
+                        <td>{{ resignation.notice_period|default:"—" }}</td>
+                        <td>{{ resignation.reason|default:"—" }}</td>
+                        <td>
+                            <div class="dropdown">
+                                <button class="badge border-0 dropdown-toggle status-badge-{{ resignation.status }}"
+                                        data-bs-toggle="dropdown" aria-expanded="false"
+                                        style="cursor:pointer;">
+                                    {{ resignation.get_status_display }}
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-sm">
+                                    <li><a class="dropdown-item {% if resignation.status == 'pending' %}active{% endif %}" href="#" onclick="changeStatus({{ resignation.id }}, 'pending'); return false;">
+                                        <span class="status-dot bg-warning me-2"></span>Pending</a></li>
+                                    <li><a class="dropdown-item {% if resignation.status == 'approved' %}active{% endif %}" href="#" onclick="changeStatus({{ resignation.id }}, 'approved'); return false;">
+                                        <span class="status-dot bg-success me-2"></span>Approved</a></li>
+                                    <li><a class="dropdown-item {% if resignation.status == 'rejected' %}active{% endif %}" href="#" onclick="changeStatus({{ resignation.id }}, 'rejected'); return false;">
+                                        <span class="status-dot bg-danger me-2"></span>Rejected</a></li>
+                                    <li><a class="dropdown-item {% if resignation.status == 'completed' %}active{% endif %}" href="#" onclick="changeStatus({{ resignation.id }}, 'completed'); return false;">
+                                        <span class="status-dot bg-info me-2"></span>Completed</a></li>
+                                </ul>
+                            </div>
+                        </td>
+                        <td>
+                            {% if resignation.document %}
+                            <a href="{{ resignation.document.url }}" target="_blank" class="badge bg-info text-decoration-none">View Document</a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center text-nowrap">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewResignation({{ resignation.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editResignation({{ resignation.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-success me-1" title="Change Status" data-bs-toggle="dropdown">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ resignation.id }}, '{{ resignation.employee.full_name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No resignations found.
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        {% if resignations %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ resignations.start_index }} to {{ resignations.end_index }} of {{ total_resignations }} resignations
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if resignations.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ resignations.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&employee={{ employee_filter }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in resignations.paginator.page_range %}
+                    <li class="page-item {% if resignations.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&employee={{ employee_filter }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if resignations.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ resignations.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&employee={{ employee_filter }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<!-- Add / Edit Resignation Modal -->
+<div class="modal fade" id="resignationModal" tabindex="-1" aria-labelledby="resignationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resignationModalLabel">Add New Resignation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="resignationForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <input type="hidden" id="resignationId" value="">
+
+                    <div class="mb-3">
+                        <label for="resigEmployee" class="form-label">Employee <span class="text-danger">*</span></label>
+                        <select class="form-select" id="resigEmployee" name="employee" required>
+                            <option value="">Select Employee</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="resigDate" class="form-label">Resignation Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="resigDate" name="resignation_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="resigLastDay" class="form-label">Last Working Day <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="resigLastDay" name="last_working_day" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="resigNoticePeriod" class="form-label">Notice Period</label>
+                        <input type="text" class="form-control" id="resigNoticePeriod" name="notice_period" placeholder="e.g. 1 month, 2 weeks">
+                    </div>
+                    <div class="mb-3">
+                        <label for="resigReason" class="form-label">Reason</label>
+                        <input type="text" class="form-control" id="resigReason" name="reason" placeholder="Enter reason for resignation">
+                    </div>
+                    <div class="mb-3">
+                        <label for="resigDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="resigDescription" name="description" rows="3" placeholder="Enter additional details"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="resigDocument" class="form-label">Documents</label>
+                        <input type="file" class="form-control" id="resigDocument" name="document" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                        <small class="text-muted" id="currentDocument"></small>
+                    </div>
+                    <!-- Status field (only shown for edit) -->
+                    <div class="mb-3" id="statusFieldWrapper" style="display:none;">
+                        <label for="resigStatus" class="form-label">Status</label>
+                        <select class="form-select" id="resigStatus" name="status">
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="saveResignationBtn" onclick="saveResignation()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Resignation Modal -->
+<div class="modal fade" id="viewResignationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-door-open me-2"></i>Resignation Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewResignationBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the resignation for <strong id="deleteResignationName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const resignationModalEl = document.getElementById('resignationModal');
+    const resignationModal = new bootstrap.Modal(resignationModalEl);
+    let isAddMode = false;
+
+    function openAddModal() {
+        isAddMode = true;
+        document.getElementById('resignationModalLabel').textContent = 'Add New Resignation';
+        document.getElementById('resignationForm').reset();
+        document.getElementById('resignationId').value = '';
+        document.getElementById('currentDocument').textContent = '';
+        document.getElementById('statusFieldWrapper').style.display = 'none';
+        clearAllErrors();
+        resignationModal.show();
+    }
+
+    function clearAllErrors() {
+        document.querySelectorAll('.field-error').forEach(el => el.remove());
+        document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        document.querySelectorAll('.shake').forEach(el => el.classList.remove('shake'));
+    }
+
+    function showFieldError(fieldId, message) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+        const existing = field.parentNode.querySelector('.field-error');
+        if (existing) existing.remove();
+        field.classList.add('is-invalid');
+        field.classList.add('shake');
+        setTimeout(() => field.classList.remove('shake'), 500);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'field-error';
+        errorDiv.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(message)}`;
+        field.parentNode.appendChild(errorDiv);
+        field.addEventListener('input', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('input', handler);
+        });
+        field.addEventListener('change', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('change', handler);
+        });
+    }
+
+    function saveResignation() {
+        const form = document.getElementById('resignationForm');
+        const resignationIdVal = document.getElementById('resignationId').value;
+        const employee = document.getElementById('resigEmployee').value;
+        const resigDate = document.getElementById('resigDate').value;
+        const lastDay = document.getElementById('resigLastDay').value;
+
+        clearAllErrors();
+        let hasError = false;
+
+        if (!employee) {
+            showFieldError('resigEmployee', 'Please select an employee.');
+            hasError = true;
+        }
+        if (!resigDate) {
+            showFieldError('resigDate', 'Resignation date is required.');
+            hasError = true;
+        }
+        if (!lastDay) {
+            showFieldError('resigLastDay', 'Last working day is required.');
+            hasError = true;
+        }
+        if (resigDate && lastDay && new Date(lastDay) < new Date(resigDate)) {
+            showFieldError('resigLastDay', 'Last working day must be after resignation date.');
+            hasError = true;
+        }
+
+        if (hasError) {
+            showToast('Please fill in all required fields.', 'error');
+            return;
+        }
+
+        // Disable save button to prevent double submit
+        const saveBtn = document.getElementById('saveResignationBtn');
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+
+        const formData = new FormData(form);
+        const url = resignationIdVal
+            ? `{% url 'hrm:resignation_list' %}${resignationIdVal}/update/`
+            : `{% url 'hrm:resignation_create' %}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            if (data.success) {
+                resignationModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            showToast('Network error. Please try again.', 'error');
+        });
+    }
+
+    function viewResignation(id) {
+        fetch(`{% url 'hrm:resignation_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const r = data.resignation;
+                    const statusColors = { pending: 'warning', approved: 'success', rejected: 'danger', completed: 'info' };
+                    const statusClass = statusColors[r.status] || 'secondary';
+                    let docHtml = r.document_url
+                        ? `<a href="${escapeHtml(r.document_url)}" target="_blank" class="badge bg-info text-decoration-none">View Document</a>`
+                        : '—';
+
+                    document.getElementById('viewResignationBody').innerHTML = `
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:30%">Employee</th><td>${escapeHtml(r.employee_name)} <small class="text-muted">(${escapeHtml(r.employee_code)})</small></td></tr>
+                            <tr><th>Resignation Date</th><td>${r.resignation_date}</td></tr>
+                            <tr><th>Last Working Day</th><td>${r.last_working_day}</td></tr>
+                            <tr><th>Notice Period</th><td>${escapeHtml(r.notice_period) || '—'}</td></tr>
+                            <tr><th>Reason</th><td>${escapeHtml(r.reason) || '—'}</td></tr>
+                            <tr><th>Description</th><td>${escapeHtml(r.description) || '—'}</td></tr>
+                            <tr><th>Status</th><td><span class="badge bg-${statusClass}">${escapeHtml(r.status.charAt(0).toUpperCase() + r.status.slice(1))}</span></td></tr>
+                            <tr><th>Documents</th><td>${docHtml}</td></tr>
+                            <tr><th>Created At</th><td>${r.created_at}</td></tr>
+                            <tr><th>Updated At</th><td>${r.updated_at}</td></tr>
+                        </table>
+                    `;
+                    new bootstrap.Modal(document.getElementById('viewResignationModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load resignation details.', 'error'));
+    }
+
+    function editResignation(id) {
+        fetch(`{% url 'hrm:resignation_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    isAddMode = false;
+                    clearAllErrors();
+                    const r = data.resignation;
+                    document.getElementById('resignationModalLabel').textContent = 'Edit Resignation';
+                    document.getElementById('resignationId').value = r.id;
+                    document.getElementById('resigEmployee').value = r.employee_id;
+                    document.getElementById('resigDate').value = r.resignation_date;
+                    document.getElementById('resigLastDay').value = r.last_working_day;
+                    document.getElementById('resigNoticePeriod').value = r.notice_period;
+                    document.getElementById('resigReason').value = r.reason;
+                    document.getElementById('resigDescription').value = r.description;
+                    document.getElementById('resigStatus').value = r.status;
+                    document.getElementById('statusFieldWrapper').style.display = 'block';
+
+                    document.getElementById('currentDocument').textContent = r.document_url ? 'Current document attached. Upload new to replace.' : '';
+
+                    resignationModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load resignation data.', 'error'));
+    }
+
+    function changeStatus(id, newStatus) {
+        const formData = new FormData();
+        formData.append('status', newStatus);
+
+        fetch(`{% url 'hrm:resignation_list' %}${id}/toggle-status/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deleteResignationName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch(`{% url 'hrm:resignation_list' %}${deleteId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showToast(message, type) {
+        document.querySelectorAll('.custom-toast').forEach(t => t.remove());
+
+        const colors = { success: 'linear-gradient(135deg, #10b981, #059669)', error: 'linear-gradient(135deg, #ef4444, #dc2626)', warning: 'linear-gradient(135deg, #f59e0b, #d97706)', info: 'linear-gradient(135deg, #3b82f6, #2563eb)' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const titles = { success: 'Success', error: 'Error', warning: 'Warning', info: 'Info' };
+
+        const toast = document.createElement('div');
+        toast.className = 'custom-toast';
+        toast.style.cssText = `
+            position: fixed; top: 20px; right: 20px; background: ${colors[type] || colors.info};
+            color: white; padding: 0; border-radius: 12px; z-index: 10050;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2); min-width: 320px; max-width: 420px;
+            animation: toastSlideIn 0.4s cubic-bezier(0.68,-0.55,0.265,1.55);
+            overflow: hidden;
+        `;
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;">
+                <div style="background:rgba(255,255,255,0.2);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fas fa-${icons[type] || icons.info}" style="font-size:18px;"></i>
+                </div>
+                <div style="flex:1;">
+                    <div style="font-weight:600;font-size:14px;margin-bottom:2px;">${titles[type] || 'Info'}</div>
+                    <div style="font-size:13px;opacity:0.95;">${escapeHtml(message)}</div>
+                </div>
+                <button onclick="this.closest('.custom-toast').remove()" style="background:none;border:none;color:white;opacity:0.7;cursor:pointer;font-size:16px;padding:4px;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="toast-progress" style="height:3px;background:rgba(255,255,255,0.3);">
+                <div class="toast-progress-bar" style="height:100%;background:rgba(255,255,255,0.7);width:100%;transition:width 3s linear;"></div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+            const bar = toast.querySelector('.toast-progress-bar');
+            if (bar) bar.style.width = '0%';
+        });
+        setTimeout(() => {
+            toast.style.animation = 'toastSlideOut 0.3s ease forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+</script>
+<style>
+    @keyframes toastSlideIn {
+        from { transform: translateX(120%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes toastSlideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(120%); opacity: 0; }
+    }
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-6px); }
+        40% { transform: translateX(6px); }
+        60% { transform: translateX(-4px); }
+        80% { transform: translateX(4px); }
+    }
+    .shake { animation: shake 0.4s ease; }
+    .field-error {
+        color: #dc2626;
+        font-size: 12px;
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        animation: fadeInError 0.3s ease;
+    }
+    @keyframes fadeInError {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .is-invalid {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+    }
+    .is-invalid:focus {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25) !important;
+    }
+    .status-badge-pending {
+        background-color: #f59e0b;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-approved {
+        background-color: #10b981;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-rejected {
+        background-color: #ef4444;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-completed {
+        background-color: #10b981;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    .dropdown-menu-sm {
+        min-width: 140px;
+        font-size: 13px;
+    }
+    .dropdown-menu-sm .dropdown-item {
+        padding: 6px 14px;
+        display: flex;
+        align-items: center;
+    }
+    .dropdown-menu-sm .dropdown-item.active {
+        background-color: #f0fdf4;
+        color: #166534;
+    }
+</style>
 {% endblock %}

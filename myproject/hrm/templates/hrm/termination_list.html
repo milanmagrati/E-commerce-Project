@@ -5,36 +5,673 @@
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-user-slash me-2"></i>Terminations</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Add Termination</button>
+        <button class="btn btn-primary" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Termination
+        </button>
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if status_filter or type_filter or employee_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-3">
+                        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Statuses</option>
+                            <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                            <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>In Progress</option>
+                            <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                            <option value="revoked" {% if status_filter == 'revoked' %}selected{% endif %}>Revoked</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select name="type" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Types</option>
+                            <option value="involuntary" {% if type_filter == 'involuntary' %}selected{% endif %}>Involuntary</option>
+                            <option value="voluntary" {% if type_filter == 'voluntary' %}selected{% endif %}>Voluntary</option>
+                            <option value="retirement" {% if type_filter == 'retirement' %}selected{% endif %}>Retirement</option>
+                            <option value="contract_end" {% if type_filter == 'contract_end' %}selected{% endif %}>Contract End</option>
+                            <option value="misconduct" {% if type_filter == 'misconduct' %}selected{% endif %}>Misconduct</option>
+                            <option value="layoff" {% if type_filter == 'layoff' %}selected{% endif %}>Layoff</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select name="employee" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Employees</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}" {% if employee_filter == emp.id|stringformat:"d" %}selected{% endif %}>{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:termination_list' %}" class="btn btn-sm btn-outline-danger w-100">Clear Filters</a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Terminations Table -->
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th>#</th>
                         <th>Employee</th>
-                        <th>Department</th>
-                        <th>Termination Type</th>
+                        <th>Type</th>
                         <th>Termination Date</th>
+                        <th>Notice Date</th>
                         <th>Reason</th>
                         <th>Status</th>
-                        <th>Actions</th>
+                        <th>Documents</th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% for termination in terminations %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
-                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No terminations found. Functionality will be added soon.
+                        <td>{{ forloop.counter|add:terminations.start_index|add:"-1" }}</td>
+                        <td>
+                            <strong>{{ termination.employee.full_name }}</strong>
+                            <br><small class="text-muted">{{ termination.employee.employee_id }}</small>
+                        </td>
+                        <td>{{ termination.get_termination_type_display }}</td>
+                        <td>{{ termination.termination_date|date:"Y-m-d" }}</td>
+                        <td>{{ termination.notice_date|date:"Y-m-d" }}</td>
+                        <td>{{ termination.reason|default:"—" }}</td>
+                        <td>
+                            <div class="dropdown">
+                                <button class="badge border-0 dropdown-toggle status-badge-{{ termination.status }}"
+                                        data-bs-toggle="dropdown" aria-expanded="false"
+                                        style="cursor:pointer;">
+                                    {{ termination.get_status_display }}
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-sm">
+                                    <li><a class="dropdown-item {% if termination.status == 'pending' %}active{% endif %}" href="#" onclick="changeStatus({{ termination.id }}, 'pending'); return false;">
+                                        <span class="status-dot bg-warning me-2"></span>Pending</a></li>
+                                    <li><a class="dropdown-item {% if termination.status == 'in_progress' %}active{% endif %}" href="#" onclick="changeStatus({{ termination.id }}, 'in_progress'); return false;">
+                                        <span class="status-dot bg-info me-2"></span>In Progress</a></li>
+                                    <li><a class="dropdown-item {% if termination.status == 'completed' %}active{% endif %}" href="#" onclick="changeStatus({{ termination.id }}, 'completed'); return false;">
+                                        <span class="status-dot bg-success me-2"></span>Completed</a></li>
+                                    <li><a class="dropdown-item {% if termination.status == 'revoked' %}active{% endif %}" href="#" onclick="changeStatus({{ termination.id }}, 'revoked'); return false;">
+                                        <span class="status-dot bg-secondary me-2"></span>Revoked</a></li>
+                                </ul>
+                            </div>
+                        </td>
+                        <td>
+                            {% if termination.document %}
+                            <a href="{{ termination.document.url }}" target="_blank" class="badge bg-info text-decoration-none">View Document</a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center text-nowrap">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewTermination({{ termination.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editTermination({{ termination.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-success me-1" title="Change Status" data-bs-toggle="dropdown">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ termination.id }}, '{{ termination.employee.full_name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No terminations found.
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        {% if terminations %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ terminations.start_index }} to {{ terminations.end_index }} of {{ total_terminations }} terminations
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if terminations.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ terminations.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&employee={{ employee_filter }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in terminations.paginator.page_range %}
+                    <li class="page-item {% if terminations.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&employee={{ employee_filter }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if terminations.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ terminations.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&employee={{ employee_filter }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<!-- Add / Edit Termination Modal -->
+<div class="modal fade" id="terminationModal" tabindex="-1" aria-labelledby="terminationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="terminationModalLabel">Add New Termination</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="terminationForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <input type="hidden" id="terminationId" value="">
+
+                    <div class="mb-3">
+                        <label for="termEmployee" class="form-label">Employee <span class="text-danger">*</span></label>
+                        <select class="form-select" id="termEmployee" name="employee" required>
+                            <option value="">Select Employee</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="termType" class="form-label">Termination Type <span class="text-danger">*</span></label>
+                        <select class="form-select" id="termType" name="termination_type" required>
+                            <option value="">Select Termination Type</option>
+                            <option value="involuntary">Involuntary</option>
+                            <option value="voluntary">Voluntary</option>
+                            <option value="retirement">Retirement</option>
+                            <option value="contract_end">Contract End</option>
+                            <option value="misconduct">Misconduct</option>
+                            <option value="layoff">Layoff</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="termNoticeDate" class="form-label">Notice Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="termNoticeDate" name="notice_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="termDate" class="form-label">Termination Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="termDate" name="termination_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="termNoticePeriod" class="form-label">Notice Period</label>
+                        <input type="text" class="form-control" id="termNoticePeriod" name="notice_period" placeholder="e.g. 1 month, 2 weeks">
+                    </div>
+                    <div class="mb-3">
+                        <label for="termReason" class="form-label">Reason</label>
+                        <input type="text" class="form-control" id="termReason" name="reason" placeholder="Enter reason for termination">
+                    </div>
+                    <div class="mb-3">
+                        <label for="termDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="termDescription" name="description" rows="3" placeholder="Enter additional details"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="termDocument" class="form-label">Documents</label>
+                        <input type="file" class="form-control" id="termDocument" name="document" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                        <small class="text-muted" id="currentDocument"></small>
+                    </div>
+                    <!-- Status field (only shown for edit) -->
+                    <div class="mb-3" id="statusFieldWrapper" style="display:none;">
+                        <label for="termStatus" class="form-label">Status</label>
+                        <select class="form-select" id="termStatus" name="status">
+                            <option value="pending">Pending</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="completed">Completed</option>
+                            <option value="revoked">Revoked</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="saveTerminationBtn" onclick="saveTermination()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Termination Modal -->
+<div class="modal fade" id="viewTerminationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-slash me-2"></i>Termination Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewTerminationBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the termination for <strong id="deleteTerminationName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const terminationModalEl = document.getElementById('terminationModal');
+    const terminationModal = new bootstrap.Modal(terminationModalEl);
+    let isAddMode = false;
+
+    function openAddModal() {
+        isAddMode = true;
+        document.getElementById('terminationModalLabel').textContent = 'Add New Termination';
+        document.getElementById('terminationForm').reset();
+        document.getElementById('terminationId').value = '';
+        document.getElementById('currentDocument').textContent = '';
+        document.getElementById('statusFieldWrapper').style.display = 'none';
+        clearAllErrors();
+        terminationModal.show();
+    }
+
+    function clearAllErrors() {
+        document.querySelectorAll('.field-error').forEach(el => el.remove());
+        document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        document.querySelectorAll('.shake').forEach(el => el.classList.remove('shake'));
+    }
+
+    function showFieldError(fieldId, message) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+        const existing = field.parentNode.querySelector('.field-error');
+        if (existing) existing.remove();
+        field.classList.add('is-invalid');
+        field.classList.add('shake');
+        setTimeout(() => field.classList.remove('shake'), 500);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'field-error';
+        errorDiv.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(message)}`;
+        field.parentNode.appendChild(errorDiv);
+        field.addEventListener('input', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('input', handler);
+        });
+        field.addEventListener('change', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('change', handler);
+        });
+    }
+
+    function saveTermination() {
+        const form = document.getElementById('terminationForm');
+        const terminationIdVal = document.getElementById('terminationId').value;
+        const employee = document.getElementById('termEmployee').value;
+        const termType = document.getElementById('termType').value;
+        const noticeDate = document.getElementById('termNoticeDate').value;
+        const termDate = document.getElementById('termDate').value;
+
+        clearAllErrors();
+        let hasError = false;
+
+        if (!employee) {
+            showFieldError('termEmployee', 'Please select an employee.');
+            hasError = true;
+        }
+        if (!termType) {
+            showFieldError('termType', 'Please select a termination type.');
+            hasError = true;
+        }
+        if (!noticeDate) {
+            showFieldError('termNoticeDate', 'Notice date is required.');
+            hasError = true;
+        }
+        if (!termDate) {
+            showFieldError('termDate', 'Termination date is required.');
+            hasError = true;
+        }
+        if (noticeDate && termDate && new Date(termDate) < new Date(noticeDate)) {
+            showFieldError('termDate', 'Termination date must be on or after notice date.');
+            hasError = true;
+        }
+
+        if (hasError) {
+            showToast('Please fill in all required fields.', 'error');
+            return;
+        }
+
+        const saveBtn = document.getElementById('saveTerminationBtn');
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+
+        const formData = new FormData(form);
+        const url = terminationIdVal
+            ? `{% url 'hrm:termination_list' %}${terminationIdVal}/update/`
+            : `{% url 'hrm:termination_create' %}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            if (data.success) {
+                terminationModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            showToast('Network error. Please try again.', 'error');
+        });
+    }
+
+    function viewTermination(id) {
+        fetch(`{% url 'hrm:termination_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const t = data.termination;
+                    const statusColors = { pending: 'warning', in_progress: 'info', completed: 'success', revoked: 'secondary' };
+                    const statusClass = statusColors[t.status] || 'secondary';
+                    let docHtml = t.document_url
+                        ? `<a href="${escapeHtml(t.document_url)}" target="_blank" class="badge bg-info text-decoration-none">View Document</a>`
+                        : '—';
+
+                    document.getElementById('viewTerminationBody').innerHTML = `
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:30%">Employee</th><td>${escapeHtml(t.employee_name)} <small class="text-muted">(${escapeHtml(t.employee_code)})</small></td></tr>
+                            <tr><th>Termination Type</th><td>${escapeHtml(t.termination_type_display)}</td></tr>
+                            <tr><th>Notice Date</th><td>${t.notice_date}</td></tr>
+                            <tr><th>Termination Date</th><td>${t.termination_date}</td></tr>
+                            <tr><th>Notice Period</th><td>${escapeHtml(t.notice_period) || '—'}</td></tr>
+                            <tr><th>Reason</th><td>${escapeHtml(t.reason) || '—'}</td></tr>
+                            <tr><th>Description</th><td>${escapeHtml(t.description) || '—'}</td></tr>
+                            <tr><th>Status</th><td><span class="badge bg-${statusClass}">${escapeHtml(t.status_display)}</span></td></tr>
+                            <tr><th>Documents</th><td>${docHtml}</td></tr>
+                            <tr><th>Created At</th><td>${t.created_at}</td></tr>
+                            <tr><th>Updated At</th><td>${t.updated_at}</td></tr>
+                        </table>
+                    `;
+                    new bootstrap.Modal(document.getElementById('viewTerminationModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load termination details.', 'error'));
+    }
+
+    function editTermination(id) {
+        fetch(`{% url 'hrm:termination_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    isAddMode = false;
+                    clearAllErrors();
+                    const t = data.termination;
+                    document.getElementById('terminationModalLabel').textContent = 'Edit Termination';
+                    document.getElementById('terminationId').value = t.id;
+                    document.getElementById('termEmployee').value = t.employee_id;
+                    document.getElementById('termType').value = t.termination_type;
+                    document.getElementById('termNoticeDate').value = t.notice_date;
+                    document.getElementById('termDate').value = t.termination_date;
+                    document.getElementById('termNoticePeriod').value = t.notice_period;
+                    document.getElementById('termReason').value = t.reason;
+                    document.getElementById('termDescription').value = t.description;
+                    document.getElementById('termStatus').value = t.status;
+                    document.getElementById('statusFieldWrapper').style.display = 'block';
+
+                    document.getElementById('currentDocument').textContent = t.document_url ? 'Current document attached. Upload new to replace.' : '';
+
+                    terminationModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load termination data.', 'error'));
+    }
+
+    function changeStatus(id, newStatus) {
+        const formData = new FormData();
+        formData.append('status', newStatus);
+
+        fetch(`{% url 'hrm:termination_list' %}${id}/toggle-status/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deleteTerminationName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch(`{% url 'hrm:termination_list' %}${deleteId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showToast(message, type) {
+        document.querySelectorAll('.custom-toast').forEach(t => t.remove());
+
+        const colors = { success: 'linear-gradient(135deg, #10b981, #059669)', error: 'linear-gradient(135deg, #ef4444, #dc2626)', warning: 'linear-gradient(135deg, #f59e0b, #d97706)', info: 'linear-gradient(135deg, #3b82f6, #2563eb)' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const titles = { success: 'Success', error: 'Error', warning: 'Warning', info: 'Info' };
+
+        const toast = document.createElement('div');
+        toast.className = 'custom-toast';
+        toast.style.cssText = `
+            position: fixed; top: 20px; right: 20px; background: ${colors[type] || colors.info};
+            color: white; padding: 0; border-radius: 12px; z-index: 10050;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2); min-width: 320px; max-width: 420px;
+            animation: toastSlideIn 0.4s cubic-bezier(0.68,-0.55,0.265,1.55);
+            overflow: hidden;
+        `;
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;">
+                <div style="background:rgba(255,255,255,0.2);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fas fa-${icons[type] || icons.info}" style="font-size:18px;"></i>
+                </div>
+                <div style="flex:1;">
+                    <div style="font-weight:600;font-size:14px;margin-bottom:2px;">${titles[type] || 'Info'}</div>
+                    <div style="font-size:13px;opacity:0.95;">${escapeHtml(message)}</div>
+                </div>
+                <button onclick="this.closest('.custom-toast').remove()" style="background:none;border:none;color:white;opacity:0.7;cursor:pointer;font-size:16px;padding:4px;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="toast-progress" style="height:3px;background:rgba(255,255,255,0.3);">
+                <div class="toast-progress-bar" style="height:100%;background:rgba(255,255,255,0.7);width:100%;transition:width 3s linear;"></div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+            const bar = toast.querySelector('.toast-progress-bar');
+            if (bar) bar.style.width = '0%';
+        });
+        setTimeout(() => {
+            toast.style.animation = 'toastSlideOut 0.3s ease forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+</script>
+<style>
+    @keyframes toastSlideIn {
+        from { transform: translateX(120%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes toastSlideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(120%); opacity: 0; }
+    }
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-6px); }
+        40% { transform: translateX(6px); }
+        60% { transform: translateX(-4px); }
+        80% { transform: translateX(4px); }
+    }
+    .shake { animation: shake 0.4s ease; }
+    .field-error {
+        color: #dc2626;
+        font-size: 12px;
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        animation: fadeInError 0.3s ease;
+    }
+    @keyframes fadeInError {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .is-invalid {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+    }
+    .is-invalid:focus {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25) !important;
+    }
+    .status-badge-pending {
+        background-color: #f59e0b;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-in_progress {
+        background-color: #3b82f6;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-completed {
+        background-color: #10b981;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-revoked {
+        background-color: #6b7280;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    .dropdown-menu-sm {
+        min-width: 140px;
+        font-size: 13px;
+    }
+    .dropdown-menu-sm .dropdown-item {
+        padding: 6px 14px;
+        display: flex;
+        align-items: center;
+    }
+    .dropdown-menu-sm .dropdown-item.active {
+        background-color: #f0fdf4;
+        color: #166534;
+    }
+</style>
 {% endblock %}

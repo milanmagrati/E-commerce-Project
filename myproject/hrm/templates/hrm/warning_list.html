@@ -5,36 +5,732 @@
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-exclamation-triangle me-2"></i>Warnings</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Add Warning</button>
+        <button class="btn btn-primary" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Warning
+        </button>
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if status_filter or type_filter or severity_filter or employee_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-2">
+                        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Statuses</option>
+                            <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
+                            <option value="issued" {% if status_filter == 'issued' %}selected{% endif %}>Issued</option>
+                            <option value="acknowledged" {% if status_filter == 'acknowledged' %}selected{% endif %}>Acknowledged</option>
+                            <option value="resolved" {% if status_filter == 'resolved' %}selected{% endif %}>Resolved</option>
+                            <option value="escalated" {% if status_filter == 'escalated' %}selected{% endif %}>Escalated</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="type" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Types</option>
+                            <option value="performance" {% if type_filter == 'performance' %}selected{% endif %}>Performance</option>
+                            <option value="attendance" {% if type_filter == 'attendance' %}selected{% endif %}>Attendance</option>
+                            <option value="conduct" {% if type_filter == 'conduct' %}selected{% endif %}>Conduct</option>
+                            <option value="policy_violation" {% if type_filter == 'policy_violation' %}selected{% endif %}>Policy Violation</option>
+                            <option value="safety" {% if type_filter == 'safety' %}selected{% endif %}>Safety</option>
+                            <option value="other" {% if type_filter == 'other' %}selected{% endif %}>Other</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="severity" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Severities</option>
+                            <option value="verbal" {% if severity_filter == 'verbal' %}selected{% endif %}>Verbal</option>
+                            <option value="written" {% if severity_filter == 'written' %}selected{% endif %}>Written</option>
+                            <option value="final" {% if severity_filter == 'final' %}selected{% endif %}>Final</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select name="employee" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Employees</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}" {% if employee_filter == emp.id|stringformat:"d" %}selected{% endif %}>{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:warning_list' %}" class="btn btn-sm btn-outline-danger w-100">Clear Filters</a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Warnings Table -->
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th>#</th>
                         <th>Employee</th>
-                        <th>Department</th>
-                        <th>Warning Type</th>
-                        <th>Warning Date</th>
                         <th>Subject</th>
+                        <th>Type</th>
+                        <th>Severity</th>
+                        <th>Date</th>
                         <th>Status</th>
-                        <th>Actions</th>
+                        <th>Improvement Plan</th>
+                        <th>Documents</th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% for warning in warnings %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
-                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No warnings found. Functionality will be added soon.
+                        <td>{{ forloop.counter|add:warnings.start_index|add:"-1" }}</td>
+                        <td>
+                            <strong>{{ warning.employee.full_name }}</strong>
+                            <br><small class="text-muted">{{ warning.employee.employee_id }}</small>
+                        </td>
+                        <td>{{ warning.subject }}</td>
+                        <td>{{ warning.get_warning_type_display }}</td>
+                        <td>
+                            <span class="badge severity-badge-{{ warning.severity }}">{{ warning.get_severity_display }}</span>
+                        </td>
+                        <td>{{ warning.warning_date|date:"Y-m-d" }}</td>
+                        <td>
+                            <div class="dropdown">
+                                <button class="badge border-0 dropdown-toggle status-badge-{{ warning.status }}"
+                                        data-bs-toggle="dropdown" aria-expanded="false"
+                                        style="cursor:pointer;">
+                                    {{ warning.get_status_display }}
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-sm">
+                                    <li><a class="dropdown-item {% if warning.status == 'draft' %}active{% endif %}" href="#" onclick="changeStatus({{ warning.id }}, 'draft'); return false;">
+                                        <span class="status-dot bg-secondary me-2"></span>Draft</a></li>
+                                    <li><a class="dropdown-item {% if warning.status == 'issued' %}active{% endif %}" href="#" onclick="changeStatus({{ warning.id }}, 'issued'); return false;">
+                                        <span class="status-dot bg-warning me-2"></span>Issued</a></li>
+                                    <li><a class="dropdown-item {% if warning.status == 'acknowledged' %}active{% endif %}" href="#" onclick="changeStatus({{ warning.id }}, 'acknowledged'); return false;">
+                                        <span class="status-dot bg-info me-2"></span>Acknowledged</a></li>
+                                    <li><a class="dropdown-item {% if warning.status == 'resolved' %}active{% endif %}" href="#" onclick="changeStatus({{ warning.id }}, 'resolved'); return false;">
+                                        <span class="status-dot bg-success me-2"></span>Resolved</a></li>
+                                    <li><a class="dropdown-item {% if warning.status == 'escalated' %}active{% endif %}" href="#" onclick="changeStatus({{ warning.id }}, 'escalated'); return false;">
+                                        <span class="status-dot bg-danger me-2"></span>Escalated</a></li>
+                                </ul>
+                            </div>
+                        </td>
+                        <td>
+                            {% if warning.improvement_plan %}
+                            <span class="badge bg-success">Yes</span>
+                            {% else %}
+                            <span class="text-muted">No</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if warning.document %}
+                            <a href="{{ warning.document.url }}" target="_blank" class="badge bg-info text-decoration-none">View Document</a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center text-nowrap">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewWarning({{ warning.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editWarning({{ warning.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ warning.id }}, '{{ warning.employee.full_name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No warnings found.
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        {% if warnings %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ warnings.start_index }} to {{ warnings.end_index }} of {{ total_warnings }} warnings
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if warnings.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ warnings.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in warnings.paginator.page_range %}
+                    <li class="page-item {% if warnings.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if warnings.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ warnings.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<!-- Add / Edit Warning Modal -->
+<div class="modal fade" id="warningModal" tabindex="-1" aria-labelledby="warningModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="warningModalLabel">Add New Warning</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="warningForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <input type="hidden" id="warningId" value="">
+
+                    <div class="mb-3">
+                        <label for="warnEmployee" class="form-label">Employee <span class="text-danger">*</span></label>
+                        <select class="form-select" id="warnEmployee" name="employee" required>
+                            <option value="">Select Employee</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="warnBy" class="form-label">Warning By <span class="text-danger">*</span></label>
+                        <select class="form-select" id="warnBy" name="warning_by">
+                            <option value="">Select Warning By</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="warnType" class="form-label">Warning Type <span class="text-danger">*</span></label>
+                        <select class="form-select" id="warnType" name="warning_type" required>
+                            <option value="">Select Warning Type</option>
+                            <option value="performance">Performance</option>
+                            <option value="attendance">Attendance</option>
+                            <option value="conduct">Conduct</option>
+                            <option value="policy_violation">Policy Violation</option>
+                            <option value="safety">Safety</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="warnSubject" class="form-label">Subject <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="warnSubject" name="subject" placeholder="Enter warning subject" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="warnSeverity" class="form-label">Severity <span class="text-danger">*</span></label>
+                        <select class="form-select" id="warnSeverity" name="severity" required>
+                            <option value="">Select Severity</option>
+                            <option value="verbal">Verbal</option>
+                            <option value="written">Written</option>
+                            <option value="final">Final</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="warnDate" class="form-label">Warning Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="warnDate" name="warning_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="warnDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="warnDescription" name="description" rows="3" placeholder="Enter additional details"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="warnDocument" class="form-label">Documents</label>
+                        <input type="file" class="form-control" id="warnDocument" name="document" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                        <small class="text-muted" id="currentDocument"></small>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="warnImprovement" name="improvement_plan">
+                        <label class="form-check-label" for="warnImprovement">Improvement Plan Required</label>
+                    </div>
+                    <!-- Status field (only shown for edit) -->
+                    <div class="mb-3" id="statusFieldWrapper" style="display:none;">
+                        <label for="warnStatus" class="form-label">Status</label>
+                        <select class="form-select" id="warnStatus" name="status">
+                            <option value="draft">Draft</option>
+                            <option value="issued">Issued</option>
+                            <option value="acknowledged">Acknowledged</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="escalated">Escalated</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="saveWarningBtn" onclick="saveWarning()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Warning Modal -->
+<div class="modal fade" id="viewWarningModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Warning Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewWarningBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the warning for <strong id="deleteWarningName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const warningModalEl = document.getElementById('warningModal');
+    const warningModal = new bootstrap.Modal(warningModalEl);
+
+    function openAddModal() {
+        document.getElementById('warningModalLabel').textContent = 'Add New Warning';
+        document.getElementById('warningForm').reset();
+        document.getElementById('warningId').value = '';
+        document.getElementById('currentDocument').textContent = '';
+        document.getElementById('statusFieldWrapper').style.display = 'none';
+        clearAllErrors();
+        warningModal.show();
+    }
+
+    function clearAllErrors() {
+        document.querySelectorAll('.field-error').forEach(el => el.remove());
+        document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        document.querySelectorAll('.shake').forEach(el => el.classList.remove('shake'));
+    }
+
+    function showFieldError(fieldId, message) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+        const existing = field.parentNode.querySelector('.field-error');
+        if (existing) existing.remove();
+        field.classList.add('is-invalid');
+        field.classList.add('shake');
+        setTimeout(() => field.classList.remove('shake'), 500);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'field-error';
+        errorDiv.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i>' + escapeHtml(message);
+        field.parentNode.appendChild(errorDiv);
+        field.addEventListener('input', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('input', handler);
+        });
+        field.addEventListener('change', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('change', handler);
+        });
+    }
+
+    function saveWarning() {
+        const form = document.getElementById('warningForm');
+        const warningIdVal = document.getElementById('warningId').value;
+        const employee = document.getElementById('warnEmployee').value;
+        const warnType = document.getElementById('warnType').value;
+        const subject = document.getElementById('warnSubject').value.trim();
+        const severity = document.getElementById('warnSeverity').value;
+        const warnDate = document.getElementById('warnDate').value;
+
+        clearAllErrors();
+        let hasError = false;
+
+        if (!employee) {
+            showFieldError('warnEmployee', 'Please select an employee.');
+            hasError = true;
+        }
+        if (!warnType) {
+            showFieldError('warnType', 'Please select a warning type.');
+            hasError = true;
+        }
+        if (!subject) {
+            showFieldError('warnSubject', 'Subject is required.');
+            hasError = true;
+        }
+        if (!severity) {
+            showFieldError('warnSeverity', 'Please select severity.');
+            hasError = true;
+        }
+        if (!warnDate) {
+            showFieldError('warnDate', 'Warning date is required.');
+            hasError = true;
+        }
+
+        if (hasError) {
+            showToast('Please fill in all required fields.', 'error');
+            return;
+        }
+
+        const saveBtn = document.getElementById('saveWarningBtn');
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+
+        const formData = new FormData(form);
+        const url = warningIdVal
+            ? "{% url 'hrm:warning_list' %}" + warningIdVal + '/update/'
+            : "{% url 'hrm:warning_create' %}";
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            if (data.success) {
+                warningModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            showToast('Network error. Please try again.', 'error');
+        });
+    }
+
+    function viewWarning(id) {
+        fetch("{% url 'hrm:warning_list' %}" + id + '/')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const w = data.warning;
+                    const statusColors = { draft: 'secondary', issued: 'warning', acknowledged: 'info', resolved: 'success', escalated: 'danger' };
+                    const severityColors = { verbal: 'info', written: 'warning', final: 'danger' };
+                    const statusClass = statusColors[w.status] || 'secondary';
+                    const sevClass = severityColors[w.severity] || 'secondary';
+                    let docHtml = w.document_url
+                        ? '<a href="' + escapeHtml(w.document_url) + '" target="_blank" class="badge bg-info text-decoration-none">View Document</a>'
+                        : '—';
+
+                    document.getElementById('viewWarningBody').innerHTML =
+                        '<table class="table table-bordered mb-0">' +
+                            '<tr><th style="width:30%">Employee</th><td>' + escapeHtml(w.employee_name) + ' <small class="text-muted">(' + escapeHtml(w.employee_code) + ')</small></td></tr>' +
+                            '<tr><th>Warning By</th><td>' + (escapeHtml(w.warning_by_name) || '—') + '</td></tr>' +
+                            '<tr><th>Warning Type</th><td>' + escapeHtml(w.warning_type_display) + '</td></tr>' +
+                            '<tr><th>Subject</th><td>' + escapeHtml(w.subject) + '</td></tr>' +
+                            '<tr><th>Severity</th><td><span class="badge bg-' + sevClass + '">' + escapeHtml(w.severity_display) + '</span></td></tr>' +
+                            '<tr><th>Warning Date</th><td>' + w.warning_date + '</td></tr>' +
+                            '<tr><th>Description</th><td>' + (escapeHtml(w.description) || '—') + '</td></tr>' +
+                            '<tr><th>Improvement Plan</th><td>' + (w.improvement_plan ? '<span class="badge bg-success">Yes</span>' : 'No') + '</td></tr>' +
+                            '<tr><th>Status</th><td><span class="badge bg-' + statusClass + '">' + escapeHtml(w.status_display) + '</span></td></tr>' +
+                            '<tr><th>Documents</th><td>' + docHtml + '</td></tr>' +
+                            '<tr><th>Created At</th><td>' + w.created_at + '</td></tr>' +
+                            '<tr><th>Updated At</th><td>' + w.updated_at + '</td></tr>' +
+                        '</table>';
+                    new bootstrap.Modal(document.getElementById('viewWarningModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load warning details.', 'error'));
+    }
+
+    function editWarning(id) {
+        fetch("{% url 'hrm:warning_list' %}" + id + '/')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    clearAllErrors();
+                    const w = data.warning;
+                    document.getElementById('warningModalLabel').textContent = 'Edit Warning';
+                    document.getElementById('warningId').value = w.id;
+                    document.getElementById('warnEmployee').value = w.employee_id;
+                    document.getElementById('warnBy').value = w.warning_by_id || '';
+                    document.getElementById('warnType').value = w.warning_type;
+                    document.getElementById('warnSubject').value = w.subject;
+                    document.getElementById('warnSeverity').value = w.severity;
+                    document.getElementById('warnDate').value = w.warning_date;
+                    document.getElementById('warnDescription').value = w.description;
+                    document.getElementById('warnImprovement').checked = w.improvement_plan;
+                    document.getElementById('warnStatus').value = w.status;
+                    document.getElementById('statusFieldWrapper').style.display = 'block';
+                    document.getElementById('currentDocument').textContent = w.document_url ? 'Current document attached. Upload new to replace.' : '';
+                    warningModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load warning data.', 'error'));
+    }
+
+    function changeStatus(id, newStatus) {
+        const formData = new FormData();
+        formData.append('status', newStatus);
+
+        fetch("{% url 'hrm:warning_list' %}" + id + '/toggle-status/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deleteWarningName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch("{% url 'hrm:warning_list' %}" + deleteId + '/delete/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showToast(message, type) {
+        document.querySelectorAll('.custom-toast').forEach(t => t.remove());
+
+        const colors = { success: 'linear-gradient(135deg, #10b981, #059669)', error: 'linear-gradient(135deg, #ef4444, #dc2626)', warning: 'linear-gradient(135deg, #f59e0b, #d97706)', info: 'linear-gradient(135deg, #3b82f6, #2563eb)' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const titles = { success: 'Success', error: 'Error', warning: 'Warning', info: 'Info' };
+
+        const toast = document.createElement('div');
+        toast.className = 'custom-toast';
+        toast.style.cssText = 'position:fixed;top:20px;right:20px;background:' + (colors[type] || colors.info) + ';color:white;padding:0;border-radius:12px;z-index:10050;box-shadow:0 8px 32px rgba(0,0,0,0.2);min-width:320px;max-width:420px;animation:toastSlideIn 0.4s cubic-bezier(0.68,-0.55,0.265,1.55);overflow:hidden;';
+        toast.innerHTML =
+            '<div style="display:flex;align-items:center;gap:12px;padding:14px 18px;">' +
+                '<div style="background:rgba(255,255,255,0.2);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">' +
+                    '<i class="fas fa-' + (icons[type] || icons.info) + '" style="font-size:18px;"></i>' +
+                '</div>' +
+                '<div style="flex:1;">' +
+                    '<div style="font-weight:600;font-size:14px;margin-bottom:2px;">' + (titles[type] || 'Info') + '</div>' +
+                    '<div style="font-size:13px;opacity:0.95;">' + escapeHtml(message) + '</div>' +
+                '</div>' +
+                '<button onclick="this.closest(\'.custom-toast\').remove()" style="background:none;border:none;color:white;opacity:0.7;cursor:pointer;font-size:16px;padding:4px;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">' +
+                    '<i class="fas fa-times"></i>' +
+                '</button>' +
+            '</div>' +
+            '<div class="toast-progress" style="height:3px;background:rgba(255,255,255,0.3);">' +
+                '<div class="toast-progress-bar" style="height:100%;background:rgba(255,255,255,0.7);width:100%;transition:width 3s linear;"></div>' +
+            '</div>';
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+            const bar = toast.querySelector('.toast-progress-bar');
+            if (bar) bar.style.width = '0%';
+        });
+        setTimeout(() => {
+            toast.style.animation = 'toastSlideOut 0.3s ease forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+</script>
+<style>
+    @keyframes toastSlideIn {
+        from { transform: translateX(120%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes toastSlideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(120%); opacity: 0; }
+    }
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-6px); }
+        40% { transform: translateX(6px); }
+        60% { transform: translateX(-4px); }
+        80% { transform: translateX(4px); }
+    }
+    .shake { animation: shake 0.4s ease; }
+    .field-error {
+        color: #dc2626;
+        font-size: 12px;
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        animation: fadeInError 0.3s ease;
+    }
+    @keyframes fadeInError {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .is-invalid {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+    }
+    .is-invalid:focus {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25) !important;
+    }
+    /* Severity badges */
+    .severity-badge-verbal {
+        background-color: #3b82f6;
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .severity-badge-written {
+        background-color: #f59e0b;
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .severity-badge-final {
+        background-color: #ef4444;
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    /* Status badges */
+    .status-badge-draft {
+        background-color: #6b7280;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-issued {
+        background-color: #f59e0b;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-acknowledged {
+        background-color: #3b82f6;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-resolved {
+        background-color: #10b981;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-escalated {
+        background-color: #ef4444;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    .dropdown-menu-sm {
+        min-width: 150px;
+        font-size: 13px;
+    }
+    .dropdown-menu-sm .dropdown-item {
+        padding: 6px 14px;
+        display: flex;
+        align-items: center;
+    }
+    .dropdown-menu-sm .dropdown-item.active {
+        background-color: #f0fdf4;
+        color: #166534;
+    }
+</style>
 {% endblock %}
