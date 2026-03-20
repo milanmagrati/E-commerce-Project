@@ -828,12 +828,10 @@
         </div>
 
         <!-- Active Targets Cards -->
-        {% for item in targets_data %}
-        {% if item.status == 'in_progress' %}
-        {% if forloop.first or forloop.counter == 1 %}
+        {% if active_targets %}
         <h6 class="fw-bold mb-3" style="color:#1f2937; font-size:.92rem;"><i class="fas fa-crosshairs me-2" style="color:#6366f1;"></i>Active Targets</h6>
         <div class="row g-3 mb-4">
-        {% endif %}
+        {% for item in active_targets %}
             <div class="col-xl-4 col-md-6">
                 <div class="st-target-card">
                     <div class="card-top">
@@ -881,9 +879,9 @@
                     </div>
                 </div>
             </div>
-        {% endif %}
         {% endfor %}
         </div>
+        {% endif %}
 
         <!-- Performance History Table -->
         <div class="st-history-card">
@@ -1020,7 +1018,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ========== Edit Modal ==========
     window.openEditModal = function(targetId) {
-        fetch('/api/targets/' + targetId + '/')
+        fetch('{% url "api_target_detail" 0 %}'.replace('0', targetId))
             .then(function(res) {
                 if (!res.ok) throw new Error('Failed to load');
                 return res.json();
@@ -1034,7 +1032,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('editStartDate').value = data.start_date;
                 document.getElementById('editEndDate').value = data.end_date;
                 document.getElementById('editNote').value = data.note || '';
-                document.getElementById('editTargetForm').action = '/targets/' + data.id + '/edit/';
+                document.getElementById('editTargetForm').action = '{% url "edit_target" 0 %}'.replace('0', data.id);
                 var modal = new bootstrap.Modal(document.getElementById('editTargetModal'));
                 modal.show();
             })

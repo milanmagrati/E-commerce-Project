@@ -14462,7 +14462,7 @@ def manage_targets(request):
             'status': status,
         })
 
-    staff_members = User.objects.filter(is_active=True, is_deleted=False, role__in=['sales', 'warehouse']).order_by('first_name')
+    staff_members = User.objects.filter(is_active=True, is_deleted=False).exclude(role='administrator').exclude(is_superuser=True).order_by('first_name')
 
     # KPI counts
     kpi = {
@@ -14528,8 +14528,11 @@ def my_targets(request):
         'not_met': sum(1 for t in targets_data if t['status'] == 'not_met'),
     }
 
+    active_targets = [t for t in targets_data if t['status'] == 'in_progress']
+
     context = {
         'targets_data': targets_data,
+        'active_targets': active_targets,
         'is_admin_view': False,
         'kpi': kpi,
     }
