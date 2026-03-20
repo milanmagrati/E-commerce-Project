@@ -3,54 +3,188 @@
 
 {% block content %}
 <div class="row">
-    <div class="col-12 mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-tachometer-alt me-2"></i>Asset Dashboard</h2>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-md-3 mb-4">
-        <div class="card text-center">
-            <div class="card-body">
-                <i class="fas fa-laptop fa-2x text-primary mb-2"></i>
-                <h5 class="card-title">Total Assets</h5>
-                <h3>0</h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 mb-4">
-        <div class="card text-center">
-            <div class="card-body">
-                <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
-                <h5 class="card-title">Assigned</h5>
-                <h3>0</h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 mb-4">
-        <div class="card text-center">
-            <div class="card-body">
-                <i class="fas fa-box-open fa-2x text-warning mb-2"></i>
-                <h5 class="card-title">Unassigned</h5>
-                <h3>0</h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 mb-4">
-        <div class="card text-center">
-            <div class="card-body">
-                <i class="fas fa-tools fa-2x text-danger mb-2"></i>
-                <h5 class="card-title">Under Maintenance</h5>
-                <h3>0</h3>
-            </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'hrm:asset_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-list me-1"></i>Asset List
+            </a>
+            <a href="{% url 'hrm:asset_depreciation' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-line me-1"></i>Depreciation Report
+            </a>
         </div>
     </div>
 </div>
 
-<div class="card">
-    <div class="card-body text-center text-muted py-4">
-        <i class="fas fa-chart-bar fa-2x mb-2 d-block"></i>
-        Asset dashboard details will be added soon.
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Total Assets</div>
+                <h2 class="mb-0" style="font-weight:700;">{{ total_assets }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Available</div>
+                <h2 class="mb-0 text-success" style="font-weight:700;">{{ available_count }}</h2>
+                <small class="text-muted">{{ available_pct }}% of total</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Assigned</div>
+                <h2 class="mb-0 text-primary" style="font-weight:700;">{{ assigned_count }}</h2>
+                <small class="text-muted">{{ assigned_pct }}% of total</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Under Maintenance</div>
+                <h2 class="mb-0 text-warning" style="font-weight:700;">{{ maintenance_count }}</h2>
+                <small class="text-muted">{{ maintenance_pct }}% of total</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Asset Value Summary -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="fw-bold mb-3">Asset Value Summary</h5>
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Total Purchase Value</div>
+                <h3 class="mb-0" style="font-weight:700;">Rs. {{ total_purchase_value|floatformat:2 }}</h3>
+            </div>
+            <div class="col-md-4">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Total Current Value</div>
+                <h3 class="mb-0" style="font-weight:700;">Rs. {{ total_current_value|floatformat:2 }}</h3>
+            </div>
+            <div class="col-md-4">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Total Depreciation</div>
+                <h3 class="mb-0" style="font-weight:700;">Rs. {{ total_depreciation|floatformat:2 }}</h3>
+            </div>
+        </div>
+        <div class="mb-2 d-flex justify-content-between align-items-center">
+            <span class="fw-bold">Depreciation Progress</span>
+            <span class="fw-bold">{{ depreciation_pct }}%</span>
+        </div>
+        <div class="progress" style="height:12px;">
+            <div class="progress-bar bg-success" role="progressbar" style="width:{{ depreciation_pct }}%;" aria-valuenow="{{ depreciation_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <div class="mt-3">
+            <a href="{% url 'hrm:asset_depreciation' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-line me-1"></i>View Depreciation Report
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Distribution & Recent Assignments Row -->
+<div class="row mb-4">
+    <!-- Asset Distribution by Type -->
+    <div class="col-lg-7 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3">Asset Distribution by Type</h5>
+                {% for at in asset_types_dist %}
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>{{ at.name }}</span>
+                        <span class="fw-bold">{{ at.asset_count }}</span>
+                    </div>
+                    {% widthratio at.asset_count max_type_count 100 as bar_width %}
+                    <div class="progress" style="height:8px;">
+                        <div class="progress-bar bg-success" role="progressbar" style="width:{% widthratio at.asset_count max_type_count 100 %}%;"></div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="text-center text-muted py-3">
+                    <i class="fas fa-inbox mb-2 d-block"></i>
+                    No asset types found.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Assignments -->
+    <div class="col-lg-5 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3">Recent Assignments</h5>
+                {% for asset in recent_assignments %}
+                <div class="d-flex justify-content-between align-items-start {% if not forloop.last %}border-bottom pb-3 mb-3{% endif %}">
+                    <div>
+                        <strong>{{ asset.name }}</strong>
+                        <br><small class="text-muted">Assigned to: {{ asset.assigned_to.full_name }}</small>
+                        <br><small class="text-muted">{{ asset.updated_at|date:"Y-m-d" }}</small>
+                    </div>
+                    <a href="{% url 'hrm:asset_list' %}" class="btn btn-sm btn-outline-secondary">View</a>
+                </div>
+                {% empty %}
+                <div class="text-center text-muted py-3">
+                    No recent assignments.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Maintenance & Warranties Row -->
+<div class="row mb-4">
+    <!-- Upcoming Maintenance -->
+    <div class="col-lg-7 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3">Upcoming Maintenance</h5>
+                {% for asset in upcoming_maintenance %}
+                <div class="d-flex justify-content-between align-items-start {% if not forloop.last %}border-bottom pb-3 mb-3{% endif %}">
+                    <div>
+                        <strong>{{ asset.name }}</strong>
+                        <br><small class="text-muted">preventive</small>
+                        <br><small class="text-muted">{{ asset.updated_at|date:"Y-m-d" }}</small>
+                    </div>
+                    <a href="{% url 'hrm:asset_list' %}" class="btn btn-sm btn-outline-secondary">View</a>
+                </div>
+                {% empty %}
+                <div class="text-center text-muted py-3">
+                    No upcoming maintenance.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Expiring Warranties -->
+    <div class="col-lg-5 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3">Expiring Warranties</h5>
+                {% for asset in expiring_warranties %}
+                <div class="d-flex justify-content-between align-items-start {% if not forloop.last %}border-bottom pb-3 mb-3{% endif %}">
+                    <div>
+                        <strong>{{ asset.name }}</strong>
+                        <br><small class="text-muted">Expires: {{ asset.warranty_expiry|date:"Y-m-d" }}</small>
+                    </div>
+                    <a href="{% url 'hrm:asset_list' %}" class="btn btn-sm btn-outline-secondary">View</a>
+                </div>
+                {% empty %}
+                <div class="text-center text-muted py-3">
+                    No expiring warranties
+                </div>
+                {% endfor %}
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

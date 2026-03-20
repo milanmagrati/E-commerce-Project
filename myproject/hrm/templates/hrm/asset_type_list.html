@@ -5,34 +5,493 @@
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-tags me-2"></i>Asset Types</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Add Asset Type</button>
+        <button class="btn btn-primary" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Asset Type
+        </button>
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if status_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-3">
+                        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Status</option>
+                            <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                            <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:asset_type_list' %}" class="btn btn-sm btn-outline-danger w-100">Clear Filters</a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Asset Types Table -->
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Type Name</th>
+                        <th>Name <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
                         <th>Description</th>
-                        <th>Total Assets</th>
+                        <th>Assets</th>
                         <th>Status</th>
-                        <th>Actions</th>
+                        <th>Created At <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% for asset_type in asset_types %}
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">
-                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No asset types found. Functionality will be added soon.
+                        <td>{{ forloop.counter|add:asset_types.start_index|add:"-1" }}</td>
+                        <td><strong>{{ asset_type.name }}</strong></td>
+                        <td>{{ asset_type.description|default:"—"|truncatewords:10 }}</td>
+                        <td>
+                            <span class="badge bg-secondary">{{ asset_type.assets.count }}</span>
+                        </td>
+                        <td>
+                            {% if asset_type.status == 'active' %}
+                            <span class="badge bg-success" style="cursor:pointer;" onclick="toggleStatus({{ asset_type.id }})" title="Click to toggle">Active</span>
+                            {% else %}
+                            <span class="badge bg-danger" style="cursor:pointer;" onclick="toggleStatus({{ asset_type.id }})" title="Click to toggle">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ asset_type.created_at|date:"Y-m-d" }}</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewAssetType({{ asset_type.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editAssetType({{ asset_type.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ asset_type.id }}, '{{ asset_type.name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No asset types found.
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        {% if asset_types %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ asset_types.start_index }} to {{ asset_types.end_index }} of {{ total_asset_types }} asset types
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if asset_types.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ asset_types.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in asset_types.paginator.page_range %}
+                    <li class="page-item {% if asset_types.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if asset_types.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ asset_types.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<!-- Add / Edit Asset Type Modal -->
+<div class="modal fade" id="assetTypeModal" tabindex="-1" aria-labelledby="assetTypeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="assetTypeModalLabel">Add New Asset Type</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="assetTypeForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="assetTypeId" value="">
+
+                    <div class="mb-3">
+                        <label for="assetTypeName" class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="assetTypeName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="assetTypeDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="assetTypeDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3" id="statusFieldGroup" style="display:none;">
+                        <label for="assetTypeStatus" class="form-label">Status</label>
+                        <select class="form-select" id="assetTypeStatus" name="status">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="saveBtn" onclick="saveAssetType()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Asset Type Modal -->
+<div class="modal fade" id="viewAssetTypeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-tags me-2"></i>Asset Type Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewAssetTypeBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete asset type <strong id="deleteAssetTypeName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const assetTypeModalEl = document.getElementById('assetTypeModal');
+    const assetTypeModal = new bootstrap.Modal(assetTypeModalEl);
+    let isAddMode = false;
+
+    function openAddModal() {
+        isAddMode = true;
+        document.getElementById('assetTypeModalLabel').textContent = 'Add New Asset Type';
+        document.getElementById('assetTypeForm').reset();
+        document.getElementById('assetTypeId').value = '';
+        document.getElementById('assetTypeStatus').value = 'active';
+        document.getElementById('statusFieldGroup').style.display = 'none';
+        clearAllErrors();
+        assetTypeModal.show();
+    }
+
+    function clearAllErrors() {
+        document.querySelectorAll('.field-error').forEach(el => el.remove());
+        document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        document.querySelectorAll('.shake').forEach(el => el.classList.remove('shake'));
+    }
+
+    function showFieldError(fieldId, message) {
+        const field = document.getElementById(fieldId);
+        const existing = field.parentNode.querySelector('.field-error');
+        if (existing) existing.remove();
+        field.classList.add('is-invalid');
+        field.classList.add('shake');
+        setTimeout(() => field.classList.remove('shake'), 500);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'field-error';
+        errorDiv.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${message}`;
+        field.parentNode.appendChild(errorDiv);
+        field.addEventListener('input', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('input', handler);
+        });
+        field.addEventListener('change', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('change', handler);
+        });
+    }
+
+    function saveAssetType() {
+        const form = document.getElementById('assetTypeForm');
+        const assetTypeIdVal = document.getElementById('assetTypeId').value;
+        const name = document.getElementById('assetTypeName').value.trim();
+
+        clearAllErrors();
+        let hasError = false;
+
+        if (!name) {
+            showFieldError('assetTypeName', 'Asset type name is required.');
+            hasError = true;
+        }
+
+        if (hasError) {
+            showToast('Please fill in all required fields.', 'error');
+            return;
+        }
+
+        const saveBtn = document.getElementById('saveBtn');
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+
+        const formData = new FormData(form);
+        const url = assetTypeIdVal
+            ? `{% url 'hrm:asset_type_list' %}${assetTypeIdVal}/update/`
+            : `{% url 'hrm:asset_type_create' %}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            if (data.success) {
+                assetTypeModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                if (data.error && data.error.toLowerCase().includes('already exists')) {
+                    showFieldError('assetTypeName', data.error);
+                }
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            showToast('Network error. Please try again.', 'error');
+        });
+    }
+
+    function viewAssetType(id) {
+        fetch(`{% url 'hrm:asset_type_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const a = data.asset_type;
+                    document.getElementById('viewAssetTypeBody').innerHTML = `
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:35%">Name</th><td>${escapeHtml(a.name)}</td></tr>
+                            <tr><th>Description</th><td>${escapeHtml(a.description) || '—'}</td></tr>
+                            <tr><th>Status</th><td><span class="badge bg-${a.status === 'active' ? 'success' : 'danger'}">${a.status.charAt(0).toUpperCase() + a.status.slice(1)}</span></td></tr>
+                            <tr><th>Created At</th><td>${a.created_at}</td></tr>
+                            <tr><th>Updated At</th><td>${a.updated_at}</td></tr>
+                        </table>
+                    `;
+                    new bootstrap.Modal(document.getElementById('viewAssetTypeModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load asset type details.', 'error'));
+    }
+
+    function editAssetType(id) {
+        fetch(`{% url 'hrm:asset_type_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    isAddMode = false;
+                    clearAllErrors();
+                    const a = data.asset_type;
+                    document.getElementById('assetTypeModalLabel').textContent = 'Edit Asset Type';
+                    document.getElementById('assetTypeId').value = a.id;
+                    document.getElementById('assetTypeName').value = a.name;
+                    document.getElementById('assetTypeDescription').value = a.description;
+                    document.getElementById('assetTypeStatus').value = a.status;
+                    document.getElementById('statusFieldGroup').style.display = 'block';
+                    assetTypeModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load asset type data.', 'error'));
+    }
+
+    function toggleStatus(id) {
+        fetch(`{% url 'hrm:asset_type_list' %}${id}/toggle-status/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deleteAssetTypeName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch(`{% url 'hrm:asset_type_list' %}${deleteId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showToast(message, type) {
+        document.querySelectorAll('.custom-toast').forEach(t => t.remove());
+
+        const colors = { success: 'linear-gradient(135deg, #10b981, #059669)', error: 'linear-gradient(135deg, #ef4444, #dc2626)', warning: 'linear-gradient(135deg, #f59e0b, #d97706)', info: 'linear-gradient(135deg, #3b82f6, #2563eb)' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const titles = { success: 'Success', error: 'Error', warning: 'Warning', info: 'Info' };
+
+        const toast = document.createElement('div');
+        toast.className = 'custom-toast';
+        toast.style.cssText = `
+            position: fixed; top: 20px; right: 20px; background: ${colors[type] || colors.info};
+            color: white; padding: 0; border-radius: 12px; z-index: 10050;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2); min-width: 320px; max-width: 420px;
+            animation: toastSlideIn 0.4s cubic-bezier(0.68,-0.55,0.265,1.55);
+            overflow: hidden;
+        `;
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;">
+                <div style="background:rgba(255,255,255,0.2);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fas fa-${icons[type] || icons.info}" style="font-size:18px;"></i>
+                </div>
+                <div style="flex:1;">
+                    <div style="font-weight:600;font-size:14px;margin-bottom:2px;">${titles[type] || 'Info'}</div>
+                    <div style="font-size:13px;opacity:0.95;">${escapeHtml(message)}</div>
+                </div>
+                <button onclick="this.closest('.custom-toast').remove()" style="background:none;border:none;color:white;opacity:0.7;cursor:pointer;font-size:16px;padding:4px;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="toast-progress" style="height:3px;background:rgba(255,255,255,0.3);">
+                <div class="toast-progress-bar" style="height:100%;background:rgba(255,255,255,0.7);width:100%;transition:width 3s linear;"></div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+            const bar = toast.querySelector('.toast-progress-bar');
+            if (bar) bar.style.width = '0%';
+        });
+        setTimeout(() => {
+            toast.style.animation = 'toastSlideOut 0.3s ease forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+</script>
+<style>
+    @keyframes toastSlideIn {
+        from { transform: translateX(120%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes toastSlideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(120%); opacity: 0; }
+    }
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-6px); }
+        40% { transform: translateX(6px); }
+        60% { transform: translateX(-4px); }
+        80% { transform: translateX(4px); }
+    }
+    .shake { animation: shake 0.4s ease; }
+    .field-error {
+        color: #dc2626;
+        font-size: 12px;
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        animation: fadeInError 0.3s ease;
+    }
+    @keyframes fadeInError {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .is-invalid {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+    }
+    .is-invalid:focus {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25) !important;
+    }
+</style>
 {% endblock %}

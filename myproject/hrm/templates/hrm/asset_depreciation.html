@@ -1,40 +1,168 @@
 {% extends 'base.html' %}
-{% block title %}Asset Depreciation - HRM{% endblock %}
+{% block title %}Asset Depreciation Report - HRM{% endblock %}
 
 {% block content %}
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fas fa-chart-line me-2"></i>Asset Depreciation</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-calculator me-1"></i>Calculate Depreciation</button>
+        <h2><i class="fas fa-chart-line me-2"></i>Asset Depreciation Report</h2>
+        <div class="d-flex gap-2">
+            <a href="{% url 'hrm:asset_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-list me-1"></i>Asset List
+            </a>
+            <a href="{% url 'hrm:asset_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-bar me-1"></i>Dashboard
+            </a>
+            <button class="btn btn-outline-secondary" onclick="window.print()">
+                <i class="fas fa-print me-1"></i>Print
+            </button>
+            <a href="{% url 'hrm:asset_depreciation' %}?export=csv&search={{ search_query }}&method={{ method_filter }}" class="btn btn-outline-secondary">
+                <i class="fas fa-download me-1"></i>Export CSV
+            </a>
+        </div>
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if method_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-3">
+                        <select name="method" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Methods</option>
+                            <option value="straight_line" {% if method_filter == 'straight_line' %}selected{% endif %}>Straight Line</option>
+                            <option value="declining_balance" {% if method_filter == 'declining_balance' %}selected{% endif %}>Declining Balance</option>
+                            <option value="sum_of_years" {% if method_filter == 'sum_of_years' %}selected{% endif %}>Sum of Years</option>
+                            <option value="units_of_production" {% if method_filter == 'units_of_production' %}selected{% endif %}>Units of Production</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:asset_depreciation' %}" class="btn btn-sm btn-outline-danger w-100">Clear Filters</a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Total Purchase Value</div>
+                <h3 class="mb-0" style="font-weight:700;">Rs. {{ total_purchase|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Total Current Value</div>
+                <h3 class="mb-0" style="font-weight:700;">Rs. {{ total_current|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-uppercase text-muted small fw-bold mb-1">Total Depreciation</div>
+                <h3 class="mb-0" style="font-weight:700;">Rs. {{ total_dep|floatformat:2 }}</h3>
+                <small class="text-muted">{{ total_dep_pct }}% of purchase value</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Depreciation Details Table -->
 <div class="card">
     <div class="card-body">
+        <h5 class="fw-bold mb-3">Asset Depreciation Details</h5>
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
-                        <th>#</th>
-                        <th>Asset Name</th>
-                        <th>Purchase Value</th>
-                        <th>Current Value</th>
-                        <th>Depreciation Rate</th>
-                        <th>Depreciation Method</th>
-                        <th>Accumulated Depreciation</th>
-                        <th>Actions</th>
+                        <th class="text-uppercase text-muted small">Asset Name</th>
+                        <th class="text-uppercase text-muted small">Purchase Date</th>
+                        <th class="text-uppercase text-muted small">Purchase Cost</th>
+                        <th class="text-uppercase text-muted small">Depreciation Method</th>
+                        <th class="text-uppercase text-muted small">Current Value</th>
+                        <th class="text-uppercase text-muted small">Depreciation</th>
+                        <th class="text-uppercase text-muted small text-end">Depreciation %</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% for item in assets %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
+                        <td><strong>{{ item.name }}</strong></td>
+                        <td>{{ item.purchase_date|date:"Y-m-d" }}</td>
+                        <td>Rs. {{ item.purchase_cost|floatformat:2 }}</td>
+                        <td>{{ item.depreciation_method }}</td>
+                        <td>Rs. {{ item.current_value|floatformat:2 }}</td>
+                        <td>Rs. {{ item.depreciation|floatformat:2 }}</td>
+                        <td class="text-end">{{ item.depreciation_pct }}%</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
                             <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No depreciation records found. Functionality will be added soon.
+                            No depreciation records found. Add assets with a depreciation method to see data here.
                         </td>
                     </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        {% if assets %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing page {{ assets.number }} of {{ assets.paginator.num_pages }} ({{ total_count }} assets)
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if assets.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ assets.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&method={{ method_filter }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in assets.paginator.page_range %}
+                    <li class="page-item {% if assets.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&method={{ method_filter }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if assets.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ assets.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&method={{ method_filter }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

@@ -1,13 +1,15 @@
 import json
+from datetime import date, timedelta
+from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from django.http import JsonResponse
-from django.db.models import Q
+from django.http import JsonResponse, HttpResponse
+from django.db.models import Q, Sum, Count
 from django.core.paginator import Paginator
 from django.contrib import messages
 
-from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, AwardType, Award, Promotion, Resignation, Termination, Warning
+from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, AwardType, Award, Promotion, Resignation, Termination, Warning, Complaint, AssetType, Asset
 from .forms import EmployeeForm, EmployeeDocumentForm
 
 
@@ -1795,42 +1797,776 @@ def warning_toggle_status(request, pk):
 
 @login_required
 def complaint_list(request):
+    complaints_qs = Complaint.objects.select_related('complainant', 'against').all()
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+
+    search_query = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    type_filter = request.GET.get('type', '').strip()
+    employee_filter = request.GET.get('employee', '').strip()
+    per_page = request.GET.get('per_page', '10')
+
+    if search_query:
+        complaints_qs = complaints_qs.filter(
+            Q(complainant__full_name__icontains=search_query) |
+            Q(complainant__employee_id__icontains=search_query) |
+            Q(subject__icontains=search_query) |
+            Q(description__icontains=search_query) |
+            Q(assigned_to__icontains=search_query)
+        )
+    if status_filter:
+        complaints_qs = complaints_qs.filter(status=status_filter)
+    if type_filter:
+        complaints_qs = complaints_qs.filter(complaint_type=type_filter)
+    if employee_filter:
+        complaints_qs = complaints_qs.filter(complainant_id=employee_filter)
+
+    paginator = Paginator(complaints_qs, int(per_page) if per_page.isdigit() else 10)
+    page_number = request.GET.get('page', 1)
+    complaints = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Complaints',
+        'complaints': complaints,
+        'total_complaints': paginator.count,
+        'employees': employees,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'type_filter': type_filter,
+        'employee_filter': employee_filter,
+        'per_page': per_page,
     }
     return render(request, 'hrm/complaint_list.html', context)
+
+
+@login_required
+def complaint_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    try:
+        complainant_id = request.POST.get('complainant', '').strip()
+        against_id = request.POST.get('against', '').strip()
+        complaint_type = request.POST.get('complaint_type', '').strip()
+        subject = request.POST.get('subject', '').strip()
+        complaint_date = request.POST.get('complaint_date', '').strip()
+        description = request.POST.get('description', '').strip()
+        assigned_to = request.POST.get('assigned_to', '').strip()
+        is_anonymous = request.POST.get('is_anonymous') == 'on'
+        document = request.FILES.get('document')
+
+        if not all([complainant_id, complaint_type, subject, complaint_date]):
+            return JsonResponse({'success': False, 'error': 'Please fill in all required fields.'})
+
+        complainant = get_object_or_404(Employee, id=complainant_id)
+        against = None
+        if against_id:
+            against = get_object_or_404(Employee, id=against_id)
+
+        complaint = Complaint.objects.create(
+            complainant=complainant,
+            against=against,
+            complaint_type=complaint_type,
+            subject=subject,
+            complaint_date=complaint_date,
+            description=description,
+            assigned_to=assigned_to,
+            is_anonymous=is_anonymous,
+            document=document,
+        )
+        return JsonResponse({'success': True, 'message': f'Complaint "{subject}" created successfully!'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def complaint_detail(request, pk):
+    complaint = get_object_or_404(Complaint.objects.select_related('complainant', 'against'), id=pk)
+    data = {
+        'success': True,
+        'complaint': {
+            'id': complaint.id,
+            'complainant_id': complaint.complainant_id,
+            'complainant_name': 'Anonymous' if complaint.is_anonymous else complaint.complainant.full_name,
+            'complainant_code': complaint.complainant.employee_id,
+            'against_id': complaint.against_id if complaint.against else '',
+            'against_name': complaint.against.full_name if complaint.against else '-',
+            'complaint_type': complaint.complaint_type,
+            'complaint_type_display': complaint.get_complaint_type_display(),
+            'subject': complaint.subject,
+            'complaint_date': str(complaint.complaint_date),
+            'description': complaint.description,
+            'assigned_to': complaint.assigned_to,
+            'is_anonymous': complaint.is_anonymous,
+            'status': complaint.status,
+            'status_display': complaint.get_status_display(),
+            'document_url': complaint.document.url if complaint.document else '',
+            'created_at': complaint.created_at.strftime('%Y-%m-%d %H:%M'),
+            'updated_at': complaint.updated_at.strftime('%Y-%m-%d %H:%M'),
+        }
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def complaint_update(request, pk):
+    complaint = get_object_or_404(Complaint, id=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    try:
+        complainant_id = request.POST.get('complainant', '').strip()
+        against_id = request.POST.get('against', '').strip()
+        complaint_type = request.POST.get('complaint_type', '').strip()
+        subject = request.POST.get('subject', '').strip()
+        complaint_date = request.POST.get('complaint_date', '').strip()
+        description = request.POST.get('description', '').strip()
+        assigned_to = request.POST.get('assigned_to', '').strip()
+        is_anonymous = request.POST.get('is_anonymous') == 'on'
+        status = request.POST.get('status', '').strip()
+        document = request.FILES.get('document')
+
+        if not all([complainant_id, complaint_type, subject, complaint_date]):
+            return JsonResponse({'success': False, 'error': 'Please fill in all required fields.'})
+
+        complainant = get_object_or_404(Employee, id=complainant_id)
+        against = None
+        if against_id:
+            against = get_object_or_404(Employee, id=against_id)
+
+        complaint.complainant = complainant
+        complaint.against = against
+        complaint.complaint_type = complaint_type
+        complaint.subject = subject
+        complaint.complaint_date = complaint_date
+        complaint.description = description
+        complaint.assigned_to = assigned_to
+        complaint.is_anonymous = is_anonymous
+        if status:
+            complaint.status = status
+        if document:
+            complaint.document = document
+        complaint.save()
+        return JsonResponse({'success': True, 'message': f'Complaint "{subject}" updated successfully!'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def complaint_delete(request, pk):
+    complaint = get_object_or_404(Complaint, id=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+    subject = complaint.subject
+    complaint.delete()
+    return JsonResponse({'success': True, 'message': f'Complaint "{subject}" deleted successfully!'})
+
+
+@login_required
+def complaint_toggle_status(request, pk):
+    complaint = get_object_or_404(Complaint, id=pk)
+    if request.method == 'POST':
+        new_status = request.POST.get('status', '').strip()
+        if new_status not in ['submitted', 'under_review', 'resolved', 'dismissed']:
+            return JsonResponse({'success': False, 'error': 'Invalid status.'})
+        complaint.status = new_status
+        complaint.save()
+        return JsonResponse({'success': True, 'message': f'Complaint status updated to "{complaint.get_status_display()}"!'})
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
 
 # ==================== Asset Management ====================
 
 @login_required
 def asset_type_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+
+    asset_types = AssetType.objects.all()
+
+    if search_query:
+        asset_types = asset_types.filter(
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if status_filter:
+        asset_types = asset_types.filter(status=status_filter)
+
+    paginator = Paginator(asset_types, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Asset Types',
+        'asset_types': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'total_asset_types': paginator.count,
     }
     return render(request, 'hrm/asset_type_list.html', context)
 
 
 @login_required
+def asset_type_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Asset type name is required.'})
+
+        if AssetType.objects.filter(name__iexact=name).exists():
+            return JsonResponse({'success': False, 'error': f'Asset type "{name}" already exists.'})
+
+        asset_type = AssetType(
+            name=name,
+            description=request.POST.get('description', '').strip(),
+            status=request.POST.get('status', 'active'),
+        )
+        asset_type.save()
+        return JsonResponse({'success': True, 'message': f'Asset type "{asset_type.name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def asset_type_detail(request, pk):
+    asset_type = get_object_or_404(AssetType, id=pk)
+    return JsonResponse({
+        'success': True,
+        'asset_type': {
+            'id': asset_type.id,
+            'name': asset_type.name,
+            'description': asset_type.description,
+            'status': asset_type.status,
+            'created_at': asset_type.created_at.strftime('%Y-%m-%d'),
+            'updated_at': asset_type.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def asset_type_update(request, pk):
+    asset_type = get_object_or_404(AssetType, id=pk)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Asset type name is required.'})
+
+        if AssetType.objects.filter(name__iexact=name).exclude(id=pk).exists():
+            return JsonResponse({'success': False, 'error': f'Asset type "{name}" already exists.'})
+
+        asset_type.name = name
+        asset_type.description = request.POST.get('description', '').strip()
+        asset_type.status = request.POST.get('status', asset_type.status)
+        asset_type.save()
+        return JsonResponse({'success': True, 'message': f'Asset type "{asset_type.name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def asset_type_delete(request, pk):
+    asset_type = get_object_or_404(AssetType, id=pk)
+
+    if request.method == 'POST':
+        type_name = asset_type.name
+        asset_type.delete()
+        return JsonResponse({'success': True, 'message': f'Asset type "{type_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def asset_type_toggle_status(request, pk):
+    asset_type = get_object_or_404(AssetType, id=pk)
+
+    if request.method == 'POST':
+        asset_type.status = 'inactive' if asset_type.status == 'active' else 'active'
+        asset_type.save()
+        return JsonResponse({'success': True, 'message': f'Asset type "{asset_type.name}" is now {asset_type.get_status_display()}.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
 def asset_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+    condition_filter = request.GET.get('condition', '')
+    asset_type_filter = request.GET.get('asset_type', '')
+    location_filter = request.GET.get('location', '')
+
+    assets = Asset.objects.select_related('asset_type', 'assigned_to').all()
+
+    if search_query:
+        assets = assets.filter(
+            Q(name__icontains=search_query) |
+            Q(asset_code__icontains=search_query) |
+            Q(serial_number__icontains=search_query) |
+            Q(location__icontains=search_query) |
+            Q(supplier__icontains=search_query) |
+            Q(asset_type__name__icontains=search_query) |
+            Q(assigned_to__full_name__icontains=search_query)
+        )
+
+    if status_filter:
+        assets = assets.filter(status=status_filter)
+    if condition_filter:
+        assets = assets.filter(condition=condition_filter)
+    if asset_type_filter:
+        assets = assets.filter(asset_type_id=asset_type_filter)
+    if location_filter:
+        assets = assets.filter(location__icontains=location_filter)
+
+    paginator = Paginator(assets, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Assets',
+        'assets': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'condition_filter': condition_filter,
+        'asset_type_filter': asset_type_filter,
+        'location_filter': location_filter,
+        'total_assets': paginator.count,
+        'asset_types': AssetType.objects.filter(status='active').order_by('name'),
+        'employees': Employee.objects.filter(employee_status='active').order_by('full_name'),
     }
     return render(request, 'hrm/asset_list.html', context)
 
 
 @login_required
+def asset_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        asset_type_id = request.POST.get('asset_type', '').strip()
+        asset_code = request.POST.get('asset_code', '').strip()
+        status = request.POST.get('status', '').strip()
+
+        errors = {}
+        if not name:
+            errors['name'] = 'Asset name is required.'
+        if not asset_type_id:
+            errors['asset_type'] = 'Asset type is required.'
+        if not asset_code:
+            errors['asset_code'] = 'Asset code is required.'
+        elif Asset.objects.filter(asset_code__iexact=asset_code).exists():
+            errors['asset_code'] = f'Asset code "{asset_code}" already exists.'
+        if not status:
+            errors['status'] = 'Status is required.'
+
+        if errors:
+            return JsonResponse({'success': False, 'errors': errors, 'error': list(errors.values())[0]})
+
+        asset_type = get_object_or_404(AssetType, id=asset_type_id)
+
+        purchase_cost = request.POST.get('purchase_cost', '').strip()
+        salvage_value = request.POST.get('salvage_value', '').strip()
+        useful_life = request.POST.get('useful_life_years', '').strip()
+        assigned_to_id = request.POST.get('assigned_to', '').strip()
+
+        asset = Asset(
+            name=name,
+            asset_type=asset_type,
+            serial_number=request.POST.get('serial_number', '').strip(),
+            asset_code=asset_code,
+            purchase_date=request.POST.get('purchase_date', '').strip() or None,
+            purchase_cost=purchase_cost if purchase_cost else None,
+            status=status,
+            condition=request.POST.get('condition', '').strip() or 'new',
+            description=request.POST.get('description', '').strip(),
+            location=request.POST.get('location', '').strip(),
+            supplier=request.POST.get('supplier', '').strip(),
+            warranty_info=request.POST.get('warranty_info', '').strip(),
+            warranty_expiry=request.POST.get('warranty_expiry', '').strip() or None,
+            depreciation_method=request.POST.get('depreciation_method', '').strip() or 'none',
+            useful_life_years=int(useful_life) if useful_life else 5,
+            salvage_value=salvage_value if salvage_value else None,
+        )
+
+        if assigned_to_id:
+            asset.assigned_to = get_object_or_404(Employee, id=assigned_to_id)
+
+        if request.FILES.get('image'):
+            asset.image = request.FILES['image']
+        if request.FILES.get('document'):
+            asset.document = request.FILES['document']
+
+        asset.save()
+        return JsonResponse({'success': True, 'message': f'Asset "{asset.name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def asset_detail(request, pk):
+    asset = get_object_or_404(Asset.objects.select_related('asset_type', 'assigned_to'), id=pk)
+    return JsonResponse({
+        'success': True,
+        'asset': {
+            'id': asset.id,
+            'name': asset.name,
+            'asset_type_id': asset.asset_type_id,
+            'asset_type_name': asset.asset_type.name,
+            'serial_number': asset.serial_number,
+            'asset_code': asset.asset_code,
+            'purchase_date': asset.purchase_date.strftime('%Y-%m-%d') if asset.purchase_date else '',
+            'purchase_cost': str(asset.purchase_cost) if asset.purchase_cost else '',
+            'status': asset.status,
+            'status_display': asset.get_status_display(),
+            'condition': asset.condition,
+            'condition_display': asset.get_condition_display(),
+            'description': asset.description,
+            'location': asset.location,
+            'assigned_to_id': asset.assigned_to_id or '',
+            'assigned_to_name': asset.assigned_to.full_name if asset.assigned_to else '',
+            'supplier': asset.supplier,
+            'warranty_info': asset.warranty_info,
+            'warranty_expiry': asset.warranty_expiry.strftime('%Y-%m-%d') if asset.warranty_expiry else '',
+            'image_url': asset.image.url if asset.image else '',
+            'document_url': asset.document.url if asset.document else '',
+            'depreciation_method': asset.depreciation_method,
+            'depreciation_method_display': asset.get_depreciation_method_display(),
+            'useful_life_years': asset.useful_life_years,
+            'salvage_value': str(asset.salvage_value) if asset.salvage_value else '',
+            'created_at': asset.created_at.strftime('%Y-%m-%d'),
+            'updated_at': asset.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def asset_update(request, pk):
+    asset = get_object_or_404(Asset, id=pk)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        asset_type_id = request.POST.get('asset_type', '').strip()
+        asset_code = request.POST.get('asset_code', '').strip()
+        status = request.POST.get('status', '').strip()
+
+        errors = {}
+        if not name:
+            errors['name'] = 'Asset name is required.'
+        if not asset_type_id:
+            errors['asset_type'] = 'Asset type is required.'
+        if not asset_code:
+            errors['asset_code'] = 'Asset code is required.'
+        elif Asset.objects.filter(asset_code__iexact=asset_code).exclude(id=pk).exists():
+            errors['asset_code'] = f'Asset code "{asset_code}" already exists.'
+        if not status:
+            errors['status'] = 'Status is required.'
+
+        if errors:
+            return JsonResponse({'success': False, 'errors': errors, 'error': list(errors.values())[0]})
+
+        asset.name = name
+        asset.asset_type = get_object_or_404(AssetType, id=asset_type_id)
+        asset.serial_number = request.POST.get('serial_number', '').strip()
+        asset.asset_code = asset_code
+        asset.purchase_date = request.POST.get('purchase_date', '').strip() or None
+        purchase_cost = request.POST.get('purchase_cost', '').strip()
+        asset.purchase_cost = purchase_cost if purchase_cost else None
+        asset.status = status
+        asset.condition = request.POST.get('condition', '').strip() or asset.condition
+        asset.description = request.POST.get('description', '').strip()
+        asset.location = request.POST.get('location', '').strip()
+        asset.supplier = request.POST.get('supplier', '').strip()
+        asset.warranty_info = request.POST.get('warranty_info', '').strip()
+        asset.warranty_expiry = request.POST.get('warranty_expiry', '').strip() or None
+        asset.depreciation_method = request.POST.get('depreciation_method', '').strip() or 'none'
+        useful_life = request.POST.get('useful_life_years', '').strip()
+        asset.useful_life_years = int(useful_life) if useful_life else 5
+        salvage_value = request.POST.get('salvage_value', '').strip()
+        asset.salvage_value = salvage_value if salvage_value else None
+
+        assigned_to_id = request.POST.get('assigned_to', '').strip()
+        asset.assigned_to = get_object_or_404(Employee, id=assigned_to_id) if assigned_to_id else None
+
+        if request.FILES.get('image'):
+            asset.image = request.FILES['image']
+        if request.FILES.get('document'):
+            asset.document = request.FILES['document']
+
+        asset.save()
+        return JsonResponse({'success': True, 'message': f'Asset "{asset.name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def asset_delete(request, pk):
+    asset = get_object_or_404(Asset, id=pk)
+
+    if request.method == 'POST':
+        asset_name = asset.name
+        asset.delete()
+        return JsonResponse({'success': True, 'message': f'Asset "{asset_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def asset_assign(request, pk):
+    asset = get_object_or_404(Asset, id=pk)
+
+    if request.method == 'POST':
+        assigned_to_id = request.POST.get('assigned_to', '').strip()
+        if assigned_to_id:
+            employee = get_object_or_404(Employee, id=assigned_to_id)
+            asset.assigned_to = employee
+            asset.status = 'assigned'
+            asset.save()
+            return JsonResponse({'success': True, 'message': f'Asset "{asset.name}" assigned to {employee.full_name}.'})
+        else:
+            asset.assigned_to = None
+            asset.status = 'available'
+            asset.save()
+            return JsonResponse({'success': True, 'message': f'Asset "{asset.name}" unassigned and set to available.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def asset_checkin(request, pk):
+    asset = get_object_or_404(Asset, id=pk)
+
+    if request.method == 'POST':
+        asset.assigned_to = None
+        asset.status = 'available'
+        asset.save()
+        return JsonResponse({'success': True, 'message': f'Asset "{asset.name}" checked in and is now available.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
 def asset_dashboard(request):
+    today = date.today()
+    assets = Asset.objects.select_related('asset_type', 'assigned_to').all()
+
+    total_assets = assets.count()
+    available_count = assets.filter(status='available').count()
+    assigned_count = assets.filter(status='assigned').count()
+    maintenance_count = assets.filter(status='under_maintenance').count()
+    retired_count = assets.filter(status='retired').count()
+    disposed_count = assets.filter(status='disposed').count()
+
+    # Percentages
+    available_pct = round(available_count / total_assets * 100) if total_assets else 0
+    assigned_pct = round(assigned_count / total_assets * 100) if total_assets else 0
+    maintenance_pct = round(maintenance_count / total_assets * 100) if total_assets else 0
+
+    # Asset value summary
+    total_purchase_value = assets.aggregate(total=Sum('purchase_cost'))['total'] or Decimal('0.00')
+
+    # Calculate depreciation for each asset
+    total_depreciation = Decimal('0.00')
+    for asset in assets:
+        if asset.purchase_cost and asset.depreciation_method != 'none' and asset.purchase_date:
+            years_elapsed = (today - asset.purchase_date).days / Decimal('365.25')
+            salvage = asset.salvage_value or Decimal('0.00')
+            depreciable_amount = asset.purchase_cost - salvage
+            if depreciable_amount > 0 and asset.useful_life_years > 0:
+                if asset.depreciation_method == 'straight_line':
+                    annual_dep = depreciable_amount / asset.useful_life_years
+                    dep = min(annual_dep * years_elapsed, depreciable_amount)
+                elif asset.depreciation_method == 'declining_balance':
+                    rate = Decimal('2.0') / asset.useful_life_years
+                    remaining = asset.purchase_cost
+                    full_years = int(years_elapsed)
+                    for _ in range(full_years):
+                        year_dep = remaining * rate
+                        if remaining - year_dep < salvage:
+                            year_dep = remaining - salvage
+                        remaining -= year_dep
+                    dep = asset.purchase_cost - remaining
+                elif asset.depreciation_method == 'sum_of_years':
+                    n = asset.useful_life_years
+                    syd = n * (n + 1) / 2
+                    dep = Decimal('0.00')
+                    full_years = min(int(years_elapsed), n)
+                    for yr in range(1, full_years + 1):
+                        dep += depreciable_amount * Decimal(str((n - yr + 1) / syd))
+                else:
+                    dep = Decimal('0.00')
+                total_depreciation += max(dep, Decimal('0.00'))
+
+    total_current_value = total_purchase_value - total_depreciation
+    depreciation_pct = round(total_depreciation / total_purchase_value * 100) if total_purchase_value else 0
+
+    # Asset distribution by type
+    asset_types_dist = (
+        AssetType.objects.filter(status='active')
+        .annotate(asset_count=Count('assets'))
+        .order_by('-asset_count', 'name')
+    )
+    max_type_count = max((at.asset_count for at in asset_types_dist), default=1) or 1
+
+    # Recent assignments (assigned assets, ordered by update)
+    recent_assignments = (
+        assets.filter(status='assigned', assigned_to__isnull=False)
+        .order_by('-updated_at')[:5]
+    )
+
+    # Upcoming maintenance (under_maintenance assets)
+    upcoming_maintenance = (
+        assets.filter(status='under_maintenance')
+        .order_by('-updated_at')[:5]
+    )
+
+    # Expiring warranties (within next 90 days)
+    warranty_deadline = today + timedelta(days=90)
+    expiring_warranties = (
+        assets.filter(warranty_expiry__gte=today, warranty_expiry__lte=warranty_deadline)
+        .order_by('warranty_expiry')[:5]
+    )
+
     context = {
         'page_title': 'Asset Dashboard',
+        'total_assets': total_assets,
+        'available_count': available_count,
+        'assigned_count': assigned_count,
+        'maintenance_count': maintenance_count,
+        'retired_count': retired_count,
+        'disposed_count': disposed_count,
+        'available_pct': available_pct,
+        'assigned_pct': assigned_pct,
+        'maintenance_pct': maintenance_pct,
+        'total_purchase_value': total_purchase_value,
+        'total_current_value': total_current_value,
+        'total_depreciation': total_depreciation,
+        'depreciation_pct': depreciation_pct,
+        'asset_types_dist': asset_types_dist,
+        'max_type_count': max_type_count,
+        'recent_assignments': recent_assignments,
+        'upcoming_maintenance': upcoming_maintenance,
+        'expiring_warranties': expiring_warranties,
     }
     return render(request, 'hrm/asset_dashboard.html', context)
 
 
 @login_required
 def asset_depreciation(request):
+    today = date.today()
+    search_query = request.GET.get('search', '')
+    method_filter = request.GET.get('method', '')
+    per_page = request.GET.get('per_page', '10')
+
+    assets = Asset.objects.select_related('asset_type').filter(
+        depreciation_method__in=['straight_line', 'declining_balance', 'sum_of_years', 'units_of_production'],
+        purchase_cost__isnull=False,
+        purchase_date__isnull=False,
+    )
+
+    if search_query:
+        assets = assets.filter(
+            Q(name__icontains=search_query) |
+            Q(asset_code__icontains=search_query) |
+            Q(serial_number__icontains=search_query)
+        )
+
+    if method_filter:
+        assets = assets.filter(depreciation_method=method_filter)
+
+    # Calculate depreciation for each asset
+    asset_data = []
+    total_purchase = Decimal('0.00')
+    total_current = Decimal('0.00')
+    total_dep = Decimal('0.00')
+
+    for asset in assets:
+        years_elapsed = (today - asset.purchase_date).days / Decimal('365.25')
+        salvage = asset.salvage_value or Decimal('0.00')
+        depreciable_amount = asset.purchase_cost - salvage
+        dep = Decimal('0.00')
+
+        if depreciable_amount > 0 and asset.useful_life_years > 0:
+            if asset.depreciation_method == 'straight_line':
+                annual_dep = depreciable_amount / asset.useful_life_years
+                dep = min(annual_dep * years_elapsed, depreciable_amount)
+            elif asset.depreciation_method == 'declining_balance':
+                rate = Decimal('2.0') / asset.useful_life_years
+                remaining = asset.purchase_cost
+                full_years = int(years_elapsed)
+                for _ in range(full_years):
+                    year_dep = remaining * rate
+                    if remaining - year_dep < salvage:
+                        year_dep = remaining - salvage
+                    remaining -= year_dep
+                dep = asset.purchase_cost - remaining
+            elif asset.depreciation_method == 'sum_of_years':
+                n = asset.useful_life_years
+                syd = n * (n + 1) / 2
+                full_years = min(int(years_elapsed), n)
+                for yr in range(1, full_years + 1):
+                    dep += depreciable_amount * Decimal(str((n - yr + 1) / syd))
+
+        dep = max(dep, Decimal('0.00'))
+        current_value = asset.purchase_cost - dep
+        dep_pct = round(dep / asset.purchase_cost * 100, 2) if asset.purchase_cost else 0
+
+        total_purchase += asset.purchase_cost
+        total_current += current_value
+        total_dep += dep
+
+        asset_data.append({
+            'id': asset.id,
+            'name': asset.name,
+            'asset_code': asset.asset_code,
+            'purchase_date': asset.purchase_date,
+            'purchase_cost': asset.purchase_cost,
+            'depreciation_method': asset.get_depreciation_method_display(),
+            'current_value': current_value,
+            'depreciation': dep,
+            'depreciation_pct': dep_pct,
+        })
+
+    total_dep_pct = round(total_dep / total_purchase * 100) if total_purchase else 0
+
+    paginator = Paginator(asset_data, int(per_page) if per_page.isdigit() else 10)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    # Handle CSV export
+    if request.GET.get('export') == 'csv':
+        import csv
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="asset_depreciation_report.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Asset Name', 'Asset Code', 'Purchase Date', 'Purchase Cost', 'Depreciation Method', 'Current Value', 'Depreciation', 'Depreciation %'])
+        for item in asset_data:
+            writer.writerow([
+                item['name'], item['asset_code'],
+                item['purchase_date'].strftime('%Y-%m-%d') if item['purchase_date'] else '',
+                f"{item['purchase_cost']:.2f}",
+                item['depreciation_method'],
+                f"{item['current_value']:.2f}",
+                f"{item['depreciation']:.2f}",
+                f"{item['depreciation_pct']:.2f}%",
+            ])
+        return response
+
     context = {
-        'page_title': 'Asset Depreciation',
+        'page_title': 'Asset Depreciation Report',
+        'assets': page_obj,
+        'search_query': search_query,
+        'method_filter': method_filter,
+        'per_page': per_page,
+        'total_purchase': total_purchase,
+        'total_current': total_current,
+        'total_dep': total_dep,
+        'total_dep_pct': total_dep_pct,
+        'total_count': paginator.count,
     }
     return render(request, 'hrm/asset_depreciation.html', context)
 

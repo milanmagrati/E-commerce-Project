@@ -5,37 +5,750 @@
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-laptop me-2"></i>Assets</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Add Asset</button>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Asset Name</th>
-                        <th>Asset ID</th>
-                        <th>Category</th>
-                        <th>Assigned To</th>
-                        <th>Purchase Date</th>
-                        <th>Condition</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td colspan="9" class="text-center text-muted py-4">
-                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No assets found. Functionality will be added soon.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <div class="d-flex gap-2">
+            <a href="{% url 'hrm:asset_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-bar me-1"></i>Dashboard
+            </a>
+            <a href="{% url 'hrm:asset_depreciation' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-line me-1"></i>Depreciation Report
+            </a>
+            <button class="btn btn-primary" onclick="openAddModal()">
+                <i class="fas fa-plus me-1"></i>Add Asset
+            </button>
         </div>
     </div>
 </div>
+
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if status_filter or condition_filter or asset_type_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-2">
+                        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Status</option>
+                            <option value="available" {% if status_filter == 'available' %}selected{% endif %}>Available</option>
+                            <option value="assigned" {% if status_filter == 'assigned' %}selected{% endif %}>Assigned</option>
+                            <option value="under_maintenance" {% if status_filter == 'under_maintenance' %}selected{% endif %}>Under Maintenance</option>
+                            <option value="retired" {% if status_filter == 'retired' %}selected{% endif %}>Retired</option>
+                            <option value="disposed" {% if status_filter == 'disposed' %}selected{% endif %}>Disposed</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="condition" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Conditions</option>
+                            <option value="new" {% if condition_filter == 'new' %}selected{% endif %}>New</option>
+                            <option value="good" {% if condition_filter == 'good' %}selected{% endif %}>Good</option>
+                            <option value="fair" {% if condition_filter == 'fair' %}selected{% endif %}>Fair</option>
+                            <option value="poor" {% if condition_filter == 'poor' %}selected{% endif %}>Poor</option>
+                            <option value="damaged" {% if condition_filter == 'damaged' %}selected{% endif %}>Damaged</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select name="asset_type" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Asset Types</option>
+                            {% for at in asset_types %}
+                            <option value="{{ at.id }}" {% if asset_type_filter == at.id|stringformat:"d" %}selected{% endif %}>{{ at.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:asset_list' %}" class="btn btn-sm btn-outline-danger w-100">Clear Filters</a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Assets Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Name <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
+                        <th>Asset Code</th>
+                        <th>Status</th>
+                        <th>Assigned To</th>
+                        <th>Purchase Date <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
+                        <th>Purchase Cost <i class="fas fa-sort text-muted" style="font-size:0.75rem;"></i></th>
+                        <th>Location</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for asset in assets %}
+                    <tr>
+                        <td>{{ forloop.counter|add:assets.start_index|add:"-1" }}</td>
+                        <td>
+                            <strong>{{ asset.name }}</strong>
+                            <br><small class="text-muted">{{ asset.asset_type.name }}</small>
+                        </td>
+                        <td>
+                            <span>{{ asset.asset_code }}</span>
+                            {% if asset.serial_number %}
+                            <br><small class="text-muted">{{ asset.serial_number }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if asset.status == 'available' %}
+                            <span class="badge bg-success">Available</span>
+                            {% elif asset.status == 'assigned' %}
+                            <span class="badge bg-info">Assigned</span>
+                            {% elif asset.status == 'under_maintenance' %}
+                            <span class="badge bg-warning text-dark">Maintenance</span>
+                            {% elif asset.status == 'retired' %}
+                            <span class="badge bg-secondary">Retired</span>
+                            {% elif asset.status == 'disposed' %}
+                            <span class="badge bg-danger">Disposed</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if asset.assigned_to %}
+                            {{ asset.assigned_to.full_name }}
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ asset.purchase_date|date:"Y-m-d"|default:"-" }}</td>
+                        <td>
+                            {% if asset.purchase_cost %}
+                            Rs. {{ asset.purchase_cost|floatformat:2 }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>{{ asset.location|default:"-" }}</td>
+                        <td class="text-center text-nowrap">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewAsset({{ asset.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editAsset({{ asset.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-success me-1" title="Assign" onclick="openAssignModal({{ asset.id }}, '{{ asset.name|escapejs }}', '{{ asset.assigned_to_id|default:"" }}')">
+                                <i class="fas fa-user-tag"></i>
+                            </button>
+                            {% if asset.status == 'assigned' %}
+                            <button class="btn btn-sm btn-outline-secondary me-1" title="Check In" onclick="checkinAsset({{ asset.id }}, '{{ asset.name|escapejs }}')">
+                                <i class="fas fa-check-circle"></i>
+                            </button>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ asset.id }}, '{{ asset.name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No assets found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if assets %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ assets.start_index }} to {{ assets.end_index }} of {{ total_assets }} assets
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if assets.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ assets.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&condition={{ condition_filter }}&asset_type={{ asset_type_filter }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in assets.paginator.page_range %}
+                    <li class="page-item {% if assets.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&condition={{ condition_filter }}&asset_type={{ asset_type_filter }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if assets.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ assets.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&condition={{ condition_filter }}&asset_type={{ asset_type_filter }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Add / Edit Asset Modal -->
+<div class="modal fade" id="assetModal" tabindex="-1" aria-labelledby="assetModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="assetModalLabel">Add New Asset</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+                <form id="assetForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <input type="hidden" id="assetId" value="">
+
+                    <div class="row g-3">
+                        <!-- Name -->
+                        <div class="col-md-6">
+                            <label for="assetName" class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="assetName" name="name">
+                        </div>
+                        <!-- Asset Type -->
+                        <div class="col-md-6">
+                            <label for="assetAssetType" class="form-label">Asset Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="assetAssetType" name="asset_type">
+                                <option value="">Select Asset Type</option>
+                                {% for at in asset_types %}
+                                <option value="{{ at.id }}">{{ at.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <!-- Serial Number -->
+                        <div class="col-md-6">
+                            <label for="assetSerialNumber" class="form-label">Serial Number</label>
+                            <input type="text" class="form-control" id="assetSerialNumber" name="serial_number">
+                        </div>
+                        <!-- Asset Code -->
+                        <div class="col-md-6">
+                            <label for="assetCode" class="form-label">Asset Code <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="assetCode" name="asset_code">
+                        </div>
+                        <!-- Purchase Date -->
+                        <div class="col-md-6">
+                            <label for="assetPurchaseDate" class="form-label">Purchase Date</label>
+                            <input type="date" class="form-control" id="assetPurchaseDate" name="purchase_date">
+                        </div>
+                        <!-- Purchase Cost -->
+                        <div class="col-md-6">
+                            <label for="assetPurchaseCost" class="form-label">Purchase Cost</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="assetPurchaseCost" name="purchase_cost">
+                        </div>
+                        <!-- Status -->
+                        <div class="col-md-6">
+                            <label for="assetStatus" class="form-label">Status <span class="text-danger">*</span></label>
+                            <select class="form-select" id="assetStatus" name="status">
+                                <option value="">Select Status</option>
+                                <option value="available">Available</option>
+                                <option value="assigned">Assigned</option>
+                                <option value="under_maintenance">Under Maintenance</option>
+                                <option value="retired">Retired</option>
+                                <option value="disposed">Disposed</option>
+                            </select>
+                        </div>
+                        <!-- Condition -->
+                        <div class="col-md-6">
+                            <label for="assetCondition" class="form-label">Condition</label>
+                            <select class="form-select" id="assetCondition" name="condition">
+                                <option value="">Select Condition</option>
+                                <option value="new">New</option>
+                                <option value="good">Good</option>
+                                <option value="fair">Fair</option>
+                                <option value="poor">Poor</option>
+                                <option value="damaged">Damaged</option>
+                            </select>
+                        </div>
+                        <!-- Description -->
+                        <div class="col-12">
+                            <label for="assetDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="assetDescription" name="description" rows="3"></textarea>
+                        </div>
+                        <!-- Location -->
+                        <div class="col-md-6">
+                            <label for="assetLocation" class="form-label">Location</label>
+                            <input type="text" class="form-control" id="assetLocation" name="location">
+                        </div>
+                        <!-- Assigned To -->
+                        <div class="col-md-6" id="assignedToGroup">
+                            <label for="assetAssignedTo" class="form-label">Assigned To</label>
+                            <select class="form-select" id="assetAssignedTo" name="assigned_to">
+                                <option value="">Not Assigned</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <!-- Supplier -->
+                        <div class="col-md-6">
+                            <label for="assetSupplier" class="form-label">Supplier</label>
+                            <input type="text" class="form-control" id="assetSupplier" name="supplier">
+                        </div>
+                        <!-- Warranty Info -->
+                        <div class="col-md-6">
+                            <label for="assetWarrantyInfo" class="form-label">Warranty Information</label>
+                            <input type="text" class="form-control" id="assetWarrantyInfo" name="warranty_info">
+                        </div>
+                        <!-- Warranty Expiry -->
+                        <div class="col-md-6">
+                            <label for="assetWarrantyExpiry" class="form-label">Warranty Expiry Date</label>
+                            <input type="date" class="form-control" id="assetWarrantyExpiry" name="warranty_expiry">
+                        </div>
+                        <!-- Image -->
+                        <div class="col-md-6">
+                            <label for="assetImage" class="form-label">Image</label>
+                            <input type="file" class="form-control" id="assetImage" name="image" accept="image/*">
+                        </div>
+                        <!-- Document -->
+                        <div class="col-md-6">
+                            <label for="assetDocument" class="form-label">Documents</label>
+                            <input type="file" class="form-control" id="assetDocument" name="document">
+                        </div>
+                        <!-- Depreciation Method -->
+                        <div class="col-md-6">
+                            <label for="assetDepreciationMethod" class="form-label">Depreciation Method</label>
+                            <select class="form-select" id="assetDepreciationMethod" name="depreciation_method">
+                                <option value="none">None</option>
+                                <option value="straight_line">Straight Line</option>
+                                <option value="declining_balance">Declining Balance</option>
+                                <option value="sum_of_years">Sum of Years Digits</option>
+                                <option value="units_of_production">Units of Production</option>
+                            </select>
+                        </div>
+                        <!-- Useful Life -->
+                        <div class="col-md-3">
+                            <label for="assetUsefulLife" class="form-label">Useful Life (Years)</label>
+                            <input type="number" min="1" class="form-control" id="assetUsefulLife" name="useful_life_years" value="5">
+                        </div>
+                        <!-- Salvage Value -->
+                        <div class="col-md-3">
+                            <label for="assetSalvageValue" class="form-label">Salvage Value</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="assetSalvageValue" name="salvage_value">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="saveBtn" onclick="saveAsset()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Asset Modal -->
+<div class="modal fade" id="viewAssetModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-laptop me-2"></i>Asset Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewAssetBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Asset Modal -->
+<div class="modal fade" id="assignModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-tag me-2"></i>Assign Asset</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Assign <strong id="assignAssetName"></strong> to an employee:</p>
+                <form id="assignForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="assignAssetId" value="">
+                    <div class="mb-3">
+                        <label for="assignEmployee" class="form-label">Employee</label>
+                        <select class="form-select" id="assignEmployee" name="assigned_to">
+                            <option value="">Not Assigned (Available)</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="assignAsset()">Assign</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete asset <strong id="deleteAssetName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const assetModalEl = document.getElementById('assetModal');
+    const assetModal = new bootstrap.Modal(assetModalEl);
+
+    // ========== Add / Edit Modal ==========
+    function openAddModal() {
+        document.getElementById('assetModalLabel').textContent = 'Add New Asset';
+        document.getElementById('assetForm').reset();
+        document.getElementById('assetId').value = '';
+        document.getElementById('assetUsefulLife').value = '5';
+        // Reset file inputs
+        document.getElementById('assetImage').value = '';
+        document.getElementById('assetDocument').value = '';
+        clearAllErrors();
+        assetModal.show();
+    }
+
+    function clearAllErrors() {
+        document.querySelectorAll('.field-error').forEach(el => el.remove());
+        document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        document.querySelectorAll('.shake').forEach(el => el.classList.remove('shake'));
+    }
+
+    function showFieldError(fieldId, message) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+        const existing = field.parentNode.querySelector('.field-error');
+        if (existing) existing.remove();
+        field.classList.add('is-invalid');
+        field.classList.add('shake');
+        setTimeout(() => field.classList.remove('shake'), 500);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'field-error';
+        errorDiv.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${message}`;
+        field.parentNode.appendChild(errorDiv);
+        field.addEventListener('input', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('input', handler);
+        });
+        field.addEventListener('change', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('change', handler);
+        });
+    }
+
+    function saveAsset() {
+        const form = document.getElementById('assetForm');
+        const assetIdVal = document.getElementById('assetId').value;
+        const name = document.getElementById('assetName').value.trim();
+        const assetType = document.getElementById('assetAssetType').value;
+        const assetCode = document.getElementById('assetCode').value.trim();
+        const status = document.getElementById('assetStatus').value;
+
+        clearAllErrors();
+        let hasError = false;
+
+        if (!name) { showFieldError('assetName', 'Asset name is required.'); hasError = true; }
+        if (!assetType) { showFieldError('assetAssetType', 'Asset type is required.'); hasError = true; }
+        if (!assetCode) { showFieldError('assetCode', 'Asset code is required.'); hasError = true; }
+        if (!status) { showFieldError('assetStatus', 'Status is required.'); hasError = true; }
+
+        if (hasError) {
+            showToast('Please fill in all required fields.', 'error');
+            return;
+        }
+
+        const saveBtn = document.getElementById('saveBtn');
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+
+        const formData = new FormData(form);
+        const url = assetIdVal
+            ? `{% url 'hrm:asset_list' %}${assetIdVal}/update/`
+            : `{% url 'hrm:asset_create' %}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            if (data.success) {
+                assetModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                if (data.errors) {
+                    const fieldMap = {
+                        'name': 'assetName',
+                        'asset_type': 'assetAssetType',
+                        'asset_code': 'assetCode',
+                        'status': 'assetStatus',
+                    };
+                    for (const [key, msg] of Object.entries(data.errors)) {
+                        if (fieldMap[key]) showFieldError(fieldMap[key], msg);
+                    }
+                }
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            showToast('Network error. Please try again.', 'error');
+        });
+    }
+
+    // ========== View ==========
+    function viewAsset(id) {
+        fetch(`{% url 'hrm:asset_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const a = data.asset;
+                    let html = `<div class="row"><div class="col-md-6">
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:40%">Name</th><td>${escapeHtml(a.name)}</td></tr>
+                            <tr><th>Asset Type</th><td>${escapeHtml(a.asset_type_name)}</td></tr>
+                            <tr><th>Asset Code</th><td>${escapeHtml(a.asset_code)}</td></tr>
+                            <tr><th>Serial Number</th><td>${escapeHtml(a.serial_number) || '—'}</td></tr>
+                            <tr><th>Status</th><td><span class="badge bg-${getStatusColor(a.status)}">${escapeHtml(a.status_display)}</span></td></tr>
+                            <tr><th>Condition</th><td>${escapeHtml(a.condition_display)}</td></tr>
+                            <tr><th>Assigned To</th><td>${escapeHtml(a.assigned_to_name) || '—'}</td></tr>
+                            <tr><th>Location</th><td>${escapeHtml(a.location) || '—'}</td></tr>
+                        </table></div><div class="col-md-6">
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:40%">Purchase Date</th><td>${a.purchase_date || '—'}</td></tr>
+                            <tr><th>Purchase Cost</th><td>${a.purchase_cost ? 'Rs. ' + parseFloat(a.purchase_cost).toLocaleString('en-US', {minimumFractionDigits:2}) : '—'}</td></tr>
+                            <tr><th>Supplier</th><td>${escapeHtml(a.supplier) || '—'}</td></tr>
+                            <tr><th>Warranty Info</th><td>${escapeHtml(a.warranty_info) || '—'}</td></tr>
+                            <tr><th>Warranty Expiry</th><td>${a.warranty_expiry || '—'}</td></tr>
+                            <tr><th>Depreciation</th><td>${escapeHtml(a.depreciation_method_display)}</td></tr>
+                            <tr><th>Useful Life</th><td>${a.useful_life_years} Years</td></tr>
+                            <tr><th>Salvage Value</th><td>${a.salvage_value ? 'Rs. ' + parseFloat(a.salvage_value).toLocaleString('en-US', {minimumFractionDigits:2}) : '—'}</td></tr>
+                        </table></div></div>`;
+                    if (a.description) {
+                        html += `<div class="mt-3"><strong>Description:</strong><p class="mb-0 mt-1">${escapeHtml(a.description)}</p></div>`;
+                    }
+                    if (a.image_url) {
+                        html += `<div class="mt-3"><strong>Image:</strong><br><img src="${a.image_url}" class="img-thumbnail mt-1" style="max-height:200px;"></div>`;
+                    }
+                    if (a.document_url) {
+                        html += `<div class="mt-2"><strong>Document:</strong> <a href="${a.document_url}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-download me-1"></i>Download</a></div>`;
+                    }
+                    html += `<hr><small class="text-muted">Created: ${a.created_at} | Updated: ${a.updated_at}</small>`;
+                    document.getElementById('viewAssetBody').innerHTML = html;
+                    new bootstrap.Modal(document.getElementById('viewAssetModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load asset details.', 'error'));
+    }
+
+    function getStatusColor(status) {
+        const map = { available: 'success', assigned: 'info', under_maintenance: 'warning', retired: 'secondary', disposed: 'danger' };
+        return map[status] || 'secondary';
+    }
+
+    // ========== Edit ==========
+    function editAsset(id) {
+        fetch(`{% url 'hrm:asset_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    clearAllErrors();
+                    const a = data.asset;
+                    document.getElementById('assetModalLabel').textContent = 'Edit Asset';
+                    document.getElementById('assetId').value = a.id;
+                    document.getElementById('assetName').value = a.name;
+                    document.getElementById('assetAssetType').value = a.asset_type_id;
+                    document.getElementById('assetSerialNumber').value = a.serial_number;
+                    document.getElementById('assetCode').value = a.asset_code;
+                    document.getElementById('assetPurchaseDate').value = a.purchase_date;
+                    document.getElementById('assetPurchaseCost').value = a.purchase_cost;
+                    document.getElementById('assetStatus').value = a.status;
+                    document.getElementById('assetCondition').value = a.condition;
+                    document.getElementById('assetDescription').value = a.description;
+                    document.getElementById('assetLocation').value = a.location;
+                    document.getElementById('assetAssignedTo').value = a.assigned_to_id;
+                    document.getElementById('assetSupplier').value = a.supplier;
+                    document.getElementById('assetWarrantyInfo').value = a.warranty_info;
+                    document.getElementById('assetWarrantyExpiry').value = a.warranty_expiry;
+                    document.getElementById('assetDepreciationMethod').value = a.depreciation_method;
+                    document.getElementById('assetUsefulLife').value = a.useful_life_years;
+                    document.getElementById('assetSalvageValue').value = a.salvage_value;
+                    // Clear file inputs (can't pre-fill)
+                    document.getElementById('assetImage').value = '';
+                    document.getElementById('assetDocument').value = '';
+                    assetModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load asset data.', 'error'));
+    }
+
+    // ========== Assign ==========
+    function openAssignModal(id, name, currentAssignedTo) {
+        document.getElementById('assignAssetId').value = id;
+        document.getElementById('assignAssetName').textContent = name;
+        document.getElementById('assignEmployee').value = currentAssignedTo || '';
+        new bootstrap.Modal(document.getElementById('assignModal')).show();
+    }
+
+    function assignAsset() {
+        const id = document.getElementById('assignAssetId').value;
+        const formData = new FormData(document.getElementById('assignForm'));
+        fetch(`{% url 'hrm:asset_list' %}${id}/assign/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('assignModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    // ========== Check In ==========
+    function checkinAsset(id, name) {
+        if (!confirm(`Check in "${name}" and set it as available?`)) return;
+        fetch(`{% url 'hrm:asset_list' %}${id}/checkin/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    // ========== Delete ==========
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deleteAssetName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch(`{% url 'hrm:asset_list' %}${deleteId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    // ========== Utilities ==========
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showToast(message, type) {
+        document.querySelectorAll('.custom-toast').forEach(t => t.remove());
+        const colors = { success: 'linear-gradient(135deg, #10b981, #059669)', error: 'linear-gradient(135deg, #ef4444, #dc2626)', warning: 'linear-gradient(135deg, #f59e0b, #d97706)', info: 'linear-gradient(135deg, #3b82f6, #2563eb)' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const titles = { success: 'Success', error: 'Error', warning: 'Warning', info: 'Info' };
+        const toast = document.createElement('div');
+        toast.className = 'custom-toast';
+        toast.style.cssText = `position:fixed;top:20px;right:20px;background:${colors[type]||colors.info};color:white;padding:0;border-radius:12px;z-index:10050;box-shadow:0 8px 32px rgba(0,0,0,0.2);min-width:320px;max-width:420px;animation:toastSlideIn 0.4s cubic-bezier(0.68,-0.55,0.265,1.55);overflow:hidden;`;
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;">
+                <div style="background:rgba(255,255,255,0.2);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fas fa-${icons[type]||icons.info}" style="font-size:18px;"></i>
+                </div>
+                <div style="flex:1;">
+                    <div style="font-weight:600;font-size:14px;margin-bottom:2px;">${titles[type]||'Info'}</div>
+                    <div style="font-size:13px;opacity:0.95;">${escapeHtml(message)}</div>
+                </div>
+                <button onclick="this.closest('.custom-toast').remove()" style="background:none;border:none;color:white;opacity:0.7;cursor:pointer;font-size:16px;padding:4px;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="toast-progress" style="height:3px;background:rgba(255,255,255,0.3);">
+                <div class="toast-progress-bar" style="height:100%;background:rgba(255,255,255,0.7);width:100%;transition:width 3s linear;"></div>
+            </div>`;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => { const bar = toast.querySelector('.toast-progress-bar'); if (bar) bar.style.width = '0%'; });
+        setTimeout(() => { toast.style.animation = 'toastSlideOut 0.3s ease forwards'; setTimeout(() => toast.remove(), 300); }, 3500);
+    }
+</script>
+<style>
+    @keyframes toastSlideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes toastSlideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
+    @keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+    .shake { animation: shake 0.4s ease; }
+    .field-error { color: #dc2626; font-size: 12px; margin-top: 4px; display: flex; align-items: center; animation: fadeInError 0.3s ease; }
+    @keyframes fadeInError { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .is-invalid { border-color: #dc2626 !important; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important; }
+    .is-invalid:focus { border-color: #dc2626 !important; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25) !important; }
+</style>
 {% endblock %}

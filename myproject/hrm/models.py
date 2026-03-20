@@ -351,3 +351,120 @@ class Warning(models.Model):
 
     def __str__(self):
         return f"{self.employee.full_name} - {self.subject} ({self.warning_date})"
+
+
+class Complaint(models.Model):
+    TYPE_CHOICES = [
+        ('harassment', 'Harassment'),
+        ('discrimination', 'Discrimination'),
+        ('workplace_conditions', 'Workplace Conditions'),
+        ('management_issues', 'Management Issues'),
+        ('policy_violation', 'Policy Violation'),
+        ('safety', 'Safety'),
+        ('other', 'Other'),
+    ]
+    STATUS_CHOICES = [
+        ('submitted', 'Submitted'),
+        ('under_review', 'Under Review'),
+        ('resolved', 'Resolved'),
+        ('dismissed', 'Dismissed'),
+    ]
+
+    complainant = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='complaints_filed')
+    against = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name='complaints_against')
+    complaint_type = models.CharField(max_length=25, choices=TYPE_CHOICES)
+    subject = models.CharField(max_length=255)
+    complaint_date = models.DateField()
+    description = models.TextField(blank=True, default='')
+    assigned_to = models.CharField(max_length=255, blank=True, default='')
+    is_anonymous = models.BooleanField(default=False)
+    document = models.FileField(upload_to='complaint_documents/', blank=True, null=True)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='submitted')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        name = 'Anonymous' if self.is_anonymous else self.complainant.full_name
+        return f"{name} - {self.subject} ({self.complaint_date})"
+
+
+class AssetType(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
+
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Asset Type'
+        verbose_name_plural = 'Asset Types'
+
+    def __str__(self):
+        return self.name
+
+
+class Asset(models.Model):
+    STATUS_CHOICES = [
+        ('available', 'Available'),
+        ('assigned', 'Assigned'),
+        ('under_maintenance', 'Under Maintenance'),
+        ('retired', 'Retired'),
+        ('disposed', 'Disposed'),
+    ]
+    CONDITION_CHOICES = [
+        ('new', 'New'),
+        ('good', 'Good'),
+        ('fair', 'Fair'),
+        ('poor', 'Poor'),
+        ('damaged', 'Damaged'),
+    ]
+    DEPRECIATION_METHOD_CHOICES = [
+        ('straight_line', 'Straight Line'),
+        ('declining_balance', 'Declining Balance'),
+        ('sum_of_years', 'Sum of Years Digits'),
+        ('units_of_production', 'Units of Production'),
+        ('none', 'None'),
+    ]
+
+    name = models.CharField(max_length=255)
+    asset_type = models.ForeignKey(AssetType, on_delete=models.CASCADE, related_name='assets')
+    serial_number = models.CharField(max_length=100, blank=True, default='')
+    asset_code = models.CharField(max_length=100, unique=True)
+    purchase_date = models.DateField(null=True, blank=True)
+    purchase_cost = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
+    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='new')
+    description = models.TextField(blank=True, default='')
+    location = models.CharField(max_length=255, blank=True, default='')
+    assigned_to = models.ForeignKey(
+        'Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_assets'
+    )
+    supplier = models.CharField(max_length=255, blank=True, default='')
+    warranty_info = models.CharField(max_length=255, blank=True, default='')
+    warranty_expiry = models.DateField(null=True, blank=True)
+    image = models.ImageField(upload_to='asset_images/', blank=True, null=True)
+    document = models.FileField(upload_to='asset_documents/', blank=True, null=True)
+    depreciation_method = models.CharField(
+        max_length=25, choices=DEPRECIATION_METHOD_CHOICES, default='none'
+    )
+    useful_life_years = models.PositiveIntegerField(default=5)
+    salvage_value = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Asset'
+        verbose_name_plural = 'Assets'
+
+    def __str__(self):
+        return f"{self.name} ({self.asset_code})"

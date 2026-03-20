@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Branch, Department, Designation, Employee, EmployeeDocument
+from .models import Branch, Department, Designation, Employee, EmployeeDocument, AssetType, Asset
 
 
 @admin.register(Branch)
@@ -34,3 +34,17 @@ class EmployeeAdmin(admin.ModelAdmin):
     list_filter = ('employee_status', 'employment_type', 'department', 'branch')
     search_fields = ('full_name', 'employee_id', 'email', 'phone')
     inlines = [EmployeeDocumentInline]
+
+
+@admin.register(AssetType)
+class AssetTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'status', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('name', 'description')
+
+
+@admin.register(Asset)
+class AssetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'asset_type', 'asset_code', 'status', 'condition', 'assigned_to', 'location')
+    list_filter = ('status', 'condition', 'asset_type', 'depreciation_method')
+    search_fields = ('name', 'asset_code', 'serial_number', 'location', 'supplier')
