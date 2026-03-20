@@ -5,14 +5,69 @@
 <div class="row">
     <div class="col-12 d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-level-up-alt me-2"></i>Promotions</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Add Promotion</button>
+        <button class="btn btn-primary" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Promotion
+        </button>
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+                    <i class="fas fa-filter me-1"></i> Filters
+                </button>
+            </div>
+            <div class="col-md-3 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <!-- Filter Panel -->
+            <div class="col-12 collapse {% if status_filter or employee_filter %}show{% endif %}" id="filterPanel">
+                <div class="row g-2 mt-1">
+                    <div class="col-md-3">
+                        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Statuses</option>
+                            <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                            <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+                            <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select name="employee" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All Employees</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}" {% if employee_filter == emp.id|stringformat:"d" %}selected{% endif %}>{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <a href="{% url 'hrm:promotion_list' %}" class="btn btn-sm btn-outline-danger w-100">Clear Filters</a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Promotions Table -->
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th>#</th>
@@ -20,19 +75,609 @@
                         <th>Previous Designation</th>
                         <th>New Designation</th>
                         <th>Promotion Date</th>
-                        <th>Actions</th>
+                        <th>Effective Date</th>
+                        <th>Salary Adjustment</th>
+                        <th>Status</th>
+                        <th>Document</th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
+                    {% for promotion in promotions %}
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">
-                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                            No promotions found. Functionality will be added soon.
+                        <td>{{ forloop.counter|add:promotions.start_index|add:"-1" }}</td>
+                        <td>
+                            <strong>{{ promotion.employee.full_name }}</strong>
+                            <br><small class="text-muted">{{ promotion.employee.employee_id }}</small>
+                        </td>
+                        <td>{{ promotion.previous_designation }}</td>
+                        <td>{{ promotion.new_designation.name|default:"—" }}</td>
+                        <td>{{ promotion.promotion_date|date:"Y-m-d" }}</td>
+                        <td>{{ promotion.effective_date|date:"Y-m-d" }}</td>
+                        <td>
+                            {% if promotion.salary_adjustment %}
+                                ${{ promotion.salary_adjustment|floatformat:2 }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="dropdown">
+                                <button class="badge border-0 dropdown-toggle status-badge-{{ promotion.status }}"
+                                        data-bs-toggle="dropdown" aria-expanded="false"
+                                        style="cursor:pointer;">
+                                    {{ promotion.get_status_display }}
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-sm">
+                                    <li><a class="dropdown-item {% if promotion.status == 'pending' %}active{% endif %}" href="#" onclick="changeStatus({{ promotion.id }}, 'pending'); return false;">
+                                        <span class="status-dot bg-warning me-2"></span>Pending</a></li>
+                                    <li><a class="dropdown-item {% if promotion.status == 'approved' %}active{% endif %}" href="#" onclick="changeStatus({{ promotion.id }}, 'approved'); return false;">
+                                        <span class="status-dot bg-success me-2"></span>Approved</a></li>
+                                    <li><a class="dropdown-item {% if promotion.status == 'rejected' %}active{% endif %}" href="#" onclick="changeStatus({{ promotion.id }}, 'rejected'); return false;">
+                                        <span class="status-dot bg-danger me-2"></span>Rejected</a></li>
+                                </ul>
+                            </div>
+                        </td>
+                        <td>
+                            {% if promotion.document %}
+                            <a href="{{ promotion.document.url }}" target="_blank" class="badge bg-info text-decoration-none">Document</a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center text-nowrap">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewPromotion({{ promotion.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editPromotion({{ promotion.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-success me-1" title="Change Status" data-bs-toggle="dropdown">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ promotion.id }}, '{{ promotion.employee.full_name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                            No promotions found.
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        {% if promotions %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">
+                Showing {{ promotions.start_index }} to {{ promotions.end_index }} of {{ total_promotions }} promotions
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if promotions.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ promotions.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&employee={{ employee_filter }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in promotions.paginator.page_range %}
+                    <li class="page-item {% if promotions.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&employee={{ employee_filter }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if promotions.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ promotions.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&employee={{ employee_filter }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<!-- Add / Edit Promotion Modal -->
+<div class="modal fade" id="promotionModal" tabindex="-1" aria-labelledby="promotionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="promotionModalLabel">Add New Promotion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="promotionForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <input type="hidden" id="promotionId" value="">
+
+                    <div class="mb-3">
+                        <label for="promoEmployee" class="form-label">Employee <span class="text-danger">*</span></label>
+                        <select class="form-select" id="promoEmployee" name="employee" required>
+                            <option value="">Select Employee</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="promoPrevDesignation" class="form-label">Previous Designation <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="promoPrevDesignation" name="previous_designation" placeholder="Auto-filled when employee is selected" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="promoNewDesignation" class="form-label">New Designation <span class="text-danger">*</span></label>
+                        <select class="form-select" id="promoNewDesignation" name="new_designation" required>
+                            <option value="">Select New Designation</option>
+                            {% for d in designations %}
+                            <option value="{{ d.id }}">{{ d.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="promoDate" class="form-label">Promotion Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="promoDate" name="promotion_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="promoEffectiveDate" class="form-label">Effective Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="promoEffectiveDate" name="effective_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="promoSalary" class="form-label">Salary Adjustment</label>
+                        <input type="number" class="form-control" id="promoSalary" name="salary_adjustment" step="0.01" min="0" placeholder="Enter new salary amount">
+                    </div>
+                    <div class="mb-3">
+                        <label for="promoReason" class="form-label">Reason for Promotion</label>
+                        <textarea class="form-control" id="promoReason" name="reason" rows="3" placeholder="Enter reason for promotion"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="promoDocument" class="form-label">Document</label>
+                        <input type="file" class="form-control" id="promoDocument" name="document" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                        <small class="text-muted" id="currentDocument"></small>
+                    </div>
+                    <!-- Status field (only shown for edit) -->
+                    <div class="mb-3" id="statusFieldWrapper" style="display:none;">
+                        <label for="promoStatus" class="form-label">Status</label>
+                        <select class="form-select" id="promoStatus" name="status">
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="savePromotionBtn" onclick="savePromotion()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Promotion Modal -->
+<div class="modal fade" id="viewPromotionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-level-up-alt me-2"></i>Promotion Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewPromotionBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the promotion for <strong id="deletePromotionName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const promotionModalEl = document.getElementById('promotionModal');
+    const promotionModal = new bootstrap.Modal(promotionModalEl);
+    let isAddMode = false;
+
+    // Auto-fill previous designation when employee is selected
+    document.getElementById('promoEmployee').addEventListener('change', function() {
+        const employeeId = this.value;
+        const prevDesField = document.getElementById('promoPrevDesignation');
+        if (!employeeId) {
+            prevDesField.value = '';
+            return;
+        }
+        fetch(`{% url 'hrm:get_employee_designation' %}?employee_id=${encodeURIComponent(employeeId)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    prevDesField.value = data.designation;
+                } else {
+                    prevDesField.value = '';
+                }
+            })
+            .catch(() => {
+                prevDesField.value = '';
+            });
+    });
+
+    function openAddModal() {
+        isAddMode = true;
+        document.getElementById('promotionModalLabel').textContent = 'Add New Promotion';
+        document.getElementById('promotionForm').reset();
+        document.getElementById('promotionId').value = '';
+        document.getElementById('currentDocument').textContent = '';
+        document.getElementById('statusFieldWrapper').style.display = 'none';
+        clearAllErrors();
+        promotionModal.show();
+    }
+
+    function clearAllErrors() {
+        document.querySelectorAll('.field-error').forEach(el => el.remove());
+        document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        document.querySelectorAll('.shake').forEach(el => el.classList.remove('shake'));
+    }
+
+    function showFieldError(fieldId, message) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+        const existing = field.parentNode.querySelector('.field-error');
+        if (existing) existing.remove();
+        field.classList.add('is-invalid');
+        field.classList.add('shake');
+        setTimeout(() => field.classList.remove('shake'), 500);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'field-error';
+        errorDiv.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(message)}`;
+        field.parentNode.appendChild(errorDiv);
+        field.addEventListener('input', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('input', handler);
+        });
+        field.addEventListener('change', function handler() {
+            field.classList.remove('is-invalid');
+            const err = field.parentNode.querySelector('.field-error');
+            if (err) err.remove();
+            field.removeEventListener('change', handler);
+        });
+    }
+
+    function savePromotion() {
+        const form = document.getElementById('promotionForm');
+        const promotionIdVal = document.getElementById('promotionId').value;
+        const employee = document.getElementById('promoEmployee').value;
+        const prevDesignation = document.getElementById('promoPrevDesignation').value.trim();
+        const newDesignation = document.getElementById('promoNewDesignation').value;
+        const promoDate = document.getElementById('promoDate').value;
+        const effectiveDate = document.getElementById('promoEffectiveDate').value;
+
+        clearAllErrors();
+        let hasError = false;
+
+        if (!employee) {
+            showFieldError('promoEmployee', 'Please select an employee.');
+            hasError = true;
+        }
+        if (!prevDesignation) {
+            showFieldError('promoPrevDesignation', 'Previous designation is required.');
+            hasError = true;
+        }
+        if (!newDesignation) {
+            showFieldError('promoNewDesignation', 'Please select a new designation.');
+            hasError = true;
+        }
+        if (!promoDate) {
+            showFieldError('promoDate', 'Promotion date is required.');
+            hasError = true;
+        }
+        if (!effectiveDate) {
+            showFieldError('promoEffectiveDate', 'Effective date is required.');
+            hasError = true;
+        }
+
+        if (hasError) {
+            showToast('Please fill in all required fields.', 'error');
+            return;
+        }
+
+        // Disable save button to prevent double submit
+        const saveBtn = document.getElementById('savePromotionBtn');
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+
+        const formData = new FormData(form);
+        const url = promotionIdVal
+            ? `{% url 'hrm:promotion_list' %}${promotionIdVal}/update/`
+            : `{% url 'hrm:promotion_create' %}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            if (data.success) {
+                promotionModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = 'Save';
+            showToast('Network error. Please try again.', 'error');
+        });
+    }
+
+    function viewPromotion(id) {
+        fetch(`{% url 'hrm:promotion_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const p = data.promotion;
+                    const statusColors = { pending: 'warning', approved: 'success', rejected: 'danger' };
+                    const statusClass = statusColors[p.status] || 'secondary';
+                    let docHtml = p.document_url
+                        ? `<a href="${escapeHtml(p.document_url)}" target="_blank" class="badge bg-info text-decoration-none">View Document</a>`
+                        : '—';
+
+                    document.getElementById('viewPromotionBody').innerHTML = `
+                        <table class="table table-bordered mb-0">
+                            <tr><th style="width:30%">Employee</th><td>${escapeHtml(p.employee_name)} <small class="text-muted">(${escapeHtml(p.employee_code)})</small></td></tr>
+                            <tr><th>Previous Designation</th><td>${escapeHtml(p.previous_designation)}</td></tr>
+                            <tr><th>New Designation</th><td>${escapeHtml(p.new_designation_name) || '—'}</td></tr>
+                            <tr><th>Promotion Date</th><td>${p.promotion_date}</td></tr>
+                            <tr><th>Effective Date</th><td>${p.effective_date}</td></tr>
+                            <tr><th>Salary Adjustment</th><td>${p.salary_adjustment ? '$' + parseFloat(p.salary_adjustment).toFixed(2) : '—'}</td></tr>
+                            <tr><th>Status</th><td><span class="badge bg-${statusClass}">${escapeHtml(p.status.charAt(0).toUpperCase() + p.status.slice(1))}</span></td></tr>
+                            <tr><th>Reason</th><td>${escapeHtml(p.reason) || '—'}</td></tr>
+                            <tr><th>Document</th><td>${docHtml}</td></tr>
+                            <tr><th>Created At</th><td>${p.created_at}</td></tr>
+                            <tr><th>Updated At</th><td>${p.updated_at}</td></tr>
+                        </table>
+                    `;
+                    new bootstrap.Modal(document.getElementById('viewPromotionModal')).show();
+                }
+            })
+            .catch(() => showToast('Failed to load promotion details.', 'error'));
+    }
+
+    function editPromotion(id) {
+        fetch(`{% url 'hrm:promotion_list' %}${id}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    isAddMode = false;
+                    clearAllErrors();
+                    const p = data.promotion;
+                    document.getElementById('promotionModalLabel').textContent = 'Edit Promotion';
+                    document.getElementById('promotionId').value = p.id;
+                    document.getElementById('promoEmployee').value = p.employee_id;
+                    document.getElementById('promoPrevDesignation').value = p.previous_designation;
+                    document.getElementById('promoNewDesignation').value = p.new_designation_id;
+                    document.getElementById('promoDate').value = p.promotion_date;
+                    document.getElementById('promoEffectiveDate').value = p.effective_date;
+                    document.getElementById('promoSalary').value = p.salary_adjustment;
+                    document.getElementById('promoReason').value = p.reason;
+                    document.getElementById('promoStatus').value = p.status;
+                    document.getElementById('statusFieldWrapper').style.display = 'block';
+
+                    document.getElementById('currentDocument').textContent = p.document_url ? 'Current document attached. Upload new to replace.' : '';
+
+                    promotionModal.show();
+                }
+            })
+            .catch(() => showToast('Failed to load promotion data.', 'error'));
+    }
+
+    function changeStatus(id, newStatus) {
+        const formData = new FormData();
+        formData.append('status', newStatus);
+
+        fetch(`{% url 'hrm:promotion_list' %}${id}/toggle-status/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            body: formData,
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    }
+
+    let deleteId = null;
+    function confirmDelete(id, name) {
+        deleteId = id;
+        document.getElementById('deletePromotionName').textContent = name;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (!deleteId) return;
+        fetch(`{% url 'hrm:promotion_list' %}${deleteId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else {
+                showToast(data.error || 'Something went wrong.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+    });
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showToast(message, type) {
+        document.querySelectorAll('.custom-toast').forEach(t => t.remove());
+
+        const colors = { success: 'linear-gradient(135deg, #10b981, #059669)', error: 'linear-gradient(135deg, #ef4444, #dc2626)', warning: 'linear-gradient(135deg, #f59e0b, #d97706)', info: 'linear-gradient(135deg, #3b82f6, #2563eb)' };
+        const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const titles = { success: 'Success', error: 'Error', warning: 'Warning', info: 'Info' };
+
+        const toast = document.createElement('div');
+        toast.className = 'custom-toast';
+        toast.style.cssText = `
+            position: fixed; top: 20px; right: 20px; background: ${colors[type] || colors.info};
+            color: white; padding: 0; border-radius: 12px; z-index: 10050;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2); min-width: 320px; max-width: 420px;
+            animation: toastSlideIn 0.4s cubic-bezier(0.68,-0.55,0.265,1.55);
+            overflow: hidden;
+        `;
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;">
+                <div style="background:rgba(255,255,255,0.2);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fas fa-${icons[type] || icons.info}" style="font-size:18px;"></i>
+                </div>
+                <div style="flex:1;">
+                    <div style="font-weight:600;font-size:14px;margin-bottom:2px;">${titles[type] || 'Info'}</div>
+                    <div style="font-size:13px;opacity:0.95;">${escapeHtml(message)}</div>
+                </div>
+                <button onclick="this.closest('.custom-toast').remove()" style="background:none;border:none;color:white;opacity:0.7;cursor:pointer;font-size:16px;padding:4px;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="toast-progress" style="height:3px;background:rgba(255,255,255,0.3);">
+                <div class="toast-progress-bar" style="height:100%;background:rgba(255,255,255,0.7);width:100%;transition:width 3s linear;"></div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+            const bar = toast.querySelector('.toast-progress-bar');
+            if (bar) bar.style.width = '0%';
+        });
+        setTimeout(() => {
+            toast.style.animation = 'toastSlideOut 0.3s ease forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+</script>
+<style>
+    @keyframes toastSlideIn {
+        from { transform: translateX(120%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes toastSlideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(120%); opacity: 0; }
+    }
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-6px); }
+        40% { transform: translateX(6px); }
+        60% { transform: translateX(-4px); }
+        80% { transform: translateX(4px); }
+    }
+    .shake { animation: shake 0.4s ease; }
+    .field-error {
+        color: #dc2626;
+        font-size: 12px;
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        animation: fadeInError 0.3s ease;
+    }
+    @keyframes fadeInError {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .is-invalid {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+    }
+    .is-invalid:focus {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25) !important;
+    }
+    .status-badge-pending {
+        background-color: #f59e0b;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-approved {
+        background-color: #10b981;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-badge-rejected {
+        background-color: #ef4444;
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    .dropdown-menu-sm {
+        min-width: 140px;
+        font-size: 13px;
+    }
+    .dropdown-menu-sm .dropdown-item {
+        padding: 6px 14px;
+        display: flex;
+        align-items: center;
+    }
+    .dropdown-menu-sm .dropdown-item.active {
+        background-color: #f0fdf4;
+        color: #166534;
+    }
+</style>
 {% endblock %}

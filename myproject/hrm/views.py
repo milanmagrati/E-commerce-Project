@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.core.paginator import Paginator
 from django.contrib import messages
 
-from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, AwardType, Award
+from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, AwardType, Award, Promotion
 from .forms import EmployeeForm, EmployeeDocumentForm
 
 
@@ -1081,10 +1081,193 @@ def award_delete(request, pk):
 
 @login_required
 def promotion_list(request):
+    search_query = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '10')
+    status_filter = request.GET.get('status', '')
+    employee_filter = request.GET.get('employee', '')
+
+    promotions = Promotion.objects.select_related('employee', 'new_designation').all()
+
+    if search_query:
+        promotions = promotions.filter(
+            Q(employee__full_name__icontains=search_query) |
+            Q(previous_designation__icontains=search_query) |
+            Q(new_designation__name__icontains=search_query) |
+            Q(reason__icontains=search_query)
+        )
+
+    if status_filter:
+        promotions = promotions.filter(status=status_filter)
+
+    if employee_filter:
+        promotions = promotions.filter(employee_id=employee_filter)
+
+    paginator = Paginator(promotions, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Promotions',
+        'promotions': page_obj,
+        'search_query': search_query,
+        'per_page': per_page,
+        'status_filter': status_filter,
+        'employee_filter': employee_filter,
+        'total_promotions': paginator.count,
+        'employees': Employee.objects.filter(employee_status='active').order_by('full_name'),
+        'designations': Designation.objects.filter(status='active').order_by('name'),
     }
     return render(request, 'hrm/promotion_list.html', context)
+
+
+@login_required
+def promotion_create(request):
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '').strip()
+        previous_designation = request.POST.get('previous_designation', '').strip()
+        new_designation_id = request.POST.get('new_designation', '').strip()
+        promotion_date = request.POST.get('promotion_date', '').strip()
+        effective_date = request.POST.get('effective_date', '').strip()
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not previous_designation:
+            return JsonResponse({'success': False, 'error': 'Previous designation is required.'})
+        if not new_designation_id:
+            return JsonResponse({'success': False, 'error': 'New designation is required.'})
+        if not promotion_date:
+            return JsonResponse({'success': False, 'error': 'Promotion date is required.'})
+        if not effective_date:
+            return JsonResponse({'success': False, 'error': 'Effective date is required.'})
+
+        employee = get_object_or_404(Employee, id=employee_id)
+        new_designation = get_object_or_404(Designation, id=new_designation_id)
+
+        salary_adjustment = request.POST.get('salary_adjustment', '').strip()
+
+        promotion = Promotion(
+            employee=employee,
+            previous_designation=previous_designation,
+            new_designation=new_designation,
+            promotion_date=promotion_date,
+            effective_date=effective_date,
+            salary_adjustment=salary_adjustment if salary_adjustment else None,
+            reason=request.POST.get('reason', '').strip(),
+        )
+
+        if request.FILES.get('document'):
+            promotion.document = request.FILES['document']
+
+        promotion.save()
+        return JsonResponse({'success': True, 'message': f'Promotion for "{employee.full_name}" created successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def promotion_detail(request, pk):
+    promotion = get_object_or_404(Promotion.objects.select_related('employee', 'new_designation'), id=pk)
+    return JsonResponse({
+        'success': True,
+        'promotion': {
+            'id': promotion.id,
+            'employee_id': promotion.employee.id,
+            'employee_name': promotion.employee.full_name,
+            'employee_code': promotion.employee.employee_id,
+            'previous_designation': promotion.previous_designation,
+            'new_designation_id': promotion.new_designation.id if promotion.new_designation else '',
+            'new_designation_name': promotion.new_designation.name if promotion.new_designation else '',
+            'promotion_date': promotion.promotion_date.strftime('%Y-%m-%d'),
+            'effective_date': promotion.effective_date.strftime('%Y-%m-%d'),
+            'salary_adjustment': str(promotion.salary_adjustment) if promotion.salary_adjustment else '',
+            'reason': promotion.reason,
+            'status': promotion.status,
+            'document_url': promotion.document.url if promotion.document else '',
+            'created_at': promotion.created_at.strftime('%Y-%m-%d'),
+            'updated_at': promotion.updated_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def promotion_update(request, pk):
+    promotion = get_object_or_404(Promotion, id=pk)
+
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '').strip()
+        previous_designation = request.POST.get('previous_designation', '').strip()
+        new_designation_id = request.POST.get('new_designation', '').strip()
+        promotion_date = request.POST.get('promotion_date', '').strip()
+        effective_date = request.POST.get('effective_date', '').strip()
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not previous_designation:
+            return JsonResponse({'success': False, 'error': 'Previous designation is required.'})
+        if not new_designation_id:
+            return JsonResponse({'success': False, 'error': 'New designation is required.'})
+        if not promotion_date:
+            return JsonResponse({'success': False, 'error': 'Promotion date is required.'})
+        if not effective_date:
+            return JsonResponse({'success': False, 'error': 'Effective date is required.'})
+
+        promotion.employee = get_object_or_404(Employee, id=employee_id)
+        promotion.previous_designation = previous_designation
+        promotion.new_designation = get_object_or_404(Designation, id=new_designation_id)
+        promotion.promotion_date = promotion_date
+        promotion.effective_date = effective_date
+        salary_adjustment = request.POST.get('salary_adjustment', '').strip()
+        promotion.salary_adjustment = salary_adjustment if salary_adjustment else None
+        promotion.reason = request.POST.get('reason', '').strip()
+        promotion.status = request.POST.get('status', promotion.status).strip()
+
+        if request.FILES.get('document'):
+            promotion.document = request.FILES['document']
+
+        promotion.save()
+        return JsonResponse({'success': True, 'message': f'Promotion for "{promotion.employee.full_name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def promotion_delete(request, pk):
+    promotion = get_object_or_404(Promotion.objects.select_related('employee'), id=pk)
+
+    if request.method == 'POST':
+        emp_name = promotion.employee.full_name
+        promotion.delete()
+        return JsonResponse({'success': True, 'message': f'Promotion for "{emp_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def promotion_toggle_status(request, pk):
+    promotion = get_object_or_404(Promotion, id=pk)
+
+    if request.method == 'POST':
+        new_status = request.POST.get('status', '').strip()
+        if new_status not in ['pending', 'approved', 'rejected']:
+            return JsonResponse({'success': False, 'error': 'Invalid status.'})
+        promotion.status = new_status
+        promotion.save()
+        return JsonResponse({'success': True, 'message': f'Promotion status updated to "{promotion.get_status_display()}"!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def get_employee_designation(request):
+    employee_id = request.GET.get('employee_id', '')
+    if employee_id:
+        try:
+            employee = Employee.objects.select_related('designation').get(id=employee_id)
+            designation_name = employee.designation.name if employee.designation else ''
+            return JsonResponse({'success': True, 'designation': designation_name})
+        except Employee.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Employee not found.'})
+    return JsonResponse({'success': False, 'error': 'Employee ID is required.'})
 
 
 @login_required

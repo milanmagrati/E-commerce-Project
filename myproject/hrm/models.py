@@ -205,6 +205,32 @@ class AwardType(models.Model):
         return self.name
 
 
+class Promotion(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='promotions')
+    previous_designation = models.CharField(max_length=255)
+    new_designation = models.ForeignKey(Designation, on_delete=models.SET_NULL, null=True, related_name='promotions')
+    promotion_date = models.DateField()
+    effective_date = models.DateField()
+    salary_adjustment = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    reason = models.TextField(blank=True, default='')
+    document = models.FileField(upload_to='promotion_documents/', blank=True, null=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.employee.full_name} - {self.previous_designation} → {self.new_designation}"
+
+
 class Award(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='awards')
     award_type = models.ForeignKey(AwardType, on_delete=models.CASCADE, related_name='awards')
