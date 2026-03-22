@@ -1623,7 +1623,11 @@
                         <tr class="{% if product.product_type == 'variable' %}sp-expandable-row{% endif %}" 
                             {% if product.product_type == 'variable' %}onclick="toggleProductVariants(this, {{ product.product_id }})"{% endif %}>
                             <td>
+                                {% if product.rank <= 3 %}
                                 <span class="sp-rank-badge sp-rank-{{ product.rank }}">{{ product.rank }}</span>
+                                {% else %}
+                                <span class="sp-rank-badge" style="background: #e5e7eb; color: #333;">{{ product.rank }}</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <div class="sp-product-name-container">

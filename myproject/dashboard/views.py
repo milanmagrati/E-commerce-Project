@@ -12849,11 +12849,11 @@ def staff_performance_analytics(request):
     # ========== KPI CALCULATIONS ==========
     total_orders = orders_qs.count()
     
-    # Successful deliveries
+    # Successful deliveries (case-insensitive: DB may store 'Delivered' or 'delivered')
     successful_orders = orders_qs.filter(
-        Q(status='delivered') | Q(order_status='delivered')
+        Q(status__iexact='delivered') | Q(order_status__iexact='delivered')
     ).count()
-    success_rate = (successful_orders / total_orders * 100) if total_orders > 0 else 0
+    success_rate = (successful_orders / total_orders * 100) if total_orders > 0 else 0.0
     
     # Returns
     return_requests = ReturnRequest.objects.filter(
@@ -12869,7 +12869,7 @@ def staff_performance_analytics(request):
             pass
     
     returns_count = return_requests.count()
-    return_rate = (returns_count / total_orders * 100) if total_orders > 0 else 0
+    return_rate = (returns_count / total_orders * 100) if total_orders > 0 else 0.0
     
     # Revenue - use aggregation with larger max_digits for aggregated totals
     revenue_result = orders_qs.aggregate(Sum('total_amount'))
@@ -12913,8 +12913,9 @@ def staff_performance_analytics(request):
     
     for staff in staff_to_show:
         staff_orders = orders_qs.filter(created_by=staff)
+        # Case-insensitive: DB may store 'Delivered' or 'delivered'
         staff_delivered = staff_orders.filter(
-            Q(status='delivered') | Q(order_status='delivered')
+            Q(status__iexact='delivered') | Q(order_status__iexact='delivered')
         ).count()
         staff_return_qs = return_requests.filter(order__created_by=staff)
         staff_returns = staff_return_qs.count()
@@ -12927,13 +12928,16 @@ def staff_performance_analytics(request):
             decimal_places=2
         )
 
-        staff_success_rate = (staff_delivered / staff_orders.count() * 100) if staff_orders.count() > 0 else 0
+        staff_success_rate = (staff_delivered / staff_orders.count() * 100) if staff_orders.count() > 0 else 0.0
 
-        # Return status breakdown per staff
+        # Return status breakdown per staff (normalize keys to lowercase for case-insensitive lookup)
         staff_return_statuses = staff_return_qs.values('return_status').annotate(
             count=Count('id')
         )
-        staff_return_status_map = {item['return_status']: item['count'] for item in staff_return_statuses}
+        staff_return_status_map = {
+            (item['return_status'] or '').lower(): item['count']
+            for item in staff_return_statuses
+        }
 
         # Return reason breakdown per staff
         staff_return_reasons = staff_return_qs.exclude(return_reason='').values('return_reason').annotate(
@@ -12974,9 +12978,14 @@ def staff_performance_analytics(request):
             'return_reasons': list(staff_return_reasons),
         })
     
-    # Sort by success rate descending (only when showing all staff)
-    if staff_filter == 'all':
-        staff_performance_data.sort(key=lambda x: x['success_rate'], reverse=True)
+    # Sort by composite score: most deliveries → highest success rate → most orders → name
+    # This ensures meaningful ranking even when success rates are identical (e.g., all 0%)
+    staff_performance_data.sort(key=lambda x: (
+        -x['successful_orders'],       # More deliveries = better rank
+        -x['success_rate'],            # Higher success rate = better rank
+        -x['total_orders'],            # More activity = better rank (tiebreaker)
+        x['name'].lower()              # Alphabetical last tiebreaker
+    ))
     
     # ========== TOP PERFORMING PRODUCTS ==========
     # Build product revenue with proportional order totals
@@ -12990,26 +12999,22 @@ def staff_performance_analytics(request):
         product__isnull=False
     ).select_related('product', 'order').values_list(
         'product_id', 'product__name', 'product__product_type', 
-        'order_id', 'order__total_amount', 'quantity', 'total'
+        'quantity', 'total'
     )
     
-    for product_id, product_name, product_type, order_id, order_total, qty, item_total in order_items:
+    for product_id, product_name, product_type, qty, item_total in order_items:
         if product_id not in product_revenues:
             product_revenues[product_id] = {
                 'product__name': product_name,
                 'product__product_type': product_type,
                 'units_sold': 0,
                 'total_revenue': Decimal('0'),
-                'order_totals': {}  # Track orders to avoid double-counting
             }
         
         product_revenues[product_id]['units_sold'] += qty
         
-        # Calculate this item's proportional share of the order total
-        # Use SafeDecimal to handle the calculation
-        if order_id not in product_revenues[product_id]['order_totals']:
-            product_revenues[product_id]['order_totals'][order_id] = safe_decimal(order_total, max_digits=12, decimal_places=2)
-            product_revenues[product_id]['total_revenue'] += safe_decimal(order_total, max_digits=12, decimal_places=2)
+        # Use the actual item-level total (price × qty for this item) for accurate revenue
+        product_revenues[product_id]['total_revenue'] += safe_decimal(item_total or 0, max_digits=12, decimal_places=2)
     
     # Convert to list format expected by the rest of the code
     top_products_data = []
@@ -13096,7 +13101,7 @@ def staff_performance_analytics(request):
     # ========== PERFORMANCE TRENDS OVER TIME ==========
     daily_data = orders_qs.values('created_at__date').annotate(
         daily_orders=Count('id'),
-        daily_delivered=Count('id', filter=Q(status='delivered') | Q(order_status='delivered')),
+        daily_delivered=Count('id', filter=Q(status__iexact='delivered') | Q(order_status__iexact='delivered')),
         daily_revenue=Sum('total_amount')
     ).order_by('created_at__date')
 
@@ -13114,7 +13119,7 @@ def staff_performance_analytics(request):
         returns = return_requests.filter(
             order__created_at__date=date
         ).count()
-        success_rate_daily = (delivered / orders * 100) if orders > 0 else 0
+        success_rate_daily = (delivered / orders * 100) if orders > 0 else 0.0
         
         performance_trends.append({
             'date': date.strftime('%d %b'),
@@ -13129,7 +13134,7 @@ def staff_performance_analytics(request):
     performance_trends_json = json.dumps(performance_trends)
     
     # ========== ORDER STATUS BREAKDOWN ==========
-    order_statuses = orders_qs.values('status').annotate(count=Count('id')).order_by('-count')
+    # Combine both status and order_status fields, using .lower() for case-insensitive grouping
     status_breakdown = {
         'delivered': 0,
         'pending': 0,
@@ -13137,17 +13142,18 @@ def staff_performance_analytics(request):
         'other': 0
     }
     
-    for status_item in order_statuses:
-        status = status_item['status'] or 'unknown'
-        count = status_item['count']
-        if status.lower() in ['delivered', 'completed']:
-            status_breakdown['delivered'] += count
-        elif status.lower() in ['returned', 'return']:
-            status_breakdown['returns'] += count
-        elif status.lower() in ['pending', 'processing']:
-            status_breakdown['pending'] += count
-        else:
-            status_breakdown['other'] += count
+    for field in ('status', 'order_status'):
+        for status_item in orders_qs.values(field).annotate(count=Count('id')):
+            status = (status_item[field] or 'unknown').lower()
+            count = status_item['count']
+            if status in ['delivered', 'completed']:
+                status_breakdown['delivered'] += count
+            elif status in ['returned', 'return']:
+                status_breakdown['returns'] += count
+            elif status in ['pending', 'processing']:
+                status_breakdown['pending'] += count
+            else:
+                status_breakdown['other'] += count
     
     # Ensure status_breakdown has all keys for chart
     status_breakdown_json = json.dumps(status_breakdown)
@@ -13161,12 +13167,12 @@ def staff_performance_analytics(request):
     # Return stats summary
     return_stats = {
         'total': returns_count,
-        'pending': return_requests.filter(return_status='pending').count(),
-        'approved': return_requests.filter(return_status='approved').count(),
-        'received': return_requests.filter(return_status='received').count(),
-        'inspecting': return_requests.filter(return_status='inspecting').count(),
-        'refunded': return_requests.filter(return_status='refunded').count(),
-        'rejected': return_requests.filter(return_status='rejected').count(),
+        'pending': return_requests.filter(return_status__iexact='pending').count(),
+        'approved': return_requests.filter(return_status__iexact='approved').count(),
+        'received': return_requests.filter(return_status__iexact='received').count(),
+        'inspecting': return_requests.filter(return_status__iexact='inspecting').count(),
+        'refunded': return_requests.filter(return_status__iexact='refunded').count(),
+        'rejected': return_requests.filter(return_status__iexact='rejected').count(),
         'total_refund': safe_decimal(
             return_requests.aggregate(Sum('refund_amount')).get('refund_amount__sum') or 0,
             max_digits=12, decimal_places=2
@@ -13199,21 +13205,27 @@ def staff_performance_analytics(request):
         'created_by', 'customer', 'branch'
     ).prefetch_related('items__product').order_by('-created_at')
 
-    # Staff orders status filter
+    # Staff orders status filter (case-insensitive, check both status fields)
     staff_orders_status = request.GET.get('orders_status', '')
     if staff_orders_status:
-        staff_orders_qs = staff_orders_qs.filter(status=staff_orders_status)
+        staff_orders_qs = staff_orders_qs.filter(
+            Q(status__iexact=staff_orders_status) | Q(order_status__iexact=staff_orders_status)
+        )
 
     # Pagination
     staff_orders_page_num = request.GET.get('orders_page', 1)
     staff_orders_paginator = Paginator(staff_orders_qs, 15)
     staff_orders_page = staff_orders_paginator.get_page(staff_orders_page_num)
 
-    # Collect distinct statuses for filter dropdown
-    staff_orders_statuses = list(
-        orders_qs.values_list('status', flat=True)
-        .distinct()
-        .order_by('status')
+    # Collect distinct statuses for filter dropdown (merge both status fields)
+    statuses_from_status = set(
+        orders_qs.values_list('status', flat=True).distinct()
+    )
+    statuses_from_order_status = set(
+        orders_qs.values_list('order_status', flat=True).distinct()
+    )
+    staff_orders_statuses = sorted(
+        s for s in (statuses_from_status | statuses_from_order_status) if s
     )
 
     # Per-staff order count summary
