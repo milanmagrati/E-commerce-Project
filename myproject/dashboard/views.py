@@ -2407,28 +2407,30 @@ def orders_list(request):
     
     # Status filter - Now properly handles Setup-based statuses
     if status_filter:
-        # Try to find the Setup with matching filter value
-        # The filter value comes from setup.name.lower().replace(' ', '_')
         try:
-            # First, try to find Setup by matching the filter value format
             status_setup = Setup.objects.filter(
                 setup_type='status',
                 name__iexact=status_filter.replace('_', ' ')
             ).first()
             
             if status_setup:
-                # STRICT FILTER: Primary by status_setup_id, fallback only for null status_setup
-                # This prevents "On Hold" showing when "Processing" is selected
                 orders = orders.filter(
                     Q(status_setup_id=status_setup.id) |
-                    (Q(status_setup_id__isnull=True) & Q(order_status__iexact=status_filter.replace('_', ' ')))
+                    (Q(status_setup_id__isnull=True) & (
+                        Q(order_status__iexact=status_filter.replace('_', ' ')) |
+                        Q(order_status__iexact=status_filter)
+                    ))
                 )
             else:
-                # Setup not found, filter by order_status field only
-                orders = orders.filter(order_status__iexact=status_filter.replace('_', ' '))
+                orders = orders.filter(
+                    Q(order_status__iexact=status_filter.replace('_', ' ')) |
+                    Q(order_status__iexact=status_filter)
+                )
         except Exception:
-            # Fallback filtering
-            orders = orders.filter(order_status__iexact=status_filter.replace('_', ' '))
+            orders = orders.filter(
+                Q(order_status__iexact=status_filter.replace('_', ' ')) |
+                Q(order_status__iexact=status_filter)
+            )
     
     # Payment status filter - Now properly handles Setup-based payment statuses
     if payment_filter:
@@ -2514,16 +2516,16 @@ def orders_list(request):
     elif date_filter == 'all':
         pass  # No date filter
     
-    # ✅ FIXED: Calculate statistics using ORM aggregations (no decimal issues)
+    # ✅ FIXED: Calculate statistics using case-insensitive ORM queries
     total_orders = orders.count()
-    total_revenue = orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-    pending_orders = orders.filter(order_status='pending').count()
-    confirmed_orders = orders.filter(order_status='confirmed').count()
-    dispatched_orders = orders.filter(order_status='dispatched').count()
+    total_revenue = orders.filter(payment_status__iexact='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    pending_orders = orders.filter(order_status__iexact='pending').count()
+    confirmed_orders = orders.filter(order_status__iexact='confirmed').count()
+    dispatched_orders = orders.filter(order_status__iexact='dispatched').count()
     
-    # Delivered today (using date filter)
+    # Delivered today: orders with delivered status and delivered_at today
     delivered_today = orders.filter(
-        order_status='delivered',
+        order_status__iexact='delivered',
         delivered_at__date=today_nepal
     ).count()
     
@@ -5840,11 +5842,18 @@ def orders_bulk_action(request):
                 try:
                     setup_id = int(action.split('_')[-1])
                     status_setup = Setup.objects.get(id=setup_id, setup_type='status')
+                    normalized_status = status_setup.name.lower().replace(' ', '_')
                     
                     # Update orders with the selected status
                     for order in orders:
+                        old_status = order.order_status
                         order.status_setup = status_setup
-                        order.order_status = status_setup.name
+                        order.order_status = normalized_status
+                        
+                        # Set delivered_at timestamp when status changes to delivered
+                        if normalized_status == 'delivered' and old_status != 'delivered':
+                            order.delivered_at = timezone.now()
+                        
                         order.save()
                         
                         # Log activity
@@ -5864,11 +5873,12 @@ def orders_bulk_action(request):
                 try:
                     setup_id = int(action.split('_')[-1])
                     payment_setup = Setup.objects.get(id=setup_id, setup_type='payment_status')
+                    normalized_payment = payment_setup.name.lower().replace(' ', '_')
                     
                     # Update orders with the selected payment status
                     for order in orders:
                         order.payment_status_setup = payment_setup
-                        order.payment_status = payment_setup.name
+                        order.payment_status = normalized_payment
                         order.save()
                         
                         # Log activity
@@ -5885,10 +5895,11 @@ def orders_bulk_action(request):
             
             # ✅ LEGACY: Keep backward compatibility with old action names
             elif action == 'mark_delivered':
-                orders.update(order_status='delivered')
-                
-                # Log activity for each order
                 for order in orders:
+                    order.order_status = 'delivered'
+                    order.delivered_at = timezone.now()
+                    order.save()
+                    
                     OrderActivityLog.objects.create(
                         order=order,
                         user=request.user,
