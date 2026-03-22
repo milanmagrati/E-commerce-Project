@@ -2527,6 +2527,15 @@ def orders_list(request):
         delivered_at__date=today_nepal
     ).count()
     
+    # Product name sorting
+    product_sort = request.GET.get('product_sort', '')
+    if product_sort in ('asc', 'desc'):
+        from django.db.models import Min, Max
+        if product_sort == 'asc':
+            orders = orders.annotate(first_product=Min('items__product_name')).order_by('first_product')
+        else:
+            orders = orders.annotate(first_product=Max('items__product_name')).order_by('-first_product')
+
     # Pagination
     from django.core.paginator import Paginator
     per_page = request.GET.get('per_page', '50')
@@ -2616,6 +2625,7 @@ def orders_list(request):
         'end_date': end_date,
         'logistics_filter': logistics_filter,
         'product_filter': product_filter,
+        'product_sort': product_sort,
         'product_choices': product_choices,
         'per_page': per_page,
         'order_status_choices': order_status_choices,

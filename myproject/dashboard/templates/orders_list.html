@@ -289,7 +289,36 @@
                         <th width="10%">Order #</th>
                         <th width="15%">Customer</th>
                         <th width="10%">Date</th>
-                        <th width="15%">Product</th>
+                        <th width="15%">
+                            <div class="dropdown d-inline-block product-sort-dropdown">
+                                <span class="dropdown-toggle" role="button" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
+                                    Product
+                                    {% if product_sort == 'asc' %}<i class="fas fa-sort-alpha-down ms-1"></i>
+                                    {% elif product_sort == 'desc' %}<i class="fas fa-sort-alpha-up ms-1"></i>
+                                    {% endif %}
+                                </span>
+                                <ul class="dropdown-menu dropdown-menu-start shadow-sm">
+                                    <li>
+                                        <a class="dropdown-item {% if product_sort == 'asc' %}active{% endif %}" href="javascript:void(0)" onclick="applyProductSort('asc')">
+                                            <i class="fas fa-sort-alpha-down me-2"></i> Sort A to Z
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item {% if product_sort == 'desc' %}active{% endif %}" href="javascript:void(0)" onclick="applyProductSort('desc')">
+                                            <i class="fas fa-sort-alpha-up me-2"></i> Sort Z to A
+                                        </a>
+                                    </li>
+                                    {% if product_sort %}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <a class="dropdown-item text-danger" href="javascript:void(0)" onclick="applyProductSort('')">
+                                            <i class="fas fa-times me-2"></i> Clear Sort
+                                        </a>
+                                    </li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                        </th>
                         <th width="10%">Amount</th>
                         <th width="10%">Payment</th>
                         <th width="8%">Status</th>
@@ -901,6 +930,21 @@
         animation: slideDown 0.3s ease;
     }
 
+    /* Product Sort Dropdown */
+    .product-sort-dropdown .dropdown-toggle::after {
+        font-size: 1.1rem;
+        color: #e11d48;
+        vertical-align: middle;
+        border-top-width: 0.5em;
+        border-right-width: 0.4em;
+        border-left-width: 0.4em;
+    }
+
+    .product-sort-dropdown .dropdown-toggle i {
+        font-size: 1.3rem;
+        color: #e11d48;
+    }
+
     @keyframes slideDown {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
@@ -1369,6 +1413,18 @@
 function changePerPage(value) {
     const url = new URL(window.location.href);
     url.searchParams.set('per_page', value);
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+}
+
+// Product sort: set or clear product_sort param and reload
+function applyProductSort(direction) {
+    const url = new URL(window.location.href);
+    if (direction) {
+        url.searchParams.set('product_sort', direction);
+    } else {
+        url.searchParams.delete('product_sort');
+    }
     url.searchParams.delete('page');
     window.location.href = url.toString();
 }
