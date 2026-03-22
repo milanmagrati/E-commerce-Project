@@ -2393,6 +2393,7 @@ def orders_list(request):
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
     logistics_filter = request.GET.get('logistics_status', '')
+    product_filter = request.GET.get('product', '')
     
     # ✅ FIXED: Apply filters using ORM (much more efficient than Python list filtering)
     # Search filter
@@ -2452,6 +2453,10 @@ def orders_list(request):
             # Fallback filtering
             orders = orders.filter(payment_status=payment_filter)
     
+    # Product name filter
+    if product_filter:
+        orders = orders.filter(items__product_name__iexact=product_filter).distinct()
+
     # In/Out Valley filter
     if in_out_filter:
         orders = orders.filter(in_out=in_out_filter)
@@ -2548,6 +2553,16 @@ def orders_list(request):
         for setup in payment_setups
     ]
     
+    # ✅ FETCH DISTINCT PRODUCT NAMES FOR FILTER DROPDOWN
+    from dashboard.models import OrderItem
+    product_choices = list(
+        OrderItem.objects.filter(
+            order__is_deleted=False
+        ).values_list('product_name', flat=True).distinct().order_by('product_name')
+    )
+    # Remove empty/None values
+    product_choices = [p for p in product_choices if p]
+
     # ✅ PREPARE DROPDOWN OPTIONS FOR BULK ACTIONS
     # Format options as (action_value, display_label, icon)
     order_status_bulk_options = [
@@ -2600,6 +2615,8 @@ def orders_list(request):
         'start_date': start_date,
         'end_date': end_date,
         'logistics_filter': logistics_filter,
+        'product_filter': product_filter,
+        'product_choices': product_choices,
         'per_page': per_page,
         'order_status_choices': order_status_choices,
         'payment_status_choices': payment_status_choices,
@@ -12573,12 +12590,22 @@ def financial_report_data(request):
             if day['date']:
                 day['date'] = str(day['date'])
 
-        # NCM Delivery Revenue Table - only delivered + paid orders
-        ncm_orders_in_period = orders.filter(
+        # NCM Delivery Revenue Table - delivered + paid orders
+        # Use both dispatch_date and delivered_at for date filtering
+        # so orders delivered within the period show up even if dispatched earlier
+        ncm_base = orders_base.filter(
             ncm_order_id__isnull=False,
             ncm_status__icontains='delivered',
             payment_status='paid'
         )
+        if period != 'all' and start and end:
+            ncm_orders_in_period = ncm_base.filter(
+                Q(dispatch_date__range=(start, end)) |
+                Q(delivered_at__range=(start, end)) |
+                Q(dispatch_date__isnull=True, created_at__range=(start, end))
+            )
+        else:
+            ncm_orders_in_period = ncm_base
         logger.info(f"NCM delivered & paid orders in period: {ncm_orders_in_period.count()}")
 
         ncm_revenue_list = list(

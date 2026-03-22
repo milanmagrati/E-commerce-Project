@@ -141,6 +141,16 @@
                         <tbody>
                             <!-- Data will be loaded via AJAX -->
                         </tbody>
+                        <tfoot id="dailySummaryTotals" style="display:none;">
+                            <tr class="daily-summary-total-row">
+                                <td><strong>Total</strong></td>
+                                <td id="ds-total-orders"><strong>0</strong></td>
+                                <td id="ds-total-revenue"><strong>0.00</strong></td>
+                                <td id="ds-total-charges"><strong>0.00</strong></td>
+                                <td id="ds-total-expenses"><strong>0.00</strong></td>
+                                <td id="ds-total-profit"><strong>0.00</strong></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
                 <div class="pagination-container">
@@ -530,27 +540,30 @@
         background: #fff;
         border-radius: 14px;
         box-shadow: 0 2px 12px rgba(102, 126, 234, 0.08);
-        padding: 20px 24px;
+        padding: 16px 24px;
         margin-bottom: 32px;
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        flex-wrap: wrap;
-        gap: 20px;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
     }
 
     .filter-bar {
         display: flex;
         align-items: center;
-        gap: 16px;
+        gap: 12px;
         flex: 1;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        min-width: 0;
     }
 
     .quick-filters {
         display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
+        gap: 8px;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
     }
 
     .filter-btn {
@@ -590,8 +603,9 @@
     .custom-date-range {
         display: flex;
         align-items: center;
-        gap: 12px;
-        flex-wrap: wrap;
+        gap: 8px;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
     }
 
     .date-input {
@@ -650,67 +664,79 @@
     .export-buttons {
         display: flex;
         gap: 8px;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        align-items: center;
+        flex-shrink: 0;
     }
 
     .export-buttons .btn {
         border-radius: 8px;
         font-weight: 600;
-        font-size: 0.95rem;
-        padding: 8px 14px;
+        font-size: 0.9rem;
+        padding: 7px 12px;
+        white-space: nowrap;
     }
 
-    @media (max-width: 1024px) {
+    @media (max-width: 1200px) {
         .filter-container {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 16px;
+            flex-wrap: wrap;
         }
 
         .filter-bar {
-            width: 100%;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .custom-date-range {
-            width: 100%;
+            flex-wrap: wrap;
         }
 
         .export-buttons {
-            width: 100%;
-            justify-content: flex-start;
+            flex-shrink: 0;
         }
     }
 
     @media (max-width: 768px) {
         .filter-container {
-            padding: 16px 12px;
+            padding: 14px 12px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .filter-bar {
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .quick-filters {
-            gap: 8px;
+            flex-wrap: wrap;
+            gap: 6px;
         }
 
         .filter-btn {
-            padding: 6px 14px;
-            font-size: 0.9rem;
+            padding: 6px 12px;
+            font-size: 0.85rem;
+        }
+
+        .custom-date-range {
+            flex-wrap: wrap;
+            gap: 6px;
         }
 
         .date-input {
-            min-width: 120px;
+            min-width: 130px;
             padding: 6px 10px;
-            font-size: 0.9rem;
+            font-size: 0.88rem;
         }
 
         .btn-apply {
-            padding: 6px 20px;
-            font-size: 0.9rem;
+            padding: 7px 18px;
+            font-size: 0.88rem;
+        }
+
+        .export-buttons {
+            flex-wrap: wrap;
+            gap: 6px;
         }
 
         .export-buttons .btn {
             padding: 6px 10px;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
         }
     }
 
@@ -838,6 +864,25 @@
 
     .table-hover tbody tr:hover {
         background: #f1f5f9;
+    }
+
+    /* Daily Summary totals row */
+    .daily-summary-total-row {
+        background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
+        border-top: 2px solid #7c3aed;
+    }
+
+    .daily-summary-total-row td {
+        font-size: 0.97rem;
+        padding: 10px 8px;
+        border-top: 2px solid #7c3aed !important;
+        color: #3730a3;
+    }
+
+    .daily-summary-total-row td:first-child {
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        color: #5b21b6;
     }
 
     /* Key Metrics */
@@ -1290,9 +1335,9 @@
                         throw new Error('Invalid JSON response from server');
                     }
                 }).then(data => {
-                    if (data.error) {
+                    if (data.success === false || data.error) {
                         console.error('❌ API returned error:', data.error);
-                        throw new Error(data.message || data.error);
+                        throw new Error(data.message || data.error || 'Unknown server error');
                     }
                     if (!data || typeof data !== 'object') {
                         throw new Error('Invalid response format from server');
@@ -1611,6 +1656,33 @@
         });
     }
 
+    function renderDailySummaryTotals(data) {
+        const tfoot = document.getElementById('dailySummaryTotals');
+        if (!tfoot) return;
+
+        if (!data || data.length === 0) {
+            tfoot.style.display = 'none';
+            return;
+        }
+
+        let totalOrders = 0, totalRevenue = 0, totalCharges = 0, totalExpenses = 0, totalProfit = 0;
+        data.forEach(row => {
+            totalOrders   += parseInt(row.orders || 0, 10);
+            totalRevenue  += parseFloat(row.revenue || 0);
+            totalCharges  += parseFloat(row.ncm_charges || 0);
+            totalExpenses += parseFloat(row.expenses || 0);
+            totalProfit   += parseFloat(row.net_profit || 0);
+        });
+
+        document.getElementById('ds-total-orders').innerHTML   = `<strong>${totalOrders}</strong>`;
+        document.getElementById('ds-total-revenue').innerHTML  = `<strong>${totalRevenue.toFixed(2)}</strong>`;
+        document.getElementById('ds-total-charges').innerHTML  = `<strong>${totalCharges.toFixed(2)}</strong>`;
+        document.getElementById('ds-total-expenses').innerHTML = `<strong>${totalExpenses.toFixed(2)}</strong>`;
+        document.getElementById('ds-total-profit').innerHTML   = `<strong class="${totalProfit >= 0 ? 'text-success' : 'text-danger'}">${totalProfit.toFixed(2)}</strong>`;
+
+        tfoot.style.display = '';
+    }
+
     function renderDailySummaryTable(data) {
         // Store full data in pagination state
         paginationState.dailySummary.data = data || [];
@@ -1620,6 +1692,9 @@
         // Update badge count
         const badgeEl = document.getElementById('dailySummaryCount');
         if (badgeEl) badgeEl.textContent = paginationState.dailySummary.totalRows;
+
+        // Render totals row from full dataset (respects current filter)
+        renderDailySummaryTotals(paginationState.dailySummary.data);
 
         // Render first page
         renderTableWithPagination('dailySummary');
@@ -1881,19 +1956,12 @@
 
                 // Render each component with error handling
                 try {
-                    if (data.stats) {
-                        console.log('📊 Rendering stats:', data.stats);
-                        renderStats(data.stats);
-                    }
-                    if (data.key_metrics) renderKeyMetrics(data.key_metrics);
-                    if (data.payment_status) renderPaymentStatusTable(data.payment_status);
-                    if (data.branch_summary) renderBranchSummaryTable(data.branch_summary);
-                    if (data.daily_summary) renderDailySummaryTable(data.daily_summary);
-                    if (data.ncm_revenue) {
-                        console.log(`📊 Rendering ${data.ncm_revenue.length} NCM revenue rows`);
-                        console.log('First row:', data.ncm_revenue[0]);
-                        renderNcmRevenueTable(data.ncm_revenue);
-                    }
+                    renderStats(data.stats || {});
+                    renderKeyMetrics(data.key_metrics || {});
+                    renderPaymentStatusTable(data.payment_status || []);
+                    renderBranchSummaryTable(data.branch_summary || []);
+                    renderDailySummaryTable(data.daily_summary || []);
+                    renderNcmRevenueTable(data.ncm_revenue || []);
                     renderCharts(data);
                 } catch (renderError) {
                     console.error('❌ Error rendering component:', renderError);

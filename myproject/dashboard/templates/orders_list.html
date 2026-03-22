@@ -157,6 +157,16 @@
                     {% endfor %}
                 </select>
             </div>
+
+            <!-- ✅ PRODUCT NAME FILTER -->
+            <div class="col-md-2">
+                <select name="product" class="form-select" id="productFilter">
+                    <option value="">All Products</option>
+                    {% for product_name in product_choices %}
+                        <option value="{{ product_name }}" {% if product_filter == product_name %}selected{% endif %}>{{ product_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             
             <div class="col-md-2">
                 <select name="in_out" class="form-select" onchange="this.form.submit()">
@@ -2085,7 +2095,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const filterForm = document.getElementById('filterForm');
     if (filterForm) {
         // Get all select dropdowns in the filter form
-        const selects = filterForm.querySelectorAll('select[name="date_range"], select[name="status"], select[name="payment"]');
+        const selects = filterForm.querySelectorAll('select[name="date_range"], select[name="status"], select[name="payment"], select[name="product"]');
         
         // Add change event listener to each select
         selects.forEach(select => {
