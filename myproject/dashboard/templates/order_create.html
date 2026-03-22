@@ -3106,15 +3106,15 @@
 
 <!-- ✨ NCM BRANCHES SEARCH MODAL -->
 <div class="modal fade" id="ncmBranchesSearchModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable" style="max-width: 95vw; margin: 1.5rem auto;">
+        <div class="modal-content" style="height: 90vh;">
             <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #5568d3 100%); color: white;">
                 <h5 class="modal-title" style="color: white;">
                     <i class="fas fa-map-marker-alt"></i> Search NCM Branches
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter: invert(1);"></button>
             </div>
-            <div class="modal-body" style="background: #f8f9fa;">
+            <div class="modal-body" style="background: #f8f9fa; display: flex; flex-direction: column; overflow: hidden;">
                 <!-- Search Input -->
                 <div class="mb-3">
                     <input type="text" id="ncmBranchSearchInput" class="form-control" placeholder="Search by branch name, code, areas, municipality, address or district..." 
@@ -3126,8 +3126,8 @@
                     <i class="fas fa-list"></i> <span id="ncmBranchResultCount">Loading...</span> results
                 </div>
 
-                <!-- Branches List -->
-                <div id="ncmBranchesListContainer" style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 400px; overflow-y: auto;">
+                <!-- Branches Table -->
+                <div id="ncmBranchesListContainer" style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; flex: 1; overflow-y: auto;">
                     <div style="padding: 40px 20px; text-align: center; color: #999;">
                         <i class="fas fa-spinner fa-spin" style="font-size: 2rem; margin-bottom: 15px; display: block;"></i>
                         Loading branches...
@@ -3847,33 +3847,26 @@
         noResults.style.display = 'none';
         listContainer.innerHTML = '';
 
-        branches.forEach((branch, index) => {
-            const branchItem = document.createElement('div');
-            branchItem.style.cssText = `
-                padding: 15px;
-                border-bottom: 1px solid #e2e8f0;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                background: white;
-            `;
-            
-            // Add match highlight if there's a search term
-            if (searchTerm && branch.matchedField) {
-                branchItem.style.borderLeft = '4px solid #667eea';
-                branchItem.style.paddingLeft = '12px';
-            }
-            
-            branchItem.onmouseover = function() {
-                this.style.background = '#f0f4ff';
-                this.style.boxShadow = 'inset 4px 0 0 0 #667eea';
-            };
-            
-            branchItem.onmouseout = function() {
-                this.style.background = 'white';
-                this.style.boxShadow = 'none';
-            };
+        // Build table structure
+        const table = document.createElement('table');
+        table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 0.88rem;';
+        table.innerHTML = `
+            <thead>
+                <tr style="background: linear-gradient(135deg, #667eea 0%, #5568d3 100%); color: white; position: sticky; top: 0; z-index: 1;">
+                    <th style="padding: 12px 10px; text-align: left; font-weight: 600; white-space: nowrap;">Branch Name</th>
+                    <th style="padding: 12px 10px; text-align: left; font-weight: 600; white-space: nowrap;">Branch Code</th>
+                    <th style="padding: 12px 10px; text-align: left; font-weight: 600; min-width: 200px;">Areas Covered</th>
+                    <th style="padding: 12px 10px; text-align: left; font-weight: 600; white-space: nowrap;">Municipality</th>
+                    <th style="padding: 12px 10px; text-align: left; font-weight: 600; white-space: nowrap;">District</th>
+                    <th style="padding: 12px 10px; text-align: left; font-weight: 600; white-space: nowrap;">Region</th>
+                    <th style="padding: 12px 10px; text-align: left; font-weight: 600; white-space: nowrap;">Phone</th>
+                    <th style="padding: 12px 10px; text-align: left; font-weight: 600; white-space: nowrap;">Address</th>
+                </tr>
+            </thead>
+        `;
+        const tbody = document.createElement('tbody');
 
-            // Safely get branch data with fallbacks
+        branches.forEach((branch, index) => {
             const branchName = branch.name || 'Unknown Branch';
             const branchCode = branch.code || 'N/A';
             const branchRegion = branch.region || 'N/A';
@@ -3881,37 +3874,34 @@
             const branchDistrict = branch.district || 'N/A';
             const branchPhone = branch.phone || 'N/A';
             const branchAddress = branch.address || 'N/A';
-            const branchAreas = branch.areas_covered || 'N/A';
+            const branchAreas = branch.areas_covered || 'None';
 
-            // Build matched field indicator
-            let matchIndicator = '';
-            if (searchTerm && branch.matchedField) {
-                const matchedField = branch.matchedField;
-                matchIndicator = `<div style="font-size: 0.75rem; color: #fff; background: #667eea; padding: 2px 8px; border-radius: 3px; display: inline-block; margin-bottom: 8px; font-weight: 600;"><i class="fas fa-check-circle me-1"></i>Matched in: ${matchedField.label}</div>`;
-            }
+            const row = document.createElement('tr');
+            const bgColor = index % 2 === 0 ? '#ffffff' : '#f8f9fc';
+            const highlightBorder = (searchTerm && branch.matchedField) ? 'border-left: 4px solid #667eea;' : '';
+            row.style.cssText = `background: ${bgColor}; cursor: pointer; transition: background 0.15s; ${highlightBorder}`;
+            
+            row.onmouseover = function() { this.style.background = '#eef2ff'; };
+            row.onmouseout = function() { this.style.background = bgColor; };
 
-            branchItem.innerHTML = `
-                <div>
-                    ${matchIndicator}
-                    <div style="font-weight: 600; color: #1a1a2e; margin-bottom: 5px;">
-                        <i class="fas fa-building" style="color: #667eea; margin-right: 8px;"></i>${highlightSearchTerm(branchName, searchTerm)}
-                    </div>
-                    <div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;">
-                        <strong>Code:</strong> <span style="font-family: monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">${highlightSearchTerm(branchCode, searchTerm)}</span> 
-                        <strong style="margin-left: 10px;">Region:</strong> <span>${highlightSearchTerm(branchRegion, searchTerm)}</span>
-                    </div>
-                    <div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;">
-                        <strong>Municipality:</strong> <span>${highlightSearchTerm(branchMunicipality, searchTerm)}</span> 
-                        <strong style="margin-left: 10px;">District:</strong> <span>${highlightSearchTerm(branchDistrict, searchTerm)}</span>
-                    </div>
-                    ${branchPhone && branchPhone !== 'N/A' ? `<div style="font-size: 0.85rem; color: #667eea; margin-bottom: 5px;"><i class="fas fa-phone"></i> ${highlightSearchTerm(branchPhone, searchTerm)}</div>` : ''}
-                    ${branchAddress && branchAddress !== 'N/A' ? `<div style="font-size: 0.85rem; color: #666; margin-bottom: 5px;"><strong>Address:</strong> ${highlightSearchTerm(branchAddress, searchTerm)}</div>` : ''}
-                    ${branchAreas && branchAreas !== 'N/A' ? `<div style="font-size: 0.85rem; color: #10b981; margin-bottom: 5px;"><i class="fas fa-map" style="margin-right: 5px;"></i><strong>Areas:</strong> <span style="word-wrap: break-word; word-break: break-word; white-space: normal; display: block; margin-top: 4px; line-height: 1.4;">${highlightSearchTerm(branchAreas, searchTerm)}</span></div>` : ''}
-                </div>
+            const tdStyle = 'padding: 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; color: #333;';
+
+            row.innerHTML = `
+                <td style="${tdStyle} font-weight: 600; color: #1a1a2e; white-space: nowrap;">${highlightSearchTerm(branchName, searchTerm)}</td>
+                <td style="${tdStyle} white-space: nowrap;"><span style="font-family: monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">${highlightSearchTerm(branchCode, searchTerm)}</span></td>
+                <td style="${tdStyle} max-width: 300px; word-wrap: break-word; line-height: 1.4; color: #10b981; font-size: 0.82rem;">${highlightSearchTerm(branchAreas, searchTerm)}</td>
+                <td style="${tdStyle} white-space: nowrap;">${highlightSearchTerm(branchMunicipality, searchTerm)}</td>
+                <td style="${tdStyle} white-space: nowrap;">${highlightSearchTerm(branchDistrict, searchTerm)}</td>
+                <td style="${tdStyle} white-space: nowrap;">${highlightSearchTerm(branchRegion, searchTerm)}</td>
+                <td style="${tdStyle} white-space: nowrap; color: #667eea;">${branchPhone !== 'N/A' ? highlightSearchTerm(branchPhone, searchTerm) : '<span style="color:#999;">None</span>'}</td>
+                <td style="${tdStyle} max-width: 200px; word-wrap: break-word;">${branchAddress !== 'N/A' ? highlightSearchTerm(branchAddress, searchTerm) : '<span style="color:#999;">N/A</span>'}</td>
             `;
 
-            listContainer.appendChild(branchItem);
+            tbody.appendChild(row);
         });
+
+        table.appendChild(tbody);
+        listContainer.appendChild(table);
     }
 
     function selectNcmBranch(index) {

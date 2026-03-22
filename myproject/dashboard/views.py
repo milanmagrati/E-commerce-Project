@@ -12074,8 +12074,9 @@ def daily_sales_report(request):
     """Daily sales report — detailed breakdown for a specific date"""
     from django.db.models.functions import ExtractHour
 
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
     now = timezone.now()
-    today = now.date()
+    today = now.astimezone(nepal_tz).date()
 
     # Date selection
     date_str = request.GET.get('date', '')
@@ -12087,13 +12088,13 @@ def daily_sales_report(request):
     else:
         selected_date = today
 
-    day_start = timezone.make_aware(datetime.combine(selected_date, datetime.min.time()))
-    day_end = timezone.make_aware(datetime.combine(selected_date, datetime.max.time()))
+    day_start = nepal_tz.localize(datetime.combine(selected_date, datetime.min.time()))
+    day_end = nepal_tz.localize(datetime.combine(selected_date, datetime.max.time()))
 
     # Previous day for comparison
     prev_date = selected_date - timedelta(days=1)
-    prev_start = timezone.make_aware(datetime.combine(prev_date, datetime.min.time()))
-    prev_end = timezone.make_aware(datetime.combine(prev_date, datetime.max.time()))
+    prev_start = nepal_tz.localize(datetime.combine(prev_date, datetime.min.time()))
+    prev_end = nepal_tz.localize(datetime.combine(prev_date, datetime.max.time()))
 
     # ── Orders for selected date ──
     orders_qs = Order.objects.filter(
@@ -12171,14 +12172,14 @@ def daily_sales_report(request):
         .order_by('-count')
     )
 
-    # ── Hourly Breakdown ──
-    hourly_data = (
-        orders_qs.annotate(hour=ExtractHour('created_at'))
-        .values('hour')
-        .annotate(count=Count('id'), revenue=Sum('total_amount'))
-        .order_by('hour')
-    )
-    hourly_map = {h['hour']: {'count': h['count'], 'revenue': float(h['revenue'] or 0)} for h in hourly_data}
+    # ── Hourly Breakdown (Nepal timezone) ──
+    hourly_map = {}
+    for order in orders_qs:
+        nepal_hour = order.created_at.astimezone(nepal_tz).hour
+        if nepal_hour not in hourly_map:
+            hourly_map[nepal_hour] = {'count': 0, 'revenue': 0}
+        hourly_map[nepal_hour]['count'] += 1
+        hourly_map[nepal_hour]['revenue'] += float(order.total_amount or 0)
     hourly_labels = [f'{h:02d}:00' for h in range(24)]
     hourly_counts = [hourly_map.get(h, {}).get('count', 0) for h in range(24)]
     hourly_revenues = [hourly_map.get(h, {}).get('revenue', 0) for h in range(24)]
@@ -12215,7 +12216,7 @@ def daily_sales_report(request):
         orders_list.append({
             'id': order.id,
             'order_number': order.order_number,
-            'time': order.created_at.strftime('%I:%M %p'),
+            'time': order.created_at.astimezone(nepal_tz).strftime('%I:%M %p'),
             'customer_name': order.customer_name,
             'customer_phone': order.customer_phone,
             'customer_email': order.customer_email or '',
@@ -12245,7 +12246,7 @@ def daily_sales_report(request):
                     'new_value': log.new_value or '',
                     'description': log.description or '',
                     'user': log.user.username if log.user else 'System',
-                    'time': log.created_at.strftime('%I:%M %p'),
+                    'time': log.created_at.astimezone(nepal_tz).strftime('%I:%M %p'),
                 }
                 for log in order.activity_logs.all()
             ],
