@@ -670,12 +670,6 @@
                             <a href="{% url 'logistics_branches' %}"><i class="fas fa-code-branch me-1"></i> Branches</a>
                         </li>
                         {% endif %}
-
-                        {% if user.is_superuser or user.role == 'administrator' or user.can_sync_ncm_orders %}
-                        <li class="{% if request.resolver_match.url_name == 'ncm:bulk_sync' %}active{% endif %}">
-                            <a href="{% url 'ncm:bulk_sync' %}"><i class="fas fa-sync-alt me-1"></i> Sync Orders</a>
-                        </li>
-                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}

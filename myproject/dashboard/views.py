@@ -13623,30 +13623,67 @@ def purchase_report(request):
         supplier_chart_data.append(float(row['total_value']))
 
     # Product breakdown
-    product_data = (
-        items_qs
-        .values('product__id', 'product__name', 'product__product_type')
-        .annotate(
-            total_qty=Sum('quantity'),
-            total_value=Sum('total'),
-            avg_rate=Coalesce(Avg('rate'), Decimal('0')),
-        )
-        .order_by('-total_qty')
-    )
+    # When a specific product is selected, split rows by supplier + date so
+    # purchases from different suppliers on different dates are NOT combined.
+    product_breakdown_by_entry = bool(selected_product_id)
     product_breakdown = []
     product_chart_labels = []
     product_chart_data = []
-    for row in product_data:
-        pname = row['product__name'] or 'Unknown'
-        product_breakdown.append({
-            'name': pname,
-            'product_type': row['product__product_type'] or 'simple',
-            'total_qty': row['total_qty'],
-            'total_value': row['total_value'],
-            'avg_rate': round(row['avg_rate'], 2),
-        })
-        product_chart_labels.append(pname)
-        product_chart_data.append(row['total_qty'])
+
+    if product_breakdown_by_entry:
+        product_data = (
+            items_qs
+            .values(
+                'product__id', 'product__name', 'product__product_type',
+                'purchase__supplier__name', 'purchase__purchase_date',
+            )
+            .annotate(
+                total_qty=Sum('quantity'),
+                total_value=Sum('total'),
+                cost_rate=Coalesce(Avg('rate'), Decimal('0')),
+            )
+            .order_by('purchase__purchase_date', 'purchase__supplier__name')
+        )
+        for row in product_data:
+            pname = row['product__name'] or 'Unknown'
+            supplier_name = row['purchase__supplier__name'] or 'Unknown'
+            purchase_date = row['purchase__purchase_date']
+            product_breakdown.append({
+                'name': pname,
+                'product_type': row['product__product_type'] or 'simple',
+                'supplier_name': supplier_name,
+                'purchase_date': purchase_date,
+                'total_qty': row['total_qty'],
+                'total_value': row['total_value'],
+                'cost_rate': round(row['cost_rate'], 2),
+            })
+            label = f"{pname} – {supplier_name}"
+            product_chart_labels.append(label)
+            product_chart_data.append(row['total_qty'])
+    else:
+        product_data = (
+            items_qs
+            .values('product__id', 'product__name', 'product__product_type')
+            .annotate(
+                total_qty=Sum('quantity'),
+                total_value=Sum('total'),
+                cost_rate=Coalesce(Avg('rate'), Decimal('0')),
+            )
+            .order_by('-total_qty')
+        )
+        for row in product_data:
+            pname = row['product__name'] or 'Unknown'
+            product_breakdown.append({
+                'name': pname,
+                'product_type': row['product__product_type'] or 'simple',
+                'supplier_name': None,
+                'purchase_date': None,
+                'total_qty': row['total_qty'],
+                'total_value': row['total_value'],
+                'cost_rate': round(row['cost_rate'], 2),
+            })
+            product_chart_labels.append(pname)
+            product_chart_data.append(row['total_qty'])
 
     # Payment status breakdown
     status_data = (
@@ -13831,6 +13868,7 @@ def purchase_report(request):
         'has_filters': has_filters,
         'supplier_ranking': supplier_ranking,
         'product_breakdown': product_breakdown,
+        'product_breakdown_by_entry': product_breakdown_by_entry,
         'staff_ranking': staff_ranking,
         'chart_labels': json.dumps(chart_labels),
         'chart_count_data': json.dumps(chart_count_data),

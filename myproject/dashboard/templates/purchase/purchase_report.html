@@ -544,9 +544,13 @@
                             <thead>
                                 <tr>
                                     <th>Product</th>
+                                    {% if product_breakdown_by_entry %}
+                                    <th>Supplier</th>
+                                    <th>Date</th>
+                                    {% endif %}
                                     <th>Qty Purchased</th>
                                     <th>Total Value</th>
-                                    <th>Avg Rate</th>
+                                    <th>Cost Rate</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -559,9 +563,13 @@
                                         {% elif pb.product_type == 'bundle' %}<span class="badge bg-warning text-dark ms-1" style="font-size:.55rem;">BUNDLE</span>
                                         {% endif %}
                                     </td>
+                                    {% if product_breakdown_by_entry %}
+                                    <td>{{ pb.supplier_name }}</td>
+                                    <td>{{ pb.purchase_date }}</td>
+                                    {% endif %}
                                     <td><strong>{{ pb.total_qty }}</strong></td>
                                     <td>{{ pb.total_value|currency }}</td>
-                                    <td>{{ pb.avg_rate|currency }}</td>
+                                    <td>{{ pb.cost_rate|currency }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
