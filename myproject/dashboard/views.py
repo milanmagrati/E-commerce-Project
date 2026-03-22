@@ -2531,10 +2531,11 @@ def orders_list(request):
     product_sort = request.GET.get('product_sort', '')
     if product_sort in ('asc', 'desc'):
         from django.db.models import Min, Max
+        from django.db.models.functions import Lower
         if product_sort == 'asc':
-            orders = orders.annotate(first_product=Min('items__product_name')).order_by('first_product')
+            orders = orders.annotate(first_product=Min('items__product_name')).order_by(Lower('first_product').asc())
         else:
-            orders = orders.annotate(first_product=Max('items__product_name')).order_by('-first_product')
+            orders = orders.annotate(first_product=Max('items__product_name')).order_by(Lower('first_product').desc())
 
     # Pagination
     from django.core.paginator import Paginator
