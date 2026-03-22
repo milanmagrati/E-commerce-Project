@@ -4874,7 +4874,6 @@ def api_bestselling_products(request):
 
 
 @login_required
-@permission_required('can_export_data')
 @require_http_methods(["POST"])
 def export_selected_orders_excel(request):
     """Export selected orders to Excel"""
@@ -5765,7 +5764,6 @@ def variation_delete(request, variation_id):
     return redirect("product_detail", product_id=product_id)
 
 @login_required
-@permission_required('can_delete_orders')
 def orders_bulk_action(request):
     """Handle bulk actions on orders including NCM bulk sending"""
     if request.method == 'POST':
@@ -5794,6 +5792,10 @@ def orders_bulk_action(request):
                 return orders_bulk_ncm_send(request, orders)
             
             elif action == 'delete':
+                # Only users with delete permission can move orders to trash
+                if request.user.role != 'administrator' and not request.user.can_delete_orders:
+                    messages.error(request, '❌ You do not have permission to delete orders.')
+                    return redirect(redirect_to)
                 # SOFT DELETE - Move to trash instead of permanent delete
                 # Only restore stock for dispatched orders
                 for order in orders:
