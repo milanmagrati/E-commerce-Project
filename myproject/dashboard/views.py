@@ -11735,6 +11735,19 @@ def sales_report(request):
             sl.append(dm.get(_d, 0))
         return sl
 
+    # Bundle available_stock lookup for top products
+    # Bundle products don't store real stock in their own stock field;
+    # their effective stock is min(component.stock // qty_required).
+    _bundle_ids_top = {
+        p['product__id'] for p in top_products_raw
+        if p.get('product__product_type') == 'bundle'
+    }
+    _bundle_avail_top = {}
+    if _bundle_ids_top:
+        for _bp in Product.objects.filter(id__in=_bundle_ids_top).prefetch_related(
+                'bundle_components__component_product'):
+            _bundle_avail_top[_bp.id] = _bp.available_stock
+
     for p in top_products_raw:
         label = p['product__name'] or ''
         variant = p['product_variation__variation_name'] or ''
@@ -11747,8 +11760,12 @@ def sales_report(request):
         rev = float(p['revenue'] or 0)
         qty = p['qty_sold'] or 0
         profit_pct = round((rev - cost * qty) / rev * 100, 1) if rev > 0 else 0
-        stock = p['product_variation__stock'] if p['product_variation__id'] else p['product__stock']
-        stock = stock or 0
+        if p.get('product__product_type') == 'bundle':
+            # For bundle products, derive effective stock from component availability
+            stock = _bundle_avail_top.get(p['product__id'], 0)
+        else:
+            stock = p['product_variation__stock'] if p['product_variation__id'] else p['product__stock']
+            stock = stock or 0
 
         # Days until stockout — hybrid EWS + spike detection
         _sales = _build_sales_list(p['product__id'], p['product_variation__id'])
@@ -11849,7 +11866,7 @@ def sales_report(request):
             product__isnull=False,
         )
         .values(
-            'product__id', 'product__name', 'product__stock',
+            'product__id', 'product__name', 'product__stock', 'product__product_type',
             'product_variation__id', 'product_variation__variation_name',
             'product_variation__stock',
         )
@@ -11857,14 +11874,29 @@ def sales_report(request):
         .order_by('product__id', 'product_variation__id')
     )
 
+    # Bundle available_stock lookup for stock alerts
+    _bundle_ids_alerts = {
+        row['product__id'] for row in product_stock_raw
+        if row.get('product__product_type') == 'bundle'
+    }
+    _bundle_avail_alerts = {}
+    if _bundle_ids_alerts:
+        for _bp in Product.objects.filter(id__in=_bundle_ids_alerts).prefetch_related(
+                'bundle_components__component_product'):
+            _bundle_avail_alerts[_bp.id] = _bp.available_stock
+
     # Build meta lookup (name + stock) keyed by (product_id, variation_id)
     product_meta = {}
     for row in product_stock_raw:
         key = (row['product__id'], row['product_variation__id'])
         if key not in product_meta:
-            stock = (row['product_variation__stock']
-                     if row['product_variation__id']
-                     else row['product__stock']) or 0
+            if row.get('product__product_type') == 'bundle':
+                # Bundle stock is derived from component availability, not the product's own stock field
+                stock = _bundle_avail_alerts.get(row['product__id'], 0)
+            else:
+                stock = (row['product_variation__stock']
+                         if row['product_variation__id']
+                         else row['product__stock']) or 0
             name = row['product__name'] or ''
             variant = row['product_variation__variation_name'] or ''
             display = f"{name} ({variant})" if variant else name
@@ -11947,8 +11979,20 @@ def sales_report(request):
     trending_products = trending_products[:10]
 
     # Slow moving products
+    # Bundle products have their stock derived from components — fetch them separately
+    # so that the stock__gt=0 filter doesn't incorrectly exclude them.
     slow_products = []
-    all_active_products = Product.objects.filter(is_deleted=False, is_active=True, stock__gt=0)
+    _simple_active = Product.objects.filter(
+        is_deleted=False, is_active=True, stock__gt=0
+    ).exclude(product_type='bundle')
+    _bundle_active_all = list(
+        Product.objects.filter(
+            is_deleted=False, is_active=True, product_type='bundle'
+        ).prefetch_related('bundle_components__component_product')
+    )
+    all_active_products = list(_simple_active) + [
+        b for b in _bundle_active_all if b.available_stock > 0
+    ]
     for product in all_active_products:
         last_sale = OrderItem.objects.filter(
             product=product, order__is_deleted=False
@@ -11963,7 +12007,7 @@ def sales_report(request):
                 'product_type': product.product_type,
                 'last_sold': last_sale.order.created_at.strftime('%b %d, %Y') if last_sale else 'Never',
                 'days_idle': days_idle,
-                'stock': product.stock,
+                'stock': product.available_stock,  # Correct for both simple/variable and bundle products
             })
     slow_products.sort(key=lambda x: x['days_idle'], reverse=True)
     slow_products = slow_products[:20]
