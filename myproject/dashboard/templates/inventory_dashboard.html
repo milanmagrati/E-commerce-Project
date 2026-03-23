@@ -635,28 +635,29 @@
             </div>
             <div class="card-body-dark p-0">
                 <div class="table-container-dark" style="max-height: 500px; overflow-y: auto;">
-                    <table class="table-dark products-value-table">
+                    <table class="table-dark products-value-table" id="productsValueTable">
                         <colgroup>
                             <col style="width: 45px;">
-                            {% if can_view_product_value %}
-                            <col style="width: 200px;">
-                            <col style="width: 120px;">
-                            {% else %}
-                            <col style="width: 350px;">
-                            {% endif %}
+                            <col style="width: 280px;">
                             <col style="width: 110px;">
-                            <col style="width: 120px;">
                             <col style="width: 150px;">
+                            <col style="width: 160px;">
                         </colgroup>
                         <thead style="position: sticky; top: 0; z-index: 1;">
                             <tr>
                                 <th>#</th>
                                 <th>Product</th>
-                                {% if can_view_product_value %}
-                                <th class="text-right">Cost Price</th>
-                                {% endif %}
                                 <th class="text-center">Stock Qty</th>
-                                <th class="text-right">Unit Price</th>
+                                <th class="text-right">
+                                    <span id="unitPriceHeaderText">Unit Price</span>
+                                    {% if can_toggle_product_price %}
+                                    <div class="price-toggle-dropdown" id="priceToggleDropdown">
+                                        <button type="button" class="price-toggle-btn" id="priceToggleBtn" onclick="togglePriceDropdown(event)">
+                                            <i class="fas fa-caret-down"></i>
+                                        </button>
+                                    </div>
+                                    {% endif %}
+                                </th>
                                 <th class="text-right">Total Value</th>
                             </tr>
                         </thead>
@@ -682,24 +683,19 @@
                                         <span class="product-name">{{ item.product.name }}</span>
                                     </div>
                                 </td>
-                                {% if can_view_product_value %}
-                                <td class="text-right">
-                                    <strong>Rs {{ item.cost_price|floatformat:2 }}</strong>
-                                </td>
-                                {% endif %}
                                 <td class="text-center">
                                     <span class="stock-badge success">{{ item.product.stock }}</span>
                                 </td>
-                                <td class="text-right">
+                                <td class="text-right product-unit-price" data-selling-price="{{ item.product.price }}" data-cost-price="{{ item.cost_price }}" data-stock="{{ item.available_stock }}">
                                     <strong>Rs {{ item.product.price|floatformat:2 }}</strong>
                                 </td>
-                                <td class="text-right">
+                                <td class="text-right product-total-value">
                                     <strong class="total-value-text">Rs {{ item.value|floatformat:2 }}</strong>
                                 </td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="{% if can_view_product_value %}6{% else %}5{% endif %}" class="text-center py-4">
+                                <td colspan="5" class="text-center py-4">
                                     <p class="text-muted">No products with stock</p>
                                 </td>
                             </tr>
@@ -1276,6 +1272,18 @@
         </div>
     </div>
 </div>
+
+<!-- ✅ Price Toggle Dropdown (portal – outside all scroll/overflow containers) -->
+{% if can_toggle_product_price %}
+<div id="priceDropdownMenu">
+    <div class="price-dropdown-item active" data-price-mode="selling" onclick="switchPriceMode('selling')">
+        <i class="fas fa-check"></i> By Selling Price
+    </div>
+    <div class="price-dropdown-item" data-price-mode="cost" onclick="switchPriceMode('cost')">
+        <i class="fas fa-check"></i> By Cost Price
+    </div>
+</div>
+{% endif %}
 
 <style>
 /* Root Variables */
@@ -2230,6 +2238,71 @@
 
 .products-value-table .product-cell {
     overflow: hidden;
+}
+
+/* Price Toggle Dropdown */
+.price-toggle-dropdown {
+    display: inline-block;
+    position: relative;
+}
+
+.price-toggle-btn {
+    background: none;
+    border: none;
+    color: #e53e3e;
+    cursor: pointer;
+    padding: 2px 8px;
+    font-size: 20px;
+    transition: color 0.2s;
+    vertical-align: middle;
+}
+
+.price-toggle-btn:hover {
+    color: #c53030;
+}
+
+#priceDropdownMenu {
+    display: none;
+    position: fixed;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    min-width: 170px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    z-index: 9999;
+    overflow: hidden;
+}
+
+#priceDropdownMenu.show {
+    display: block;
+}
+
+.price-dropdown-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #cbd5e1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+
+.price-dropdown-item i {
+    opacity: 0;
+    color: #10b981;
+    font-size: 12px;
+}
+
+.price-dropdown-item.active i {
+    opacity: 1;
+}
+
+.price-dropdown-item:hover {
+    background: #334155;
+    color: #fff;
 }
 
 .sku-badge {
@@ -3360,5 +3433,77 @@ function filterStockCountTable() {
         row.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
     });
 }
+
+// Price Toggle Dropdown Functions
+function togglePriceDropdown(event) {
+    event.stopPropagation();
+    var menu = document.getElementById('priceDropdownMenu');
+    if (!menu) return;
+
+    if (menu.classList.contains('show')) {
+        menu.classList.remove('show');
+        return;
+    }
+
+    var btn = document.getElementById('priceToggleBtn');
+    var rect = btn.getBoundingClientRect();
+
+    // Temporarily render off-screen to measure width
+    menu.style.visibility = 'hidden';
+    menu.style.top = '-9999px';
+    menu.style.left = '-9999px';
+    menu.classList.add('show');
+
+    var menuWidth = menu.offsetWidth || 170;
+    var left = rect.right - menuWidth;
+    if (left < 4) left = rect.left;
+
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.left = left + 'px';
+    menu.style.visibility = '';
+}
+
+function switchPriceMode(mode) {
+    var items = document.querySelectorAll('#priceDropdownMenu .price-dropdown-item');
+    items.forEach(function(item) {
+        item.classList.remove('active');
+        if (item.getAttribute('data-price-mode') === mode) {
+            item.classList.add('active');
+        }
+    });
+
+    var headerText = document.getElementById('unitPriceHeaderText');
+    if (headerText) {
+        headerText.textContent = (mode === 'cost') ? 'Cost Price' : 'Unit Price';
+    }
+
+    var rows = document.querySelectorAll('#productsValueTable .product-unit-price');
+    rows.forEach(function(cell) {
+        var sellingPrice = parseFloat(cell.getAttribute('data-selling-price')) || 0;
+        var costPrice = parseFloat(cell.getAttribute('data-cost-price')) || 0;
+        var stock = parseInt(cell.getAttribute('data-stock')) || 0;
+
+        var displayPrice = (mode === 'cost') ? costPrice : sellingPrice;
+        var totalValue = stock * displayPrice;
+
+        cell.querySelector('strong').textContent = 'Rs ' + displayPrice.toFixed(2);
+        var totalCell = cell.closest('tr').querySelector('.product-total-value .total-value-text');
+        if (totalCell) {
+            totalCell.textContent = 'Rs ' + totalValue.toFixed(2);
+        }
+    });
+
+    var menu = document.getElementById('priceDropdownMenu');
+    if (menu) menu.classList.remove('show');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    var menu = document.getElementById('priceDropdownMenu');
+    if (!menu) return;
+    if (!e.target.closest || !e.target.closest('#priceToggleDropdown, #priceDropdownMenu')) {
+        menu.classList.remove('show');
+    }
+});
 </script>
 {% endblock %}

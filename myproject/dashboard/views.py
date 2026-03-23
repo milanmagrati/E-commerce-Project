@@ -7093,9 +7093,9 @@ def inventory_dashboard(request):
         )[:10]
 
         # Products by Stock Value — use available_stock, show ALL products
-        can_view_product_value = request.user.is_administrator or getattr(request.user, 'can_view_product_value', False)
+        can_toggle_product_price = request.user.is_administrator or getattr(request.user, 'can_toggle_product_price', False)
         products_with_value = [
-            {'product': p, 'value': p.available_stock * p.price, 'cost_price': p.cost_price}
+            {'product': p, 'value': p.available_stock * p.price, 'cost_price': p.cost_price, 'available_stock': p.available_stock}
             for p in all_products_list if p.available_stock > 0
         ]
         top_products = sorted(products_with_value, key=lambda x: x['value'], reverse=True)
@@ -7414,7 +7414,7 @@ def inventory_dashboard(request):
             'low_stock_products': low_stock_products,
             'out_of_stock_products': out_of_stock_products,
             'top_products': top_products,
-            'can_view_product_value': can_view_product_value,
+            'can_toggle_product_price': can_toggle_product_price,
             'recent_dispatched_orders': recent_dispatched_orders,
             'dispatched_page_obj': dispatched_page_obj,
             'dispatched_total_count': dispatched_order_ids.count(),
