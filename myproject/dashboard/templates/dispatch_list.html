@@ -34,166 +34,152 @@
     </div>
 
     <!-- Statistics Cards -->
-    <div class="row mb-4">
-        <div class="col-md-3">
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
             <div class="stat-card stat-card-primary">
-                <div class="stat-icon">
-                    <i class="bi bi-box-seam"></i>
-                </div>
+                <div class="stat-icon"><i class="bi bi-box-seam"></i></div>
                 <div class="stat-content">
-                    <h3 class="stat-number">{{ dispatches.count }}</h3>
-                    <p class="stat-label">Total Dispatches</p>
+                    <div class="stat-number">{{ dispatches.count }}</div>
+                    <div class="stat-label">Total Dispatches</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md-3">
             <div class="stat-card stat-card-success">
-                <div class="stat-icon">
-                    <i class="bi bi-check-circle"></i>
-                </div>
+                <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
                 <div class="stat-content">
-                    <h3 class="stat-number">{{ dispatches|length }}</h3>
-                    <p class="stat-label">Showing Results</p>
+                    <div class="stat-number">{{ dispatches|length }}</div>
+                    <div class="stat-label">Showing</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md-3">
             <div class="stat-card stat-card-info">
-                <div class="stat-icon">
-                    <i class="bi bi-truck"></i>
-                </div>
+                <div class="stat-icon"><i class="bi bi-truck"></i></div>
                 <div class="stat-content">
-                    <h3 class="stat-number">{{ dispatches.count }}</h3>
-                    <p class="stat-label">
-                        {% if logistics_filter %}
-                            {{ logistics_filter|title }}
-                        {% else %}
-                            All Logistics
-                        {% endif %}
-                    </p>
+                    <div class="stat-number">{{ dispatches.count }}</div>
+                    <div class="stat-label">{% if logistics_filter %}{{ logistics_filter|title }}{% else %}All Logistics{% endif %}</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md-3">
             <div class="stat-card stat-card-warning">
-                <div class="stat-icon">
-                    <i class="bi bi-clipboard-check"></i>
-                </div>
+                <div class="stat-icon"><i class="bi bi-clipboard-check"></i></div>
                 <div class="stat-content">
-                    <h3 class="stat-number" id="selectedCountLarge">0</h3>
-                    <p class="stat-label">Selected</p>
+                    <div class="stat-number" id="selectedCountLarge">0</div>
+                    <div class="stat-label">Selected</div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Filters Card -->
-    <div class="card mb-3 shadow-sm">
-        <div class="card-body">
-            <form method="get" class="row g-3">
-                <div class="col-md-2">
-                    <label class="form-label small">Search</label>
-                    <input type="text" name="search" class="form-control" 
-                           placeholder="Batch or Order ID" value="{{ search }}">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small">Logistics</label>
-                    <select name="logistics" class="form-select">
-                        <option value="">All Logistics</option>
-                        {% for value, label in logistics_choices %}
-                            <option value="{{ value }}" {% if logistics_filter == value %}selected{% endif %}>
-                                {{ label }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small">Status</label>
-                    <select name="status" class="form-select">
-                        <option value="">All Status</option>
-                        {% for value, label in status_choices %}
-                            <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>
-                                {{ label }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small">Date From</label>
-                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small">Date To</label>
-                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small">&nbsp;</label>
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary">
+    <div class="card mb-2 shadow-sm">
+        <div class="card-body py-2 px-3">
+            <form method="get">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-sm-6 col-md">
+                        <label class="form-label form-label-sm mb-1">Search</label>
+                        <input type="text" name="search" class="form-control form-control-sm"
+                               placeholder="Batch or Order ID" value="{{ search }}">
+                    </div>
+                    <div class="col-12 col-sm-6 col-md">
+                        <label class="form-label form-label-sm mb-1">Logistics</label>
+                        <select name="logistics" class="form-select form-select-sm">
+                            <option value="">All Logistics</option>
+                            {% for value, label in logistics_choices %}
+                                <option value="{{ value }}" {% if logistics_filter == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-sm-6 col-md">
+                        <label class="form-label form-label-sm mb-1">Status</label>
+                        <select name="status" class="form-select form-select-sm">
+                            <option value="">All Status</option>
+                            {% for value, label in status_choices %}
+                                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-sm-6 col-md">
+                        <label class="form-label form-label-sm mb-1">Date From</label>
+                        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+                    </div>
+                    <div class="col-12 col-sm-6 col-md">
+                        <label class="form-label form-label-sm mb-1">Date To</label>
+                        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+                    </div>
+                    <div class="col-12 col-sm-6 col-md-auto">
+                        <button type="submit" class="btn btn-primary btn-sm w-100">
                             <i class="bi bi-search"></i> Filter
                         </button>
                     </div>
+                    {% if search or logistics_filter or status_filter or date_from or date_to %}
+                    <div class="col-12 col-sm-6 col-md-auto">
+                        <a href="{% url 'dispatch_list' %}" class="btn btn-outline-secondary btn-sm w-100">
+                            <i class="bi bi-x-circle"></i> Clear
+                        </a>
+                    </div>
+                    {% endif %}
                 </div>
             </form>
-            {% if search or logistics_filter or status_filter or date_from or date_to %}
-            <div class="mt-2">
-                <a href="{% url 'dispatch_list' %}" class="btn btn-sm btn-outline-secondary">
-                    <i class="bi bi-x-circle"></i> Clear Filters
-                </a>
-            </div>
-            {% endif %}
         </div>
     </div>
 
-    <!-- Bulk Actions Card -->
+    <!-- Bulk Actions Card (hidden until items are selected) -->
     <form method="post" action="{% url 'dispatch_bulk_action' %}" id="bulkActionForm">
         {% csrf_token %}
-        <div class="card mb-3 shadow-sm">
-            <div class="card-body">
-                <div class="row g-3 align-items-center">
-                    <div class="col-md-6">
-                        <select name="bulk_action" class="form-select" required>
-                            <option value="">-- Select Bulk Action --</option>
+        <div class="card mb-2 shadow-sm" id="bulkActionsPanel" style="display:none;">
+            <div class="card-body py-2 px-3">
+                <div class="row g-2 align-items-center">
+                    <div class="col-auto">
+                        <small class="fw-semibold text-primary"><span id="selectedCount">0</span> selected</small>
+                    </div>
+                    <div class="col col-sm-auto">
+                        <select name="bulk_action" class="form-select form-select-sm" required>
+                            <option value="">-- Bulk Action --</option>
                             <option value="move_to_trash">Move to Trash</option>
                             <option value="change_status">Change Status</option>
                             <option value="export_excel">Export to Excel</option>
                         </select>
                     </div>
-                    <div class="col-md-4">
-                        <select name="new_status" class="form-select" id="newStatusSelect" style="display:none;">
-                            <option value="">-- Select New Status --</option>
+                    <div class="col col-sm-auto">
+                        <select name="new_status" class="form-select form-select-sm" id="newStatusSelect" style="display:none;">
+                            <option value="">-- New Status --</option>
                             {% for value, label in status_choices %}
                                 <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary w-100">
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary btn-sm">
                             <i class="bi bi-lightning-fill"></i> Apply
                         </button>
                     </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="clearSelectionBtn">
+                            <i class="bi bi-x"></i> Clear
+                        </button>
+                    </div>
                 </div>
-                <small class="text-muted mt-2 d-block">
-                    <span id="selectedCount">0</span> dispatch(es) selected
-                </small>
             </div>
         </div>
 
         <!-- Dispatches Table -->
         <div class="card shadow-sm">
-            <div class="card-body">
+            <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle">
+                    <table class="table table-hover table-sm align-middle mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th width="30">
+                                <th width="36" class="ps-3">
                                     <input type="checkbox" class="form-check-input" id="selectAll">
                                 </th>
                                 <th>Batch Number</th>
                                 <th>Logistics</th>
                                 <th>Status</th>
                                 <th>Orders</th>
-                                <th>Created By</th>
+                                <th class="d-none d-md-table-cell">Created By</th>
                                 <th>Created At</th>
                                 <th>Actions</th>
                             </tr>
@@ -201,12 +187,12 @@
                         <tbody>
                             {% for dispatch in dispatches %}
                             <tr class="clickable-row" data-href="{% url 'dispatch_detail' dispatch.pk %}">
-                                <td onclick="event.stopPropagation();">
+                                <td class="ps-3" onclick="event.stopPropagation();">
                                     <input type="checkbox" class="form-check-input dispatch-checkbox" 
                                            name="dispatch_ids" value="{{ dispatch.id }}">
                                 </td>
                                 <td>
-                                    <strong class="text-primary">{{ dispatch.batch_number }}</strong>
+                                    <strong class="text-primary batch-number">{{ dispatch.batch_number }}</strong>
                                 </td>
                                 <td>
                                     <span class="badge bg-info">
@@ -235,7 +221,7 @@
                                 <td>
                                     <span class="badge bg-dark">{{ dispatch.total_orders }} orders</span>
                                 </td>
-                                <td>{{ dispatch.created_by.username|default:"N/A" }}</td>
+                                <td class="d-none d-md-table-cell">{{ dispatch.created_by.username|default:"N/A" }}</td>
                                 <td>
                                     <small>{{ dispatch.created_at|nepali_date }}</small><br>
                                     <small class="text-muted">{{ dispatch.created_at|nepali_time }}</small>
@@ -282,175 +268,126 @@
     .stat-card {
         display: flex;
         align-items: center;
-        padding: 1.5rem;
-        border-radius: 12px;
+        padding: 0.65rem 0.9rem;
+        border-radius: 10px;
         background: white;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        transition: all 0.3s ease;
-        border-left: 4px solid;
+        box-shadow: 0 1px 4px rgba(0,0,0,.08);
+        transition: box-shadow .2s, transform .2s;
+        border-left: 3px solid;
+        height: 100%;
     }
-
     .stat-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,.12);
     }
-
-    .stat-card-primary {
-        border-left-color: #0d6efd;
-        background: linear-gradient(135deg, #fff 0%, #e7f1ff 100%);
-    }
-
-    .stat-card-success {
-        border-left-color: #198754;
-        background: linear-gradient(135deg, #fff 0%, #d1f4e0 100%);
-    }
-
-    .stat-card-info {
-        border-left-color: #0dcaf0;
-        background: linear-gradient(135deg, #fff 0%, #d1f9ff 100%);
-    }
-
-    .stat-card-warning {
-        border-left-color: #ffc107;
-        background: linear-gradient(135deg, #fff 0%, #fff4d1 100%);
-    }
+    .stat-card-primary  { border-left-color: #0d6efd; background: linear-gradient(135deg,#fff 0%,#e7f1ff 100%); }
+    .stat-card-success  { border-left-color: #198754; background: linear-gradient(135deg,#fff 0%,#d1f4e0 100%); }
+    .stat-card-info     { border-left-color: #0dcaf0; background: linear-gradient(135deg,#fff 0%,#d1f9ff 100%); }
+    .stat-card-warning  { border-left-color: #ffc107; background: linear-gradient(135deg,#fff 0%,#fff4d1 100%); }
 
     .stat-icon {
-        font-size: 3rem;
-        margin-right: 1.5rem;
-        opacity: 0.7;
+        font-size: 1.6rem;
+        margin-right: 0.75rem;
+        opacity: 0.75;
+        flex-shrink: 0;
     }
+    .stat-card-primary .stat-icon { color: #0d6efd; }
+    .stat-card-success .stat-icon { color: #198754; }
+    .stat-card-info    .stat-icon { color: #0dcaf0; }
+    .stat-card-warning .stat-icon { color: #ffc107; }
 
-    .stat-card-primary .stat-icon {
-        color: #0d6efd;
-    }
-
-    .stat-card-success .stat-icon {
-        color: #198754;
-    }
-
-    .stat-card-info .stat-icon {
-        color: #0dcaf0;
-    }
-
-    .stat-card-warning .stat-icon {
-        color: #ffc107;
-    }
-
-    .stat-content {
-        flex: 1;
-    }
+    .stat-content { flex: 1; min-width: 0; }
 
     .stat-number {
-        font-size: 2.5rem;
+        font-size: 1.5rem;
         font-weight: 700;
-        margin: 0;
-        line-height: 1;
-        color: #2c3e50;
+        line-height: 1.1;
+        color: #1e293b;
+        white-space: nowrap;
     }
-
     .stat-label {
-        font-size: 0.9rem;
+        font-size: 0.7rem;
         color: #6c757d;
-        margin: 0.5rem 0 0 0;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.4px;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* ==================== BATCH NUMBER TRUNCATION ==================== */
+    .batch-number {
+        font-size: 0.82rem;
+        word-break: break-all;
+    }
+    @media (min-width: 768px) {
+        .batch-number {
+            white-space: nowrap;
+            max-width: 220px;
+            display: inline-block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            vertical-align: middle;
+        }
     }
 
     /* ==================== ENHANCED ACTION BUTTONS ==================== */
     .action-btn {
         display: inline-block;
-        padding: 6px 12px;
-        margin: 0 3px;
-        font-size: 0.85rem;
+        padding: 3px 9px;
+        margin: 0 2px;
+        font-size: 0.78rem;
         font-weight: 600;
         text-decoration: none;
         border: none;
-        border-radius: 6px;
-        transition: all 0.3s ease;
+        border-radius: 5px;
+        transition: all 0.2s ease;
         cursor: pointer;
         background: none;
+        white-space: nowrap;
     }
+    .view-btn   { color: #17a2b8; background: rgba(23,162,184,.1); }
+    .view-btn:hover  { color:#fff; background:#17a2b8; transform:translateY(-1px); }
+    .delete-btn { color: #dc3545; background: rgba(220,53,69,.1); }
+    .delete-btn:hover { color:#fff; background:#dc3545; transform:translateY(-1px); }
 
-    .view-btn {
-        color: #17a2b8;
-        background: rgba(23, 162, 184, 0.1);
-    }
-
-    .view-btn:hover {
-        color: #fff;
-        background: #17a2b8;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(23, 162, 184, 0.3);
-    }
-
-    .delete-btn {
-        color: #dc3545;
-        background: rgba(220, 53, 69, 0.1);
-    }
-
-    .delete-btn:hover {
-        color: #fff;
-        background: #dc3545;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3);
-    }
-
-    /* ==================== CLICKABLE ROW ==================== */
-    .clickable-row {
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-
-    .clickable-row:hover {
-        background: rgba(0, 123, 255, 0.05);
-        transform: scale(1.01);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    /* ==================== TABLE ENHANCEMENTS ==================== */
+    /* ==================== TABLE ==================== */
     .table thead th {
         font-weight: 600;
         text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.5px;
+        font-size: 0.7rem;
+        letter-spacing: 0.4px;
         color: #495057;
+        white-space: nowrap;
     }
+    .table td, .table th { vertical-align: middle; }
 
-    /* ==================== CHECKBOX STYLING ==================== */
-    .form-check-input {
-        cursor: pointer;
-        width: 18px;
-        height: 18px;
+    /* ==================== CLICKABLE ROW ==================== */
+    .clickable-row { cursor: pointer; transition: background .15s; }
+    .clickable-row:hover { background: rgba(13,110,253,.04); }
+
+    /* ==================== CHECKBOX ==================== */
+    .form-check-input { cursor: pointer; width: 16px; height: 16px; }
+    .form-check-input:checked { background-color: #0d6efd; border-color: #0d6efd; }
+
+    /* ==================== BULK PANEL ==================== */
+    #bulkActionsPanel {
+        border-left: 3px solid #0d6efd;
+        animation: slideDown .2s ease;
     }
-
-    .form-check-input:checked {
-        background-color: #0d6efd;
-        border-color: #0d6efd;
-    }
-
-    /* ==================== BULK ACTION CARD ==================== */
-    #selectedCount {
-        font-weight: 700;
-        color: #0d6efd;
-        font-size: 1.1rem;
+    @keyframes slideDown {
+        from { opacity:0; transform:translateY(-6px); }
+        to   { opacity:1; transform:translateY(0); }
     }
 
     /* ==================== RESPONSIVE ==================== */
-    @media (max-width: 768px) {
-        .stat-card {
-            margin-bottom: 1rem;
-        }
-        
-        .stat-icon {
-            font-size: 2rem;
-            margin-right: 1rem;
-        }
-        
-        .stat-number {
-            font-size: 1.8rem;
-        }
+    @media (max-width: 576px) {
+        .stat-number { font-size: 1.25rem; }
+        .stat-icon   { font-size: 1.3rem; margin-right: 0.5rem; }
+        .stat-card   { padding: 0.5rem 0.65rem; }
+        .container-fluid { padding-left: 0.75rem; padding-right: 0.75rem; }
     }
 </style>
 
@@ -487,6 +424,9 @@
         const count = checkedBoxes.length;
         document.getElementById('selectedCount').textContent = count;
         document.getElementById('selectedCountLarge').textContent = count;
+        // Show/hide bulk actions panel
+        const panel = document.getElementById('bulkActionsPanel');
+        if (panel) panel.style.display = count > 0 ? 'block' : 'none';
     }
 
     // ==================== BULK ACTION FORM VALIDATION ====================
@@ -552,6 +492,14 @@
             e.stopPropagation();
             deleteDispatch(this.dataset.id, this.dataset.batch);
         });
+    });
+
+    // ==================== CLEAR SELECTION ====================
+    document.getElementById('clearSelectionBtn')?.addEventListener('click', function() {
+        document.querySelectorAll('.dispatch-checkbox').forEach(cb => cb.checked = false);
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) selectAll.checked = false;
+        updateSelectedCount();
     });
 
     // Initialize count on page load
