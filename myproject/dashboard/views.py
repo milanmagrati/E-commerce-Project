@@ -1242,6 +1242,15 @@ def product_edit(request, product_id):
         if form.is_valid():
             product = form.save()
 
+            # Sync cost_price field with weighted average for variable cost products.
+            # This handles the case where the user switches cost_price_type to 'variable'
+            # without making a new purchase, ensuring the displayed value is accurate.
+            if product.cost_price_type == 'variable':
+                new_avg = product.average_cost
+                if new_avg != product.cost_price:
+                    product.cost_price = new_avg
+                    product.save(update_fields=['cost_price'])
+
             # If a temporary uploaded image exists (from previous failed validation), attach it to the product
             try:
                 temp_path = request.session.pop('temp_product_image', None)
@@ -7006,9 +7015,10 @@ def inventory_dashboard(request):
 
         # For accurate stats, evaluate each product's effective stock
         # (bundle products derive stock from components via available_stock)
-        non_bundle_products = products.exclude(product_type='bundle')
+        non_bundle_products = products.exclude(product_type='bundle').prefetch_related('product_purchases')
         bundle_products = products.filter(product_type='bundle').prefetch_related(
-            'bundle_components__component_product'
+            'bundle_components__component_product',
+            'product_purchases',
         )
 
         # Non-bundle stats via DB queries
@@ -7057,7 +7067,7 @@ def inventory_dashboard(request):
             p.available_stock * p.price for p in all_products_list if p.available_stock > 0
         )
         total_stock_cost_value = sum(
-            p.available_stock * p.cost_price for p in all_products_list if p.available_stock > 0
+            p.available_stock * p.average_cost for p in all_products_list if p.available_stock > 0
         )
 
         # Total Stock Units
@@ -7099,7 +7109,7 @@ def inventory_dashboard(request):
         # Products by Stock Value — use available_stock, show ALL products
         can_toggle_product_price = request.user.is_administrator or getattr(request.user, 'can_toggle_product_price', False)
         products_with_value = [
-            {'product': p, 'value': p.available_stock * p.price, 'cost_price': p.cost_price, 'available_stock': p.available_stock}
+            {'product': p, 'value': p.available_stock * p.price, 'cost_price': p.average_cost, 'available_stock': p.available_stock}
             for p in all_products_list if p.available_stock > 0
         ]
         top_products = sorted(products_with_value, key=lambda x: x['value'], reverse=True)
@@ -12555,12 +12565,12 @@ def financial_report_data(request):
         pending_payments = orders.filter(payment_status__in=['pending', 'partial']).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
         ncm_delivery_charges = orders.filter(delivery_charge__isnull=False).aggregate(total=Sum('delivery_charge'))['total'] or Decimal('0')
         
-        # Calculate total expenses from product cost_price
+        # Calculate total expenses using average_cost (handles variable cost price products)
         expenses = Decimal('0')
         for order in orders:
             for item in order.items.all():
-                if item.product and item.product.cost_price:
-                    expenses += (item.product.cost_price * item.quantity)
+                if item.product and item.product.average_cost:
+                    expenses += (item.product.average_cost * item.quantity)
         
         net_profit = total_revenue - ncm_delivery_charges - expenses
 
@@ -12586,11 +12596,11 @@ def financial_report_data(request):
         for order in orders:
             branch = order.ncm_destination_branch or 'Not Assigned'
             
-            # Calculate cost for this order
+            # Calculate cost for this order using average_cost (handles variable cost price products)
             order_cost = Decimal('0')
             for item in order.items.all():
-                if item.product and item.product.cost_price:
-                    order_cost += (item.product.cost_price * item.quantity)
+                if item.product and item.product.average_cost:
+                    order_cost += (item.product.average_cost * item.quantity)
             
             if branch not in branch_data:
                 branch_data[branch] = {
@@ -12633,8 +12643,8 @@ def financial_report_data(request):
 
             order_cost = Decimal('0')
             for item in order.items.all():
-                if item.product and item.product.cost_price:
-                    order_cost += (item.product.cost_price * item.quantity)
+                if item.product and item.product.average_cost:
+                    order_cost += (item.product.average_cost * item.quantity)
 
             if order_date not in daily_data:
                 daily_data[order_date] = {

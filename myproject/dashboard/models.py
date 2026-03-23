@@ -118,12 +118,14 @@ class Product(models.Model):
         - fixed: always returns the static cost_price field.
         - variable: returns weighted average from ProductPurchase records,
           falls back to cost_price if no purchases exist.
+        Uses a single DB query (or prefetch cache) to avoid N+1 issues.
         """
         if self.cost_price_type == 'fixed':
             return self.cost_price
         # Variable cost price: weighted average from purchase history
-        purchases = self.product_purchases.all()
-        if not purchases.exists():
+        # list() evaluates once and uses prefetch cache if available
+        purchases = list(self.product_purchases.all())
+        if not purchases:
             return self.cost_price
         total_cost = sum(p.cost_price * p.quantity for p in purchases)
         total_qty = sum(p.quantity for p in purchases)
