@@ -4890,6 +4890,10 @@ def api_bestselling_products(request):
 @require_http_methods(["POST"])
 def export_selected_orders_excel(request):
     """Export selected orders to Excel"""
+    # Permission check
+    if request.user.role != 'administrator' and not request.user.can_export_orders:
+        from django.http import JsonResponse
+        return HttpResponse("You do not have permission to export orders.", status=403)
     try:
         from django.db import connection
         import sys

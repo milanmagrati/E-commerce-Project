@@ -161,6 +161,10 @@
                                                 <input type="checkbox" class="form-check-input" name="can_view_on_hold_orders" id="can_view_on_hold_orders" {% if edit_user.can_view_on_hold_orders %}checked{% endif %}>
                                                 <label for="can_view_on_hold_orders">View On Hold Orders</label>
                                             </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_orders" id="can_export_orders" {% if edit_user.can_export_orders %}checked{% endif %}>
+                                                <label for="can_export_orders">Export to Excel</label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

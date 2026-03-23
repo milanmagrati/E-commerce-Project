@@ -72,11 +72,13 @@
                     <span class="badge bg-white text-info ms-2" id="syncCountBadge">0</span>
                 </button>
 
+                {% if request.user.role == 'administrator' or request.user.can_export_orders %}
                 <button class="btn btn-success btn-lg" id="exportExcelButton"
                         onclick="exportSelectedOrders()" style="display: none;">
                     <i class="fas fa-file-excel"></i> Export to Excel
                     <span class="badge bg-white text-success ms-2" id="exportCountBadge">0</span>
                 </button>
+                {% endif %}
 
                 <button class="btn btn-warning btn-lg" data-bs-toggle="modal" data-bs-target="#importExcelModal">
                     <i class="fas fa-file-import"></i> Import Excel
@@ -201,7 +203,9 @@
                 <div class="col-md-4">
                     <select name="bulk_action" class="form-select form-select-sm" required>
                         <option value="">Select Action</option>
+                        {% if request.user.role == 'administrator' or request.user.can_export_orders %}
                         <option value="export_excel">📊 Export to Excel</option>
+                        {% endif %}
                         <option value="delete">🗑️ Move to Trash</option>
                         {% if order_status_bulk_options %}
                             <optgroup label="Order Status">
@@ -1732,9 +1736,11 @@ function updateBulkActions() {
         bulkSyncButton.style.display = 'inline-block';
         syncCountBadge.textContent = count;
         
-        // Show Export button
-        exportExcelButton.style.display = 'inline-block';
-        exportCountBadge.textContent = count;
+        // Show Export button (only renders in DOM if user has permission)
+        if (exportExcelButton) {
+            exportExcelButton.style.display = 'inline-block';
+            if (exportCountBadge) exportCountBadge.textContent = count;
+        }
         
         // Populate the standard bulk action form with hidden inputs
         const bulkInputsContainer = document.getElementById('bulkInputsContainer');
@@ -1759,7 +1765,7 @@ function updateBulkActions() {
         bulkBar.style.display = 'none';
         bulkLogisticsDropdown.style.display = 'none';
         bulkSyncButton.style.display = 'none';
-        exportExcelButton.style.display = 'none';
+        if (exportExcelButton) exportExcelButton.style.display = 'none';
         const selectAllCb = document.getElementById('selectAll');
         if (selectAllCb) {
             selectAllCb.indeterminate = false;

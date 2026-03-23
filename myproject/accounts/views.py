@@ -240,6 +240,7 @@ def user_create(request):
                 user.can_delete_orders = True
                 user.can_cancel_orders = True
                 user.can_view_on_hold_orders = True
+                user.can_export_orders = True
                 
                 user.can_view_products = True
                 user.can_create_products = True
@@ -320,6 +321,7 @@ def user_create(request):
                 user.can_delete_orders = request.POST.get('can_delete_orders') == 'on'
                 user.can_cancel_orders = request.POST.get('can_cancel_orders') == 'on'
                 user.can_view_on_hold_orders = request.POST.get('can_view_on_hold_orders') == 'on'
+                user.can_export_orders = request.POST.get('can_export_orders') == 'on'
                 
                 # Products Module
                 user.can_view_products = request.POST.get('can_view_products') == 'on'
@@ -461,6 +463,7 @@ def user_edit(request, user_id):
             edit_user.can_delete_orders = True
             edit_user.can_cancel_orders = True
             edit_user.can_view_on_hold_orders = True
+            edit_user.can_export_orders = True
             
             edit_user.can_view_products = True
             edit_user.can_create_products = True
@@ -553,6 +556,7 @@ def user_edit(request, user_id):
             edit_user.can_delete_orders = request.POST.get('can_delete_orders') == 'on'
             edit_user.can_cancel_orders = request.POST.get('can_cancel_orders') == 'on'
             edit_user.can_view_on_hold_orders = request.POST.get('can_view_on_hold_orders') == 'on'
+            edit_user.can_export_orders = request.POST.get('can_export_orders') == 'on'
             
             # Products Module
             edit_user.can_view_products = request.POST.get('can_view_products') == 'on'
@@ -859,7 +863,7 @@ def profile_view(request):
     
     # Count all permission fields
     permission_fields = [
-        'can_view_orders', 'can_create_orders', 'can_edit_orders', 'can_delete_orders', 'can_cancel_orders', 'can_view_on_hold_orders',
+        'can_view_orders', 'can_create_orders', 'can_edit_orders', 'can_delete_orders', 'can_cancel_orders', 'can_view_on_hold_orders', 'can_export_orders',
         'can_view_products', 'can_create_products', 'can_edit_products', 'can_delete_products',
         'can_view_customers', 'can_create_customers', 'can_edit_customers', 'can_delete_customers',
         'can_view_returns', 'can_create_returns', 'can_edit_returns', 'can_delete_returns', 'can_approve_returns', 'can_process_refunds',
