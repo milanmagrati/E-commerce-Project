@@ -623,6 +623,7 @@
     // Scanned orders storage
     let scannedOrders = new Map();
     let expandedOrderId = null;
+    let pendingBarcodes = new Set(); // Tracks in-flight fetch requests to prevent duplicates
     
     // LocalStorage key for draft saves
     const DRAFT_STORAGE_KEY = 'return_scanner_draft_orders';
@@ -729,6 +730,8 @@
         if (e.key === 'Enter') {
             e.preventDefault();
             clearTimeout(typingTimer);
+            clearTimeout(scannerTimer); // Cancel pending scanner timer
+            scannerBuffer = '';          // Reset scanner buffer
             const barcode = this.value.trim();
             if (barcode) {
                 processScannedBarcode(barcode);
@@ -810,6 +813,12 @@
             console.warn('⚠️ Invalid barcode format');
             return;
         }
+
+        // Prevent duplicate concurrent requests for the same barcode
+        if (pendingBarcodes.has(barcode)) {
+            console.log('⏳ Already fetching this barcode, skipping duplicate call:', barcode);
+            return;
+        }
         
         updateScanStatus('waiting', '<i class="fas fa-spinner fa-spin"></i> Searching...');
         
@@ -831,6 +840,8 @@
         const apiUrl = `/api/order-by-barcode/?barcode=${encodeURIComponent(barcode)}`;
         console.log('📡 Calling API:', apiUrl);
         
+        pendingBarcodes.add(barcode);
+
         fetch(apiUrl, { signal: controller.signal })
             .then(response => {
                 clearTimeout(timeoutId);
@@ -846,6 +857,7 @@
                 });
             })
             .then(data => {
+                pendingBarcodes.delete(barcode);
                 if (data.success) {
                     console.log('✅ Order found:', data.order.order_number);
                     addScannedOrder(data.order);
@@ -872,6 +884,7 @@
                 }
             })
             .catch(error => {
+                pendingBarcodes.delete(barcode);
                 clearTimeout(timeoutId);
                 if (error.name === 'AbortError') {
                     console.error('⏱️ Request timeout');
