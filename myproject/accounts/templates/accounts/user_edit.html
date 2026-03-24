@@ -165,6 +165,10 @@
                                                 <input type="checkbox" class="form-check-input" name="can_export_orders" id="can_export_orders" {% if edit_user.can_export_orders %}checked{% endif %}>
                                                 <label for="can_export_orders">Export to Excel</label>
                                             </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_orders_list" id="can_view_orders_list" {% if edit_user.can_view_orders_list %}checked{% endif %}>
+                                                <label for="can_view_orders_list">View All Orders List</label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -342,6 +346,14 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_toggle_product_price" id="can_toggle_product_price" {% if edit_user.can_toggle_product_price %}checked{% endif %}>
                                                 <label for="can_toggle_product_price">Toggle Product Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_selling_unit_price" id="can_view_selling_unit_price" {% if edit_user.can_view_selling_unit_price %}checked{% endif %}>
+                                                <label for="can_view_selling_unit_price">Selling Unit Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_cost_unit_price" id="can_view_cost_unit_price" {% if edit_user.can_view_cost_unit_price %}checked{% endif %}>
+                                                <label for="can_view_cost_unit_price">Cost Unit Price</label>
                                             </div>
                                         </div>
                                     </div>

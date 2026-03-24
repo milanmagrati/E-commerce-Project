@@ -235,6 +235,7 @@ def user_create(request):
                 user.is_superuser = True
                 # Grant all permissions
                 user.can_view_orders = True
+                user.can_view_orders_list = True
                 user.can_create_orders = True
                 user.can_edit_orders = True
                 user.can_delete_orders = True
@@ -275,6 +276,8 @@ def user_create(request):
                 user.can_adjust_stock = True
                 user.can_view_inventory_cost = True
                 user.can_toggle_product_price = True
+                user.can_view_selling_unit_price = True
+                user.can_view_cost_unit_price = True
                 
                 user.can_view_reports = True
                 user.can_view_sales_reports = True
@@ -316,6 +319,7 @@ def user_create(request):
                 
                 # Orders Module
                 user.can_view_orders = request.POST.get('can_view_orders') == 'on'
+                user.can_view_orders_list = request.POST.get('can_view_orders_list') == 'on'
                 user.can_create_orders = request.POST.get('can_create_orders') == 'on'
                 user.can_edit_orders = request.POST.get('can_edit_orders') == 'on'
                 user.can_delete_orders = request.POST.get('can_delete_orders') == 'on'
@@ -362,6 +366,8 @@ def user_create(request):
                 user.can_adjust_stock = request.POST.get('can_adjust_stock') == 'on'
                 user.can_view_inventory_cost = request.POST.get('can_view_inventory_cost') == 'on'
                 user.can_toggle_product_price = request.POST.get('can_toggle_product_price') == 'on'
+                user.can_view_selling_unit_price = request.POST.get('can_view_selling_unit_price') == 'on'
+                user.can_view_cost_unit_price = request.POST.get('can_view_cost_unit_price') == 'on'
                 
                 # Reports Module
                 user.can_view_reports = request.POST.get('can_view_reports') == 'on'
@@ -458,6 +464,7 @@ def user_edit(request, user_id):
             
             # Grant all permissions
             edit_user.can_view_orders = True
+            edit_user.can_view_orders_list = True
             edit_user.can_create_orders = True
             edit_user.can_edit_orders = True
             edit_user.can_delete_orders = True
@@ -498,6 +505,8 @@ def user_edit(request, user_id):
             edit_user.can_adjust_stock = True
             edit_user.can_view_inventory_cost = True
             edit_user.can_toggle_product_price = True
+            edit_user.can_view_selling_unit_price = True
+            edit_user.can_view_cost_unit_price = True
             
             edit_user.can_view_reports = True
             edit_user.can_view_sales_reports = True
@@ -551,6 +560,7 @@ def user_edit(request, user_id):
             
             # Orders Module
             edit_user.can_view_orders = request.POST.get('can_view_orders') == 'on'
+            edit_user.can_view_orders_list = request.POST.get('can_view_orders_list') == 'on'
             edit_user.can_create_orders = request.POST.get('can_create_orders') == 'on'
             edit_user.can_edit_orders = request.POST.get('can_edit_orders') == 'on'
             edit_user.can_delete_orders = request.POST.get('can_delete_orders') == 'on'
@@ -597,6 +607,8 @@ def user_edit(request, user_id):
             edit_user.can_adjust_stock = request.POST.get('can_adjust_stock') == 'on'
             edit_user.can_view_inventory_cost = request.POST.get('can_view_inventory_cost') == 'on'
             edit_user.can_toggle_product_price = request.POST.get('can_toggle_product_price') == 'on'
+            edit_user.can_view_selling_unit_price = request.POST.get('can_view_selling_unit_price') == 'on'
+            edit_user.can_view_cost_unit_price = request.POST.get('can_view_cost_unit_price') == 'on'
             
             # Reports Module
             edit_user.can_view_reports = request.POST.get('can_view_reports') == 'on'

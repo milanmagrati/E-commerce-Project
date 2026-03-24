@@ -53,6 +53,7 @@ class CustomUser(AbstractUser):
     
     # ORDER PERMISSIONS
     can_view_orders = models.BooleanField(default=True)
+    can_view_orders_list = models.BooleanField(default=False, verbose_name="Can View All Orders List")
     can_create_orders = models.BooleanField(default=True)
     can_edit_orders = models.BooleanField(default=False)
     can_delete_orders = models.BooleanField(default=False)
@@ -84,6 +85,8 @@ class CustomUser(AbstractUser):
     can_adjust_stock = models.BooleanField(default=False)
     can_view_inventory_cost = models.BooleanField(default=False, verbose_name="Can View Inventory Cost")
     can_toggle_product_price = models.BooleanField(default=False, verbose_name="Toggle Product Price")
+    can_view_selling_unit_price = models.BooleanField(default=False, verbose_name="View Selling Unit Price")
+    can_view_cost_unit_price = models.BooleanField(default=False, verbose_name="View Cost Unit Price")
     
     # REPORT PERMISSIONS
     can_view_reports = models.BooleanField(default=False)

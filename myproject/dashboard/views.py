@@ -2376,7 +2376,7 @@ def customer_delete(request, customer_id):
 
 from django.db.models import Prefetch
 @login_required
-@permission_required('can_view_orders')
+@permission_required('can_view_orders_list')
 def orders_list(request):
     """Display list of orders with filters and statistics - using pure ORM queries"""
     from datetime import timedelta
@@ -7132,6 +7132,8 @@ def inventory_dashboard(request):
 
         # Products by Stock Value — use available_stock, show ALL products
         can_toggle_product_price = request.user.is_administrator or getattr(request.user, 'can_toggle_product_price', False)
+        can_view_selling_unit_price = request.user.is_administrator or getattr(request.user, 'can_view_selling_unit_price', False)
+        can_view_cost_unit_price = request.user.is_administrator or getattr(request.user, 'can_view_cost_unit_price', False)
         products_with_value = [
             {'product': p, 'value': p.available_stock * p.price, 'cost_price': p.average_cost, 'available_stock': p.available_stock}
             for p in all_products_list if p.available_stock > 0
@@ -7453,6 +7455,8 @@ def inventory_dashboard(request):
             'out_of_stock_products': out_of_stock_products,
             'top_products': top_products,
             'can_toggle_product_price': can_toggle_product_price,
+            'can_view_selling_unit_price': can_view_selling_unit_price,
+            'can_view_cost_unit_price': can_view_cost_unit_price,
             'recent_dispatched_orders': recent_dispatched_orders,
             'dispatched_page_obj': dispatched_page_obj,
             'dispatched_total_count': dispatched_order_ids.count(),

@@ -648,8 +648,9 @@
                                 <th>#</th>
                                 <th>Product</th>
                                 <th class="text-center">Stock Qty</th>
+                                {% if can_toggle_product_price or can_view_selling_unit_price or can_view_cost_unit_price %}
                                 <th class="text-right">
-                                    <span id="unitPriceHeaderText">Unit Price</span>
+                                    <span id="unitPriceHeaderText">{% if can_view_cost_unit_price and not can_toggle_product_price and not can_view_selling_unit_price %}Cost Price{% else %}Unit Price{% endif %}</span>
                                     {% if can_toggle_product_price %}
                                     <div class="price-toggle-dropdown" id="priceToggleDropdown">
                                         <button type="button" class="price-toggle-btn" id="priceToggleBtn" onclick="togglePriceDropdown(event)">
@@ -659,6 +660,7 @@
                                     {% endif %}
                                 </th>
                                 <th class="text-right">Total Value</th>
+                                {% endif %}
                             </tr>
                         </thead>
                         <tbody>
@@ -686,16 +688,18 @@
                                 <td class="text-center">
                                     <span class="stock-badge success">{{ item.product.stock }}</span>
                                 </td>
+                                {% if can_toggle_product_price or can_view_selling_unit_price or can_view_cost_unit_price %}
                                 <td class="text-right product-unit-price" data-selling-price="{{ item.product.price }}" data-cost-price="{{ item.cost_price }}" data-stock="{{ item.available_stock }}">
                                     <strong>Rs {{ item.product.price|floatformat:2 }}</strong>
                                 </td>
                                 <td class="text-right product-total-value">
                                     <strong class="total-value-text">Rs {{ item.value|floatformat:2 }}</strong>
                                 </td>
+                                {% endif %}
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="5" class="text-center py-4">
+                                <td colspan="{% if can_toggle_product_price or can_view_selling_unit_price or can_view_cost_unit_price %}5{% else %}3{% endif %}" class="text-center py-4">
                                     <p class="text-muted">No products with stock</p>
                                 </td>
                             </tr>
@@ -3566,6 +3570,21 @@ document.addEventListener('click', function(e) {
     if (!e.target.closest || !e.target.closest('#priceToggleDropdown, #priceDropdownMenu')) {
         menu.classList.remove('show');
     }
+});
+
+// Initialize price display based on permissions on page load
+document.addEventListener('DOMContentLoaded', function() {
+    {% if can_view_cost_unit_price and not can_toggle_product_price and not can_view_selling_unit_price %}
+    // Only cost unit price permission: show cost price without toggle
+    var rows = document.querySelectorAll('#productsValueTable .product-unit-price');
+    rows.forEach(function(cell) {
+        var costPrice = parseFloat(cell.getAttribute('data-cost-price')) || 0;
+        var stock = parseInt(cell.getAttribute('data-stock')) || 0;
+        cell.querySelector('strong').textContent = 'Rs ' + costPrice.toFixed(2);
+        var totalCell = cell.closest('tr').querySelector('.product-total-value .total-value-text');
+        if (totalCell) totalCell.textContent = 'Rs ' + (stock * costPrice).toFixed(2);
+    });
+    {% endif %}
 });
 </script>
 {% endblock %}

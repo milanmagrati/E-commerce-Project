@@ -324,7 +324,7 @@
                             </div>  
                         </th>
                         <th width="10%">Amount</th>
-                        <th width="10%">Payment</th>
+                        <th width="10%">Branch</th>
                         <th width="8%">Status</th>
                         <th width="20%">Actions</th>                       
                     </tr>
@@ -378,21 +378,11 @@
                             {% endif %}
                         </td>
                         <td>
-                            <strong class="payment-status-{{ order.payment_status|lower }}">
-                                {% if order.payment_status_setup %}
-                                    {{ order.payment_status_setup.name|replace:"_: "|upper }}
-                                {% else %}
-                                    {{ order.payment_status|replace:"_: "|upper }}
-                                {% endif %}
-                            </strong>
-                            <br>
-                            <small class="text-muted">
-                                {% if order.payment_setup %}
-                                    {{ order.payment_setup.name|replace:"_: "|upper }}
-                                {% elif order.payment_method %}
-                                    {{ order.payment_method|replace:"_: "|upper }}
-                                {% endif %}
-                            </small>
+                            {% if order.branch_city %}
+                                <span class="text-dark"><i class="fas fa-map-marker-alt text-primary me-1"></i>{{ order.branch_city }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
                         </td>
                         <td>
                             <strong class="order-status-{{ order.order_status|default:'pending'|lower }}" style="font-weight: 700;">
