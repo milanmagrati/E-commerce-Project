@@ -2784,7 +2784,7 @@
                                 </div>
                                 <p class="mb-1 small fw-bold text-dark">{{ order.customer_name }}</p>
                                 <p class="mb-1 small text-muted">{{ order.created_by.username }}</p>
-                                <p class="mb-0 small text-muted">{{ order.created_at|date:"M d, H:i" }}</p>
+                                <p class="mb-0 small text-muted">{{ order.created_at|nepali_date }} {{ order.created_at|nepali_time }}</p>
                             </div>
                         </a>
                     </div>
