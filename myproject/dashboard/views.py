@@ -10761,7 +10761,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             "branch": destination_branch,
             "package": str(product_name)[:50],
             "vref_id": str(order.order_number),
-            "instruction": "",
+            "instruction": str(order.notes or "")[:100],
             "delivery_type": delivery_type,
             "weight": weight
         }
