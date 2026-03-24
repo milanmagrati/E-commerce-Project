@@ -6034,7 +6034,15 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
         const tbody = document.getElementById('cartBody');
 
         if (cart.length === 0) {
-            tbody.innerHTML = document.getElementById('emptyRow').outerHTML;
+            tbody.innerHTML = `<tr id="emptyRow">
+                <td colspan="5">
+                    <div class="empty-cart">
+                        <i class="fas fa-shopping-cart"></i>
+                        <p class="mb-0">No products added</p>
+                        <small>Click "Add Products" to start</small>
+                    </div>
+                </td>
+            </tr>`;
             document.getElementById('submitBtn').disabled = true;
             updateTotal();
             return;
