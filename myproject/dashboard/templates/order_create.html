@@ -2393,10 +2393,109 @@
         font-weight: 600;
         margin-bottom: 6px;
     }
+
+    /* ✨ ORDER SUCCESS ANIMATION OVERLAY */
+    #orderSuccessOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        align-items: center;
+        justify-content: center;
+        background: rgba(10, 10, 30, 0.55);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        animation: overlayFadeIn 0.2s ease forwards;
+    }
+    #orderSuccessOverlay.active {
+        display: flex;
+    }
+    @keyframes overlayFadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+    @keyframes overlayFadeOut {
+        from { opacity: 1; }
+        to   { opacity: 0; }
+    }
+    .success-card {
+        background: #fff;
+        border-radius: 24px;
+        padding: 48px 60px;
+        text-align: center;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.25);
+        animation: cardPop 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards;
+        min-width: 340px;
+    }
+    @keyframes cardPop {
+        from { transform: scale(0.6); opacity: 0; }
+        to   { transform: scale(1);   opacity: 1; }
+    }
+    .success-ring {
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 20px;
+        box-shadow: 0 0 0 0 rgba(34,197,94,0.5);
+        animation: ringPulse 0.6s ease 0.2s forwards;
+    }
+    @keyframes ringPulse {
+        0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+        70%  { box-shadow: 0 0 0 20px rgba(34,197,94,0); }
+        100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+    .success-ring i {
+        font-size: 2.5rem;
+        color: #fff;
+        animation: checkPop 0.3s cubic-bezier(0.34,1.56,0.64,1) 0.15s both;
+    }
+    @keyframes checkPop {
+        from { transform: scale(0); }
+        to   { transform: scale(1); }
+    }
+    .success-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1a1a2e;
+        margin-bottom: 6px;
+        letter-spacing: -0.3px;
+    }
+    .success-order-num {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #22c55e;
+        background: #f0fdf4;
+        border: 1.5px solid #bbf7d0;
+        border-radius: 8px;
+        padding: 6px 20px;
+        display: inline-block;
+        margin-top: 4px;
+    }
+    .success-subtitle {
+        font-size: 0.9rem;
+        color: #6b7280;
+        margin-top: 10px;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
+
+<!-- ✨ ORDER SUCCESS OVERLAY -->
+<div id="orderSuccessOverlay">
+    <div class="success-card">
+        <div class="success-ring">
+            <i class="fas fa-check"></i>
+        </div>
+        <div class="success-title">Order Created!</div>
+        <div class="success-order-num" id="successOrderNum">#T000</div>
+        <div class="success-subtitle">You can create the next order now.</div>
+    </div>
+</div>
 
 <div class="pos-wrapper">
     <div class="pos-card">
@@ -5986,6 +6085,17 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
     }
 
     function updateTotal() {
+        if (cart.length === 0) {
+            document.getElementById('subtotal').textContent = 'रू 0.00';
+            document.getElementById('discountAmount').textContent = '- रू 0.00';
+            document.getElementById('shippingAmount').textContent = '+ रू 0.00';
+            document.getElementById('taxAmount').textContent = '+ रू 0.00';
+            document.getElementById('totalAmount').textContent = 'रू 0.00';
+            document.getElementById('orderItems').value = '[]';
+            document.getElementById('totalInput').value = '0.00';
+            return;
+        }
+
         const subtotal = cart.reduce((sum, i) => sum + (i.price * i.qty), 0);
         const discount = parseFloat(document.getElementById('discount').value) || 0;
         const shipping = parseFloat(document.getElementById('shipping').value) || 0;
@@ -6414,7 +6524,14 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
         .catch(error => {
             console.error('Duplicate check error:', error);
             // On network error, proceed with submission (don't block the user)
-            proceedWithOrderSubmission();
+            try {
+                proceedWithOrderSubmission();
+            } catch(e) {
+                console.error('proceedWithOrderSubmission failed:', e);
+                submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> Create Order';
+                submitBtn.disabled = false;
+                showToastNotification('Error: ' + e.message, 'error');
+            }
         });
     });
 
@@ -6425,21 +6542,104 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
         proceedWithOrderSubmission();
     }
 
-    // Actually submit the form
+    // Actually submit the form (via AJAX so we stay on the page)
     function proceedWithOrderSubmission() {
-        clearFormData();
-        hideFloatingButton();
+        console.log('[OrderSubmit v4] proceedWithOrderSubmission called');
+        var submitBtn = document.getElementById('submitBtn');
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+        submitBtn.disabled = true;
 
-        document.getElementById('submitBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
-        document.getElementById('submitBtn').disabled = true;
+        // ★ FAIL-SAFE: Always reset button after 15 seconds no matter what
+        var failSafeTimer = setTimeout(function() {
+            console.error('[OrderSubmit v4] FAIL-SAFE: resetting button after 15s');
+            submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> Create Order';
+            submitBtn.disabled = cart.length === 0;
+            showToastNotification('Request took too long. Please try again.', 'error');
+        }, 15000);
 
-        const form = document.getElementById('orderForm');
-        const bypassInput = document.createElement('input');
-        bypassInput.type = 'hidden';
-        bypassInput.name = '_bypass_js_validation';
-        bypassInput.value = '1';
-        form.appendChild(bypassInput);
-        form.submit();
+        function _resetBtn() {
+            clearTimeout(failSafeTimer);
+            submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> Create Order';
+            submitBtn.disabled = cart.length === 0;
+        }
+
+        try {
+            // Ensure hidden fields are up-to-date before capturing FormData
+            updateTotal();
+
+            var form = document.getElementById('orderForm');
+            var formData = new FormData(form);
+            formData.set('_bypass_js_validation', '1');
+            formData.set('_ajax', '1');
+
+            var csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            console.log('[OrderSubmit v4] Sending fetch to', (form.action || window.location.pathname) + '?_ajax=1');
+
+            fetch((form.action || window.location.pathname) + '?_ajax=1', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(function(res) {
+                console.log('[OrderSubmit v4] Response status:', res.status, 'content-type:', res.headers.get('content-type'));
+                var contentType = res.headers.get('content-type') || '';
+                if (contentType.indexOf('application/json') !== -1) {
+                    return res.json();
+                }
+                // Server returned HTML (followed redirect or error page)
+                return res.text().then(function(html) {
+                    if (html.indexOf('created successfully') !== -1) {
+                        var match = html.match(/Order (T\d+) created successfully/);
+                        return { success: true, order_number: match ? match[1] : '---', message: 'Order created!' };
+                    }
+                    if (html.indexOf('login') !== -1 || html.indexOf('Login') !== -1) {
+                        throw new Error('Session expired. Please refresh the page and login again.');
+                    }
+                    throw new Error('Server error. Please try again.');
+                });
+            })
+            .then(function(data) {
+                console.log('[OrderSubmit v4] Response data:', JSON.stringify(data));
+                if (data && data.success) {
+                    clearTimeout(failSafeTimer);
+                    document.getElementById('successOrderNum').textContent = '#' + data.order_number;
+                    var overlay = document.getElementById('orderSuccessOverlay');
+                    overlay.classList.add('active');
+
+                    clearFormData();
+                    hideFloatingButton();
+
+                    setTimeout(function() {
+                        overlay.style.animation = 'overlayFadeOut 0.25s ease forwards';
+                        setTimeout(function() {
+                            overlay.classList.remove('active');
+                            overlay.style.animation = '';
+                            // Reset button BEFORE clearing draft
+                            submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> Create Order';
+                            submitBtn.disabled = true; // cart will be empty
+                            clearDraftAndReset();
+                        }, 260);
+                    }, 850);
+                } else {
+                    console.warn('[OrderSubmit v4] Server returned error:', data && data.error);
+                    showToastNotification((data && data.error) || 'Failed to create order.', 'error');
+                    _resetBtn();
+                }
+            })
+            .catch(function(err) {
+                console.error('[OrderSubmit v4] Fetch error:', err);
+                showToastNotification(err.message || 'Error submitting order.', 'error');
+                _resetBtn();
+            });
+        } catch(syncErr) {
+            console.error('[OrderSubmit v4] Sync error:', syncErr);
+            showToastNotification('Error: ' + syncErr.message, 'error');
+            _resetBtn();
+        }
     }
 
     // Helper: remove a field from validation banner by its label name

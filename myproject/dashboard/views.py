@@ -2654,6 +2654,12 @@ def orders_list(request):
 def order_create(request):
     """Create a new order with city management integration and custom product support"""
     if request.method == "POST":
+        _is_ajax = request.GET.get('_ajax') == '1' or request.POST.get('_ajax') == '1'
+
+        def _ajax_error(msg):
+            from django.http import JsonResponse
+            return JsonResponse({'success': False, 'error': msg})
+
         try:
             with transaction.atomic():
                 customer_name = (request.POST.get("customer_name") or "").strip()
@@ -2733,7 +2739,10 @@ def order_create(request):
                     missing.append('IN/OUT')
 
                 if missing:
-                    messages.error(request, f"Missing required fields: {', '.join(missing)}")
+                    err = f"Missing required fields: {', '.join(missing)}"
+                    if _is_ajax:
+                        return _ajax_error(err)
+                    messages.error(request, err)
                     return redirect("order_create")
 
                 created_by = get_object_or_404(User, id=created_by_id)
@@ -2808,6 +2817,8 @@ def order_create(request):
                 cart = json.loads(order_items_json)
 
                 if not cart:
+                    if _is_ajax:
+                        return _ajax_error('No products in cart.')
                     messages.error(request, "No products in cart.")
                     return redirect("order_create")
 
@@ -2877,14 +2888,20 @@ def order_create(request):
                                 order_number = f"T{Order.objects.count() + retry_count:03d}"
                             
                             if retry_count >= max_retries:
-                                messages.error(request, "Failed to create order after multiple attempts. Please try again.")
+                                err = 'Failed to create order after multiple attempts. Please try again.'
+                                if _is_ajax:
+                                    return _ajax_error(err)
+                                messages.error(request, err)
                                 return redirect("order_create")
                         else:
                             raise
                 
                 # ✅ VERIFY ORDER WAS CREATED
                 if not order:
-                    messages.error(request, "Failed to create order. Please try again.")
+                    err = 'Failed to create order. Please try again.'
+                    if _is_ajax:
+                        return _ajax_error(err)
+                    messages.error(request, err)
                     return redirect("order_create")
                 
                 # ✅ SYNC ORDER STATUS WITH STATUS SETUP - ENSURES DATA CONSISTENCY
@@ -2932,12 +2949,19 @@ def order_create(request):
                 if is_partial_payment:
                     success_msg += f" | Partial payment: रू {partial_amount_paid} paid"
                 
+                # Return JSON for AJAX submissions (POS stays on the same page)
+                if _is_ajax:
+                    from django.http import JsonResponse
+                    return JsonResponse({'success': True, 'order_number': order.order_number, 'message': success_msg})
+
                 messages.success(request, success_msg)
                 return redirect("orders_list")
 
         except Exception as e:
             import traceback
             traceback.print_exc()
+            if _is_ajax:
+                return _ajax_error(f'Error creating order: {str(e)}')
             messages.error(request, f"Error creating order: {str(e)}")
             return redirect("order_create")
 
