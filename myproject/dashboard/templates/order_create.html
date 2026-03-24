@@ -5332,6 +5332,10 @@
         customProductModal = new bootstrap.Modal(document.getElementById('customProductModal'));
         bestsellingProductDetailModal = new bootstrap.Modal(document.getElementById('bestsellingProductDetailModal'));
         ncmBranchesSearchModal = new bootstrap.Modal(document.getElementById('ncmBranchesSearchModal'));
+        document.getElementById('ncmBranchesSearchModal').addEventListener('shown.bs.modal', function () {
+            const input = document.getElementById('ncmBranchSearchInput');
+            if (input) { input.focus(); input.select(); }
+        });
         searchOrdersModal = new bootstrap.Modal(document.getElementById('searchOrdersModal'));
 
         // ✨ Initialize Search Orders
