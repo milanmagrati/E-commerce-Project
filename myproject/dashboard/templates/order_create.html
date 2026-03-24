@@ -3888,42 +3888,50 @@
 
         function filterNcmBranchesFunc() {
             const searchTerm = searchInput.value.trim();
-            const searchTermLower = normalizeString(searchTerm);
+
+            if (!searchTerm) {
+                filteredNcmBranches = ncmBranchesData.map(branch => ({ ...branch, matchedField: null }));
+                displayNcmBranches(filteredNcmBranches);
+                return;
+            }
+
+            // Split query into individual tokens for multi-word AND search
+            const tokens = normalizeString(searchTerm).split(/\s+/).filter(t => t.length > 0);
 
             filteredNcmBranches = ncmBranchesData
-                .map(branch => ({
-                    ...branch,
-                    matchedField: getMatchedField(branch, searchTerm)
-                }))
-                .filter(branch => {
-                    // If no search term, return all branches
-                    if (!searchTerm) {
-                        return true;
-                    }
+                .map(branch => {
+                    // Build one combined lowercase string from all searchable fields
+                    const combinedText = normalizeString([
+                        branch.name, branch.code, branch.municipality, branch.district,
+                        branch.address, branch.phone, branch.region, branch.areas_covered
+                    ].join(' '));
 
-                    // Check if any field matches search term
-                    const matchesSearch = 
-                        fieldMatches(branch.name, searchTerm) ||
-                        fieldMatches(branch.code, searchTerm) ||
-                        fieldMatches(branch.municipality, searchTerm) ||
-                        fieldMatches(branch.district, searchTerm) ||
-                        fieldMatches(branch.address, searchTerm) ||
-                        fieldMatches(branch.phone, searchTerm) ||
-                        fieldMatches(branch.region, searchTerm) ||
-                        fieldMatches(branch.areas_covered, searchTerm);
+                    // Every token must appear somewhere in the combined text (AND logic)
+                    const allMatch = tokens.every(token => combinedText.includes(token));
 
-                    return matchesSearch;
-                });
+                    return {
+                        ...branch,
+                        matchedField: allMatch ? getMatchedField(branch, searchTerm) : null,
+                        _matches: allMatch
+                    };
+                })
+                .filter(branch => branch._matches);
 
             displayNcmBranches(filteredNcmBranches);
         }
     }
 
-    // Highlight matched search term within a text string
+    // Highlight all tokens of the search term within a text string (single-pass to avoid corrupting injected HTML)
     function highlightSearchTerm(text, term) {
         if (!term || !text) return text;
-        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp('(' + escaped + ')', 'gi');
+        const tokens = term.trim().split(/\s+/).filter(t => t.length > 0);
+        if (tokens.length === 0) return text;
+        // Escape each token, sort longest-first so longer matches take priority
+        const escapedTokens = tokens
+            .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+            .sort((a, b) => b.length - a.length);
+        // Single-pass replacement with all tokens as alternation — prevents matching inside already-injected <mark> tags
+        const regex = new RegExp('(' + escapedTokens.join('|') + ')', 'gi');
         return String(text).replace(regex, '<mark style="background:#fef08a;color:#1a1a2e;padding:0 2px;border-radius:2px;font-weight:700;">$1</mark>');
     }
 
