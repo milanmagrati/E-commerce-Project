@@ -1,34 +1,42 @@
 {% extends 'base.html' %}
 {% load replace_filter %}
+{% load dashboard_extras %}
 {% block title %}Dispatch Management{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white">
-                    <div class="row align-items-center">
-                        <div class="col-md-6">
-                            <h4 class="mb-0"><i class="fas fa-shipping-fast"></i> Dispatch Management</h4>
-                        </div>
-                        <div class="col-md-6 text-end">
-                            <!-- ✅ VIEW BUTTONS -->
-                            <a href="{% url 'dispatch_list' %}" class="btn btn-light btn-sm me-2">
-                                <i class="fas fa-list"></i> View All Dispatches
-                            </a>
-                            <a href="{% url 'dispatch_trash' %}" class="btn btn-outline-light btn-sm me-2">
-                                <i class="fas fa-trash"></i> Trash
-                            </a>
-                            <!-- ✅ ACTION BUTTONS -->
-                            <button type="button" class="btn btn-warning btn-sm" id="removeDuplicatesBtn">
-                                <i class="fas fa-eraser"></i> Remove Duplicates
-                            </button>
-                            <button type="button" class="btn btn-danger btn-sm ms-2" id="clearAllBtn">
-                                <i class="fas fa-trash"></i> Clear All
-                            </button>
-                        </div>
-                    </div>
+
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="fas fa-shipping-fast text-primary"></i> Dispatch Management
+            </h2>
+            <p class="text-muted mb-0">Scan order barcodes to create a dispatch batch</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{% url 'dispatch_list' %}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-list"></i> View All Dispatches
+            </a>
+            <a href="{% url 'dispatch_trash' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-trash"></i> Trash
+            </a>
+            <button type="button" class="btn btn-warning btn-sm" id="removeDuplicatesBtn" disabled>
+                <i class="fas fa-eraser"></i> Remove Duplicates
+            </button>
+            <button type="button" class="btn btn-danger btn-sm" id="clearAllBtn" disabled>
+                <i class="fas fa-trash"></i> Clear All
+            </button>
+        </div>
+    </div>
+
+    <div class="row g-4">
+
+        <!-- ===== MAIN CONTENT (Left) ===== -->
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header dispatch-header text-white">
+                    <h5 class="mb-0"><i class="fas fa-barcode me-2"></i>Scan Orders</h5>
                 </div>
                 <div class="card-body">
                     <!-- Scan Stats Dashboard -->
@@ -112,9 +120,8 @@
                                     <option value="">-- Select Logistics --</option>
                                     <option value="ncm">NCM</option>
                                     <option value="pick_and_drop">Pick and Drop</option>
-                                    <option value="sundarijal">Sundarijal</option>
-                                    <option value="express">Express</option>
-                                    <option value="local">Local Delivery</option>
+                                    <option value="daraz">Daraz</option>
+                                    <option value="indrive">Indrive</option>
                                     <option value="other">Other</option>
                                 </select>
                             </div>
@@ -130,17 +137,69 @@
                 </div>
             </div>
         </div>
-    </div>
+
+        <!-- ===== SIDEBAR (Right) ===== -->
+        <div class="col-lg-4">
+            <!-- Recent Orders (Last 2 Days) -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h6 class="mb-0">
+                        <i class="fas fa-history text-primary"></i> Recent Orders (Last 2 Days)
+                    </h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush recent-orders-list">
+                        {% for order in recent_orders %}
+                        <div class="list-group-item list-group-item-action recent-order-item"
+                             data-order-number="{{ order.order_number }}"
+                             title="Click to add to scan list"
+                             style="cursor: pointer;">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <strong class="text-primary">{{ order.order_number }}</strong>
+                                <span class="badge bg-success">रू {{ order.total_amount }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">
+                                    <i class="fas fa-user"></i> {{ order.customer_name|truncatewords:2 }}
+                                </small>
+                                <small class="text-muted">
+                                    {{ order.created_at|nepali_date }}
+                                </small>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-center py-4">
+                            <i class="fas fa-inbox text-muted fs-3 d-block mb-2"></i>
+                            <p class="text-muted mb-0 small">No orders in the last 2 days</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dispatch Info Card -->
+            <div class="card border-0 shadow-sm bg-light">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        <i class="fas fa-info-circle text-primary"></i> Dispatch Tips
+                    </h6>
+                    <hr>
+                    <ul class="small mb-0 ps-3">
+                        <li class="mb-2"><i class="fas fa-check text-success"></i> Scan or manually enter order IDs</li>
+                        <li class="mb-2"><i class="fas fa-check text-success"></i> Click any order on the right to add it</li>
+                        <li class="mb-2"><i class="fas fa-check text-success"></i> Remove duplicates before dispatching</li>
+                        <li class="mb-0"><i class="fas fa-check text-success"></i> Session auto-saves for <strong>30 minutes</strong></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /.row -->
 </div>
 
 <style>
-    .card {
-        border-radius: 12px;
-        overflow: hidden;
-    }
-
-    .card-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    .dispatch-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 1rem 1.5rem;
     }
 
@@ -264,13 +323,6 @@
     .btn-primary:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-    }
-
-    /* Header Buttons */
-    .card-header .btn-warning,
-    .card-header .btn-danger {
-        transition: all 0.3s ease;
-        font-weight: 700;
     }
 
     .btn-warning {
@@ -429,9 +481,19 @@
         transition: stroke-dasharray 0.5s ease;
     }
 
-    .badge {
-        font-size: 0.9rem;
-        padding: 0.5rem 0.8rem;
+    /* Recent Orders Sidebar */
+    .recent-orders-list {
+        max-height: 420px;
+        overflow-y: auto;
+    }
+
+    .recent-order-item {
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }
+
+    .recent-order-item:hover {
+        background: #f0f4ff;
     }
 
     @keyframes slideInRight {
@@ -616,7 +678,7 @@
 
     // ✅ Process scanned barcode
     function processBarcode(orderId) {
-        orderId = orderId.trim();
+        orderId = orderId.trim().toUpperCase();
         if (!orderId) return;
 
         if (scannedOrdersSet.has(orderId)) {
@@ -634,6 +696,13 @@
     const inputField = document.getElementById('orderIdsInput');
 
     if (inputField) {
+        // Auto-uppercase as user types
+        inputField.addEventListener('input', function () {
+            const pos = this.selectionStart;
+            this.value = this.value.toUpperCase();
+            this.setSelectionRange(pos, pos);
+        });
+
         inputField.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -784,6 +853,39 @@
     // Make deleteOrder globally accessible
     window.deleteOrder = deleteOrder;
 
+    // ✅ ADD ORDER FROM SIDEBAR CLICK - using addEventListener like returns page
+    document.querySelectorAll('.recent-order-item').forEach(function(item) {
+        item.addEventListener('click', function() {
+            const orderNumber = this.getAttribute('data-order-number');
+            if (!orderNumber) return;
+
+            // Show in input field briefly (visual feedback like returns page)
+            const inputField = document.getElementById('orderIdsInput');
+            if (inputField) {
+                inputField.value = orderNumber;
+                inputField.style.borderColor = '#10b981';
+                setTimeout(function() {
+                    inputField.value = '';
+                    inputField.style.borderColor = '';
+                    inputField.focus();
+                }, 400);
+            }
+
+            // Process the scan (calls renderOrderIds internally)
+            processBarcode(orderNumber);
+
+            // Schedule auto-save via the patched render (avoids double DOM render)
+            if (typeof window._scheduleDispatchSave === 'function') {
+                window._scheduleDispatchSave();
+            }
+
+            // Highlight the clicked sidebar item briefly
+            this.style.background = '#d1fae5';
+            const self = this;
+            setTimeout(function() { self.style.background = ''; }, 700);
+        });
+    });
+
 // ============================================================
 // ✅ AUTO-SAVE AND RESTORE (30 MINUTE EXPIRY)
 // ============================================================
@@ -793,6 +895,7 @@
     const STORAGE_KEY = 'dispatch_form_draft';
     const EXPIRY_MINUTES = 30;
     let dispatched = false;
+    let alreadyRestored = false;
     
     // Save dispatch form data
     function saveFormDraft() {
@@ -815,6 +918,7 @@
     
     // Restore saved form data
     function restoreFormDraft() {
+        if (alreadyRestored) return false;
         try {
             const savedData = localStorage.getItem(STORAGE_KEY);
             
@@ -856,6 +960,7 @@
             }
             
             console.log('✅ Draft restored successfully');
+            alreadyRestored = true;
             showRestoreNotification(minutesSinceCreated);
             return true;
             
@@ -930,6 +1035,7 @@
         clearTimeout(saveTimeout);
         saveTimeout = setTimeout(saveFormDraft, 2000);
     }
+    window._scheduleDispatchSave = scheduleSave;
 
     // ✅ SAVE IMMEDIATELY when leaving the page (but NOT after dispatch)
     window.addEventListener('beforeunload', function() {

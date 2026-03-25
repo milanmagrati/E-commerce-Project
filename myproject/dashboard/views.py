@@ -6655,9 +6655,17 @@ def dispatch_management(request):
     
     # Get status setups for the dropdown
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    
+
+    # Get recent orders from the last 2 days for sidebar
+    two_days_ago = timezone.now() - timedelta(days=2)
+    recent_orders = Order.objects.filter(
+        is_deleted=False,
+        created_at__gte=two_days_ago
+    ).order_by('-created_at')[:50]
+
     context = {
         'status_setups': status_setups,
+        'recent_orders': recent_orders,
     }
     
     return render(request, 'dispatch_management.html', context)
