@@ -1,0 +1,1079 @@
+{% extends 'base.html' %}
+{% block title %}Shifts - HRM{% endblock %}
+
+{% block content %}
+<!-- Page Toast Notification -->
+<div id="pageToast" class="page-toast" style="display:none;">
+    <div class="page-toast-inner">
+        <div class="page-toast-icon" id="pageToastIcon">
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <div class="page-toast-body">
+            <div class="page-toast-title" id="pageToastTitle">Success</div>
+            <div class="page-toast-msg" id="pageToastMsg">Operation completed successfully.</div>
+        </div>
+        <button class="page-toast-close" onclick="dismissToast()">&times;</button>
+        <div class="page-toast-progress"><div class="page-toast-progress-bar" id="pageToastProgress"></div></div>
+    </div>
+</div>
+
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-0 fw-bold">Shifts</h2>
+        </div>
+        <button class="btn btn-success px-3" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i> Add Shift
+        </button>
+    </div>
+
+    <!-- Search & Filters -->
+    <div class="card mb-3 shadow-sm border">
+        <div class="card-body py-2 px-3">
+            <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="input-group input-group-sm" style="max-width:250px;">
+                    <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted" style="font-size:.8rem;"></i></span>
+                    <input type="text" class="form-control border-start-0" name="search" placeholder="Search..." value="{{ search }}">
+                </div>
+                <button class="btn btn-success btn-sm px-3" type="submit"><i class="fas fa-search me-1"></i>Search</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"><i class="fas fa-filter me-1"></i>Filters</button>
+                {% if search %}
+                <a href="{% url 'hrm:shift_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times me-1"></i>Clear</a>
+                {% endif %}
+                <div class="ms-auto d-flex align-items-center">
+                    <label class="me-2 mb-0 text-muted small text-nowrap">Per Page:</label>
+                    <select name="per_page" class="form-select form-select-sm" style="width:75px;" onchange="this.form.submit()">
+                        <option value="9" {% if per_page == '9' %}selected{% endif %}>9</option>
+                        <option value="18" {% if per_page == '18' %}selected{% endif %}>18</option>
+                        <option value="36" {% if per_page == '36' %}selected{% endif %}>36</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm h-100 stat-card stat-card-total">
+                <div class="card-body d-flex justify-content-between align-items-center py-3">
+                    <div>
+                        <div class="text-muted small fw-semibold">Total Shifts</div>
+                        <div class="fs-3 fw-bold">{{ total_shifts }}</div>
+                    </div>
+                    <div class="stat-icon-circle bg-primary-subtle text-primary">
+                        <i class="fas fa-users"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm h-100 stat-card stat-card-active">
+                <div class="card-body d-flex justify-content-between align-items-center py-3">
+                    <div>
+                        <div class="text-muted small fw-semibold">Active Shifts</div>
+                        <div class="fs-3 fw-bold">{{ active_shifts }}</div>
+                    </div>
+                    <div class="stat-icon-circle bg-success-subtle text-success">
+                        <i class="fas fa-sun"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm h-100 stat-card stat-card-night">
+                <div class="card-body d-flex justify-content-between align-items-center py-3">
+                    <div>
+                        <div class="text-muted small fw-semibold">Night Shifts</div>
+                        <div class="fs-3 fw-bold">{{ night_shifts }}</div>
+                    </div>
+                    <div class="stat-icon-circle bg-dark text-white">
+                        <i class="fas fa-moon"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm h-100 stat-card stat-card-day">
+                <div class="card-body d-flex justify-content-between align-items-center py-3">
+                    <div>
+                        <div class="text-muted small fw-semibold">Day Shifts</div>
+                        <div class="fs-3 fw-bold">{{ day_shifts }}</div>
+                    </div>
+                    <div class="stat-icon-circle bg-warning-subtle text-warning">
+                        <i class="fas fa-sun"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shift Cards Grid -->
+    <div class="row g-3 mb-4">
+        {% for shift in shifts %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card shadow-sm shift-card h-100">
+                <div class="card-body">
+                    <!-- Header Row -->
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="shift-type-icon {% if shift.is_night_shift %}night{% else %}day{% endif %} me-3">
+                                {% if shift.is_night_shift %}
+                                <i class="fas fa-moon"></i>
+                                {% else %}
+                                <i class="fas fa-sun"></i>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <h6 class="fw-bold mb-1">{{ shift.name }}</h6>
+                                <div class="d-flex gap-1">
+                                    <span class="badge {% if shift.is_night_shift %}shift-badge-night{% else %}shift-badge-day{% endif %}">
+                                        {{ shift.shift_type }}
+                                    </span>
+                                    <span class="badge {% if shift.is_active %}shift-badge-active{% else %}shift-badge-inactive{% endif %}">
+                                        {% if shift.is_active %}Active{% else %}Inactive{% endif %}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-icon" title="View" onclick="viewShift({{ shift.id }})">
+                                <i class="fas fa-eye text-muted"></i>
+                            </button>
+                            <button class="btn btn-sm btn-icon" title="Edit" onclick="editShift({{ shift.id }})">
+                                <i class="fas fa-edit text-muted"></i>
+                            </button>
+                            <button class="btn btn-sm btn-icon" title="Toggle Status" onclick="toggleStatus({{ shift.id }})">
+                                <i class="fas fa-{% if shift.is_active %}lock{% else %}lock-open{% endif %} text-muted"></i>
+                            </button>
+                            <button class="btn btn-sm btn-icon" title="Delete" onclick="deleteShift({{ shift.id }}, '{{ shift.name|escapejs }}')">
+                                <i class="fas fa-trash text-danger"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Shift Details -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <div class="shift-detail-item">
+                                <i class="far fa-clock text-muted me-1"></i>
+                                <div>
+                                    <div class="fw-semibold">{{ shift.start_time|time:"H:i" }} - {{ shift.end_time|time:"H:i" }}</div>
+                                    <div class="text-muted small">Shift Hours</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="shift-detail-item">
+                                <div>
+                                    <div class="fw-semibold">{{ shift.break_duration }} minutes</div>
+                                    <div class="text-muted small">Break Duration</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="shift-detail-item">
+                                <i class="far fa-calendar text-muted me-1"></i>
+                                <div>
+                                    <div class="fw-semibold">{{ shift.working_hours }} hours</div>
+                                    <div class="text-muted small">Working Time</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="shift-detail-item">
+                                <div>
+                                    <div class="fw-semibold">{{ shift.grace_period }} minutes</div>
+                                    <div class="text-muted small">Grace Period</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Description -->
+                    {% if shift.description %}
+                    <div class="shift-description text-muted small">
+                        {{ shift.description }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card shadow-sm border">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-clock fa-3x text-muted mb-3 d-block"></i>
+                    <h5 class="text-muted">No shifts found</h5>
+                    <p class="text-muted mb-3">Get started by creating your first shift.</p>
+                    <button class="btn btn-success" onclick="openAddModal()">
+                        <i class="fas fa-plus me-1"></i> Add First Shift
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if shifts.has_other_pages %}
+    <div class="card shadow-sm border">
+        <div class="card-body d-flex justify-content-between align-items-center py-2">
+            <small class="text-muted">
+                Showing {{ shifts.start_index }} to {{ shifts.end_index }} of {{ shifts.paginator.count }} shifts
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if shifts.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ shifts.previous_page_number }}&search={{ search }}&per_page={{ per_page }}">Previous</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Previous</span></li>
+                    {% endif %}
+                    {% for num in shifts.paginator.page_range %}
+                    <li class="page-item {% if shifts.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search }}&per_page={{ per_page }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if shifts.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ shifts.next_page_number }}&search={{ search }}&per_page={{ per_page }}">Next</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Next</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add/Edit Shift Modal -->
+<div class="modal fade" id="shiftModal" tabindex="-1" aria-labelledby="shiftModalTitle">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+
+            <!-- Gradient Header -->
+            <div class="shift-modal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="modal-header-icon">
+                        <i class="fas fa-clock" id="shiftModalIcon"></i>
+                    </div>
+                    <div>
+                        <h5 class="mb-0 fw-bold text-white" id="shiftModalTitle">Add New Shift</h5>
+                        <small class="text-white opacity-75" id="shiftModalSubtitle">Fill in the details to create a shift</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body p-0">
+                <!-- Error Alert -->
+                <div id="shiftFormError" class="shift-alert shift-alert-danger" style="display:none;">
+                    <div class="shift-alert-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div class="shift-alert-content">
+                        <div class="shift-alert-title">Validation Error</div>
+                        <div class="shift-alert-msg" id="shiftFormErrorText">Please fill all required fields.</div>
+                    </div>
+                    <button type="button" class="shift-alert-close" onclick="hideError()">&times;</button>
+                </div>
+                <!-- Success Alert -->
+                <div id="shiftFormSuccess" class="shift-alert shift-alert-success" style="display:none;">
+                    <div class="shift-alert-icon"><i class="fas fa-check-circle"></i></div>
+                    <div class="shift-alert-content">
+                        <div class="shift-alert-title">Success</div>
+                        <div class="shift-alert-msg" id="shiftFormSuccessText">Shift saved successfully!</div>
+                    </div>
+                </div>
+
+                <!-- Section 1: Basic Information -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot bg-success"></span>
+                        Basic Information
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="pro-label">Shift Name <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap">
+                                <span class="pro-input-icon"><i class="fas fa-tag"></i></span>
+                                <input type="text" class="form-control pro-field" id="shiftName" placeholder="e.g. Morning Shift, Night Shift...">
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="pro-label">Description</label>
+                            <textarea class="form-control pro-field" id="shiftDescription" rows="2" placeholder="Brief description of this shift..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Time Configuration -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot bg-primary"></span>
+                        Time Configuration
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="pro-label">Start Time <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap">
+                                <span class="pro-input-icon"><i class="far fa-clock"></i></span>
+                                <input type="time" class="form-control pro-field" id="shiftStartTime">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="pro-label">End Time <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap">
+                                <span class="pro-input-icon"><i class="far fa-clock"></i></span>
+                                <input type="time" class="form-control pro-field" id="shiftEndTime">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="pro-label">Working Hours</label>
+                            <div class="pro-input-wrap has-suffix">
+                                <span class="pro-input-icon"><i class="fas fa-hourglass-half"></i></span>
+                                <input type="number" class="form-control pro-field" id="shiftWorkingHours" value="8.0" step="0.5" min="0" placeholder="8.0">
+                                <span class="pro-input-suffix">hrs</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Break Settings -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot bg-warning"></span>
+                        Break Settings
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="pro-label">Break Start Time</label>
+                            <div class="pro-input-wrap">
+                                <span class="pro-input-icon"><i class="far fa-clock"></i></span>
+                                <input type="time" class="form-control pro-field" id="shiftBreakStartTime">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="pro-label">Break End Time</label>
+                            <div class="pro-input-wrap">
+                                <span class="pro-input-icon"><i class="far fa-clock"></i></span>
+                                <input type="time" class="form-control pro-field" id="shiftBreakEndTime">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="pro-label">Break Duration</label>
+                            <div class="pro-input-wrap has-suffix">
+                                <span class="pro-input-icon"><i class="fas fa-pause-circle"></i></span>
+                                <input type="number" class="form-control pro-field" id="shiftBreakDuration" value="60" min="0" placeholder="60">
+                                <span class="pro-input-suffix">min</span>
+                            </div>
+                            <small class="text-muted" style="font-size:.72rem;">Auto-filled from break times</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 4: Additional Settings -->
+                <div class="modal-form-section" style="border-bottom:none;">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#6366f1;"></span>
+                        Additional Settings
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="pro-label">Grace Period <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <span class="pro-input-icon"><i class="fas fa-stopwatch"></i></span>
+                                <input type="number" class="form-control pro-field" id="shiftGracePeriod" value="15" min="0" placeholder="15">
+                                <span class="pro-input-suffix">min</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="pro-label">Status</label>
+                            <select class="form-select pro-field" id="shiftStatus">
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <div class="night-shift-row">
+                                <div class="night-shift-info">
+                                    <div class="night-shift-icon"><i class="fas fa-moon"></i></div>
+                                    <div>
+                                        <div class="fw-semibold" style="font-size:.875rem;">Night Shift</div>
+                                        <div class="text-muted" style="font-size:.78rem;">Enable if this shift runs overnight</div>
+                                    </div>
+                                </div>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input night-toggle" type="checkbox" id="shiftIsNightShift" role="switch">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="modal-footer border-top bg-light px-4 py-3 gap-2">
+                <button type="button" class="btn btn-light border px-4" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Cancel
+                </button>
+                <button type="button" class="btn btn-success px-4 fw-semibold" id="shiftSaveBtn" onclick="saveShift()" style="min-width:130px;">
+                    <span id="shiftNormalState"><i class="fas fa-save me-1"></i><span id="shiftSaveBtnText">Save Shift</span></span>
+                    <span id="shiftLoadingState" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Saving...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Shift Modal -->
+<div class="modal fade" id="viewShiftModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold" id="viewShiftTitle">Shift Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="viewShiftBody"></div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete shift <strong id="deleteShiftName"></strong>?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* ── Stat Cards ── */
+    .stat-card {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        border-left: 4px solid #dee2e6;
+        overflow: hidden;
+    }
+    .stat-card-total  { border-left-color: #6366f1; }
+    .stat-card-active { border-left-color: #28a745; }
+    .stat-card-night  { border-left-color: #6c757d; }
+    .stat-card-day    { border-left-color: #f59e0b; }
+    .stat-icon-circle {
+        width: 48px; height: 48px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.2rem; flex-shrink: 0;
+    }
+    /* ── Shift Cards ── */
+    .shift-card {
+        transition: transform .2s, box-shadow .2s;
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
+        border-left: 4px solid #28a745;
+    }
+    .shift-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.1) !important; }
+    .shift-type-icon {
+        width: 44px; height: 44px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; flex-shrink: 0;
+    }
+    .shift-type-icon.day  { background: #fff7e6; color: #f59e0b; }
+    .shift-type-icon.night{ background: #eef2ff; color: #6366f1; }
+    .shift-badge-day     { background: #fff0f0; color: #ef4444; font-weight: 600; font-size: .72rem; }
+    .shift-badge-night   { background: #eef2ff; color: #6366f1; font-weight: 600; font-size: .72rem; }
+    .shift-badge-active  { background: #ecfdf5; color: #059669; font-weight: 600; font-size: .72rem; }
+    .shift-badge-inactive{ background: #fef2f2; color: #dc2626; font-weight: 600; font-size: .72rem; }
+    .shift-detail-item { display: flex; align-items: flex-start; gap: 4px; }
+    .shift-detail-item .fw-semibold { font-size: .875rem; }
+    .shift-description { border-top: 1px solid #f0f0f0; padding-top: .75rem; }
+    .btn-icon {
+        width: 30px; height: 30px; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 6px; border: 1px solid #e5e7eb; background: #fff;
+        transition: all .2s;
+    }
+    .btn-icon:hover { background: #f3f4f6; border-color: #d1d5db; }
+
+    /* ── Add/Edit Modal ── */
+    .shift-modal-header {
+        background: linear-gradient(135deg, #1a7a4a 0%, #28a745 100%);
+        padding: 1.2rem 1.5rem;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-header-icon {
+        width: 46px; height: 46px; border-radius: 12px;
+        background: rgba(255,255,255,.2);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.25rem; color: #fff; flex-shrink: 0;
+    }
+    .modal-form-section {
+        padding: 1.1rem 1.5rem;
+        border-bottom: 1px solid #f1f3f5;
+    }
+    .modal-section-label {
+        display: flex; align-items: center; gap: 8px;
+        font-size: .7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .09em; color: #6c757d; margin-bottom: .9rem;
+    }
+    .section-dot {
+        width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .pro-label {
+        display: block; font-size: .82rem; font-weight: 600;
+        color: #374151; margin-bottom: .35rem;
+    }
+    .pro-input-wrap {
+        position: relative; display: flex; align-items: center;
+    }
+    .pro-input-wrap .pro-input-icon {
+        position: absolute; left: 11px; z-index: 2;
+        color: #9ca3af; font-size: .82rem; pointer-events: none;
+    }
+    .pro-input-wrap.has-suffix .pro-field { padding-right: 44px; }
+    .pro-input-wrap .pro-input-suffix {
+        position: absolute; right: 11px; z-index: 2;
+        color: #9ca3af; font-size: .78rem; pointer-events: none; font-weight: 500;
+    }
+    .pro-input-wrap .pro-field { padding-left: 34px; }
+    .pro-input-wrap textarea.pro-field { padding-left: 12px; }
+    .pro-field {
+        border: 1.5px solid #e5e7eb; border-radius: 8px;
+        font-size: .875rem; background: #fafafa;
+        transition: border-color .15s, box-shadow .15s, background .15s;
+        width: 100%;
+    }
+    .pro-field:focus {
+        border-color: #28a745 !important;
+        box-shadow: 0 0 0 3px rgba(40,167,69,.12) !important;
+        background: #fff;
+        outline: none;
+    }
+    .pro-field.is-invalid { border-color: #dc3545 !important; }
+    .night-shift-row {
+        background: linear-gradient(135deg, #f8f0ff 0%, #eef2ff 100%);
+        border: 1.5px solid #e0d7ff; border-radius: 10px;
+        padding: .75rem 1rem;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 1rem;
+    }
+    .night-shift-info { display: flex; align-items: center; gap: 10px; }
+    .night-shift-icon {
+        width: 34px; height: 34px; border-radius: 50%;
+        background: #eef2ff; color: #6366f1;
+        display: flex; align-items: center; justify-content: center;
+        font-size: .9rem; flex-shrink: 0;
+    }
+    .night-toggle { width: 2.4em; height: 1.2em; cursor: pointer; }
+    .night-toggle:checked { background-color: #28a745 !important; border-color: #28a745 !important; }
+
+    /* ── Alert Toasts inside Modal ── */
+    .shift-alert {
+        margin: 12px 20px 0;
+        padding: 10px 14px;
+        border-radius: 10px;
+        display: flex; align-items: center; gap: 10px;
+        animation: slideDown .3s ease;
+    }
+    .shift-alert-danger {
+        background: linear-gradient(135deg, #fef2f2 0%, #fff5f5 100%);
+        border: 1.5px solid #fecaca;
+    }
+    .shift-alert-success {
+        background: linear-gradient(135deg, #ecfdf5 0%, #f0fff4 100%);
+        border: 1.5px solid #a7f3d0;
+    }
+    .shift-alert-icon {
+        width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: .9rem;
+    }
+    .shift-alert-danger .shift-alert-icon { background: #fee2e2; color: #dc2626; }
+    .shift-alert-success .shift-alert-icon { background: #d1fae5; color: #059669; }
+    .shift-alert-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .shift-alert-danger .shift-alert-title { color: #b91c1c; }
+    .shift-alert-success .shift-alert-title { color: #065f46; }
+    .shift-alert-msg { font-size: .82rem; color: #374151; margin-top: 1px; }
+    .shift-alert-close {
+        background: none; border: none; font-size: 1.2rem;
+        color: #9ca3af; cursor: pointer; margin-left: auto; line-height: 1;
+    }
+    .shift-alert-close:hover { color: #374151; }
+
+    /* ── Field validation ── */
+    .pro-field.field-error {
+        border-color: #dc3545 !important;
+        background: #fff5f5 !important;
+        animation: fieldShake .4s ease;
+    }
+    .field-error-text {
+        display: block; font-size: .72rem; color: #dc3545;
+        margin-top: 3px; font-weight: 500;
+    }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fieldShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)} 40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
+
+    /* ── Page Toast Notification ── */
+    .page-toast {
+        position: fixed;
+        top: 24px;
+        right: 24px;
+        z-index: 9999;
+        animation: toastSlideIn .4s cubic-bezier(.21,1.02,.73,1);
+    }
+    .page-toast-inner {
+        min-width: 340px;
+        max-width: 420px;
+        background: #fff;
+        border-radius: 14px;
+        box-shadow: 0 12px 40px rgba(0,0,0,.15), 0 4px 12px rgba(0,0,0,.08);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 16px 18px 16px 16px;
+        position: relative;
+    }
+    .page-toast-icon {
+        width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.15rem;
+    }
+    .page-toast.toast-success .page-toast-icon { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #059669; }
+    .page-toast.toast-danger .page-toast-icon  { background: linear-gradient(135deg, #fee2e2, #fecaca); color: #dc2626; }
+    .page-toast.toast-info .page-toast-icon    { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #2563eb; }
+    .page-toast-body { flex: 1; min-width: 0; }
+    .page-toast-title {
+        font-size: .82rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; margin-bottom: 2px;
+    }
+    .page-toast.toast-success .page-toast-title { color: #065f46; }
+    .page-toast.toast-danger .page-toast-title  { color: #991b1b; }
+    .page-toast.toast-info .page-toast-title    { color: #1e40af; }
+    .page-toast-msg { font-size: .85rem; color: #374151; line-height: 1.4; }
+    .page-toast-close {
+        background: none; border: none; font-size: 1.4rem;
+        color: #9ca3af; cursor: pointer; line-height: 1;
+        padding: 0; margin-left: 4px; align-self: flex-start;
+    }
+    .page-toast-close:hover { color: #374151; }
+    .page-toast-progress {
+        position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+        background: #f3f4f6; border-radius: 0 0 14px 14px; overflow: hidden;
+    }
+    .page-toast-progress-bar {
+        height: 100%; width: 100%; border-radius: 0 0 14px 14px;
+        animation: toastCountdown 4s linear forwards;
+    }
+    .page-toast.toast-success .page-toast-progress-bar { background: linear-gradient(90deg, #059669, #34d399); }
+    .page-toast.toast-danger .page-toast-progress-bar  { background: linear-gradient(90deg, #dc2626, #f87171); }
+    .page-toast.toast-info .page-toast-progress-bar    { background: linear-gradient(90deg, #2563eb, #60a5fa); }
+    @keyframes toastSlideIn {
+        from { opacity: 0; transform: translateX(60px) scale(.95); }
+        to   { opacity: 1; transform: translateX(0) scale(1); }
+    }
+    @keyframes toastSlideOut {
+        from { opacity: 1; transform: translateX(0) scale(1); }
+        to   { opacity: 0; transform: translateX(60px) scale(.95); }
+    }
+    @keyframes toastCountdown {
+        from { width: 100%; } to { width: 0%; }
+    }
+</style>
+
+{% block extra_js %}
+<script>
+    var CSRF = '{{ csrf_token }}';
+    var editingId = null;
+    var deletingId = null;
+    var toastTimer = null;
+
+    /* ── Page Toast System ── */
+    function showPageToast(type, title, msg) {
+        var toast = document.getElementById('pageToast');
+        toast.className = 'page-toast toast-' + type;
+        document.getElementById('pageToastTitle').textContent = title;
+        document.getElementById('pageToastMsg').textContent = msg;
+        var iconMap = { success: 'fa-check-circle', danger: 'fa-exclamation-circle', info: 'fa-info-circle' };
+        document.getElementById('pageToastIcon').innerHTML = '<i class="fas ' + (iconMap[type] || 'fa-check-circle') + '"></i>';
+        toast.style.display = 'block';
+        toast.style.animation = 'toastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
+        var bar = document.getElementById('pageToastProgress');
+        bar.style.animation = 'none';
+        void bar.offsetWidth;
+        bar.style.animation = 'toastCountdown 4s linear forwards';
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function() { dismissToast(); }, 4200);
+    }
+    function dismissToast() {
+        var toast = document.getElementById('pageToast');
+        toast.style.animation = 'toastSlideOut .3s ease forwards';
+        setTimeout(function() { toast.style.display = 'none'; }, 300);
+        if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    }
+    /* Show toast from sessionStorage on page load */
+    (function() {
+        var msg = sessionStorage.getItem('shiftToast');
+        if (msg) {
+            sessionStorage.removeItem('shiftToast');
+            try {
+                var d = JSON.parse(msg);
+                setTimeout(function() { showPageToast(d.type, d.title, d.msg); }, 300);
+            } catch(e) {}
+        }
+    })();
+
+    /* ── Modal singleton helper (prevents Bootstrap stacking/backdrop bug) ── */
+    function getModal(elId) {
+        var el = document.getElementById(elId);
+        var inst = bootstrap.Modal.getInstance(el);
+        if (!inst) inst = new bootstrap.Modal(el);
+        return inst;
+    }
+
+    /* ── Alert helpers ── */
+    function showError(msg) {
+        document.getElementById('shiftFormSuccess').style.display = 'none';
+        var box = document.getElementById('shiftFormError');
+        document.getElementById('shiftFormErrorText').textContent = msg;
+        box.style.display = 'flex';
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    function hideError() {
+        document.getElementById('shiftFormError').style.display = 'none';
+    }
+    function showSuccess(msg) {
+        hideError();
+        var box = document.getElementById('shiftFormSuccess');
+        document.getElementById('shiftFormSuccessText').textContent = msg;
+        box.style.display = 'flex';
+    }
+
+    /* ── Field-level validation ── */
+    function markField(fieldId, invalid, message) {
+        var el = document.getElementById(fieldId);
+        if (!el) return;
+        var wrap = el.closest('.pro-input-wrap') || el.parentElement;
+        var old = wrap.querySelector('.field-error-text');
+        if (old) old.remove();
+        if (invalid) {
+            el.classList.add('field-error');
+            if (message) {
+                var span = document.createElement('span');
+                span.className = 'field-error-text';
+                span.textContent = message;
+                wrap.appendChild(span);
+            }
+        } else {
+            el.classList.remove('field-error');
+        }
+    }
+    function clearAllFieldErrors() {
+        document.querySelectorAll('.field-error').forEach(function(el) { el.classList.remove('field-error'); });
+        document.querySelectorAll('.field-error-text').forEach(function(el) { el.remove(); });
+    }
+
+    /* ── Auto-clear field error on typing ── */
+    ['shiftName','shiftStartTime','shiftEndTime'].forEach(function(fieldId) {
+        var el = document.getElementById(fieldId);
+        if (el) {
+            el.addEventListener('input', function() { markField(fieldId, false); });
+            el.addEventListener('change', function() { markField(fieldId, false); });
+        }
+    });
+
+    /* ── Auto-calculate Working Hours from Start/End Time ── */
+    var workingHoursManual = false;
+    var breakDurationManual = false;
+
+    function calcWorkingHours() {
+        var s = document.getElementById('shiftStartTime').value;
+        var e = document.getElementById('shiftEndTime').value;
+        if (!s || !e) return;
+        var sm = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]);
+        var em = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
+        var diff = em - sm;
+        if (diff <= 0) diff += 1440; /* overnight shift */
+        var breakMins = parseInt(document.getElementById('shiftBreakDuration').value) || 0;
+        var net = (diff - breakMins) / 60;
+        if (net < 0) net = 0;
+        document.getElementById('shiftWorkingHours').value = Math.round(net * 100) / 100;
+    }
+
+    /* Shift start/end change — always recalculate (times take priority over manual entry) */
+    document.getElementById('shiftStartTime').addEventListener('change', function() {
+        workingHoursManual = false;
+        calcWorkingHours();
+    });
+    document.getElementById('shiftEndTime').addEventListener('change', function() {
+        workingHoursManual = false;
+        calcWorkingHours();
+    });
+    /* User manually types working hours — freeze auto-fill until times change again */
+    document.getElementById('shiftWorkingHours').addEventListener('input', function() {
+        workingHoursManual = true;
+    });
+
+    /* ── Auto-calculate Break Duration from Break Start/End Time ── */
+    function calcBreakDuration() {
+        var bs = document.getElementById('shiftBreakStartTime').value;
+        var be = document.getElementById('shiftBreakEndTime').value;
+        if (!bs || !be) return;
+        var bsm = parseInt(bs.split(':')[0]) * 60 + parseInt(bs.split(':')[1]);
+        var bem = parseInt(be.split(':')[0]) * 60 + parseInt(be.split(':')[1]);
+        var diff = bem - bsm;
+        if (diff < 0) {
+            /* End before start — invalid combination, clear the field */
+            document.getElementById('shiftBreakDuration').value = '';
+            if (!workingHoursManual) calcWorkingHours();
+            return;
+        }
+        document.getElementById('shiftBreakDuration').value = diff;
+        if (!workingHoursManual) calcWorkingHours();
+    }
+
+    /* Break times always override manual break duration entry */
+    document.getElementById('shiftBreakStartTime').addEventListener('change', function() {
+        breakDurationManual = false;
+        calcBreakDuration();
+    });
+    document.getElementById('shiftBreakEndTime').addEventListener('change', function() {
+        breakDurationManual = false;
+        calcBreakDuration();
+    });
+    /* User manually changes break duration (typing or spinner) — stop break-time auto-fill,
+       but still recalculate working hours from the new value */
+    document.getElementById('shiftBreakDuration').addEventListener('input', function() {
+        breakDurationManual = true;
+        if (!workingHoursManual) calcWorkingHours();
+    });
+    document.getElementById('shiftBreakDuration').addEventListener('change', function() {
+        breakDurationManual = true;
+        if (!workingHoursManual) calcWorkingHours();
+    });
+
+    /* ── Save button loading state ── */
+    function setSaveLoading(loading) {
+        var btn = document.getElementById('shiftSaveBtn');
+        document.getElementById('shiftNormalState').classList.toggle('d-none', loading);
+        document.getElementById('shiftLoadingState').classList.toggle('d-none', !loading);
+        btn.disabled = loading;
+    }
+
+    /* ── Reset form ── */
+    function resetForm() {
+        ['shiftName','shiftStartTime','shiftEndTime','shiftBreakStartTime','shiftBreakEndTime'].forEach(function(fieldId) {
+            document.getElementById(fieldId).value = '';
+        });
+        document.getElementById('shiftDescription').value = '';
+        document.getElementById('shiftBreakDuration').value = '60';
+        document.getElementById('shiftGracePeriod').value = '15';
+        document.getElementById('shiftWorkingHours').value = '8.0';
+        document.getElementById('shiftIsNightShift').checked = false;
+        document.getElementById('shiftStatus').value = 'active';
+        workingHoursManual = false;
+        breakDurationManual = false;
+        clearAllFieldErrors();
+        hideError();
+        document.getElementById('shiftFormSuccess').style.display = 'none';
+        setSaveLoading(false);
+    }
+
+    /* ══════════════════ CRUD ══════════════════ */
+
+    function openAddModal() {
+        editingId = null;
+        document.getElementById('shiftModalTitle').textContent = 'Add New Shift';
+        document.getElementById('shiftModalSubtitle').textContent = 'Fill in the details to create a shift';
+        document.getElementById('shiftModalIcon').className = 'fas fa-plus';
+        document.getElementById('shiftSaveBtnText').textContent = 'Save Shift';
+        resetForm();
+        getModal('shiftModal').show();
+    }
+
+    function editShift(id) {
+        fetch('/hrm/shifts/' + id + '/update/')
+            .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function(data) {
+                editingId = id;
+                document.getElementById('shiftModalTitle').textContent = 'Edit Shift';
+                document.getElementById('shiftModalSubtitle').textContent = 'Update the shift details below';
+                document.getElementById('shiftModalIcon').className = 'fas fa-edit';
+                document.getElementById('shiftSaveBtnText').textContent = 'Update Shift';
+                document.getElementById('shiftName').value = data.name;
+                document.getElementById('shiftDescription').value = data.description || '';
+                document.getElementById('shiftStartTime').value = data.start_time;
+                document.getElementById('shiftEndTime').value = data.end_time;
+                document.getElementById('shiftBreakDuration').value = data.break_duration;
+                document.getElementById('shiftBreakStartTime').value = data.break_start_time || '';
+                document.getElementById('shiftBreakEndTime').value = data.break_end_time || '';
+                document.getElementById('shiftGracePeriod').value = data.grace_period;
+                document.getElementById('shiftWorkingHours').value = data.working_hours;
+                document.getElementById('shiftIsNightShift').checked = data.is_night_shift;
+                document.getElementById('shiftStatus').value = data.is_active ? 'active' : 'inactive';
+                /* When editing, treat loaded values as manually set so they aren't overwritten */
+                workingHoursManual = true;
+                breakDurationManual = true;
+                clearAllFieldErrors(); hideError(); setSaveLoading(false);
+                document.getElementById('shiftFormSuccess').style.display = 'none';
+                getModal('shiftModal').show();
+            })
+            .catch(function() { alert('Failed to load shift data.'); });
+    }
+
+    function viewShift(id) {
+        fetch('/hrm/shifts/' + id + '/update/')
+            .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function(data) {
+                document.getElementById('viewShiftTitle').textContent = data.name;
+                var statusLabel = data.is_active
+                    ? '<span class="badge bg-success">Active</span>'
+                    : '<span class="badge bg-danger">Inactive</span>';
+                var typeBadge = data.is_night_shift
+                    ? '<span class="badge" style="background:#eef2ff;color:#6366f1;">Night Shift</span>'
+                    : '<span class="badge" style="background:#fff0f0;color:#ef4444;">Day Shift</span>';
+                document.getElementById('viewShiftBody').innerHTML =
+                    '<div class="mb-3 d-flex gap-2">' + typeBadge + ' ' + statusLabel + '</div>' +
+                    '<table class="table table-sm mb-3">' +
+                    '<tr><td class="text-muted" style="width:45%">Shift Hours</td><td class="fw-semibold">' + data.start_time + ' - ' + data.end_time + '</td></tr>' +
+                    '<tr><td class="text-muted">Break Duration</td><td class="fw-semibold">' + data.break_duration + ' min</td></tr>' +
+                    '<tr><td class="text-muted">Break Start</td><td class="fw-semibold">' + (data.break_start_time || '\u2014') + '</td></tr>' +
+                    '<tr><td class="text-muted">Break End</td><td class="fw-semibold">' + (data.break_end_time || '\u2014') + '</td></tr>' +
+                    '<tr><td class="text-muted">Working Hours</td><td class="fw-semibold">' + data.working_hours + ' hrs</td></tr>' +
+                    '<tr><td class="text-muted">Grace Period</td><td class="fw-semibold">' + data.grace_period + ' min</td></tr>' +
+                    '</table>' +
+                    (data.description ? '<p class="text-muted small border-top pt-2 mb-0">' + data.description + '</p>' : '');
+                getModal('viewShiftModal').show();
+            })
+            .catch(function() { alert('Failed to load shift details.'); });
+    }
+
+    function saveShift() {
+        var name = document.getElementById('shiftName').value.trim();
+        var startTime = document.getElementById('shiftStartTime').value;
+        var endTime = document.getElementById('shiftEndTime').value;
+
+        /* ── Validate required fields ── */
+        clearAllFieldErrors();
+        var hasErrors = false;
+        if (!name) { markField('shiftName', true, 'Shift name is required'); hasErrors = true; }
+        if (!startTime) { markField('shiftStartTime', true, 'Start time is required'); hasErrors = true; }
+        if (!endTime) { markField('shiftEndTime', true, 'End time is required'); hasErrors = true; }
+
+        if (hasErrors) {
+            showError('Please fill in all required fields highlighted below.');
+            return;
+        }
+
+        hideError();
+        setSaveLoading(true);
+
+        var params = new URLSearchParams();
+        params.append('name', name);
+        params.append('start_time', startTime);
+        params.append('end_time', endTime);
+        params.append('description', document.getElementById('shiftDescription').value.trim());
+        params.append('break_duration', document.getElementById('shiftBreakDuration').value || '60');
+        params.append('break_start_time', document.getElementById('shiftBreakStartTime').value);
+        params.append('break_end_time', document.getElementById('shiftBreakEndTime').value);
+        params.append('grace_period', document.getElementById('shiftGracePeriod').value || '15');
+        params.append('working_hours', document.getElementById('shiftWorkingHours').value || '8.0');
+        params.append('status', document.getElementById('shiftStatus').value);
+        if (document.getElementById('shiftIsNightShift').checked) {
+            params.append('is_night_shift', 'on');
+        }
+
+        var url = editingId ? '/hrm/shifts/' + editingId + '/update/' : '/hrm/shifts/create/';
+
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': CSRF,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: params.toString()
+        })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Server returned ' + r.status);
+            return r.json();
+        })
+        .then(function(data) {
+            if (data.success) {
+                var toastMsg = editingId
+                    ? 'Shift has been updated successfully!'
+                    : 'New shift has been created successfully!';
+                var toastTitle = editingId ? 'Shift Updated' : 'Shift Created';
+                sessionStorage.setItem('shiftToast', JSON.stringify({
+                    type: 'success', title: toastTitle, msg: toastMsg
+                }));
+                location.reload();
+            } else {
+                setSaveLoading(false);
+                showError(data.error || 'Failed to save shift. Please check your input.');
+            }
+        })
+        .catch(function(err) {
+            setSaveLoading(false);
+            showError('Network error: Could not reach the server. Please try again.');
+            console.error('Save shift error:', err);
+        });
+    }
+
+    function deleteShift(id, name) {
+        deletingId = id;
+        document.getElementById('deleteShiftName').textContent = name;
+        getModal('deleteModal').show();
+    }
+
+    function confirmDelete() {
+        fetch('/hrm/shifts/' + deletingId + '/delete/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': CSRF}
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                sessionStorage.setItem('shiftToast', JSON.stringify({
+                    type: 'danger', title: 'Shift Deleted', msg: 'Shift has been deleted successfully.'
+                }));
+                location.reload();
+            }
+        })
+        .catch(function() { alert('Failed to delete shift.'); });
+    }
+
+    function toggleStatus(id) {
+        fetch('/hrm/shifts/' + id + '/toggle-status/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': CSRF}
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                sessionStorage.setItem('shiftToast', JSON.stringify({
+                    type: 'info', title: 'Status Updated', msg: 'Shift status has been toggled successfully.'
+                }));
+                location.reload();
+            }
+        })
+        .catch(function() { alert('Failed to toggle status.'); });
+    }
+</script>
+{% endblock %}
+{% endblock %}

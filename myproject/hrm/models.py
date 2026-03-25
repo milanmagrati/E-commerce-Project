@@ -468,3 +468,88 @@ class Asset(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.asset_code})"
+
+
+# ==================== Attendance Management ====================
+
+class Shift(models.Model):
+    SHIFT_TYPE_CHOICES = [
+        ('day', 'Day Shift'),
+        ('night', 'Night Shift'),
+    ]
+
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, default='')
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    break_duration = models.PositiveIntegerField(default=60, help_text='Break duration in minutes')
+    break_start_time = models.TimeField(null=True, blank=True)
+    break_end_time = models.TimeField(null=True, blank=True)
+    grace_period = models.PositiveIntegerField(default=15, help_text='Grace period in minutes')
+    is_night_shift = models.BooleanField(default=False)
+    working_hours = models.DecimalField(max_digits=4, decimal_places=1, default=8.0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Shift'
+        verbose_name_plural = 'Shifts'
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def shift_type(self):
+        return 'Night Shift' if self.is_night_shift else 'Day Shift'
+
+
+class AttendancePolicy(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, default='')
+    work_hours_per_day = models.DecimalField(max_digits=4, decimal_places=2, default=8.0)
+    late_mark_after = models.PositiveIntegerField(default=15, help_text='Minutes after shift start to mark as late')
+    half_day_hours = models.DecimalField(max_digits=4, decimal_places=2, default=4.0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Attendance Policy'
+        verbose_name_plural = 'Attendance Policies'
+
+    def __str__(self):
+        return self.name
+
+
+class AttendanceRegularization(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name='regularizations'
+    )
+    date = models.DateField()
+    clock_in = models.TimeField(null=True, blank=True)
+    clock_out = models.TimeField(null=True, blank=True)
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    approved_by = models.ForeignKey(
+        Employee, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_regularizations'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Attendance Regularization'
+        verbose_name_plural = 'Attendance Regularizations'
+
+    def __str__(self):
+        return f"{self.employee} - {self.date}"

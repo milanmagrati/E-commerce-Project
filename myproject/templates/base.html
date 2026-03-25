@@ -825,11 +825,17 @@
                                 Attendance <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
                             </a>
                             <ul class="collapse list-unstyled ps-3" id="hrmAttendance">
-                                <li class="{% if request.resolver_match.url_name == 'attendance_dashboard' %}active{% endif %}">
-                                    <a href="{% url 'hrm:attendance_dashboard' %}">Dashboard</a>
+                                <li class="{% if request.resolver_match.url_name == 'shift_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:shift_list' %}">Shifts</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'attendance_policy_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:attendance_policy_list' %}">Attendance Policies</a>
                                 </li>
                                 <li class="{% if request.resolver_match.url_name == 'attendance_list' %}active{% endif %}">
-                                    <a href="{% url 'hrm:attendance_list' %}">All Records</a>
+                                    <a href="{% url 'hrm:attendance_list' %}">Attendance Records</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'attendance_regularization_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:attendance_regularization_list' %}">Attendance Regularizations</a>
                                 </li>
                             </ul>
                         </li>

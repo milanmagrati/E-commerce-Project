@@ -107,9 +107,26 @@ urlpatterns = [
     # Document Management
     path('documents/', views.document_list, name='document_list'),
 
-    # Attendance
-    path('attendance/dashboard/', views.attendance_dashboard, name='attendance_dashboard'),
+    # Attendance Records
     path('attendance/', views.attendance_list, name='attendance_list'),
+
+    # Shifts
+    path('shifts/', views.shift_list, name='shift_list'),
+    path('shifts/create/', views.shift_create, name='shift_create'),
+    path('shifts/<int:pk>/update/', views.shift_update, name='shift_update'),
+    path('shifts/<int:pk>/delete/', views.shift_delete, name='shift_delete'),
+    path('shifts/<int:pk>/toggle-status/', views.shift_toggle_status, name='shift_toggle_status'),
+
+    # Attendance Policies
+    path('attendance-policies/', views.attendance_policy_list, name='attendance_policy_list'),
+    path('attendance-policies/create/', views.attendance_policy_create, name='attendance_policy_create'),
+    path('attendance-policies/<int:pk>/update/', views.attendance_policy_update, name='attendance_policy_update'),
+    path('attendance-policies/<int:pk>/delete/', views.attendance_policy_delete, name='attendance_policy_delete'),
+    path('attendance-policies/<int:pk>/toggle-status/', views.attendance_policy_toggle_status, name='attendance_policy_toggle_status'),
+
+    # Attendance Regularizations
+    path('attendance-regularizations/', views.attendance_regularization_list, name='attendance_regularization_list'),
+    path('attendance-regularizations/<int:pk>/status/', views.attendance_regularization_update_status, name='attendance_regularization_update_status'),
 
     # Biometric Attendance
     path('biometric-attendance/', views.biometric_attendance, name='biometric_attendance'),

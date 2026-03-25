@@ -2591,22 +2591,265 @@ def document_list(request):
     return render(request, 'hrm/document_list.html', context)
 
 
-# ==================== Attendance ====================
-
-@login_required
-def attendance_dashboard(request):
-    context = {
-        'page_title': 'Attendance Dashboard',
-    }
-    return render(request, 'hrm/attendance_dashboard.html', context)
-
+# ==================== Attendance Records ====================
 
 @login_required
 def attendance_list(request):
     context = {
-        'page_title': 'Attendance',
+        'page_title': 'Attendance Records',
     }
     return render(request, 'hrm/attendance_list.html', context)
+
+
+# ==================== Shifts ====================
+
+@login_required
+def shift_list(request):
+    from .models import Shift
+    search = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', '9')
+    shifts = Shift.objects.all()
+
+    total_shifts = shifts.count()
+    active_shifts = shifts.filter(is_active=True).count()
+    night_shifts = shifts.filter(is_night_shift=True).count()
+    day_shifts = shifts.filter(is_night_shift=False).count()
+
+    if search:
+        shifts = shifts.filter(
+            Q(name__icontains=search) | Q(description__icontains=search)
+        )
+
+    paginator = Paginator(shifts, int(per_page))
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'page_title': 'Shifts',
+        'shifts': page_obj,
+        'search': search,
+        'per_page': per_page,
+        'total_shifts': total_shifts,
+        'active_shifts': active_shifts,
+        'night_shifts': night_shifts,
+        'day_shifts': day_shifts,
+    }
+    return render(request, 'hrm/shift_list.html', context)
+
+
+@login_required
+def shift_create(request):
+    from .models import Shift
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        start_time = request.POST.get('start_time', '').strip()
+        end_time = request.POST.get('end_time', '').strip()
+        description = request.POST.get('description', '').strip()
+        break_duration = request.POST.get('break_duration', '60').strip() or '60'
+        break_start_time = request.POST.get('break_start_time', '').strip() or None
+        break_end_time = request.POST.get('break_end_time', '').strip() or None
+        grace_period = request.POST.get('grace_period', '15').strip() or '15'
+        is_night_shift = request.POST.get('is_night_shift') == 'on'
+        is_active = request.POST.get('status', 'active') == 'active'
+        working_hours = request.POST.get('working_hours', '8.0').strip() or '8.0'
+        if not name or not start_time or not end_time:
+            return JsonResponse({'success': False, 'error': 'Name, start time and end time are required.'})
+        shift = Shift.objects.create(
+            name=name,
+            start_time=start_time,
+            end_time=end_time,
+            description=description,
+            break_duration=int(break_duration),
+            break_start_time=break_start_time,
+            break_end_time=break_end_time,
+            grace_period=int(grace_period),
+            is_night_shift=is_night_shift,
+            is_active=is_active,
+            working_hours=float(working_hours),
+        )
+        return JsonResponse({'success': True, 'id': shift.id, 'name': shift.name})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def shift_update(request, pk):
+    from .models import Shift
+    shift = get_object_or_404(Shift, pk=pk)
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        start_time = request.POST.get('start_time', '').strip()
+        end_time = request.POST.get('end_time', '').strip()
+        description = request.POST.get('description', '').strip()
+        if not name or not start_time or not end_time:
+            return JsonResponse({'success': False, 'error': 'Name, start time and end time are required.'})
+        shift.name = name
+        shift.start_time = start_time
+        shift.end_time = end_time
+        shift.description = description
+        shift.break_duration = int(request.POST.get('break_duration', '60') or '60')
+        shift.break_start_time = request.POST.get('break_start_time', '').strip() or None
+        shift.break_end_time = request.POST.get('break_end_time', '').strip() or None
+        shift.grace_period = int(request.POST.get('grace_period', '15') or '15')
+        shift.is_night_shift = request.POST.get('is_night_shift') == 'on'
+        shift.is_active = request.POST.get('status', 'active') == 'active'
+        shift.working_hours = float(request.POST.get('working_hours', '8.0') or '8.0')
+        shift.save()
+        return JsonResponse({'success': True})
+    data = {
+        'id': shift.id,
+        'name': shift.name,
+        'start_time': shift.start_time.strftime('%H:%M'),
+        'end_time': shift.end_time.strftime('%H:%M'),
+        'description': shift.description,
+        'break_duration': shift.break_duration,
+        'break_start_time': shift.break_start_time.strftime('%H:%M') if shift.break_start_time else '',
+        'break_end_time': shift.break_end_time.strftime('%H:%M') if shift.break_end_time else '',
+        'grace_period': shift.grace_period,
+        'is_night_shift': shift.is_night_shift,
+        'is_active': shift.is_active,
+        'working_hours': str(shift.working_hours),
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def shift_delete(request, pk):
+    from .models import Shift
+    shift = get_object_or_404(Shift, pk=pk)
+    if request.method == 'POST':
+        shift.delete()
+        return JsonResponse({'success': True})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def shift_toggle_status(request, pk):
+    from .models import Shift
+    shift = get_object_or_404(Shift, pk=pk)
+    shift.is_active = not shift.is_active
+    shift.save()
+    return JsonResponse({'success': True, 'is_active': shift.is_active})
+
+
+# ==================== Attendance Policies ====================
+
+@login_required
+def attendance_policy_list(request):
+    from .models import AttendancePolicy
+    search = request.GET.get('search', '')
+    policies = AttendancePolicy.objects.all()
+    if search:
+        policies = policies.filter(name__icontains=search)
+    context = {
+        'page_title': 'Attendance Policies',
+        'policies': policies,
+        'search': search,
+    }
+    return render(request, 'hrm/attendance_policy_list.html', context)
+
+
+@login_required
+def attendance_policy_create(request):
+    from .models import AttendancePolicy
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Policy name is required.'})
+        policy = AttendancePolicy.objects.create(
+            name=name,
+            description=request.POST.get('description', '').strip(),
+            work_hours_per_day=request.POST.get('work_hours_per_day', 8.0) or 8.0,
+            late_mark_after=request.POST.get('late_mark_after', 15) or 15,
+            half_day_hours=request.POST.get('half_day_hours', 4.0) or 4.0,
+        )
+        return JsonResponse({'success': True, 'id': policy.id, 'name': policy.name})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def attendance_policy_update(request, pk):
+    from .models import AttendancePolicy
+    policy = get_object_or_404(AttendancePolicy, pk=pk)
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Policy name is required.'})
+        policy.name = name
+        policy.description = request.POST.get('description', '').strip()
+        policy.work_hours_per_day = request.POST.get('work_hours_per_day', 8.0) or 8.0
+        policy.late_mark_after = request.POST.get('late_mark_after', 15) or 15
+        policy.half_day_hours = request.POST.get('half_day_hours', 4.0) or 4.0
+        policy.save()
+        return JsonResponse({'success': True})
+    data = {
+        'id': policy.id,
+        'name': policy.name,
+        'description': policy.description,
+        'work_hours_per_day': str(policy.work_hours_per_day),
+        'late_mark_after': policy.late_mark_after,
+        'half_day_hours': str(policy.half_day_hours),
+        'is_active': policy.is_active,
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def attendance_policy_delete(request, pk):
+    from .models import AttendancePolicy
+    policy = get_object_or_404(AttendancePolicy, pk=pk)
+    if request.method == 'POST':
+        policy.delete()
+        return JsonResponse({'success': True})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def attendance_policy_toggle_status(request, pk):
+    from .models import AttendancePolicy
+    policy = get_object_or_404(AttendancePolicy, pk=pk)
+    policy.is_active = not policy.is_active
+    policy.save()
+    return JsonResponse({'success': True, 'is_active': policy.is_active})
+
+
+# ==================== Attendance Regularization ====================
+
+@login_required
+def attendance_regularization_list(request):
+    from .models import AttendanceRegularization
+    search = request.GET.get('search', '')
+    status_filter = request.GET.get('status', '')
+    regularizations = AttendanceRegularization.objects.select_related('employee', 'approved_by').all()
+    if search:
+        regularizations = regularizations.filter(
+            Q(employee__first_name__icontains=search) |
+            Q(employee__last_name__icontains=search) |
+            Q(reason__icontains=search)
+        )
+    if status_filter:
+        regularizations = regularizations.filter(status=status_filter)
+    context = {
+        'page_title': 'Attendance Regularizations',
+        'regularizations': regularizations,
+        'search': search,
+        'status_filter': status_filter,
+        'status_choices': AttendanceRegularization.STATUS_CHOICES,
+    }
+    return render(request, 'hrm/attendance_regularization_list.html', context)
+
+
+@login_required
+def attendance_regularization_update_status(request, pk):
+    from .models import AttendanceRegularization, Employee
+    reg = get_object_or_404(AttendanceRegularization, pk=pk)
+    if request.method == 'POST':
+        new_status = request.POST.get('status', '')
+        if new_status not in ['pending', 'approved', 'rejected']:
+            return JsonResponse({'success': False, 'error': 'Invalid status.'})
+        reg.status = new_status
+        reg.save()
+        return JsonResponse({'success': True, 'status': reg.status})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
 
 
 # ==================== Biometric Attendance ====================
