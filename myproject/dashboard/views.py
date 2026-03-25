@@ -4527,7 +4527,7 @@ def api_search_orders(request):
     per_page = int(request.GET.get('per_page', 30))
     
     orders = Order.objects.filter(is_deleted=False).select_related(
-        'customer', 'created_by', 'status_setup', 'payment_setup', 'payment_status_setup'
+        'customer', 'created_by', 'status_setup', 'payment_setup', 'payment_status_setup', 'branch'
     ).prefetch_related('items').order_by('-created_at')
     
     if query:
@@ -4604,6 +4604,12 @@ def api_search_orders(request):
         if order.created_by:
             created_by_name = order.created_by.get_full_name() or order.created_by.username
         
+        branch_name = ''
+        if order.branch:
+            branch_name = order.branch.name
+        elif order.branch_city:
+            branch_name = order.branch_city
+
         results.append({
             'id': order.id,
             'order_number': order.order_number,
@@ -4612,6 +4618,7 @@ def api_search_orders(request):
             'customer_email': order.customer_email or '',
             'shipping_address': order.shipping_address or '',
             'branch_city': order.branch_city or '',
+            'branch_name': branch_name,
             'in_out': order.in_out or '',
             'status': status_display,
             'payment_status': payment_status_display,

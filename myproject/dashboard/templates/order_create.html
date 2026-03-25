@@ -2635,7 +2635,7 @@
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Phone *</label>
+                        <label class="form-label">Phone * <span id="phoneSearchError" style="display:none;color:#ef4444;font-size:0.75rem;font-weight:600;margin-left:4px;">Enter 10 digit</span></label>
                         <input type="text" name="customer_phone" id="customerPhone" class="form-control"
                             placeholder="Phone" required>
                     </div>
@@ -3465,7 +3465,7 @@
             html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="12%">Date</th>';
             html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="18%">Product</th>';
             html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="10%">Amount</th>';
-            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="10%">Payment</th>';
+            html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="10%">Branch</th>';
             html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="7%">Status</th>';
             html += '<th style="padding:10px 12px;font-weight:700;color:#1a1a2e;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;" width="20%">Actions</th>';
             html += '</tr></thead><tbody>';
@@ -3518,8 +3518,9 @@
                 // Amount
                 html += '<td style="padding:12px;vertical-align:middle;"><strong style="color:#10b981;">रू ' + parseFloat(order.total_amount).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</strong></td>';
 
-                // Payment
-                html += '<td style="padding:12px;vertical-align:middle;"><strong style="color:' + paymentStatusColor + ';">' + (order.payment_status || '').toUpperCase() + '</strong><br><small class="text-muted">' + (order.payment_method || '').toUpperCase() + '</small></td>';
+                // Branch
+                const branchDisplay = order.branch_name || order.branch_city || '';
+                html += '<td style="padding:12px;vertical-align:middle;">' + (branchDisplay ? '<span style="font-size:0.85rem;color:#374151;"><i class="fas fa-map-marker-alt" style="color:#d97706;"></i> ' + highlightTerm(branchDisplay, searchTerm) + '</span>' : '<span class="text-muted" style="font-size:0.82rem;">—</span>') + '</td>';
 
                 // Status
                 html += '<td style="padding:12px;vertical-align:middle;"><strong style="color:' + orderStatusColor + ';font-weight:700;">' + (order.status || 'Pending') + '</strong></td>';
@@ -5520,18 +5521,29 @@
 
         document.getElementById('phoneSearch').addEventListener('input', function(e) {
             const phone = e.target.value.trim();
-            
+            const digits = phone.replace(/\D/g, '');
+            const errEl = document.getElementById('phoneSearchError');
+
             clearTimeout(phoneSearchTimer);
-            
+
             if (!phone) {
                 this.style.borderColor = '';
                 this.style.background = '';
+                errEl.style.display = 'none';
                 return;
             }
-            
-            this.style.borderColor = '#3b82f6';
-            this.style.background = '#eff6ff';
-            
+
+            // Show error when digits typed but not yet 10
+            if (digits.length > 0 && digits.length !== 10) {
+                errEl.style.display = 'inline';
+                this.style.borderColor = '#ef4444';
+                this.style.background = '#fef2f2';
+            } else {
+                errEl.style.display = 'none';
+                this.style.borderColor = '#3b82f6';
+                this.style.background = '#eff6ff';
+            }
+
             phoneSearchTimer = setTimeout(() => {
                 searchCustomerByPhone(phone);
             }, 500);
