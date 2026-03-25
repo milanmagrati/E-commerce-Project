@@ -355,6 +355,18 @@
                                                 <input type="checkbox" class="form-check-input" name="can_view_cost_unit_price" id="can_view_cost_unit_price" {% if edit_user.can_view_cost_unit_price %}checked{% endif %}>
                                                 <label for="can_view_cost_unit_price">Cost Unit Price</label>
                                             </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_valuation_selling" id="can_view_valuation_selling" {% if edit_user.can_view_valuation_selling %}checked{% endif %}>
+                                                <label for="can_view_valuation_selling">Valuation by Selling Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_valuation_cost" id="can_view_valuation_cost" {% if edit_user.can_view_valuation_cost %}checked{% endif %}>
+                                                <label for="can_view_valuation_cost">Valuation by Cost Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_toggle_stock_valuation" id="can_toggle_stock_valuation" {% if edit_user.can_toggle_stock_valuation %}checked{% endif %}>
+                                                <label for="can_toggle_stock_valuation">Toggle Stock Valuation</label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

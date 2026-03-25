@@ -87,7 +87,12 @@ class CustomUser(AbstractUser):
     can_toggle_product_price = models.BooleanField(default=False, verbose_name="Toggle Product Price")
     can_view_selling_unit_price = models.BooleanField(default=False, verbose_name="View Selling Unit Price")
     can_view_cost_unit_price = models.BooleanField(default=False, verbose_name="View Cost Unit Price")
-    
+
+    # STOCK VALUATION PERMISSIONS
+    can_view_valuation_selling = models.BooleanField(default=False, verbose_name="Valuation by Selling Price")
+    can_view_valuation_cost = models.BooleanField(default=False, verbose_name="Valuation by Cost Price")
+    can_toggle_stock_valuation = models.BooleanField(default=False, verbose_name="Toggle Stock Valuation")
+
     # REPORT PERMISSIONS
     can_view_reports = models.BooleanField(default=False)
     can_view_sales_reports = models.BooleanField(default=False)

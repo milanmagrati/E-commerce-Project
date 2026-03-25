@@ -7512,6 +7512,36 @@ def inventory_dashboard(request):
 
             # Stock Count
             'stock_count_products': stock_count_products,
+
+            # Stock Valuation permission flags (pre-computed for clean template logic)
+            'show_valuation_card': (
+                request.user.is_administrator or
+                request.user.can_view_valuation_selling or
+                request.user.can_view_valuation_cost or
+                request.user.can_toggle_stock_valuation
+            ),
+            'show_valuation_selling': (
+                request.user.is_administrator or
+                request.user.can_view_valuation_selling or
+                request.user.can_toggle_stock_valuation
+            ),
+            'show_valuation_cost': (
+                request.user.is_administrator or
+                request.user.can_view_valuation_cost or
+                request.user.can_toggle_stock_valuation
+            ),
+            # Show tabs when user can switch between both
+            'show_valuation_tabs': (
+                request.user.is_administrator or
+                request.user.can_toggle_stock_valuation or
+                (request.user.can_view_valuation_selling and request.user.can_view_valuation_cost)
+            ),
+            # Cost panel starts hidden only when selling is also visible (so user starts on selling)
+            'cost_starts_hidden': (
+                request.user.is_administrator or
+                request.user.can_view_valuation_selling or
+                request.user.can_toggle_stock_valuation
+            ),
         }
 
         return render(request, 'inventory_dashboard.html', context)

@@ -157,29 +157,39 @@
 
     <!-- Charts Row -->
     <div class="charts-row">
+        {% if show_valuation_card %}
         <!-- Stock Value Card -->
         <div class="chart-card">
             <div class="card-header-dark">
                 <h5><i class="fas fa-dollar-sign"></i> Stock Valuation</h5>
                 <div class="header-actions-small">
-                    <button class="btn-icon" id="btnSellingVal" onclick="toggleValuation('selling')">
+                    {% if show_valuation_tabs %}
+                    <button class="btn-icon active" id="btnSellingVal" onclick="toggleValuation('selling')">
                         <i class="fas fa-tags"></i>
                     </button>
                     <button class="btn-icon" id="btnCostVal" onclick="toggleValuation('cost')">
                         <i class="fas fa-coins"></i>
                     </button>
+                    {% endif %}
                 </div>
             </div>
             <div class="card-body-dark">
+                {% if show_valuation_tabs %}
                 <div class="stock-valuation-tabs">
+                    {% if show_valuation_selling %}
                     <button class="valuation-tab active" onclick="toggleValuation('selling')" id="tabSelling">
                         <i class="fas fa-tags"></i> By Selling Price
                     </button>
-                    <button class="valuation-tab" onclick="toggleValuation('cost')" id="tabCost">
+                    {% endif %}
+                    {% if show_valuation_cost %}
+                    <button class="valuation-tab {% if not show_valuation_selling %}active{% endif %}" onclick="toggleValuation('cost')" id="tabCost">
                         <i class="fas fa-coins"></i> By Cost Price
                     </button>
+                    {% endif %}
                 </div>
+                {% endif %}
                 <div class="value-display-container">
+                    {% if show_valuation_selling %}
                     <div id="sellingValuation">
                         <div class="value-display">
                             <span class="currency">Rs</span>
@@ -187,13 +197,20 @@
                         </div>
                         <p class="value-subtitle">Retail inventory valuation</p>
                     </div>
+                    {% endif %}
+                    {% if show_valuation_cost %}
+                    {% if cost_starts_hidden %}
                     <div id="costValuation" style="display: none;">
+                    {% else %}
+                    <div id="costValuation">
+                    {% endif %}
                         <div class="value-display">
                             <span class="currency cost-currency">Rs</span>
                             <span class="amount cost-amount" id="stockCostValue">{{ total_stock_cost_value|floatformat:0 }}</span>
                         </div>
                         <p class="value-subtitle">Cost-based inventory valuation</p>
                     </div>
+                    {% endif %}
                     <div class="value-stats">
                         <div class="value-stat">
                             <i class="fas fa-boxes text-info"></i>
@@ -207,6 +224,7 @@
                 </div>
             </div>
         </div>
+        {% endif %}
 
         <!-- Donut Chart -->
         <div class="chart-card">
@@ -3246,17 +3264,17 @@ function toggleValuation(type) {
     const btnCost = document.getElementById('btnCostVal');
 
     if (type === 'selling') {
-        sellingDiv.style.display = 'block';
-        costDiv.style.display = 'none';
-        tabSelling.className = 'valuation-tab active';
-        tabCost.className = 'valuation-tab';
+        if (sellingDiv) sellingDiv.style.display = 'block';
+        if (costDiv) costDiv.style.display = 'none';
+        if (tabSelling) tabSelling.className = 'valuation-tab active';
+        if (tabCost) tabCost.className = 'valuation-tab';
         if (btnSelling) btnSelling.classList.add('active');
         if (btnCost) btnCost.classList.remove('active');
     } else {
-        sellingDiv.style.display = 'none';
-        costDiv.style.display = 'block';
-        tabCost.className = 'valuation-tab active-cost';
-        tabSelling.className = 'valuation-tab';
+        if (sellingDiv) sellingDiv.style.display = 'none';
+        if (costDiv) costDiv.style.display = 'block';
+        if (tabCost) tabCost.className = 'valuation-tab active-cost';
+        if (tabSelling) tabSelling.className = 'valuation-tab';
         if (btnCost) btnCost.classList.add('active');
         if (btnSelling) btnSelling.classList.remove('active');
     }

@@ -278,7 +278,10 @@ def user_create(request):
                 user.can_toggle_product_price = True
                 user.can_view_selling_unit_price = True
                 user.can_view_cost_unit_price = True
-                
+                user.can_view_valuation_selling = True
+                user.can_view_valuation_cost = True
+                user.can_toggle_stock_valuation = True
+
                 user.can_view_reports = True
                 user.can_view_sales_reports = True
                 user.can_view_financial_reports = True
@@ -368,6 +371,9 @@ def user_create(request):
                 user.can_toggle_product_price = request.POST.get('can_toggle_product_price') == 'on'
                 user.can_view_selling_unit_price = request.POST.get('can_view_selling_unit_price') == 'on'
                 user.can_view_cost_unit_price = request.POST.get('can_view_cost_unit_price') == 'on'
+                user.can_view_valuation_selling = request.POST.get('can_view_valuation_selling') == 'on'
+                user.can_view_valuation_cost = request.POST.get('can_view_valuation_cost') == 'on'
+                user.can_toggle_stock_valuation = request.POST.get('can_toggle_stock_valuation') == 'on'
                 
                 # Reports Module
                 user.can_view_reports = request.POST.get('can_view_reports') == 'on'
@@ -507,6 +513,9 @@ def user_edit(request, user_id):
             edit_user.can_toggle_product_price = True
             edit_user.can_view_selling_unit_price = True
             edit_user.can_view_cost_unit_price = True
+            edit_user.can_view_valuation_selling = True
+            edit_user.can_view_valuation_cost = True
+            edit_user.can_toggle_stock_valuation = True
             
             edit_user.can_view_reports = True
             edit_user.can_view_sales_reports = True
@@ -609,6 +618,9 @@ def user_edit(request, user_id):
             edit_user.can_toggle_product_price = request.POST.get('can_toggle_product_price') == 'on'
             edit_user.can_view_selling_unit_price = request.POST.get('can_view_selling_unit_price') == 'on'
             edit_user.can_view_cost_unit_price = request.POST.get('can_view_cost_unit_price') == 'on'
+            edit_user.can_view_valuation_selling = request.POST.get('can_view_valuation_selling') == 'on'
+            edit_user.can_view_valuation_cost = request.POST.get('can_view_valuation_cost') == 'on'
+            edit_user.can_toggle_stock_valuation = request.POST.get('can_toggle_stock_valuation') == 'on'
             
             # Reports Module
             edit_user.can_view_reports = request.POST.get('can_view_reports') == 'on'
