@@ -177,8 +177,10 @@
                                 </th>
                                 <th>Batch Number</th>
                                 <th>Logistics</th>
-                                <th>Status</th>
                                 <th>Orders</th>
+                                <th>Success</th>
+                                <th>Failed</th>
+                                <th>Status</th>
                                 <th class="d-none d-md-table-cell">Created By</th>
                                 <th>Created At</th>
                                 <th>Actions</th>
@@ -200,26 +202,36 @@
                                     </span>
                                 </td>
                                 <td>
-                                    {% if dispatch.status == 'dispatched' %}
-                                        <span class="text-success fw-bold">Dispatched</span>
-                                    {% elif dispatch.status == 'delivered' %}
-                                        <span class="text-primary fw-bold">Delivered</span>
-                                    {% elif dispatch.status == 'cancelled' %}
-                                        <span class="text-danger fw-bold">Cancelled</span>
-                                    {% elif dispatch.status == 'shipped' %}
-                                        <span class="text-info fw-bold">Shipped</span>
-                                    {% elif dispatch.status == 'packed' %}
-                                        <span class="text-secondary fw-bold">Packed</span>
-                                    {% elif dispatch.status == 'confirmed' %}
-                                        <span class="text-dark fw-bold">Confirmed</span>
-                                    {% elif dispatch.status == 'processing' %}
-                                        <span class="text-warning fw-bold">Processing</span>
-                                    {% else %}
-                                        <span class="text-muted fw-bold">{{ dispatch.get_status_display }}</span>
-                                    {% endif %}
+                                    <span class="badge bg-dark">{{ dispatch.total_orders }}</span>
                                 </td>
                                 <td>
-                                    <span class="badge bg-dark">{{ dispatch.total_orders }} orders</span>
+                                    {% with success_count=dispatch.get_success_count %}
+                                    <span class="badge bg-success">{{ success_count }}</span>
+                                    {% endwith %}
+                                </td>
+                                <td>
+                                    {% with failed_count=dispatch.get_failed_count %}
+                                    {% if failed_count > 0 %}
+                                        <span class="badge bg-danger">{{ failed_count }}</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">0</span>
+                                    {% endif %}
+                                    {% endwith %}
+                                </td>
+                                <td>
+                                    {% with success_count=dispatch.get_success_count failed_count=dispatch.get_failed_count %}
+                                    {% if dispatch.total_orders > 0 and success_count == dispatch.total_orders %}
+                                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Completed</span>
+                                    {% elif success_count > 0 and failed_count > 0 %}
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle"></i> Partial</span>
+                                    {% elif failed_count > 0 and success_count == 0 %}
+                                        <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Failed</span>
+                                    {% elif dispatch.total_orders == 0 %}
+                                        <span class="badge bg-secondary">Pending</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ dispatch.get_status_display }}</span>
+                                    {% endif %}
+                                    {% endwith %}
                                 </td>
                                 <td class="d-none d-md-table-cell">{{ dispatch.created_by.username|default:"N/A" }}</td>
                                 <td>
@@ -241,7 +253,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="8" class="text-center py-4">
+                                <td colspan="10" class="text-center py-4">
                                     <i class="bi bi-inbox" style="font-size: 48px; color: #ccc;"></i>
                                     <p class="text-muted mt-2">No dispatches found</p>
                                     <a href="{% url 'dispatch_management' %}" class="btn btn-primary btn-sm">
