@@ -33,7 +33,7 @@
     <div class="row g-4">
 
         <!-- ===== MAIN CONTENT (Left) ===== -->
-        <div class="col-lg-8">
+        <div class="col-lg-9">
             <div class="card border-0 shadow-sm">
                 <div class="card-header dispatch-header text-white">
                     <h5 class="mb-0"><i class="fas fa-barcode me-2"></i>Scan Orders</h5>
@@ -139,7 +139,7 @@
         </div>
 
         <!-- ===== SIDEBAR (Right) ===== -->
-        <div class="col-lg-4">
+        <div class="col-lg-3">
             <!-- Recent Orders (Last 2 Days) -->
             <div class="card border-0 shadow-sm mb-4">
                 <div class="card-header bg-white border-bottom">
@@ -221,21 +221,22 @@
 
     .form-control-display {
         font-family: 'Courier New', monospace;
-        font-size: 1.1rem;
+        font-size: 0.95rem;
         border: 2px solid #ddd;
         border-radius: 8px;
-        padding: 12px;
-        min-height: 150px;
+        padding: 10px;
+        min-height: 120px;
         background: white;
-        line-height: 2.5;
+        line-height: 2.2;
     }
 
     .order-id-chip {
         display: inline-block;
-        padding: 8px 35px 8px 12px;
-        margin: 4px;
-        border-radius: 6px;
+        padding: 5px 28px 5px 8px;
+        margin: 3px;
+        border-radius: 5px;
         font-weight: 600;
+        font-size: 0.85rem;
         transition: all 0.2s ease;
         position: relative;
         cursor: default;
@@ -260,15 +261,15 @@
     .order-id-chip .delete-btn {
         position: absolute;
         top: 50%;
-        right: 5px;
+        right: 4px;
         transform: translateY(-50%);
         background: rgba(0, 0, 0, 0.2);
         color: white;
         border: none;
         border-radius: 50%;
-        width: 22px;
-        height: 22px;
-        font-size: 14px;
+        width: 18px;
+        height: 18px;
+        font-size: 12px;
         line-height: 1;
         cursor: pointer;
         display: flex;
@@ -374,9 +375,9 @@
     .stat-card {
         display: flex;
         align-items: center;
-        gap: 15px;
-        padding: 18px 20px;
-        border-radius: 14px;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: 12px;
         position: relative;
         overflow: hidden;
         transition: all 0.3s ease;
@@ -404,13 +405,13 @@
     }
 
     .stat-icon {
-        width: 50px;
-        height: 50px;
-        border-radius: 12px;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.3rem;
+        font-size: 1.1rem;
         flex-shrink: 0;
     }
 
@@ -437,15 +438,16 @@
     }
 
     .stat-label {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.3px;
         color: #6b7280;
+        white-space: nowrap;
     }
 
     .stat-value {
-        font-size: 1.75rem;
+        font-size: 1.5rem;
         font-weight: 800;
         line-height: 1.2;
         font-family: 'Courier New', monospace;
@@ -456,8 +458,8 @@
     .stat-duplicate .stat-value { color: #dc2626; }
 
     .stat-ring {
-        width: 44px;
-        height: 44px;
+        width: 36px;
+        height: 36px;
         flex-shrink: 0;
     }
 
@@ -483,17 +485,49 @@
 
     /* Recent Orders Sidebar */
     .recent-orders-list {
-        max-height: 420px;
+        max-height: 350px;
         overflow-y: auto;
+    }
+
+    .recent-orders-list::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .recent-orders-list::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    .recent-orders-list::-webkit-scrollbar-thumb {
+        background: #c4b5fd;
+        border-radius: 4px;
+    }
+
+    .recent-orders-list::-webkit-scrollbar-thumb:hover {
+        background: #8b5cf6;
     }
 
     .recent-order-item {
         cursor: pointer;
         transition: background 0.2s ease;
+        padding: 8px 12px !important;
     }
 
     .recent-order-item:hover {
         background: #f0f4ff;
+    }
+
+    .recent-order-item .badge {
+        font-size: 0.7rem;
+        padding: 3px 6px;
+    }
+
+    .recent-order-item strong {
+        font-size: 0.85rem;
+    }
+
+    .recent-order-item small {
+        font-size: 0.72rem;
     }
 
     @keyframes slideInRight {
@@ -507,6 +541,92 @@
     @keyframes slideOutDown {
         from { opacity: 1; transform: translateY(0); }
         to { opacity: 0; transform: translateY(50px); }
+    }
+
+    /* ===== RESPONSIVE FIXES ===== */
+    @media (max-width: 1400px) {
+        .stat-card {
+            padding: 10px 12px;
+            gap: 8px;
+        }
+        .stat-icon {
+            width: 35px;
+            height: 35px;
+            font-size: 1rem;
+        }
+        .stat-value {
+            font-size: 1.3rem;
+        }
+        .stat-label {
+            font-size: 0.65rem;
+        }
+        .stat-ring {
+            width: 30px;
+            height: 30px;
+        }
+    }
+
+    @media (max-width: 1200px) {
+        .stat-card {
+            padding: 8px 10px;
+            gap: 6px;
+        }
+        .stat-icon {
+            width: 30px;
+            height: 30px;
+            font-size: 0.9rem;
+            border-radius: 8px;
+        }
+        .stat-value {
+            font-size: 1.1rem;
+        }
+        .stat-ring {
+            width: 28px;
+            height: 28px;
+        }
+        .order-id-chip {
+            padding: 4px 24px 4px 6px;
+            margin: 2px;
+            font-size: 0.8rem;
+        }
+        .order-id-chip .delete-btn {
+            width: 16px;
+            height: 16px;
+            font-size: 10px;
+        }
+        .recent-orders-list {
+            max-height: 300px;
+        }
+    }
+
+    @media (max-width: 991px) {
+        .scan-stats-dashboard .col-md-4 {
+            flex: 0 0 33.333%;
+            max-width: 33.333%;
+        }
+    }
+
+    .form-control-display {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .form-control-display::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .form-control-display::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    .form-control-display::-webkit-scrollbar-thumb {
+        background: #a5b4fc;
+        border-radius: 4px;
+    }
+
+    .form-control-display::-webkit-scrollbar-thumb:hover {
+        background: #818cf8;
     }
 </style>
 
