@@ -62,6 +62,42 @@
         box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.15) !important;
     }
     .messages-container { display: none !important; }
+
+    /* Purchase items table responsive fixes */
+    #itemsTable {
+        min-width: 600px;
+        table-layout: fixed;
+        width: 100%;
+    }
+    #itemsTable th,
+    #itemsTable td {
+        vertical-align: middle;
+        overflow: hidden;
+    }
+    #itemsTable th:nth-child(1), #itemsTable td:nth-child(1) { width: 28%; }
+    #itemsTable th:nth-child(2), #itemsTable td:nth-child(2) { width: 20%; }
+    #itemsTable th:nth-child(3), #itemsTable td:nth-child(3) { width: 14%; }
+    #itemsTable th:nth-child(4), #itemsTable td:nth-child(4) { width: 18%; }
+    #itemsTable th:nth-child(5), #itemsTable td:nth-child(5) { width: 14%; }
+    #itemsTable th:nth-child(6), #itemsTable td:nth-child(6) { width: 6%; }
+    #itemsTable .row-total,
+    #itemsTable #grandTotal {
+        white-space: nowrap;
+    }
+    #itemsTable input,
+    #itemsTable select {
+        width: 100%;
+        box-sizing: border-box;
+    }
+    @media (max-width: 768px) {
+        #itemsTable .row-total,
+        #itemsTable #grandTotal {
+            font-size: 0.92rem;
+        }
+        #itemsTable tfoot td {
+            font-size: 0.92rem;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -149,12 +185,12 @@
                             <table class="table table-hover mb-0" id="itemsTable">
                                 <thead class="table-light">
                                     <tr>
-                                        <th style="width:30%">Product</th>
-                                        <th style="width:20%">Variant</th>
-                                        <th style="width:12%" class="text-center">Quantity</th>
-                                        <th style="width:16%" class="text-end">Rate (Rs.)</th>
-                                        <th style="width:17%" class="text-end">Total (Rs.)</th>
-                                        <th style="width:5%"></th>
+                                        <th style="min-width:130px">Product</th>
+                                        <th style="min-width:110px">Variant</th>
+                                        <th style="min-width:80px" class="text-center">Quantity</th>
+                                        <th style="min-width:100px" class="text-end">Rate (Rs.)</th>
+                                        <th style="min-width:110px" class="text-end">Total (Rs.)</th>
+                                        <th style="min-width:40px"></th>
                                     </tr>
                                 </thead>
                                 <tbody id="itemsBody">
@@ -178,7 +214,7 @@
                                             </td>
                                             <td><input type="number" name="quantity[]" class="form-control form-control-sm text-center qty-input" value="{{ item.quantity }}" min="1" placeholder="Qty" required></td>
                                             <td><input type="number" step="0.01" name="rate[]" class="form-control form-control-sm text-end rate-input" value="{{ item.rate }}" min="0" placeholder="0.00" required></td>
-                                            <td class="text-end fw-bold row-total pt-3">0.00</td>
+                                            <td class="text-end fw-bold row-total">0.00</td>
                                             <td class="text-center">
                                                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)" title="Remove">
                                                     <i class="fas fa-times"></i>
@@ -205,7 +241,7 @@
                                         </td>
                                         <td><input type="number" name="quantity[]" class="form-control form-control-sm text-center qty-input" min="1" placeholder="Qty" required></td>
                                         <td><input type="number" step="0.01" name="rate[]" class="form-control form-control-sm text-end rate-input" min="0" placeholder="0.00" required></td>
-                                        <td class="text-end fw-bold row-total pt-3">0.00</td>
+                                        <td class="text-end fw-bold row-total">0.00</td>
                                         <td class="text-center">
                                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)" title="Remove">
                                                 <i class="fas fa-times"></i>
@@ -217,7 +253,7 @@
                                 <tfoot class="table-light">
                                     <tr>
                                         <td colspan="4" class="text-end fw-bold">Grand Total:</td>
-                                        <td class="text-end fw-bold fs-5 text-primary" id="grandTotal">Rs. 0.00</td>
+                                        <td class="text-end fw-bold fs-5 text-primary text-nowrap" id="grandTotal">Rs. 0.00</td>
                                         <td></td>
                                     </tr>
                                 </tfoot>
