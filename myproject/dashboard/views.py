@@ -11772,7 +11772,7 @@ def sales_report(request):
     # ── 3. Top 10 Products ──
     top_products_raw = (
         items_qs
-        .filter(product__isnull=False)
+        .filter(product__isnull=False, product__is_deleted=False)
         .values('product__id', 'product__name', 'product__cost_price', 'product__stock',
                 'product__product_type', 'product_variation__id', 'product_variation__variation_name',
                 'product_variation__stock')
@@ -11798,6 +11798,7 @@ def sales_report(request):
             order__is_deleted=False,
             order__created_at__gte=_30d_start,
             product__isnull=False,
+            product__is_deleted=False,
         )
         .annotate(day=TruncDate('order__created_at'))
         .values('product__id', 'product_variation__id', 'day')
@@ -11947,6 +11948,7 @@ def sales_report(request):
             order__is_deleted=False,
             order__created_at__gte=last_30_start,
             product__isnull=False,
+            product__is_deleted=False,
         )
         .values(
             'product__id', 'product__name', 'product__stock', 'product__product_type',
@@ -12027,13 +12029,14 @@ def sales_report(request):
     prev_7_start = today_start - timedelta(days=14)
     last_7_sales = (
         OrderItem.objects.filter(order__is_deleted=False, order__created_at__gte=last_7_start,
-                                 product__isnull=False)
+                                 product__isnull=False, product__is_deleted=False)
         .values('product__id', 'product__name', 'product_variation__variation_name')
         .annotate(qty=Sum('quantity'))
     )
     prev_7_sales = (
         OrderItem.objects.filter(order__is_deleted=False, order__created_at__gte=prev_7_start,
-                                 order__created_at__lt=last_7_start, product__isnull=False)
+                                 order__created_at__lt=last_7_start, product__isnull=False,
+                                 product__is_deleted=False)
         .values('product__id', 'product__name', 'product_variation__variation_name')
         .annotate(qty=Sum('quantity'))
     )

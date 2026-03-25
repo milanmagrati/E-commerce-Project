@@ -709,7 +709,9 @@
                                 <th>Revenue</th>
                                 <th>Profit</th>
                                 <th>Stock</th>
-                                <th>Prediction</th>
+                                <th>Sell Rate</th>
+                                <th>Stock Lasts</th>
+                                <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -727,19 +729,31 @@
                                 </td>
                                 <td>{{ p.stock }}</td>
                                 <td>
+                                    <span style="font-size:.85rem;color:#374151;">{{ p.avg_daily }}/day</span>
+                                </td>
+                                <td>
+                                    {% if p.avg_daily == 0 %}
+                                    <span style="font-size:.85rem;color:#6b7280;">No sales</span>
+                                    {% elif p.days_left >= 9999 %}
+                                    <span style="font-size:.85rem;color:#059669;font-weight:600;">∞</span>
+                                    {% else %}
+                                    <span style="font-size:.85rem;{% if p.days_left <= 3 %}color:#dc2626;{% elif p.days_left <= 10 %}color:#d97706;{% elif p.days_left <= 20 %}color:#2563eb;{% else %}color:#059669;{% endif %}font-weight:600;">{{ p.days_left }} days</span>
+                                    {% endif %}
+                                </td>
+                                <td>
                                     {% if p.urgency == 'critical' %}
-                                    <span class="badge-danger">Critical — {{ p.days_left }}d</span>
+                                    <span class="badge-danger">Critical</span>
                                     {% elif p.urgency == 'urgent' %}
-                                    <span class="badge-warning">Urgent — {{ p.days_left }}d</span>
+                                    <span class="badge-warning">Urgent</span>
                                     {% elif p.urgency == 'low' %}
-                                    <span class="badge-info">Low — {{ p.days_left }}d</span>
+                                    <span class="badge-info">Low</span>
                                     {% else %}
                                     <span class="badge-success">OK</span>
                                     {% endif %}
                                 </td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="8" class="text-center" style="padding:30px;color:#9ca3af;">No sales data for this period</td></tr>
+                            <tr><td colspan="10" class="text-center" style="padding:30px;color:#9ca3af;">No sales data for this period</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -1302,11 +1316,11 @@ function exportExcel() {
     });
 
     // Top products
-    csv += '\n\nTop Selling Products\nProduct,Variant,Type,Qty Sold,Revenue,Profit %,Stock,Prediction\n';
+    csv += '\n\nTop Selling Products\nProduct,Variant,Type,Qty Sold,Revenue,Profit %,Stock,Sell Rate,Stock Lasts,Status\n';
     const topRows = document.querySelectorAll('#tab-top .sr-table tbody tr');
     topRows.forEach(row => {
         const cells = row.querySelectorAll('td');
-        if (cells.length >= 8) {
+        if (cells.length >= 10) {
             const vals = Array.from(cells).map(c => c.textContent.trim().replace(/,/g, ''));
             csv += vals.map(v => `"${v}"`).join(',') + '\n';
         }
