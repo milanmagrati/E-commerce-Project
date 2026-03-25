@@ -5544,9 +5544,11 @@
                 this.style.background = '#eff6ff';
             }
 
-            phoneSearchTimer = setTimeout(() => {
-                searchCustomerByPhone(phone);
-            }, 500);
+            if (digits.length === 10) {
+                phoneSearchTimer = setTimeout(() => {
+                    searchCustomerByPhone(phone);
+                }, 500);
+            }
         });
 
         document.getElementById('productModal').addEventListener('shown.bs.modal', () => {
