@@ -6435,6 +6435,10 @@ def dispatch_management(request):
 
                         # Check if already dispatched
                         if order.order_status == 'dispatched':
+                            DispatchItem.objects.filter(
+                                dispatch=dispatch,
+                                scanned_order_id=order_id
+                            ).update(dispatch_status='failed', failure_reason='Already dispatched')
                             messages.warning(request, f'⚠️ Order {order_id} already dispatched')
                             continue
                         
@@ -6618,6 +6622,10 @@ def dispatch_management(request):
                         )
                         
                         updated_count += 1
+                        DispatchItem.objects.filter(
+                            dispatch=dispatch,
+                            scanned_order_id=order_id
+                        ).update(dispatch_status='success')
                     else:
                         not_found.append(order_id)
                 

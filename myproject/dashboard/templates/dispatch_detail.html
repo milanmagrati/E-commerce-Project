@@ -6,7 +6,7 @@
 {% block content %}
 <div class="container-fluid py-4">
     <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <h2><i class="bi bi-box-seam"></i> Dispatch Details</h2>
         <div>
             <a href="{% url 'dispatch_list' %}" class="btn btn-secondary">
@@ -20,6 +20,42 @@
                     <i class="bi bi-trash"></i> Move to Trash
                 </button>
             </form>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card bg-primary text-white shadow-sm">
+                <div class="card-body py-3">
+                    <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Total Orders Scanned</h6>
+                    <h2 class="mb-0">{{ dispatch.total_orders }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card bg-success text-white shadow-sm">
+                <div class="card-body py-3">
+                    <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Successfully Dispatched</h6>
+                    <h2 class="mb-0">{{ dispatch.get_success_count }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card bg-warning text-dark shadow-sm">
+                <div class="card-body py-3">
+                    <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Failed</h6>
+                    <h2 class="mb-0">{{ dispatch.get_failed_count }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card bg-danger text-white shadow-sm">
+                <div class="card-body py-3">
+                    <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Not Found in System</h6>
+                    <h2 class="mb-0">{{ dispatch.get_not_found_count }}</h2>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -369,8 +405,10 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if item.order %}
-                                            <span class="badge bg-success">Linked</span>
+                                        {% if item.dispatch_status == 'success' %}
+                                            <span class="badge bg-success">Success</span>
+                                        {% elif item.dispatch_status == 'failed' %}
+                                            <span class="badge bg-warning text-dark" title="{{ item.failure_reason }}">Failed</span>
                                         {% else %}
                                             <span class="badge bg-danger">Not Found</span>
                                         {% endif %}
@@ -398,34 +436,6 @@
                             </tbody>
                         </table>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Statistics Cards -->
-    <div class="row">
-        <div class="col-md-4 mb-3">
-            <div class="card bg-primary text-white shadow-sm">
-                <div class="card-body">
-                    <h6>Total Orders Scanned</h6>
-                    <h2>{{ dispatch.total_orders }}</h2>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4 mb-3">
-            <div class="card bg-success text-white shadow-sm">
-                <div class="card-body">
-                    <h6>Successfully Linked</h6>
-                    <h2>{{ dispatch.get_linked_orders_count }}</h2>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4 mb-3">
-            <div class="card bg-danger text-white shadow-sm">
-                <div class="card-body">
-                    <h6>Not Found in System</h6>
-                    <h2>{{ dispatch.get_unlinked_orders_count }}</h2>
                 </div>
             </div>
         </div>

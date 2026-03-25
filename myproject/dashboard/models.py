@@ -1010,6 +1010,18 @@ class Dispatch(models.Model):
         """Count order IDs that couldn't be found in system"""
         return self.items.filter(order__isnull=True).count()
     
+    def get_success_count(self):
+        """Count orders that were successfully dispatched"""
+        return self.items.filter(dispatch_status='success').count()
+    
+    def get_failed_count(self):
+        """Count orders that failed (e.g. already dispatched)"""
+        return self.items.filter(dispatch_status='failed').count()
+    
+    def get_not_found_count(self):
+        """Count orders that were not found in system"""
+        return self.items.filter(dispatch_status='not_found').count()
+    
     # ✅ SOFT DELETE METHOD
     def soft_delete(self, user):
         """Move to trash instead of permanent delete"""
@@ -1030,6 +1042,12 @@ class Dispatch(models.Model):
 class DispatchItem(models.Model):
     """Individual order items in a dispatch batch"""
     
+    DISPATCH_STATUS_CHOICES = [
+        ('success', 'Success'),
+        ('failed', 'Failed'),
+        ('not_found', 'Not Found'),
+    ]
+    
     dispatch = models.ForeignKey(
         Dispatch, 
         on_delete=models.CASCADE, 
@@ -1043,6 +1061,13 @@ class DispatchItem(models.Model):
         blank=True,
         related_name='dispatch_items'
     )
+    dispatch_status = models.CharField(
+        max_length=20, 
+        choices=DISPATCH_STATUS_CHOICES, 
+        default='not_found',
+        db_index=True
+    )
+    failure_reason = models.CharField(max_length=255, blank=True, default='')
     scanned_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
