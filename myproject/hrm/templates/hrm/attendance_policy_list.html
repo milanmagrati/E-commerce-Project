@@ -2,131 +2,371 @@
 {% block title %}Attendance Policies - HRM{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fas fa-file-alt me-2"></i>Attendance Policies</h2>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#policyModal" onclick="openAddModal()">
-            <i class="fas fa-plus me-1"></i>Add Policy
+<!-- Page Toast Notification -->
+<div id="pageToast" class="page-toast" style="display:none;">
+    <div class="page-toast-inner">
+        <div class="page-toast-icon" id="pageToastIcon"></div>
+        <div class="page-toast-body">
+            <div class="page-toast-title" id="pageToastTitle"></div>
+            <div class="page-toast-msg" id="pageToastMsg"></div>
+        </div>
+        <button class="page-toast-close" onclick="dismissToast()">&times;</button>
+        <div class="page-toast-progress"><div class="page-toast-progress-bar" id="pageToastProgress"></div></div>
+    </div>
+</div>
+
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-0" style="color:#1a1a2e;">Attendance Policies</h4>
+            <small class="text-muted">Manage attendance rules and grace periods</small>
+        </div>
+        <button class="btn btn-success px-3" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i> Add Attendance Policy
         </button>
     </div>
-</div>
 
-<!-- Search Bar -->
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <form method="get" class="row align-items-center g-2">
-            <div class="col-md-5">
-                <div class="input-group">
-                    <input type="text" class="form-control" name="search" placeholder="Search policies..." value="{{ search }}">
-                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+    <!-- Search & Filters -->
+    <div class="card mb-3 shadow-sm border">
+        <div class="card-body py-2 px-3">
+            <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="input-group" style="max-width:280px;">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search fa-sm"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-0" name="search" placeholder="Search..." value="{{ search }}" style="box-shadow:none;">
+                </div>
+                <button class="btn btn-success px-3" type="submit"><i class="fas fa-search me-1"></i>Search</button>
+                {% if search %}
+                <a href="{% url 'hrm:attendance_policy_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i></a>
+                {% endif %}
+                <button type="button" class="btn btn-outline-secondary px-3" style="border-radius:8px;">
+                    <i class="fas fa-filter me-1"></i>Filters
+                </button>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <span class="text-muted small">Per Page:</span>
+                    <select class="form-select form-select-sm border" style="width:80px;" name="per_page" onchange="this.form.submit()">
+                        <option value="9" {% if per_page == 9 %}selected{% endif %}>9</option>
+                        <option value="12" {% if per_page == 12 %}selected{% endif %}>12</option>
+                        <option value="18" {% if per_page == 18 %}selected{% endif %}>18</option>
+                        <option value="24" {% if per_page == 24 %}selected{% endif %}>24</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm border stat-card stat-card-total h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Total Policies</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ total_policies }}</div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#f0f0ff;">
+                        <i class="fas fa-shield-alt" style="color:#6366f1;"></i>
+                    </div>
                 </div>
             </div>
-            {% if search %}
-            <div class="col-auto">
-                <a href="{% url 'hrm:attendance_policy_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i> Clear</a>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm border stat-card stat-card-active h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Active Policies</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ active_policies }}</div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#ecfdf5;">
+                        <i class="fas fa-check-circle" style="color:#28a745;"></i>
+                    </div>
+                </div>
             </div>
-            {% endif %}
-        </form>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm border stat-card stat-card-late h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Avg Late Grace</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ avg_late_grace }} <span class="fs-6 fw-normal text-muted">min</span></div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#fff3e0;">
+                        <i class="fas fa-clock" style="color:#f59e0b;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm border stat-card stat-card-rate h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Avg Overtime Rate</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">${{ avg_overtime_rate }}</div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#ecfdf5;">
+                        <i class="fas fa-dollar-sign" style="color:#28a745;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Policy Cards Grid -->
+    <div class="row g-3 mb-4">
+        {% for policy in policies %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card shadow-sm policy-card h-100">
+                <div class="card-body">
+                    <!-- Card Header Row -->
+                    <div class="d-flex align-items-start gap-3 mb-2">
+                        <div class="policy-type-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <div class="flex-grow-1 min-width-0">
+                            <div class="fw-bold text-truncate" style="font-size:.95rem;color:#1a1a2e;">{{ policy.name }}</div>
+                            <span class="badge mt-1 {% if policy.is_active %}policy-badge-active{% else %}policy-badge-inactive{% endif %}">
+                                {% if policy.is_active %}Active{% else %}Inactive{% endif %}
+                            </span>
+                        </div>
+                        <!-- Action Buttons -->
+                        <div class="d-flex gap-1 flex-shrink-0">
+                            <button class="btn-icon text-primary" title="View" onclick="viewPolicy({{ policy.id }})">
+                                <i class="fas fa-eye fa-sm"></i>
+                            </button>
+                            <button class="btn-icon text-warning" title="Edit" onclick="editPolicy({{ policy.id }})">
+                                <i class="fas fa-edit fa-sm"></i>
+                            </button>
+                            <button class="btn-icon" title="Toggle Status" onclick="toggleStatus({{ policy.id }})"
+                                style="color:{% if policy.is_active %}#f59e0b{% else %}#6c757d{% endif %};">
+                                <i class="fas fa-lock{% if not policy.is_active %}-open{% endif %} fa-sm"></i>
+                            </button>
+                            <button class="btn-icon text-danger" title="Delete" onclick="deletePolicy({{ policy.id }}, '{{ policy.name|escapejs }}')">
+                                <i class="fas fa-trash fa-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Details -->
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <div class="policy-detail-item">
+                                <i class="fas fa-clock" style="color:#f59e0b;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">{{ policy.late_mark_after }} minutes</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Late Arrival Grace</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="policy-detail-item">
+                                <i class="fas fa-dollar-sign" style="color:#28a745;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">${{ policy.overtime_rate }}/hr</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Overtime Rate</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="policy-detail-item">
+                                <i class="fas fa-clock" style="color:#3b82f6;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">{{ policy.early_departure_grace }} minutes</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Early Departure Grace</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if policy.description %}
+                    <div class="policy-description mt-2">
+                        <small style="color:#059669;">{{ policy.description|truncatechars:80 }}</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card shadow-sm border text-center py-5">
+                <div class="text-muted">
+                    <i class="fas fa-shield-alt fa-3x mb-3 d-block" style="color:#dee2e6;"></i>
+                    <div class="fw-semibold mb-1">No attendance policies found</div>
+                    <small>{% if search %}No results for "{{ search }}". <a href="{% url 'hrm:attendance_policy_list' %}">Clear search</a>{% else %}<a href="#" onclick="openAddModal()">Add the first policy</a>{% endif %}</small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if policies.has_other_pages %}
+    <div class="card shadow-sm border">
+        <div class="card-body d-flex justify-content-between align-items-center py-2">
+            <small class="text-muted">
+                Showing {{ policies.start_index }} to {{ policies.end_index }} of {{ policies.paginator.count }} attendance policies
+            </small>
+            <div class="d-flex align-items-center gap-1">
+                <span class="text-muted small me-2">Previous</span>
+                {% for i in policies.paginator.page_range %}
+                <a href="?page={{ i }}&search={{ search }}&per_page={{ per_page }}"
+                   class="btn btn-sm {% if policies.number == i %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                   style="width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;">
+                   {{ i }}
+                </a>
+                {% endfor %}
+                <span class="text-muted small ms-2">Next</span>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    {% if policies %}
+    <div class="card shadow-sm border">
+        <div class="card-body py-2">
+            <small class="text-muted">Showing 1 to {{ policies|length }} of {{ policies|length }} attendance policies</small>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
 </div>
 
-<!-- Policies Table -->
-<div class="card">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>#</th>
-                        <th>Name</th>
-                        <th>Work Hours/Day</th>
-                        <th>Late Mark After</th>
-                        <th>Half Day Hours</th>
-                        <th>Status</th>
-                        <th class="text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for policy in policies %}
-                    <tr>
-                        <td>{{ forloop.counter }}</td>
-                        <td>
-                            <strong>{{ policy.name }}</strong>
-                            {% if policy.description %}
-                            <br><small class="text-muted">{{ policy.description|truncatechars:60 }}</small>
-                            {% endif %}
-                        </td>
-                        <td>{{ policy.work_hours_per_day }} hrs</td>
-                        <td>{{ policy.late_mark_after }} min</td>
-                        <td>{{ policy.half_day_hours }} hrs</td>
-                        <td>
-                            {% if policy.is_active %}
-                            <span class="badge bg-success" style="cursor:pointer;" onclick="toggleStatus({{ policy.id }})" title="Click to toggle">Active</span>
-                            {% else %}
-                            <span class="badge bg-danger" style="cursor:pointer;" onclick="toggleStatus({{ policy.id }})" title="Click to toggle">Inactive</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editPolicy({{ policy.id }})">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deletePolicy({{ policy.id }}, '{{ policy.name|escapejs }}')">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="7" class="text-center text-muted py-5">
-                            <i class="fas fa-file-alt fa-2x mb-2 d-block"></i>
-                            No attendance policies found. <a href="#" onclick="openAddModal()">Add the first policy.</a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+<!-- Add/Edit Policy Modal -->
+<div class="modal fade" id="policyModal" tabindex="-1" aria-labelledby="policyModalTitle">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:560px;">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <!-- Gradient Header -->
+            <div class="policy-modal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="modal-header-icon"><i class="fas fa-plus" id="policyModalIcon"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="policyModalTitle">Add New Attendance Policy</div>
+                        <div class="text-white-50 small" id="policyModalSubtitle">Fill in the details to create a policy</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="getModal('policyModal').hide()"></button>
+            </div>
+
+            <!-- Alert area -->
+            <div id="policyFormAlert" style="display:none;"></div>
+
+            <div class="modal-body p-0">
+                <!-- Section: Basic Info -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#6366f1;"></span> Basic Information
+                    </div>
+                    <div class="mb-3">
+                        <label class="pro-label">Policy Name <span class="text-danger">*</span></label>
+                        <div class="pro-input-wrap">
+                            <i class="fas fa-shield-alt pro-input-icon"></i>
+                            <input type="text" class="form-control pro-field" id="policyName" placeholder="e.g. Standard Attendance Policy">
+                        </div>
+                        <span class="field-error-text" id="policyNameErr" style="display:none;"></span>
+                    </div>
+                    <div class="mb-0">
+                        <label class="pro-label">Description</label>
+                        <div class="pro-input-wrap">
+                            <textarea class="form-control pro-field" id="policyDescription" rows="2"
+                                placeholder="Optional description of this policy..." style="padding-left:12px;"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section: Grace Periods -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#f59e0b;"></span> Grace Periods
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="pro-label">Late Arrival Grace <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-clock pro-input-icon"></i>
+                                <input type="number" class="form-control pro-field" id="policyLateMarkAfter" value="15" min="0">
+                                <span class="pro-input-suffix">min</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="pro-label">Early Departure Grace <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-clock pro-input-icon" style="color:#3b82f6;"></i>
+                                <input type="number" class="form-control pro-field" id="policyEarlyDeparture" value="15" min="0">
+                                <span class="pro-input-suffix">min</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section: Rates & Hours -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#28a745;"></span> Rates & Hours
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="pro-label">Overtime Rate Per Hour <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-dollar-sign pro-input-icon" style="color:#28a745;"></i>
+                                <input type="number" class="form-control pro-field" id="policyOvertimeRate" value="150" min="0" step="0.01">
+                                <span class="pro-input-suffix">/hr</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="pro-label">Work Hours / Day</label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-hourglass-half pro-input-icon"></i>
+                                <input type="number" class="form-control pro-field" id="policyWorkHours" value="8" step="0.5" min="1" max="24">
+                                <span class="pro-input-suffix">hrs</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section: Status -->
+                <div class="modal-form-section" style="border-bottom:none;">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#28a745;"></span> Status
+                    </div>
+                    <div class="pro-input-wrap">
+                        <i class="fas fa-toggle-on pro-input-icon"></i>
+                        <select class="form-select pro-field" id="policyStatus">
+                            <option value="true">Active</option>
+                            <option value="false">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button type="button" class="btn btn-outline-secondary px-4" onclick="getModal('policyModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-success px-4" id="policySaveBtn" onclick="savePolicy()">
+                    <span id="policyNormalState"><i class="fas fa-save me-1"></i><span id="policySaveBtnText">Save Policy</span></span>
+                    <span id="policyLoadingState" class="d-none">
+                        <span class="spinner-border spinner-border-sm me-1"></span>Saving...
+                    </span>
+                </button>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Add/Edit Policy Modal -->
-<div class="modal fade" id="policyModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="policyModalTitle">Add Attendance Policy</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<!-- View Policy Modal -->
+<div class="modal fade" id="viewPolicyModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:480px;">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="policy-modal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="modal-header-icon"><i class="fas fa-eye"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="viewPolicyName">Policy Details</div>
+                        <div class="text-white-50 small">Attendance Policy Information</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="getModal('viewPolicyModal').hide()"></button>
             </div>
-            <div class="modal-body">
-                <div id="policyFormError" class="alert alert-danger d-none"></div>
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Policy Name <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="policyName" placeholder="e.g. Standard Policy">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Description</label>
-                    <textarea class="form-control" id="policyDescription" rows="2" placeholder="Optional description"></textarea>
-                </div>
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label fw-semibold">Work Hours/Day</label>
-                        <input type="number" class="form-control" id="policyWorkHours" value="8" step="0.5" min="1" max="24">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label fw-semibold">Late Mark After (min)</label>
-                        <input type="number" class="form-control" id="policyLateMarkAfter" value="15" min="0">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label fw-semibold">Half Day Hours</label>
-                        <input type="number" class="form-control" id="policyHalfDayHours" value="4" step="0.5" min="1">
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="savePolicy()">
-                    <i class="fas fa-save me-1"></i><span id="policySaveBtnText">Save Policy</span>
-                </button>
+            <div class="modal-body p-4" id="viewPolicyBody"></div>
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" onclick="getModal('viewPolicyModal').hide()">Close</button>
             </div>
         </div>
     </div>
@@ -134,117 +374,422 @@
 
 <!-- Delete Confirm Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">Confirm Delete</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div style="background:linear-gradient(135deg,#dc2626,#ef4444);padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff;">
+                        <i class="fas fa-trash fs-6"></i>
+                    </div>
+                    <span class="fw-bold text-white">Confirm Delete</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white btn-sm" onclick="getModal('deleteModal').hide()"></button>
             </div>
-            <div class="modal-body">
-                Delete policy <strong id="deletePolicyName"></strong>?
+            <div class="modal-body text-center py-4">
+                <p class="mb-1 text-muted small">You are about to delete</p>
+                <p class="fw-bold" id="deletePolicyName" style="color:#1a1a2e;"></p>
+                <p class="text-muted small mb-0">This action cannot be undone.</p>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger btn-sm" onclick="confirmDelete()">Delete</button>
+            <div class="modal-footer border-top bg-light px-3 py-2 gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="getModal('deleteModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm flex-fill" onclick="confirmDelete()">Delete</button>
             </div>
         </div>
     </div>
 </div>
 
+<style>
+    /* ── Stat Cards ── */
+    .stat-card {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        border-left: 4px solid #dee2e6;
+        overflow: hidden;
+    }
+    .stat-card-total  { border-left-color: #6366f1; }
+    .stat-card-active { border-left-color: #28a745; }
+    .stat-card-late   { border-left-color: #f59e0b; }
+    .stat-card-rate   { border-left-color: #28a745; }
+    .stat-icon-circle {
+        width: 48px; height: 48px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.2rem; flex-shrink: 0;
+    }
+    /* ── Policy Cards ── */
+    .policy-card {
+        transition: transform .2s, box-shadow .2s;
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
+        border-left: 4px solid #6366f1;
+    }
+    .policy-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.10) !important; }
+    .policy-type-icon {
+        width: 44px; height: 44px; border-radius: 50%;
+        background: #eef2ff; color: #6366f1;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.05rem; flex-shrink: 0;
+    }
+    .policy-badge-active   { background:#ecfdf5; color:#059669; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .policy-badge-inactive { background:#fef2f2; color:#dc2626; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .policy-detail-item { display:flex; align-items:flex-start; gap:6px; }
+    .policy-description { border-top:1px solid #f0f0f0; padding-top:.6rem; }
+    .btn-icon {
+        width:30px; height:30px; padding:0;
+        display:inline-flex; align-items:center; justify-content:center;
+        border-radius:6px; border:1px solid #e5e7eb; background:#fff;
+        transition:all .2s; cursor:pointer;
+    }
+    .btn-icon:hover { background:#f3f4f6; border-color:#d1d5db; }
+
+    /* ── Modal ── */
+    .policy-modal-header {
+        background: linear-gradient(135deg, #1a7a4a 0%, #28a745 100%);
+        padding: 1.2rem 1.5rem;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-header-icon {
+        width: 46px; height: 46px; border-radius: 12px;
+        background: rgba(255,255,255,.2);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.2rem; color: #fff; flex-shrink: 0;
+    }
+    .modal-form-section {
+        padding: 1.1rem 1.5rem;
+        border-bottom: 1px solid #f1f3f5;
+    }
+    .modal-section-label {
+        display: flex; align-items: center; gap: 8px;
+        font-size: .7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .09em; color: #6c757d; margin-bottom: .9rem;
+    }
+    .section-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .pro-label {
+        display: block; font-size: .82rem; font-weight: 600;
+        color: #374151; margin-bottom: .35rem;
+    }
+    .pro-input-wrap { position: relative; display: flex; align-items: center; }
+    .pro-input-wrap .pro-input-icon {
+        position: absolute; left: 11px; z-index: 2;
+        color: #9ca3af; font-size: .82rem; pointer-events: none;
+    }
+    .pro-input-wrap.has-suffix .pro-field { padding-right: 46px; }
+    .pro-input-wrap .pro-input-suffix {
+        position: absolute; right: 11px; z-index: 2;
+        color: #9ca3af; font-size: .78rem; pointer-events: none; font-weight: 500;
+    }
+    .pro-input-wrap .pro-field { padding-left: 34px; }
+    .pro-input-wrap textarea.pro-field { padding-left: 12px; }
+    .pro-field {
+        border: 1.5px solid #e5e7eb; border-radius: 8px;
+        font-size: .875rem; background: #fafafa;
+        transition: border-color .15s, box-shadow .15s, background .15s;
+        width: 100%;
+    }
+    .pro-field:focus {
+        border-color: #28a745 !important;
+        box-shadow: 0 0 0 3px rgba(40,167,69,.12) !important;
+        background: #fff; outline: none;
+    }
+    .pro-field.field-error { border-color: #dc3545 !important; background: #fff5f5 !important; animation: fieldShake .4s ease; }
+    .field-error-text { display:block; font-size:.72rem; color:#dc3545; margin-top:3px; font-weight:500; }
+
+    /* ── Policy Form Alert ── */
+    .policy-alert {
+        margin: 12px 20px 0;
+        padding: 10px 14px;
+        border-radius: 10px;
+        display: flex; align-items: center; gap: 10px;
+        animation: slideDown .3s ease;
+    }
+    .policy-alert-danger {
+        background: linear-gradient(135deg, #fef2f2 0%, #fff5f5 100%);
+        border: 1.5px solid #fecaca;
+    }
+    .policy-alert-success {
+        background: linear-gradient(135deg, #ecfdf5 0%, #f0fff4 100%);
+        border: 1.5px solid #a7f3d0;
+    }
+    .policy-alert-icon {
+        width:32px; height:32px; border-radius:50%; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center; font-size:.9rem;
+    }
+    .policy-alert-danger .policy-alert-icon  { background:#fee2e2; color:#dc2626; }
+    .policy-alert-success .policy-alert-icon { background:#d1fae5; color:#059669; }
+    .policy-alert-title { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+    .policy-alert-danger .policy-alert-title  { color:#b91c1c; }
+    .policy-alert-success .policy-alert-title { color:#065f46; }
+    .policy-alert-msg { font-size:.82rem; color:#374151; margin-top:1px; }
+    .policy-alert-close { background:none; border:none; font-size:1.2rem; color:#9ca3af; cursor:pointer; margin-left:auto; line-height:1; }
+    .policy-alert-close:hover { color:#374151; }
+
+    /* ── Page Toast ── */
+    .page-toast { position:fixed; top:24px; right:24px; z-index:9999; animation:toastSlideIn .4s cubic-bezier(.21,1.02,.73,1); }
+    .page-toast-inner {
+        min-width:340px; max-width:420px; background:#fff; border-radius:14px;
+        box-shadow:0 12px 40px rgba(0,0,0,.15),0 4px 12px rgba(0,0,0,.08);
+        overflow:hidden; display:flex; align-items:center; gap:14px;
+        padding:16px 18px 16px 16px; position:relative;
+    }
+    .page-toast-icon { width:42px; height:42px; border-radius:50%; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center; font-size:1.15rem; }
+    .page-toast.toast-success .page-toast-icon { background:linear-gradient(135deg,#d1fae5,#a7f3d0); color:#059669; }
+    .page-toast.toast-danger  .page-toast-icon { background:linear-gradient(135deg,#fee2e2,#fecaca); color:#dc2626; }
+    .page-toast.toast-info    .page-toast-icon { background:linear-gradient(135deg,#dbeafe,#bfdbfe); color:#2563eb; }
+    .page-toast-body { flex:1; min-width:0; }
+    .page-toast-title { font-size:.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+    .page-toast.toast-success .page-toast-title { color:#065f46; }
+    .page-toast.toast-danger  .page-toast-title { color:#991b1b; }
+    .page-toast.toast-info    .page-toast-title { color:#1e40af; }
+    .page-toast-msg { font-size:.85rem; color:#374151; line-height:1.4; }
+    .page-toast-close { background:none; border:none; font-size:1.4rem; color:#9ca3af; cursor:pointer; line-height:1; padding:0; margin-left:4px; align-self:flex-start; }
+    .page-toast-close:hover { color:#374151; }
+    .page-toast-progress { position:absolute; bottom:0; left:0; right:0; height:3px; background:#f3f4f6; border-radius:0 0 14px 14px; overflow:hidden; }
+    .page-toast-progress-bar { height:100%; width:100%; border-radius:0 0 14px 14px; animation:toastCountdown 4s linear forwards; }
+    .page-toast.toast-success .page-toast-progress-bar { background:linear-gradient(90deg,#059669,#34d399); }
+    .page-toast.toast-danger  .page-toast-progress-bar { background:linear-gradient(90deg,#dc2626,#f87171); }
+    .page-toast.toast-info    .page-toast-progress-bar { background:linear-gradient(90deg,#2563eb,#60a5fa); }
+    @keyframes toastSlideIn  { from{opacity:0;transform:translateX(60px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
+    @keyframes toastSlideOut { from{opacity:1;transform:translateX(0) scale(1)} to{opacity:0;transform:translateX(60px) scale(.95)} }
+    @keyframes toastCountdown { from{width:100%} to{width:0%} }
+    @keyframes slideDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes fieldShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)} 40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
+</style>
+
 {% block extra_js %}
 <script>
-    const CSRF = '{{ csrf_token }}';
-    let editingId = null;
-    let deletingId = null;
+    var CSRF = '{{ csrf_token }}';
+    var editingId = null;
+    var deletingId = null;
+    var toastTimer = null;
+
+    /* ── Modal singleton (prevent backdrop stacking bug) ── */
+    function getModal(elId) {
+        var el = document.getElementById(elId);
+        return bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+    }
+
+    /* ── Page Toast ── */
+    function showPageToast(type, title, msg) {
+        var toast = document.getElementById('pageToast');
+        toast.className = 'page-toast toast-' + type;
+        document.getElementById('pageToastTitle').textContent = title;
+        document.getElementById('pageToastMsg').textContent = msg;
+        var icons = { success:'fa-check-circle', danger:'fa-exclamation-circle', info:'fa-info-circle' };
+        document.getElementById('pageToastIcon').innerHTML = '<i class="fas ' + (icons[type] || 'fa-check-circle') + '"></i>';
+        toast.style.display = 'block';
+        toast.style.animation = 'toastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
+        var bar = document.getElementById('pageToastProgress');
+        bar.style.animation = 'none'; void bar.offsetWidth;
+        bar.style.animation = 'toastCountdown 4s linear forwards';
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function() { dismissToast(); }, 4200);
+    }
+    function dismissToast() {
+        var toast = document.getElementById('pageToast');
+        toast.style.animation = 'toastSlideOut .3s ease forwards';
+        setTimeout(function() { toast.style.display = 'none'; }, 300);
+        if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    }
+    /* Check sessionStorage for pending toasts on page load */
+    (function() {
+        var t = sessionStorage.getItem('policyToast');
+        if (t) { try { var d = JSON.parse(t); showPageToast(d.type, d.title, d.msg); } catch(e) {} sessionStorage.removeItem('policyToast'); }
+    })();
+
+    /* ── Form Alerts ── */
+    function showFormAlert(type, title, msg) {
+        var html = '<div class="policy-alert policy-alert-' + type + '">'
+            + '<div class="policy-alert-icon"><i class="fas ' + (type === 'danger' ? 'fa-exclamation-circle' : 'fa-check-circle') + '"></i></div>'
+            + '<div><div class="policy-alert-title">' + title + '</div><div class="policy-alert-msg">' + msg + '</div></div>'
+            + '<button class="policy-alert-close" onclick="hideFormAlert()">&times;</button>'
+            + '</div>';
+        var el = document.getElementById('policyFormAlert');
+        el.innerHTML = html;
+        el.style.display = 'block';
+    }
+    function hideFormAlert() {
+        var el = document.getElementById('policyFormAlert');
+        el.style.display = 'none';
+        el.innerHTML = '';
+    }
+
+    /* ── Field error helpers ── */
+    function markField(fieldId, invalid, msg) {
+        var el = document.getElementById(fieldId);
+        var errEl = document.getElementById(fieldId + 'Err');
+        if (invalid) {
+            el.classList.add('field-error');
+            if (errEl) { errEl.textContent = msg || ''; errEl.style.display = 'block'; }
+        } else {
+            el.classList.remove('field-error');
+            if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+        }
+    }
+
+    /* ── Save button loading state ── */
+    function setSaveLoading(loading) {
+        document.getElementById('policyNormalState').classList.toggle('d-none', loading);
+        document.getElementById('policyLoadingState').classList.toggle('d-none', !loading);
+        document.getElementById('policySaveBtn').disabled = loading;
+    }
+
+    /* ── Reset form ── */
+    function resetForm() {
+        ['policyName','policyDescription'].forEach(function(id) { document.getElementById(id).value = ''; });
+        document.getElementById('policyLateMarkAfter').value = '15';
+        document.getElementById('policyEarlyDeparture').value = '15';
+        document.getElementById('policyOvertimeRate').value = '150';
+        document.getElementById('policyWorkHours').value = '8';
+        document.getElementById('policyStatus').value = 'true';
+        markField('policyName', false);
+        hideFormAlert();
+        setSaveLoading(false);
+    }
+
+    /* ══════════════════ CRUD ══════════════════ */
 
     function openAddModal() {
         editingId = null;
-        document.getElementById('policyModalTitle').textContent = 'Add Attendance Policy';
+        document.getElementById('policyModalTitle').textContent = 'Add New Attendance Policy';
+        document.getElementById('policyModalSubtitle').textContent = 'Fill in the details to create a policy';
+        document.getElementById('policyModalIcon').className = 'fas fa-plus';
         document.getElementById('policySaveBtnText').textContent = 'Save Policy';
-        document.getElementById('policyName').value = '';
-        document.getElementById('policyDescription').value = '';
-        document.getElementById('policyWorkHours').value = '8';
-        document.getElementById('policyLateMarkAfter').value = '15';
-        document.getElementById('policyHalfDayHours').value = '4';
-        document.getElementById('policyFormError').classList.add('d-none');
-        new bootstrap.Modal(document.getElementById('policyModal')).show();
+        resetForm();
+        getModal('policyModal').show();
     }
 
     function editPolicy(id) {
-        fetch(`/hrm/attendance-policies/${id}/update/`)
-            .then(r => r.json())
-            .then(data => {
+        fetch('/hrm/attendance-policies/' + id + '/update/')
+            .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function(data) {
                 editingId = id;
                 document.getElementById('policyModalTitle').textContent = 'Edit Attendance Policy';
+                document.getElementById('policyModalSubtitle').textContent = 'Update the policy details';
+                document.getElementById('policyModalIcon').className = 'fas fa-edit';
                 document.getElementById('policySaveBtnText').textContent = 'Update Policy';
                 document.getElementById('policyName').value = data.name;
                 document.getElementById('policyDescription').value = data.description || '';
-                document.getElementById('policyWorkHours').value = data.work_hours_per_day;
                 document.getElementById('policyLateMarkAfter').value = data.late_mark_after;
-                document.getElementById('policyHalfDayHours').value = data.half_day_hours;
-                document.getElementById('policyFormError').classList.add('d-none');
-                new bootstrap.Modal(document.getElementById('policyModal')).show();
+                document.getElementById('policyEarlyDeparture').value = data.early_departure_grace;
+                document.getElementById('policyOvertimeRate').value = data.overtime_rate;
+                document.getElementById('policyWorkHours').value = data.work_hours_per_day;
+                document.getElementById('policyStatus').value = data.is_active ? 'true' : 'false';
+                markField('policyName', false);
+                hideFormAlert();
+                setSaveLoading(false);
+                getModal('policyModal').show();
+            })
+            .catch(function() { showPageToast('danger', 'Error', 'Failed to load policy data.'); });
+    }
+
+    function viewPolicy(id) {
+        fetch('/hrm/attendance-policies/' + id + '/update/')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                document.getElementById('viewPolicyName').textContent = data.name;
+                var html = '<dl class="row mb-0">'
+                    + '<dt class="col-6 text-muted small">Late Arrival Grace</dt><dd class="col-6 fw-semibold">' + data.late_mark_after + ' min</dd>'
+                    + '<dt class="col-6 text-muted small">Early Departure Grace</dt><dd class="col-6 fw-semibold">' + data.early_departure_grace + ' min</dd>'
+                    + '<dt class="col-6 text-muted small">Overtime Rate</dt><dd class="col-6 fw-semibold">$' + data.overtime_rate + '/hr</dd>'
+                    + '<dt class="col-6 text-muted small">Work Hours/Day</dt><dd class="col-6 fw-semibold">' + data.work_hours_per_day + ' hrs</dd>'
+                    + '<dt class="col-6 text-muted small">Status</dt><dd class="col-6"><span class="badge ' + (data.is_active ? 'bg-success' : 'bg-danger') + '">' + (data.is_active ? 'Active' : 'Inactive') + '</span></dd>'
+                    + (data.description ? '<dt class="col-6 text-muted small">Description</dt><dd class="col-6 small">' + data.description + '</dd>' : '')
+                    + '</dl>';
+                document.getElementById('viewPolicyBody').innerHTML = html;
+                getModal('viewPolicyModal').show();
             });
     }
 
     function savePolicy() {
-        const name = document.getElementById('policyName').value.trim();
+        var name = document.getElementById('policyName').value.trim();
         if (!name) {
-            const err = document.getElementById('policyFormError');
-            err.textContent = 'Policy name is required.';
-            err.classList.remove('d-none');
+            markField('policyName', true, 'Policy name is required.');
+            showFormAlert('danger', 'Validation Error', 'Please fill in all required fields.');
+            document.getElementById('policyName').focus();
             return;
         }
-        const url = editingId
-            ? `/hrm/attendance-policies/${editingId}/update/`
-            : `/hrm/attendance-policies/create/`;
-
+        markField('policyName', false);
+        setSaveLoading(true);
+        var url = editingId
+            ? '/hrm/attendance-policies/' + editingId + '/update/'
+            : '/hrm/attendance-policies/create/';
         fetch(url, {
             method: 'POST',
-            headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded'},
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
-                name,
+                name: name,
                 description: document.getElementById('policyDescription').value.trim(),
-                work_hours_per_day: document.getElementById('policyWorkHours').value,
                 late_mark_after: document.getElementById('policyLateMarkAfter').value,
-                half_day_hours: document.getElementById('policyHalfDayHours').value,
+                early_departure_grace: document.getElementById('policyEarlyDeparture').value,
+                overtime_rate: document.getElementById('policyOvertimeRate').value,
+                work_hours_per_day: document.getElementById('policyWorkHours').value,
+                half_day_hours: '4',
+                is_active: document.getElementById('policyStatus').value,
             })
         })
-        .then(r => r.json())
-        .then(data => {
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            setSaveLoading(false);
             if (data.success) {
+                getModal('policyModal').hide();
+                sessionStorage.setItem('policyToast', JSON.stringify({
+                    type: 'success',
+                    title: editingId ? 'Policy Updated' : 'Policy Created',
+                    msg: editingId ? 'Policy updated successfully.' : '"' + name + '" has been created.'
+                }));
                 location.reload();
             } else {
-                const err = document.getElementById('policyFormError');
-                err.textContent = data.error || 'Error saving policy.';
-                err.classList.remove('d-none');
+                showFormAlert('danger', 'Error', data.error || 'Failed to save policy.');
             }
+        })
+        .catch(function() {
+            setSaveLoading(false);
+            showFormAlert('danger', 'Network Error', 'Could not connect. Please try again.');
         });
     }
 
     function deletePolicy(id, name) {
         deletingId = id;
         document.getElementById('deletePolicyName').textContent = name;
-        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+        getModal('deleteModal').show();
     }
 
     function confirmDelete() {
-        fetch(`/hrm/attendance-policies/${deletingId}/delete/`, {
+        fetch('/hrm/attendance-policies/' + deletingId + '/delete/', {
             method: 'POST',
-            headers: {'X-CSRFToken': CSRF}
+            headers: { 'X-CSRFToken': CSRF }
         })
-        .then(r => r.json())
-        .then(data => { if (data.success) location.reload(); });
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                getModal('deleteModal').hide();
+                sessionStorage.setItem('policyToast', JSON.stringify({
+                    type: 'danger', title: 'Policy Deleted', msg: 'The policy has been removed.'
+                }));
+                location.reload();
+            }
+        });
     }
 
     function toggleStatus(id) {
-        fetch(`/hrm/attendance-policies/${id}/toggle-status/`, {
+        fetch('/hrm/attendance-policies/' + id + '/toggle-status/', {
             method: 'POST',
-            headers: {'X-CSRFToken': CSRF}
+            headers: { 'X-CSRFToken': CSRF }
         })
-        .then(r => r.json())
-        .then(data => { if (data.success) location.reload(); });
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                sessionStorage.setItem('policyToast', JSON.stringify({
+                    type: 'info', title: 'Status Changed',
+                    msg: 'Policy is now ' + (data.is_active ? 'Active' : 'Inactive') + '.'
+                }));
+                location.reload();
+            }
+        });
     }
+
+    /* Auto-clear field error on input */
+    document.getElementById('policyName').addEventListener('input', function() { markField('policyName', false); });
 </script>
 {% endblock %}
 {% endblock %}

@@ -2736,14 +2736,33 @@ def shift_toggle_status(request, pk):
 @login_required
 def attendance_policy_list(request):
     from .models import AttendancePolicy
+    from django.core.paginator import Paginator
+    from django.db.models import Avg
     search = request.GET.get('search', '')
-    policies = AttendancePolicy.objects.all()
+    per_page = request.GET.get('per_page', 9)
+    try:
+        per_page = int(per_page)
+    except (ValueError, TypeError):
+        per_page = 9
+    qs = AttendancePolicy.objects.all()
     if search:
-        policies = policies.filter(name__icontains=search)
+        qs = qs.filter(name__icontains=search)
+    total = qs.count()
+    active = qs.filter(is_active=True).count()
+    avg_late = qs.aggregate(avg=Avg('late_mark_after'))['avg'] or 0
+    avg_overtime = qs.aggregate(avg=Avg('overtime_rate'))['avg'] or 0
+    paginator = Paginator(qs, per_page)
+    page_num = request.GET.get('page', 1)
+    policies = paginator.get_page(page_num)
     context = {
         'page_title': 'Attendance Policies',
         'policies': policies,
         'search': search,
+        'per_page': per_page,
+        'total_policies': total,
+        'active_policies': active,
+        'avg_late_grace': round(avg_late),
+        'avg_overtime_rate': round(float(avg_overtime), 2),
     }
     return render(request, 'hrm/attendance_policy_list.html', context)
 
@@ -2760,7 +2779,10 @@ def attendance_policy_create(request):
             description=request.POST.get('description', '').strip(),
             work_hours_per_day=request.POST.get('work_hours_per_day', 8.0) or 8.0,
             late_mark_after=request.POST.get('late_mark_after', 15) or 15,
+            early_departure_grace=request.POST.get('early_departure_grace', 15) or 15,
+            overtime_rate=request.POST.get('overtime_rate', 0.0) or 0.0,
             half_day_hours=request.POST.get('half_day_hours', 4.0) or 4.0,
+            is_active=(request.POST.get('is_active', 'true').lower() == 'true'),
         )
         return JsonResponse({'success': True, 'id': policy.id, 'name': policy.name})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
@@ -2778,7 +2800,10 @@ def attendance_policy_update(request, pk):
         policy.description = request.POST.get('description', '').strip()
         policy.work_hours_per_day = request.POST.get('work_hours_per_day', 8.0) or 8.0
         policy.late_mark_after = request.POST.get('late_mark_after', 15) or 15
+        policy.early_departure_grace = request.POST.get('early_departure_grace', 15) or 15
+        policy.overtime_rate = request.POST.get('overtime_rate', 0.0) or 0.0
         policy.half_day_hours = request.POST.get('half_day_hours', 4.0) or 4.0
+        policy.is_active = (request.POST.get('is_active', 'true').lower() == 'true')
         policy.save()
         return JsonResponse({'success': True})
     data = {
@@ -2787,6 +2812,8 @@ def attendance_policy_update(request, pk):
         'description': policy.description,
         'work_hours_per_day': str(policy.work_hours_per_day),
         'late_mark_after': policy.late_mark_after,
+        'early_departure_grace': policy.early_departure_grace,
+        'overtime_rate': str(policy.overtime_rate),
         'half_day_hours': str(policy.half_day_hours),
         'is_active': policy.is_active,
     }
