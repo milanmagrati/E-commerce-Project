@@ -964,8 +964,8 @@
                         <li class="{% if request.resolver_match.url_name == 'setup_management' %}active{% endif %}">
                             <a href="{% url 'setup_management' %}">Payment & Status Setup</a>
                         </li>
-                        <li>
-                            <a href="#">System Settings</a>
+                        <li class="{% if request.resolver_match.url_name == 'zekto_settings' %}active{% endif %}">
+                            <a href="{% url 'hrm:zekto_settings' %}"><i class="fas fa-fingerprint me-1"></i> Zekto Settings</a>
                         </li>
                         {% endif %}
                     </ul>

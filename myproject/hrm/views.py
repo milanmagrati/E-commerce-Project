@@ -3232,10 +3232,345 @@ def employee_attendance_records_api(request):
 
 @login_required
 def biometric_attendance(request):
+    from .models import BiometricAttendance
+
+    qs = BiometricAttendance.objects.all()
+
+    # Search
+    search_q = request.GET.get('q', '').strip()
+    if search_q:
+        qs = qs.filter(
+            Q(employee_name__icontains=search_q) |
+            Q(employee_code__icontains=search_q)
+        )
+
+    # Date filters
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+
+    # Totals
+    total_records = qs.count()
+
+    # Per-page
+    per_page = request.GET.get('per_page', '10')
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 20, 50, 100]:
+            per_page = 10
+    except (ValueError, TypeError):
+        per_page = 10
+
+    paginator = Paginator(qs, per_page)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Biometric Attendance',
+        'page_obj': page_obj,
+        'total_records': total_records,
+        'search_q': search_q,
+        'date_from': date_from,
+        'date_to': date_to,
+        'per_page': per_page,
+        'per_page_options': [10, 20, 50, 100],
     }
     return render(request, 'hrm/biometric_attendance.html', context)
+
+
+@login_required
+def biometric_attendance_view(request, pk):
+    """Return all raw punch entries from ZKTeco for an employee on a given date."""
+    from .models import BiometricAttendance, ZektoSetting
+    import requests as http_requests
+
+    record = get_object_or_404(BiometricAttendance, pk=pk)
+
+    setting = ZektoSetting.objects.first()
+    if not setting or not setting.auth_token:
+        return JsonResponse({
+            'success': True,
+            'record': {
+                'employee_code': record.employee_code,
+                'employee_name': record.employee_name,
+                'date': str(record.date),
+                'clock_in': record.clock_in.strftime('%H:%M') if record.clock_in else '',
+                'clock_out': record.clock_out.strftime('%H:%M') if record.clock_out else '',
+                'total_entries': record.total_entries,
+                'source': record.source,
+            },
+            'punches': [],
+            'message': 'No ZKTeco settings configured. Showing saved data only.',
+        })
+
+    # Fetch raw punches from ZKTeco API for this employee and date
+    api_url = setting.api_url.rstrip('/')
+    punches = []
+    url = f"{api_url}/iclock/api/transactions/?emp_code={record.employee_code}&start_date={record.date}&end_date={record.date}&page_size=100"
+
+    try:
+        resp = http_requests.get(url, headers={'Authorization': f'JWT {setting.auth_token}'}, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            entries = data.get('data', data.get('results', []))
+            for entry in entries:
+                punch_time = entry.get('punch_time', '')
+                punches.append({
+                    'punch_time': punch_time,
+                    'punch_state': entry.get('punch_state', ''),
+                    'punch_state_display': entry.get('punch_state_display', ''),
+                    'terminal_alias': entry.get('terminal_alias', ''),
+                })
+        elif resp.status_code == 401:
+            return JsonResponse({'success': False, 'error': 'ZKTeco token expired. Please regenerate from Settings.'})
+    except Exception:
+        pass  # Fallback to saved data
+
+    return JsonResponse({
+        'success': True,
+        'record': {
+            'employee_code': record.employee_code,
+            'employee_name': record.employee_name,
+            'date': str(record.date),
+            'clock_in': record.clock_in.strftime('%H:%M') if record.clock_in else '',
+            'clock_out': record.clock_out.strftime('%H:%M') if record.clock_out else '',
+            'total_entries': record.total_entries,
+            'source': record.source,
+        },
+        'punches': punches,
+    })
+
+
+@login_required
+def biometric_sync_all(request):
+    """Global sync: fetch all transactions from ZKTeco API and save to BiometricAttendance."""
+    from .models import BiometricAttendance, ZektoSetting, Employee
+    import requests as http_requests
+    from collections import defaultdict
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    setting = ZektoSetting.objects.first()
+    if not setting or not setting.auth_token:
+        return JsonResponse({'success': False, 'error': 'ZKTeco settings not configured or token missing. Go to Settings > Zekto Settings.'})
+
+    api_url = setting.api_url.rstrip('/')
+    token = setting.auth_token
+    all_transactions = []
+
+    # Paginated fetch
+    url = f"{api_url}/iclock/api/transactions/?page=1&page_size=100"
+    while url:
+        try:
+            resp = http_requests.get(url, headers={'Authorization': f'JWT {token}'}, timeout=30)
+            if resp.status_code == 401:
+                return JsonResponse({'success': False, 'error': 'ZKTeco token expired (401). Please regenerate from Settings > Zekto Settings.'})
+            if resp.status_code != 200:
+                return JsonResponse({'success': False, 'error': f'ZKTeco API returned status {resp.status_code}.'})
+            data = resp.json()
+            results = data.get('data', data.get('results', []))
+            all_transactions.extend(results)
+            url = data.get('next', None)
+        except http_requests.exceptions.RequestException as e:
+            return JsonResponse({'success': False, 'error': f'Connection error: {str(e)}'})
+
+    if not all_transactions:
+        return JsonResponse({'success': True, 'message': 'No transactions found on ZKTeco API.', 'synced': 0})
+
+    # Build employee name lookup from Employee model
+    emp_name_map = {}
+    for emp in Employee.objects.all():
+        if emp.employee_code:
+            emp_name_map[emp.employee_code] = emp.full_name
+
+    # Group by (emp_code, date)
+    grouped = defaultdict(list)
+    for tx in all_transactions:
+        emp_code = str(tx.get('emp_code', '')).strip()
+        punch_time_str = tx.get('punch_time', '')
+        if not emp_code or not punch_time_str:
+            continue
+        # punch_time is typically "YYYY-MM-DD HH:MM:SS" format
+        try:
+            from datetime import datetime
+            punch_dt = datetime.fromisoformat(punch_time_str.replace('Z', '+00:00').replace('T', ' ').split('+')[0].strip())
+            punch_date = punch_dt.date()
+            punch_time = punch_dt.time()
+            grouped[(emp_code, punch_date)].append(punch_time)
+        except (ValueError, AttributeError):
+            continue
+
+    # Save using update_or_create
+    synced_count = 0
+    for (emp_code, punch_date), times in grouped.items():
+        times.sort()
+        clock_in = times[0]
+        clock_out = times[-1] if len(times) > 1 else None
+        total_entries = len(times)
+        emp_name = emp_name_map.get(emp_code, f'Employee {emp_code}')
+
+        BiometricAttendance.objects.update_or_create(
+            employee_code=emp_code,
+            date=punch_date,
+            defaults={
+                'employee_name': emp_name,
+                'clock_in': clock_in,
+                'clock_out': clock_out,
+                'total_entries': total_entries,
+                'source': 'device',
+            }
+        )
+        synced_count += 1
+
+    return JsonResponse({'success': True, 'message': f'Successfully synced {synced_count} attendance records.', 'synced': synced_count})
+
+
+@login_required
+def biometric_sync_single(request, pk):
+    """Sync a single employee's data from ZKTeco API for a given date."""
+    from .models import BiometricAttendance, ZektoSetting, Employee
+    import requests as http_requests
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    record = get_object_or_404(BiometricAttendance, pk=pk)
+    setting = ZektoSetting.objects.first()
+    if not setting or not setting.auth_token:
+        return JsonResponse({'success': False, 'error': 'ZKTeco settings not configured or token missing.'})
+
+    api_url = setting.api_url.rstrip('/')
+    url = f"{api_url}/iclock/api/transactions/?emp_code={record.employee_code}&start_date={record.date}&end_date={record.date}&page_size=100"
+
+    try:
+        resp = http_requests.get(url, headers={'Authorization': f'JWT {setting.auth_token}'}, timeout=15)
+        if resp.status_code == 401:
+            return JsonResponse({'success': False, 'error': 'ZKTeco token expired (401). Please regenerate.'})
+        if resp.status_code != 200:
+            return JsonResponse({'success': False, 'error': f'API returned status {resp.status_code}.'})
+
+        data = resp.json()
+        results = data.get('data', data.get('results', []))
+        if not results:
+            return JsonResponse({'success': True, 'message': 'No transactions found for this employee on this date.'})
+
+        times = []
+        for tx in results:
+            punch_time_str = tx.get('punch_time', '')
+            try:
+                from datetime import datetime
+                punch_dt = datetime.fromisoformat(punch_time_str.replace('Z', '+00:00').replace('T', ' ').split('+')[0].strip())
+                times.append(punch_dt.time())
+            except (ValueError, AttributeError):
+                continue
+
+        if times:
+            times.sort()
+            record.clock_in = times[0]
+            record.clock_out = times[-1] if len(times) > 1 else None
+            record.total_entries = len(times)
+            record.source = 'device'
+
+            # Update name from Employee model if available
+            emp = Employee.objects.filter(employee_code=record.employee_code).first()
+            if emp:
+                record.employee_name = emp.full_name
+
+            record.save()
+            return JsonResponse({'success': True, 'message': f'Synced {len(times)} entries for {record.employee_name}.'})
+
+        return JsonResponse({'success': True, 'message': 'No valid punch times found.'})
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Connection error: {str(e)}'})
+
+
+@login_required
+def biometric_attendance_delete(request, pk):
+    from .models import BiometricAttendance
+
+    record = get_object_or_404(BiometricAttendance, pk=pk)
+    if request.method == 'POST':
+        record.delete()
+        return JsonResponse({'success': True, 'message': 'Record deleted successfully.'})
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+# ==================== ZKTeco Settings ====================
+
+@login_required
+def zekto_settings(request):
+    from .models import ZektoSetting
+
+    setting = ZektoSetting.load()
+
+    if request.method == 'POST':
+        setting.api_url = request.POST.get('api_url', '').strip()
+        setting.username = request.POST.get('username', '').strip()
+        setting.password = request.POST.get('password', '').strip()
+        setting.save()
+        messages.success(request, 'ZKTeco settings saved successfully.')
+        return redirect('hrm:zekto_settings')
+
+    context = {
+        'page_title': 'Zekto Settings',
+        'setting': setting,
+    }
+    return render(request, 'hrm/zekto_settings.html', context)
+
+
+@login_required
+def zekto_generate_token(request):
+    """AJAX endpoint: generate JWT token from ZKTeco BioTime API."""
+    from .models import ZektoSetting
+    import requests as http_requests
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    setting = ZektoSetting.objects.first()
+    if not setting or not setting.api_url or not setting.username or not setting.password:
+        return JsonResponse({'success': False, 'error': 'Please save API URL, username, and password first.'})
+
+    api_url = setting.api_url.rstrip('/')
+    token_url = f"{api_url}/jwt-api-token-auth/"
+
+    try:
+        resp = http_requests.post(
+            token_url,
+            json={'username': setting.username, 'password': setting.password},
+            headers={'Content-Type': 'application/json'},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            token = data.get('token', '')
+            if token:
+                setting.auth_token = token
+                setting.save()
+                return JsonResponse({'success': True, 'token': token, 'message': 'JWT token generated successfully.'})
+            return JsonResponse({'success': False, 'error': 'No token in API response.'})
+        else:
+            error_msg = f'API returned status {resp.status_code}'
+            try:
+                error_data = resp.json()
+                if 'detail' in error_data:
+                    error_msg = error_data['detail']
+                elif 'non_field_errors' in error_data:
+                    error_msg = ', '.join(error_data['non_field_errors'])
+            except Exception:
+                pass
+            return JsonResponse({'success': False, 'error': error_msg})
+    except http_requests.exceptions.ConnectionError:
+        return JsonResponse({'success': False, 'error': 'Could not connect to ZKTeco API. Check the URL.'})
+    except http_requests.exceptions.Timeout:
+        return JsonResponse({'success': False, 'error': 'Connection timed out.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
 
 
 # ==================== Payroll Management ====================

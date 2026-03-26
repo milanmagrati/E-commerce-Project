@@ -598,3 +598,65 @@ class AttendanceRegularization(models.Model):
 
     def __str__(self):
         return f"{self.employee} - {self.date}"
+
+
+# ==================== ZKTeco / Biometric Settings ====================
+
+class ZektoSetting(models.Model):
+    api_url = models.URLField(max_length=500, help_text='ZKTeco BioTime API base URL')
+    username = models.CharField(max_length=255)
+    password = models.CharField(max_length=255)
+    auth_token = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Zekto Setting'
+        verbose_name_plural = 'Zekto Settings'
+
+    def __str__(self):
+        return f"ZKTeco Settings ({self.api_url})"
+
+    def save(self, *args, **kwargs):
+        # Singleton: ensure only one record exists
+        if not self.pk and ZektoSetting.objects.exists():
+            existing = ZektoSetting.objects.first()
+            self.pk = existing.pk
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(
+            pk=1,
+            defaults={'api_url': '', 'username': '', 'password': ''}
+        )
+        return obj
+
+
+# ==================== Biometric Attendance ====================
+
+class BiometricAttendance(models.Model):
+    SOURCE_CHOICES = [
+        ('device', 'Device'),
+        ('manual', 'Manual'),
+        ('import', 'Import'),
+    ]
+
+    employee_code = models.CharField(max_length=50)
+    employee_name = models.CharField(max_length=255)
+    date = models.DateField()
+    clock_in = models.TimeField(null=True, blank=True)
+    clock_out = models.TimeField(null=True, blank=True)
+    total_entries = models.PositiveIntegerField(default=0)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='device')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date']
+        unique_together = ['employee_code', 'date']
+        verbose_name = 'Biometric Attendance'
+        verbose_name_plural = 'Biometric Attendances'
+
+    def __str__(self):
+        return f"{self.employee_name} ({self.employee_code}) - {self.date}"

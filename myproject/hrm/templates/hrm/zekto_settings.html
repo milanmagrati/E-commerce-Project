@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% block title %}Zekto Settings{% endblock %}
+
+{% block extra_css %}
+<style>
+  .zekto-card {
+    border-radius: 14px; border: none;
+    box-shadow: 0 2px 12px rgba(0,0,0,.07); overflow: hidden;
+    width: 100%;
+  }
+  .zekto-card .card-header {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    padding: 1.25rem 1.5rem;
+  }
+  .zekto-card .card-header h5 { color: #fff; font-weight: 700; font-size: 1.05rem; margin: 0; }
+  .zekto-card .card-body { padding: 1.75rem; }
+  .zekto-label { font-size: .88rem; font-weight: 600; color: #374151; margin-bottom: .35rem; }
+  .zekto-input {
+    border: 1px solid #e5e7eb; border-radius: 8px; padding: .55rem .9rem;
+    font-size: .9rem; width: 100%;
+  }
+  .zekto-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); outline: none; }
+  .zekto-btn-save {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none;
+    padding: .6rem 1.5rem; border-radius: 10px; font-size: .9rem; font-weight: 600;
+    cursor: pointer; transition: all .2s;
+  }
+  .zekto-btn-save:hover { opacity: .92; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(99,102,241,.35); }
+  .zekto-btn-token {
+    background: linear-gradient(135deg, #10b981, #059669); color: #fff; border: none;
+    padding: .6rem 1.5rem; border-radius: 10px; font-size: .9rem; font-weight: 600;
+    cursor: pointer; transition: all .2s;
+  }
+  .zekto-btn-token:hover { opacity: .92; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(16,185,129,.35); }
+  .zekto-info-note {
+    background: #eff6ff; border: 1px solid #dbeafe; border-radius: 10px;
+    padding: .75rem 1rem; font-size: .85rem; color: #1e40af;
+    margin-top: 1rem;
+  }
+  .zekto-token-area {
+    border: 1px solid #e5e7eb; border-radius: 8px; padding: .55rem .9rem;
+    font-size: .82rem; font-family: monospace; width: 100%;
+    background: #f9fafb; color: #374151; resize: none; min-height: 70px;
+  }
+  /* toast */
+  .page-toast {
+    position: fixed; top: 80px; right: 24px; z-index: 9999;
+    min-width: 300px; max-width: 400px; border-radius: 12px;
+    padding: 14px 18px; font-size: 0.9rem; font-weight: 500;
+    box-shadow: 0 8px 30px rgba(0,0,0,.15); display: flex;
+    align-items: center; gap: 10px;
+    animation: toastSlideIn .35s ease;
+  }
+  .page-toast.toast-success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+  .page-toast.toast-error   { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
+  @keyframes toastSlideIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Toast -->
+<div id="pageToast" class="page-toast" style="display:none;"></div>
+
+<div class="row justify-content-center">
+<div class="col-12 px-3">
+
+<!-- Page header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2 style="font-size:1.45rem; font-weight:700; color:#111827;" class="mb-1">
+      <i class="fas fa-fingerprint me-2 text-primary"></i>Zekto Settings
+    </h2>
+    <p class="text-muted mb-0" style="font-size:.9rem;">Configure your ZKTeco BioTime API connection</p>
+  </div>
+</div>
+
+{% if messages %}
+  {% for message in messages %}
+  <div class="page-toast {% if message.tags == 'error' %}toast-error{% else %}toast-success{% endif %}" id="djangoMsg{{ forloop.counter }}" style="display:flex;">
+    <i class="fas {% if message.tags == 'error' %}fa-times-circle{% else %}fa-check-circle{% endif %}"></i>
+    <span>{{ message|escapejs }}</span>
+  </div>
+  <script>
+    setTimeout(function() {
+      var el = document.getElementById('djangoMsg{{ forloop.counter }}');
+      if (el) el.style.display = 'none';
+    }, 5000);
+  </script>
+  {% endfor %}
+{% endif %}
+
+<div class="card zekto-card">
+  <div class="card-header">
+    <h5><i class="fas fa-cogs me-2"></i>ZKTeco API Configuration</h5>
+  </div>
+  <div class="card-body">
+    <form method="post" id="zektoForm">
+      {% csrf_token %}
+
+      <div class="mb-3">
+        <label class="zekto-label">ZKTeco API URL <span class="text-danger">*</span></label>
+        <input type="url" name="api_url" class="zekto-input" placeholder="https://your-biotime-server.com/api" value="{{ setting.api_url }}" required>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="zekto-label">Username <span class="text-danger">*</span></label>
+          <input type="text" name="username" class="zekto-input" placeholder="admin" value="{{ setting.username }}" required>
+        </div>
+        <div class="col-md-6">
+          <label class="zekto-label">Password <span class="text-danger">*</span></label>
+          <input type="password" name="password" class="zekto-input" placeholder="Enter password" value="{{ setting.password }}" required>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="zekto-label">Auth Token <span class="text-muted fw-normal">(read-only)</span></label>
+        <textarea id="authToken" class="zekto-token-area" readonly placeholder="No token generated yet. Click 'Generate Token' below.">{{ setting.auth_token|default:'' }}</textarea>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap">
+        <button type="submit" class="zekto-btn-save">
+          <i class="fas fa-save me-1"></i> Save Changes
+        </button>
+        <button type="button" class="zekto-btn-token" id="generateTokenBtn" onclick="generateToken()">
+          <i class="fas fa-key me-1"></i> Generate Token
+        </button>
+      </div>
+    </form>
+
+    <div class="zekto-info-note">
+      <i class="fas fa-info-circle me-1"></i>
+      <strong>Note:</strong> First entry = clock-in, last entry = clock-out per day.
+      Ensure you save your credentials before generating a token.
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+
+  window.showToast = function(msg, type) {
+    var el = document.getElementById('pageToast');
+    var isError = (type === 'error');
+    el.className = 'page-toast ' + (isError ? 'toast-error' : 'toast-success');
+    el.innerHTML = '<i class="fas ' + (isError ? 'fa-times-circle' : 'fa-check-circle') + '"></i><span>' + msg + '</span>';
+    el.style.display = 'flex';
+    setTimeout(function() { el.style.display = 'none'; }, 5000);
+  };
+
+  window.generateToken = function() {
+    var btn = document.getElementById('generateTokenBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Generating...';
+
+    fetch("{% url 'hrm:zekto_generate_token' %}", {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': CSRF,
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-key me-1"></i> Generate Token';
+      if (data.success) {
+        document.getElementById('authToken').value = data.token;
+        showToast(data.message || 'Token generated successfully.', 'success');
+      } else {
+        showToast(data.error || 'Failed to generate token.', 'error');
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-key me-1"></i> Generate Token';
+      showToast('Network error. Please try again.', 'error');
+    });
+  };
+});
+</script>
+{% endblock %}

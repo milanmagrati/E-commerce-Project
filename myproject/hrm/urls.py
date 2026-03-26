@@ -137,6 +137,14 @@ urlpatterns = [
 
     # Biometric Attendance
     path('biometric-attendance/', views.biometric_attendance, name='biometric_attendance'),
+    path('biometric-attendance/<int:pk>/view/', views.biometric_attendance_view, name='biometric_attendance_view'),
+    path('biometric-attendance/<int:pk>/delete/', views.biometric_attendance_delete, name='biometric_attendance_delete'),
+    path('biometric-attendance/<int:pk>/sync/', views.biometric_sync_single, name='biometric_sync_single'),
+    path('biometric-attendance/sync-all/', views.biometric_sync_all, name='biometric_sync_all'),
+
+    # Zekto Settings
+    path('settings/zekto/', views.zekto_settings, name='zekto_settings'),
+    path('settings/zekto/generate-token/', views.zekto_generate_token, name='zekto_generate_token'),
 
     # Payroll Management
     path('payroll/', views.payroll_management, name='payroll_management'),

@@ -1,19 +1,595 @@
 {% extends 'base.html' %}
 {% block title %}Biometric Attendance - HRM{% endblock %}
 
+{% block extra_css %}
+<style>
+  /* toast */
+  .page-toast {
+    position: fixed; top: 80px; right: 24px; z-index: 9999;
+    min-width: 300px; max-width: 400px; border-radius: 12px;
+    padding: 14px 18px; font-size: 0.9rem; font-weight: 500;
+    box-shadow: 0 8px 30px rgba(0,0,0,.15); display: flex;
+    align-items: center; gap: 10px;
+    animation: toastSlideIn .35s ease;
+  }
+  .page-toast.toast-success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+  .page-toast.toast-error   { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
+  @keyframes toastSlideIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
+
+  /* table card */
+  .bio-card { border-radius: 14px; border: none; box-shadow: 0 2px 12px rgba(0,0,0,.07); overflow: hidden; }
+  .bio-card .card-header {
+    background: #fff; border-bottom: 1px solid #f0f0f0;
+    padding: 1rem 1.5rem; display: flex; align-items: center; gap: .5rem;
+  }
+  .bio-card .card-header .bio-device-icon {
+    width: 30px; height: 30px; background: #eff6ff; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #3b82f6; font-size: .875rem;
+  }
+  .bio-card .card-header span { color: #6b7280; font-size: .92rem; }
+
+  /* table */
+  .bio-table { margin: 0; }
+  .bio-table thead th {
+    background: #f9fafb; color: #6b7280; font-size: .78rem;
+    font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+    border-bottom: 1px solid #e5e7eb; padding: .85rem 1rem; white-space: nowrap;
+  }
+  .bio-table tbody td { padding: .9rem 1rem; vertical-align: middle; border-bottom: 1px solid #f3f4f6; font-size: .9rem; }
+  .bio-table tbody tr:last-child td { border-bottom: none; }
+  .bio-table tbody tr:hover td { background: #f9fafb; }
+
+  .bio-row-num { color: #9ca3af; font-size: .85rem; }
+  .bio-emp-code { font-weight: 600; color: #374151; }
+  .bio-emp-name { font-weight: 500; color: #111827; }
+  .bio-date { color: #4b5563; }
+  .bio-clock-in  { color: #10b981; font-weight: 600; font-family: monospace; font-size: .92rem; }
+  .bio-clock-out { color: #ef4444; font-weight: 600; font-family: monospace; font-size: .92rem; }
+  .bio-clock-na  { color: #d1d5db; font-size: .85rem; }
+
+  .bio-entries-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #eff6ff; color: #3b82f6; font-size: .82rem; font-weight: 700;
+  }
+
+  /* action buttons */
+  .bio-btn-icon {
+    width: 32px; height: 32px; border-radius: 8px; border: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .82rem; transition: all .2s; cursor: pointer;
+  }
+  .bio-btn-view   { background: #eff6ff; color: #3b82f6; }
+  .bio-btn-view:hover { background: #dbeafe; color: #1d4ed8; transform: translateY(-1px); }
+  .bio-btn-sync   { background: #ecfdf5; color: #059669; }
+  .bio-btn-sync:hover { background: #d1fae5; color: #047857; transform: translateY(-1px); }
+  .bio-btn-delete { background: #fef2f2; color: #ef4444; }
+  .bio-btn-delete:hover { background: #fee2e2; color: #b91c1c; transform: translateY(-1px); }
+
+  /* search card */
+  .bio-search-card { border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .bio-search-input {
+    border: 1px solid #e5e7eb; border-radius: 8px 0 0 8px; padding: .55rem .9rem;
+    font-size: .9rem; outline: none; min-width: 220px;
+  }
+  .bio-search-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+  .bio-search-btn {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none;
+    padding: .55rem 1.1rem; border-radius: 0 8px 8px 0; font-size: .88rem;
+    font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: .35rem; transition: opacity .2s;
+  }
+  .bio-search-btn:hover { opacity: .9; }
+  .bio-filter-btn {
+    background: #fff; border: 1px solid #e5e7eb; color: #374151; border-radius: 8px;
+    padding: .5rem 1rem; font-size: .88rem; font-weight: 500; cursor: pointer;
+    display: flex; align-items: center; gap: .35rem; transition: all .2s;
+  }
+  .bio-filter-btn:hover { border-color: #6366f1; color: #6366f1; }
+  .bio-per-page-select {
+    border: 1px solid #e5e7eb; border-radius: 8px; padding: .5rem .75rem;
+    font-size: .88rem; color: #374151; outline: none; cursor: pointer;
+  }
+  .bio-per-page-select:focus { border-color: #6366f1; }
+
+  /* pagination */
+  .bio-pagination .page-link {
+    border-radius: 8px !important; margin: 0 2px; border: 1px solid #e5e7eb;
+    color: #374151; font-size: .88rem; padding: .45rem .75rem;
+  }
+  .bio-pagination .page-item.active .page-link { background: #6366f1; border-color: #6366f1; color: #fff; }
+  .bio-pagination .page-link:hover { background: #f5f3ff; color: #6366f1; }
+
+  /* filter panel */
+  .bio-filter-panel { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem 1.25rem; margin-top: .75rem; }
+
+  /* modals */
+  .bio-modal-header { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 1.25rem 1.5rem; border-radius: 0; }
+  .bio-modal-header .modal-title { color: #fff; font-weight: 700; font-size: 1rem; }
+  .bio-modal-header .btn-close { filter: invert(1); }
+  .bio-modal-del-header { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 1.25rem 1.5rem; }
+  .bio-modal-del-header .modal-title { color: #fff; font-weight: 700; font-size: 1rem; }
+  .bio-modal-del-header .btn-close { filter: invert(1); }
+
+  /* source badge */
+  .src-badge { font-size: .72rem; font-weight: 600; padding: .2rem .55rem; border-radius: 20px; }
+  .src-device { background: #dbeafe; color: #1d4ed8; }
+  .src-manual { background: #fef3c7; color: #92400e; }
+  .src-import { background: #d1fae5; color: #065f46; }
+
+  /* view detail rows */
+  .bio-detail-row { display: flex; align-items: center; padding: .65rem 0; border-bottom: 1px solid #f3f4f6; font-size: .9rem; }
+  .bio-detail-row:last-child { border-bottom: none; }
+  .bio-detail-label { width: 140px; flex-shrink: 0; color: #6b7280; font-weight: 500; }
+  .bio-detail-value { color: #111827; font-weight: 500; }
+
+  /* empty state */
+  .bio-empty { padding: 3.5rem 1rem; text-align: center; color: #9ca3af; }
+  .bio-empty i { font-size: 2.5rem; margin-bottom: 1rem; opacity: .4; }
+  .bio-empty p { font-size: .95rem; }
+
+  /* page title */
+  .bio-page-title { font-size: 1.45rem; font-weight: 700; color: #111827; }
+  .bio-sync-btn {
+    background: linear-gradient(135deg, #10b981, #059669); color: #fff; border: none;
+    padding: .6rem 1.2rem; border-radius: 10px; font-size: .88rem; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; gap: .4rem; transition: all .2s;
+  }
+  .bio-sync-btn:hover { opacity: .92; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(16,185,129,.35); }
+
+  /* punch table inside view modal */
+  .punch-table { width: 100%; font-size: .85rem; margin-top: .75rem; }
+  .punch-table thead th { background: #f9fafb; color: #6b7280; font-size: .75rem; text-transform: uppercase; padding: .5rem .6rem; border-bottom: 1px solid #e5e7eb; }
+  .punch-table tbody td { padding: .5rem .6rem; border-bottom: 1px solid #f3f4f6; color: #374151; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fas fa-fingerprint me-2"></i>Biometric Attendance</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-cog me-1"></i>Configure Device</button>
-    </div>
+
+<!-- CSRF token for AJAX requests -->
+{% csrf_token %}
+
+<!-- Toast notification -->
+<div id="pageToast" class="page-toast" style="display:none;"></div>
+
+<script>
+  (function(){
+    var msg = sessionStorage.getItem('bio_msg');
+    var t   = sessionStorage.getItem('bio_msg_type');
+    if(msg){
+      sessionStorage.removeItem('bio_msg');
+      sessionStorage.removeItem('bio_msg_type');
+      var el = document.getElementById('pageToast');
+      el.className = 'page-toast ' + (t === 'error' ? 'toast-error' : 'toast-success');
+      el.innerHTML = '<i class="fas ' + (t === 'error' ? 'fa-times-circle' : 'fa-check-circle') + '"></i><span>' + msg + '</span>';
+      el.style.display = 'flex';
+      setTimeout(function(){ el.style.display='none'; }, 4000);
+    }
+  })();
+</script>
+
+<!-- Page header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2 class="bio-page-title mb-1"><i class="fas fa-fingerprint me-2 text-primary"></i>Biometric Attendance</h2>
+    <p class="text-muted mb-0" style="font-size:.9rem;">Manage biometric device attendance records synced from ZKTeco</p>
+  </div>
+  <button class="bio-sync-btn" id="globalSyncBtn" onclick="syncAll()">
+    <i class="fas fa-sync-alt"></i> Sync from ZKTeco
+  </button>
 </div>
 
-<div class="card">
-    <div class="card-body text-center py-5">
-        <i class="fas fa-fingerprint fa-3x text-muted mb-3"></i>
-        <h5 class="text-muted">Biometric Attendance</h5>
-        <p class="text-muted">Configure and manage biometric attendance devices and records here.</p>
-    </div>
+<!-- Search & Filter bar -->
+<div class="card bio-search-card mb-3">
+  <div class="card-body py-3">
+    <form method="get" id="searchForm">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <!-- Search -->
+        <div class="d-flex flex-grow-1" style="max-width:380px;">
+          <input type="text" name="q" class="bio-search-input form-control" placeholder="Search by name or employee code..." value="{{ search_q }}">
+          <button type="submit" class="bio-search-btn"><i class="fas fa-search"></i> Search</button>
+        </div>
+        <!-- Filters toggle -->
+        <button type="button" class="bio-filter-btn" onclick="toggleFilters()">
+          <i class="fas fa-filter"></i> Filters{% if date_from or date_to %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}
+        </button>
+        <!-- Per page -->
+        <div class="ms-auto d-flex align-items-center gap-2">
+          <span class="text-muted" style="font-size:.88rem; white-space:nowrap;">Per Page:</span>
+          <select name="per_page" class="bio-per-page-select" onchange="this.form.submit()">
+            {% for opt in per_page_options %}
+            <option value="{{ opt }}" {% if per_page == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <!-- Preserve other params -->
+        {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
+        {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
+      </div>
+
+      <!-- Filter panel (collapsible) -->
+      <div id="filterPanel" class="bio-filter-panel mt-3" style="display:{% if date_from or date_to %}flex{% else %}none{% endif %}; flex-wrap:wrap; gap:1rem; align-items:flex-end;">
+        <div>
+          <label class="form-label mb-1" style="font-size:.82rem; color:#6b7280; font-weight:600;">Date From</label>
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="min-width:155px;">
+        </div>
+        <div>
+          <label class="form-label mb-1" style="font-size:.82rem; color:#6b7280; font-weight:600;">Date To</label>
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="min-width:155px;">
+        </div>
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-sm btn-primary" style="border-radius:8px; padding:.4rem .9rem;">Apply</button>
+          <a href="{% url 'hrm:biometric_attendance' %}" class="btn btn-sm btn-outline-secondary" style="border-radius:8px; padding:.4rem .9rem;">Clear</a>
+        </div>
+        <!-- Preserve per_page -->
+        <input type="hidden" name="per_page" value="{{ per_page }}">
+      </div>
+    </form>
+  </div>
 </div>
+
+<!-- Table card -->
+<div class="card bio-card">
+  <div class="card-header">
+    <div class="bio-device-icon"><i class="fas fa-clock"></i></div>
+    <span>Biometric attendance data from ZKTeco device</span>
+    <span class="ms-auto text-muted" style="font-size:.82rem;">{{ total_records }} total record{{ total_records|pluralize }}</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table bio-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Employee Code</th>
+          <th>Employee Name</th>
+          <th>Date</th>
+          <th>Clock In</th>
+          <th>Clock Out</th>
+          <th>Total Entries</th>
+          <th>Source</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in page_obj %}
+        <tr>
+          <td class="bio-row-num">{{ forloop.counter0|add:page_obj.start_index }}</td>
+          <td class="bio-emp-code">{{ record.employee_code }}</td>
+          <td class="bio-emp-name">{{ record.employee_name }}</td>
+          <td class="bio-date">{{ record.date|date:"Y-m-d" }}</td>
+          <td>
+            {% if record.clock_in %}
+              <span class="bio-clock-in">{{ record.clock_in|time:"g:i A" }}</span>
+            {% else %}
+              <span class="bio-clock-na">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if record.clock_out %}
+              <span class="bio-clock-out">{{ record.clock_out|time:"g:i A" }}</span>
+            {% else %}
+              <span class="bio-clock-na">—</span>
+            {% endif %}
+          </td>
+          <td><span class="bio-entries-badge">{{ record.total_entries }}</span></td>
+          <td>
+            <span class="src-badge src-{{ record.source }}">{{ record.source|capfirst }}</span>
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <button class="bio-btn-icon bio-btn-view" title="View Punches" onclick="viewRecord({{ record.pk }})">
+                <i class="fas fa-eye"></i>
+              </button>
+              <button class="bio-btn-icon bio-btn-sync" title="Re-sync" onclick="syncSingle(this, {{ record.pk }})">
+                <i class="fas fa-sync-alt"></i>
+              </button>
+              <button class="bio-btn-icon bio-btn-delete" title="Delete" onclick="openDeleteModal({{ record.pk }}, '{{ record.employee_name|escapejs }}', '{{ record.date }}')">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9">
+            <div class="bio-empty">
+              <i class="fas fa-fingerprint d-block"></i>
+              <p class="mb-0">No biometric records found{% if search_q or date_from or date_to %} matching your filters{% endif %}.</p>
+              {% if search_q or date_from or date_to %}
+              <a href="{% url 'hrm:biometric_attendance' %}" class="btn btn-sm btn-outline-primary mt-3" style="border-radius:8px;">Clear Filters</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.has_other_pages %}
+  <div class="card-footer bg-white border-top d-flex justify-content-between align-items-center flex-wrap gap-2 px-4 py-3">
+    <small class="text-muted">
+      Showing <strong>{{ page_obj.start_index }}</strong> to <strong>{{ page_obj.end_index }}</strong> of <strong>{{ total_records }}</strong> biometric record{{ total_records|pluralize }}
+    </small>
+    <nav>
+      <ul class="pagination mb-0 bio-pagination">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+          <a class="page-link" href="?{% if search_q %}q={{ search_q }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">Previous</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">Previous</span></li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+          {% if page_obj.number == num %}
+          <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+          {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+          <li class="page-item">
+            <a class="page-link" href="?{% if search_q %}q={{ search_q }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}per_page={{ per_page }}&page={{ num }}">{{ num }}</a>
+          </li>
+          {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?{% if search_q %}q={{ search_q }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}">Next</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">Next</span></li>
+        {% endif %}
+      </ul>
+    </nav>
+  </div>
+  {% else %}
+  <div class="card-footer bg-white border-top px-4 py-3">
+    <small class="text-muted">
+      Showing <strong>{{ page_obj.start_index }}</strong> to <strong>{{ page_obj.end_index }}</strong> of <strong>{{ total_records }}</strong> biometric record{{ total_records|pluralize }}
+    </small>
+  </div>
+  {% endif %}
+</div>
+
+
+<!-- ==================== View Modal (raw punches) ==================== -->
+<div class="modal fade" id="bioViewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 shadow-lg" style="border-radius:16px; overflow:hidden;">
+      <div class="modal-header bio-modal-header">
+        <h5 class="modal-title"><i class="fas fa-eye me-2"></i>Biometric Record Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4" id="bioViewBody">
+        <div class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary"></i></div>
+      </div>
+      <div class="modal-footer border-0 pb-4">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" style="border-radius:8px; font-size:.88rem;">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== Delete Modal ==================== -->
+<div class="modal fade" id="bioDeleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg" style="border-radius:16px; overflow:hidden;">
+      <div class="modal-header bio-modal-del-header">
+        <h5 class="modal-title" style="background:none; padding:0; border-radius:0; color:#fff;"><i class="fas fa-trash me-2"></i>Delete Record</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4 text-center">
+        <div style="width:64px;height:64px;background:#fee2e2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;">
+          <i class="fas fa-trash fa-lg text-danger"></i>
+        </div>
+        <h6 class="fw-bold mb-2">Are you sure?</h6>
+        <p class="text-muted mb-0" style="font-size:.9rem;">
+          You are about to delete the biometric record for<br>
+          <strong id="bioDeleteName"></strong> on <strong id="bioDeleteDate"></strong>.<br>
+          This action cannot be undone.
+        </p>
+      </div>
+      <div class="modal-footer border-0 pb-4 gap-2 justify-content-center">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" style="border-radius:8px; min-width:100px;">Cancel</button>
+        <button type="button" class="btn btn-danger" id="bioDeleteConfirm" style="border-radius:8px; min-width:100px;">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+
+  function bsModal(id) {
+    return bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
+  }
+
+  // Reset view body on close
+  document.getElementById('bioViewModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('bioViewBody').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary"></i></div>';
+  });
+
+  // Reset delete button on close
+  document.getElementById('bioDeleteModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('bioDeleteConfirm').disabled = false;
+    document.getElementById('bioDeleteConfirm').textContent = 'Delete';
+  });
+
+  // Toggle filter panel
+  window.toggleFilters = function () {
+    var p = document.getElementById('filterPanel');
+    p.style.display = p.style.display === 'none' ? 'flex' : 'none';
+  };
+
+  // Toast helper (session storage for page reload)
+  function showToast(msg, type) {
+    sessionStorage.setItem('bio_msg', msg);
+    sessionStorage.setItem('bio_msg_type', type || 'success');
+  }
+
+  // Inline toast (no reload)
+  function showInlineToast(msg, type) {
+    var el = document.getElementById('pageToast');
+    var isError = type === 'error';
+    el.className = 'page-toast ' + (isError ? 'toast-error' : 'toast-success');
+    el.innerHTML = '<i class="fas ' + (isError ? 'fa-times-circle' : 'fa-check-circle') + '"></i><span>' + msg + '</span>';
+    el.style.display = 'flex';
+    setTimeout(function(){ el.style.display='none'; }, 5000);
+  }
+
+  // ── View record (show raw punch entries)
+  window.viewRecord = function (pk) {
+    document.getElementById('bioViewBody').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary fa-2x"></i></div>';
+    bsModal('bioViewModal').show();
+
+    fetch('/hrm/biometric-attendance/' + pk + '/view/', {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.success) {
+        document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center">' + (data.error || 'Failed to load.') + '</p>';
+        return;
+      }
+      var rec = data.record;
+      var srcClass = { device: 'src-device', manual: 'src-manual', import: 'src-import' };
+      var html = '';
+
+      // Summary section
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Employee</span><span class="bio-detail-value">' + rec.employee_name + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Employee Code</span><span class="bio-detail-value">' + rec.employee_code + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Date</span><span class="bio-detail-value">' + rec.date + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Clock In</span><span class="bio-detail-value" style="color:#10b981;font-weight:600;font-family:monospace;">' + (rec.clock_in || '—') + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Clock Out</span><span class="bio-detail-value" style="color:#ef4444;font-weight:600;font-family:monospace;">' + (rec.clock_out || '—') + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Total Entries</span><span class="bio-detail-value"><span class="bio-entries-badge">' + rec.total_entries + '</span></span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Source</span><span class="bio-detail-value"><span class="src-badge ' + (srcClass[rec.source] || '') + '">' + rec.source.charAt(0).toUpperCase() + rec.source.slice(1) + '</span></span></div>';
+
+      // Raw punches table if available
+      var punches = data.punches || [];
+      if (punches.length > 0) {
+        html += '<hr class="my-3">';
+        html += '<h6 class="fw-bold mb-2" style="font-size:.9rem;"><i class="fas fa-list me-1 text-primary"></i>Raw Punch Entries (' + punches.length + ')</h6>';
+        html += '<table class="punch-table"><thead><tr><th>#</th><th>Punch Time</th><th>State</th><th>Device</th></tr></thead><tbody>';
+        for (var i = 0; i < punches.length; i++) {
+          html += '<tr>';
+          html += '<td>' + (i + 1) + '</td>';
+          html += '<td style="font-family:monospace;">' + (punches[i].punch_time || '—') + '</td>';
+          html += '<td>' + (punches[i].punch_state_display || punches[i].punch_state || '—') + '</td>';
+          html += '<td>' + (punches[i].terminal_alias || '—') + '</td>';
+          html += '</tr>';
+        }
+        html += '</tbody></table>';
+      } else if (data.message) {
+        html += '<hr class="my-3">';
+        html += '<p class="text-muted mb-0" style="font-size:.85rem;"><i class="fas fa-info-circle me-1"></i>' + data.message + '</p>';
+      }
+
+      document.getElementById('bioViewBody').innerHTML = html;
+    })
+    .catch(function () {
+      document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center">Failed to load.</p>';
+    });
+  };
+
+  // ── Sync single record
+  window.syncSingle = function (btn, pk) {
+    btn.disabled = true;
+    btn.querySelector('i').classList.add('fa-spin');
+
+    fetch('/hrm/biometric-attendance/' + pk + '/sync/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      btn.disabled = false;
+      btn.querySelector('i').classList.remove('fa-spin');
+      if (data.success) {
+        showToast(data.message || 'Record synced.');
+        window.location.reload();
+      } else {
+        showInlineToast(data.error || 'Sync failed.', 'error');
+      }
+    })
+    .catch(function () {
+      btn.disabled = false;
+      btn.querySelector('i').classList.remove('fa-spin');
+      showInlineToast('Network error during sync.', 'error');
+    });
+  };
+
+  // ── Global sync all
+  window.syncAll = function () {
+    var btn = document.getElementById('globalSyncBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+
+    fetch("{% url 'hrm:biometric_sync_all' %}", {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sync from ZKTeco';
+      if (data.success) {
+        showToast(data.message || 'Sync completed.');
+        window.location.reload();
+      } else {
+        showInlineToast(data.error || 'Sync failed.', 'error');
+      }
+    })
+    .catch(function () {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sync from ZKTeco';
+      showInlineToast('Network error. Please try again.', 'error');
+    });
+  };
+
+  // ── Delete modal
+  var _deletePk = null;
+  window.openDeleteModal = function (pk, name, date) {
+    _deletePk = pk;
+    document.getElementById('bioDeleteName').textContent = name;
+    document.getElementById('bioDeleteDate').textContent = date;
+    document.getElementById('bioDeleteConfirm').disabled = false;
+    document.getElementById('bioDeleteConfirm').textContent = 'Delete';
+    bsModal('bioDeleteModal').show();
+  };
+
+  document.getElementById('bioDeleteConfirm').addEventListener('click', function () {
+    if (!_deletePk) return;
+    var self = this;
+    self.disabled = true;
+    self.textContent = 'Deleting...';
+
+    fetch('/hrm/biometric-attendance/' + _deletePk + '/delete/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      bsModal('bioDeleteModal').hide();
+      if (data.success) {
+        showToast(data.message || 'Record deleted.');
+      } else {
+        showToast(data.error || 'Delete failed.', 'error');
+      }
+      window.location.reload();
+    })
+    .catch(function () {
+      bsModal('bioDeleteModal').hide();
+      showToast('Network error.', 'error');
+      window.location.reload();
+    });
+  });
+
+}); // end DOMContentLoaded
+</script>
 {% endblock %}
