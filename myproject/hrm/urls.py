@@ -129,7 +129,11 @@ urlpatterns = [
 
     # Attendance Regularizations
     path('attendance-regularizations/', views.attendance_regularization_list, name='attendance_regularization_list'),
+    path('attendance-regularizations/create/', views.attendance_regularization_create, name='attendance_regularization_create'),
+    path('attendance-regularizations/<int:pk>/update/', views.attendance_regularization_update, name='attendance_regularization_update'),
+    path('attendance-regularizations/<int:pk>/delete/', views.attendance_regularization_delete, name='attendance_regularization_delete'),
     path('attendance-regularizations/<int:pk>/status/', views.attendance_regularization_update_status, name='attendance_regularization_update_status'),
+    path('api/employee-attendance-records/', views.employee_attendance_records_api, name='employee_attendance_records_api'),
 
     # Biometric Attendance
     path('biometric-attendance/', views.biometric_attendance, name='biometric_attendance'),

@@ -3047,26 +3047,151 @@ def attendance_policy_toggle_status(request, pk):
 
 @login_required
 def attendance_regularization_list(request):
-    from .models import AttendanceRegularization
+    from .models import AttendanceRegularization, Employee, AttendanceRecord
+    from django.core.paginator import Paginator
+
     search = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
-    regularizations = AttendanceRegularization.objects.select_related('employee', 'approved_by').all()
+    per_page = request.GET.get('per_page', 9)
+    try:
+        per_page = int(per_page)
+    except (ValueError, TypeError):
+        per_page = 9
+
+    qs = AttendanceRegularization.objects.select_related('employee', 'approved_by', 'attendance_record').all()
     if search:
-        regularizations = regularizations.filter(
-            Q(employee__first_name__icontains=search) |
-            Q(employee__last_name__icontains=search) |
+        qs = qs.filter(
+            Q(employee__full_name__icontains=search) |
             Q(reason__icontains=search)
         )
     if status_filter:
-        regularizations = regularizations.filter(status=status_filter)
+        qs = qs.filter(status=status_filter)
+
+    all_regs = AttendanceRegularization.objects.all()
+    total_requests = all_regs.count()
+    pending_count = all_regs.filter(status='pending').count()
+    approved_count = all_regs.filter(status='approved').count()
+    rejected_count = all_regs.filter(status='rejected').count()
+    approval_rate = round((approved_count / total_requests * 100), 1) if total_requests > 0 else 0
+
+    paginator = Paginator(qs, per_page)
+    page_num = request.GET.get('page', 1)
+    regularizations = paginator.get_page(page_num)
+
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+
     context = {
         'page_title': 'Attendance Regularizations',
         'regularizations': regularizations,
         'search': search,
         'status_filter': status_filter,
+        'per_page': per_page,
         'status_choices': AttendanceRegularization.STATUS_CHOICES,
+        'total_requests': total_requests,
+        'pending_count': pending_count,
+        'approved_count': approved_count,
+        'rejected_count': rejected_count,
+        'approval_rate': approval_rate,
+        'employees': employees,
     }
     return render(request, 'hrm/attendance_regularization_list.html', context)
+
+
+@login_required
+def attendance_regularization_create(request):
+    from .models import AttendanceRegularization, Employee, AttendanceRecord
+
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee')
+        record_id = request.POST.get('attendance_record') or None
+        clock_in = request.POST.get('clock_in') or None
+        clock_out = request.POST.get('clock_out') or None
+        reason = request.POST.get('reason', '').strip()
+        is_draft = request.POST.get('is_draft') == 'true'
+
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
+        if not reason:
+            return JsonResponse({'success': False, 'error': 'Reason is required.'})
+
+        employee = Employee.objects.filter(pk=employee_id).first()
+        if not employee:
+            return JsonResponse({'success': False, 'error': 'Employee not found.'})
+
+        record = AttendanceRecord.objects.filter(pk=record_id).first() if record_id else None
+        date_val = record.date if record else request.POST.get('date') or None
+        if not date_val:
+            return JsonResponse({'success': False, 'error': 'Please select an attendance record or provide a date.'})
+
+        reg = AttendanceRegularization.objects.create(
+            employee=employee,
+            attendance_record=record,
+            date=date_val,
+            clock_in=clock_in if clock_in else None,
+            clock_out=clock_out if clock_out else None,
+            reason=reason,
+            status='pending',
+            is_draft=is_draft,
+        )
+        return JsonResponse({'success': True, 'id': reg.id})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def attendance_regularization_update(request, pk):
+    from .models import AttendanceRegularization, AttendanceRecord
+
+    reg = get_object_or_404(AttendanceRegularization, pk=pk)
+
+    if request.method == 'POST':
+        clock_in = request.POST.get('clock_in') or None
+        clock_out = request.POST.get('clock_out') or None
+        reason = request.POST.get('reason', '').strip()
+        is_draft = request.POST.get('is_draft') == 'true'
+        record_id = request.POST.get('attendance_record') or None
+
+        if not reason:
+            return JsonResponse({'success': False, 'error': 'Reason is required.'})
+
+        record = AttendanceRecord.objects.filter(pk=record_id).first() if record_id else reg.attendance_record
+
+        reg.clock_in = clock_in if clock_in else None
+        reg.clock_out = clock_out if clock_out else None
+        reg.reason = reason
+        reg.is_draft = is_draft
+        reg.attendance_record = record
+        if record:
+            reg.date = record.date
+        reg.save()
+        return JsonResponse({'success': True})
+
+    # GET — return JSON for edit modal
+    data = {
+        'id': reg.id,
+        'employee_id': reg.employee_id,
+        'employee_name': reg.employee.full_name,
+        'attendance_record_id': reg.attendance_record_id,
+        'date': str(reg.date),
+        'clock_in': reg.clock_in.strftime('%H:%M') if reg.clock_in else '',
+        'clock_out': reg.clock_out.strftime('%H:%M') if reg.clock_out else '',
+        'original_clock_in': reg.attendance_record.clock_in.strftime('%H:%M') if reg.attendance_record and reg.attendance_record.clock_in else '',
+        'original_clock_out': reg.attendance_record.clock_out.strftime('%H:%M') if reg.attendance_record and reg.attendance_record.clock_out else '',
+        'reason': reg.reason,
+        'status': reg.status,
+        'is_draft': reg.is_draft,
+        'created_at': reg.created_at.strftime('%Y-%m-%d'),
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def attendance_regularization_delete(request, pk):
+    from .models import AttendanceRegularization
+    reg = get_object_or_404(AttendanceRegularization, pk=pk)
+    if request.method == 'POST':
+        reg.delete()
+        return JsonResponse({'success': True})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
 
 
 @login_required
@@ -3081,6 +3206,26 @@ def attendance_regularization_update_status(request, pk):
         reg.save()
         return JsonResponse({'success': True, 'status': reg.status})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def employee_attendance_records_api(request):
+    """Return attendance records for a specific employee (for dropdown in regularization modal)."""
+    from .models import AttendanceRecord
+    employee_id = request.GET.get('employee_id')
+    if not employee_id:
+        return JsonResponse({'records': []})
+    records = AttendanceRecord.objects.filter(employee_id=employee_id).order_by('-date')[:50]
+    data = []
+    for r in records:
+        data.append({
+            'id': r.id,
+            'date': str(r.date),
+            'clock_in': r.clock_in.strftime('%H:%M') if r.clock_in else '--:--',
+            'clock_out': r.clock_out.strftime('%H:%M') if r.clock_out else '--:--',
+            'status': r.status,
+        })
+    return JsonResponse({'records': data})
 
 
 # ==================== Biometric Attendance ====================

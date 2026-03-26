@@ -574,15 +574,20 @@ class AttendanceRegularization(models.Model):
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name='regularizations'
     )
+    attendance_record = models.ForeignKey(
+        'AttendanceRecord', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='regularizations'
+    )
     date = models.DateField()
-    clock_in = models.TimeField(null=True, blank=True)
-    clock_out = models.TimeField(null=True, blank=True)
+    clock_in = models.TimeField(null=True, blank=True, help_text='Requested clock in')
+    clock_out = models.TimeField(null=True, blank=True, help_text='Requested clock out')
     reason = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     approved_by = models.ForeignKey(
         Employee, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='approved_regularizations'
     )
+    is_draft = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

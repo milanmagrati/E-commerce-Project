@@ -2,123 +2,724 @@
 {% block title %}Attendance Regularizations - HRM{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fas fa-calendar-check me-2"></i>Attendance Regularizations</h2>
+<!-- Page Toast -->
+<div id="pageToast" class="page-toast" style="display:none;">
+    <div class="page-toast-inner">
+        <div class="page-toast-icon" id="pageToastIcon"></div>
+        <div class="page-toast-body">
+            <div class="page-toast-title" id="pageToastTitle"></div>
+            <div class="page-toast-msg" id="pageToastMsg"></div>
+        </div>
+        <button class="page-toast-close" onclick="dismissToast()">&times;</button>
+        <div class="page-toast-progress"><div class="page-toast-progress-bar" id="pageToastProgress"></div></div>
     </div>
 </div>
 
-<!-- Filters -->
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <form method="get" class="row align-items-center g-2">
-            <div class="col-md-4">
-                <div class="input-group">
-                    <input type="text" class="form-control" name="search" placeholder="Search by employee or reason..." value="{{ search }}">
-                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i> Search</button>
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-0" style="color:#1a1a2e;">Attendance Regularizations</h4>
+            <small class="text-muted">Manage attendance correction requests</small>
+        </div>
+        <button class="btn btn-success px-3" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i> Add Request
+        </button>
+    </div>
+
+    <!-- Search & Filters -->
+    <div class="card mb-3 shadow-sm border">
+        <div class="card-body py-2 px-3">
+            <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="input-group" style="max-width:260px;">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search fa-sm"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-0" name="search" placeholder="Search..." value="{{ search }}" style="box-shadow:none;">
                 </div>
-            </div>
-            <div class="col-md-3">
-                <select name="status" class="form-select" onchange="this.form.submit()">
+                <button class="btn btn-success px-3" type="submit"><i class="fas fa-search me-1"></i>Search</button>
+                <select name="status" class="form-select" style="width:160px;" onchange="this.form.submit()">
                     <option value="">All Statuses</option>
                     {% for val, label in status_choices %}
                     <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-            </div>
-            {% if search or status_filter %}
-            <div class="col-auto">
-                <a href="{% url 'hrm:attendance_regularization_list' %}" class="btn btn-outline-secondary btn-sm">
-                    <i class="fas fa-times"></i> Clear
-                </a>
-            </div>
-            {% endif %}
-        </form>
+                {% if search or status_filter %}
+                <a href="{% url 'hrm:attendance_regularization_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i></a>
+                {% endif %}
+                <button type="button" class="btn btn-outline-secondary px-3" style="border-radius:8px;">
+                    <i class="fas fa-filter me-1"></i>Filters
+                </button>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <span class="text-muted small">Per Page:</span>
+                    <select class="form-select form-select-sm border" style="width:80px;" name="per_page" onchange="this.form.submit()">
+                        <option value="9" {% if per_page == 9 %}selected{% endif %}>9</option>
+                        <option value="12" {% if per_page == 12 %}selected{% endif %}>12</option>
+                        <option value="18" {% if per_page == 18 %}selected{% endif %}>18</option>
+                        <option value="24" {% if per_page == 24 %}selected{% endif %}>24</option>
+                    </select>
+                </div>
+            </form>
+        </div>
     </div>
+
+    <!-- Stats -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm border reg-stat h-100" style="border-left:4px solid #6366f1 !important;">
+                <div class="card-body d-flex align-items-center justify-content-between py-3">
+                    <div>
+                        <div class="text-muted small">Total Requests</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ total_requests }}</div>
+                        <div class="text-muted" style="font-size:.7rem;">All time</div>
+                    </div>
+                    <div class="reg-stat-icon" style="background:#f0f0ff;"><i class="fas fa-calendar-alt" style="color:#6366f1;"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm border reg-stat h-100" style="border-left:4px solid #f59e0b !important;">
+                <div class="card-body d-flex align-items-center justify-content-between py-3">
+                    <div>
+                        <div class="text-muted small">Pending</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ pending_count }}</div>
+                        <div style="font-size:.7rem;color:#f59e0b;">Needs Review</div>
+                    </div>
+                    <div class="reg-stat-icon" style="background:#fff7ed;"><i class="fas fa-exclamation-circle" style="color:#f59e0b;"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm border reg-stat h-100" style="border-left:4px solid #28a745 !important;">
+                <div class="card-body d-flex align-items-center justify-content-between py-3">
+                    <div>
+                        <div class="text-muted small">Approved</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ approved_count }}</div>
+                        <div style="font-size:.7rem;color:#28a745;">{{ approval_rate }}% rate</div>
+                    </div>
+                    <div class="reg-stat-icon" style="background:#ecfdf5;"><i class="fas fa-check-circle" style="color:#28a745;"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm border reg-stat h-100" style="border-left:4px solid #dc2626 !important;">
+                <div class="card-body d-flex align-items-center justify-content-between py-3">
+                    <div>
+                        <div class="text-muted small">Rejected</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ rejected_count }}</div>
+                        <div style="font-size:.7rem;color:#dc2626;">Declined</div>
+                    </div>
+                    <div class="reg-stat-icon" style="background:#fef2f2;"><i class="fas fa-times-circle" style="color:#dc2626;"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cards Grid -->
+    <div class="row g-3 mb-4">
+        {% for reg in regularizations %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card shadow-sm reg-card h-100">
+                <div class="card-body pb-2">
+                    <!-- Header: avatar + name + date + status + actions -->
+                    <div class="d-flex align-items-start gap-2 mb-3">
+                        <div class="reg-avatar">
+                            {% if reg.employee.profile_image %}
+                            <img src="{{ reg.employee.profile_image.url }}" class="reg-avatar-img" alt="">
+                            {% else %}
+                            <div class="reg-avatar-placeholder"><i class="fas fa-user"></i></div>
+                            {% endif %}
+                            <span class="reg-online-dot {% if reg.status == 'approved' %}bg-success{% elif reg.status == 'rejected' %}bg-danger{% else %}bg-warning{% endif %}"></span>
+                        </div>
+                        <div class="flex-grow-1 min-width-0">
+                            <div class="fw-bold text-truncate" style="font-size:.9rem;color:#1a1a2e;">{{ reg.employee.full_name }}</div>
+                            <div class="d-flex align-items-center gap-2" style="font-size:.72rem;">
+                                <span class="text-muted">{{ reg.date }}</span>
+                                <span class="badge reg-status-{{ reg.status }}">
+                                    {% if reg.status == 'pending' %}Pending{% elif reg.status == 'approved' %}Approved{% else %}Rejected{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <!-- Action buttons -->
+                        <div class="d-flex gap-1 flex-shrink-0">
+                            {% if reg.status == 'pending' %}
+                            <button class="reg-btn-icon" style="color:#28a745;border-color:#d1fae5;" title="Approve" onclick="updateStatus({{ reg.id }}, 'approved')"><i class="fas fa-check fa-sm"></i></button>
+                            <button class="reg-btn-icon" style="color:#dc2626;border-color:#fecaca;" title="Reject" onclick="updateStatus({{ reg.id }}, 'rejected')"><i class="fas fa-times fa-sm"></i></button>
+                            {% endif %}
+                            <button class="reg-btn-icon" style="color:#3b82f6;border-color:#dbeafe;" title="View" onclick="viewRecord({{ reg.id }})"><i class="fas fa-eye fa-sm"></i></button>
+                            <button class="reg-btn-icon" style="color:#f59e0b;border-color:#fef3c7;" title="Edit" onclick="editRecord({{ reg.id }})"><i class="fas fa-edit fa-sm"></i></button>
+                            <button class="reg-btn-icon" style="color:#dc2626;border-color:#fecaca;" title="Delete" onclick="deleteRecord({{ reg.id }}, '{{ reg.employee.full_name|escapejs }}')"><i class="fas fa-trash fa-sm"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- Original → Requested times -->
+                    <div class="reg-times-section mb-3">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div>
+                                <div class="reg-time-label">Original</div>
+                                <div class="reg-time-row">
+                                    <i class="fas fa-clock" style="color:#dc2626;font-size:.7rem;"></i>
+                                    <span class="reg-time-val" style="color:#dc2626;">{% if reg.attendance_record and reg.attendance_record.clock_in %}{{ reg.attendance_record.clock_in|time:"H:i" }}{% else %}--:--{% endif %}</span>
+                                </div>
+                                <div class="reg-time-row">
+                                    <i class="fas fa-clock" style="color:#dc2626;font-size:.7rem;"></i>
+                                    <span class="reg-time-val" style="color:#dc2626;">{% if reg.attendance_record and reg.attendance_record.clock_out %}{{ reg.attendance_record.clock_out|time:"H:i" }}{% else %}--:--{% endif %}</span>
+                                </div>
+                            </div>
+                            <div class="text-center">
+                                <i class="fas fa-arrow-right text-muted" style="font-size:.85rem;"></i>
+                            </div>
+                            <div class="text-end">
+                                <div class="reg-time-label">Requested</div>
+                                <div class="reg-time-row justify-content-end">
+                                    <i class="fas fa-clock" style="color:#28a745;font-size:.7rem;"></i>
+                                    <span class="reg-time-val" style="color:#28a745;">{{ reg.clock_in|time:"H:i"|default:"--:--" }}</span>
+                                </div>
+                                <div class="reg-time-row justify-content-end">
+                                    <i class="fas fa-clock" style="color:#28a745;font-size:.7rem;"></i>
+                                    <span class="reg-time-val" style="color:#28a745;">{{ reg.clock_out|time:"H:i"|default:"--:--" }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reason -->
+                    <div class="mb-2" style="font-size:.78rem;">
+                        <div class="d-flex align-items-center gap-1 text-muted mb-1">
+                            <i class="far fa-comment-alt" style="font-size:.7rem;"></i>
+                            <span class="fw-semibold">Reason</span>
+                        </div>
+                        <div style="color:#374151;">{{ reg.reason|truncatechars:100 }}</div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div style="border-top:1px solid #f3f4f6;padding-top:6px;margin-top:6px;">
+                        <div class="d-flex align-items-center gap-1 text-muted" style="font-size:.72rem;">
+                            <i class="far fa-calendar-alt"></i>
+                            <span>Requested on : {{ reg.created_at|date:"Y-m-d" }}</span>
+                            {% if reg.is_draft %}
+                            <span class="badge bg-secondary ms-auto" style="font-size:.65rem;">Draft</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card shadow-sm border text-center py-5">
+                <div class="text-muted">
+                    <i class="fas fa-calendar-check fa-3x mb-3 d-block" style="color:#dee2e6;"></i>
+                    <div class="fw-semibold mb-1">No regularization requests found</div>
+                    <small>{% if search or status_filter %}No results. <a href="{% url 'hrm:attendance_regularization_list' %}">Clear filters</a>{% else %}<a href="#" onclick="openAddModal()">Create the first request</a>{% endif %}</small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if regularizations.has_other_pages %}
+    <div class="card shadow-sm border">
+        <div class="card-body d-flex justify-content-between align-items-center py-2">
+            <small class="text-muted">
+                Showing {{ regularizations.start_index }} to {{ regularizations.end_index }} of {{ regularizations.paginator.count }} requests
+            </small>
+            <div class="d-flex align-items-center gap-1">
+                {% if regularizations.has_previous %}
+                <a href="?page={{ regularizations.previous_page_number }}&search={{ search }}&status={{ status_filter }}&per_page={{ per_page }}" class="btn btn-sm btn-outline-secondary" style="border-radius:6px;">Previous</a>
+                {% else %}
+                <span class="text-muted small me-2">Previous</span>
+                {% endif %}
+                {% for i in regularizations.paginator.page_range %}
+                <a href="?page={{ i }}&search={{ search }}&status={{ status_filter }}&per_page={{ per_page }}"
+                   class="btn btn-sm {% if regularizations.number == i %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                   style="width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;">
+                   {{ i }}
+                </a>
+                {% endfor %}
+                {% if regularizations.has_next %}
+                <a href="?page={{ regularizations.next_page_number }}&search={{ search }}&status={{ status_filter }}&per_page={{ per_page }}" class="btn btn-sm btn-outline-secondary" style="border-radius:6px;">Next</a>
+                {% else %}
+                <span class="text-muted small ms-2">Next</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    {% if regularizations %}
+    <div class="card shadow-sm border">
+        <div class="card-body py-2">
+            <small class="text-muted">Showing 1 to {{ regularizations|length }} of {{ regularizations|length }} requests</small>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
 </div>
 
-<!-- Regularizations Table -->
-<div class="card">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>#</th>
-                        <th>Employee</th>
-                        <th>Date</th>
-                        <th>Clock In</th>
-                        <th>Clock Out</th>
-                        <th>Reason</th>
-                        <th>Status</th>
-                        <th class="text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for reg in regularizations %}
-                    <tr>
-                        <td>{{ forloop.counter }}</td>
-                        <td>
-                            <strong>{{ reg.employee.first_name }} {{ reg.employee.last_name }}</strong>
-                            <br><small class="text-muted">{{ reg.employee.employee_id|default:"" }}</small>
-                        </td>
-                        <td>{{ reg.date|date:"Y-m-d" }}</td>
-                        <td>{{ reg.clock_in|time:"H:i"|default:"—" }}</td>
-                        <td>{{ reg.clock_out|time:"H:i"|default:"—" }}</td>
-                        <td>{{ reg.reason|truncatechars:60 }}</td>
-                        <td>
-                            {% if reg.status == 'approved' %}
-                                <span class="badge bg-success">Approved</span>
-                            {% elif reg.status == 'rejected' %}
-                                <span class="badge bg-danger">Rejected</span>
-                            {% else %}
-                                <span class="badge bg-warning text-dark">Pending</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            {% if reg.status == 'pending' %}
-                            <button class="btn btn-sm btn-outline-success me-1" title="Approve" onclick="updateStatus({{ reg.id }}, 'approved')">
-                                <i class="fas fa-check"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger" title="Reject" onclick="updateStatus({{ reg.id }}, 'rejected')">
-                                <i class="fas fa-times"></i>
-                            </button>
-                            {% else %}
-                            <button class="btn btn-sm btn-outline-secondary" title="Reset to Pending" onclick="updateStatus({{ reg.id }}, 'pending')">
-                                <i class="fas fa-undo"></i>
-                            </button>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="8" class="text-center text-muted py-5">
-                            <i class="fas fa-calendar-check fa-2x mb-2 d-block"></i>
-                            No attendance regularization requests found.
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="regModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:540px;">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="reg-modal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="reg-modal-header-icon"><i class="fas fa-plus" id="regModalIcon"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="regModalTitle">Add New Regularization Request</div>
+                        <div class="text-white-50 small" id="regModalSubtitle">Fill in the details</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="getModal('regModal').hide()"></button>
+            </div>
+
+            <div id="regFormAlert" style="display:none;"></div>
+
+            <div class="modal-body p-0">
+                <!-- Employee -->
+                <div class="reg-section">
+                    <div class="mb-3">
+                        <label class="reg-label">Employee <span class="text-danger">*</span></label>
+                        <div class="reg-input-wrap">
+                            <i class="fas fa-user reg-input-icon"></i>
+                            <select class="form-select reg-field" id="regEmployee" onchange="loadAttendanceRecords()">
+                                <option value="">Select employee</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.id }}">{{ emp.full_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <span class="reg-field-error" id="regEmployeeErr"></span>
+                    </div>
+
+                    <!-- Attendance Record -->
+                    <div class="mb-3">
+                        <label class="reg-label">Attendance Record</label>
+                        <div class="reg-input-wrap">
+                            <i class="fas fa-calendar-alt reg-input-icon"></i>
+                            <select class="form-select reg-field" id="regRecord">
+                                <option value="">Select attendance record</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Requested Clock In -->
+                    <div class="mb-3">
+                        <label class="reg-label">Requested Clock In</label>
+                        <div class="reg-input-wrap">
+                            <input type="time" class="form-control reg-field" id="regClockIn" style="padding-left:12px;">
+                            <i class="fas fa-clock" style="position:absolute;right:12px;color:#9ca3af;font-size:.82rem;pointer-events:none;"></i>
+                        </div>
+                    </div>
+
+                    <!-- Requested Clock Out -->
+                    <div class="mb-3">
+                        <label class="reg-label">Requested Clock Out</label>
+                        <div class="reg-input-wrap">
+                            <input type="time" class="form-control reg-field" id="regClockOut" style="padding-left:12px;">
+                            <i class="fas fa-clock" style="position:absolute;right:12px;color:#9ca3af;font-size:.82rem;pointer-events:none;"></i>
+                        </div>
+                    </div>
+
+                    <!-- Reason -->
+                    <div class="mb-3">
+                        <label class="reg-label">Reason <span class="text-danger">*</span></label>
+                        <textarea class="form-control reg-field" id="regReason" rows="3" placeholder="Describe the reason for regularization..." style="padding-left:12px;"></textarea>
+                        <span class="reg-field-error" id="regReasonErr"></span>
+                    </div>
+
+                    <!-- Draft checkbox -->
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="regDraft" style="cursor:pointer;">
+                        <label class="form-check-label small fw-semibold" for="regDraft" style="cursor:pointer;">Save as Draft</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button type="button" class="btn btn-outline-secondary px-4" onclick="getModal('regModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-success px-4" id="regSaveBtn" onclick="saveRecord()">
+                    <span id="regNormalState"><i class="fas fa-save me-1"></i><span id="regSaveBtnText">Save</span></span>
+                    <span id="regLoadingState" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Saving...</span>
+                </button>
+            </div>
         </div>
     </div>
 </div>
 
+<!-- View Modal -->
+<div class="modal fade" id="viewModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:480px;">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="reg-modal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="reg-modal-header-icon"><i class="fas fa-eye"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="viewModalName">Request Details</div>
+                        <div class="text-white-50 small">Regularization Request Information</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="getModal('viewModal').hide()"></button>
+            </div>
+            <div class="modal-body p-4" id="viewModalBody"></div>
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" onclick="getModal('viewModal').hide()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div style="background:linear-gradient(135deg,#dc2626,#ef4444);padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff;">
+                        <i class="fas fa-trash fs-6"></i>
+                    </div>
+                    <span class="fw-bold text-white">Confirm Delete</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white btn-sm" onclick="getModal('deleteModal').hide()"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <p class="mb-1 text-muted small">You are about to delete the request for</p>
+                <p class="fw-bold" id="deleteRecordName" style="color:#1a1a2e;"></p>
+                <p class="text-muted small mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer border-top bg-light px-3 py-2 gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="getModal('deleteModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm flex-fill" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Stats */
+    .reg-stat { border-radius:12px; }
+    .reg-stat-icon { width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.2rem; flex-shrink:0; }
+
+    /* Cards */
+    .reg-card { transition:transform .2s,box-shadow .2s; border-radius:12px; border:1px solid #e9ecef; border-left:4px solid #f59e0b; }
+    .reg-card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,.10) !important; }
+    .reg-avatar { position:relative; flex-shrink:0; }
+    .reg-avatar-img { width:40px; height:40px; border-radius:50%; object-fit:cover; }
+    .reg-avatar-placeholder { width:40px; height:40px; border-radius:50%; background:#eef2ff; color:#6366f1; display:flex; align-items:center; justify-content:center; font-size:.85rem; }
+    .reg-online-dot { position:absolute; bottom:0; right:0; width:10px; height:10px; border-radius:50%; border:2px solid #fff; }
+    .reg-status-pending  { background:#fef3c7; color:#92400e; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .reg-status-approved { background:#ecfdf5; color:#059669; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .reg-status-rejected { background:#fef2f2; color:#dc2626; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .reg-btn-icon { width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#fff; transition:all .2s; cursor:pointer; font-size:.8rem; }
+    .reg-btn-icon:hover { filter:brightness(.92); }
+
+    /* Times section */
+    .reg-times-section { background:#f9fafb; border-radius:10px; padding:10px 14px; }
+    .reg-time-label { font-size:.7rem; font-weight:700; text-transform:uppercase; color:#6c757d; letter-spacing:.04em; margin-bottom:2px; }
+    .reg-time-row { display:flex; align-items:center; gap:5px; margin-bottom:1px; }
+    .reg-time-val { font-size:.82rem; font-weight:600; }
+
+    /* Modal */
+    .reg-modal-header { background:linear-gradient(135deg,#1a7a4a 0%,#28a745 100%); padding:1.2rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
+    .reg-modal-header-icon { width:46px; height:46px; border-radius:12px; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#fff; flex-shrink:0; }
+    .reg-section { padding:1.1rem 1.5rem; }
+    .reg-label { display:block; font-size:.82rem; font-weight:600; color:#374151; margin-bottom:.35rem; }
+    .reg-input-wrap { position:relative; display:flex; align-items:center; }
+    .reg-input-icon { position:absolute; left:11px; z-index:2; color:#9ca3af; font-size:.82rem; pointer-events:none; }
+    .reg-input-wrap .reg-field { padding-left:34px; }
+    textarea.reg-field { padding-left:12px !important; }
+    .reg-field { border:1.5px solid #e5e7eb; border-radius:8px; font-size:.875rem; background:#fafafa; transition:border-color .15s,box-shadow .15s,background .15s; width:100%; }
+    .reg-field:focus { border-color:#28a745 !important; box-shadow:0 0 0 3px rgba(40,167,69,.12) !important; background:#fff; outline:none; }
+    .reg-field.field-error { border-color:#dc3545 !important; background:#fff5f5 !important; animation:fieldShake .4s ease; }
+    .reg-field-error { display:none; font-size:.72rem; color:#dc3545; margin-top:3px; font-weight:500; }
+
+    /* Form Alert */
+    .reg-alert { margin:12px 20px 0; padding:10px 14px; border-radius:10px; display:flex; align-items:center; gap:10px; animation:slideDown .3s ease; }
+    .reg-alert-danger  { background:linear-gradient(135deg,#fef2f2,#fff5f5); border:1.5px solid #fecaca; }
+    .reg-alert-success { background:linear-gradient(135deg,#ecfdf5,#f0fff4); border:1.5px solid #a7f3d0; }
+    .reg-alert-icon { width:32px; height:32px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:.9rem; }
+    .reg-alert-danger .reg-alert-icon  { background:#fee2e2; color:#dc2626; }
+    .reg-alert-success .reg-alert-icon { background:#d1fae5; color:#059669; }
+    .reg-alert-title { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+    .reg-alert-danger  .reg-alert-title { color:#b91c1c; }
+    .reg-alert-success .reg-alert-title { color:#065f46; }
+    .reg-alert-msg { font-size:.82rem; color:#374151; margin-top:1px; }
+    .reg-alert-close { background:none; border:none; font-size:1.2rem; color:#9ca3af; cursor:pointer; margin-left:auto; line-height:1; }
+
+    /* Toast */
+    .page-toast { position:fixed; top:24px; right:24px; z-index:9999; animation:toastSlideIn .4s cubic-bezier(.21,1.02,.73,1); }
+    .page-toast-inner { min-width:340px; max-width:420px; background:#fff; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.15),0 4px 12px rgba(0,0,0,.08); overflow:hidden; display:flex; align-items:center; gap:14px; padding:16px 18px 16px 16px; position:relative; }
+    .page-toast-icon { width:42px; height:42px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:1.15rem; }
+    .page-toast.toast-success .page-toast-icon { background:linear-gradient(135deg,#d1fae5,#a7f3d0); color:#059669; }
+    .page-toast.toast-danger  .page-toast-icon { background:linear-gradient(135deg,#fee2e2,#fecaca); color:#dc2626; }
+    .page-toast.toast-info    .page-toast-icon { background:linear-gradient(135deg,#dbeafe,#bfdbfe); color:#2563eb; }
+    .page-toast-body { flex:1; min-width:0; }
+    .page-toast-title { font-size:.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+    .page-toast.toast-success .page-toast-title { color:#065f46; }
+    .page-toast.toast-danger  .page-toast-title { color:#991b1b; }
+    .page-toast.toast-info    .page-toast-title { color:#1e40af; }
+    .page-toast-msg { font-size:.85rem; color:#374151; line-height:1.4; }
+    .page-toast-close { background:none; border:none; font-size:1.4rem; color:#9ca3af; cursor:pointer; line-height:1; padding:0; margin-left:4px; align-self:flex-start; }
+    .page-toast-progress { position:absolute; bottom:0; left:0; right:0; height:3px; background:#f3f4f6; border-radius:0 0 14px 14px; overflow:hidden; }
+    .page-toast-progress-bar { height:100%; width:100%; border-radius:0 0 14px 14px; animation:toastCountdown 4s linear forwards; }
+    .page-toast.toast-success .page-toast-progress-bar { background:linear-gradient(90deg,#059669,#34d399); }
+    .page-toast.toast-danger  .page-toast-progress-bar { background:linear-gradient(90deg,#dc2626,#f87171); }
+
+    @keyframes toastSlideIn  { from{opacity:0;transform:translateX(60px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
+    @keyframes toastSlideOut { from{opacity:1;transform:translateX(0) scale(1)} to{opacity:0;transform:translateX(60px) scale(.95)} }
+    @keyframes toastCountdown { from{width:100%} to{width:0%} }
+    @keyframes slideDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes fieldShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)} 40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
+</style>
+
 {% block extra_js %}
 <script>
-    const CSRF = '{{ csrf_token }}';
+    var CSRF = '{{ csrf_token }}';
+    var editingId = null;
+    var deletingId = null;
+    var toastTimer = null;
+
+    /* Modal singleton */
+    function getModal(elId) {
+        var el = document.getElementById(elId);
+        return bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+    }
+
+    /* Toast */
+    function showPageToast(type, title, msg) {
+        var toast = document.getElementById('pageToast');
+        toast.className = 'page-toast toast-' + type;
+        document.getElementById('pageToastTitle').textContent = title;
+        document.getElementById('pageToastMsg').textContent = msg;
+        var icons = { success:'fa-check-circle', danger:'fa-exclamation-circle', info:'fa-info-circle' };
+        document.getElementById('pageToastIcon').innerHTML = '<i class="fas ' + (icons[type]||'fa-check-circle') + '"></i>';
+        toast.style.display = 'block';
+        toast.style.animation = 'toastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
+        var bar = document.getElementById('pageToastProgress');
+        bar.style.animation = 'none'; void bar.offsetWidth;
+        bar.style.animation = 'toastCountdown 4s linear forwards';
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function(){ dismissToast(); }, 4200);
+    }
+    function dismissToast() {
+        var toast = document.getElementById('pageToast');
+        toast.style.animation = 'toastSlideOut .3s ease forwards';
+        setTimeout(function(){ toast.style.display = 'none'; }, 300);
+        if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    }
+    (function(){
+        var t = sessionStorage.getItem('regToast');
+        if (t) { try { var d = JSON.parse(t); showPageToast(d.type, d.title, d.msg); } catch(e){} sessionStorage.removeItem('regToast'); }
+    })();
+
+    /* Form Alert */
+    function showFormAlert(type, title, msg) {
+        var html = '<div class="reg-alert reg-alert-' + type + '">'
+            + '<div class="reg-alert-icon"><i class="fas ' + (type==='danger'?'fa-exclamation-circle':'fa-check-circle') + '"></i></div>'
+            + '<div><div class="reg-alert-title">' + title + '</div><div class="reg-alert-msg">' + msg + '</div></div>'
+            + '<button class="reg-alert-close" onclick="hideFormAlert()">&times;</button></div>';
+        var el = document.getElementById('regFormAlert');
+        el.innerHTML = html; el.style.display = 'block';
+    }
+    function hideFormAlert() { var el = document.getElementById('regFormAlert'); el.style.display = 'none'; el.innerHTML = ''; }
+
+    /* Field helpers */
+    function markField(id, invalid, msg) {
+        var el = document.getElementById(id);
+        var err = document.getElementById(id + 'Err');
+        if (invalid) { el.classList.add('field-error'); if (err) { err.textContent = msg||''; err.style.display = 'block'; } }
+        else { el.classList.remove('field-error'); if (err) { err.textContent = ''; err.style.display = 'none'; } }
+    }
+    function clearErrors() { ['regEmployee','regReason'].forEach(function(id){ markField(id, false); }); }
+
+    ['regEmployee','regReason'].forEach(function(id){
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('input', function(){ markField(id, false); });
+    });
+
+    /* Save loading */
+    function setSaveLoading(on) {
+        document.getElementById('regNormalState').classList.toggle('d-none', on);
+        document.getElementById('regLoadingState').classList.toggle('d-none', !on);
+        document.getElementById('regSaveBtn').disabled = on;
+    }
+
+    /* Reset form */
+    function resetForm() {
+        document.getElementById('regEmployee').value = '';
+        document.getElementById('regEmployee').disabled = false;
+        document.getElementById('regRecord').innerHTML = '<option value="">Select attendance record</option>';
+        document.getElementById('regClockIn').value = '';
+        document.getElementById('regClockOut').value = '';
+        document.getElementById('regReason').value = '';
+        document.getElementById('regDraft').checked = false;
+        clearErrors(); hideFormAlert(); setSaveLoading(false);
+    }
+
+    /* Load attendance records for selected employee */
+    function loadAttendanceRecords(preSelect) {
+        var empId = document.getElementById('regEmployee').value;
+        var sel = document.getElementById('regRecord');
+        sel.innerHTML = '<option value="">Select attendance record</option>';
+        if (!empId) return;
+
+        fetch('/hrm/api/employee-attendance-records/?employee_id=' + empId)
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                (data.records || []).forEach(function(rec){
+                    var opt = document.createElement('option');
+                    opt.value = rec.id;
+                    opt.textContent = rec.date + ' | In: ' + rec.clock_in + ' Out: ' + rec.clock_out;
+                    sel.appendChild(opt);
+                });
+                if (preSelect) sel.value = preSelect;
+            });
+    }
+
+    /* ═══ CRUD ═══ */
+
+    function openAddModal() {
+        editingId = null;
+        document.getElementById('regModalTitle').textContent = 'Add New Regularization Request';
+        document.getElementById('regModalSubtitle').textContent = 'Fill in the details';
+        document.getElementById('regModalIcon').className = 'fas fa-plus';
+        document.getElementById('regSaveBtnText').textContent = 'Save';
+        resetForm();
+        getModal('regModal').show();
+    }
+
+    function editRecord(id) {
+        fetch('/hrm/attendance-regularizations/' + id + '/update/')
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                editingId = id;
+                document.getElementById('regModalTitle').textContent = 'Edit Regularization Request';
+                document.getElementById('regModalSubtitle').textContent = 'Update request for ' + data.employee_name;
+                document.getElementById('regModalIcon').className = 'fas fa-edit';
+                document.getElementById('regSaveBtnText').textContent = 'Update';
+                document.getElementById('regEmployee').value = data.employee_id;
+                document.getElementById('regEmployee').disabled = true;
+                loadAttendanceRecords(data.attendance_record_id);
+                document.getElementById('regClockIn').value = data.clock_in;
+                document.getElementById('regClockOut').value = data.clock_out;
+                document.getElementById('regReason').value = data.reason;
+                document.getElementById('regDraft').checked = data.is_draft;
+                clearErrors(); hideFormAlert(); setSaveLoading(false);
+                getModal('regModal').show();
+            })
+            .catch(function(){ showPageToast('danger', 'Error', 'Failed to load request data.'); });
+    }
+
+    function viewRecord(id) {
+        fetch('/hrm/attendance-regularizations/' + id + '/update/')
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                document.getElementById('viewModalName').textContent = data.employee_name;
+                var statusLabel = {pending:'Pending',approved:'Approved',rejected:'Rejected'}[data.status] || data.status;
+                var html = '<dl class="row mb-0">'
+                    + '<dt class="col-5 text-muted small">Employee</dt><dd class="col-7 fw-semibold">' + data.employee_name + '</dd>'
+                    + '<dt class="col-5 text-muted small">Date</dt><dd class="col-7 fw-semibold">' + data.date + '</dd>'
+                    + '<dt class="col-5 text-muted small">Original Clock In</dt><dd class="col-7 fw-semibold">' + (data.original_clock_in || '--:--') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Original Clock Out</dt><dd class="col-7 fw-semibold">' + (data.original_clock_out || '--:--') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Requested Clock In</dt><dd class="col-7 fw-semibold" style="color:#28a745;">' + (data.clock_in || '--:--') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Requested Clock Out</dt><dd class="col-7 fw-semibold" style="color:#28a745;">' + (data.clock_out || '--:--') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Status</dt><dd class="col-7"><span class="badge reg-status-' + data.status + '">' + statusLabel + '</span></dd>'
+                    + '<dt class="col-5 text-muted small">Reason</dt><dd class="col-7 small">' + data.reason + '</dd>'
+                    + '<dt class="col-5 text-muted small">Requested On</dt><dd class="col-7 fw-semibold">' + data.created_at + '</dd>'
+                    + (data.is_draft ? '<dt class="col-5 text-muted small">Draft</dt><dd class="col-7"><span class="badge bg-secondary">Yes</span></dd>' : '')
+                    + '</dl>';
+                document.getElementById('viewModalBody').innerHTML = html;
+                getModal('viewModal').show();
+            });
+    }
+
+    function saveRecord() {
+        var hasError = false;
+        var employee = document.getElementById('regEmployee').value;
+        if (!employee && !document.getElementById('regEmployee').disabled) {
+            markField('regEmployee', true, 'Employee is required.'); hasError = true;
+        }
+        var reason = document.getElementById('regReason').value.trim();
+        if (!reason) {
+            markField('regReason', true, 'Reason is required.'); hasError = true;
+        }
+        if (hasError) { showFormAlert('danger', 'Validation Error', 'Please fill in all required fields.'); return; }
+
+        setSaveLoading(true);
+        var url = editingId
+            ? '/hrm/attendance-regularizations/' + editingId + '/update/'
+            : '/hrm/attendance-regularizations/create/';
+
+        var body = {
+            clock_in: document.getElementById('regClockIn').value,
+            clock_out: document.getElementById('regClockOut').value,
+            reason: reason,
+            attendance_record: document.getElementById('regRecord').value,
+            is_draft: document.getElementById('regDraft').checked ? 'true' : 'false'
+        };
+        if (!editingId) { body.employee = employee; }
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(body)
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            setSaveLoading(false);
+            if (data.success) {
+                getModal('regModal').hide();
+                sessionStorage.setItem('regToast', JSON.stringify({
+                    type: 'success',
+                    title: editingId ? 'Request Updated' : 'Request Created',
+                    msg: editingId ? 'Regularization request updated.' : 'Regularization request created.'
+                }));
+                location.reload();
+            } else {
+                showFormAlert('danger', 'Error', data.error || 'Failed to save.');
+            }
+        })
+        .catch(function(){ setSaveLoading(false); showFormAlert('danger', 'Network Error', 'Could not connect.'); });
+    }
+
+    function deleteRecord(id, name) {
+        deletingId = id;
+        document.getElementById('deleteRecordName').textContent = name;
+        getModal('deleteModal').show();
+    }
+
+    function confirmDelete() {
+        fetch('/hrm/attendance-regularizations/' + deletingId + '/delete/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF }
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            if (data.success) {
+                getModal('deleteModal').hide();
+                sessionStorage.setItem('regToast', JSON.stringify({ type:'danger', title:'Request Deleted', msg:'The regularization request has been removed.' }));
+                location.reload();
+            }
+        });
+    }
 
     function updateStatus(id, status) {
-        const labels = {approved: 'Approve', rejected: 'Reject', pending: 'Reset to Pending'};
-        if (!confirm(`${labels[status]} this regularization request?`)) return;
+        var labels = {approved:'Approve', rejected:'Reject', pending:'Reset to Pending'};
+        if (!confirm(labels[status] + ' this regularization request?')) return;
 
-        fetch(`/hrm/attendance-regularizations/${id}/status/`, {
+        fetch('/hrm/attendance-regularizations/' + id + '/status/', {
             method: 'POST',
-            headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded'},
-            body: new URLSearchParams({status})
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({status: status})
         })
-        .then(r => r.json())
-        .then(data => { if (data.success) location.reload(); });
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            if (data.success) {
+                sessionStorage.setItem('regToast', JSON.stringify({
+                    type: status === 'approved' ? 'success' : (status === 'rejected' ? 'danger' : 'info'),
+                    title: 'Status Updated',
+                    msg: 'Request has been ' + status + '.'
+                }));
+                location.reload();
+            }
+        });
     }
 </script>
 {% endblock %}
