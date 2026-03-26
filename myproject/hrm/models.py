@@ -526,6 +526,44 @@ class AttendancePolicy(models.Model):
         return self.name
 
 
+class AttendanceRecord(models.Model):
+    STATUS_CHOICES = [
+        ('present', 'Present'),
+        ('absent', 'Absent'),
+        ('late', 'Late'),
+        ('half_day', 'Half Day'),
+        ('on_leave', 'On Leave'),
+    ]
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name='attendance_records'
+    )
+    date = models.DateField()
+    clock_in = models.TimeField(null=True, blank=True)
+    clock_out = models.TimeField(null=True, blank=True)
+    shift = models.ForeignKey(
+        'Shift', on_delete=models.SET_NULL, null=True, blank=True, related_name='attendance_records'
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='present')
+    working_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    overtime_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    is_holiday = models.BooleanField(default=False)
+    notes = models.TextField(blank=True, default='')
+    is_early_departure = models.BooleanField(default=False)
+    is_late_arrival = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date', '-created_at']
+        verbose_name = 'Attendance Record'
+        verbose_name_plural = 'Attendance Records'
+        unique_together = ['employee', 'date']
+
+    def __str__(self):
+        return f"{self.employee.full_name} - {self.date}"
+
+
 class AttendanceRegularization(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),

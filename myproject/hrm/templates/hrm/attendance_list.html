@@ -2,39 +2,791 @@
 {% block title %}Attendance Records - HRM{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fas fa-calendar-alt me-2"></i>Attendance Records</h2>
-        <button class="btn btn-primary" disabled><i class="fas fa-plus me-1"></i>Mark Attendance</button>
+<!-- Page Toast Notification -->
+<div id="pageToast" class="page-toast" style="display:none;">
+    <div class="page-toast-inner">
+        <div class="page-toast-icon" id="pageToastIcon"></div>
+        <div class="page-toast-body">
+            <div class="page-toast-title" id="pageToastTitle"></div>
+            <div class="page-toast-msg" id="pageToastMsg"></div>
+        </div>
+        <button class="page-toast-close" onclick="dismissToast()">&times;</button>
+        <div class="page-toast-progress"><div class="page-toast-progress-bar" id="pageToastProgress"></div></div>
     </div>
 </div>
 
-<div class="card">
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>#</th>
-                        <th>Employee</th>
-                        <th>Date</th>
-                        <th>Clock In</th>
-                        <th>Clock Out</th>
-                        <th>Working Hours</th>
-                        <th>Status</th>
-                        <th class="text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td colspan="8" class="text-center text-muted py-5">
-                            <i class="fas fa-calendar-alt fa-2x mb-2 d-block"></i>
-                            No attendance records found. Functionality will be added soon.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-0" style="color:#1a1a2e;">Attendance Records</h4>
+            <small class="text-muted">Track employee attendance and working hours</small>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary px-3" style="border-radius:8px;">
+                <i class="fas fa-download me-1"></i> Export
+            </button>
+            <button class="btn btn-outline-secondary px-3" style="border-radius:8px;">
+                <i class="fas fa-upload me-1"></i> Import
+            </button>
+            <button class="btn btn-success px-3" onclick="openAddModal()">
+                <i class="fas fa-plus me-1"></i> Add Record
+            </button>
+        </div>
+    </div>
+
+    <!-- Search & Filters -->
+    <div class="card mb-3 shadow-sm border">
+        <div class="card-body py-2 px-3">
+            <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="input-group" style="max-width:280px;">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search fa-sm"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-0" name="search" placeholder="Search..." value="{{ search }}" style="box-shadow:none;">
+                </div>
+                <button class="btn btn-success px-3" type="submit"><i class="fas fa-search me-1"></i>Search</button>
+                {% if search %}
+                <a href="{% url 'hrm:attendance_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i></a>
+                {% endif %}
+                <button type="button" class="btn btn-outline-secondary px-3" style="border-radius:8px;">
+                    <i class="fas fa-filter me-1"></i>Filters
+                </button>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <span class="text-muted small">Per Page:</span>
+                    <select class="form-select form-select-sm border" style="width:80px;" name="per_page" onchange="this.form.submit()">
+                        <option value="9" {% if per_page == 9 %}selected{% endif %}>9</option>
+                        <option value="12" {% if per_page == 12 %}selected{% endif %}>12</option>
+                        <option value="18" {% if per_page == 18 %}selected{% endif %}>18</option>
+                        <option value="24" {% if per_page == 24 %}selected{% endif %}>24</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg att-stat-col">
+            <div class="card shadow-sm border stat-card stat-card-total h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Total Records</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ total_records }}</div>
+                        <div class="text-muted" style="font-size:.7rem;">All time</div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#f0f0ff;">
+                        <i class="fas fa-calendar-alt" style="color:#6366f1;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg att-stat-col">
+            <div class="card shadow-sm border stat-card stat-card-present h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Present Today</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ present_today }}</div>
+                        <div style="font-size:.7rem;color:#28a745;">Today</div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#ecfdf5;">
+                        <i class="fas fa-check-circle" style="color:#28a745;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg att-stat-col">
+            <div class="card shadow-sm border stat-card stat-card-leave h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">On Leave Today</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ on_leave_today }}</div>
+                        <div style="font-size:.7rem;color:#28a745;">Today</div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#eef2ff;">
+                        <i class="fas fa-calendar-minus" style="color:#6366f1;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg att-stat-col">
+            <div class="card shadow-sm border stat-card stat-card-late h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Late Arrivals Today</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ late_today }}</div>
+                        <div style="font-size:.7rem;color:#28a745;">Today</div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#fff3e0;">
+                        <i class="fas fa-exclamation-triangle" style="color:#f59e0b;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg att-stat-col">
+            <div class="card shadow-sm border stat-card stat-card-overtime h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Overtime Today</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ overtime_today }}</div>
+                        <div style="font-size:.7rem;color:#28a745;">Today</div>
+                    </div>
+                    <div class="ms-auto stat-icon-circle" style="background:#ecfdf5;">
+                        <i class="fas fa-chart-line" style="color:#28a745;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Attendance Cards Grid -->
+    <div class="row g-3 mb-4">
+        {% for r in records %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card shadow-sm att-card h-100">
+                <div class="card-body pb-2">
+                    <!-- Header -->
+                    <div class="d-flex align-items-start gap-2 mb-2">
+                        <div class="att-avatar">
+                            {% if r.employee.profile_image %}
+                            <img src="{{ r.employee.profile_image.url }}" alt="" class="att-avatar-img">
+                            {% else %}
+                            <div class="att-avatar-placeholder">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            {% endif %}
+                            <span class="att-online-dot {% if r.status == 'present' %}bg-success{% elif r.status == 'on_leave' %}bg-primary{% elif r.status == 'late' %}bg-warning{% else %}bg-secondary{% endif %}"></span>
+                        </div>
+                        <div class="flex-grow-1 min-width-0">
+                            <div class="fw-bold text-truncate" style="font-size:.9rem;color:#1a1a2e;">{{ r.employee.full_name }}</div>
+                            <div class="d-flex align-items-center gap-2 flex-wrap" style="font-size:.72rem;">
+                                <span class="text-muted">{{ r.date }}</span>
+                                {% if r.shift %}
+                                <span class="badge att-shift-badge">{{ r.shift.name }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <span class="badge att-status-{{ r.status }} me-1">
+                            {% if r.status == 'present' %}Present{% elif r.status == 'absent' %}Absent{% elif r.status == 'late' %}Late{% elif r.status == 'half_day' %}Half Day{% elif r.status == 'on_leave' %}On Leave{% endif %}
+                        </span>
+                        <!-- Actions -->
+                        <div class="d-flex gap-1 flex-shrink-0">
+                            <button class="btn-icon text-primary" title="View" onclick="viewRecord({{ r.id }})"><i class="fas fa-eye fa-sm"></i></button>
+                            <button class="btn-icon text-warning" title="Edit" onclick="editRecord({{ r.id }})"><i class="fas fa-edit fa-sm"></i></button>
+                            <button class="btn-icon text-danger" title="Delete" onclick="deleteRecord({{ r.id }}, '{{ r.employee.full_name|escapejs }}')"><i class="fas fa-trash fa-sm"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- Clock In / Out / Duration -->
+                    <div class="d-flex align-items-center justify-content-between mt-2 mb-2">
+                        <div class="d-flex align-items-center gap-1">
+                            <i class="fas fa-sign-in-alt" style="color:#28a745;font-size:.75rem;"></i>
+                            <span class="fw-semibold" style="font-size:.85rem;">{{ r.clock_in|default:"--:--" }}</span>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-muted" style="font-size:.68rem;">Duration</div>
+                            <div class="fw-bold" style="font-size:.85rem;">{{ r.working_hours }}h</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-1">
+                            <span class="fw-semibold" style="font-size:.85rem;">{{ r.clock_out|default:"--:--" }}</span>
+                            <i class="fas fa-sign-out-alt" style="color:#6366f1;font-size:.75rem;"></i>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="att-progress-bar mb-2">
+                        {% if r.overtime_hours > 0 %}
+                        <div class="att-progress-fill att-progress-overtime" style="width:100%;"></div>
+                        {% elif r.is_early_departure %}
+                        <div class="att-progress-fill att-progress-early" style="width:85%;"></div>
+                        <div class="att-progress-fill att-progress-gap" style="width:15%;"></div>
+                        {% else %}
+                        <div class="att-progress-fill att-progress-normal" style="width:100%;"></div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Bottom Info -->
+                    <div class="d-flex justify-content-between align-items-center" style="min-height:20px;">
+                        <div>
+                            {% if r.is_early_departure %}
+                            <span style="font-size:.72rem;color:#f59e0b;"><i class="fas fa-exclamation-circle"></i> Early</span>
+                            {% endif %}
+                            {% if r.is_late_arrival %}
+                            <span style="font-size:.72rem;color:#ef4444;"><i class="fas fa-clock"></i> Late</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            {% if r.overtime_hours > 0 %}
+                            <span style="font-size:.72rem;color:#28a745;font-weight:600;">+{{ r.overtime_hours }}h OT</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if r.is_early_departure %}
+                    <div style="font-size:.72rem;color:#9ca3af;border-top:1px solid #f3f4f6;padding-top:4px;margin-top:4px;">Early departure</div>
+                    {% endif %}
+                    {% if r.notes %}
+                    <div style="font-size:.72rem;color:#9ca3af;border-top:1px solid #f3f4f6;padding-top:4px;margin-top:4px;">{{ r.notes|truncatechars:60 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card shadow-sm border text-center py-5">
+                <div class="text-muted">
+                    <i class="fas fa-calendar-alt fa-3x mb-3 d-block" style="color:#dee2e6;"></i>
+                    <div class="fw-semibold mb-1">No attendance records found</div>
+                    <small>{% if search %}No results for "{{ search }}". <a href="{% url 'hrm:attendance_list' %}">Clear search</a>{% else %}<a href="#" onclick="openAddModal()">Add the first record</a>{% endif %}</small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if records.has_other_pages %}
+    <div class="card shadow-sm border">
+        <div class="card-body d-flex justify-content-between align-items-center py-2">
+            <small class="text-muted">
+                Showing {{ records.start_index }} to {{ records.end_index }} of {{ records.paginator.count }} records
+            </small>
+            <div class="d-flex align-items-center gap-1">
+                {% if records.has_previous %}
+                <a href="?page={{ records.previous_page_number }}&search={{ search }}&per_page={{ per_page }}" class="btn btn-sm btn-outline-secondary" style="border-radius:6px;">Previous</a>
+                {% else %}
+                <span class="text-muted small me-2">Previous</span>
+                {% endif %}
+                {% for i in records.paginator.page_range %}
+                <a href="?page={{ i }}&search={{ search }}&per_page={{ per_page }}"
+                   class="btn btn-sm {% if records.number == i %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                   style="width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;">
+                   {{ i }}
+                </a>
+                {% endfor %}
+                {% if records.has_next %}
+                <a href="?page={{ records.next_page_number }}&search={{ search }}&per_page={{ per_page }}" class="btn btn-sm btn-outline-secondary" style="border-radius:6px;">Next</a>
+                {% else %}
+                <span class="text-muted small ms-2">Next</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    {% if records %}
+    <div class="card shadow-sm border">
+        <div class="card-body py-2">
+            <small class="text-muted">Showing 1 to {{ records|length }} of {{ records|length }} records</small>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+
+<!-- Add/Edit Record Modal -->
+<div class="modal fade" id="recordModal" tabindex="-1" aria-labelledby="recordModalTitle">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:560px;">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <!-- Header -->
+            <div class="att-modal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="modal-header-icon"><i class="fas fa-plus" id="recordModalIcon"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="recordModalTitle">Add New Attendance Record</div>
+                        <div class="text-white-50 small" id="recordModalSubtitle">Fill in the details to create a record</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="getModal('recordModal').hide()"></button>
+            </div>
+
+            <!-- Alert -->
+            <div id="recordFormAlert" style="display:none;"></div>
+
+            <div class="modal-body p-0">
+                <!-- Employee -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#6366f1;"></span> Employee Details
+                    </div>
+                    <div class="mb-3">
+                        <label class="pro-label">Employee <span class="text-danger">*</span></label>
+                        <div class="pro-input-wrap">
+                            <i class="fas fa-user pro-input-icon"></i>
+                            <select class="form-select pro-field" id="recordEmployee">
+                                <option value="">Select Employee</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.id }}">{{ emp.full_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <span class="field-error-text" id="recordEmployeeErr" style="display:none;"></span>
+                    </div>
+                    <div class="mb-0">
+                        <label class="pro-label">Date <span class="text-danger">*</span></label>
+                        <div class="pro-input-wrap">
+                            <i class="fas fa-calendar pro-input-icon"></i>
+                            <input type="date" class="form-control pro-field" id="recordDate">
+                        </div>
+                        <span class="field-error-text" id="recordDateErr" style="display:none;"></span>
+                    </div>
+                </div>
+
+                <!-- Time -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#28a745;"></span> Time Details
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="pro-label">Clock In Time <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap">
+                                <i class="fas fa-sign-in-alt pro-input-icon" style="color:#28a745;"></i>
+                                <input type="time" class="form-control pro-field" id="recordClockIn">
+                            </div>
+                            <span class="field-error-text" id="recordClockInErr" style="display:none;"></span>
+                        </div>
+                        <div class="col-6">
+                            <label class="pro-label">Clock Out Time <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap">
+                                <i class="fas fa-sign-out-alt pro-input-icon" style="color:#6366f1;"></i>
+                                <input type="time" class="form-control pro-field" id="recordClockOut">
+                            </div>
+                            <span class="field-error-text" id="recordClockOutErr" style="display:none;"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Additional -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#f59e0b;"></span> Additional
+                    </div>
+                    <div class="mb-3">
+                        <label class="pro-label">Shift</label>
+                        <div class="pro-input-wrap">
+                            <i class="fas fa-clock pro-input-icon"></i>
+                            <select class="form-select pro-field" id="recordShift">
+                                <option value="">No shift</option>
+                                {% for s in shifts %}
+                                <option value="{{ s.id }}">{{ s.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="recordHoliday" style="cursor:pointer;">
+                            <label class="form-check-label small fw-semibold" for="recordHoliday" style="cursor:pointer;">Holiday</label>
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="pro-label">Notes</label>
+                        <div class="pro-input-wrap">
+                            <textarea class="form-control pro-field" id="recordNotes" rows="2" placeholder="Optional notes..." style="padding-left:12px;"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button type="button" class="btn btn-outline-secondary px-4" onclick="getModal('recordModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-success px-4" id="recordSaveBtn" onclick="saveRecord()">
+                    <span id="recordNormalState"><i class="fas fa-save me-1"></i><span id="recordSaveBtnText">Save</span></span>
+                    <span id="recordLoadingState" class="d-none">
+                        <span class="spinner-border spinner-border-sm me-1"></span>Saving...
+                    </span>
+                </button>
+            </div>
         </div>
     </div>
 </div>
+
+<!-- View Record Modal -->
+<div class="modal fade" id="viewRecordModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:480px;">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="att-modal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="modal-header-icon"><i class="fas fa-eye"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="viewRecordName">Record Details</div>
+                        <div class="text-white-50 small">Attendance Record Information</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="getModal('viewRecordModal').hide()"></button>
+            </div>
+            <div class="modal-body p-4" id="viewRecordBody"></div>
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" onclick="getModal('viewRecordModal').hide()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div style="background:linear-gradient(135deg,#dc2626,#ef4444);padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff;">
+                        <i class="fas fa-trash fs-6"></i>
+                    </div>
+                    <span class="fw-bold text-white">Confirm Delete</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white btn-sm" onclick="getModal('deleteModal').hide()"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <p class="mb-1 text-muted small">You are about to delete the record for</p>
+                <p class="fw-bold" id="deleteRecordName" style="color:#1a1a2e;"></p>
+                <p class="text-muted small mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer border-top bg-light px-3 py-2 gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="getModal('deleteModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm flex-fill" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* ── Stat Cards ── */
+    .stat-card { border:1px solid #e9ecef; border-radius:12px; border-left:4px solid #dee2e6; overflow:hidden; }
+    .stat-card-total   { border-left-color:#6366f1; }
+    .stat-card-present { border-left-color:#28a745; }
+    .stat-card-leave   { border-left-color:#6366f1; }
+    .stat-card-late    { border-left-color:#f59e0b; }
+    .stat-card-overtime{ border-left-color:#28a745; }
+    .stat-icon-circle { width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.2rem; flex-shrink:0; }
+
+    /* ── Attendance Cards ── */
+    .att-card { transition:transform .2s,box-shadow .2s; border-radius:12px; border:1px solid #e9ecef; border-left:4px solid #28a745; }
+    .att-card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,.10) !important; }
+    .att-avatar { position:relative; flex-shrink:0; }
+    .att-avatar-img { width:40px; height:40px; border-radius:50%; object-fit:cover; }
+    .att-avatar-placeholder { width:40px; height:40px; border-radius:50%; background:#eef2ff; color:#6366f1; display:flex; align-items:center; justify-content:center; font-size:.85rem; }
+    .att-online-dot { position:absolute; bottom:0; right:0; width:10px; height:10px; border-radius:50%; border:2px solid #fff; }
+    .att-shift-badge { background:#eef2ff; color:#6366f1; font-size:.68rem; font-weight:600; border-radius:4px; padding:1px 6px; }
+    .att-status-present  { background:#ecfdf5; color:#059669; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .att-status-absent   { background:#fef2f2; color:#dc2626; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .att-status-late     { background:#fff7ed; color:#ea580c; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .att-status-half_day { background:#fffbeb; color:#d97706; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .att-status-on_leave { background:#eef2ff; color:#4f46e5; font-weight:600; font-size:.72rem; border-radius:20px; padding:2px 10px; }
+    .btn-icon { width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#fff; transition:all .2s; cursor:pointer; }
+    .btn-icon:hover { background:#f3f4f6; border-color:#d1d5db; }
+
+    /* Progress Bar */
+    .att-progress-bar { height:5px; border-radius:4px; background:#f1f5f9; display:flex; overflow:hidden; }
+    .att-progress-fill { height:100%; }
+    .att-progress-normal  { background:linear-gradient(90deg,#28a745,#34d399); }
+    .att-progress-overtime { background:linear-gradient(90deg,#28a745,#34d399); }
+    .att-progress-early   { background:linear-gradient(90deg,#3b82f6,#6366f1); }
+    .att-progress-gap     { background:#c7d2fe; }
+
+    /* ── Modal ── */
+    .att-modal-header { background:linear-gradient(135deg,#1a7a4a 0%,#28a745 100%); padding:1.2rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
+    .modal-header-icon { width:46px; height:46px; border-radius:12px; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#fff; flex-shrink:0; }
+    .modal-form-section { padding:1.1rem 1.5rem; border-bottom:1px solid #f1f3f5; }
+    .modal-section-label { display:flex; align-items:center; gap:8px; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:#6c757d; margin-bottom:.9rem; }
+    .section-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .pro-label { display:block; font-size:.82rem; font-weight:600; color:#374151; margin-bottom:.35rem; }
+    .pro-input-wrap { position:relative; display:flex; align-items:center; }
+    .pro-input-wrap .pro-input-icon { position:absolute; left:11px; z-index:2; color:#9ca3af; font-size:.82rem; pointer-events:none; }
+    .pro-input-wrap .pro-field { padding-left:34px; }
+    .pro-input-wrap textarea.pro-field { padding-left:12px; }
+    .pro-field { border:1.5px solid #e5e7eb; border-radius:8px; font-size:.875rem; background:#fafafa; transition:border-color .15s,box-shadow .15s,background .15s; width:100%; }
+    .pro-field:focus { border-color:#28a745 !important; box-shadow:0 0 0 3px rgba(40,167,69,.12) !important; background:#fff; outline:none; }
+    .pro-field.field-error { border-color:#dc3545 !important; background:#fff5f5 !important; animation:fieldShake .4s ease; }
+    .field-error-text { display:block; font-size:.72rem; color:#dc3545; margin-top:3px; font-weight:500; }
+
+    /* ── Form Alert ── */
+    .record-alert { margin:12px 20px 0; padding:10px 14px; border-radius:10px; display:flex; align-items:center; gap:10px; animation:slideDown .3s ease; }
+    .record-alert-danger { background:linear-gradient(135deg,#fef2f2,#fff5f5); border:1.5px solid #fecaca; }
+    .record-alert-success { background:linear-gradient(135deg,#ecfdf5,#f0fff4); border:1.5px solid #a7f3d0; }
+    .record-alert-icon { width:32px; height:32px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:.9rem; }
+    .record-alert-danger .record-alert-icon  { background:#fee2e2; color:#dc2626; }
+    .record-alert-success .record-alert-icon { background:#d1fae5; color:#059669; }
+    .record-alert-title { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+    .record-alert-danger .record-alert-title  { color:#b91c1c; }
+    .record-alert-success .record-alert-title { color:#065f46; }
+    .record-alert-msg { font-size:.82rem; color:#374151; margin-top:1px; }
+    .record-alert-close { background:none; border:none; font-size:1.2rem; color:#9ca3af; cursor:pointer; margin-left:auto; line-height:1; }
+    .record-alert-close:hover { color:#374151; }
+
+    /* ── Page Toast ── */
+    .page-toast { position:fixed; top:24px; right:24px; z-index:9999; animation:toastSlideIn .4s cubic-bezier(.21,1.02,.73,1); }
+    .page-toast-inner { min-width:340px; max-width:420px; background:#fff; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.15),0 4px 12px rgba(0,0,0,.08); overflow:hidden; display:flex; align-items:center; gap:14px; padding:16px 18px 16px 16px; position:relative; }
+    .page-toast-icon { width:42px; height:42px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:1.15rem; }
+    .page-toast.toast-success .page-toast-icon { background:linear-gradient(135deg,#d1fae5,#a7f3d0); color:#059669; }
+    .page-toast.toast-danger  .page-toast-icon { background:linear-gradient(135deg,#fee2e2,#fecaca); color:#dc2626; }
+    .page-toast.toast-info    .page-toast-icon { background:linear-gradient(135deg,#dbeafe,#bfdbfe); color:#2563eb; }
+    .page-toast-body { flex:1; min-width:0; }
+    .page-toast-title { font-size:.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+    .page-toast.toast-success .page-toast-title { color:#065f46; }
+    .page-toast.toast-danger  .page-toast-title { color:#991b1b; }
+    .page-toast.toast-info    .page-toast-title { color:#1e40af; }
+    .page-toast-msg { font-size:.85rem; color:#374151; line-height:1.4; }
+    .page-toast-close { background:none; border:none; font-size:1.4rem; color:#9ca3af; cursor:pointer; line-height:1; padding:0; margin-left:4px; align-self:flex-start; }
+    .page-toast-close:hover { color:#374151; }
+    .page-toast-progress { position:absolute; bottom:0; left:0; right:0; height:3px; background:#f3f4f6; border-radius:0 0 14px 14px; overflow:hidden; }
+    .page-toast-progress-bar { height:100%; width:100%; border-radius:0 0 14px 14px; animation:toastCountdown 4s linear forwards; }
+    .page-toast.toast-success .page-toast-progress-bar { background:linear-gradient(90deg,#059669,#34d399); }
+    .page-toast.toast-danger  .page-toast-progress-bar { background:linear-gradient(90deg,#dc2626,#f87171); }
+    .page-toast.toast-info    .page-toast-progress-bar { background:linear-gradient(90deg,#2563eb,#60a5fa); }
+
+    @keyframes toastSlideIn  { from{opacity:0;transform:translateX(60px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
+    @keyframes toastSlideOut { from{opacity:1;transform:translateX(0) scale(1)} to{opacity:0;transform:translateX(60px) scale(.95)} }
+    @keyframes toastCountdown { from{width:100%} to{width:0%} }
+    @keyframes slideDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes fieldShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)} 40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
+</style>
+
+{% block extra_js %}
+<script>
+    var CSRF = '{{ csrf_token }}';
+    var editingId = null;
+    var deletingId = null;
+    var toastTimer = null;
+
+    /* ── Modal singleton ── */
+    function getModal(elId) {
+        var el = document.getElementById(elId);
+        return bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+    }
+
+    /* ── Page Toast ── */
+    function showPageToast(type, title, msg) {
+        var toast = document.getElementById('pageToast');
+        toast.className = 'page-toast toast-' + type;
+        document.getElementById('pageToastTitle').textContent = title;
+        document.getElementById('pageToastMsg').textContent = msg;
+        var icons = { success:'fa-check-circle', danger:'fa-exclamation-circle', info:'fa-info-circle' };
+        document.getElementById('pageToastIcon').innerHTML = '<i class="fas ' + (icons[type] || 'fa-check-circle') + '"></i>';
+        toast.style.display = 'block';
+        toast.style.animation = 'toastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
+        var bar = document.getElementById('pageToastProgress');
+        bar.style.animation = 'none'; void bar.offsetWidth;
+        bar.style.animation = 'toastCountdown 4s linear forwards';
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function(){ dismissToast(); }, 4200);
+    }
+    function dismissToast() {
+        var toast = document.getElementById('pageToast');
+        toast.style.animation = 'toastSlideOut .3s ease forwards';
+        setTimeout(function(){ toast.style.display = 'none'; }, 300);
+        if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    }
+    (function(){
+        var t = sessionStorage.getItem('attToast');
+        if (t) { try { var d = JSON.parse(t); showPageToast(d.type, d.title, d.msg); } catch(e){} sessionStorage.removeItem('attToast'); }
+    })();
+
+    /* ── Form Alert ── */
+    function showFormAlert(type, title, msg) {
+        var html = '<div class="record-alert record-alert-' + type + '">'
+            + '<div class="record-alert-icon"><i class="fas ' + (type === 'danger' ? 'fa-exclamation-circle' : 'fa-check-circle') + '"></i></div>'
+            + '<div><div class="record-alert-title">' + title + '</div><div class="record-alert-msg">' + msg + '</div></div>'
+            + '<button class="record-alert-close" onclick="hideFormAlert()">&times;</button></div>';
+        var el = document.getElementById('recordFormAlert');
+        el.innerHTML = html; el.style.display = 'block';
+    }
+    function hideFormAlert() {
+        var el = document.getElementById('recordFormAlert');
+        el.style.display = 'none'; el.innerHTML = '';
+    }
+
+    /* ── Field helpers ── */
+    function markField(fieldId, invalid, msg) {
+        var el = document.getElementById(fieldId);
+        var errEl = document.getElementById(fieldId + 'Err');
+        if (invalid) {
+            el.classList.add('field-error');
+            if (errEl) { errEl.textContent = msg || ''; errEl.style.display = 'block'; }
+        } else {
+            el.classList.remove('field-error');
+            if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+        }
+    }
+    function clearAllFieldErrors() {
+        ['recordEmployee','recordDate','recordClockIn','recordClockOut'].forEach(function(id){ markField(id, false); });
+    }
+
+    /* Auto-clear on input */
+    ['recordEmployee','recordDate','recordClockIn','recordClockOut'].forEach(function(id){
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('change', function(){ markField(id, false); });
+    });
+
+    /* ── Save loading state ── */
+    function setSaveLoading(loading) {
+        document.getElementById('recordNormalState').classList.toggle('d-none', loading);
+        document.getElementById('recordLoadingState').classList.toggle('d-none', !loading);
+        document.getElementById('recordSaveBtn').disabled = loading;
+    }
+
+    /* ── Reset form ── */
+    function resetForm() {
+        document.getElementById('recordEmployee').value = '';
+        document.getElementById('recordDate').value = '';
+        document.getElementById('recordClockIn').value = '';
+        document.getElementById('recordClockOut').value = '';
+        document.getElementById('recordShift').value = '';
+        document.getElementById('recordHoliday').checked = false;
+        document.getElementById('recordNotes').value = '';
+        clearAllFieldErrors();
+        hideFormAlert();
+        setSaveLoading(false);
+    }
+
+    /* ══════════════════ CRUD ══════════════════ */
+
+    function openAddModal() {
+        editingId = null;
+        document.getElementById('recordModalTitle').textContent = 'Add New Attendance Record';
+        document.getElementById('recordModalSubtitle').textContent = 'Fill in the details to create a record';
+        document.getElementById('recordModalIcon').className = 'fas fa-plus';
+        document.getElementById('recordSaveBtnText').textContent = 'Save';
+        document.getElementById('recordEmployee').disabled = false;
+        document.getElementById('recordDate').disabled = false;
+        resetForm();
+        getModal('recordModal').show();
+    }
+
+    function editRecord(id) {
+        fetch('/hrm/attendance/' + id + '/update/')
+            .then(function(r){ if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function(data){
+                editingId = id;
+                document.getElementById('recordModalTitle').textContent = 'Edit Attendance Record';
+                document.getElementById('recordModalSubtitle').textContent = 'Update the record for ' + data.employee_name;
+                document.getElementById('recordModalIcon').className = 'fas fa-edit';
+                document.getElementById('recordSaveBtnText').textContent = 'Update';
+                document.getElementById('recordEmployee').value = data.employee_id;
+                document.getElementById('recordEmployee').disabled = true;
+                document.getElementById('recordDate').value = data.date;
+                document.getElementById('recordDate').disabled = true;
+                document.getElementById('recordClockIn').value = data.clock_in;
+                document.getElementById('recordClockOut').value = data.clock_out;
+                document.getElementById('recordShift').value = data.shift_id || '';
+                document.getElementById('recordHoliday').checked = data.is_holiday;
+                document.getElementById('recordNotes').value = data.notes || '';
+                clearAllFieldErrors();
+                hideFormAlert();
+                setSaveLoading(false);
+                getModal('recordModal').show();
+            })
+            .catch(function(){ showPageToast('danger', 'Error', 'Failed to load record data.'); });
+    }
+
+    function viewRecord(id) {
+        fetch('/hrm/attendance/' + id + '/update/')
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                document.getElementById('viewRecordName').textContent = data.employee_name;
+                var statusLabel = {present:'Present',absent:'Absent',late:'Late',half_day:'Half Day',on_leave:'On Leave'}[data.status] || data.status;
+                var html = '<dl class="row mb-0">'
+                    + '<dt class="col-5 text-muted small">Employee</dt><dd class="col-7 fw-semibold">' + data.employee_name + '</dd>'
+                    + '<dt class="col-5 text-muted small">Date</dt><dd class="col-7 fw-semibold">' + data.date + '</dd>'
+                    + '<dt class="col-5 text-muted small">Clock In</dt><dd class="col-7 fw-semibold">' + (data.clock_in || '--:--') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Clock Out</dt><dd class="col-7 fw-semibold">' + (data.clock_out || '--:--') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Working Hours</dt><dd class="col-7 fw-semibold">' + data.working_hours + 'h</dd>'
+                    + '<dt class="col-5 text-muted small">Overtime</dt><dd class="col-7 fw-semibold">' + data.overtime_hours + 'h</dd>'
+                    + '<dt class="col-5 text-muted small">Status</dt><dd class="col-7"><span class="badge att-status-' + data.status + '">' + statusLabel + '</span></dd>'
+                    + '<dt class="col-5 text-muted small">Shift</dt><dd class="col-7 fw-semibold">' + (data.shift_name || 'None') + '</dd>'
+                    + (data.is_late_arrival ? '<dt class="col-5 text-muted small">Late Arrival</dt><dd class="col-7"><span class="text-danger small">Yes</span></dd>' : '')
+                    + (data.is_early_departure ? '<dt class="col-5 text-muted small">Early Departure</dt><dd class="col-7"><span class="text-warning small">Yes</span></dd>' : '')
+                    + (data.notes ? '<dt class="col-5 text-muted small">Notes</dt><dd class="col-7 small">' + data.notes + '</dd>' : '')
+                    + '</dl>';
+                document.getElementById('viewRecordBody').innerHTML = html;
+                getModal('viewRecordModal').show();
+            });
+    }
+
+    function saveRecord() {
+        var hasError = false;
+
+        var employee = document.getElementById('recordEmployee').value;
+        if (!employee && !document.getElementById('recordEmployee').disabled) {
+            markField('recordEmployee', true, 'Employee is required.'); hasError = true;
+        }
+        var date = document.getElementById('recordDate').value;
+        if (!date && !document.getElementById('recordDate').disabled) {
+            markField('recordDate', true, 'Date is required.'); hasError = true;
+        }
+        var clockIn = document.getElementById('recordClockIn').value;
+        if (!clockIn) { markField('recordClockIn', true, 'Clock in time is required.'); hasError = true; }
+        var clockOut = document.getElementById('recordClockOut').value;
+        if (!clockOut) { markField('recordClockOut', true, 'Clock out time is required.'); hasError = true; }
+
+        if (hasError) {
+            showFormAlert('danger', 'Validation Error', 'Please fill in all required fields.');
+            return;
+        }
+
+        setSaveLoading(true);
+        var url = editingId
+            ? '/hrm/attendance/' + editingId + '/update/'
+            : '/hrm/attendance/create/';
+
+        var bodyParams = {
+            clock_in: clockIn,
+            clock_out: clockOut,
+            shift: document.getElementById('recordShift').value,
+            is_holiday: document.getElementById('recordHoliday').checked ? 'true' : 'false',
+            notes: document.getElementById('recordNotes').value.trim(),
+            status: 'present'
+        };
+        if (!editingId) {
+            bodyParams.employee = employee;
+            bodyParams.date = date;
+        }
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(bodyParams)
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            setSaveLoading(false);
+            if (data.success) {
+                getModal('recordModal').hide();
+                sessionStorage.setItem('attToast', JSON.stringify({
+                    type: 'success',
+                    title: editingId ? 'Record Updated' : 'Record Created',
+                    msg: editingId ? 'Attendance record updated successfully.' : 'Attendance record has been created.'
+                }));
+                location.reload();
+            } else {
+                showFormAlert('danger', 'Error', data.error || 'Failed to save record.');
+            }
+        })
+        .catch(function(){
+            setSaveLoading(false);
+            showFormAlert('danger', 'Network Error', 'Could not connect. Please try again.');
+        });
+    }
+
+    function deleteRecord(id, name) {
+        deletingId = id;
+        document.getElementById('deleteRecordName').textContent = name;
+        getModal('deleteModal').show();
+    }
+
+    function confirmDelete() {
+        fetch('/hrm/attendance/' + deletingId + '/delete/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF }
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            if (data.success) {
+                getModal('deleteModal').hide();
+                sessionStorage.setItem('attToast', JSON.stringify({
+                    type: 'danger', title: 'Record Deleted', msg: 'The attendance record has been removed.'
+                }));
+                location.reload();
+            }
+        });
+    }
+</script>
+{% endblock %}
 {% endblock %}

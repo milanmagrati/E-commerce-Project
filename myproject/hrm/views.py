@@ -2595,10 +2595,214 @@ def document_list(request):
 
 @login_required
 def attendance_list(request):
+    from .models import AttendanceRecord, Employee, Shift
+    from django.core.paginator import Paginator
+    from django.db.models import Q, Count, Sum
+    from datetime import date as dt_date
+
+    search = request.GET.get('search', '')
+    per_page = request.GET.get('per_page', 9)
+    try:
+        per_page = int(per_page)
+    except (ValueError, TypeError):
+        per_page = 9
+
+    qs = AttendanceRecord.objects.select_related('employee', 'shift').all()
+    if search:
+        qs = qs.filter(
+            Q(employee__full_name__icontains=search) |
+            Q(notes__icontains=search)
+        )
+
+    today = dt_date.today()
+    all_records = AttendanceRecord.objects.all()
+    total_records = all_records.count()
+    present_today = all_records.filter(date=today, status='present').count()
+    on_leave_today = all_records.filter(date=today, status='on_leave').count()
+    late_today = all_records.filter(date=today, is_late_arrival=True).count()
+    overtime_today = all_records.filter(date=today, overtime_hours__gt=0).count()
+
+    paginator = Paginator(qs, per_page)
+    page_num = request.GET.get('page', 1)
+    records = paginator.get_page(page_num)
+
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+    shifts = Shift.objects.filter(is_active=True).order_by('name')
+
     context = {
         'page_title': 'Attendance Records',
+        'records': records,
+        'search': search,
+        'per_page': per_page,
+        'total_records': total_records,
+        'present_today': present_today,
+        'on_leave_today': on_leave_today,
+        'late_today': late_today,
+        'overtime_today': overtime_today,
+        'employees': employees,
+        'shifts': shifts,
     }
     return render(request, 'hrm/attendance_list.html', context)
+
+
+@login_required
+def attendance_create(request):
+    from .models import AttendanceRecord, Employee, Shift, AttendancePolicy
+    from datetime import datetime, timedelta
+
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee')
+        date_val = request.POST.get('date')
+        clock_in = request.POST.get('clock_in') or None
+        clock_out = request.POST.get('clock_out') or None
+        shift_id = request.POST.get('shift') or None
+        is_holiday = request.POST.get('is_holiday') == 'true'
+        notes = request.POST.get('notes', '').strip()
+        status = request.POST.get('status', 'present')
+
+        if not employee_id or not date_val:
+            return JsonResponse({'success': False, 'error': 'Employee and date are required.'})
+
+        employee = Employee.objects.filter(pk=employee_id).first()
+        if not employee:
+            return JsonResponse({'success': False, 'error': 'Employee not found.'})
+
+        if AttendanceRecord.objects.filter(employee=employee, date=date_val).exists():
+            return JsonResponse({'success': False, 'error': 'Attendance already exists for this employee on this date.'})
+
+        shift = Shift.objects.filter(pk=shift_id).first() if shift_id else None
+
+        working_hours = 0
+        overtime_hours = 0
+        is_late = False
+        is_early = False
+
+        if clock_in and clock_out:
+            cin = datetime.strptime(clock_in, '%H:%M')
+            cout = datetime.strptime(clock_out, '%H:%M')
+            diff = (cout - cin).total_seconds() / 3600
+            if diff < 0:
+                diff += 24
+            working_hours = round(diff, 2)
+
+            if shift:
+                shift_hours = float(shift.working_hours)
+                if working_hours > shift_hours:
+                    overtime_hours = round(working_hours - shift_hours, 2)
+                shift_start = datetime.combine(datetime.today(), shift.start_time)
+                shift_end = datetime.combine(datetime.today(), shift.end_time)
+                cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in, '%H:%M').time())
+                cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out, '%H:%M').time())
+                grace = shift.grace_period or 0
+                if cin_full > shift_start + timedelta(minutes=grace):
+                    is_late = True
+                if cout_full < shift_end - timedelta(minutes=grace):
+                    is_early = True
+
+        record = AttendanceRecord.objects.create(
+            employee=employee,
+            date=date_val,
+            clock_in=clock_in if clock_in else None,
+            clock_out=clock_out if clock_out else None,
+            shift=shift,
+            status=status,
+            working_hours=working_hours,
+            overtime_hours=overtime_hours,
+            is_holiday=is_holiday,
+            notes=notes,
+            is_early_departure=is_early,
+            is_late_arrival=is_late,
+        )
+        return JsonResponse({'success': True, 'id': record.id})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def attendance_update(request, pk):
+    from .models import AttendanceRecord, Shift
+    from datetime import datetime, timedelta
+
+    record = get_object_or_404(AttendanceRecord, pk=pk)
+
+    if request.method == 'POST':
+        clock_in = request.POST.get('clock_in') or None
+        clock_out = request.POST.get('clock_out') or None
+        shift_id = request.POST.get('shift') or None
+        is_holiday = request.POST.get('is_holiday') == 'true'
+        notes = request.POST.get('notes', '').strip()
+        status = request.POST.get('status', 'present')
+
+        shift = Shift.objects.filter(pk=shift_id).first() if shift_id else record.shift
+
+        working_hours = 0
+        overtime_hours = 0
+        is_late = False
+        is_early = False
+
+        if clock_in and clock_out:
+            cin = datetime.strptime(clock_in, '%H:%M')
+            cout = datetime.strptime(clock_out, '%H:%M')
+            diff = (cout - cin).total_seconds() / 3600
+            if diff < 0:
+                diff += 24
+            working_hours = round(diff, 2)
+
+            if shift:
+                shift_hours = float(shift.working_hours)
+                if working_hours > shift_hours:
+                    overtime_hours = round(working_hours - shift_hours, 2)
+                shift_start = datetime.combine(datetime.today(), shift.start_time)
+                shift_end = datetime.combine(datetime.today(), shift.end_time)
+                cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in, '%H:%M').time())
+                cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out, '%H:%M').time())
+                grace = shift.grace_period or 0
+                if cin_full > shift_start + timedelta(minutes=grace):
+                    is_late = True
+                if cout_full < shift_end - timedelta(minutes=grace):
+                    is_early = True
+
+        record.clock_in = clock_in if clock_in else None
+        record.clock_out = clock_out if clock_out else None
+        record.shift = shift
+        record.status = status
+        record.working_hours = working_hours
+        record.overtime_hours = overtime_hours
+        record.is_holiday = is_holiday
+        record.notes = notes
+        record.is_early_departure = is_early
+        record.is_late_arrival = is_late
+        record.save()
+        return JsonResponse({'success': True})
+
+    # GET — return data for edit
+    data = {
+        'id': record.id,
+        'employee_id': record.employee_id,
+        'employee_name': record.employee.full_name,
+        'date': str(record.date),
+        'clock_in': record.clock_in.strftime('%H:%M') if record.clock_in else '',
+        'clock_out': record.clock_out.strftime('%H:%M') if record.clock_out else '',
+        'shift_id': record.shift_id,
+        'shift_name': record.shift.name if record.shift else '',
+        'status': record.status,
+        'working_hours': str(record.working_hours),
+        'overtime_hours': str(record.overtime_hours),
+        'is_holiday': record.is_holiday,
+        'notes': record.notes,
+        'is_early_departure': record.is_early_departure,
+        'is_late_arrival': record.is_late_arrival,
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def attendance_delete(request, pk):
+    from .models import AttendanceRecord
+    record = get_object_or_404(AttendanceRecord, pk=pk)
+    if request.method == 'POST':
+        record.delete()
+        return JsonResponse({'success': True})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
 
 
 # ==================== Shifts ====================
