@@ -247,6 +247,14 @@ LOGGING = {
             'backupCount': 3,
             'formatter': 'verbose',
         },
+        'adms_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(BASE_DIR, 'logs', 'adms.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'ncm': {
@@ -261,6 +269,11 @@ LOGGING = {
         },
         'sms': {
             'handlers': ['console', 'ncm_sms_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'hrm.adms': {
+            'handlers': ['console', 'adms_file'],
             'level': 'DEBUG',
             'propagate': False,
         },

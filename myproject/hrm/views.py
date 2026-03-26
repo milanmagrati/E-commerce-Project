@@ -3245,38 +3245,54 @@ def iclock_cdata(request):
     """
     from .models import ZKDevice, BiometricAttendance
 
-    sn = request.GET.get('SN', '').strip()
+    # Some firmware sends lowercase 'sn' — be case-insensitive
+    sn = (
+        request.GET.get('SN') or
+        request.GET.get('sn') or
+        request.GET.get('Sn') or
+        ''
+    ).strip()
     if not sn:
         return HttpResponse('Unknown device', content_type='text/plain')
 
     # Register / update device
     ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
-    device, _ = ZKDevice.objects.get_or_create(serial_number=sn)
-    device.ip_address = ip
-    device.last_seen = timezone.now()
-    device.save(update_fields=['ip_address', 'last_seen'])
+    try:
+        device, created = ZKDevice.objects.get_or_create(serial_number=sn)
+        device.ip_address = ip
+        device.last_seen = timezone.now()
+        device.save(update_fields=['ip_address', 'last_seen'])
+        adms_logger.info(f"[CDATA] SN={sn} IP={ip} {'REGISTERED' if created else 'SEEN'} method={request.method}")
+    except Exception as e:
+        adms_logger.error(f"[CDATA] Failed to register device SN={sn}: {e}")
+        return HttpResponse('OK', content_type='text/plain')
 
     if request.method == 'GET':
-        adms_logger.info(f"[CDATA GET] SN={sn} IP={ip} — handshake")
+        # Correct ZKTeco ADMS handshake response:
+        # - ATTLOGStamp / OPERATIONStamp (not the short 'Stamp' aliases)
+        # - Encrypt=0 is required by most ZKTeco firmware
+        # - TransFlag uses a space separator between log types
         options = (
             "GET OPTION FROM: {sn}\r\n"
-            "Stamp=9999\r\n"
-            "OpStamp=9999\r\n"
-            "PhotoStamp=9999\r\n"
+            "ATTLOGStamp=9999\r\n"
+            "OPERATIONStamp=9999\r\n"
             "ErrorDelay=60\r\n"
             "Delay=30\r\n"
             "TransTimes=00:00;14:05\r\n"
             "TransInterval=1\r\n"
-            "TransFlag=TransData AttLog\tOpLog\r\n"
+            "TransFlag=TransData AttLog OpLog\r\n"
             "TimeZone=0\r\n"
             "Realtime=1\r\n"
-            "ServerVer=2.4.1\r\n"
+            "Encrypt=0\r\n"
         ).format(sn=sn)
         return HttpResponse(options, content_type='text/plain')
 
     if request.method == 'POST':
         table = request.GET.get('table', '').strip()
-        body = request.body.decode('utf-8', errors='ignore').strip()
+        try:
+            body = request.body.decode('utf-8', errors='ignore').strip()
+        except Exception:
+            body = ''
         adms_logger.info(f"[CDATA POST] SN={sn} table={table} body_length={len(body)}")
 
         if table == 'ATTLOG' and body:
@@ -3293,7 +3309,11 @@ def iclock_cdata(request):
                     ts_str = parts[1].strip()
                     status = int(parts[2].strip()) if len(parts) > 2 else 0
                     verify = int(parts[3].strip()) if len(parts) > 3 else 0
-                    punch_dt = timezone.make_aware(datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S'))
+
+                    # Device sends local time; make_aware treats it as server timezone (Asia/Kathmandu)
+                    naive_dt = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S')
+                    from django.utils.timezone import is_aware
+                    punch_dt = naive_dt if is_aware(naive_dt) else timezone.make_aware(naive_dt)
 
                     BiometricAttendance.objects.get_or_create(
                         pin=pin,
@@ -3309,14 +3329,21 @@ def iclock_cdata(request):
                 except (ValueError, IndexError) as e:
                     adms_logger.warning(f"[CDATA POST] Parse error: {e} line='{line}'")
                     continue
+                except Exception as e:
+                    adms_logger.error(f"[CDATA POST] Unexpected error: {e} line='{line}'")
+                    continue
 
-            adms_logger.info(f"[CDATA POST] SN={sn} saved={saved} lines")
+            adms_logger.info(f"[CDATA POST] SN={sn} saved={saved} attendance lines")
 
-            # Update device transaction count
-            device.transaction_count = BiometricAttendance.objects.filter(device=device).count()
-            device.user_count = BiometricAttendance.objects.filter(device=device).values('pin').distinct().count()
-            device.save(update_fields=['transaction_count', 'user_count'])
+            # Update device transaction/user counts
+            try:
+                device.transaction_count = BiometricAttendance.objects.filter(device=device).count()
+                device.user_count = BiometricAttendance.objects.filter(device=device).values('pin').distinct().count()
+                device.save(update_fields=['transaction_count', 'user_count'])
+            except Exception as e:
+                adms_logger.error(f"[CDATA POST] Failed to update counts for SN={sn}: {e}")
 
+        # Always return OK so the device doesn't mark the server as down
         return HttpResponse('OK', content_type='text/plain')
 
     return HttpResponse('OK', content_type='text/plain')
@@ -3327,14 +3354,22 @@ def iclock_getrequest(request):
     """GET /iclock/getrequest?SN=XXXX → heartbeat, update last_seen"""
     from .models import ZKDevice
 
-    sn = request.GET.get('SN', '').strip()
+    sn = (
+        request.GET.get('SN') or
+        request.GET.get('sn') or
+        request.GET.get('Sn') or
+        ''
+    ).strip()
     if sn:
         ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
-        device, _ = ZKDevice.objects.get_or_create(serial_number=sn)
-        device.ip_address = ip
-        device.last_seen = timezone.now()
-        device.save(update_fields=['ip_address', 'last_seen'])
-        adms_logger.debug(f"[HEARTBEAT] SN={sn} IP={ip}")
+        try:
+            device, created = ZKDevice.objects.get_or_create(serial_number=sn)
+            device.ip_address = ip
+            device.last_seen = timezone.now()
+            device.save(update_fields=['ip_address', 'last_seen'])
+            adms_logger.debug(f"[HEARTBEAT] SN={sn} IP={ip} {'REGISTERED' if created else 'SEEN'}")
+        except Exception as e:
+            adms_logger.error(f"[HEARTBEAT] Failed to update device SN={sn}: {e}")
 
     return HttpResponse('OK', content_type='text/plain')
 
@@ -3397,13 +3432,11 @@ def biometric_attendance(request):
             base_qs = base_qs.filter(pin__icontains=search_q)
 
     # Subquery: get the device serial_number from the earliest punch per (pin, date) group
+    # Uses timestamp__date= directly to avoid ORM ambiguity with the outer 'punch_date' annotation
     first_device_sq = BiometricAttendance.objects.filter(
         pin=OuterRef('pin'),
         device__isnull=False,
-    ).annotate(
-        punch_date=TruncDate('timestamp')
-    ).filter(
-        punch_date=OuterRef('punch_date')
+        timestamp__date=OuterRef('punch_date'),
     ).order_by('timestamp').values('device__serial_number')[:1]
 
     qs = base_qs.annotate(
@@ -3501,10 +3534,9 @@ def biometric_attendance_view(request, pin, date_str):
             'raw_log': p.raw_log,
         })
 
-    first_punch = punches.first()
-    last_punch = punches.last()
-    clock_in = first_punch.timestamp.astimezone(local_tz).strftime('%H:%M') if first_punch else ''
-    clock_out = last_punch.timestamp.astimezone(local_tz).strftime('%H:%M') if punches.count() > 1 else ''
+    punch_count = len(punch_list)
+    clock_in = punch_list[0]['time'][:5] if punch_count > 0 else ''
+    clock_out = punch_list[-1]['time'][:5] if punch_count > 1 else ''
 
     return JsonResponse({
         'success': True,
@@ -3514,7 +3546,7 @@ def biometric_attendance_view(request, pin, date_str):
             'date': date_str,
             'clock_in': clock_in,
             'clock_out': clock_out,
-            'total_entries': punches.count(),
+            'total_entries': punch_count,
         },
         'punches': punch_list,
     })
@@ -3666,7 +3698,6 @@ def zekto_device_update(request, pk):
     except ZKDevice.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Device not found.'})
 
-    import json
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
