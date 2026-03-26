@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from hrm.views import iclock_cdata, iclock_getrequest, iclock_devicecmd
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -27,6 +28,11 @@ urlpatterns = [
     path('pnd/', include('pick_and_drop.urls')),
     path('chat/', include('chat.urls')),
     path('hrm/', include('hrm.urls')),
+
+    # ZKTeco ADMS endpoints at root level (device pushes to /iclock/...)
+    path('iclock/cdata', iclock_cdata, name='iclock_cdata_root'),
+    path('iclock/getrequest', iclock_getrequest, name='iclock_getrequest_root'),
+    path('iclock/devicecmd', iclock_devicecmd, name='iclock_devicecmd_root'),
 
 ] 
 # Serve media files in development

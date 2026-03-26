@@ -600,63 +600,48 @@ class AttendanceRegularization(models.Model):
         return f"{self.employee} - {self.date}"
 
 
-# ==================== ZKTeco / Biometric Settings ====================
+# ==================== ZKTeco ADMS Device ====================
 
-class ZektoSetting(models.Model):
-    api_url = models.URLField(max_length=500, help_text='ZKTeco BioTime API base URL')
-    username = models.CharField(max_length=255)
-    password = models.CharField(max_length=255)
-    auth_token = models.TextField(blank=True, null=True)
+class ZKDevice(models.Model):
+    serial_number = models.CharField(max_length=100, unique=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    last_seen = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = 'Zekto Setting'
-        verbose_name_plural = 'Zekto Settings'
+        ordering = ['-last_seen']
+        verbose_name = 'ZK Device'
+        verbose_name_plural = 'ZK Devices'
 
     def __str__(self):
-        return f"ZKTeco Settings ({self.api_url})"
-
-    def save(self, *args, **kwargs):
-        # Singleton: ensure only one record exists
-        if not self.pk and ZektoSetting.objects.exists():
-            existing = ZektoSetting.objects.first()
-            self.pk = existing.pk
-        super().save(*args, **kwargs)
-
-    @classmethod
-    def load(cls):
-        obj, _ = cls.objects.get_or_create(
-            pk=1,
-            defaults={'api_url': '', 'username': '', 'password': ''}
-        )
-        return obj
+        return f"{self.serial_number} ({self.ip_address or 'Unknown IP'})"
 
 
-# ==================== Biometric Attendance ====================
+# ==================== Biometric Attendance (Raw Punch Log) ====================
 
 class BiometricAttendance(models.Model):
-    SOURCE_CHOICES = [
-        ('device', 'Device'),
-        ('manual', 'Manual'),
-        ('import', 'Import'),
+    STATUS_CHOICES = [
+        (0, 'Check-In'),
+        (1, 'Check-Out'),
+        (2, 'Break-Out'),
+        (3, 'Break-In'),
+        (4, 'OT-In'),
+        (5, 'OT-Out'),
     ]
 
-    employee_code = models.CharField(max_length=50)
-    employee_name = models.CharField(max_length=255)
-    date = models.DateField()
-    clock_in = models.TimeField(null=True, blank=True)
-    clock_out = models.TimeField(null=True, blank=True)
-    total_entries = models.PositiveIntegerField(default=0)
-    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='device')
+    device = models.ForeignKey(ZKDevice, on_delete=models.SET_NULL, null=True, blank=True, related_name='punches')
+    pin = models.CharField(max_length=50, help_text='Employee code from device')
+    timestamp = models.DateTimeField()
+    status = models.IntegerField(choices=STATUS_CHOICES, default=0)
+    verify_mode = models.IntegerField(default=0)
+    raw_log = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-date']
-        unique_together = ['employee_code', 'date']
+        ordering = ['-timestamp']
+        unique_together = ['pin', 'timestamp']
         verbose_name = 'Biometric Attendance'
         verbose_name_plural = 'Biometric Attendances'
 
     def __str__(self):
-        return f"{self.employee_name} ({self.employee_code}) - {self.date}"
+        return f"PIN {self.pin} @ {self.timestamp}"

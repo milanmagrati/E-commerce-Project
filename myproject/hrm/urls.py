@@ -135,16 +135,20 @@ urlpatterns = [
     path('attendance-regularizations/<int:pk>/status/', views.attendance_regularization_update_status, name='attendance_regularization_update_status'),
     path('api/employee-attendance-records/', views.employee_attendance_records_api, name='employee_attendance_records_api'),
 
-    # Biometric Attendance
+    # ZKTeco ADMS Push Endpoints (device pushes data here)
+    path('iclock/cdata', views.iclock_cdata, name='iclock_cdata'),
+    path('iclock/getrequest', views.iclock_getrequest, name='iclock_getrequest'),
+    path('iclock/devicecmd', views.iclock_devicecmd, name='iclock_devicecmd'),
+
+    # Biometric Attendance (admin views)
     path('biometric-attendance/', views.biometric_attendance, name='biometric_attendance'),
-    path('biometric-attendance/<int:pk>/view/', views.biometric_attendance_view, name='biometric_attendance_view'),
-    path('biometric-attendance/<int:pk>/delete/', views.biometric_attendance_delete, name='biometric_attendance_delete'),
-    path('biometric-attendance/<int:pk>/sync/', views.biometric_sync_single, name='biometric_sync_single'),
+    path('biometric-attendance/<str:pin>/<str:date_str>/view/', views.biometric_attendance_view, name='biometric_attendance_view'),
+    path('biometric-attendance/<str:pin>/<str:date_str>/delete/', views.biometric_attendance_delete, name='biometric_attendance_delete'),
+    path('biometric-attendance/<str:pin>/<str:date_str>/sync/', views.biometric_sync_single, name='biometric_sync_single'),
     path('biometric-attendance/sync-all/', views.biometric_sync_all, name='biometric_sync_all'),
 
-    # Zekto Settings
+    # Zekto Settings (device dashboard)
     path('settings/zekto/', views.zekto_settings, name='zekto_settings'),
-    path('settings/zekto/generate-token/', views.zekto_generate_token, name='zekto_generate_token'),
 
     # Payroll Management
     path('payroll/', views.payroll_management, name='payroll_management'),

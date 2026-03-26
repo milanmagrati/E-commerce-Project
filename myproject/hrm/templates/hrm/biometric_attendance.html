@@ -111,12 +111,6 @@
   .bio-modal-del-header .modal-title { color: #fff; font-weight: 700; font-size: 1rem; }
   .bio-modal-del-header .btn-close { filter: invert(1); }
 
-  /* source badge */
-  .src-badge { font-size: .72rem; font-weight: 600; padding: .2rem .55rem; border-radius: 20px; }
-  .src-device { background: #dbeafe; color: #1d4ed8; }
-  .src-manual { background: #fef3c7; color: #92400e; }
-  .src-import { background: #d1fae5; color: #065f46; }
-
   /* view detail rows */
   .bio-detail-row { display: flex; align-items: center; padding: .65rem 0; border-bottom: 1px solid #f3f4f6; font-size: .9rem; }
   .bio-detail-row:last-child { border-bottom: none; }
@@ -141,6 +135,8 @@
   .punch-table { width: 100%; font-size: .85rem; margin-top: .75rem; }
   .punch-table thead th { background: #f9fafb; color: #6b7280; font-size: .75rem; text-transform: uppercase; padding: .5rem .6rem; border-bottom: 1px solid #e5e7eb; }
   .punch-table tbody td { padding: .5rem .6rem; border-bottom: 1px solid #f3f4f6; color: #374151; }
+
+  .bio-device-label { font-family: monospace; font-size: .82rem; color: #6b7280; }
 </style>
 {% endblock %}
 
@@ -172,10 +168,10 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
     <h2 class="bio-page-title mb-1"><i class="fas fa-fingerprint me-2 text-primary"></i>Biometric Attendance</h2>
-    <p class="text-muted mb-0" style="font-size:.9rem;">Manage biometric device attendance records synced from ZKTeco</p>
+    <p class="text-muted mb-0" style="font-size:.9rem;">Attendance records pushed from ZKTeco ADMS devices</p>
   </div>
   <button class="bio-sync-btn" id="globalSyncBtn" onclick="syncAll()">
-    <i class="fas fa-sync-alt"></i> Sync from ZKTeco
+    <i class="fas fa-sync-alt"></i> Refresh Data
   </button>
 </div>
 
@@ -184,16 +180,13 @@
   <div class="card-body py-3">
     <form method="get" id="searchForm">
       <div class="d-flex flex-wrap align-items-center gap-2">
-        <!-- Search -->
         <div class="d-flex flex-grow-1" style="max-width:380px;">
-          <input type="text" name="q" class="bio-search-input form-control" placeholder="Search by name or employee code..." value="{{ search_q }}">
+          <input type="text" name="q" class="bio-search-input form-control" placeholder="Search by PIN or employee name..." value="{{ search_q }}">
           <button type="submit" class="bio-search-btn"><i class="fas fa-search"></i> Search</button>
         </div>
-        <!-- Filters toggle -->
         <button type="button" class="bio-filter-btn" onclick="toggleFilters()">
           <i class="fas fa-filter"></i> Filters{% if date_from or date_to %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}
         </button>
-        <!-- Per page -->
         <div class="ms-auto d-flex align-items-center gap-2">
           <span class="text-muted" style="font-size:.88rem; white-space:nowrap;">Per Page:</span>
           <select name="per_page" class="bio-per-page-select" onchange="this.form.submit()">
@@ -202,12 +195,10 @@
             {% endfor %}
           </select>
         </div>
-        <!-- Preserve other params -->
         {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
         {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
       </div>
 
-      <!-- Filter panel (collapsible) -->
       <div id="filterPanel" class="bio-filter-panel mt-3" style="display:{% if date_from or date_to %}flex{% else %}none{% endif %}; flex-wrap:wrap; gap:1rem; align-items:flex-end;">
         <div>
           <label class="form-label mb-1" style="font-size:.82rem; color:#6b7280; font-weight:600;">Date From</label>
@@ -221,7 +212,6 @@
           <button type="submit" class="btn btn-sm btn-primary" style="border-radius:8px; padding:.4rem .9rem;">Apply</button>
           <a href="{% url 'hrm:biometric_attendance' %}" class="btn btn-sm btn-outline-secondary" style="border-radius:8px; padding:.4rem .9rem;">Clear</a>
         </div>
-        <!-- Preserve per_page -->
         <input type="hidden" name="per_page" value="{{ per_page }}">
       </div>
     </form>
@@ -232,7 +222,7 @@
 <div class="card bio-card">
   <div class="card-header">
     <div class="bio-device-icon"><i class="fas fa-clock"></i></div>
-    <span>Biometric attendance data from ZKTeco device</span>
+    <span>Aggregated attendance from raw device punches</span>
     <span class="ms-auto text-muted" style="font-size:.82rem;">{{ total_records }} total record{{ total_records|pluralize }}</span>
   </div>
 
@@ -241,13 +231,13 @@
       <thead>
         <tr>
           <th>#</th>
-          <th>Employee Code</th>
+          <th>Employee Code (PIN)</th>
           <th>Employee Name</th>
           <th>Date</th>
           <th>Clock In</th>
           <th>Clock Out</th>
           <th>Total Entries</th>
-          <th>Source</th>
+          <th>Device</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -255,7 +245,7 @@
         {% for record in page_obj %}
         <tr>
           <td class="bio-row-num">{{ forloop.counter0|add:page_obj.start_index }}</td>
-          <td class="bio-emp-code">{{ record.employee_code }}</td>
+          <td class="bio-emp-code">{{ record.pin }}</td>
           <td class="bio-emp-name">{{ record.employee_name }}</td>
           <td class="bio-date">{{ record.date|date:"Y-m-d" }}</td>
           <td>
@@ -273,18 +263,16 @@
             {% endif %}
           </td>
           <td><span class="bio-entries-badge">{{ record.total_entries }}</span></td>
-          <td>
-            <span class="src-badge src-{{ record.source }}">{{ record.source|capfirst }}</span>
-          </td>
+          <td><span class="bio-device-label">{{ record.device_sn }}</span></td>
           <td>
             <div class="d-flex gap-1">
-              <button class="bio-btn-icon bio-btn-view" title="View Punches" onclick="viewRecord({{ record.pk }})">
+              <button class="bio-btn-icon bio-btn-view" title="View raw punches" onclick="viewRecord('{{ record.pin }}', '{{ record.date|date:"Y-m-d" }}')">
                 <i class="fas fa-eye"></i>
               </button>
-              <button class="bio-btn-icon bio-btn-sync" title="Re-sync" onclick="syncSingle(this, {{ record.pk }})">
+              <button class="bio-btn-icon bio-btn-sync" title="Re-sync" onclick="syncSingle(this, '{{ record.pin }}', '{{ record.date|date:"Y-m-d" }}')">
                 <i class="fas fa-sync-alt"></i>
               </button>
-              <button class="bio-btn-icon bio-btn-delete" title="Delete" onclick="openDeleteModal({{ record.pk }}, '{{ record.employee_name|escapejs }}', '{{ record.date }}')">
+              <button class="bio-btn-icon bio-btn-delete" title="Delete" onclick="openDeleteModal('{{ record.pin }}', '{{ record.employee_name|escapejs }}', '{{ record.date|date:"Y-m-d" }}')">
                 <i class="fas fa-trash"></i>
               </button>
             </div>
@@ -296,6 +284,7 @@
             <div class="bio-empty">
               <i class="fas fa-fingerprint d-block"></i>
               <p class="mb-0">No biometric records found{% if search_q or date_from or date_to %} matching your filters{% endif %}.</p>
+              <p class="mb-0 mt-1" style="font-size:.82rem;">Records appear here automatically when a ZKTeco device pushes attendance data.</p>
               {% if search_q or date_from or date_to %}
               <a href="{% url 'hrm:biometric_attendance' %}" class="btn btn-sm btn-outline-primary mt-3" style="border-radius:8px;">Clear Filters</a>
               {% endif %}
@@ -310,7 +299,7 @@
   {% if page_obj.has_other_pages %}
   <div class="card-footer bg-white border-top d-flex justify-content-between align-items-center flex-wrap gap-2 px-4 py-3">
     <small class="text-muted">
-      Showing <strong>{{ page_obj.start_index }}</strong> to <strong>{{ page_obj.end_index }}</strong> of <strong>{{ total_records }}</strong> biometric record{{ total_records|pluralize }}
+      Showing <strong>{{ page_obj.start_index }}</strong> to <strong>{{ page_obj.end_index }}</strong> of <strong>{{ total_records }}</strong> record{{ total_records|pluralize }}
     </small>
     <nav>
       <ul class="pagination mb-0 bio-pagination">
@@ -345,7 +334,7 @@
   {% else %}
   <div class="card-footer bg-white border-top px-4 py-3">
     <small class="text-muted">
-      Showing <strong>{{ page_obj.start_index }}</strong> to <strong>{{ page_obj.end_index }}</strong> of <strong>{{ total_records }}</strong> biometric record{{ total_records|pluralize }}
+      Showing <strong>{{ page_obj.start_index }}</strong> to <strong>{{ page_obj.end_index }}</strong> of <strong>{{ total_records }}</strong> record{{ total_records|pluralize }}
     </small>
   </div>
   {% endif %}
@@ -357,7 +346,7 @@
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content border-0 shadow-lg" style="border-radius:16px; overflow:hidden;">
       <div class="modal-header bio-modal-header">
-        <h5 class="modal-title"><i class="fas fa-eye me-2"></i>Biometric Record Details</h5>
+        <h5 class="modal-title"><i class="fas fa-eye me-2"></i>Raw Punch Entries</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body p-4" id="bioViewBody">
@@ -376,7 +365,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg" style="border-radius:16px; overflow:hidden;">
       <div class="modal-header bio-modal-del-header">
-        <h5 class="modal-title" style="background:none; padding:0; border-radius:0; color:#fff;"><i class="fas fa-trash me-2"></i>Delete Record</h5>
+        <h5 class="modal-title" style="background:none; padding:0; border-radius:0; color:#fff;"><i class="fas fa-trash me-2"></i>Delete Records</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body p-4 text-center">
@@ -385,8 +374,8 @@
         </div>
         <h6 class="fw-bold mb-2">Are you sure?</h6>
         <p class="text-muted mb-0" style="font-size:.9rem;">
-          You are about to delete the biometric record for<br>
-          <strong id="bioDeleteName"></strong> on <strong id="bioDeleteDate"></strong>.<br>
+          Delete all raw punch records for<br>
+          <strong id="bioDeleteName"></strong> on <strong id="bioDeleteDate"></strong>?<br>
           This action cannot be undone.
         </p>
       </div>
@@ -404,36 +393,31 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  var CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+  var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
   function bsModal(id) {
     return bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
   }
 
-  // Reset view body on close
   document.getElementById('bioViewModal').addEventListener('hidden.bs.modal', function () {
     document.getElementById('bioViewBody').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary"></i></div>';
   });
 
-  // Reset delete button on close
   document.getElementById('bioDeleteModal').addEventListener('hidden.bs.modal', function () {
     document.getElementById('bioDeleteConfirm').disabled = false;
     document.getElementById('bioDeleteConfirm').textContent = 'Delete';
   });
 
-  // Toggle filter panel
   window.toggleFilters = function () {
     var p = document.getElementById('filterPanel');
     p.style.display = p.style.display === 'none' ? 'flex' : 'none';
   };
 
-  // Toast helper (session storage for page reload)
   function showToast(msg, type) {
     sessionStorage.setItem('bio_msg', msg);
     sessionStorage.setItem('bio_msg_type', type || 'success');
   }
 
-  // Inline toast (no reload)
   function showInlineToast(msg, type) {
     var el = document.getElementById('pageToast');
     var isError = type === 'error';
@@ -443,12 +427,12 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(function(){ el.style.display='none'; }, 5000);
   }
 
-  // ── View record (show raw punch entries)
-  window.viewRecord = function (pk) {
+  // ── View raw punches
+  window.viewRecord = function (pin, dateStr) {
     document.getElementById('bioViewBody').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary fa-2x"></i></div>';
     bsModal('bioViewModal').show();
 
-    fetch('/hrm/biometric-attendance/' + pk + '/view/', {
+    fetch('/hrm/biometric-attendance/' + encodeURIComponent(pin) + '/' + dateStr + '/view/', {
       headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .then(function (r) { return r.json(); })
@@ -458,36 +442,30 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       var rec = data.record;
-      var srcClass = { device: 'src-device', manual: 'src-manual', import: 'src-import' };
       var html = '';
 
-      // Summary section
       html += '<div class="bio-detail-row"><span class="bio-detail-label">Employee</span><span class="bio-detail-value">' + rec.employee_name + '</span></div>';
-      html += '<div class="bio-detail-row"><span class="bio-detail-label">Employee Code</span><span class="bio-detail-value">' + rec.employee_code + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">PIN (Code)</span><span class="bio-detail-value" style="font-weight:700;">' + rec.pin + '</span></div>';
       html += '<div class="bio-detail-row"><span class="bio-detail-label">Date</span><span class="bio-detail-value">' + rec.date + '</span></div>';
       html += '<div class="bio-detail-row"><span class="bio-detail-label">Clock In</span><span class="bio-detail-value" style="color:#10b981;font-weight:600;font-family:monospace;">' + (rec.clock_in || '—') + '</span></div>';
       html += '<div class="bio-detail-row"><span class="bio-detail-label">Clock Out</span><span class="bio-detail-value" style="color:#ef4444;font-weight:600;font-family:monospace;">' + (rec.clock_out || '—') + '</span></div>';
       html += '<div class="bio-detail-row"><span class="bio-detail-label">Total Entries</span><span class="bio-detail-value"><span class="bio-entries-badge">' + rec.total_entries + '</span></span></div>';
-      html += '<div class="bio-detail-row"><span class="bio-detail-label">Source</span><span class="bio-detail-value"><span class="src-badge ' + (srcClass[rec.source] || '') + '">' + rec.source.charAt(0).toUpperCase() + rec.source.slice(1) + '</span></span></div>';
 
-      // Raw punches table if available
       var punches = data.punches || [];
       if (punches.length > 0) {
         html += '<hr class="my-3">';
-        html += '<h6 class="fw-bold mb-2" style="font-size:.9rem;"><i class="fas fa-list me-1 text-primary"></i>Raw Punch Entries (' + punches.length + ')</h6>';
-        html += '<table class="punch-table"><thead><tr><th>#</th><th>Punch Time</th><th>State</th><th>Device</th></tr></thead><tbody>';
+        html += '<h6 class="fw-bold mb-2" style="font-size:.9rem;"><i class="fas fa-list me-1 text-primary"></i>All Raw Punches (' + punches.length + ')</h6>';
+        html += '<table class="punch-table"><thead><tr><th>#</th><th>Time</th><th>Status</th><th>Verify</th><th>Device</th></tr></thead><tbody>';
         for (var i = 0; i < punches.length; i++) {
           html += '<tr>';
           html += '<td>' + (i + 1) + '</td>';
-          html += '<td style="font-family:monospace;">' + (punches[i].punch_time || '—') + '</td>';
-          html += '<td>' + (punches[i].punch_state_display || punches[i].punch_state || '—') + '</td>';
-          html += '<td>' + (punches[i].terminal_alias || '—') + '</td>';
+          html += '<td style="font-family:monospace;font-weight:600;">' + punches[i].time + '</td>';
+          html += '<td>' + punches[i].status + '</td>';
+          html += '<td>' + punches[i].verify_mode + '</td>';
+          html += '<td style="font-family:monospace;font-size:.82rem;">' + punches[i].device + '</td>';
           html += '</tr>';
         }
         html += '</tbody></table>';
-      } else if (data.message) {
-        html += '<hr class="my-3">';
-        html += '<p class="text-muted mb-0" style="font-size:.85rem;"><i class="fas fa-info-circle me-1"></i>' + data.message + '</p>';
       }
 
       document.getElementById('bioViewBody').innerHTML = html;
@@ -497,12 +475,12 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   };
 
-  // ── Sync single record
-  window.syncSingle = function (btn, pk) {
+  // ── Sync single
+  window.syncSingle = function (btn, pin, dateStr) {
     btn.disabled = true;
     btn.querySelector('i').classList.add('fa-spin');
 
-    fetch('/hrm/biometric-attendance/' + pk + '/sync/', {
+    fetch('/hrm/biometric-attendance/' + encodeURIComponent(pin) + '/' + dateStr + '/sync/', {
       method: 'POST',
       headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
     })
@@ -511,8 +489,7 @@ document.addEventListener('DOMContentLoaded', function () {
       btn.disabled = false;
       btn.querySelector('i').classList.remove('fa-spin');
       if (data.success) {
-        showToast(data.message || 'Record synced.');
-        window.location.reload();
+        showInlineToast(data.message || 'Record synced.', 'success');
       } else {
         showInlineToast(data.error || 'Sync failed.', 'error');
       }
@@ -524,11 +501,11 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   };
 
-  // ── Global sync all
+  // ── Global sync
   window.syncAll = function () {
     var btn = document.getElementById('globalSyncBtn');
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
 
     fetch("{% url 'hrm:biometric_sync_all' %}", {
       method: 'POST',
@@ -537,39 +514,40 @@ document.addEventListener('DOMContentLoaded', function () {
     .then(function (r) { return r.json(); })
     .then(function (data) {
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sync from ZKTeco';
+      btn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
       if (data.success) {
-        showToast(data.message || 'Sync completed.');
+        showToast(data.message || 'Data refreshed.');
         window.location.reload();
       } else {
-        showInlineToast(data.error || 'Sync failed.', 'error');
+        showInlineToast(data.error || 'Refresh failed.', 'error');
       }
     })
     .catch(function () {
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sync from ZKTeco';
+      btn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
       showInlineToast('Network error. Please try again.', 'error');
     });
   };
 
-  // ── Delete modal
-  var _deletePk = null;
-  window.openDeleteModal = function (pk, name, date) {
-    _deletePk = pk;
+  // ── Delete
+  var _deletePin = null, _deleteDate = null;
+  window.openDeleteModal = function (pin, name, dateStr) {
+    _deletePin = pin;
+    _deleteDate = dateStr;
     document.getElementById('bioDeleteName').textContent = name;
-    document.getElementById('bioDeleteDate').textContent = date;
+    document.getElementById('bioDeleteDate').textContent = dateStr;
     document.getElementById('bioDeleteConfirm').disabled = false;
     document.getElementById('bioDeleteConfirm').textContent = 'Delete';
     bsModal('bioDeleteModal').show();
   };
 
   document.getElementById('bioDeleteConfirm').addEventListener('click', function () {
-    if (!_deletePk) return;
+    if (!_deletePin || !_deleteDate) return;
     var self = this;
     self.disabled = true;
     self.textContent = 'Deleting...';
 
-    fetch('/hrm/biometric-attendance/' + _deletePk + '/delete/', {
+    fetch('/hrm/biometric-attendance/' + encodeURIComponent(_deletePin) + '/' + _deleteDate + '/delete/', {
       method: 'POST',
       headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
     })
@@ -577,7 +555,7 @@ document.addEventListener('DOMContentLoaded', function () {
     .then(function (data) {
       bsModal('bioDeleteModal').hide();
       if (data.success) {
-        showToast(data.message || 'Record deleted.');
+        showToast(data.message || 'Records deleted.');
       } else {
         showToast(data.error || 'Delete failed.', 'error');
       }
