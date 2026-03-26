@@ -3607,6 +3607,53 @@ def zekto_settings(request):
 
 
 @login_required
+def zekto_device_add(request):
+    """Manually add a new ZKDevice via AJAX POST."""
+    from .models import ZKDevice
+    from django.core.validators import validate_ipv46_address
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    import json
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON.'})
+
+    serial_number = data.get('serial_number', '').strip()
+    if not serial_number:
+        return JsonResponse({'success': False, 'error': 'Serial number is required.'})
+
+    if ZKDevice.objects.filter(serial_number=serial_number).exists():
+        return JsonResponse({'success': False, 'error': f'A device with serial number "{serial_number}" already exists.'})
+
+    ip_raw = data.get('ip_address', '').strip()
+    ip_address = None
+    if ip_raw:
+        try:
+            validate_ipv46_address(ip_raw)
+            ip_address = ip_raw
+        except DjangoValidationError:
+            return JsonResponse({'success': False, 'error': 'Invalid IP address format.'})
+
+    device = ZKDevice.objects.create(
+        serial_number=serial_number,
+        name=data.get('name', '').strip(),
+        branch=data.get('branch', '').strip(),
+        model_name=data.get('model_name', '').strip(),
+        ip_address=ip_address,
+    )
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Device "{device.name or device.serial_number}" added successfully.',
+        'device_id': device.id,
+    })
+
+
+@login_required
 def zekto_device_update(request, pk):
     """Update device name, branch, model_name via AJAX POST."""
     from .models import ZKDevice

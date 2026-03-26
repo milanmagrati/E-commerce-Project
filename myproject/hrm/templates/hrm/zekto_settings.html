@@ -189,6 +189,9 @@
 <div class="card zekto-card">
   <div class="card-header d-flex justify-content-between align-items-center">
     <h5><i class="fas fa-server me-2"></i>Company Device</h5>
+    <button onclick="openAddModal()" style="background:rgba(255,255,255,.18); color:#fff; border:1.5px solid rgba(255,255,255,.4); font-size:.82rem; font-weight:600; border-radius:8px; padding:.35rem .85rem; cursor:pointer; transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,.3)'" onmouseout="this.style.background='rgba(255,255,255,.18)'">
+      <i class="fas fa-plus me-1"></i>Add Device
+    </button>
   </div>
 
   <!-- Tabs -->
@@ -464,6 +467,52 @@
   </div>
 </div>
 
+<!-- Add Device Modal -->
+<div class="modal fade" id="deviceAddModal" tabindex="-1" aria-labelledby="deviceAddLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:14px; border:none; overflow:hidden;">
+      <div class="modal-header" style="background:linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border:none; padding:1rem 1.5rem;">
+        <h5 class="modal-title text-white fw-bold" id="deviceAddLabel">
+          <i class="fas fa-plus me-2"></i>Add Device
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="modal-field mb-3">
+          <label>Serial Number <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="addDeviceSerial" placeholder="e.g. CQTW224560219">
+        </div>
+        <div class="modal-field mb-3">
+          <label>Device Name</label>
+          <input type="text" class="form-control" id="addDeviceName" placeholder="e.g. Main Entrance">
+        </div>
+        <div class="row g-3">
+          <div class="col-6 modal-field">
+            <label>IP Address</label>
+            <input type="text" class="form-control" id="addDeviceIP" placeholder="e.g. 192.168.1.100">
+          </div>
+          <div class="col-6 modal-field">
+            <label>Branch</label>
+            <input type="text" class="form-control" id="addDeviceBranch" placeholder="e.g. Head Office">
+          </div>
+        </div>
+        <div class="modal-field mt-3">
+          <label>Model</label>
+          <input type="text" class="form-control" id="addDeviceModel" placeholder="e.g. K20 Pro/ID">
+        </div>
+      </div>
+      <div class="modal-footer" style="border-top:1px solid #e5e7eb; padding:1rem 1.5rem;">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+          <i class="fas fa-times me-1"></i>Cancel
+        </button>
+        <button type="button" class="btn btn-primary" id="addDeviceBtn" onclick="addDevice()">
+          <i class="fas fa-plus me-1"></i>Add Device
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="zekto-toast" id="zektoToast"></div>
 
@@ -516,7 +565,7 @@ function openEditModal(deviceId) {
       document.getElementById('editDeviceFaceCount').value = d.face_count;
       document.getElementById('editDeviceFPCount').value = d.fingerprint_count;
       document.getElementById('editDeviceUserCount').value = d.user_count;
-      new bootstrap.Modal(document.getElementById('deviceUpdateModal')).show();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceUpdateModal')).show();
     })
     .catch(function() { showToast('Failed to load device details.', 'error'); });
 }
@@ -539,7 +588,7 @@ function saveDevice() {
   .then(function(data) {
     if (data.success) {
       showToast(data.message, 'success');
-      bootstrap.Modal.getInstance(document.getElementById('deviceUpdateModal')).hide();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceUpdateModal')).hide();
       setTimeout(function() { location.reload(); }, 800);
     } else {
       showToast(data.error, 'error');
@@ -579,7 +628,7 @@ function syncAllDevices() {
   });
   if (!deviceIds.length) { showToast('No devices to sync.', 'error'); return; }
 
-  var done = 0;
+  var done = 0, total = deviceIds.length;
   showToast('Syncing all devices...', 'success');
   deviceIds.forEach(function(id) {
     fetch("{% url 'hrm:zekto_device_sync' pk=0 %}".replace('0', id), {
@@ -589,11 +638,69 @@ function syncAllDevices() {
     .then(function(r) { return r.json(); })
     .then(function() {
       done++;
-      if (done === deviceIds.length) {
+      if (done === total) {
         showToast('All devices synced successfully!', 'success');
         setTimeout(function() { location.reload(); }, 800);
       }
+    })
+    .catch(function() {
+      done++;
+      if (done === total) {
+        showToast('Sync completed with some errors.', 'error');
+        setTimeout(function() { location.reload(); }, 800);
+      }
     });
+  });
+}
+
+// --- Add Device ---
+function openAddModal() {
+  document.getElementById('addDeviceSerial').value = '';
+  document.getElementById('addDeviceName').value = '';
+  document.getElementById('addDeviceIP').value = '';
+  document.getElementById('addDeviceBranch').value = '';
+  document.getElementById('addDeviceModel').value = '';
+  var btn = document.getElementById('addDeviceBtn');
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-plus me-1"></i>Add Device';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceAddModal')).show();
+}
+
+function addDevice() {
+  var serial = document.getElementById('addDeviceSerial').value.trim();
+  if (!serial) { showToast('Serial number is required.', 'error'); return; }
+
+  var btn = document.getElementById('addDeviceBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+
+  fetch("{% url 'hrm:zekto_device_add' %}", {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({
+      serial_number: serial,
+      name: document.getElementById('addDeviceName').value.trim(),
+      ip_address: document.getElementById('addDeviceIP').value.trim(),
+      branch: document.getElementById('addDeviceBranch').value.trim(),
+      model_name: document.getElementById('addDeviceModel').value.trim(),
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-plus me-1"></i>Add Device';
+    if (data.success) {
+      showToast(data.message, 'success');
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceAddModal')).hide();
+      setTimeout(function() { location.reload(); }, 800);
+    } else {
+      showToast(data.error, 'error');
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-plus me-1"></i>Add Device';
+    showToast('Failed to add device.', 'error');
   });
 }
 
@@ -601,7 +708,7 @@ function syncAllDevices() {
 function deleteDevice(deviceId, serialNumber) {
   document.getElementById('deleteDeviceId').value = deviceId;
   document.getElementById('deleteDeviceText').textContent = 'Are you sure you want to delete device ' + serialNumber + '?';
-  new bootstrap.Modal(document.getElementById('deviceDeleteModal')).show();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceDeleteModal')).show();
 }
 
 function confirmDelete() {
@@ -614,7 +721,7 @@ function confirmDelete() {
   .then(function(data) {
     if (data.success) {
       showToast(data.message, 'success');
-      bootstrap.Modal.getInstance(document.getElementById('deviceDeleteModal')).hide();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceDeleteModal')).hide();
       setTimeout(function() { location.reload(); }, 800);
     } else {
       showToast(data.error, 'error');

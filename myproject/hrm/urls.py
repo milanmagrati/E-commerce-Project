@@ -149,6 +149,7 @@ urlpatterns = [
 
     # Zekto Settings (device dashboard)
     path('settings/zekto/', views.zekto_settings, name='zekto_settings'),
+    path('settings/zekto/device/add/', views.zekto_device_add, name='zekto_device_add'),
     path('settings/zekto/device/<int:pk>/detail/', views.zekto_device_detail, name='zekto_device_detail'),
     path('settings/zekto/device/<int:pk>/update/', views.zekto_device_update, name='zekto_device_update'),
     path('settings/zekto/device/<int:pk>/delete/', views.zekto_device_delete, name='zekto_device_delete'),
