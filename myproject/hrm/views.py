@@ -3312,6 +3312,11 @@ def iclock_cdata(request):
 
             adms_logger.info(f"[CDATA POST] SN={sn} saved={saved} lines")
 
+            # Update device transaction count
+            device.transaction_count = BiometricAttendance.objects.filter(device=device).count()
+            device.user_count = BiometricAttendance.objects.filter(device=device).values('pin').distinct().count()
+            device.save(update_fields=['transaction_count', 'user_count'])
+
         return HttpResponse('OK', content_type='text/plain')
 
     return HttpResponse('OK', content_type='text/plain')
@@ -3346,6 +3351,14 @@ def iclock_devicecmd(request):
 def biometric_attendance(request):
     """Aggregated attendance view: groups raw punches by (pin, date)."""
     from .models import BiometricAttendance, Employee
+    from django.db.models import Min, Max, Count, Subquery, OuterRef
+    from django.db.models.functions import TruncDate
+    from django.utils import timezone as tz
+
+    # Parse query params early
+    search_q = request.GET.get('q', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
 
     # Build employee name lookup
     emp_name_map = {}
@@ -3353,9 +3366,35 @@ def biometric_attendance(request):
         if emp.employee_code:
             emp_name_map[emp.employee_code] = emp.full_name
 
-    # Aggregate raw punches by (pin, date)
-    from django.db.models import Min, Max, Count, Subquery, OuterRef
-    from django.db.models.functions import TruncDate
+    # Base queryset with date filters pushed into ORM
+    base_qs = BiometricAttendance.objects.all()
+
+    if date_from:
+        try:
+            df = datetime.strptime(date_from, '%Y-%m-%d').date()
+            base_qs = base_qs.filter(timestamp__date__gte=df)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            dt_val = datetime.strptime(date_to, '%Y-%m-%d').date()
+            base_qs = base_qs.filter(timestamp__date__lte=dt_val)
+        except ValueError:
+            pass
+
+    # PIN search at ORM level
+    if search_q:
+        # Find employee codes that match by PIN or name
+        matching_pins = set()
+        sq_lower = search_q.lower()
+        for code, name in emp_name_map.items():
+            if sq_lower in code.lower() or sq_lower in name.lower():
+                matching_pins.add(code)
+        if matching_pins:
+            base_qs = base_qs.filter(pin__in=matching_pins)
+        else:
+            # Fallback: search by PIN directly (for PINs not in employee table)
+            base_qs = base_qs.filter(pin__icontains=search_q)
 
     # Subquery: get the device serial_number from the earliest punch per (pin, date) group
     first_device_sq = BiometricAttendance.objects.filter(
@@ -3367,7 +3406,7 @@ def biometric_attendance(request):
         punch_date=OuterRef('punch_date')
     ).order_by('timestamp').values('device__serial_number')[:1]
 
-    qs = BiometricAttendance.objects.annotate(
+    qs = base_qs.annotate(
         punch_date=TruncDate('timestamp')
     ).values('pin', 'punch_date').annotate(
         clock_in=Min('timestamp'),
@@ -3375,6 +3414,9 @@ def biometric_attendance(request):
         total_entries=Count('id'),
         device_sn=Subquery(first_device_sq),
     ).order_by('-punch_date', 'pin')
+
+    # Convert to local timezone for display
+    local_tz = tz.get_current_timezone()
 
     # Build records list
     records = []
@@ -3385,37 +3427,19 @@ def biometric_attendance(request):
         clock_out_dt = row['clock_out']
         total = row['total_entries']
 
+        # Convert to local time before extracting .time()
+        clock_in_local = clock_in_dt.astimezone(local_tz).time() if clock_in_dt else None
+        clock_out_local = clock_out_dt.astimezone(local_tz).time() if clock_out_dt and total > 1 else None
+
         records.append({
             'pin': pin,
             'employee_name': emp_name_map.get(pin, f'Employee {pin}'),
             'date': punch_date,
-            'clock_in': clock_in_dt.time() if clock_in_dt else None,
-            'clock_out': clock_out_dt.time() if clock_out_dt and total > 1 else None,
+            'clock_in': clock_in_local,
+            'clock_out': clock_out_local,
             'total_entries': total,
             'device_sn': row['device_sn'] or '—',
         })
-
-    # Search
-    search_q = request.GET.get('q', '').strip()
-    if search_q:
-        sq = search_q.lower()
-        records = [r for r in records if sq in r['pin'].lower() or sq in r['employee_name'].lower()]
-
-    # Date filters
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
-    if date_from:
-        try:
-            df = datetime.strptime(date_from, '%Y-%m-%d').date()
-            records = [r for r in records if r['date'] >= df]
-        except ValueError:
-            pass
-    if date_to:
-        try:
-            dt = datetime.strptime(date_to, '%Y-%m-%d').date()
-            records = [r for r in records if r['date'] <= dt]
-        except ValueError:
-            pass
 
     total_records = len(records)
 
@@ -3449,6 +3473,7 @@ def biometric_attendance(request):
 def biometric_attendance_view(request, pin, date_str):
     """Return all raw punches for a given employee PIN on a specific date."""
     from .models import BiometricAttendance, Employee
+    from django.utils import timezone as tz
 
     try:
         punch_date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -3463,18 +3488,23 @@ def biometric_attendance_view(request, pin, date_str):
     emp = Employee.objects.filter(employee_code=pin).first()
     emp_name = emp.full_name if emp else f'Employee {pin}'
 
+    local_tz = tz.get_current_timezone()
+
     punch_list = []
     for p in punches:
+        local_ts = p.timestamp.astimezone(local_tz)
         punch_list.append({
-            'time': p.timestamp.strftime('%H:%M:%S'),
+            'time': local_ts.strftime('%H:%M:%S'),
             'status': p.get_status_display(),
             'verify_mode': p.verify_mode,
             'device': p.device.serial_number if p.device else '—',
             'raw_log': p.raw_log,
         })
 
-    clock_in = punches.first().timestamp.strftime('%H:%M') if punches.exists() else ''
-    clock_out = punches.last().timestamp.strftime('%H:%M') if punches.count() > 1 else ''
+    first_punch = punches.first()
+    last_punch = punches.last()
+    clock_in = first_punch.timestamp.astimezone(local_tz).strftime('%H:%M') if first_punch else ''
+    clock_out = last_punch.timestamp.astimezone(local_tz).strftime('%H:%M') if punches.count() > 1 else ''
 
     return JsonResponse({
         'success': True,
@@ -3554,9 +3584,17 @@ def zekto_settings(request):
     for d in devices:
         is_online = d.last_seen and (now - d.last_seen) < timedelta(minutes=5)
         device_list.append({
+            'id': d.id,
             'serial_number': d.serial_number,
+            'name': d.name or '',
+            'model_name': d.model_name or '',
+            'branch': d.branch or '',
             'ip_address': d.ip_address or '—',
             'last_seen': d.last_seen,
+            'face_count': d.face_count,
+            'fingerprint_count': d.fingerprint_count,
+            'transaction_count': d.transaction_count,
+            'user_count': d.user_count,
             'is_online': is_online,
         })
 
@@ -3566,6 +3604,116 @@ def zekto_settings(request):
         'device_count': len(device_list),
     }
     return render(request, 'hrm/zekto_settings.html', context)
+
+
+@login_required
+def zekto_device_update(request, pk):
+    """Update device name, branch, model_name via AJAX POST."""
+    from .models import ZKDevice
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    try:
+        device = ZKDevice.objects.get(pk=pk)
+    except ZKDevice.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Device not found.'})
+
+    import json
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON.'})
+
+    name = data.get('name', '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'error': 'Device name is required.'})
+
+    device.name = name
+    device.branch = data.get('branch', '').strip()
+    device.model_name = data.get('model_name', '').strip()
+    device.save(update_fields=['name', 'branch', 'model_name'])
+
+    return JsonResponse({'success': True, 'message': f'Device "{device.name}" updated successfully.'})
+
+
+@login_required
+def zekto_device_delete(request, pk):
+    """Delete a device and optionally its attendance records."""
+    from .models import ZKDevice
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    try:
+        device = ZKDevice.objects.get(pk=pk)
+    except ZKDevice.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Device not found.'})
+
+    sn = device.serial_number
+    device.delete()
+    return JsonResponse({'success': True, 'message': f'Device {sn} deleted successfully.'})
+
+
+@login_required
+def zekto_device_sync(request, pk):
+    """Recalculate device counts (transactions, users, fingerprints, faces) from DB."""
+    from .models import ZKDevice, BiometricAttendance
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    try:
+        device = ZKDevice.objects.get(pk=pk)
+    except ZKDevice.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Device not found.'})
+
+    device.transaction_count = BiometricAttendance.objects.filter(device=device).count()
+    device.user_count = BiometricAttendance.objects.filter(device=device).values('pin').distinct().count()
+    device.save(update_fields=['transaction_count', 'user_count'])
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Device {device.serial_number} counts synced.',
+        'data': {
+            'transaction_count': device.transaction_count,
+            'user_count': device.user_count,
+            'face_count': device.face_count,
+            'fingerprint_count': device.fingerprint_count,
+        }
+    })
+
+
+@login_required
+def zekto_device_detail(request, pk):
+    """Return device detail as JSON for the update modal."""
+    from .models import ZKDevice
+
+    try:
+        device = ZKDevice.objects.get(pk=pk)
+    except ZKDevice.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Device not found.'})
+
+    now = timezone.now()
+    is_online = device.last_seen and (now - device.last_seen) < timedelta(minutes=5)
+
+    return JsonResponse({
+        'success': True,
+        'device': {
+            'id': device.id,
+            'serial_number': device.serial_number,
+            'name': device.name or '',
+            'model_name': device.model_name or '',
+            'branch': device.branch or '',
+            'ip_address': device.ip_address or '',
+            'last_seen': device.last_seen.strftime('%Y/%m/%d %I:%M:%S %p') if device.last_seen else 'Never',
+            'face_count': device.face_count,
+            'fingerprint_count': device.fingerprint_count,
+            'transaction_count': device.transaction_count,
+            'user_count': device.user_count,
+            'is_online': is_online,
+        }
+    })
 
 
 # ==================== Payroll Management ====================

@@ -604,8 +604,15 @@ class AttendanceRegularization(models.Model):
 
 class ZKDevice(models.Model):
     serial_number = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=150, blank=True, default='')
+    model_name = models.CharField(max_length=100, blank=True, default='')
+    branch = models.CharField(max_length=150, blank=True, default='')
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     last_seen = models.DateTimeField(null=True, blank=True)
+    face_count = models.PositiveIntegerField(default=0)
+    fingerprint_count = models.PositiveIntegerField(default=0)
+    transaction_count = models.PositiveIntegerField(default=0)
+    user_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -614,7 +621,7 @@ class ZKDevice(models.Model):
         verbose_name_plural = 'ZK Devices'
 
     def __str__(self):
-        return f"{self.serial_number} ({self.ip_address or 'Unknown IP'})"
+        return f"{self.name or self.serial_number} ({self.ip_address or 'Unknown IP'})"
 
 
 # ==================== Biometric Attendance (Raw Punch Log) ====================

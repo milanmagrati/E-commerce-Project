@@ -157,7 +157,8 @@
       sessionStorage.removeItem('bio_msg_type');
       var el = document.getElementById('pageToast');
       el.className = 'page-toast ' + (t === 'error' ? 'toast-error' : 'toast-success');
-      el.innerHTML = '<i class="fas ' + (t === 'error' ? 'fa-times-circle' : 'fa-check-circle') + '"></i><span>' + msg + '</span>';
+      el.innerHTML = '<i class="fas ' + (t === 'error' ? 'fa-times-circle' : 'fa-check-circle') + '"></i><span></span>';
+      el.querySelector('span').textContent = msg;
       el.style.display = 'flex';
       setTimeout(function(){ el.style.display='none'; }, 4000);
     }
@@ -212,7 +213,6 @@
           <button type="submit" class="btn btn-sm btn-primary" style="border-radius:8px; padding:.4rem .9rem;">Apply</button>
           <a href="{% url 'hrm:biometric_attendance' %}" class="btn btn-sm btn-outline-secondary" style="border-radius:8px; padding:.4rem .9rem;">Clear</a>
         </div>
-        <input type="hidden" name="per_page" value="{{ per_page }}">
       </div>
     </form>
   </div>
@@ -395,6 +395,8 @@
 document.addEventListener('DOMContentLoaded', function () {
   var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
   function bsModal(id) {
     return bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
   }
@@ -422,7 +424,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var el = document.getElementById('pageToast');
     var isError = type === 'error';
     el.className = 'page-toast ' + (isError ? 'toast-error' : 'toast-success');
-    el.innerHTML = '<i class="fas ' + (isError ? 'fa-times-circle' : 'fa-check-circle') + '"></i><span>' + msg + '</span>';
+    el.innerHTML = '<i class="fas ' + (isError ? 'fa-times-circle' : 'fa-check-circle') + '"></i><span></span>';
+    el.querySelector('span').textContent = msg;
     el.style.display = 'flex';
     setTimeout(function(){ el.style.display='none'; }, 5000);
   }
@@ -438,31 +441,32 @@ document.addEventListener('DOMContentLoaded', function () {
     .then(function (r) { return r.json(); })
     .then(function (data) {
       if (!data.success) {
-        document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center">' + (data.error || 'Failed to load.') + '</p>';
+        document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center"></p>';
+        document.getElementById('bioViewBody').querySelector('p').textContent = data.error || 'Failed to load.';
         return;
       }
       var rec = data.record;
       var html = '';
 
-      html += '<div class="bio-detail-row"><span class="bio-detail-label">Employee</span><span class="bio-detail-value">' + rec.employee_name + '</span></div>';
-      html += '<div class="bio-detail-row"><span class="bio-detail-label">PIN (Code)</span><span class="bio-detail-value" style="font-weight:700;">' + rec.pin + '</span></div>';
-      html += '<div class="bio-detail-row"><span class="bio-detail-label">Date</span><span class="bio-detail-value">' + rec.date + '</span></div>';
-      html += '<div class="bio-detail-row"><span class="bio-detail-label">Clock In</span><span class="bio-detail-value" style="color:#10b981;font-weight:600;font-family:monospace;">' + (rec.clock_in || '—') + '</span></div>';
-      html += '<div class="bio-detail-row"><span class="bio-detail-label">Clock Out</span><span class="bio-detail-value" style="color:#ef4444;font-weight:600;font-family:monospace;">' + (rec.clock_out || '—') + '</span></div>';
-      html += '<div class="bio-detail-row"><span class="bio-detail-label">Total Entries</span><span class="bio-detail-value"><span class="bio-entries-badge">' + rec.total_entries + '</span></span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Employee</span><span class="bio-detail-value">' + esc(rec.employee_name) + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">PIN (Code)</span><span class="bio-detail-value" style="font-weight:700;">' + esc(rec.pin) + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Date</span><span class="bio-detail-value">' + esc(rec.date) + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Clock In</span><span class="bio-detail-value" style="color:#10b981;font-weight:600;font-family:monospace;">' + esc(rec.clock_in || '—') + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Clock Out</span><span class="bio-detail-value" style="color:#ef4444;font-weight:600;font-family:monospace;">' + esc(rec.clock_out || '—') + '</span></div>';
+      html += '<div class="bio-detail-row"><span class="bio-detail-label">Total Entries</span><span class="bio-detail-value"><span class="bio-entries-badge">' + parseInt(rec.total_entries) + '</span></span></div>';
 
       var punches = data.punches || [];
       if (punches.length > 0) {
         html += '<hr class="my-3">';
-        html += '<h6 class="fw-bold mb-2" style="font-size:.9rem;"><i class="fas fa-list me-1 text-primary"></i>All Raw Punches (' + punches.length + ')</h6>';
+        html += '<h6 class="fw-bold mb-2" style="font-size:.9rem;"><i class="fas fa-list me-1 text-primary"></i>All Raw Punches (' + parseInt(punches.length) + ')</h6>';
         html += '<table class="punch-table"><thead><tr><th>#</th><th>Time</th><th>Status</th><th>Verify</th><th>Device</th></tr></thead><tbody>';
         for (var i = 0; i < punches.length; i++) {
           html += '<tr>';
           html += '<td>' + (i + 1) + '</td>';
-          html += '<td style="font-family:monospace;font-weight:600;">' + punches[i].time + '</td>';
-          html += '<td>' + punches[i].status + '</td>';
-          html += '<td>' + punches[i].verify_mode + '</td>';
-          html += '<td style="font-family:monospace;font-size:.82rem;">' + punches[i].device + '</td>';
+          html += '<td style="font-family:monospace;font-weight:600;">' + esc(punches[i].time) + '</td>';
+          html += '<td>' + esc(punches[i].status) + '</td>';
+          html += '<td>' + parseInt(punches[i].verify_mode) + '</td>';
+          html += '<td style="font-family:monospace;font-size:.82rem;">' + esc(punches[i].device) + '</td>';
           html += '</tr>';
         }
         html += '</tbody></table>';
