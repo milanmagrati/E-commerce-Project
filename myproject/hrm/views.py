@@ -3172,10 +3172,10 @@ def attendance_regularization_update(request, pk):
         'employee_name': reg.employee.full_name,
         'attendance_record_id': reg.attendance_record_id,
         'date': str(reg.date),
-        'clock_in': reg.clock_in.strftime('%H:%M') if reg.clock_in else '',
-        'clock_out': reg.clock_out.strftime('%H:%M') if reg.clock_out else '',
-        'original_clock_in': reg.attendance_record.clock_in.strftime('%H:%M') if reg.attendance_record and reg.attendance_record.clock_in else '',
-        'original_clock_out': reg.attendance_record.clock_out.strftime('%H:%M') if reg.attendance_record and reg.attendance_record.clock_out else '',
+        'clock_in': reg.clock_in.strftime('%I:%M %p') if reg.clock_in else '',
+        'clock_out': reg.clock_out.strftime('%I:%M %p') if reg.clock_out else '',
+        'original_clock_in': reg.attendance_record.clock_in.strftime('%I:%M %p') if reg.attendance_record and reg.attendance_record.clock_in else '',
+        'original_clock_out': reg.attendance_record.clock_out.strftime('%I:%M %p') if reg.attendance_record and reg.attendance_record.clock_out else '',
         'reason': reg.reason,
         'status': reg.status,
         'is_draft': reg.is_draft,
@@ -3221,8 +3221,8 @@ def employee_attendance_records_api(request):
         data.append({
             'id': r.id,
             'date': str(r.date),
-            'clock_in': r.clock_in.strftime('%H:%M') if r.clock_in else '--:--',
-            'clock_out': r.clock_out.strftime('%H:%M') if r.clock_out else '--:--',
+            'clock_in': r.clock_in.strftime('%I:%M %p') if r.clock_in else '--:--',
+            'clock_out': r.clock_out.strftime('%I:%M %p') if r.clock_out else '--:--',
             'status': r.status,
         })
     return JsonResponse({'records': data})

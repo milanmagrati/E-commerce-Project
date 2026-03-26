@@ -157,11 +157,11 @@
                                 <div class="reg-time-label">Original</div>
                                 <div class="reg-time-row">
                                     <i class="fas fa-clock" style="color:#dc2626;font-size:.7rem;"></i>
-                                    <span class="reg-time-val" style="color:#dc2626;">{% if reg.attendance_record and reg.attendance_record.clock_in %}{{ reg.attendance_record.clock_in|time:"H:i" }}{% else %}--:--{% endif %}</span>
+                                    <span class="reg-time-val" style="color:#dc2626;">{% if reg.attendance_record and reg.attendance_record.clock_in %}{{ reg.attendance_record.clock_in|time:"g:i A" }}{% else %}--:--{% endif %}</span>
                                 </div>
                                 <div class="reg-time-row">
                                     <i class="fas fa-clock" style="color:#dc2626;font-size:.7rem;"></i>
-                                    <span class="reg-time-val" style="color:#dc2626;">{% if reg.attendance_record and reg.attendance_record.clock_out %}{{ reg.attendance_record.clock_out|time:"H:i" }}{% else %}--:--{% endif %}</span>
+                                    <span class="reg-time-val" style="color:#dc2626;">{% if reg.attendance_record and reg.attendance_record.clock_out %}{{ reg.attendance_record.clock_out|time:"g:i A" }}{% else %}--:--{% endif %}</span>
                                 </div>
                             </div>
                             <div class="text-center">
@@ -171,11 +171,11 @@
                                 <div class="reg-time-label">Requested</div>
                                 <div class="reg-time-row justify-content-end">
                                     <i class="fas fa-clock" style="color:#28a745;font-size:.7rem;"></i>
-                                    <span class="reg-time-val" style="color:#28a745;">{{ reg.clock_in|time:"H:i"|default:"--:--" }}</span>
+                                    <span class="reg-time-val" style="color:#28a745;">{{ reg.clock_in|time:"g:i A"|default:"--:--" }}</span>
                                 </div>
                                 <div class="reg-time-row justify-content-end">
                                     <i class="fas fa-clock" style="color:#28a745;font-size:.7rem;"></i>
-                                    <span class="reg-time-val" style="color:#28a745;">{{ reg.clock_out|time:"H:i"|default:"--:--" }}</span>
+                                    <span class="reg-time-val" style="color:#28a745;">{{ reg.clock_out|time:"g:i A"|default:"--:--" }}</span>
                                 </div>
                             </div>
                         </div>
@@ -300,21 +300,25 @@
                         </div>
                     </div>
 
-                    <!-- Requested Clock In -->
-                    <div class="mb-3">
-                        <label class="reg-label">Requested Clock In</label>
-                        <div class="reg-input-wrap">
-                            <input type="time" class="form-control reg-field" id="regClockIn" style="padding-left:12px;">
-                            <i class="fas fa-clock" style="position:absolute;right:12px;color:#9ca3af;font-size:.82rem;pointer-events:none;"></i>
+                    <!-- Requested Clock In / Out -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="reg-label">Requested Clock In</label>
+                            <div class="reg-time-field-wrap">
+                                <div class="reg-time-icon-left" style="background:#ecfdf5;">
+                                    <i class="fas fa-sign-in-alt" style="color:#28a745;"></i>
+                                </div>
+                                <input type="time" class="form-control reg-time-input" id="regClockIn">
+                            </div>
                         </div>
-                    </div>
-
-                    <!-- Requested Clock Out -->
-                    <div class="mb-3">
-                        <label class="reg-label">Requested Clock Out</label>
-                        <div class="reg-input-wrap">
-                            <input type="time" class="form-control reg-field" id="regClockOut" style="padding-left:12px;">
-                            <i class="fas fa-clock" style="position:absolute;right:12px;color:#9ca3af;font-size:.82rem;pointer-events:none;"></i>
+                        <div class="col-6">
+                            <label class="reg-label">Requested Clock Out</label>
+                            <div class="reg-time-field-wrap">
+                                <div class="reg-time-icon-left" style="background:#eef2ff;">
+                                    <i class="fas fa-sign-out-alt" style="color:#6366f1;"></i>
+                                </div>
+                                <input type="time" class="form-control reg-time-input" id="regClockOut">
+                            </div>
                         </div>
                     </div>
 
@@ -429,6 +433,13 @@
     .reg-field:focus { border-color:#28a745 !important; box-shadow:0 0 0 3px rgba(40,167,69,.12) !important; background:#fff; outline:none; }
     .reg-field.field-error { border-color:#dc3545 !important; background:#fff5f5 !important; animation:fieldShake .4s ease; }
     .reg-field-error { display:none; font-size:.72rem; color:#dc3545; margin-top:3px; font-weight:500; }
+
+    /* Time fields */
+    .reg-time-field-wrap { display:flex; align-items:stretch; border:1.5px solid #e5e7eb; border-radius:8px; overflow:hidden; background:#fafafa; transition:border-color .15s,box-shadow .15s; }
+    .reg-time-field-wrap:focus-within { border-color:#28a745; box-shadow:0 0 0 3px rgba(40,167,69,.12); background:#fff; }
+    .reg-time-icon-left { width:38px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:.82rem; border-right:1.5px solid #e5e7eb; }
+    .reg-time-input { border:none !important; box-shadow:none !important; background:transparent !important; border-radius:0 !important; font-size:.875rem; font-weight:500; padding-left:10px; flex:1; }
+    .reg-time-input:focus { outline:none; box-shadow:none !important; }
 
     /* Form Alert */
     .reg-alert { margin:12px 20px 0; padding:10px 14px; border-radius:10px; display:flex; align-items:center; gap:10px; animation:slideDown .3s ease; }
