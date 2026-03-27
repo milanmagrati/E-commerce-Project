@@ -3281,7 +3281,7 @@ def iclock_cdata(request):
             "TransTimes=00:00;14:05\r\n"
             "TransInterval=1\r\n"
             "TransFlag=TransData AttLog OpLog\r\n"
-            "TimeZone=0\r\n"
+            "TimeZone=5.75\r\n"
             "Realtime=1\r\n"
             "Encrypt=0\r\n"
         ).format(sn=sn)
@@ -3310,10 +3310,12 @@ def iclock_cdata(request):
                     status = int(parts[2].strip()) if len(parts) > 2 else 0
                     verify = int(parts[3].strip()) if len(parts) > 3 else 0
 
-                    # Device sends local time; make_aware treats it as server timezone (Asia/Kathmandu)
+                    # Device sends local Nepal time (NST, UTC+5:45). Explicitly wrap as NST.
                     naive_dt = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S')
                     from django.utils.timezone import is_aware
-                    punch_dt = naive_dt if is_aware(naive_dt) else timezone.make_aware(naive_dt)
+                    import pytz
+                    _nst = pytz.timezone('Asia/Kathmandu')
+                    punch_dt = naive_dt if is_aware(naive_dt) else _nst.localize(naive_dt)
 
                     BiometricAttendance.objects.get_or_create(
                         pin=pin,
@@ -3448,8 +3450,9 @@ def biometric_attendance(request):
         device_sn=Subquery(first_device_sq),
     ).order_by('-punch_date', 'pin')
 
-    # Convert to local timezone for display
-    local_tz = tz.get_current_timezone()
+    # Convert to Nepal Standard Time (UTC+5:45) for display
+    import pytz
+    local_tz = pytz.timezone('Asia/Kathmandu')
 
     # Build records list
     records = []
@@ -3460,7 +3463,7 @@ def biometric_attendance(request):
         clock_out_dt = row['clock_out']
         total = row['total_entries']
 
-        # Convert to local time before extracting .time()
+        # Convert UTC timestamps to Nepal time before extracting .time()
         clock_in_local = clock_in_dt.astimezone(local_tz).time() if clock_in_dt else None
         clock_out_local = clock_out_dt.astimezone(local_tz).time() if clock_out_dt and total > 1 else None
 
@@ -3521,7 +3524,8 @@ def biometric_attendance_view(request, pin, date_str):
     emp = Employee.objects.filter(employee_code=pin).first()
     emp_name = emp.full_name if emp else f'Employee {pin}'
 
-    local_tz = tz.get_current_timezone()
+    import pytz
+    local_tz = pytz.timezone('Asia/Kathmandu')
 
     punch_list = []
     for p in punches:
