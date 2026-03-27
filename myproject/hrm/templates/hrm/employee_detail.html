@@ -99,17 +99,17 @@
             <div class="card-body">
                 <h6 class="card-title fw-bold mb-3"><i class="fas fa-map-marker-alt me-2"></i>Contact Information</h6>
                 <table class="table table-sm table-borderless mb-0">
-                    <tr><td class="text-muted" style="width:40%">Address</td><td>{{ employee.address_line_1 }}{% if employee.address_line_2 %}, {{ employee.address_line_2 }}{% endif %}</td></tr>
-                    <tr><td class="text-muted">City</td><td>{{ employee.city }}</td></tr>
-                    <tr><td class="text-muted">State</td><td>{{ employee.state }}</td></tr>
-                    <tr><td class="text-muted">Country</td><td>{{ employee.country }}</td></tr>
-                    <tr><td class="text-muted">Postal Code</td><td>{{ employee.postal_code }}</td></tr>
+                    <tr><td class="text-muted" style="width:40%">Address</td><td>{% if employee.address_line_1 %}{{ employee.address_line_1 }}{% if employee.address_line_2 %}, {{ employee.address_line_2 }}{% endif %}{% else %}-{% endif %}</td></tr>
+                    <tr><td class="text-muted">City</td><td>{{ employee.city|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">State</td><td>{{ employee.state|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">Country</td><td>{{ employee.country|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">Postal Code</td><td>{{ employee.postal_code|default:"-" }}</td></tr>
                 </table>
                 <h6 class="fw-bold mt-3 mb-2">Emergency Contact</h6>
                 <table class="table table-sm table-borderless mb-0">
-                    <tr><td class="text-muted" style="width:40%">Name</td><td>{{ employee.emergency_contact_name }}</td></tr>
-                    <tr><td class="text-muted">Relationship</td><td>{{ employee.emergency_contact_relationship }}</td></tr>
-                    <tr><td class="text-muted">Phone</td><td>{{ employee.emergency_contact_phone }}</td></tr>
+                    <tr><td class="text-muted" style="width:40%">Name</td><td>{{ employee.emergency_contact_name|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">Relationship</td><td>{{ employee.emergency_contact_relationship|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">Phone</td><td>{{ employee.emergency_contact_phone|default:"-" }}</td></tr>
                 </table>
             </div>
         </div>
@@ -121,14 +121,32 @@
             <div class="card-body">
                 <h6 class="card-title fw-bold mb-3"><i class="fas fa-university me-2"></i>Banking Information</h6>
                 <table class="table table-sm table-borderless mb-0">
-                    <tr><td class="text-muted" style="width:40%">Bank Name</td><td>{{ employee.bank_name }}</td></tr>
-                    <tr><td class="text-muted">Account Holder</td><td>{{ employee.account_holder_name }}</td></tr>
-                    <tr><td class="text-muted">Account Number</td><td>{{ employee.account_number }}</td></tr>
-                    <tr><td class="text-muted">BIC/SWIFT</td><td>{{ employee.bank_identifier_code }}</td></tr>
-                    <tr><td class="text-muted">Bank Branch</td><td>{{ employee.bank_branch }}</td></tr>
+                    <tr><td class="text-muted" style="width:40%">Bank Name</td><td>{{ employee.bank_name|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">Account Holder</td><td>{{ employee.account_holder_name|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">Account Number</td><td>{{ employee.account_number|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">BIC/SWIFT</td><td>{{ employee.bank_identifier_code|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">Bank Branch</td><td>{{ employee.bank_branch|default:"-" }}</td></tr>
                     <tr><td class="text-muted">Tax Payer ID</td><td>{{ employee.tax_payer_id|default:"-" }}</td></tr>
-                    <tr><td class="text-muted">Base Salary</td><td>{{ employee.base_salary }}</td></tr>
+                    <tr><td class="text-muted">Base Salary</td><td>{% if employee.base_salary %}NPR {{ employee.base_salary }}{% else %}-{% endif %}</td></tr>
                 </table>
+                {% if employee.payment_qr_code %}
+                <hr class="my-3">
+                <div class="text-center">
+                    <p class="fw-semibold mb-2" style="font-size:.85rem;color:#374151;">
+                        <i class="fas fa-qrcode me-1 text-primary"></i>Payment QR Code
+                    </p>
+                    <div class="p-3 border rounded" style="background:#f8fafc;display:inline-block;">
+                        <img src="{{ employee.payment_qr_code.url }}" alt="Payment QR Code"
+                             style="max-width:150px;max-height:150px;border-radius:6px;display:block;">
+                    </div>
+                    <div class="mt-2">
+                        <a href="{{ employee.payment_qr_code.url }}" download
+                           class="btn btn-sm btn-outline-primary" style="font-size:.78rem;border-radius:6px;">
+                            <i class="fas fa-download me-1"></i>Download QR
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>

@@ -577,7 +577,7 @@
                         <td>{{ slip.generated_on|date:"Y-m-d"|default:"-" }}</td>
                         <td>
                             <div class="ps-actions">
-                                <a class="ps-act ps-act-download" href="{% url 'hrm:payslip_download' slip.pk %}" title="Download Payslip" onclick="setTimeout(()=>location.reload(),1500)">
+                                <a class="ps-act ps-act-download" href="{% url 'hrm:payslip_download' slip.pk %}" target="_blank" title="Download Payslip" onclick="setTimeout(()=>location.reload(),1500)">
                                     <i class="fas fa-download"></i>
                                 </a>
                             </div>
@@ -658,7 +658,7 @@
 <script>
 // Helper: trigger browser download then reload page to reflect updated status
 function downloadAndReload(url) {
-    window.location.href = url;
+    window.open(url, '_blank');
     setTimeout(() => location.reload(), 1500);
 }
 

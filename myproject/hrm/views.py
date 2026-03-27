@@ -4589,9 +4589,15 @@ def payslip_detail(request, pk):
 
 @login_required
 def payslip_download(request, pk):
-    from .models import Payslip
+    from .models import Payslip, EmployeeSalary, AttendanceRecord, AttendancePolicy
+    import calendar
+    from datetime import date as dt_date
+    from decimal import Decimal, ROUND_HALF_UP
+
     try:
-        slip = Payslip.objects.select_related('employee', 'payroll_run').get(pk=pk)
+        slip = Payslip.objects.select_related(
+            'employee', 'employee__department', 'employee__designation', 'payroll_run'
+        ).get(pk=pk)
     except Payslip.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
 
@@ -4600,31 +4606,154 @@ def payslip_download(request, pk):
         slip.status = 'downloaded'
         slip.save(update_fields=['status', 'updated_at'])
 
-    # Generate simple text payslip for download
-    pay_period = ''
-    if slip.payroll_run.pay_period_start and slip.payroll_run.pay_period_end:
-        pay_period = f"{slip.payroll_run.pay_period_start} to {slip.payroll_run.pay_period_end}"
-    content = (
-        f"{'='*50}\n"
-        f"               PAYSLIP\n"
-        f"{'='*50}\n\n"
-        f"Payslip Number : {slip.payslip_number}\n"
-        f"Employee       : {slip.employee.full_name}\n"
-        f"Employee ID    : {slip.employee.employee_id}\n"
-        f"Pay Period     : {pay_period}\n"
-        f"Pay Date       : {slip.payroll_run.pay_date or '-'}\n\n"
-        f"{'-'*50}\n"
-        f"Gross Salary      : Rs. {slip.gross_salary}\n"
-        f"Total Deductions  : Rs. {slip.total_deductions}\n"
-        f"Net Salary        : Rs. {slip.net_salary}\n"
-        f"{'-'*50}\n\n"
-        f"Status         : {slip.get_status_display()}\n"
-        f"Generated On   : {slip.generated_on or '-'}\n"
-        f"{'='*50}\n"
+    employee = slip.employee
+    run = slip.payroll_run
+
+    # ── Determine month / year from pay period ──
+    month = run.month or (run.pay_period_start.month if run.pay_period_start else timezone.now().month)
+    year = run.year or (run.pay_period_start.year if run.pay_period_start else timezone.now().year)
+
+    # ── Working days in month (Mon-Fri) ──
+    first_day = dt_date(year, month, 1)
+    last_day = dt_date(year, month, calendar.monthrange(year, month)[1])
+    working_days = 0
+    d = first_day
+    while d <= last_day:
+        if d.weekday() < 5:
+            working_days += 1
+        d += timedelta(days=1)
+
+    # ── Attendance summary ──
+    records = AttendanceRecord.objects.filter(employee=employee, date__year=year, date__month=month)
+    present_days = Decimal('0')
+    half_days = Decimal('0')
+    absent_days = Decimal('0')
+    on_leave_days = Decimal('0')
+    total_overtime_hours = Decimal('0')
+
+    for rec in records:
+        if rec.status in ('present', 'late'):
+            present_days += 1
+        elif rec.status == 'absent':
+            absent_days += 1
+        elif rec.status == 'half_day':
+            half_days += 1
+        elif rec.status == 'on_leave':
+            on_leave_days += 1
+        total_overtime_hours += rec.overtime_hours
+
+    paid_leave_days = on_leave_days
+
+    # ── Salary component breakdown ──
+    salary_record = (
+        EmployeeSalary.objects.filter(employee=employee, is_active=True)
+        .prefetch_related('components')
+        .order_by('-effective_date')
+        .first()
     )
-    response = HttpResponse(content, content_type='text/plain')
-    response['Content-Disposition'] = f'attachment; filename="{slip.payslip_number}.txt"'
-    return response
+    basic_salary = salary_record.basic_salary if salary_record else (employee.base_salary or Decimal('0'))
+    components = salary_record.components.filter(is_active=True) if salary_record else []
+
+    # Two-pass calculation (matches generate_payslips logic)
+    pre_gross = basic_salary
+    for comp in components:
+        if comp.component_type == 'earning':
+            if comp.calculation_type == 'fixed':
+                pre_gross += comp.amount
+            elif comp.calculation_type == 'percentage_of_basic':
+                pre_gross += (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    earnings_list = []
+    deductions_list = []
+    total_earnings_comp = Decimal('0')
+    total_deductions_comp = Decimal('0')
+
+    for comp in components:
+        if comp.calculation_type == 'fixed':
+            calc_amount = comp.amount
+        elif comp.calculation_type == 'percentage_of_basic':
+            calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
+            calc_amount = (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        else:
+            calc_amount = comp.amount
+
+        if comp.component_type == 'earning':
+            earnings_list.append({'name': comp.name, 'amount': calc_amount})
+            total_earnings_comp += calc_amount
+        else:
+            deductions_list.append({'name': comp.name, 'amount': calc_amount})
+            total_deductions_comp += calc_amount
+
+    total_earnings = basic_salary + total_earnings_comp
+
+    # ── Attendance-based deductions ──
+    per_day_salary = Decimal('0')
+    if working_days > 0:
+        per_day_salary = (total_earnings / Decimal(str(working_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    half_day_deduction = (per_day_salary * half_days * Decimal('0.5')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    absent_deduction = (per_day_salary * absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    attendance_deduction = half_day_deduction + absent_deduction
+
+    # ── Overtime ──
+    overtime_rate = Decimal('0')
+    try:
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
+        if policy:
+            overtime_rate = policy.overtime_rate
+    except Exception:
+        pass
+    overtime_amount = (total_overtime_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    # ── Net salary ──
+    total_deductions = total_deductions_comp + attendance_deduction
+    net_salary = total_earnings + overtime_amount - total_deductions
+
+    # ── Build side-by-side salary rows ──
+    max_rows = max(len(earnings_list), len(deductions_list))
+    salary_rows = []
+    for i in range(max_rows):
+        row = {}
+        if i < len(earnings_list):
+            row['earning_name'] = earnings_list[i]['name']
+            row['earning_amount'] = earnings_list[i]['amount']
+        else:
+            row['earning_name'] = ''
+            row['earning_amount'] = None
+        if i < len(deductions_list):
+            row['deduction_name'] = deductions_list[i]['name']
+            row['deduction_amount'] = deductions_list[i]['amount']
+        else:
+            row['deduction_name'] = ''
+            row['deduction_amount'] = None
+        salary_rows.append(row)
+
+    context = {
+        'payslip': slip,
+        'employee': employee,
+        'company_name': 'HRM System',
+        'pay_period_start': run.pay_period_start,
+        'pay_period_end': run.pay_period_end,
+        'pay_date': run.pay_date,
+        'basic_salary': basic_salary,
+        'working_days': working_days,
+        'present_days': present_days,
+        'absent_days': absent_days,
+        'half_days': half_days,
+        'paid_leave_days': paid_leave_days,
+        'total_overtime_hours': total_overtime_hours,
+        'earnings_list': earnings_list,
+        'deductions_list': deductions_list,
+        'salary_rows': salary_rows,
+        'total_earnings': total_earnings + overtime_amount,
+        'total_deductions': total_deductions,
+        'overtime_amount': overtime_amount,
+        'overtime_rate': overtime_rate,
+        'attendance_deduction': attendance_deduction,
+        'net_salary': net_salary,
+    }
+    return render(request, 'hrm/payslip_print.html', context)
 
 
 @login_required

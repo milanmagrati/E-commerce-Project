@@ -4,102 +4,349 @@
 
 {% block content %}
 <style>
-    .error-banner {
-        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-        color: #fff;
-        border-radius: 10px;
-        padding: 16px 24px;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 15px rgba(238, 90, 36, 0.3);
-        animation: slideDown 0.4s ease-out;
-    }
-    .error-banner .error-icon {
-        font-size: 1.5rem;
-        margin-right: 12px;
-    }
-    .error-banner ul {
-        margin-bottom: 0;
-        padding-left: 20px;
-    }
-    .error-banner ul li {
-        margin-bottom: 2px;
-        font-size: 0.9rem;
-    }
-    @keyframes slideDown {
-        from { opacity: 0; transform: translateY(-20px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes shake {
-        0%, 100% { transform: translateX(0); }
-        20%, 60% { transform: translateX(-4px); }
-        40%, 80% { transform: translateX(4px); }
-    }
-    .field-error-wrapper .form-control.is-invalid,
-    .field-error-wrapper .form-select.is-invalid {
-        border-color: #dc3545 !important;
-        box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.15) !important;
-        animation: shake 0.4s ease;
-    }
-    .field-error-msg {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        color: #dc3545;
-        font-size: 0.82rem;
-        margin-top: 4px;
-        font-weight: 500;
-    }
-    .field-error-msg i {
-        font-size: 0.75rem;
-    }
-    .card-error {
-        border-left: 4px solid #dc3545 !important;
-    }
-    .gender-error {
-        border: 2px solid #dc3545;
-        border-radius: 8px;
-        padding: 8px 12px;
-        background: rgba(220, 53, 69, 0.04);
-    }
+/* ── Variables ──────────────────────────────────────────── */
+:root {
+    --primary: #4f46e5;
+    --primary-light: #ede9fe;
+    --primary-dark: #3730a3;
+    --success: #059669;
+    --danger: #dc2626;
+    --warning: #d97706;
+    --info: #0284c7;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --bg-card: #ffffff;
+    --bg-page: #f8fafc;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
+    --shadow-hover: 0 4px 6px rgba(0,0,0,.07), 0 10px 30px rgba(0,0,0,.1);
+    --transition: all .22s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Page wrapper ───────────────────────────────────────── */
+.emp-form-wrapper { max-width: 1100px; margin: 0 auto; }
+
+/* ── Page Header ────────────────────────────────────────── */
+.page-header-bar {
+    background: linear-gradient(135deg, var(--primary) 0%, #6366f1 100%);
+    border-radius: var(--radius);
+    padding: 28px 32px;
+    margin-bottom: 28px;
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(79,70,229,.25);
+    animation: fadeSlideDown .4s ease both;
+}
+.page-header-bar .breadcrumb-item a { color: rgba(255,255,255,.75); text-decoration: none; transition: var(--transition); }
+.page-header-bar .breadcrumb-item a:hover { color: #fff; }
+.page-header-bar .breadcrumb-item.active { color: rgba(255,255,255,.9); }
+.page-header-bar .breadcrumb-item + .breadcrumb-item::before { color: rgba(255,255,255,.45); }
+.page-header-bar h1 { font-size: 1.65rem; font-weight: 700; margin: 6px 0 0; letter-spacing: -.3px; }
+.page-header-bar .header-icon {
+    width: 52px; height: 52px; background: rgba(255,255,255,.18);
+    border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; backdrop-filter: blur(4px);
+}
+.btn-back {
+    background: rgba(255,255,255,.15);
+    color: #fff;
+    border: 1.5px solid rgba(255,255,255,.35);
+    border-radius: var(--radius-sm);
+    padding: 9px 20px;
+    font-weight: 500;
+    transition: var(--transition);
+    backdrop-filter: blur(4px);
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 7px;
+}
+.btn-back:hover { background: rgba(255,255,255,.28); color: #fff; transform: translateX(-2px); }
+
+/* ── Section Cards ──────────────────────────────────────── */
+.section-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+    transition: var(--transition);
+    animation: fadeSlideUp .35s ease both;
+    overflow: hidden;
+}
+.section-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-1px); }
+.section-card.card-error { border-left: 4px solid var(--danger) !important; }
+
+.section-card-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 20px 28px 0;
+    margin-bottom: 20px;
+}
+.section-icon {
+    width: 42px; height: 42px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.05rem; flex-shrink: 0;
+}
+.icon-blue   { background: #eff6ff; color: #2563eb; }
+.icon-violet { background: #f5f3ff; color: #7c3aed; }
+.icon-teal   { background: #f0fdfa; color: #0d9488; }
+.icon-amber  { background: #fffbeb; color: #d97706; }
+.icon-slate  { background: #f8fafc; color: #475569; }
+
+.section-title { font-size: 1rem; font-weight: 700; color: var(--text-main); margin: 0; }
+.section-subtitle { font-size: 0.8rem; color: var(--text-muted); margin: 2px 0 0; }
+.section-card-body { padding: 4px 28px 28px; }
+
+/* ── Form Controls ──────────────────────────────────────── */
+.form-label {
+    font-size: .82rem; font-weight: 600; color: var(--text-main);
+    margin-bottom: 6px; letter-spacing: .01em;
+}
+.form-label .req { color: var(--danger); margin-left: 3px; }
+.form-label .opt-badge {
+    font-size: .68rem; font-weight: 500; color: var(--text-muted);
+    background: #f1f5f9; border-radius: 4px; padding: 1px 6px; margin-left: 5px;
+}
+.form-control, .form-select {
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 13px;
+    font-size: .9rem;
+    color: var(--text-main);
+    background: #fafbfc;
+    transition: var(--transition);
+    box-shadow: none;
+}
+.form-control:hover, .form-select:hover { border-color: #c7d2fe; background: #fff; }
+.form-control:focus, .form-select:focus {
+    border-color: var(--primary);
+    background: #fff;
+    box-shadow: 0 0 0 3.5px rgba(79,70,229,.12);
+    outline: none;
+}
+.form-control[readonly] { background: #f1f5f9; color: var(--text-muted); cursor: not-allowed; }
+.form-hint { font-size: .76rem; color: var(--text-muted); margin-top: 5px; display: flex; align-items: center; gap: 4px; }
+
+/* ── Gender Radio ───────────────────────────────────────── */
+.gender-group { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.gender-option {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 18px; border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); cursor: pointer;
+    transition: var(--transition); background: #fafbfc;
+    font-size: .88rem; font-weight: 500; color: var(--text-muted);
+    user-select: none;
+}
+.gender-option:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.gender-option input[type=radio] { display: none; }
+.gender-option.selected { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.gender-option .radio-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid currentColor; display: flex; align-items: center; justify-content: center;
+    transition: var(--transition); flex-shrink: 0;
+}
+.gender-option.selected .radio-dot::after {
+    content: ''; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--primary);
+}
+.gender-error-wrap { border: 1.5px solid var(--danger); border-radius: var(--radius-sm); padding: 10px 14px; background: rgba(220,38,38,.03); }
+
+/* ── Image Upload ───────────────────────────────────────── */
+.img-upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    background: #fafbfc;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    min-height: 140px;
+    display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
+}
+.img-upload-zone:hover { border-color: var(--primary); background: var(--primary-light); }
+.img-upload-zone.has-image { padding: 16px; border-style: solid; border-color: var(--primary); }
+.img-upload-zone .upload-icon { font-size: 2rem; color: #94a3b8; line-height: 1; transition: var(--transition); }
+.img-upload-zone:hover .upload-icon { color: var(--primary); transform: scale(1.08); }
+.img-upload-zone .upload-text { font-size: .85rem; color: var(--text-muted); }
+.img-upload-zone .upload-hint { font-size: .75rem; color: #94a3b8; }
+#imagePreview { max-height: 110px; max-width: 220px; border-radius: 10px; object-fit: cover; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+
+/* ── QR Upload Zone ─────────────────────────────────────── */
+.qr-drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    background: #fafbfc;
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+    min-height: 130px;
+    display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px;
+}
+.qr-drop-zone:hover { border-color: var(--primary); background: var(--primary-light); }
+.qr-drop-zone.has-qr { padding: 14px; border-style: solid; border-color: var(--primary); }
+.qr-drop-zone .qr-drop-icon { font-size: 2rem; color: #94a3b8; line-height: 1; transition: var(--transition); }
+.qr-drop-zone:hover .qr-drop-icon { color: var(--primary); transform: scale(1.08); }
+.qr-drop-zone .qr-drop-text { font-size: .85rem; font-weight: 500; color: var(--text-muted); }
+.qr-drop-zone .qr-drop-hint { font-size: .75rem; color: #94a3b8; }
+.qr-preview-img { max-height: 120px; max-width: 120px; border-radius: 8px; object-fit: contain; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.qr-current-img { max-height: 100px; max-width: 100px; border-radius: 6px; object-fit: contain; border: 1.5px solid var(--border); cursor: pointer; transition: var(--transition); }
+.qr-current-img:hover { border-color: var(--primary); }
+
+/* ── Document Table ─────────────────────────────────────── */
+.doc-table { border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border); }
+.doc-table thead th { background: #f8fafc; color: var(--text-main); font-size: .8rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 10px 14px; border: none; border-bottom: 1px solid var(--border); }
+.doc-table tbody td { padding: 11px 14px; font-size: .88rem; color: var(--text-main); border: none; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.doc-table tbody tr:last-child td { border-bottom: none; }
+.doc-table tbody tr { transition: var(--transition); }
+.doc-table tbody tr:hover { background: #f8fafc; }
+.doc-row-new { animation: fadeSlideUp .2s ease both; }
+.btn-add-doc {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border: 1.5px dashed #94a3b8;
+    border-radius: var(--radius-sm); background: transparent;
+    color: var(--text-muted); font-size: .85rem; font-weight: 500;
+    cursor: pointer; transition: var(--transition); margin-top: 12px;
+}
+.btn-add-doc:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+
+/* ── Divider ────────────────────────────────────────────── */
+.section-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 22px 0 18px; color: var(--text-muted); font-size: .8rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .06em;
+}
+.section-divider::before, .section-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* ── Error Banner ───────────────────────────────────────── */
+.error-banner {
+    background: linear-gradient(135deg, #fef2f2 0%, #fff5f5 100%);
+    color: var(--danger);
+    border: 1.5px solid #fecaca;
+    border-left: 5px solid var(--danger);
+    border-radius: var(--radius);
+    padding: 18px 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 12px rgba(220,38,38,.08);
+    animation: fadeSlideDown .35s ease both;
+}
+.error-banner h6 { color: var(--danger); font-size: .95rem; }
+.error-banner ul li { font-size: .85rem; margin-bottom: 3px; }
+
+/* ── Field Errors ───────────────────────────────────────── */
+.field-error-wrapper .form-control.is-invalid,
+.field-error-wrapper .form-select.is-invalid {
+    border-color: var(--danger) !important;
+    box-shadow: 0 0 0 3px rgba(220,38,38,.1) !important;
+    animation: shake .35s ease;
+}
+.field-error-msg {
+    display: flex; align-items: center; gap: 5px;
+    color: var(--danger); font-size: .79rem; margin-top: 5px; font-weight: 500;
+}
+.field-error-msg i { font-size: .72rem; }
+
+/* ── Sticky Footer ──────────────────────────────────────── */
+.form-actions-bar {
+    position: sticky;
+    bottom: 0;
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    padding: 16px 28px;
+    margin: 0 -12px;
+    display: flex; justify-content: flex-end; align-items: center; gap: 12px;
+    z-index: 100;
+    border-radius: 0 0 var(--radius) var(--radius);
+    box-shadow: 0 -4px 20px rgba(0,0,0,.06);
+    animation: fadeSlideUp .3s ease both;
+}
+.btn-cancel-form {
+    padding: 10px 24px; border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border); background: #fff;
+    color: var(--text-muted); font-weight: 600; font-size: .9rem;
+    text-decoration: none; transition: var(--transition);
+    display: inline-flex; align-items: center; gap: 7px;
+}
+.btn-cancel-form:hover { border-color: #94a3b8; color: var(--text-main); background: #f8fafc; }
+.btn-save-form {
+    padding: 10px 28px; border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, var(--primary) 0%, #6366f1 100%);
+    color: #fff; font-weight: 600; font-size: .9rem;
+    border: none; cursor: pointer; transition: var(--transition);
+    display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 4px 14px rgba(79,70,229,.35);
+}
+.btn-save-form:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(79,70,229,.45); }
+.btn-save-form:active { transform: translateY(0); }
+.btn-save-form.loading { opacity: .75; pointer-events: none; }
+
+/* ── Alerts ─────────────────────────────────────────────── */
+.alert { border-radius: var(--radius-sm); border: none; font-size: .88rem; padding: 13px 18px; }
+.alert-success { background: #f0fdf4; color: #166534; border-left: 4px solid var(--success); }
+.alert-error, .alert-danger { background: #fef2f2; color: #991b1b; border-left: 4px solid var(--danger); }
+.alert-info { background: #eff6ff; color: #1e40af; border-left: 4px solid var(--info); }
+
+/* ── Animations ─────────────────────────────────────────── */
+@keyframes fadeSlideDown {
+    from { opacity: 0; transform: translateY(-18px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shake {
+    0%,100% { transform: translateX(0); }
+    20%,60%  { transform: translateX(-4px); }
+    40%,80%  { transform: translateX(4px); }
+}
+.section-card:nth-child(1) { animation-delay: .04s; }
+.section-card:nth-child(2) { animation-delay: .08s; }
+.section-card:nth-child(3) { animation-delay: .12s; }
+.section-card:nth-child(4) { animation-delay: .16s; }
+.section-card:nth-child(5) { animation-delay: .20s; }
+.section-card:nth-child(6) { animation-delay: .24s; }
 </style>
 
-<div class="row">
-    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
+<div class="emp-form-wrapper">
+
+<!-- ── Page Header ── -->
+<div class="page-header-bar d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <div class="d-flex align-items-center gap-3">
+        <div class="header-icon"><i class="fas fa-user-plus"></i></div>
         <div>
             <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-1">
+                <ol class="breadcrumb mb-0" style="font-size:.78rem;">
                     <li class="breadcrumb-item"><a href="{% url 'hrm:dashboard' %}">Dashboard</a></li>
-                    <li class="breadcrumb-item"><a href="#">HR Management</a></li>
                     <li class="breadcrumb-item"><a href="{% url 'hrm:employee_list' %}">Employees</a></li>
                     <li class="breadcrumb-item active">{{ page_title }}</li>
                 </ol>
             </nav>
-            <h2>{{ page_title }}</h2>
+            <h1>{{ page_title }}</h1>
         </div>
-        <a href="{% url 'hrm:employee_list' %}" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left me-1"></i>Back
-        </a>
     </div>
+    <a href="{% url 'hrm:employee_list' %}" class="btn-back">
+        <i class="fas fa-arrow-left"></i> Back to List
+    </a>
 </div>
 
-<!-- Error Banner -->
+<!-- ── Error Banner ── -->
 {% if form.errors %}
 <div class="error-banner" id="errorBanner">
-    <div class="d-flex align-items-start">
-        <i class="fas fa-exclamation-triangle error-icon mt-1"></i>
+    <div class="d-flex align-items-start gap-3">
+        <i class="fas fa-exclamation-circle mt-1" style="font-size:1.2rem;"></i>
         <div class="flex-grow-1">
             <h6 class="mb-1 fw-bold">Please fix the following errors:</h6>
-            <ul class="mb-0">
+            <ul class="mb-0 ps-3">
                 {% for field, errors in form.errors.items %}
                     {% for error in errors %}
-                    <li>
-                        {% if field == '__all__' %}{{ error }}{% else %}<strong>{{ field|title }}:</strong> {{ error }}{% endif %}
-                    </li>
+                    <li>{% if field == '__all__' %}{{ error }}{% else %}<strong>{{ field|title }}:</strong> {{ error }}{% endif %}</li>
                     {% endfor %}
                 {% endfor %}
             </ul>
         </div>
-        <button type="button" class="btn-close btn-close-white ms-3" onclick="document.getElementById('errorBanner').remove()"></button>
+        <button type="button" class="btn-close ms-auto" onclick="document.getElementById('errorBanner').remove()" style="filter:none;opacity:.6;"></button>
     </div>
 </div>
 {% endif %}
@@ -117,318 +364,308 @@
 <form method="post" enctype="multipart/form-data" id="employeeForm" novalidate>
     {% csrf_token %}
 
-    <!-- Basic Information -->
-    <div class="card mb-4 {% if form.full_name.errors or form.employee_id.errors or form.employee_code.errors or form.email.errors or form.password.errors or form.phone.errors or form.date_of_birth.errors or form.gender.errors or form.profile_image.errors %}card-error{% endif %}">
-        <div class="card-body">
-            <h5 class="card-title mb-4 fw-bold">Basic Information</h5>
-            <div class="row g-3">
+    <!-- ── Basic Information ── -->
+    <div class="section-card {% if form.full_name.errors or form.employee_id.errors or form.employee_code.errors or form.email.errors or form.phone.errors or form.date_of_birth.errors or form.gender.errors or form.profile_image.errors %}card-error{% endif %}">
+        <div class="section-card-header">
+            <div class="section-icon icon-blue"><i class="fas fa-id-card"></i></div>
+            <div>
+                <p class="section-title">Basic Information</p>
+                <p class="section-subtitle">Personal details and contact information</p>
+            </div>
+        </div>
+        <div class="section-card-body">
+            <div class="row g-4">
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Full Name <span class="text-danger">*</span></label>
+                    <label class="form-label">Full Name <span class="req">*</span></label>
                     {{ form.full_name }}
-                    {% if form.full_name.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.full_name.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.full_name.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.full_name.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
                     <label class="form-label">Employee ID</label>
                     {{ form.employee_id }}
-                    <small class="text-muted">Employee ID will be auto-generated</small>
-                    {% if form.employee_id.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_id.errors.0 }}</div>
-                    {% endif %}
+                    <div class="form-hint"><i class="fas fa-info-circle"></i> Auto-generated upon saving</div>
+                    {% if form.employee_id.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_id.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Employee Code <span class="text-danger">*</span></label>
+                    <label class="form-label">Employee Code <span class="req">*</span></label>
                     {{ form.employee_code }}
-                    <small class="text-muted">This ID will be used to map employee with biometric device.</small>
-                    {% if form.employee_code.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_code.errors.0 }}</div>
-                    {% endif %}
+                    <div class="form-hint"><i class="fas fa-fingerprint"></i> Used to map employee with biometric device</div>
+                    {% if form.employee_code.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_code.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Email <span class="text-danger">*</span></label>
+                    <label class="form-label">Email Address <span class="req">*</span></label>
                     {{ form.email }}
-                    {% if form.email.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.email.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.email.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.email.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Password <span class="text-danger">*</span></label>
-                    {{ form.password }}
-                    {% if form.password.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.password.errors.0 }}</div>
-                    {% endif %}
-                </div>
-                <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                    <label class="form-label">Phone Number <span class="req">*</span></label>
                     {{ form.phone }}
-                    {% if form.phone.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.phone.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.phone.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.phone.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Date of Birth <span class="text-danger">*</span></label>
+                    <label class="form-label">Date of Birth <span class="req">*</span></label>
                     {{ form.date_of_birth }}
-                    {% if form.date_of_birth.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.date_of_birth.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.date_of_birth.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.date_of_birth.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Gender <span class="text-danger">*</span></label>
-                    <div class="d-flex gap-4 mt-1 {% if form.gender.errors %}gender-error{% endif %}">
+                    <label class="form-label">Gender <span class="req">*</span></label>
+                    <div class="gender-group {% if form.gender.errors %}gender-error-wrap{% endif %}" id="genderGroup">
                         {% for radio in form.gender %}
-                        <div class="form-check">
+                        <label class="gender-option {% if radio.data.selected %}selected{% endif %}">
                             {{ radio.tag }}
-                            <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
-                        </div>
+                            <span class="radio-dot"></span>
+                            {{ radio.choice_label }}
+                        </label>
                         {% endfor %}
                     </div>
-                    {% if form.gender.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.gender.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.gender.errors %}<div class="field-error-msg mt-1"><i class="fas fa-exclamation-circle"></i> {{ form.gender.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="col-12 field-error-wrapper">
-                    <label class="form-label">Profile Image</label>
-                    <div class="border rounded p-4 text-center mb-2 {% if form.profile_image.errors %}border-danger{% endif %}" id="imagePreviewArea" style="min-height:120px; cursor:pointer;" onclick="document.getElementById('id_profile_image_input').click()">
+                <div class="col-md-6 field-error-wrapper">
+                    <label class="form-label">Profile Image <span class="opt-badge">optional</span></label>
+                    <div class="img-upload-zone {% if employee and employee.profile_image %}has-image{% endif %}" id="imageUploadZone" onclick="document.getElementById('id_profile_image_input').click()">
                         {% if employee and employee.profile_image %}
-                        <img src="{{ employee.profile_image.url }}" alt="Preview" id="imagePreview" class="rounded" style="max-height:100px;max-width:200px;object-fit:cover;">
+                        <img src="{{ employee.profile_image.url }}" alt="Preview" id="imagePreview" class="rounded">
                         {% else %}
                         <div id="imagePlaceholder">
-                            <i class="fas fa-image fa-2x text-muted mb-2 d-block"></i>
-                            <span class="text-muted">Image</span><br>
-                            <small class="text-muted">No image selected</small>
+                            <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                            <div class="upload-text fw-500">Click to upload a photo</div>
+                            <div class="upload-hint">PNG, JPG up to 5 MB</div>
                         </div>
-                        <img src="" alt="Preview" id="imagePreview" class="rounded d-none" style="max-height:100px;max-width:200px;object-fit:cover;">
+                        <img src="" alt="Preview" id="imagePreview" class="rounded d-none">
                         {% endif %}
                     </div>
-                    <div class="input-group">
-                        <input type="text" class="form-control" placeholder="Select profile image..." readonly id="imageFileName"
+                    <div class="input-group mt-2">
+                        <input type="text" class="form-control" placeholder="No image selected" readonly id="imageFileName"
                             {% if employee and employee.profile_image %}value="{{ employee.profile_image.name }}"{% endif %}>
-                        <label class="btn btn-outline-secondary" for="id_profile_image_input">
-                            <i class="fas fa-image me-1"></i>Browse
+                        <label class="btn btn-outline-secondary" for="id_profile_image_input" style="border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                            <i class="fas fa-folder-open me-1"></i>Browse
                         </label>
                     </div>
                     <input type="file" name="profile_image" id="id_profile_image_input" class="d-none" accept="image/*" onchange="previewImage(this)">
-                    {% if form.profile_image.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.profile_image.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.profile_image.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.profile_image.errors.0 }}</div>{% endif %}
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Employment Details -->
-    <div class="card mb-4 {% if form.branch.errors or form.department.errors or form.designation.errors or form.date_of_joining.errors or form.employment_type.errors or form.employee_status.errors %}card-error{% endif %}">
-        <div class="card-body">
-            <h5 class="card-title mb-4 fw-bold">Employment Details</h5>
-            <div class="row g-3">
+    <!-- ── Employment Details ── -->
+    <div class="section-card {% if form.branch.errors or form.department.errors or form.designation.errors or form.date_of_joining.errors or form.employment_type.errors or form.employee_status.errors %}card-error{% endif %}">
+        <div class="section-card-header">
+            <div class="section-icon icon-violet"><i class="fas fa-briefcase"></i></div>
+            <div>
+                <p class="section-title">Employment Details</p>
+                <p class="section-subtitle">Job role, department and work arrangement</p>
+            </div>
+        </div>
+        <div class="section-card-body">
+            <div class="row g-4">
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Branch <span class="text-danger">*</span></label>
+                    <label class="form-label">Branch <span class="req">*</span></label>
                     {{ form.branch }}
-                    {% if form.branch.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.branch.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.branch.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.branch.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Department <span class="text-danger">*</span></label>
+                    <label class="form-label">Department <span class="req">*</span></label>
                     {{ form.department }}
-                    {% if form.department.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.department.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.department.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.department.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Designation <span class="text-danger">*</span></label>
+                    <label class="form-label">Designation <span class="req">*</span></label>
                     {{ form.designation }}
-                    {% if form.designation.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.designation.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.designation.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.designation.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Date of Joining <span class="text-danger">*</span></label>
+                    <label class="form-label">Date of Joining <span class="req">*</span></label>
                     {{ form.date_of_joining }}
-                    {% if form.date_of_joining.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.date_of_joining.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.date_of_joining.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.date_of_joining.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Employment Type <span class="text-danger">*</span></label>
+                    <label class="form-label">Employment Type <span class="req">*</span></label>
                     {{ form.employment_type }}
-                    {% if form.employment_type.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employment_type.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.employment_type.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employment_type.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Employee Status <span class="text-danger">*</span></label>
+                    <label class="form-label">Employee Status <span class="req">*</span></label>
                     {{ form.employee_status }}
-                    {% if form.employee_status.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_status.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.employee_status.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.employee_status.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Shift</label>
+                    <label class="form-label">Shift <span class="opt-badge">optional</span></label>
                     {{ form.shift }}
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Attendance Policy</label>
+                    <label class="form-label">Attendance Policy <span class="opt-badge">optional</span></label>
                     {{ form.attendance_policy }}
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Contact Information -->
-    <div class="card mb-4 {% if form.address_line_1.errors or form.city.errors or form.state.errors or form.country.errors or form.postal_code.errors or form.emergency_contact_name.errors or form.emergency_contact_relationship.errors or form.emergency_contact_phone.errors %}card-error{% endif %}">
-        <div class="card-body">
-            <h5 class="card-title mb-4 fw-bold">Contact Information</h5>
-            <div class="row g-3">
+    <!-- ── Contact Information ── -->
+    <div class="section-card {% if form.address_line_1.errors or form.city.errors or form.state.errors or form.country.errors or form.postal_code.errors or form.emergency_contact_name.errors or form.emergency_contact_relationship.errors or form.emergency_contact_phone.errors %}card-error{% endif %}">
+        <div class="section-card-header">
+            <div class="section-icon icon-teal"><i class="fas fa-map-marker-alt"></i></div>
+            <div>
+                <p class="section-title">Contact Information <span class="opt-badge" style="font-size:.72rem;">optional</span></p>
+                <p class="section-subtitle">Residential address and emergency contact</p>
+            </div>
+        </div>
+        <div class="section-card-body">
+            <div class="row g-4">
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Address Line 1 <span class="text-danger">*</span></label>
+                    <label class="form-label">Address Line 1</label>
                     {{ form.address_line_1 }}
-                    {% if form.address_line_1.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.address_line_1.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.address_line_1.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.address_line_1.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Address Line 2</label>
                     {{ form.address_line_2 }}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">City <span class="text-danger">*</span></label>
+                    <label class="form-label">City</label>
                     {{ form.city }}
-                    {% if form.city.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.city.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.city.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.city.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">State/Province <span class="text-danger">*</span></label>
+                    <label class="form-label">State / Province</label>
                     {{ form.state }}
-                    {% if form.state.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.state.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.state.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.state.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Country <span class="text-danger">*</span></label>
+                    <label class="form-label">Country</label>
                     {{ form.country }}
-                    {% if form.country.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.country.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.country.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.country.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Postal/Zip Code <span class="text-danger">*</span></label>
+                    <label class="form-label">Postal / Zip Code</label>
                     {{ form.postal_code }}
-                    {% if form.postal_code.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.postal_code.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.postal_code.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.postal_code.errors.0 }}</div>{% endif %}
                 </div>
             </div>
 
-            <h6 class="mt-4 mb-3 fw-bold">Emergency Contact</h6>
-            <div class="row g-3">
-                <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Name <span class="text-danger">*</span></label>
+            <div class="section-divider"><i class="fas fa-heart" style="color:#f43f5e;"></i> Emergency Contact</div>
+            <div class="row g-4">
+                <div class="col-md-4 field-error-wrapper">
+                    <label class="form-label">Name</label>
                     {{ form.emergency_contact_name }}
-                    {% if form.emergency_contact_name.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_name.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.emergency_contact_name.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_name.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Relationship <span class="text-danger">*</span></label>
+                <div class="col-md-4 field-error-wrapper">
+                    <label class="form-label">Relationship</label>
                     {{ form.emergency_contact_relationship }}
-                    {% if form.emergency_contact_relationship.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_relationship.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.emergency_contact_relationship.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_relationship.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                <div class="col-md-4 field-error-wrapper">
+                    <label class="form-label">Phone Number</label>
                     {{ form.emergency_contact_phone }}
-                    {% if form.emergency_contact_phone.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_phone.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.emergency_contact_phone.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.emergency_contact_phone.errors.0 }}</div>{% endif %}
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Banking Information -->
-    <div class="card mb-4 {% if form.bank_name.errors or form.account_holder_name.errors or form.account_number.errors or form.bank_identifier_code.errors or form.bank_branch.errors or form.base_salary.errors %}card-error{% endif %}">
-        <div class="card-body">
-            <h5 class="card-title mb-4 fw-bold">Banking Information</h5>
-            <div class="row g-3">
+    <!-- ── Banking Information ── -->
+    <div class="section-card {% if form.bank_name.errors or form.account_holder_name.errors or form.account_number.errors or form.bank_identifier_code.errors or form.bank_branch.errors or form.base_salary.errors %}card-error{% endif %}">
+        <div class="section-card-header">
+            <div class="section-icon icon-amber"><i class="fas fa-university"></i></div>
+            <div>
+                <p class="section-title">Banking Information <span class="opt-badge" style="font-size:.72rem;">optional</span></p>
+                <p class="section-subtitle">Salary account and payment details</p>
+            </div>
+        </div>
+        <div class="section-card-body">
+            <div class="row g-4">
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Bank Name <span class="text-danger">*</span></label>
+                    <label class="form-label">Bank Name</label>
                     {{ form.bank_name }}
-                    {% if form.bank_name.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_name.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.bank_name.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_name.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Account Holder Name <span class="text-danger">*</span></label>
+                    <label class="form-label">Account Holder Name</label>
                     {{ form.account_holder_name }}
-                    {% if form.account_holder_name.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.account_holder_name.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.account_holder_name.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.account_holder_name.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Account Number <span class="text-danger">*</span></label>
+                    <label class="form-label">Account Number</label>
                     {{ form.account_number }}
-                    {% if form.account_number.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.account_number.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.account_number.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.account_number.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Bank Identifier Code (BIC/SWIFT) <span class="text-danger">*</span></label>
+                    <label class="form-label">Bank Identifier Code <span style="color:var(--text-muted);font-weight:400;">(BIC / SWIFT)</span></label>
                     {{ form.bank_identifier_code }}
-                    {% if form.bank_identifier_code.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_identifier_code.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.bank_identifier_code.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_identifier_code.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Bank Branch <span class="text-danger">*</span></label>
+                    <label class="form-label">Bank Branch</label>
                     {{ form.bank_branch }}
-                    {% if form.bank_branch.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_branch.errors.0 }}</div>
-                    {% endif %}
+                    {% if form.bank_branch.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.bank_branch.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Tax Payer ID</label>
                     {{ form.tax_payer_id }}
                 </div>
                 <div class="col-md-6 field-error-wrapper">
-                    <label class="form-label">Base Salary <span class="text-danger">*</span></label>
-                    {{ form.base_salary }}
-                    {% if form.base_salary.errors %}
-                    <div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.base_salary.errors.0 }}</div>
-                    {% endif %}
+                    <label class="form-label">Base Salary</label>
+                    <div class="input-group">
+                        <span class="input-group-text" style="border-radius:var(--radius-sm) 0 0 var(--radius-sm);border:1.5px solid var(--border);border-right:none;background:#f8fafc;color:var(--text-muted);font-size:.85rem;">NPR</span>
+                        {{ form.base_salary }}
+                    </div>
+                    {% if form.base_salary.errors %}<div class="field-error-msg"><i class="fas fa-exclamation-circle"></i> {{ form.base_salary.errors.0 }}</div>{% endif %}
+                </div>
+
+                <!-- Payment QR Code -->
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Payment QR Code <span class="opt-badge">optional</span></label>
+                    <div class="qr-drop-zone {% if employee and employee.payment_qr_code %}has-qr{% endif %}" id="qrDropZone" onclick="document.getElementById('id_payment_qr_code').click()">
+                        {% if employee and employee.payment_qr_code %}
+                        <img id="qrPreview" src="{{ employee.payment_qr_code.url }}" alt="QR Preview" class="qr-preview-img">
+                        {% else %}
+                        <div id="qrPlaceholder">
+                            <i class="fas fa-qrcode qr-drop-icon"></i>
+                            <div class="qr-drop-text">Click to upload QR code</div>
+                            <div class="qr-drop-hint">Bank / eSewa / Khalti or any wallet QR</div>
+                        </div>
+                        <img id="qrPreview" src="" alt="QR Preview" class="qr-preview-img d-none">
+                        {% endif %}
+                    </div>
+                    <input type="file" name="payment_qr_code" id="id_payment_qr_code" accept="image/*" class="d-none"
+                           onchange="previewQR(this)">
+                    {% if form.payment_qr_code.errors %}<div class="field-error-msg mt-1"><i class="fas fa-exclamation-circle"></i> {{ form.payment_qr_code.errors.0 }}</div>{% endif %}
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Documents Section -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <h5 class="card-title mb-4 fw-bold">Documents</h5>
-
+    <!-- ── Documents ── -->
+    <div class="section-card">
+        <div class="section-card-header">
+            <div class="section-icon icon-slate"><i class="fas fa-paperclip"></i></div>
+            <div>
+                <p class="section-title">Documents <span class="opt-badge" style="font-size:.72rem;">optional</span></p>
+                <p class="section-subtitle">Upload identity proofs, certificates, and other files</p>
+            </div>
+        </div>
+        <div class="section-card-body">
             {% if employee and documents %}
             <div class="table-responsive mb-3">
-                <table class="table table-sm table-bordered">
+                <table class="doc-table w-100">
                     <thead>
                         <tr>
-                            <th>Title</th>
+                            <th>Document Title</th>
                             <th>File</th>
-                            <th>Uploaded</th>
-                            <th style="width:80px;">Actions</th>
+                            <th>Uploaded On</th>
+                            <th style="width:70px;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for doc in documents %}
                         <tr id="doc-row-{{ doc.id }}">
-                            <td>{{ doc.title }}</td>
-                            <td><a href="{{ doc.file.url }}" target="_blank" class="text-primary"><i class="fas fa-file me-1"></i>View</a></td>
-                            <td>{{ doc.uploaded_at|date:"Y-m-d" }}</td>
+                            <td><i class="fas fa-file-alt me-2" style="color:var(--primary);"></i>{{ doc.title }}</td>
+                            <td><a href="{{ doc.file.url }}" target="_blank" class="text-primary fw-500" style="font-size:.85rem;"><i class="fas fa-external-link-alt me-1"></i>View File</a></td>
+                            <td style="color:var(--text-muted);font-size:.83rem;">{{ doc.uploaded_at|date:"d M Y" }}</td>
                             <td>
-                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteDocument({{ doc.id }})">
-                                    <i class="fas fa-trash"></i>
+                                <button type="button" class="btn btn-sm btn-outline-danger" style="border-radius:6px;padding:4px 10px;" onclick="deleteDocument({{ doc.id }})">
+                                    <i class="fas fa-trash-alt"></i>
                                 </button>
                             </td>
                         </tr>
@@ -438,44 +675,79 @@
             </div>
             {% endif %}
 
-            <div id="documentContainer">
-                <!-- Dynamic document rows go here -->
-            </div>
-            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addDocumentRow()">
-                <i class="fas fa-plus me-1"></i>Add Document
+            <div id="documentContainer"></div>
+            <button type="button" class="btn-add-doc" onclick="addDocumentRow()">
+                <i class="fas fa-plus"></i> Add Document
             </button>
         </div>
     </div>
 
-    <!-- Form Actions -->
-    <div class="d-flex justify-content-end gap-2 mb-4">
-        <a href="{% url 'hrm:employee_list' %}" class="btn btn-outline-secondary">Cancel</a>
-        <button type="submit" class="btn btn-success" id="submitBtn">
-            <i class="fas fa-save me-1"></i>Save Employee
+    <!-- ── Sticky Action Bar ── -->
+    <div class="form-actions-bar">
+        <span style="font-size:.82rem;color:var(--text-muted);margin-right:auto;"><i class="fas fa-info-circle me-1"></i> Fields marked <span style="color:var(--danger);">*</span> are required</span>
+        <a href="{% url 'hrm:employee_list' %}" class="btn-cancel-form">
+            <i class="fas fa-times"></i> Cancel
+        </a>
+        <button type="submit" class="btn-save-form" id="submitBtn">
+            <i class="fas fa-save"></i> Save Employee
         </button>
     </div>
 </form>
+</div>
 
 <script>
-// Image preview
+// ── Image upload preview ──────────────────────────────────
 function previewImage(input) {
     const preview = document.getElementById('imagePreview');
     const placeholder = document.getElementById('imagePlaceholder');
     const fileName = document.getElementById('imageFileName');
+    const zone = document.getElementById('imageUploadZone');
 
     if (input.files && input.files[0]) {
         const reader = new FileReader();
         reader.onload = function(e) {
             preview.src = e.target.result;
             preview.classList.remove('d-none');
-            if (placeholder) placeholder.classList.add('d-none');
+            if (placeholder) placeholder.style.display = 'none';
+            if (zone) zone.classList.add('has-image');
         };
         reader.readAsDataURL(input.files[0]);
         fileName.value = input.files[0].name;
     }
 }
 
-// Cascading dropdowns: Branch -> Department -> Designation
+// ── QR code upload preview ────────────────────────────────
+function previewQR(input) {
+    const preview = document.getElementById('qrPreview');
+    const placeholder = document.getElementById('qrPlaceholder');
+    const zone = document.getElementById('qrDropZone');
+
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.src = e.target.result;
+            preview.classList.remove('d-none');
+            if (placeholder) placeholder.style.display = 'none';
+            if (zone) zone.classList.add('has-qr');
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+// ── Gender pill selection ─────────────────────────────────
+document.querySelectorAll('.gender-option').forEach(function(label) {
+    label.addEventListener('click', function() {
+        document.querySelectorAll('.gender-option').forEach(l => l.classList.remove('selected'));
+        this.classList.add('selected');
+        // remove any gender error styling
+        const group = document.getElementById('genderGroup');
+        if (group) group.classList.remove('gender-error-wrap');
+        const err = this.closest('.field-error-wrapper') && this.closest('.field-error-wrapper').querySelector('.client-error');
+        if (err) err.remove();
+    });
+});
+
+// ── Cascading dropdowns ───────────────────────────────────
 document.getElementById('id_branch').addEventListener('change', function() {
     const branchId = this.value;
     const deptSelect = document.getElementById('id_department');
@@ -518,26 +790,26 @@ document.getElementById('id_department').addEventListener('change', function() {
     }
 });
 
-// Dynamic document rows
+// ── Dynamic document rows ─────────────────────────────────
 let docRowCount = 0;
 function addDocumentRow() {
     docRowCount++;
     const container = document.getElementById('documentContainer');
     const row = document.createElement('div');
-    row.className = 'row g-2 mb-2 align-items-end';
+    row.className = 'row g-3 mb-3 align-items-end doc-row-new';
     row.id = `doc-new-row-${docRowCount}`;
     row.innerHTML = `
         <div class="col-md-5">
             <label class="form-label">Document Title</label>
-            <input type="text" name="doc_title" class="form-control" placeholder="Enter document title">
+            <input type="text" name="doc_title" class="form-control" placeholder="e.g. National ID, Certificate">
         </div>
         <div class="col-md-5">
             <label class="form-label">File</label>
             <input type="file" name="doc_file" class="form-control">
         </div>
-        <div class="col-md-2">
-            <button type="button" class="btn btn-outline-danger btn-sm w-100" onclick="removeDocumentRow('doc-new-row-${docRowCount}')">
-                <i class="fas fa-times me-1"></i>Remove
+        <div class="col-md-2 d-flex align-items-end">
+            <button type="button" class="btn btn-outline-danger btn-sm w-100" style="border-radius:8px;padding:9px;" onclick="removeDocumentRow('doc-new-row-${docRowCount}')">
+                <i class="fas fa-trash-alt me-1"></i>Remove
             </button>
         </div>
     `;
@@ -545,7 +817,8 @@ function addDocumentRow() {
 }
 
 function removeDocumentRow(rowId) {
-    document.getElementById(rowId).remove();
+    const row = document.getElementById(rowId);
+    if (row) { row.style.opacity = '0'; row.style.transform = 'translateY(-8px)'; row.style.transition = 'all .2s'; setTimeout(() => row.remove(), 200); }
 }
 
 function deleteDocument(docId) {
@@ -560,7 +833,8 @@ function deleteDocument(docId) {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                document.getElementById(`doc-row-${docId}`).remove();
+                const row = document.getElementById(`doc-row-${docId}`);
+                if (row) { row.style.opacity = '0'; row.style.transition = 'opacity .2s'; setTimeout(() => row.remove(), 200); }
                 if (typeof alertify !== 'undefined') alertify.success(data.message);
             } else {
                 if (typeof alertify !== 'undefined') alertify.error(data.error);
@@ -569,9 +843,8 @@ function deleteDocument(docId) {
     }
 }
 
-// Client-side validation before submit
+// ── Client-side validation ────────────────────────────────
 document.getElementById('employeeForm').addEventListener('submit', function(e) {
-    // Clear previous client-side errors
     this.querySelectorAll('.client-error').forEach(el => el.remove());
     this.querySelectorAll('.is-invalid-client').forEach(el => el.classList.remove('is-invalid-client', 'is-invalid'));
 
@@ -579,27 +852,12 @@ document.getElementById('employeeForm').addEventListener('submit', function(e) {
         {id: 'id_full_name', label: 'Full Name'},
         {id: 'id_employee_code', label: 'Employee Code'},
         {id: 'id_email', label: 'Email'},
-        {id: 'id_password', label: 'Password'},
         {id: 'id_phone', label: 'Phone Number'},
         {id: 'id_date_of_birth', label: 'Date of Birth'},
         {id: 'id_branch', label: 'Branch'},
         {id: 'id_department', label: 'Department'},
         {id: 'id_designation', label: 'Designation'},
         {id: 'id_date_of_joining', label: 'Date of Joining'},
-        {id: 'id_address_line_1', label: 'Address Line 1'},
-        {id: 'id_city', label: 'City'},
-        {id: 'id_state', label: 'State/Province'},
-        {id: 'id_country', label: 'Country'},
-        {id: 'id_postal_code', label: 'Postal/Zip Code'},
-        {id: 'id_emergency_contact_name', label: 'Emergency Contact Name'},
-        {id: 'id_emergency_contact_relationship', label: 'Emergency Contact Relationship'},
-        {id: 'id_emergency_contact_phone', label: 'Emergency Contact Phone'},
-        {id: 'id_bank_name', label: 'Bank Name'},
-        {id: 'id_account_holder_name', label: 'Account Holder Name'},
-        {id: 'id_account_number', label: 'Account Number'},
-        {id: 'id_bank_identifier_code', label: 'Bank Identifier Code'},
-        {id: 'id_bank_branch', label: 'Bank Branch'},
-        {id: 'id_base_salary', label: 'Base Salary'},
     ];
 
     let missingFields = [];
@@ -609,7 +867,6 @@ document.getElementById('employeeForm').addEventListener('submit', function(e) {
         if (el && !el.value.trim()) {
             el.classList.add('is-invalid', 'is-invalid-client');
             missingFields.push(f.label);
-            // Add inline message
             const msg = document.createElement('div');
             msg.className = 'field-error-msg client-error';
             msg.innerHTML = '<i class="fas fa-exclamation-circle"></i> This field is required.';
@@ -617,60 +874,52 @@ document.getElementById('employeeForm').addEventListener('submit', function(e) {
         }
     });
 
-    // Check gender radio
+    // Gender check
     const genderChecked = this.querySelector('input[name="gender"]:checked');
     if (!genderChecked) {
         missingFields.push('Gender');
-        const genderWrap = this.querySelector('.d-flex.gap-4');
-        if (genderWrap) {
-            genderWrap.classList.add('gender-error');
+        const group = document.getElementById('genderGroup');
+        if (group) {
+            group.classList.add('gender-error-wrap');
             const msg = document.createElement('div');
-            msg.className = 'field-error-msg client-error';
+            msg.className = 'field-error-msg client-error mt-1';
             msg.innerHTML = '<i class="fas fa-exclamation-circle"></i> Please select a gender.';
-            genderWrap.parentElement.appendChild(msg);
+            group.parentElement.appendChild(msg);
         }
     }
 
     if (missingFields.length > 0) {
         e.preventDefault();
-
-        // Scroll to first error
-        const firstInvalid = this.querySelector('.is-invalid, .gender-error');
-        if (firstInvalid) {
-            firstInvalid.scrollIntoView({behavior: 'smooth', block: 'center'});
-        }
-
-        // Show alert
+        const firstInvalid = this.querySelector('.is-invalid, .gender-error-wrap');
+        if (firstInvalid) firstInvalid.scrollIntoView({behavior: 'smooth', block: 'center'});
         if (typeof alertify !== 'undefined') {
             alertify.error(`Please fill in ${missingFields.length} required field(s): ${missingFields.slice(0, 3).join(', ')}${missingFields.length > 3 ? '...' : ''}`);
         }
+    } else {
+        // Show loading state
+        const btn = document.getElementById('submitBtn');
+        btn.classList.add('loading');
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
     }
 });
 
-// Clear client-side error on input
+// Clear error on input/change
 document.querySelectorAll('#employeeForm input, #employeeForm select').forEach(el => {
-    el.addEventListener('input', function() {
-        this.classList.remove('is-invalid', 'is-invalid-client');
-        const clientErr = this.parentElement.querySelector('.client-error');
-        if (clientErr) clientErr.remove();
-    });
-    el.addEventListener('change', function() {
-        this.classList.remove('is-invalid', 'is-invalid-client');
-        const clientErr = this.parentElement.querySelector('.client-error');
-        if (clientErr) clientErr.remove();
+    ['input', 'change'].forEach(evt => {
+        el.addEventListener(evt, function() {
+            this.classList.remove('is-invalid', 'is-invalid-client');
+            const clientErr = this.parentElement.querySelector('.client-error');
+            if (clientErr) clientErr.remove();
+        });
     });
 });
 
-// Scroll to error banner on page load if errors exist
+// ── Scroll to error banner on load ────────────────────────
 {% if form.errors %}
 document.addEventListener('DOMContentLoaded', function() {
     const banner = document.getElementById('errorBanner');
-    if (banner) {
-        banner.scrollIntoView({behavior: 'smooth', block: 'start'});
-    }
-    if (typeof alertify !== 'undefined') {
-        alertify.error('Please fix the errors highlighted below.');
-    }
+    if (banner) banner.scrollIntoView({behavior: 'smooth', block: 'start'});
+    if (typeof alertify !== 'undefined') alertify.error('Please fix the errors highlighted below.');
 });
 {% endif %}
 </script>

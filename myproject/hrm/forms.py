@@ -7,13 +7,13 @@ class EmployeeForm(forms.ModelForm):
         model = Employee
         fields = [
             'full_name', 'employee_id', 'employee_code', 'email', 'phone',
-            'password', 'date_of_birth', 'gender', 'profile_image',
+            'date_of_birth', 'gender', 'profile_image',
             'branch', 'department', 'designation', 'date_of_joining',
             'employment_type', 'employee_status', 'shift', 'attendance_policy',
             'address_line_1', 'address_line_2', 'city', 'state', 'country', 'postal_code',
             'emergency_contact_name', 'emergency_contact_relationship', 'emergency_contact_phone',
             'bank_name', 'account_holder_name', 'account_number',
-            'bank_identifier_code', 'bank_branch', 'tax_payer_id', 'base_salary',
+            'bank_identifier_code', 'bank_branch', 'tax_payer_id', 'base_salary', 'payment_qr_code',
         ]
         widgets = {
             'full_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter full name'}),
@@ -21,7 +21,6 @@ class EmployeeForm(forms.ModelForm):
             'employee_code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter employee code'}),
             'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'Enter email'}),
             'phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter phone number'}),
-            'password': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter password', 'type': 'password'}),
             'date_of_birth': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'gender': forms.RadioSelect(attrs={'class': 'form-check-input'}),
             'profile_image': forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
@@ -49,6 +48,7 @@ class EmployeeForm(forms.ModelForm):
             'bank_branch': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter bank branch'}),
             'tax_payer_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter tax payer ID'}),
             'base_salary': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Enter base salary', 'step': '0.01'}),
+            'payment_qr_code': forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -73,6 +73,16 @@ class EmployeeForm(forms.ModelForm):
         self.fields['address_line_2'].required = False
         self.fields['employee_code'].required = True
         self.fields['profile_image'].required = False
+
+        # Contact Information - all optional
+        for field in ['address_line_1', 'city', 'state', 'country', 'postal_code',
+                      'emergency_contact_name', 'emergency_contact_relationship', 'emergency_contact_phone']:
+            self.fields[field].required = False
+
+        # Banking Information - all optional
+        for field in ['bank_name', 'account_holder_name', 'account_number',
+                      'bank_identifier_code', 'bank_branch', 'base_salary', 'payment_qr_code']:
+            self.fields[field].required = False
 
         # If editing, populate department and designation based on current branch/department
         if self.instance and self.instance.pk:
