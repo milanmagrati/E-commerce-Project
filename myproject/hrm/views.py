@@ -4253,6 +4253,121 @@ def payroll_run_delete(request, pk):
 
 
 @login_required
+def generate_payslips(request, pk):
+    from .models import PayrollRun, Payslip, Employee, EmployeeSalary
+    import datetime
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+
+    try:
+        run = PayrollRun.objects.get(pk=pk)
+    except PayrollRun.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Payroll Run not found.'}, status=404)
+
+    if run.status == 'cancelled':
+        return JsonResponse({'success': False, 'error': 'Cannot generate payslips for a cancelled payroll run.'}, status=400)
+
+    employees = Employee.objects.filter(employee_status='active')
+    if not employees.exists():
+        return JsonResponse({'success': False, 'error': 'No active employees found.'}, status=400)
+
+    created_count = 0
+    skipped_count = 0
+    today = datetime.date.today()
+
+    for employee in employees:
+        # Skip if payslip already exists for this run + employee
+        if Payslip.objects.filter(payroll_run=run, employee=employee).exists():
+            skipped_count += 1
+            continue
+
+        # Get latest active salary record for this employee
+        salary_record = (
+            EmployeeSalary.objects
+            .filter(employee=employee, is_active=True)
+            .prefetch_related('components')
+            .order_by('-effective_date')
+            .first()
+        )
+
+        basic = salary_record.basic_salary if salary_record else employee.base_salary
+
+        earnings = Decimal('0')
+        deductions = Decimal('0')
+
+        if salary_record:
+            components = salary_record.components.filter(is_active=True)
+
+            # First pass: compute a provisional gross (basic + fixed earnings + %_of_basic earnings)
+            # used later for %_of_gross calculations
+            pre_gross = basic
+            for comp in components:
+                if comp.component_type == 'earning':
+                    if comp.calculation_type == 'fixed':
+                        pre_gross += comp.amount
+                    elif comp.calculation_type == 'percentage_of_basic':
+                        pre_gross += (basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+
+            # Second pass: full component calculation
+            for comp in components:
+                if comp.component_type == 'earning':
+                    if comp.calculation_type == 'fixed':
+                        earnings += comp.amount
+                    elif comp.calculation_type == 'percentage_of_basic':
+                        earnings += (basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+                    elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
+                        earnings += (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+                elif comp.component_type == 'deduction':
+                    if comp.calculation_type == 'fixed':
+                        deductions += comp.amount
+                    elif comp.calculation_type == 'percentage_of_basic':
+                        deductions += (basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+                    elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
+                        deductions += (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+
+        gross_salary = (basic + earnings).quantize(Decimal('0.01'))
+        total_deductions_val = deductions.quantize(Decimal('0.01'))
+        net_salary = max(gross_salary - total_deductions_val, Decimal('0'))
+
+        Payslip.objects.create(
+            payroll_run=run,
+            employee=employee,
+            gross_salary=gross_salary,
+            total_deductions=total_deductions_val,
+            net_salary=net_salary,
+            status='generated',
+            generated_on=today,
+        )
+        created_count += 1
+
+    # Refresh run totals from all payslips (including previously existing ones)
+    from django.db.models import Sum as _Sum
+    agg = Payslip.objects.filter(payroll_run=run).aggregate(
+        cnt=Count('id'),
+        g=_Sum('gross_salary'),
+        n=_Sum('net_salary'),
+    )
+    run.employee_count = agg['cnt'] or 0
+    run.gross_pay = agg['g'] or Decimal('0')
+    run.net_pay = agg['n'] or Decimal('0')
+    if run.status in ('draft', 'processing') and run.employee_count > 0:
+        run.status = 'completed'
+    run.save(update_fields=['employee_count', 'gross_pay', 'net_pay', 'status', 'updated_at'])
+
+    msg = f'Generated {created_count} payslip(s) successfully.'
+    if skipped_count:
+        msg += f' {skipped_count} already existed and were skipped.'
+
+    return JsonResponse({
+        'success': True,
+        'message': msg,
+        'created': created_count,
+        'skipped': skipped_count,
+    })
+
+
+@login_required
 def payslip_list(request):
     from .models import Payslip
     search_query = request.GET.get('search', '').strip()

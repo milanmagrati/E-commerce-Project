@@ -339,6 +339,14 @@
     background: #fef2f2;
 }
 .pr-act-delete:hover { background: #fecaca; border-color: #f87171; }
+.pr-act-generate {
+    color: #059669;
+    border-color: #a7f3d0;
+    background: #ecfdf5;
+    text-decoration: none;
+}
+.pr-act-generate:hover { background: #d1fae5; border-color: #34d399; color: #047857; }
+.pr-act-generate:disabled { opacity: .5; pointer-events: none; }
 
 /* ── Empty state ───────────────────────────────────────── */
 .pr-empty {
@@ -619,6 +627,10 @@
                                 <button class="pr-act pr-act-view" title="View Details" onclick="viewRunDetail({{ run.pk }})">
                                     <i class="fas fa-eye"></i>
                                 </button>
+                                <button class="pr-act pr-act-generate" title="Generate Payslips" onclick="confirmGeneratePayslips({{ run.pk }}, '{{ run.title|escapejs }}')"
+                                    {% if run.status == 'cancelled' %}disabled title="Cancelled run"{% endif %}>
+                                    <i class="fas fa-bolt"></i>
+                                </button>
                                 <button class="pr-act pr-act-delete" title="Delete" onclick="deleteRun({{ run.pk }}, '{{ run.title|escapejs }}')">
                                     <i class="fas fa-trash-alt"></i>
                                 </button>
@@ -759,6 +771,30 @@
     </div>
 </div>
 
+<!-- ═══════════════════ GENERATE PAYSLIPS CONFIRM MODAL ═══════════════ -->
+<div class="modal fade pr-modal" id="generatePayslipsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#1a7f4b,#25a35a);">
+                <h5 class="modal-title" style="color:#fff;"><i class="fas fa-bolt"></i> Generate Payslips</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="text-align:center;padding:24px;">
+                <i class="fas fa-file-invoice-dollar" style="font-size:40px;color:#25a35a;margin-bottom:12px;"></i>
+                <p style="font-size:14px;color:#374151;margin-bottom:4px;">Generate payslips for all active employees in</p>
+                <p style="font-size:15px;font-weight:700;color:#1f2937;" id="generateRunTitle"></p>
+                <p style="font-size:12px;color:#9ca3af;margin-bottom:0;">Already-generated payslips will be skipped.</p>
+            </div>
+            <div class="modal-footer" style="justify-content:center;">
+                <button type="button" class="pr-modal-cancel" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="pr-modal-save" id="confirmGenerateBtn">
+                    <i class="fas fa-bolt me-1"></i> Generate
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ═══════════════════════ DELETE CONFIRM MODAL ═══════════════════════ -->
 <div class="modal fade pr-modal" id="deleteRunModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-sm">
@@ -874,6 +910,47 @@ function viewRunDetail(pk) {
             body.innerHTML = '<div style="text-align:center;padding:20px;color:#dc2626;"><i class="fas fa-exclamation-circle"></i> Network error.</div>';
         });
 }
+
+// Generate Payslips
+let generateRunId = null;
+function confirmGeneratePayslips(pk, title) {
+    generateRunId = pk;
+    document.getElementById('generateRunTitle').textContent = '"' + title + '"';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('generatePayslipsModal')).show();
+}
+
+document.getElementById('confirmGenerateBtn').addEventListener('click', function() {
+    if (!generateRunId) return;
+    const btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Generating...';
+
+    fetch("{% url 'hrm:payroll_run_list' %}" + generateRunId + "/generate-payslips/", {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('generatePayslipsModal')).hide();
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-bolt me-1"></i> Generate';
+        if (data.success) {
+            alertify.success('<i class="fas fa-check-circle me-1"></i> ' + data.message);
+            setTimeout(() => location.reload(), 1800);
+        } else {
+            alertify.error('<i class="fas fa-exclamation-circle me-1"></i> ' + (data.error || 'Failed to generate payslips.'));
+        }
+    })
+    .catch(() => {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('generatePayslipsModal')).hide();
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-bolt me-1"></i> Generate';
+        alertify.error('<i class="fas fa-exclamation-circle me-1"></i> Network error. Please try again.');
+    });
+});
 
 // Delete
 let deleteRunId = null;
