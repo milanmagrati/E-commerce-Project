@@ -3468,8 +3468,9 @@ def iclock_cdata(request):
 
 @csrf_exempt
 def iclock_getrequest(request):
-    """GET /iclock/getrequest?SN=XXXX → heartbeat, update last_seen"""
+    """GET /iclock/getrequest?SN=XXXX → heartbeat, update last_seen, push Nepal time sync"""
     from .models import ZKDevice
+    import pytz, time as _time
 
     sn = (
         request.GET.get('SN') or
@@ -3488,7 +3489,15 @@ def iclock_getrequest(request):
         except Exception as e:
             adms_logger.error(f"[HEARTBEAT] Failed to update device SN={sn}: {e}")
 
-    return HttpResponse('OK', content_type='text/plain')
+    # Push current Nepal Standard Time (UTC+5:45) to device so its clock stays in sync.
+    # ZKTeco ADMS format: C:<seq>:DATA SYNC TIME YYYY-MM-DD HH:MM:SS
+    nst = pytz.timezone('Asia/Kathmandu')
+    now_nst = timezone.now().astimezone(nst)
+    nst_str = now_nst.strftime('%Y-%m-%d %H:%M:%S')
+    seq = int(_time.time())  # always increasing sequence number
+    sync_cmd = f'C:{seq}:DATA SYNC TIME {nst_str}\r\nOK'
+    adms_logger.debug(f"[HEARTBEAT] Sending time sync to SN={sn}: {nst_str}")
+    return HttpResponse(sync_cmd, content_type='text/plain')
 
 
 @csrf_exempt
@@ -3646,7 +3655,7 @@ def biometric_attendance_view(request, pin, date_str):
     for p in punches:
         local_ts = p.timestamp.astimezone(local_tz)
         punch_list.append({
-            'time': local_ts.strftime('%H:%M:%S'),
+            'time': local_ts.strftime('%I:%M %p'),
             'status': p.get_status_display(),
             'verify_mode': p.verify_mode,
             'device': p.device.serial_number if p.device else '—',
@@ -3654,8 +3663,8 @@ def biometric_attendance_view(request, pin, date_str):
         })
 
     punch_count = len(punch_list)
-    clock_in = punch_list[0]['time'][:5] if punch_count > 0 else ''
-    clock_out = punch_list[-1]['time'][:5] if punch_count > 1 else ''
+    clock_in = punch_list[0]['time'] if punch_count > 0 else ''
+    clock_out = punch_list[-1]['time'] if punch_count > 1 else ''
 
     return JsonResponse({
         'success': True,
