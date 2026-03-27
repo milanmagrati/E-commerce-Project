@@ -3383,10 +3383,12 @@ def iclock_cdata(request):
         return HttpResponse('OK', content_type='text/plain')
 
     if request.method == 'GET':
-        # Correct ZKTeco ADMS handshake response:
-        # - ATTLOGStamp / OPERATIONStamp (not the short 'Stamp' aliases)
-        # - Encrypt=0 is required by most ZKTeco firmware
-        # - TransFlag uses a space separator between log types
+        # ZKTeco ADMS handshake response.
+        # Date= forces the device to sync its clock to Nepal Standard Time on every handshake.
+        import pytz as _pytz
+        _nst = _pytz.timezone('Asia/Kathmandu')
+        _now_nst = timezone.now().astimezone(_nst)
+        _date_str = _now_nst.strftime('%Y-%m-%d %H:%M:%S')
         options = (
             "GET OPTION FROM: {sn}\r\n"
             "ATTLOGStamp=9999\r\n"
@@ -3399,7 +3401,9 @@ def iclock_cdata(request):
             "TimeZone=5.75\r\n"
             "Realtime=1\r\n"
             "Encrypt=0\r\n"
-        ).format(sn=sn)
+            "Date={date_str}\r\n"
+        ).format(sn=sn, date_str=_date_str)
+        adms_logger.info(f"[CDATA] Sending handshake to SN={sn} with Date={_date_str}")
         return HttpResponse(options, content_type='text/plain')
 
     if request.method == 'POST':
@@ -3489,14 +3493,15 @@ def iclock_getrequest(request):
         except Exception as e:
             adms_logger.error(f"[HEARTBEAT] Failed to update device SN={sn}: {e}")
 
-    # Push current Nepal Standard Time (UTC+5:45) to device so its clock stays in sync.
-    # ZKTeco ADMS format: C:<seq>:DATA SYNC TIME YYYY-MM-DD HH:MM:SS
+    # Push Nepal Standard Time (UTC+5:45) to device via two command formats for compatibility.
+    # C:ID:DATA SYNC TIME is the standard ADMS clock-set command for ZKTeco devices.
     nst = pytz.timezone('Asia/Kathmandu')
     now_nst = timezone.now().astimezone(nst)
     nst_str = now_nst.strftime('%Y-%m-%d %H:%M:%S')
-    seq = int(_time.time())  # always increasing sequence number
-    sync_cmd = f'C:{seq}:DATA SYNC TIME {nst_str}\r\nOK'
-    adms_logger.debug(f"[HEARTBEAT] Sending time sync to SN={sn}: {nst_str}")
+    seq = int(_time.time())  # monotonically increasing command ID
+    # Both formats sent for maximum firmware compatibility
+    sync_cmd = f'C:{seq}:DATA SYNC TIME {nst_str}\r\nC:{seq+1}:DATE TIME {now_nst.strftime("%Y%m%d%H%M%S")}\r\nOK'
+    adms_logger.info(f"[HEARTBEAT] Sending time sync to SN={sn}: {nst_str}")
     return HttpResponse(sync_cmd, content_type='text/plain')
 
 
