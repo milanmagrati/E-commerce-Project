@@ -4121,16 +4121,135 @@ def employee_salary_toggle_status(request, pk):
 @login_required
 def payroll_run_list(request):
     from .models import PayrollRun
+
+    # Handle POST for creating a new payroll run
+    if request.method == 'POST':
+        title = request.POST.get('title', '').strip()
+        frequency = request.POST.get('frequency', '').strip()
+        pay_period_start = request.POST.get('pay_period_start', '').strip()
+        pay_period_end = request.POST.get('pay_period_end', '').strip()
+        pay_date = request.POST.get('pay_date', '').strip()
+        notes = request.POST.get('notes', '').strip()
+
+        errors = []
+        if not title:
+            errors.append('Title is required.')
+        if not frequency:
+            errors.append('Payroll Frequency is required.')
+        if not pay_period_start:
+            errors.append('Pay Period Start is required.')
+        if not pay_period_end:
+            errors.append('Pay Period End is required.')
+        if not pay_date:
+            errors.append('Pay Date is required.')
+
+        if pay_period_start and pay_period_end:
+            from datetime import datetime as dt
+            try:
+                start_dt = dt.strptime(pay_period_start, '%Y-%m-%d').date()
+                end_dt = dt.strptime(pay_period_end, '%Y-%m-%d').date()
+                if end_dt < start_dt:
+                    errors.append('Pay Period End must be after Pay Period Start.')
+            except ValueError:
+                errors.append('Invalid date format for Pay Period.')
+
+        if errors:
+            for err in errors:
+                messages.error(request, err)
+            return redirect('hrm:payroll_run_list')
+
+        PayrollRun.objects.create(
+            title=title,
+            frequency=frequency,
+            pay_period_start=pay_period_start,
+            pay_period_end=pay_period_end,
+            pay_date=pay_date,
+            notes=notes,
+            created_by=request.user,
+        )
+        messages.success(request, f'Payroll Run "{title}" created successfully!')
+        return redirect('hrm:payroll_run_list')
+
+    # GET — list with search, filters, pagination
+    search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
+    frequency_filter = request.GET.get('frequency', '')
+    per_page = request.GET.get('per_page', '10')
+
     runs = PayrollRun.objects.all()
+
+    if search_query:
+        runs = runs.filter(Q(title__icontains=search_query))
     if status_filter:
         runs = runs.filter(status=status_filter)
+    if frequency_filter:
+        runs = runs.filter(frequency=frequency_filter)
+
+    # Pagination
+    try:
+        per_page_int = int(per_page)
+    except (ValueError, TypeError):
+        per_page_int = 10
+    paginator = Paginator(runs, per_page_int)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Payroll Runs',
-        'runs': runs,
+        'runs': page_obj,
+        'page_obj': page_obj,
+        'search_query': search_query,
         'status_filter': status_filter,
+        'frequency_filter': frequency_filter,
+        'per_page': per_page,
     }
     return render(request, 'hrm/payroll_run_list.html', context)
+
+
+@login_required
+def payroll_run_detail(request, pk):
+    from .models import PayrollRun
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+    try:
+        run = PayrollRun.objects.get(pk=pk)
+    except PayrollRun.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Payroll Run not found.'}, status=404)
+    data = {
+        'success': True,
+        'run': {
+            'id': run.pk,
+            'title': run.title,
+            'frequency': run.get_frequency_display(),
+            'pay_period_start': run.pay_period_start.strftime('%b %d, %Y') if run.pay_period_start else '-',
+            'pay_period_end': run.pay_period_end.strftime('%b %d, %Y') if run.pay_period_end else '-',
+            'pay_date': run.pay_date.strftime('%b %d, %Y') if run.pay_date else '-',
+            'status': run.get_status_display(),
+            'status_key': run.status,
+            'employee_count': run.employee_count,
+            'gross_pay': str(run.gross_pay),
+            'net_pay': str(run.net_pay),
+            'total_amount': str(run.total_amount),
+            'notes': run.notes,
+            'created_by': str(run.created_by) if run.created_by else '-',
+            'created_at': run.created_at.strftime('%b %d, %Y %I:%M %p'),
+        }
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def payroll_run_delete(request, pk):
+    from .models import PayrollRun
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+    try:
+        run = PayrollRun.objects.get(pk=pk)
+    except PayrollRun.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Payroll Run not found.'}, status=404)
+    title = run.title
+    run.delete()
+    return JsonResponse({'success': True, 'message': f'Payroll Run "{title}" deleted successfully.'})
 
 
 @login_required
@@ -4138,22 +4257,113 @@ def payslip_list(request):
     from .models import Payslip
     search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
+    per_page = request.GET.get('per_page', '10')
+
     payslips = Payslip.objects.select_related('employee', 'payroll_run').all()
+
     if search_query:
         payslips = payslips.filter(
-            employee__first_name__icontains=search_query
-        ) | payslips.filter(
-            employee__last_name__icontains=search_query
+            Q(employee__full_name__icontains=search_query) |
+            Q(payslip_number__icontains=search_query)
         )
     if status_filter:
         payslips = payslips.filter(status=status_filter)
+
+    # Pagination — constrain per_page to allowed values only
+    VALID_PER_PAGE = [10, 25, 50, 100]
+    try:
+        per_page_int = int(per_page)
+    except (ValueError, TypeError):
+        per_page_int = 10
+    if per_page_int not in VALID_PER_PAGE:
+        per_page_int = 10
+    per_page = str(per_page_int)  # normalize back so template comparison always matches
+    paginator = Paginator(payslips, per_page_int)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
     context = {
         'page_title': 'Payslips',
-        'payslips': payslips,
+        'payslips': page_obj,
+        'page_obj': page_obj,
         'search_query': search_query,
         'status_filter': status_filter,
+        'per_page': per_page,
     }
     return render(request, 'hrm/payslip_list.html', context)
+
+
+@login_required
+def payslip_detail(request, pk):
+    from .models import Payslip
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+    try:
+        slip = Payslip.objects.select_related('employee', 'payroll_run').get(pk=pk)
+    except Payslip.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
+    data = {
+        'success': True,
+        'payslip': {
+            'id': slip.pk,
+            'payslip_number': slip.payslip_number,
+            'employee': slip.employee.full_name,
+            'employee_id': slip.employee.employee_id,
+            'payroll_run': slip.payroll_run.title,
+            'pay_period_start': slip.payroll_run.pay_period_start.strftime('%Y-%m-%d') if slip.payroll_run.pay_period_start else '-',
+            'pay_period_end': slip.payroll_run.pay_period_end.strftime('%Y-%m-%d') if slip.payroll_run.pay_period_end else '-',
+            'pay_date': slip.payroll_run.pay_date.strftime('%Y-%m-%d') if slip.payroll_run.pay_date else '-',
+            'gross_salary': str(slip.gross_salary),
+            'total_deductions': str(slip.total_deductions),
+            'net_salary': str(slip.net_salary),
+            'status': slip.get_status_display(),
+            'status_key': slip.status,
+            'paid_date': slip.paid_date.strftime('%b %d, %Y') if slip.paid_date else '-',
+            'generated_on': slip.generated_on.strftime('%Y-%m-%d') if slip.generated_on else '-',
+            'created_at': slip.created_at.strftime('%b %d, %Y %I:%M %p'),
+        }
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def payslip_download(request, pk):
+    from .models import Payslip
+    try:
+        slip = Payslip.objects.select_related('employee', 'payroll_run').get(pk=pk)
+    except Payslip.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
+
+    # Mark as downloaded
+    if slip.status == 'generated':
+        slip.status = 'downloaded'
+        slip.save(update_fields=['status', 'updated_at'])
+
+    # Generate simple text payslip for download
+    pay_period = ''
+    if slip.payroll_run.pay_period_start and slip.payroll_run.pay_period_end:
+        pay_period = f"{slip.payroll_run.pay_period_start} to {slip.payroll_run.pay_period_end}"
+    content = (
+        f"{'='*50}\n"
+        f"               PAYSLIP\n"
+        f"{'='*50}\n\n"
+        f"Payslip Number : {slip.payslip_number}\n"
+        f"Employee       : {slip.employee.full_name}\n"
+        f"Employee ID    : {slip.employee.employee_id}\n"
+        f"Pay Period     : {pay_period}\n"
+        f"Pay Date       : {slip.payroll_run.pay_date or '-'}\n\n"
+        f"{'-'*50}\n"
+        f"Gross Salary      : Rs. {slip.gross_salary}\n"
+        f"Total Deductions  : Rs. {slip.total_deductions}\n"
+        f"Net Salary        : Rs. {slip.net_salary}\n"
+        f"{'-'*50}\n\n"
+        f"Status         : {slip.get_status_display()}\n"
+        f"Generated On   : {slip.generated_on or '-'}\n"
+        f"{'='*50}\n"
+    )
+    response = HttpResponse(content, content_type='text/plain')
+    response['Content-Disposition'] = f'attachment; filename="{slip.payslip_number}.txt"'
+    return response
 
 
 @login_required

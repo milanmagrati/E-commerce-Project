@@ -712,10 +712,23 @@ class PayrollRun(models.Model):
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
     ]
-    month = models.PositiveSmallIntegerField()
-    year = models.PositiveSmallIntegerField()
+    FREQUENCY_CHOICES = [
+        ('monthly', 'Monthly'),
+        ('bi_weekly', 'Bi-Weekly'),
+        ('weekly', 'Weekly'),
+    ]
+    title = models.CharField(max_length=200, default='')
+    frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, default='monthly')
+    pay_period_start = models.DateField(null=True, blank=True)
+    pay_period_end = models.DateField(null=True, blank=True)
+    pay_date = models.DateField(null=True, blank=True)
+    month = models.PositiveSmallIntegerField(blank=True, null=True)
+    year = models.PositiveSmallIntegerField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    employee_count = models.PositiveIntegerField(default=0)
     total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    gross_pay = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    net_pay = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     notes = models.TextField(blank=True, default='')
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='payroll_runs'
@@ -724,21 +737,22 @@ class PayrollRun(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-year', '-month']
-        unique_together = ['month', 'year']
+        ordering = ['-pay_date', '-created_at']
         verbose_name = 'Payroll Run'
         verbose_name_plural = 'Payroll Runs'
 
     def __str__(self):
-        return f"Payroll {self.month:02d}/{self.year} - {self.get_status_display()}"
+        return f"{self.title} - {self.get_status_display()}"
 
 
 class Payslip(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('generated', 'Generated'),
+        ('downloaded', 'Downloaded'),
         ('paid', 'Paid'),
     ]
+    payslip_number = models.CharField(max_length=50, unique=True, blank=True)
     payroll_run = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name='payslips')
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='payslips')
     gross_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -746,6 +760,7 @@ class Payslip(models.Model):
     net_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     paid_date = models.DateField(null=True, blank=True)
+    generated_on = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -755,5 +770,21 @@ class Payslip(models.Model):
         verbose_name = 'Payslip'
         verbose_name_plural = 'Payslips'
 
+    def save(self, *args, **kwargs):
+        if not self.payslip_number:
+            import datetime
+            now = datetime.date.today()
+            prefix = f"PS-{now.strftime('%Y%m')}"
+            last = Payslip.objects.filter(payslip_number__startswith=prefix).order_by('-payslip_number').first()
+            if last:
+                try:
+                    seq = int(last.payslip_number.split('-')[-1]) + 1
+                except (ValueError, IndexError):
+                    seq = 1
+            else:
+                seq = 1
+            self.payslip_number = f"{prefix}-{seq:04d}"
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Payslip - {self.employee} ({self.payroll_run})"
+        return f"{self.payslip_number} - {self.employee}"

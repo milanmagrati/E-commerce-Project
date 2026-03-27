@@ -169,5 +169,9 @@ urlpatterns = [
     path('payroll/employee-salaries/<int:pk>/toggle-status/', views.employee_salary_toggle_status, name='employee_salary_toggle_status'),
     path('payroll/employee-salaries/<int:pk>/payroll/', views.payroll_calculation, name='payroll_calculation'),
     path('payroll/runs/', views.payroll_run_list, name='payroll_run_list'),
+    path('payroll/runs/<int:pk>/', views.payroll_run_detail, name='payroll_run_detail'),
+    path('payroll/runs/<int:pk>/delete/', views.payroll_run_delete, name='payroll_run_delete'),
     path('payroll/payslips/', views.payslip_list, name='payslip_list'),
+    path('payroll/payslips/<int:pk>/', views.payslip_detail, name='payslip_detail'),
+    path('payroll/payslips/<int:pk>/download/', views.payslip_download, name='payslip_download'),
 ]

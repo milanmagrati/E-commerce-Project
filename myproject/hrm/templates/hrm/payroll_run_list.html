@@ -2,157 +2,916 @@
 {% block title %}Payroll Runs - HRM{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fas fa-play-circle me-2"></i>Payroll Runs</h2>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRunModal">
-            <i class="fas fa-plus me-1"></i>New Payroll Run
+
+<style>
+/* ── Page Container ────────────────────────────────────── */
+.pr-page-container {
+    height: calc(100vh - 140px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Breadcrumb ────────────────────────────────────────── */
+.pr-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: #6b7280;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+}
+.pr-breadcrumb a { color: #25a35a; text-decoration: none; font-weight: 500; }
+.pr-breadcrumb a:hover { text-decoration: underline; }
+.pr-breadcrumb .pr-sep { color: #d1d5db; }
+
+/* ── Header Bar ────────────────────────────────────────── */
+.pr-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    flex-shrink: 0;
+}
+
+.pr-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pr-header h2 i {
+    color: #25a35a;
+    font-size: 20px;
+}
+
+.pr-add-btn {
+    padding: 10px 22px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #1a7f4b 0%, #25a35a 100%);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    cursor: pointer;
+    transition: opacity .2s ease, transform .15s ease, box-shadow .2s ease;
+    box-shadow: 0 4px 12px rgba(37,163,90,.3);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+.pr-add-btn:hover {
+    opacity: .93;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(37,163,90,.35);
+    color: #fff;
+}
+
+/* ── Filter / Search Bar ───────────────────────────────── */
+.pr-filter-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    padding: 14px 20px;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+}
+.pr-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.pr-search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 180px;
+}
+.pr-search-wrap input {
+    width: 100%;
+    padding: 9px 14px 9px 38px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    font-size: 13px;
+    background: #f9fafb;
+    transition: border-color .2s, box-shadow .2s;
+    outline: none;
+}
+.pr-search-wrap input:focus {
+    border-color: #25a35a;
+    box-shadow: 0 0 0 3px rgba(37,163,90,.12);
+    background: #fff;
+}
+.pr-search-wrap i {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 13px;
+}
+.pr-search-btn {
+    padding: 9px 20px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #1a7f4b, #25a35a);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: opacity .2s;
+}
+.pr-search-btn:hover { opacity: .9; }
+.pr-filter-btn {
+    padding: 9px 16px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color .2s, background .2s;
+}
+.pr-filter-btn:hover { border-color: #25a35a; background: #f0fdf4; }
+.pr-filter-btn.active { border-color: #25a35a; background: #f0fdf4; color: #1a7f4b; }
+
+.pr-per-page {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: #6b7280;
+    margin-left: auto;
+}
+.pr-per-page select {
+    padding: 7px 10px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 12.5px;
+    background: #f9fafb;
+    outline: none;
+    cursor: pointer;
+}
+.pr-per-page select:focus { border-color: #25a35a; }
+
+/* Filter panel (collapsible) */
+.pr-filter-panel {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f3f4f6;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.pr-filter-panel.show { display: flex; }
+.pr-filter-panel select {
+    padding: 8px 12px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 12.5px;
+    background: #f9fafb;
+    min-width: 160px;
+    outline: none;
+}
+.pr-filter-panel select:focus { border-color: #25a35a; }
+.pr-clear-btn {
+    padding: 8px 14px;
+    border: 1.5px solid #fca5a5;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #dc2626;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .2s;
+}
+.pr-clear-btn:hover { background: #fee2e2; color: #dc2626; }
+
+/* ── Table Card ────────────────────────────────────────── */
+.pr-table-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+.pr-table-scroll {
+    overflow-y: auto;
+    flex: 1;
+}
+.pr-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.pr-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+.pr-table thead tr {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+.pr-table th {
+    padding: 13px 16px;
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: #64748b;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+}
+.pr-table td {
+    padding: 13px 16px;
+    font-size: 13px;
+    color: #374151;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+.pr-table tbody tr { transition: background .15s; }
+.pr-table tbody tr:hover { background: #f8fdfb; }
+
+/* Row number */
+.pr-row-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: #f1f5f9;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+}
+
+/* Title */
+.pr-title-cell {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+/* Badges */
+.pr-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 50px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .3px;
+}
+.pr-badge-monthly {
+    background: #ecfdf5;
+    color: #059669;
+}
+.pr-badge-bi_weekly {
+    background: #eff6ff;
+    color: #2563eb;
+}
+.pr-badge-weekly {
+    background: #fef3c7;
+    color: #d97706;
+}
+.pr-badge-draft {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+.pr-badge-processing {
+    background: #fef3c7;
+    color: #d97706;
+}
+.pr-badge-completed {
+    background: #ecfdf5;
+    color: #059669;
+}
+.pr-badge-cancelled {
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+/* Money */
+.pr-money { font-weight: 600; color: #059669; }
+
+/* Actions */
+.pr-actions { display: flex; gap: 6px; justify-content: center; }
+.pr-act {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all .2s ease;
+    background: transparent;
+}
+.pr-act-view {
+    color: #2563eb;
+    border-color: #dbeafe;
+    background: #eff6ff;
+}
+.pr-act-view:hover { background: #dbeafe; border-color: #93c5fd; }
+.pr-act-delete {
+    color: #dc2626;
+    border-color: #fecaca;
+    background: #fef2f2;
+}
+.pr-act-delete:hover { background: #fecaca; border-color: #f87171; }
+
+/* ── Empty state ───────────────────────────────────────── */
+.pr-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #9ca3af;
+}
+.pr-empty i { font-size: 48px; margin-bottom: 14px; display: block; color: #d1d5db; }
+.pr-empty p { font-size: 14px; margin: 0; }
+
+/* ── Pagination ────────────────────────────────────────── */
+.pr-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-top: 1px solid #f1f5f9;
+    flex-shrink: 0;
+}
+.pr-page-info {
+    font-size: 12.5px;
+    color: #6b7280;
+}
+.pr-page-info strong { color: #1f2937; }
+.pr-page-btns {
+    display: flex;
+    gap: 4px;
+}
+.pr-page-btn {
+    padding: 6px 14px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    color: #374151;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    text-decoration: none;
+}
+.pr-page-btn:hover { border-color: #25a35a; background: #f0fdf4; color: #1a7f4b; }
+.pr-page-btn.active {
+    background: linear-gradient(135deg, #1a7f4b, #25a35a);
+    color: #fff;
+    border-color: #25a35a;
+}
+.pr-page-btn.disabled {
+    opacity: .45;
+    pointer-events: none;
+}
+
+/* ── Modal ─────────────────────────────────────────────── */
+.pr-modal .modal-content {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.18);
+    overflow: hidden;
+}
+.pr-modal .modal-header {
+    background: linear-gradient(135deg, #1a7f4b 0%, #25a35a 100%);
+    padding: 18px 24px;
+    border: none;
+}
+.pr-modal .modal-title {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.pr-modal .modal-title i { font-size: 18px; }
+.pr-modal .btn-close { filter: brightness(0) invert(1); opacity: .85; }
+.pr-modal .btn-close:hover { opacity: 1; }
+.pr-modal .modal-body { padding: 24px; }
+.pr-modal .modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #f3f4f6;
+    background: #f9fafb;
+}
+
+/* Modal form fields */
+.pr-form-group { margin-bottom: 16px; }
+.pr-form-group label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 5px;
+}
+.pr-form-group label .text-danger { color: #dc2626; }
+.pr-form-group input,
+.pr-form-group select,
+.pr-form-group textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    font-size: 13px;
+    background: #f9fafb;
+    transition: border-color .2s, box-shadow .2s;
+    outline: none;
+}
+.pr-form-group input:focus,
+.pr-form-group select:focus,
+.pr-form-group textarea:focus {
+    border-color: #25a35a;
+    box-shadow: 0 0 0 3px rgba(37,163,90,.12);
+    background: #fff;
+}
+.pr-form-group textarea { resize: vertical; min-height: 70px; }
+
+.pr-modal-cancel {
+    padding: 9px 20px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color .2s;
+}
+.pr-modal-cancel:hover { border-color: #d1d5db; }
+.pr-modal-save {
+    padding: 9px 24px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #1a7f4b, #25a35a);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .2s;
+    box-shadow: 0 4px 12px rgba(37,163,90,.3);
+}
+.pr-modal-save:hover { opacity: .9; }
+
+/* Modal validation alert */
+.pr-alert {
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-weight: 500;
+    margin-bottom: 14px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+}
+.pr-alert-error {
+    background: #fef2f2;
+    border: 1.5px solid #fecaca;
+    color: #dc2626;
+}
+.pr-alert i { font-size: 14px; }
+
+/* Detail modal */
+.pr-detail-row {
+    display: flex;
+    padding: 10px 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+.pr-detail-row:last-child { border-bottom: none; }
+.pr-detail-label {
+    flex: 0 0 140px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #6b7280;
+}
+.pr-detail-value {
+    flex: 1;
+    font-size: 13px;
+    color: #1f2937;
+    font-weight: 500;
+}
+</style>
+
+<div class="pr-page-container">
+    <!-- Breadcrumb -->
+    <div class="pr-breadcrumb">
+        <a href="{% url 'dashboard' %}">Dashboard</a>
+        <span class="pr-sep"><i class="fas fa-chevron-right" style="font-size:9px"></i></span>
+        <span>Payroll Management</span>
+        <span class="pr-sep"><i class="fas fa-chevron-right" style="font-size:9px"></i></span>
+        <span style="color:#1f2937;font-weight:600;">Payroll Runs</span>
+    </div>
+
+    <!-- Header -->
+    <div class="pr-header">
+        <h2><i class="fas fa-play-circle"></i> Payroll Runs</h2>
+        <button class="pr-add-btn" data-bs-toggle="modal" data-bs-target="#addRunModal">
+            <i class="fas fa-plus"></i> Add Payroll Run
         </button>
     </div>
-</div>
 
-<!-- Filter -->
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <form method="get" class="row align-items-center g-2">
-            <div class="col-md-3">
-                <select name="status" class="form-select" onchange="this.form.submit()">
+    <!-- Filter / Search -->
+    <div class="pr-filter-card">
+        <form method="get" id="prFilterForm">
+            <div class="pr-filter-row">
+                <div class="pr-search-wrap">
+                    <i class="fas fa-search"></i>
+                    <input type="text" name="search" value="{{ search_query }}" placeholder="Search payroll runs by title...">
+                </div>
+                <button type="submit" class="pr-search-btn"><i class="fas fa-search"></i> Search</button>
+                <button type="button" class="pr-filter-btn" id="prToggleFilters">
+                    <i class="fas fa-filter"></i> Filters
+                </button>
+                <div class="pr-per-page">
+                    <span>Per Page:</span>
+                    <select name="per_page" onchange="document.getElementById('prFilterForm').submit();">
+                        <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                        <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                        <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                        <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                    </select>
+                </div>
+            </div>
+            <!-- Collapsible filters -->
+            <div class="pr-filter-panel {% if status_filter or frequency_filter %}show{% endif %}" id="prFilterPanel">
+                <select name="status">
                     <option value="">All Statuses</option>
                     <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
                     <option value="processing" {% if status_filter == 'processing' %}selected{% endif %}>Processing</option>
                     <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
                     <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
                 </select>
+                <select name="frequency">
+                    <option value="">All Frequencies</option>
+                    <option value="monthly" {% if frequency_filter == 'monthly' %}selected{% endif %}>Monthly</option>
+                    <option value="bi_weekly" {% if frequency_filter == 'bi_weekly' %}selected{% endif %}>Bi-Weekly</option>
+                    <option value="weekly" {% if frequency_filter == 'weekly' %}selected{% endif %}>Weekly</option>
+                </select>
+                {% if status_filter or frequency_filter or search_query %}
+                <a href="{% url 'hrm:payroll_run_list' %}" class="pr-clear-btn"><i class="fas fa-times"></i> Clear All</a>
+                {% endif %}
             </div>
-            {% if status_filter %}
-            <div class="col-md-2">
-                <a href="{% url 'hrm:payroll_run_list' %}" class="btn btn-outline-secondary">Clear</a>
-            </div>
-            {% endif %}
         </form>
     </div>
-</div>
 
-<!-- Runs Table -->
-<div class="card">
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+    <!-- Table -->
+    <div class="pr-table-card">
+        <div class="pr-table-scroll">
+            <table class="pr-table">
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Period</th>
+                        <th>Title</th>
+                        <th>Frequency</th>
+                        <th>Pay Period</th>
+                        <th>Pay Date</th>
+                        <th>Employees</th>
+                        <th>Gross Pay</th>
+                        <th>Net Pay</th>
                         <th>Status</th>
-                        <th>Total Amount (Rs.)</th>
-                        <th>Created By</th>
-                        <th>Created At</th>
                         <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for run in runs %}
                     <tr>
-                        <td>{{ forloop.counter }}</td>
+                        <td><span class="pr-row-num">{{ page_obj.start_index|add:forloop.counter0 }}</span></td>
+                        <td><span class="pr-title-cell">{{ run.title }}</span></td>
+                        <td><span class="pr-badge pr-badge-{{ run.frequency }}"><i class="fas fa-sync-alt"></i> {{ run.get_frequency_display }}</span></td>
                         <td>
-                            <strong>
-                                {% if run.month == 1 %}January
-                                {% elif run.month == 2 %}February
-                                {% elif run.month == 3 %}March
-                                {% elif run.month == 4 %}April
-                                {% elif run.month == 5 %}May
-                                {% elif run.month == 6 %}June
-                                {% elif run.month == 7 %}July
-                                {% elif run.month == 8 %}August
-                                {% elif run.month == 9 %}September
-                                {% elif run.month == 10 %}October
-                                {% elif run.month == 11 %}November
-                                {% elif run.month == 12 %}December
-                                {% endif %}
-                                {{ run.year }}
-                            </strong>
-                        </td>
-                        <td>
-                            {% if run.status == 'draft' %}<span class="badge bg-secondary">Draft</span>
-                            {% elif run.status == 'processing' %}<span class="badge bg-warning text-dark">Processing</span>
-                            {% elif run.status == 'completed' %}<span class="badge bg-success">Completed</span>
-                            {% elif run.status == 'cancelled' %}<span class="badge bg-danger">Cancelled</span>
+                            {% if run.pay_period_start and run.pay_period_end %}
+                                {{ run.pay_period_start|date:"M d, Y" }} &mdash; {{ run.pay_period_end|date:"M d, Y" }}
+                            {% else %}
+                                -
                             {% endif %}
                         </td>
-                        <td><strong>Rs. {{ run.total_amount|floatformat:2 }}</strong></td>
-                        <td>{{ run.created_by|default:"-" }}</td>
-                        <td>{{ run.created_at|date:"M d, Y" }}</td>
-                        <td class="text-center">
-                            <button class="btn btn-sm btn-outline-success me-1" title="Process">
-                                <i class="fas fa-play"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-primary me-1" title="View">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger" title="Delete">
-                                <i class="fas fa-trash"></i>
-                            </button>
+                        <td>{{ run.pay_date|date:"M d, Y"|default:"-" }}</td>
+                        <td><strong>{{ run.employee_count }}</strong></td>
+                        <td><span class="pr-money">रू{{ run.gross_pay|floatformat:2 }}</span></td>
+                        <td><span class="pr-money">रू{{ run.net_pay|floatformat:2 }}</span></td>
+                        <td><span class="pr-badge pr-badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
+                        <td>
+                            <div class="pr-actions">
+                                <button class="pr-act pr-act-view" title="View Details" onclick="viewRunDetail({{ run.pk }})">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="pr-act pr-act-delete" title="Delete" onclick="deleteRun({{ run.pk }}, '{{ run.title|escapejs }}')">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-4">
-                            <i class="fas fa-play-circle fa-2x mb-2 d-block"></i>
-                            No payroll runs found.
+                        <td colspan="10">
+                            <div class="pr-empty">
+                                <i class="fas fa-play-circle"></i>
+                                <p>No payroll runs found.</p>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        <!-- Pagination -->
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="pr-pagination">
+            <div class="pr-page-info">
+                Showing <strong>{{ page_obj.start_index }}</strong> to <strong>{{ page_obj.end_index }}</strong> of <strong>{{ page_obj.paginator.count }}</strong> payroll runs
+            </div>
+            <div class="pr-page-btns">
+                {% if page_obj.has_previous %}
+                <a class="pr-page-btn" href="?page={{ page_obj.previous_page_number }}&search={{ search_query }}&status={{ status_filter }}&frequency={{ frequency_filter }}&per_page={{ per_page }}">Previous</a>
+                {% else %}
+                <span class="pr-page-btn disabled">Previous</span>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                    <span class="pr-page-btn active">{{ num }}</span>
+                    {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+                    <a class="pr-page-btn" href="?page={{ num }}&search={{ search_query }}&status={{ status_filter }}&frequency={{ frequency_filter }}&per_page={{ per_page }}">{{ num }}</a>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <a class="pr-page-btn" href="?page={{ page_obj.next_page_number }}&search={{ search_query }}&status={{ status_filter }}&frequency={{ frequency_filter }}&per_page={{ per_page }}">Next</a>
+                {% else %}
+                <span class="pr-page-btn disabled">Next</span>
+                {% endif %}
+            </div>
+        </div>
+        {% elif page_obj.paginator.count %}
+        <div class="pr-pagination">
+            <div class="pr-page-info">
+                Showing <strong>{{ page_obj.start_index }}</strong> to <strong>{{ page_obj.end_index }}</strong> of <strong>{{ page_obj.paginator.count }}</strong> payroll runs
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 
-<!-- Add Run Modal -->
-<div class="modal fade" id="addRunModal" tabindex="-1">
-    <div class="modal-dialog">
+<!-- ═══════════════════════ ADD PAYROLL RUN MODAL ═══════════════════════ -->
+<div class="modal fade pr-modal" id="addRunModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-play-circle me-2"></i>New Payroll Run</h5>
+                <h5 class="modal-title"><i class="fas fa-plus-circle"></i> Add Payroll Run</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="post">
+            <form method="post" id="addRunForm" novalidate>
                 {% csrf_token %}
                 <div class="modal-body">
-                    <div class="row">
-                        <div class="col-6 mb-3">
-                            <label class="form-label">Month <span class="text-danger">*</span></label>
-                            <select name="month" class="form-select" required>
-                                <option value="">-- Month --</option>
-                                <option value="1">January</option>
-                                <option value="2">February</option>
-                                <option value="3">March</option>
-                                <option value="4">April</option>
-                                <option value="5">May</option>
-                                <option value="6">June</option>
-                                <option value="7">July</option>
-                                <option value="8">August</option>
-                                <option value="9">September</option>
-                                <option value="10">October</option>
-                                <option value="11">November</option>
-                                <option value="12">December</option>
-                            </select>
+                    <!-- Validation Alert -->
+                    <div class="pr-alert pr-alert-error" id="prFormAlert">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span id="prFormAlertMsg"></span>
+                    </div>
+
+                    <div class="pr-form-group">
+                        <label>Title <span class="text-danger">*</span></label>
+                        <input type="text" name="title" id="prTitle" placeholder="e.g. August 2025 Payroll" required>
+                    </div>
+
+                    <div class="pr-form-group">
+                        <label>Payroll Frequency <span class="text-danger">*</span></label>
+                        <select name="frequency" id="prFrequency" required>
+                            <option value="">-- Select Frequency --</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="bi_weekly">Bi-Weekly</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                        <div class="pr-form-group" style="margin-bottom:0;">
+                            <label>Pay Period Start <span class="text-danger">*</span></label>
+                            <input type="date" name="pay_period_start" id="prPeriodStart" required>
                         </div>
-                        <div class="col-6 mb-3">
-                            <label class="form-label">Year <span class="text-danger">*</span></label>
-                            <input type="number" name="year" class="form-control" required min="2000" max="2100" placeholder="2026">
+                        <div class="pr-form-group" style="margin-bottom:0;">
+                            <label>Pay Period End <span class="text-danger">*</span></label>
+                            <input type="date" name="pay_period_end" id="prPeriodEnd" required>
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Notes</label>
-                        <textarea name="notes" class="form-control" rows="2" placeholder="Optional notes"></textarea>
+
+                    <div class="pr-form-group" style="margin-top:16px;">
+                        <label>Pay Date <span class="text-danger">*</span></label>
+                        <input type="date" name="pay_date" id="prPayDate" required>
+                    </div>
+
+                    <div class="pr-form-group">
+                        <label>Notes</label>
+                        <textarea name="notes" id="prNotes" placeholder="Optional notes about this payroll run..." rows="3"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Run</button>
+                    <button type="button" class="pr-modal-cancel" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="pr-modal-save"><i class="fas fa-save me-1"></i> Save</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
+
+<!-- ═══════════════════════ VIEW DETAIL MODAL ═══════════════════════ -->
+<div class="modal fade pr-modal" id="viewRunModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-eye"></i> Payroll Run Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="viewRunBody">
+                <div style="text-align:center;padding:30px;color:#9ca3af;">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="pr-modal-cancel" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ DELETE CONFIRM MODAL ═══════════════════════ -->
+<div class="modal fade pr-modal" id="deleteRunModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#dc2626,#ef4444);">
+                <h5 class="modal-title" style="color:#fff;"><i class="fas fa-trash-alt"></i> Delete Payroll Run</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="text-align:center;padding:24px;">
+                <i class="fas fa-exclamation-triangle" style="font-size:40px;color:#f59e0b;margin-bottom:12px;"></i>
+                <p style="font-size:14px;color:#374151;margin-bottom:4px;">Are you sure you want to delete</p>
+                <p style="font-size:15px;font-weight:700;color:#1f2937;" id="deleteRunTitle"></p>
+                <p style="font-size:12px;color:#9ca3af;margin-bottom:0;">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer" style="justify-content:center;">
+                <button type="button" class="pr-modal-cancel" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="pr-modal-save" style="background:linear-gradient(135deg,#dc2626,#ef4444);box-shadow:0 4px 12px rgba(220,38,38,.3);" id="confirmDeleteBtn">
+                    <i class="fas fa-trash-alt me-1"></i> Delete
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Toggle filter panel — sync button active state on load
+(function() {
+    const panel = document.getElementById('prFilterPanel');
+    const btn = document.getElementById('prToggleFilters');
+    if (panel.classList.contains('show')) btn.classList.add('active');
+    btn.addEventListener('click', function() {
+        panel.classList.toggle('show');
+        this.classList.toggle('active');
+    });
+})();
+
+// Add form validation
+document.getElementById('addRunForm').addEventListener('submit', function(e) {
+    const alert = document.getElementById('prFormAlert');
+    const alertMsg = document.getElementById('prFormAlertMsg');
+    const title = document.getElementById('prTitle').value.trim();
+    const frequency = document.getElementById('prFrequency').value;
+    const periodStart = document.getElementById('prPeriodStart').value;
+    const periodEnd = document.getElementById('prPeriodEnd').value;
+    const payDate = document.getElementById('prPayDate').value;
+
+    let errors = [];
+    if (!title) errors.push('Title is required.');
+    if (!frequency) errors.push('Payroll Frequency is required.');
+    if (!periodStart) errors.push('Pay Period Start is required.');
+    if (!periodEnd) errors.push('Pay Period End is required.');
+    if (!payDate) errors.push('Pay Date is required.');
+
+    if (periodStart && periodEnd && new Date(periodEnd) < new Date(periodStart)) {
+        errors.push('Pay Period End must be after Pay Period Start.');
+    }
+
+    if (errors.length > 0) {
+        e.preventDefault();
+        alertMsg.innerHTML = errors.join('<br>');
+        alert.style.display = 'flex';
+        alert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return false;
+    }
+    alert.style.display = 'none';
+});
+
+// Hide alert when inputs change
+document.querySelectorAll('#addRunForm input, #addRunForm select, #addRunForm textarea').forEach(function(el) {
+    el.addEventListener('input', function() {
+        document.getElementById('prFormAlert').style.display = 'none';
+    });
+});
+
+// Reset form on modal close
+document.getElementById('addRunModal').addEventListener('hidden.bs.modal', function() {
+    document.getElementById('addRunForm').reset();
+    document.getElementById('prFormAlert').style.display = 'none';
+});
+
+// View detail
+function viewRunDetail(pk) {
+    const body = document.getElementById('viewRunBody');
+    body.innerHTML = '<div style="text-align:center;padding:30px;color:#9ca3af;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+    const modalEl = document.getElementById('viewRunModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+
+    fetch("{% url 'hrm:payroll_run_list' %}" + pk + "/")
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const run = data.run;
+                let statusClass = 'pr-badge-' + run.status_key;
+                body.innerHTML = `
+                    <div class="pr-detail-row"><span class="pr-detail-label">Title</span><span class="pr-detail-value">${run.title}</span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Frequency</span><span class="pr-detail-value"><span class="pr-badge pr-badge-monthly">${run.frequency}</span></span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Pay Period</span><span class="pr-detail-value">${run.pay_period_start} &mdash; ${run.pay_period_end}</span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Pay Date</span><span class="pr-detail-value">${run.pay_date}</span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Status</span><span class="pr-detail-value"><span class="pr-badge ${statusClass}">${run.status}</span></span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Employees</span><span class="pr-detail-value"><strong>${run.employee_count}</strong></span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Gross Pay</span><span class="pr-detail-value pr-money">रू${parseFloat(run.gross_pay).toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Net Pay</span><span class="pr-detail-value pr-money">रू${parseFloat(run.net_pay).toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Notes</span><span class="pr-detail-value">${run.notes || '<span style="color:#9ca3af">No notes</span>'}</span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Created By</span><span class="pr-detail-value">${run.created_by}</span></div>
+                    <div class="pr-detail-row"><span class="pr-detail-label">Created At</span><span class="pr-detail-value">${run.created_at}</span></div>
+                `;
+            } else {
+                body.innerHTML = '<div style="text-align:center;padding:20px;color:#dc2626;"><i class="fas fa-exclamation-circle"></i> ' + (data.error || 'Error loading details.') + '</div>';
+            }
+        })
+        .catch(() => {
+            body.innerHTML = '<div style="text-align:center;padding:20px;color:#dc2626;"><i class="fas fa-exclamation-circle"></i> Network error.</div>';
+        });
+}
+
+// Delete
+let deleteRunId = null;
+function deleteRun(pk, title) {
+    deleteRunId = pk;
+    document.getElementById('deleteRunTitle').textContent = '"' + title + '"';
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteRunModal'));
+    modal.show();
+}
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+    if (!deleteRunId) return;
+    const btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Deleting...';
+
+    fetch("{% url 'hrm:payroll_run_list' %}" + deleteRunId + "/delete/", {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-trash-alt me-1"></i> Delete';
+            window.alert(data.error || 'Failed to delete.');
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-trash-alt me-1"></i> Delete';
+        window.alert('Network error. Please try again.');
+    });
+});
+</script>
 {% endblock %}
