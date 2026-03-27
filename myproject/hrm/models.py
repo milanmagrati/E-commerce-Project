@@ -652,3 +652,108 @@ class BiometricAttendance(models.Model):
 
     def __str__(self):
         return f"PIN {self.pin} @ {self.timestamp}"
+
+
+# ==================== Payroll Models ====================
+
+class SalaryComponent(models.Model):
+    TYPE_CHOICES = [
+        ('earning', 'Earning'),
+        ('deduction', 'Deduction'),
+    ]
+    CALCULATION_TYPE_CHOICES = [
+        ('fixed', 'Fixed Amount'),
+        ('percentage_of_basic', '% of Basic Salary'),
+        ('percentage_of_gross', '% of Gross Salary'),
+        ('percentage_of_ctc', '% of CTC'),
+    ]
+    name = models.CharField(max_length=255)
+    component_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='earning')
+    description = models.TextField(blank=True, default='')
+    calculation_type = models.CharField(max_length=30, choices=CALCULATION_TYPE_CHOICES, default='fixed')
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    is_taxable = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Salary Component'
+        verbose_name_plural = 'Salary Components'
+
+    def __str__(self):
+        return f"{self.name} ({self.get_component_type_display()})"
+
+
+class EmployeeSalary(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='salaries')
+    effective_date = models.DateField()
+    basic_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    components = models.ManyToManyField(SalaryComponent, blank=True, related_name='employee_salaries')
+    notes = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-effective_date']
+        verbose_name = 'Employee Salary'
+        verbose_name_plural = 'Employee Salaries'
+
+    def __str__(self):
+        return f"{self.employee} - Rs. {self.basic_salary} (from {self.effective_date})"
+
+
+class PayrollRun(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    month = models.PositiveSmallIntegerField()
+    year = models.PositiveSmallIntegerField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    notes = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='payroll_runs'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-year', '-month']
+        unique_together = ['month', 'year']
+        verbose_name = 'Payroll Run'
+        verbose_name_plural = 'Payroll Runs'
+
+    def __str__(self):
+        return f"Payroll {self.month:02d}/{self.year} - {self.get_status_display()}"
+
+
+class Payslip(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('generated', 'Generated'),
+        ('paid', 'Paid'),
+    ]
+    payroll_run = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name='payslips')
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='payslips')
+    gross_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_deductions = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    net_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    paid_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ['payroll_run', 'employee']
+        verbose_name = 'Payslip'
+        verbose_name_plural = 'Payslips'
+
+    def __str__(self):
+        return f"Payslip - {self.employee} ({self.payroll_run})"

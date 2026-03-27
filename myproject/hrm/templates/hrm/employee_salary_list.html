@@ -1,0 +1,1456 @@
+{% extends 'base.html' %}
+{% block title %}Employee Salaries - HRM{% endblock %}
+
+{% block content %}
+
+<style>
+/* ── Page Container ────────────────────────────────────── */
+.es-page-container {
+    height: calc(100vh - 140px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Header Bar ────────────────────────────────────────── */
+.es-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    flex-shrink: 0;
+}
+
+.es-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.es-header h2 i {
+    color: #25a35a;
+    font-size: 20px;
+}
+
+.es-add-btn {
+    padding: 10px 22px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #1a7f4b 0%, #25a35a 100%);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    cursor: pointer;
+    transition: opacity .2s ease, transform .15s ease, box-shadow .2s ease;
+    box-shadow: 0 4px 12px rgba(37,163,90,.3);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.es-add-btn:hover {
+    opacity: .93;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(37,163,90,.35);
+    color: #fff;
+}
+
+/* ── Filter / Search Bar ───────────────────────────────── */
+.es-filter-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    padding: 14px 20px;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+}
+
+.es-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.es-search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+}
+
+.es-search-wrap .es-search-icon {
+    position: absolute;
+    left: 13px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.es-search-wrap input {
+    width: 100%;
+    padding: 9px 12px 9px 36px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 13.5px;
+    color: #1f2937;
+    background: #fafafa;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.es-search-wrap input:focus {
+    outline: none;
+    border-color: #25a35a;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(37,163,90,.12);
+}
+
+.es-search-btn {
+    padding: 9px 20px;
+    border: none;
+    border-radius: 8px;
+    background: #25a35a;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.es-search-btn:hover { background: #1a7f4b; }
+
+.es-filter-toggle {
+    padding: 9px 16px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    color: #6b7280;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.es-filter-toggle:hover {
+    border-color: #25a35a;
+    color: #25a35a;
+}
+
+.es-per-page {
+    padding: 9px 12px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #374151;
+    background: #fafafa;
+    min-width: 90px;
+    cursor: pointer;
+}
+
+.es-per-page:focus {
+    outline: none;
+    border-color: #25a35a;
+    box-shadow: 0 0 0 3px rgba(37,163,90,.12);
+}
+
+/* ── Filter Panel (hidden by default) ──────────────────── */
+.es-filters-panel {
+    display: none;
+    padding: 12px 0 0;
+    border-top: 1px solid #f3f4f6;
+    margin-top: 12px;
+}
+
+.es-filters-panel.show { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.es-filter-select {
+    padding: 8px 12px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #374151;
+    background: #fafafa;
+    min-width: 150px;
+}
+
+.es-filter-select:focus {
+    outline: none;
+    border-color: #25a35a;
+    box-shadow: 0 0 0 3px rgba(37,163,90,.12);
+}
+
+.es-clear-btn {
+    padding: 8px 16px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    color: #6b7280;
+    font-size: 13px;
+    text-decoration: none;
+    transition: all .2s ease;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.es-clear-btn:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+/* ── Table Card ────────────────────────────────────────── */
+.es-table-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.es-table-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+}
+
+.es-table-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.es-table-scroll::-webkit-scrollbar-track { background: transparent; }
+.es-table-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
+.es-table-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+.es-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13.5px;
+}
+
+.es-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.es-table thead th {
+    background: linear-gradient(135deg, #1a7f4b 0%, #25a35a 100%);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    padding: 13px 16px;
+    white-space: nowrap;
+    border: none;
+}
+
+.es-table tbody tr {
+    transition: background .15s ease;
+}
+
+.es-table tbody tr:hover {
+    background: #f0fdf4;
+}
+
+.es-table tbody td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f3f4f6;
+    color: #374151;
+    vertical-align: middle;
+}
+
+/* ── Employee Cell ─────────────────────────────────────── */
+.es-emp-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.es-emp-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.es-emp-name {
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 13.5px;
+}
+
+.es-emp-id {
+    font-size: 11.5px;
+    color: #9ca3af;
+}
+
+/* ── Salary ────────────────────────────────────────────── */
+.es-salary {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+/* ── Component Badges ──────────────────────────────────── */
+.es-comp-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 320px;
+}
+
+.es-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.es-badge-earning {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.es-badge-deduction {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.es-badge-none {
+    background: #f3f4f6;
+    color: #9ca3af;
+    font-weight: 500;
+    font-style: italic;
+}
+
+/* ── Status Badge ──────────────────────────────────────── */
+.es-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.es-status-active {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.es-status-inactive {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.es-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.es-status-active .es-status-dot { background: #22c55e; }
+.es-status-inactive .es-status-dot { background: #9ca3af; }
+
+/* ── Action Buttons ────────────────────────────────────── */
+.es-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    justify-content: center;
+}
+
+.es-act-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all .2s ease;
+}
+
+.es-act-view {
+    background: #eff6ff;
+    color: #3b82f6;
+}
+.es-act-view:hover { background: #3b82f6; color: #fff; }
+
+.es-act-edit {
+    background: #fef3c7;
+    color: #f59e0b;
+}
+.es-act-edit:hover { background: #f59e0b; color: #fff; }
+
+.es-act-lock {
+    background: #f3e8ff;
+    color: #8b5cf6;
+}
+.es-act-lock:hover { background: #8b5cf6; color: #fff; }
+
+.es-act-payroll {
+    background: #dcfce7;
+    color: #16a34a;
+    text-decoration: none;
+}
+.es-act-payroll:hover { background: #16a34a; color: #fff; }
+
+.es-act-delete {
+    background: #fee2e2;
+    color: #ef4444;
+}
+.es-act-delete:hover { background: #ef4444; color: #fff; }
+
+/* ── Empty State ───────────────────────────────────────── */
+.es-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #9ca3af;
+}
+
+.es-empty i {
+    font-size: 48px;
+    margin-bottom: 12px;
+    display: block;
+    color: #d1d5db;
+}
+
+.es-empty p {
+    font-size: 14px;
+    margin: 0;
+}
+
+/* ── Pagination ────────────────────────────────────────── */
+.es-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-top: 1px solid #f3f4f6;
+    flex-shrink: 0;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.es-page-info { font-weight: 500; }
+
+.es-page-links {
+    display: flex;
+    gap: 4px;
+}
+
+.es-page-link {
+    padding: 6px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    color: #374151;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all .2s ease;
+}
+
+.es-page-link:hover {
+    background: #25a35a;
+    border-color: #25a35a;
+    color: #fff;
+}
+
+.es-page-link.active {
+    background: #25a35a;
+    border-color: #25a35a;
+    color: #fff;
+}
+
+.es-page-link.disabled {
+    opacity: .4;
+    pointer-events: none;
+}
+
+/* ── Modal Styling ─────────────────────────────────────── */
+.es-modal .modal-content {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.15);
+    overflow: hidden;
+}
+
+.es-modal .modal-header {
+    background: linear-gradient(135deg, #1a7f4b 0%, #25a35a 100%);
+    padding: 18px 24px;
+    border: none;
+}
+
+.es-modal .modal-header .modal-title {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.es-modal .modal-header .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: .8;
+}
+
+.es-modal .modal-body {
+    padding: 24px;
+}
+
+.es-modal .modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #f3f4f6;
+}
+
+.es-modal-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 5px;
+    letter-spacing: .2px;
+    text-transform: uppercase;
+}
+
+.es-modal-label .req { color: #ef4444; }
+
+.es-modal .form-control,
+.es-modal .form-select {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 13.5px;
+    color: #1f2937;
+    background: #fafafa;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.es-modal .form-control:focus,
+.es-modal .form-select:focus {
+    border-color: #25a35a;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(37,163,90,.12);
+    outline: none;
+}
+
+.es-modal-save {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #1a7f4b 0%, #25a35a 100%);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .2s ease;
+    box-shadow: 0 4px 12px rgba(37,163,90,.3);
+}
+
+.es-modal-save:hover { opacity: .93; }
+
+.es-modal-cancel {
+    padding: 10px 20px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 9px;
+    background: #fff;
+    color: #6b7280;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .2s ease;
+}
+
+.es-modal-cancel:hover {
+    border-color: #d1d5db;
+    color: #374151;
+}
+
+/* ── Component Multi-Select ────────────────────────────── */
+.es-comp-select-wrap {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fafafa;
+    padding: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.es-comp-select-wrap:focus-within {
+    border-color: #25a35a;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(37,163,90,.12);
+}
+
+.es-comp-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .15s ease;
+    font-size: 13px;
+    margin: 0;
+}
+
+.es-comp-item:hover { background: #f0fdf4; }
+
+.es-comp-item input[type="checkbox"] {
+    accent-color: #25a35a;
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+}
+
+.es-comp-item-label {
+    flex: 1;
+    color: #374151;
+    font-weight: 500;
+}
+
+.es-comp-item-type {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    text-transform: uppercase;
+}
+
+.es-comp-item-type.earning {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.es-comp-item-type.deduction {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* ── Component Group Headers ───────────────────────────── */
+.es-comp-group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 8px 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    border-bottom: 1px solid #f3f4f6;
+    margin-bottom: 2px;
+}
+.es-comp-group-header.earning { color: #166534; }
+.es-comp-group-header.deduction { color: #991b1b; margin-top: 6px; }
+
+.es-comp-item-amount {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #6b7280;
+    white-space: nowrap;
+    margin-right: 6px;
+}
+
+.es-comp-taxable {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #fef3c7;
+    color: #92400e;
+    margin-left: 4px;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+    vertical-align: middle;
+}
+
+/* ── Salary Preview Box ─────────────────────────────────── */
+.es-preview-box {
+    background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%);
+    border-radius: 10px;
+    border: 1.5px solid #dcfce7;
+    padding: 14px 18px;
+    margin-top: 14px;
+}
+.es-preview-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: #374151;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.es-preview-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    font-size: 13px;
+    color: #4b5563;
+}
+.es-preview-row.net {
+    border-top: 1.5px solid #c7d2fe;
+    padding-top: 10px;
+    margin-top: 6px;
+    font-weight: 700;
+    font-size: 14px;
+    color: #1f2937;
+}
+.es-preview-val { font-weight: 600; font-family: 'Courier New', monospace; font-size: 13.5px; }
+.es-preview-val.green { color: #16a34a; }
+.es-preview-val.red { color: #dc2626; }
+.es-preview-val.purple { color: #7c3aed; font-size: 15px; }
+
+/* ── View Modal ────────────────────────────────────────── */
+.es-view-row {
+    display: flex;
+    padding: 10px 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.es-view-row:last-child { border-bottom: none; }
+
+.es-view-label {
+    width: 140px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+    flex-shrink: 0;
+}
+
+.es-view-value {
+    flex: 1;
+    font-size: 13.5px;
+    color: #1f2937;
+    font-weight: 500;
+}
+
+/* ── Delete Modal ──────────────────────────────────────── */
+.es-delete-modal .modal-header {
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+}
+
+.es-delete-body {
+    text-align: center;
+    padding: 30px 20px;
+}
+
+.es-delete-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: #fee2e2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 28px;
+    color: #ef4444;
+}
+
+.es-delete-body h5 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 6px;
+}
+
+.es-delete-body p {
+    font-size: 13.5px;
+    color: #6b7280;
+    margin: 0;
+}
+
+.es-delete-confirm {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(239,68,68,.3);
+}
+
+.es-delete-confirm:hover { opacity: .93; }
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .es-filter-row { flex-direction: column; }
+    .es-search-wrap { min-width: 100%; }
+    .es-comp-badges { max-width: 200px; }
+    .es-actions { flex-wrap: wrap; }
+}
+</style>
+
+<div class="es-page-container">
+
+    <!-- Header -->
+    <div class="es-header">
+        <h2><i class="fas fa-money-check-alt"></i> Employee Salaries</h2>
+        <button class="es-add-btn" data-bs-toggle="modal" data-bs-target="#addSalaryModal">
+            <i class="fas fa-plus"></i> Assign Salary
+        </button>
+    </div>
+
+    <!-- Search / Filter Bar -->
+    <div class="es-filter-card">
+        <form method="get" id="filterForm">
+            <div class="es-filter-row">
+                <div class="es-search-wrap">
+                    <i class="fas fa-search es-search-icon"></i>
+                    <input type="text" name="search" placeholder="Search by employee name or ID..." value="{{ search_query }}">
+                </div>
+                <button type="submit" class="es-search-btn"><i class="fas fa-search"></i> Search</button>
+                <button type="button" class="es-filter-toggle" id="toggleFilters">
+                    <i class="fas fa-sliders-h"></i> Filters
+                </button>
+                <select name="per_page" class="es-per-page" onchange="document.getElementById('filterForm').submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10 / page</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25 / page</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50 / page</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100 / page</option>
+                </select>
+            </div>
+
+            <!-- Hidden filters panel -->
+            <div class="es-filters-panel {% if status_filter %}show{% endif %}" id="filtersPanel">
+                <select name="status" class="es-filter-select">
+                    <option value="">All Statuses</option>
+                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+                </select>
+                {% if search_query or status_filter %}
+                <a href="{% url 'hrm:employee_salary_list' %}" class="es-clear-btn">
+                    <i class="fas fa-times"></i> Clear All
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Table Card -->
+    <div class="es-table-card">
+        <div class="es-table-scroll">
+            <table class="es-table">
+                <thead>
+                    <tr>
+                        <th style="width:50px">#</th>
+                        <th>Employee</th>
+                        <th>Basic Salary</th>
+                        <th>Components</th>
+                        <th>Status</th>
+                        <th>Created At</th>
+                        <th style="text-align:center;width:200px">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for salary in salaries %}
+                    <tr data-id="{{ salary.id }}">
+                        <td>{{ forloop.counter0|add:page_obj.start_index }}</td>
+                        <td>
+                            <div class="es-emp-cell">
+                                <div class="es-emp-avatar">
+                                    {{ salary.employee.full_name|first }}
+                                </div>
+                                <div>
+                                    <div class="es-emp-name">{{ salary.employee.full_name }}</div>
+                                    <div class="es-emp-id">{{ salary.employee.employee_id }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="es-salary">रू {{ salary.basic_salary|floatformat:2 }}</span></td>
+                        <td>
+                            <div class="es-comp-badges">
+                                {% for comp in salary.components.all %}
+                                    {% if comp.component_type == 'earning' %}
+                                    <span class="es-badge es-badge-earning">{{ comp.name }}</span>
+                                    {% else %}
+                                    <span class="es-badge es-badge-deduction">{{ comp.name }}</span>
+                                    {% endif %}
+                                {% empty %}
+                                    <span class="es-badge es-badge-none">No components</span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <td>
+                            {% if salary.is_active %}
+                            <span class="es-status es-status-active"><span class="es-status-dot"></span> Active</span>
+                            {% else %}
+                            <span class="es-status es-status-inactive"><span class="es-status-dot"></span> Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ salary.created_at|date:"M d, Y" }}</td>
+                        <td>
+                            <div class="es-actions">
+                                <button class="es-act-btn es-act-view" title="View Details" onclick="viewSalary({{ salary.id }})">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="es-act-btn es-act-edit" title="Edit" onclick="editSalary({{ salary.id }})">
+                                    <i class="fas fa-pen"></i>
+                                </button>
+                                <button class="es-act-btn es-act-lock" title="Toggle Status" onclick="toggleStatus({{ salary.id }})">
+                                    {% if salary.is_active %}
+                                    <i class="fas fa-lock-open"></i>
+                                    {% else %}
+                                    <i class="fas fa-lock"></i>
+                                    {% endif %}
+                                </button>
+                                <a class="es-act-btn es-act-payroll" title="Show Payroll" href="{% url 'hrm:payroll_calculation' salary.id %}">
+                                    <i class="fas fa-chart-bar"></i>
+                                </a>
+                                <button class="es-act-btn es-act-delete" title="Delete" onclick="confirmDelete({{ salary.id }}, '{{ salary.employee.full_name|escapejs }}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7">
+                            <div class="es-empty">
+                                <i class="fas fa-money-check-alt"></i>
+                                <p>No employee salaries found.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="es-pagination">
+            <div class="es-page-info">
+                Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }} entries
+            </div>
+            <div class="es-page-links">
+                {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}&search={{ search_query }}&status={{ status_filter }}&per_page={{ per_page }}" class="es-page-link">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+                {% else %}
+                <span class="es-page-link disabled"><i class="fas fa-chevron-left"></i></span>
+                {% endif %}
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                    <span class="es-page-link active">{{ num }}</span>
+                    {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+                    <a href="?page={{ num }}&search={{ search_query }}&status={{ status_filter }}&per_page={{ per_page }}" class="es-page-link">{{ num }}</a>
+                    {% endif %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}&search={{ search_query }}&status={{ status_filter }}&per_page={{ per_page }}" class="es-page-link">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                {% else %}
+                <span class="es-page-link disabled"><i class="fas fa-chevron-right"></i></span>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- ADD SALARY MODAL                                        -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="modal fade es-modal" id="addSalaryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i>Assign Employee Salary</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="addSalaryForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="es-modal-label">Employee <span class="req">*</span></label>
+                            <select name="employee" id="addEmployee" class="form-select" required>
+                                <option value="">-- Select Employee --</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.id }}" data-salary="{{ emp.base_salary }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="es-modal-label">Basic Salary (रू) <span class="req">*</span></label>
+                            <input type="number" name="basic_salary" id="addBasicSalary" class="form-control" required min="0" step="0.01" placeholder="0.00">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="es-modal-label">Effective Date <span class="req">*</span></label>
+                            <input type="date" name="effective_date" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="es-modal-label">Status</label>
+                            <select name="is_active" class="form-select">
+                                <option value="1" selected>Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="es-modal-label">Notes</label>
+                            <textarea name="notes" class="form-control" rows="2" placeholder="Optional notes about this salary assignment..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Salary Components -->
+                    <div class="mt-3">
+                        <label class="es-modal-label mb-2">Salary Components <small style="font-size:11px;color:#9ca3af;font-weight:400;text-transform:none;letter-spacing:0;">(select all that apply)</small></label>
+                        <div class="es-comp-select-wrap" id="addComponentsWrap">
+                            {% if earnings_components %}
+                            <div class="es-comp-group-header earning"><i class="fas fa-plus-circle"></i> Earnings</div>
+                            {% for comp in earnings_components %}
+                            <label class="es-comp-item" data-type="{{ comp.component_type }}" data-calc="{{ comp.calculation_type }}" data-amount="{{ comp.amount }}">
+                                <input type="checkbox" name="components" value="{{ comp.id }}">
+                                <span class="es-comp-item-label">{{ comp.name }}{% if comp.is_taxable %}<span class="es-comp-taxable">TAX</span>{% endif %}</span>
+                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
+                                <span class="es-comp-item-type earning">Earning</span>
+                            </label>
+                            {% endfor %}
+                            {% endif %}
+                            {% if deductions_components %}
+                            <div class="es-comp-group-header deduction"><i class="fas fa-minus-circle"></i> Deductions</div>
+                            {% for comp in deductions_components %}
+                            <label class="es-comp-item" data-type="{{ comp.component_type }}" data-calc="{{ comp.calculation_type }}" data-amount="{{ comp.amount }}">
+                                <input type="checkbox" name="components" value="{{ comp.id }}">
+                                <span class="es-comp-item-label">{{ comp.name }}{% if comp.is_taxable %}<span class="es-comp-taxable">TAX</span>{% endif %}</span>
+                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
+                                <span class="es-comp-item-type deduction">Deduction</span>
+                            </label>
+                            {% endfor %}
+                            {% endif %}
+                            {% if not earnings_components and not deductions_components %}
+                            <div class="text-center text-muted py-3" style="font-size:13px;"><i class="fas fa-info-circle me-1"></i>No active salary components available.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Live Salary Preview -->
+                    <div class="es-preview-box">
+                        <div class="es-preview-title"><i class="fas fa-calculator" style="color:#25a35a;"></i> Estimated Salary Preview</div>
+                        <div class="es-preview-row">
+                            <span>Basic Salary</span>
+                            <span class="es-preview-val green" id="addPrevBasic">रू0.00</span>
+                        </div>
+                        <div class="es-preview-row">
+                            <span>Total Earnings (incl. allowances)</span>
+                            <span class="es-preview-val green" id="addPrevEarnings">रू0.00</span>
+                        </div>
+                        <div class="es-preview-row">
+                            <span>Total Deductions</span>
+                            <span class="es-preview-val red" id="addPrevDeductions">- रू0.00</span>
+                        </div>
+                        <div class="es-preview-row net">
+                            <span><i class="fas fa-wallet me-1" style="color:#7c3aed;"></i> Estimated Net Salary</span>
+                            <span class="es-preview-val purple" id="addPrevNet">रू0.00</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="es-modal-cancel" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="es-modal-save"><i class="fas fa-save me-1"></i> Save Salary</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- EDIT SALARY MODAL                                       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="modal fade es-modal" id="editSalaryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Edit Employee Salary</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editSalaryForm">
+                {% csrf_token %}
+                <input type="hidden" id="editSalaryId">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="es-modal-label">Employee <span class="req">*</span></label>
+                            <select id="editEmployee" name="employee" class="form-select" required>
+                                <option value="">-- Select Employee --</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="es-modal-label">Basic Salary (रू) <span class="req">*</span></label>
+                            <input type="number" id="editBasicSalary" name="basic_salary" class="form-control" required min="0" step="0.01">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="es-modal-label">Effective Date <span class="req">*</span></label>
+                            <input type="date" id="editEffectiveDate" name="effective_date" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="es-modal-label">Status</label>
+                            <select id="editIsActive" name="is_active" class="form-select">
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="es-modal-label">Notes</label>
+                            <textarea id="editNotes" name="notes" class="form-control" rows="2" placeholder="Optional notes about this salary assignment..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Salary Components -->
+                    <div class="mt-3">
+                        <label class="es-modal-label mb-2">Salary Components <small style="font-size:11px;color:#9ca3af;font-weight:400;text-transform:none;letter-spacing:0;">(select all that apply)</small></label>
+                        <div class="es-comp-select-wrap" id="editComponentsWrap">
+                            {% if earnings_components %}
+                            <div class="es-comp-group-header earning"><i class="fas fa-plus-circle"></i> Earnings</div>
+                            {% for comp in earnings_components %}
+                            <label class="es-comp-item" data-type="{{ comp.component_type }}" data-calc="{{ comp.calculation_type }}" data-amount="{{ comp.amount }}">
+                                <input type="checkbox" name="components" value="{{ comp.id }}" class="edit-comp-check">
+                                <span class="es-comp-item-label">{{ comp.name }}{% if comp.is_taxable %}<span class="es-comp-taxable">TAX</span>{% endif %}</span>
+                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
+                                <span class="es-comp-item-type earning">Earning</span>
+                            </label>
+                            {% endfor %}
+                            {% endif %}
+                            {% if deductions_components %}
+                            <div class="es-comp-group-header deduction"><i class="fas fa-minus-circle"></i> Deductions</div>
+                            {% for comp in deductions_components %}
+                            <label class="es-comp-item" data-type="{{ comp.component_type }}" data-calc="{{ comp.calculation_type }}" data-amount="{{ comp.amount }}">
+                                <input type="checkbox" name="components" value="{{ comp.id }}" class="edit-comp-check">
+                                <span class="es-comp-item-label">{{ comp.name }}{% if comp.is_taxable %}<span class="es-comp-taxable">TAX</span>{% endif %}</span>
+                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
+                                <span class="es-comp-item-type deduction">Deduction</span>
+                            </label>
+                            {% endfor %}
+                            {% endif %}
+                            {% if not earnings_components and not deductions_components %}
+                            <div class="text-center text-muted py-3" style="font-size:13px;"><i class="fas fa-info-circle me-1"></i>No active salary components available.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Live Salary Preview -->
+                    <div class="es-preview-box">
+                        <div class="es-preview-title"><i class="fas fa-calculator" style="color:#25a35a;"></i> Estimated Salary Preview</div>
+                        <div class="es-preview-row">
+                            <span>Basic Salary</span>
+                            <span class="es-preview-val green" id="editPrevBasic">रू0.00</span>
+                        </div>
+                        <div class="es-preview-row">
+                            <span>Total Earnings (incl. allowances)</span>
+                            <span class="es-preview-val green" id="editPrevEarnings">रू0.00</span>
+                        </div>
+                        <div class="es-preview-row">
+                            <span>Total Deductions</span>
+                            <span class="es-preview-val red" id="editPrevDeductions">- रू0.00</span>
+                        </div>
+                        <div class="es-preview-row net">
+                            <span><i class="fas fa-wallet me-1" style="color:#7c3aed;"></i> Estimated Net Salary</span>
+                            <span class="es-preview-val purple" id="editPrevNet">रू0.00</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="es-modal-cancel" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="es-modal-save"><i class="fas fa-save me-1"></i> Update Salary</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- VIEW SALARY MODAL                                       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="modal fade es-modal" id="viewSalaryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-eye me-2"></i>Salary Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="viewSalaryBody">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="es-modal-cancel" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- DELETE CONFIRMATION MODAL                                -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="modal fade es-modal es-delete-modal" id="deleteSalaryModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="es-delete-body">
+                    <div class="es-delete-icon"><i class="fas fa-trash-alt"></i></div>
+                    <h5>Delete Salary Record?</h5>
+                    <p>This will permanently remove the salary record for <strong id="deleteEmpName"></strong>.</p>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="es-modal-cancel" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="es-delete-confirm" id="confirmDeleteBtn"><i class="fas fa-trash me-1"></i> Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+// ── Toggle Filters ────────────────────────────────────────
+document.getElementById('toggleFilters').addEventListener('click', function() {
+    document.getElementById('filtersPanel').classList.toggle('show');
+});
+
+// ── View Salary ───────────────────────────────────────────
+function viewSalary(id) {
+    fetch(`/hrm/payroll/employee-salaries/${id}/`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alertify.error('Failed to load salary details.'); return; }
+            const s = data.salary;
+            let compHtml = '';
+            if (s.components.length === 0) {
+                compHtml = '<span class="es-badge es-badge-none">No components assigned</span>';
+            } else {
+                s.components.forEach(c => {
+                    const cls = c.component_type === 'earning' ? 'es-badge-earning' : 'es-badge-deduction';
+                    compHtml += `<span class="es-badge ${cls}" style="margin:2px">${c.name} (${c.calculation_type}: रू${c.amount})</span>`;
+                });
+            }
+            const html = `
+                <div class="es-view-row">
+                    <div class="es-view-label">Employee</div>
+                    <div class="es-view-value">${s.employee_name} (${s.employee_code})</div>
+                </div>
+                <div class="es-view-row">
+                    <div class="es-view-label">Basic Salary</div>
+                    <div class="es-view-value" style="font-weight:700;color:#1a7f4b;">रू ${parseFloat(s.basic_salary).toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
+                </div>
+                <div class="es-view-row">
+                    <div class="es-view-label">Effective Date</div>
+                    <div class="es-view-value">${s.effective_date}</div>
+                </div>
+                <div class="es-view-row">
+                    <div class="es-view-label">Status</div>
+                    <div class="es-view-value">${s.is_active ? '<span class="es-status es-status-active"><span class="es-status-dot"></span> Active</span>' : '<span class="es-status es-status-inactive"><span class="es-status-dot"></span> Inactive</span>'}</div>
+                </div>
+                <div class="es-view-row">
+                    <div class="es-view-label">Components</div>
+                    <div class="es-view-value"><div class="es-comp-badges">${compHtml}</div></div>
+                </div>
+                <div class="es-view-row">
+                    <div class="es-view-label">Notes</div>
+                    <div class="es-view-value">${s.notes || '-'}</div>
+                </div>
+                <div class="es-view-row">
+                    <div class="es-view-label">Created At</div>
+                    <div class="es-view-value">${s.created_at}</div>
+                </div>
+            `;
+            document.getElementById('viewSalaryBody').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('viewSalaryModal')).show();
+        })
+        .catch(() => alertify.error('Error loading salary details.'));
+}
+
+// ── Edit Salary ───────────────────────────────────────────
+function editSalary(id) {
+    fetch(`/hrm/payroll/employee-salaries/${id}/`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alertify.error('Failed to load salary data.'); return; }
+            const s = data.salary;
+            document.getElementById('editSalaryId').value = s.id;
+            document.getElementById('editEmployee').value = s.employee_id;
+            document.getElementById('editBasicSalary').value = s.basic_salary;
+            document.getElementById('editEffectiveDate').value = s.effective_date;
+            document.getElementById('editNotes').value = s.notes;
+            document.getElementById('editIsActive').value = s.is_active ? '1' : '0';
+
+            // Reset and set component checkboxes
+            document.querySelectorAll('.edit-comp-check').forEach(cb => cb.checked = false);
+            const compIds = s.components.map(c => String(c.id));
+            document.querySelectorAll('.edit-comp-check').forEach(cb => {
+                if (compIds.includes(cb.value)) cb.checked = true;
+            });
+
+            updateEditPreview();
+            new bootstrap.Modal(document.getElementById('editSalaryModal')).show();
+        })
+        .catch(() => alertify.error('Error loading salary data.'));
+}
+
+document.getElementById('editSalaryForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const id = document.getElementById('editSalaryId').value;
+    const formData = new FormData(this);
+    fetch(`/hrm/payroll/employee-salaries/${id}/update/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alertify.success(data.message);
+            bootstrap.Modal.getInstance(document.getElementById('editSalaryModal')).hide();
+            setTimeout(() => location.reload(), 600);
+        } else {
+            alertify.error(data.error || 'Update failed.');
+        }
+    })
+    .catch(() => alertify.error('Error updating salary.'));
+});
+
+// ── Toggle Status ─────────────────────────────────────────
+function toggleStatus(id) {
+    fetch(`/hrm/payroll/employee-salaries/${id}/toggle-status/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alertify.success(data.message);
+            setTimeout(() => location.reload(), 600);
+        } else {
+            alertify.error(data.error || 'Toggle failed.');
+        }
+    })
+    .catch(() => alertify.error('Error toggling status.'));
+}
+
+// ── Salary Preview Calculation ────────────────────────────
+function calcPreview(basicSalary, compSelector) {
+    let totalEarnings = basicSalary;
+    let totalDeductions = 0;
+    document.querySelectorAll(compSelector + ':checked').forEach(cb => {
+        const item = cb.closest('[data-type]');
+        if (!item) return;
+        const amount = parseFloat(item.dataset.amount) || 0;
+        const calcAmount = (item.dataset.calc === 'fixed') ? amount : (basicSalary * amount / 100);
+        if (item.dataset.type === 'earning') totalEarnings += calcAmount;
+        else totalDeductions += calcAmount;
+    });
+    return { basic: basicSalary, earnings: totalEarnings, deductions: totalDeductions, net: totalEarnings - totalDeductions };
+}
+
+function fmtCur(val) {
+    return 'रू' + Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function updateAddPreview() {
+    const basic = parseFloat(document.getElementById('addBasicSalary').value) || 0;
+    const r = calcPreview(basic, '#addComponentsWrap input[type="checkbox"]');
+    document.getElementById('addPrevBasic').textContent = fmtCur(r.basic);
+    document.getElementById('addPrevEarnings').textContent = fmtCur(r.earnings);
+    document.getElementById('addPrevDeductions').textContent = '- ' + fmtCur(r.deductions);
+    document.getElementById('addPrevNet').textContent = fmtCur(r.net);
+}
+
+function updateEditPreview() {
+    const basic = parseFloat(document.getElementById('editBasicSalary').value) || 0;
+    const r = calcPreview(basic, '#editComponentsWrap input[type="checkbox"]');
+    document.getElementById('editPrevBasic').textContent = fmtCur(r.basic);
+    document.getElementById('editPrevEarnings').textContent = fmtCur(r.earnings);
+    document.getElementById('editPrevDeductions').textContent = '- ' + fmtCur(r.deductions);
+    document.getElementById('editPrevNet').textContent = fmtCur(r.net);
+}
+
+// Auto-fill basic salary from employee's base salary
+document.getElementById('addEmployee').addEventListener('change', function() {
+    const opt = this.options[this.selectedIndex];
+    if (opt && opt.dataset.salary && opt.value) {
+        document.getElementById('addBasicSalary').value = parseFloat(opt.dataset.salary).toFixed(2);
+    }
+    updateAddPreview();
+});
+
+// Live preview event listeners
+document.getElementById('addBasicSalary').addEventListener('input', updateAddPreview);
+document.getElementById('addComponentsWrap').addEventListener('change', updateAddPreview);
+document.getElementById('editBasicSalary').addEventListener('input', updateEditPreview);
+document.getElementById('editComponentsWrap').addEventListener('change', updateEditPreview);
+
+// ── Delete ────────────────────────────────────────────────
+let deleteId = null;
+
+function confirmDelete(id, empName) {
+    deleteId = id;
+    document.getElementById('deleteEmpName').textContent = empName;
+    new bootstrap.Modal(document.getElementById('deleteSalaryModal')).show();
+}
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+    if (!deleteId) return;
+    fetch(`/hrm/payroll/employee-salaries/${deleteId}/delete/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alertify.success(data.message);
+            bootstrap.Modal.getInstance(document.getElementById('deleteSalaryModal')).hide();
+            setTimeout(() => location.reload(), 600);
+        } else {
+            alertify.error(data.error || 'Delete failed.');
+        }
+    })
+    .catch(() => alertify.error('Error deleting salary.'));
+});
+</script>
+
+{% endblock %}

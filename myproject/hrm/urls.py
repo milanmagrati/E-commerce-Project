@@ -157,4 +157,17 @@ urlpatterns = [
 
     # Payroll Management
     path('payroll/', views.payroll_management, name='payroll_management'),
+    path('payroll/salary-components/', views.salary_component_list, name='salary_component_list'),
+    path('payroll/salary-components/<int:pk>/', views.salary_component_detail, name='salary_component_detail'),
+    path('payroll/salary-components/<int:pk>/update/', views.salary_component_update, name='salary_component_update'),
+    path('payroll/salary-components/<int:pk>/delete/', views.salary_component_delete, name='salary_component_delete'),
+    path('payroll/salary-components/<int:pk>/toggle-status/', views.salary_component_toggle_status, name='salary_component_toggle_status'),
+    path('payroll/employee-salaries/', views.employee_salary_list, name='employee_salary_list'),
+    path('payroll/employee-salaries/<int:pk>/', views.employee_salary_detail, name='employee_salary_detail'),
+    path('payroll/employee-salaries/<int:pk>/update/', views.employee_salary_update, name='employee_salary_update'),
+    path('payroll/employee-salaries/<int:pk>/delete/', views.employee_salary_delete, name='employee_salary_delete'),
+    path('payroll/employee-salaries/<int:pk>/toggle-status/', views.employee_salary_toggle_status, name='employee_salary_toggle_status'),
+    path('payroll/employee-salaries/<int:pk>/payroll/', views.payroll_calculation, name='payroll_calculation'),
+    path('payroll/runs/', views.payroll_run_list, name='payroll_run_list'),
+    path('payroll/payslips/', views.payslip_list, name='payslip_list'),
 ]

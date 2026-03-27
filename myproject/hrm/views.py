@@ -3804,4 +3804,559 @@ def payroll_management(request):
     return render(request, 'hrm/payroll_management.html', context)
 
 
+@login_required
+def salary_component_list(request):
+    from .models import SalaryComponent
+
+    # Handle POST for adding component directly on the page
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            messages.error(request, 'Component name is required.')
+            return redirect('hrm:salary_component_list')
+        SalaryComponent.objects.create(
+            name=name,
+            component_type=request.POST.get('component_type', 'earning'),
+            description=request.POST.get('description', '').strip(),
+            calculation_type=request.POST.get('calculation_type', 'fixed'),
+            amount=request.POST.get('amount') or 0,
+            is_taxable=request.POST.get('is_taxable') == 'on',
+            is_active=request.POST.get('is_active', 'active') in ('on', 'active'),
+        )
+        messages.success(request, f'Salary component "{name}" created successfully!')
+        return redirect('hrm:salary_component_list')
+
+    search_query = request.GET.get('search', '').strip()
+    type_filter = request.GET.get('type', '')
+    calc_filter = request.GET.get('calc', '')
+    status_filter = request.GET.get('status', '')
+    components = SalaryComponent.objects.all()
+    if search_query:
+        components = components.filter(
+            Q(name__icontains=search_query) | Q(description__icontains=search_query)
+        )
+    if type_filter:
+        components = components.filter(component_type=type_filter)
+    if calc_filter:
+        components = components.filter(calculation_type=calc_filter)
+    if status_filter == 'active':
+        components = components.filter(is_active=True)
+    elif status_filter == 'inactive':
+        components = components.filter(is_active=False)
+
+    total_components = SalaryComponent.objects.count()
+    total_earnings = SalaryComponent.objects.filter(component_type='earning').count()
+    total_deductions = SalaryComponent.objects.filter(component_type='deduction').count()
+
+    context = {
+        'page_title': 'Salary Components',
+        'components': components,
+        'search_query': search_query,
+        'type_filter': type_filter,
+        'calc_filter': calc_filter,
+        'status_filter': status_filter,
+        'total_components': total_components,
+        'total_earnings': total_earnings,
+        'total_deductions': total_deductions,
+    }
+    return render(request, 'hrm/salary_component_list.html', context)
+
+
+@login_required
+def salary_component_detail(request, pk):
+    from .models import SalaryComponent
+    comp = get_object_or_404(SalaryComponent, id=pk)
+    return JsonResponse({
+        'success': True,
+        'component': {
+            'id': comp.id,
+            'name': comp.name,
+            'component_type': comp.component_type,
+            'description': comp.description,
+            'calculation_type': comp.calculation_type,
+            'amount': str(comp.amount),
+            'is_taxable': comp.is_taxable,
+            'is_active': comp.is_active,
+        }
+    })
+
+
+@login_required
+def salary_component_update(request, pk):
+    from .models import SalaryComponent
+    comp = get_object_or_404(SalaryComponent, id=pk)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Component name is required.'})
+
+        comp.name = name
+        comp.component_type = request.POST.get('component_type', comp.component_type)
+        comp.description = request.POST.get('description', '').strip()
+        comp.calculation_type = request.POST.get('calculation_type', comp.calculation_type)
+        comp.amount = request.POST.get('amount') or 0
+        comp.is_taxable = request.POST.get('is_taxable') == 'on'
+        comp.is_active = request.POST.get('is_active', 'active') in ('on', 'active')
+        comp.save()
+        return JsonResponse({'success': True, 'message': f'Component "{comp.name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def salary_component_delete(request, pk):
+    from .models import SalaryComponent
+    comp = get_object_or_404(SalaryComponent, id=pk)
+
+    if request.method == 'POST':
+        comp_name = comp.name
+        comp.delete()
+        return JsonResponse({'success': True, 'message': f'Component "{comp_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def salary_component_toggle_status(request, pk):
+    from .models import SalaryComponent
+    comp = get_object_or_404(SalaryComponent, id=pk)
+
+    if request.method == 'POST':
+        comp.is_active = not comp.is_active
+        comp.save()
+        status = 'active' if comp.is_active else 'inactive'
+        return JsonResponse({'success': True, 'message': f'Component "{comp.name}" is now {status}.'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def employee_salary_list(request):
+    from .models import EmployeeSalary, SalaryComponent, Employee
+
+    # Handle POST for creating a new employee salary
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '')
+        basic_salary = request.POST.get('basic_salary', '0')
+        effective_date = request.POST.get('effective_date', '')
+        notes = request.POST.get('notes', '').strip()
+        component_ids = request.POST.getlist('components')
+
+        if not employee_id or not effective_date:
+            messages.error(request, 'Employee and effective date are required.')
+            return redirect('hrm:employee_salary_list')
+
+        try:
+            employee = Employee.objects.get(id=int(employee_id))
+        except (Employee.DoesNotExist, ValueError, TypeError):
+            messages.error(request, 'Selected employee not found.')
+            return redirect('hrm:employee_salary_list')
+
+        try:
+            basic_salary_val = round(float(basic_salary), 2) if basic_salary else 0
+            if basic_salary_val < 0:
+                raise ValueError('Salary cannot be negative.')
+        except (ValueError, TypeError):
+            messages.error(request, 'Invalid basic salary value.')
+            return redirect('hrm:employee_salary_list')
+
+        is_active_val = request.POST.get('is_active', '1') == '1'
+        salary = EmployeeSalary.objects.create(
+            employee=employee,
+            basic_salary=basic_salary_val,
+            effective_date=effective_date,
+            notes=notes,
+            is_active=is_active_val,
+        )
+        if component_ids:
+            salary.components.set(component_ids)
+        messages.success(request, f'Salary for "{employee.full_name}" assigned successfully!')
+        return redirect('hrm:employee_salary_list')
+
+    # GET request — list with search, filters, pagination
+    search_query = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '')
+    per_page = request.GET.get('per_page', '10')
+
+    salaries = EmployeeSalary.objects.select_related('employee').prefetch_related('components').all()
+
+    if search_query:
+        salaries = salaries.filter(
+            Q(employee__full_name__icontains=search_query) |
+            Q(employee__employee_id__icontains=search_query)
+        )
+    if status_filter == 'active':
+        salaries = salaries.filter(is_active=True)
+    elif status_filter == 'inactive':
+        salaries = salaries.filter(is_active=False)
+
+    # Pagination
+    try:
+        per_page_int = int(per_page)
+    except (ValueError, TypeError):
+        per_page_int = 10
+    paginator = Paginator(salaries, per_page_int)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    # Data for dropdowns
+    employees = Employee.objects.all().order_by('full_name')
+    components = SalaryComponent.objects.filter(is_active=True).order_by('component_type', 'name')
+    earnings_components = components.filter(component_type='earning')
+    deductions_components = components.filter(component_type='deduction')
+
+    context = {
+        'page_title': 'Employee Salaries',
+        'salaries': page_obj,
+        'page_obj': page_obj,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'per_page': per_page,
+        'employees': employees,
+        'components': components,
+        'earnings_components': earnings_components,
+        'deductions_components': deductions_components,
+    }
+    return render(request, 'hrm/employee_salary_list.html', context)
+
+
+@login_required
+def employee_salary_detail(request, pk):
+    from .models import EmployeeSalary
+    salary = get_object_or_404(EmployeeSalary.objects.select_related('employee').prefetch_related('components'), id=pk)
+    return JsonResponse({
+        'success': True,
+        'salary': {
+            'id': salary.id,
+            'employee_id': salary.employee.id,
+            'employee_name': salary.employee.full_name,
+            'employee_code': salary.employee.employee_id,
+            'basic_salary': str(salary.basic_salary),
+            'effective_date': salary.effective_date.isoformat(),
+            'notes': salary.notes,
+            'is_active': salary.is_active,
+            'created_at': salary.created_at.strftime('%b %d, %Y %I:%M %p'),
+            'components': [
+                {
+                    'id': c.id,
+                    'name': c.name,
+                    'component_type': c.component_type,
+                    'calculation_type': c.get_calculation_type_display(),
+                    'amount': str(c.amount),
+                }
+                for c in salary.components.all()
+            ],
+        }
+    })
+
+
+@login_required
+def employee_salary_update(request, pk):
+    from .models import EmployeeSalary, Employee
+    salary = get_object_or_404(EmployeeSalary, id=pk)
+
+    if request.method == 'POST':
+        employee_id = request.POST.get('employee', '')
+        basic_salary = request.POST.get('basic_salary', '0')
+        effective_date = request.POST.get('effective_date', '')
+        notes = request.POST.get('notes', '').strip()
+        component_ids = request.POST.getlist('components')
+
+        if not employee_id or not effective_date:
+            return JsonResponse({'success': False, 'error': 'Employee and effective date are required.'})
+
+        try:
+            employee = Employee.objects.get(id=int(employee_id))
+        except (Employee.DoesNotExist, ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Selected employee not found.'})
+
+        try:
+            basic_salary_val = round(float(basic_salary), 2) if basic_salary else 0
+            if basic_salary_val < 0:
+                raise ValueError('Salary cannot be negative.')
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Invalid basic salary value.'})
+
+        is_active_val = request.POST.get('is_active', '1') == '1'
+        salary.employee = employee
+        salary.basic_salary = basic_salary_val
+        salary.effective_date = effective_date
+        salary.notes = notes
+        salary.is_active = is_active_val
+        salary.save()
+        salary.components.set(component_ids)
+        return JsonResponse({'success': True, 'message': f'Salary for "{employee.full_name}" updated successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def employee_salary_delete(request, pk):
+    from .models import EmployeeSalary
+    salary = get_object_or_404(EmployeeSalary, id=pk)
+
+    if request.method == 'POST':
+        emp_name = salary.employee.full_name
+        salary.delete()
+        return JsonResponse({'success': True, 'message': f'Salary record for "{emp_name}" deleted successfully!'})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def employee_salary_toggle_status(request, pk):
+    from .models import EmployeeSalary
+    salary = get_object_or_404(EmployeeSalary, id=pk)
+
+    if request.method == 'POST':
+        salary.is_active = not salary.is_active
+        salary.save()
+        status = 'active' if salary.is_active else 'inactive'
+        return JsonResponse({'success': True, 'message': f'Salary for "{salary.employee.full_name}" is now {status}.', 'is_active': salary.is_active})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+
+@login_required
+def payroll_run_list(request):
+    from .models import PayrollRun
+    status_filter = request.GET.get('status', '')
+    runs = PayrollRun.objects.all()
+    if status_filter:
+        runs = runs.filter(status=status_filter)
+    context = {
+        'page_title': 'Payroll Runs',
+        'runs': runs,
+        'status_filter': status_filter,
+    }
+    return render(request, 'hrm/payroll_run_list.html', context)
+
+
+@login_required
+def payslip_list(request):
+    from .models import Payslip
+    search_query = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '')
+    payslips = Payslip.objects.select_related('employee', 'payroll_run').all()
+    if search_query:
+        payslips = payslips.filter(
+            employee__first_name__icontains=search_query
+        ) | payslips.filter(
+            employee__last_name__icontains=search_query
+        )
+    if status_filter:
+        payslips = payslips.filter(status=status_filter)
+    context = {
+        'page_title': 'Payslips',
+        'payslips': payslips,
+        'search_query': search_query,
+        'status_filter': status_filter,
+    }
+    return render(request, 'hrm/payslip_list.html', context)
+
+
+@login_required
+def payroll_calculation(request, pk):
+    from .models import EmployeeSalary, AttendanceRecord, AttendancePolicy
+    import calendar
+    from datetime import date as dt_date
+    from decimal import Decimal, ROUND_HALF_UP
+
+    salary = get_object_or_404(
+        EmployeeSalary.objects.select_related('employee').prefetch_related('components'),
+        id=pk
+    )
+    employee = salary.employee
+
+    # Determine the payroll month/year from query param or default to current
+    now = timezone.now()
+    sel_month = request.GET.get('month', '')
+    sel_year = request.GET.get('year', '')
+    try:
+        month = int(sel_month) if sel_month else now.month
+        year = int(sel_year) if sel_year else now.year
+        if month < 1 or month > 12 or year < 2000 or year > 2100:
+            raise ValueError
+    except (ValueError, TypeError):
+        month, year = now.month, now.year
+
+    month_name = calendar.month_name[month]
+    working_days_in_month = 0
+    first_day = dt_date(year, month, 1)
+    last_day = dt_date(year, month, calendar.monthrange(year, month)[1])
+
+    # Count working days (Mon-Fri) in the month
+    d = first_day
+    while d <= last_day:
+        if d.weekday() < 5:
+            working_days_in_month += 1
+        d += timedelta(days=1)
+
+    # Fetch attendance records for this employee in the selected month
+    attendance_records = AttendanceRecord.objects.filter(
+        employee=employee,
+        date__year=year,
+        date__month=month
+    ).order_by('date')
+
+    # Attendance summary
+    present_days = Decimal('0')
+    half_days = Decimal('0')
+    absent_days = Decimal('0')
+    on_leave_days = Decimal('0')
+    total_overtime_hours = Decimal('0')
+    total_working_hours = Decimal('0')
+
+    attendance_data = []
+    for rec in attendance_records:
+        overtime_display = str(rec.overtime_hours) + 'h' if rec.overtime_hours > 0 else '-'
+        status_tags = []
+        if rec.status == 'present':
+            status_tags.append(('Present', 'present'))
+            present_days += 1
+        elif rec.status == 'absent':
+            status_tags.append(('Absent', 'absent'))
+            absent_days += 1
+        elif rec.status == 'late':
+            status_tags.append(('Present', 'present'))
+            status_tags.append(('Late', 'late'))
+            present_days += 1
+        elif rec.status == 'half_day':
+            status_tags.append(('Half Day', 'half_day'))
+            half_days += 1
+        elif rec.status == 'on_leave':
+            status_tags.append(('On Leave', 'on_leave'))
+            on_leave_days += 1
+
+        if rec.is_early_departure and rec.status not in ('absent', 'on_leave', 'half_day'):
+            status_tags.append(('Early', 'early'))
+        if rec.is_late_arrival and rec.status not in ('late',):
+            pass  # already shown as Late for 'late' status
+
+        total_overtime_hours += rec.overtime_hours
+        total_working_hours += rec.working_hours
+
+        attendance_data.append({
+            'date': rec.date,
+            'clock_in': rec.clock_in,
+            'clock_out': rec.clock_out,
+            'total_hours': str(rec.working_hours) + 'h',
+            'overtime': overtime_display,
+            'status_tags': status_tags,
+        })
+
+    # Paid leave days = on_leave_days (treat on_leave as paid)
+    paid_leave_days = on_leave_days
+    total_unpaid_leave = Decimal('0')  # unpaid = absent + half_day * 0.5
+
+    # Salary calculations
+    basic_salary = salary.basic_salary
+    components = salary.components.all()
+
+    # Calculate component amounts
+    earnings = []
+    deductions = []
+    total_earnings_components = Decimal('0')
+    total_deductions_amount = Decimal('0')
+
+    for comp in components:
+        if comp.calculation_type == 'fixed':
+            calc_amount = comp.amount
+        elif comp.calculation_type == 'percentage_of_basic':
+            calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        elif comp.calculation_type == 'percentage_of_gross':
+            calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        elif comp.calculation_type == 'percentage_of_ctc':
+            calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        else:
+            calc_amount = comp.amount
+
+        if comp.component_type == 'earning':
+            earnings.append({'name': comp.name, 'amount': calc_amount})
+            total_earnings_components += calc_amount
+        else:
+            deductions.append({'name': comp.name, 'amount': calc_amount})
+            total_deductions_amount += calc_amount
+
+    total_earnings = basic_salary + total_earnings_components
+
+    # Per day salary
+    per_day_salary = Decimal('0')
+    if working_days_in_month > 0:
+        per_day_salary = (total_earnings / Decimal(str(working_days_in_month))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    # Deductions based on attendance
+    half_day_deduction_days = half_days * Decimal('0.5')
+    total_unpaid_leave = absent_days + half_day_deduction_days
+    unpaid_leave_deduction = (per_day_salary * absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    half_day_deduction = (per_day_salary * half_day_deduction_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    absent_day_deduction = unpaid_leave_deduction
+
+    # Overtime calculation
+    overtime_rate = Decimal('0')
+    try:
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
+        if policy:
+            overtime_rate = policy.overtime_rate
+    except Exception:
+        pass
+    overtime_amount = (total_overtime_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    # Net salary
+    total_attendance_deduction = unpaid_leave_deduction + half_day_deduction
+    net_salary = total_earnings - total_attendance_deduction + overtime_amount - total_deductions_amount
+
+    # Build available months for the dropdown (last 12 months)
+    available_months = []
+    for i in range(12):
+        m = now.month - i
+        y = now.year
+        if m <= 0:
+            m += 12
+            y -= 1
+        month_start = dt_date(y, m, 1)
+        month_end = dt_date(y, m, calendar.monthrange(y, m)[1])
+        label = f"{calendar.month_name[m]} {y} Payroll ({m}/1/{y} - {m}/{calendar.monthrange(y, m)[1]}/{y})"
+        available_months.append({
+            'month': m,
+            'year': y,
+            'label': label,
+            'selected': (m == month and y == year),
+        })
+
+    context = {
+        'page_title': f'Payroll Calculation - {employee.full_name}',
+        'salary': salary,
+        'employee': employee,
+        'month': month,
+        'year': year,
+        'month_name': month_name,
+        'working_days_in_month': working_days_in_month,
+        'basic_salary': basic_salary,
+        'net_salary': net_salary,
+        'present_days': present_days,
+        'half_days': half_days,
+        'absent_days': absent_days,
+        'paid_leave_days': paid_leave_days,
+        'total_unpaid_leave': total_unpaid_leave,
+        'total_overtime_hours': total_overtime_hours,
+        'earnings': earnings,
+        'deductions': deductions,
+        'total_earnings': total_earnings,
+        'total_deductions_amount': total_deductions_amount,
+        'per_day_salary': per_day_salary,
+        'unpaid_leave_deduction': unpaid_leave_deduction,
+        'half_day_deduction': half_day_deduction,
+        'half_day_deduction_days': half_day_deduction_days,
+        'absent_day_deduction': absent_day_deduction,
+        'overtime_amount': overtime_amount,
+        'overtime_rate': overtime_rate,
+        'total_attendance_deduction': total_attendance_deduction,
+        'attendance_data': attendance_data,
+        'available_months': available_months,
+    }
+    return render(request, 'hrm/payroll_calculation.html', context)
+
+
 

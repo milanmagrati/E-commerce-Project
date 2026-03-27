@@ -1,0 +1,613 @@
+{% extends 'base.html' %}
+{% block title %}Payroll Calculation - {{ employee.full_name }}{% endblock %}
+
+{% block content %}
+
+<style>
+/* ── Page Container ────────────────────────────────────── */
+.pc-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 16px 40px;
+}
+
+/* ── Breadcrumb ────────────────────────────────────────── */
+.pc-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.pc-breadcrumb a {
+    color: #6b7280;
+    text-decoration: none;
+    transition: color .2s;
+}
+.pc-breadcrumb a:hover { color: #4f46e5; }
+.pc-breadcrumb .pc-bc-sep { color: #d1d5db; }
+.pc-breadcrumb .pc-bc-current { color: #111827; font-weight: 600; }
+
+/* ── Page Header ───────────────────────────────────────── */
+.pc-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+}
+.pc-page-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+}
+.pc-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #fff;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all .2s;
+}
+.pc-back-btn:hover { background: #f3f4f6; color: #111827; }
+
+/* ── Employee Info Card ────────────────────────────────── */
+.pc-emp-card {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+}
+.pc-emp-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+.pc-emp-info {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.pc-emp-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+}
+.pc-emp-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+}
+.pc-emp-subtitle {
+    font-size: 13px;
+    color: #6b7280;
+    margin: 2px 0 0;
+}
+.pc-month-select {
+    padding: 8px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #374151;
+    background: #fff;
+    cursor: pointer;
+    min-width: 260px;
+}
+.pc-month-select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+
+/* ── Summary Cards ─────────────────────────────────────── */
+.pc-summary-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+.pc-summary-card {
+    padding: 18px 22px;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+}
+.pc-summary-card.basic { background: #eff6ff; border-color: #dbeafe; }
+.pc-summary-card.working { background: #f0fdf4; border-color: #dcfce7; }
+.pc-summary-card.net { background: #fef2f2; border-color: #fee2e2; }
+.pc-sc-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    margin-bottom: 6px;
+}
+.pc-summary-card.basic .pc-sc-label { color: #4f46e5; }
+.pc-summary-card.working .pc-sc-label { color: #16a34a; }
+.pc-summary-card.net .pc-sc-label { color: #dc2626; }
+.pc-sc-value {
+    font-size: 24px;
+    font-weight: 800;
+    color: #111827;
+}
+
+/* ── Attendance Summary ────────────────────────────────── */
+.pc-section {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+}
+.pc-section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0 0 20px;
+}
+
+.pc-att-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 16px;
+    text-align: center;
+    padding: 10px 0;
+    border-top: 1px solid #f3f4f6;
+}
+.pc-att-item .pc-att-value {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.pc-att-item .pc-att-label {
+    font-size: 11px;
+    color: #6b7280;
+    line-height: 1.3;
+}
+.pc-att-value.blue { color: #3b82f6; }
+.pc-att-value.green { color: #16a34a; }
+.pc-att-value.orange { color: #f59e0b; }
+.pc-att-value.red { color: #dc2626; }
+.pc-att-value.purple { color: #7c3aed; }
+.pc-att-value.teal { color: #0d9488; }
+
+/* ── Earnings / Deductions Grid ────────────────────────── */
+.pc-ed-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+.pc-ed-card {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    padding: 24px 28px;
+}
+.pc-ed-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 700;
+    margin: 0 0 16px;
+}
+.pc-ed-title.earning { color: #1f2937; }
+.pc-ed-title.earning i { color: #16a34a; }
+.pc-ed-title.deduction { color: #1f2937; }
+.pc-ed-title.deduction i { color: #dc2626; }
+
+.pc-ed-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+.pc-ed-row:last-child { border-bottom: none; }
+.pc-ed-name { font-size: 14px; color: #4b5563; }
+.pc-ed-amount { font-size: 14px; font-weight: 600; font-family: 'Courier New', monospace; }
+.pc-ed-amount.green { color: #16a34a; }
+.pc-ed-amount.red { color: #dc2626; }
+
+.pc-ed-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0 0;
+    margin-top: 4px;
+    font-weight: 700;
+    font-size: 15px;
+}
+.pc-ed-total.earning-total { border-top: 2px solid #dcfce7; }
+.pc-ed-total.deduction-total { border-top: 2px solid #fee2e2; }
+
+/* ── Attendance Records Table ──────────────────────────── */
+.pc-table-wrapper {
+    overflow-x: auto;
+}
+.pc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+.pc-table thead th {
+    background: #f9fafb;
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: #374151;
+    border-bottom: 1px solid #e5e7eb;
+}
+.pc-table tbody td {
+    padding: 14px 16px;
+    border-bottom: 1px solid #f3f4f6;
+    color: #374151;
+    vertical-align: middle;
+}
+.pc-table tbody tr:hover { background: #fafbfc; }
+.pc-clock-in { color: #16a34a; font-weight: 600; }
+.pc-clock-out { color: #dc2626; font-weight: 600; }
+.pc-overtime-val { color: #16a34a; font-weight: 600; }
+
+.pc-status-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 4px;
+}
+.pc-tag-present { background: #dcfce7; color: #166534; }
+.pc-tag-absent { background: #fee2e2; color: #991b1b; }
+.pc-tag-late { background: #fee2e2; color: #991b1b; }
+.pc-tag-early { background: #dcfce7; color: #166534; }
+.pc-tag-half_day { background: #fef3c7; color: #92400e; }
+.pc-tag-on_leave { background: #eff6ff; color: #1d4ed8; }
+
+/* ── Final Calculation ─────────────────────────────────── */
+.pc-final-section {
+    background: linear-gradient(180deg, #f8f0ff 0%, #fff 50%);
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    padding: 28px;
+    margin-bottom: 24px;
+}
+.pc-final-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+}
+.pc-final-label { font-size: 14px; color: #6b7280; }
+.pc-final-value {
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+}
+.pc-final-value.green { color: #16a34a; }
+.pc-final-value.red { color: #dc2626; }
+.pc-final-value.purple { color: #7c3aed; }
+
+.pc-net-salary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 0 0;
+    margin-top: 8px;
+    border-top: 3px solid #e0d4f5;
+}
+.pc-net-salary-label {
+    font-size: 18px;
+    font-weight: 800;
+    color: #1f2937;
+}
+.pc-net-salary-value {
+    font-size: 22px;
+    font-weight: 800;
+    color: #16a34a;
+    font-family: 'Courier New', monospace;
+}
+
+/* ── Formula Box ───────────────────────────────────────── */
+.pc-formula-box {
+    background: linear-gradient(135deg, #f5f0ff, #eff6ff);
+    border-radius: 12px;
+    border: 1px solid #e0d4f5;
+    padding: 20px 24px;
+    margin-top: 8px;
+}
+.pc-formula-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #7c3aed;
+    margin-bottom: 6px;
+}
+.pc-formula-text {
+    font-size: 13px;
+    color: #374151;
+    margin: 0 0 12px;
+}
+.pc-formula-breakdown {
+    font-size: 13px;
+    color: #374151;
+}
+.pc-formula-breakdown strong { font-weight: 700; }
+.pc-formula-breakdown .pc-fb-item { margin: 2px 0; }
+.pc-formula-total {
+    color: #16a34a;
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .pc-summary-row { grid-template-columns: 1fr; }
+    .pc-ed-grid { grid-template-columns: 1fr; }
+    .pc-emp-top { flex-direction: column; gap: 14px; align-items: flex-start; }
+    .pc-att-summary { grid-template-columns: repeat(3, 1fr); }
+}
+</style>
+
+{% csrf_token %}
+
+<div class="pc-container">
+
+    <!-- Breadcrumb -->
+    <div class="pc-breadcrumb">
+        <a href="{% url 'hrm:dashboard' %}"><i class="fas fa-th-large"></i> Dashboard</a>
+        <span class="pc-bc-sep">&gt;</span>
+        <a href="{% url 'hrm:payroll_management' %}">Payroll Management</a>
+        <span class="pc-bc-sep">&gt;</span>
+        <a href="{% url 'hrm:employee_salary_list' %}">Employee Salaries</a>
+        <span class="pc-bc-sep">&gt;</span>
+        <span class="pc-bc-current">Payroll Calculation</span>
+    </div>
+
+    <!-- Page Header -->
+    <div class="pc-page-header">
+        <h2>Payroll Calculation - {{ employee.full_name }}</h2>
+        <a href="{% url 'hrm:employee_salary_list' %}" class="pc-back-btn">
+            <i class="fas fa-arrow-left"></i> Back
+        </a>
+    </div>
+
+    <!-- Employee Info Card -->
+    <div class="pc-emp-card">
+        <div class="pc-emp-top">
+            <div class="pc-emp-info">
+                <div class="pc-emp-avatar"><i class="fas fa-calendar-alt"></i></div>
+                <div>
+                    <h4 class="pc-emp-name">{{ employee.full_name }}</h4>
+                    <p class="pc-emp-subtitle">Payroll Calculation for {{ month_name }} {{ year }}</p>
+                </div>
+            </div>
+            <select class="pc-month-select" id="monthSelector" onchange="changeMonth(this.value)">
+                {% for m in available_months %}
+                <option value="{{ m.month }}-{{ m.year }}" {% if m.selected %}selected{% endif %}>{{ m.label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="pc-summary-row">
+            <div class="pc-summary-card basic">
+                <div class="pc-sc-label"><i class="fas fa-dollar-sign"></i> Basic Salary</div>
+                <div class="pc-sc-value">रू{{ basic_salary|floatformat:2 }}</div>
+            </div>
+            <div class="pc-summary-card working">
+                <div class="pc-sc-label"><i class="fas fa-clock"></i> Working Days</div>
+                <div class="pc-sc-value">{{ working_days_in_month }}</div>
+            </div>
+            <div class="pc-summary-card net">
+                <div class="pc-sc-label"><i class="fas fa-chart-line"></i> Net Salary</div>
+                <div class="pc-sc-value">रू{{ net_salary|floatformat:2 }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Attendance Summary -->
+    <div class="pc-section">
+        <h3 class="pc-section-title">Attendance Summary</h3>
+        <div class="pc-att-summary">
+            <div class="pc-att-item">
+                <div class="pc-att-value blue">{{ working_days_in_month }}</div>
+                <div class="pc-att-label">Working Days</div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value green">{{ present_days|floatformat:2 }}</div>
+                <div class="pc-att-label">Present Days</div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value orange">{{ half_days|floatformat:2 }}</div>
+                <div class="pc-att-label">Half Days</div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value red">{{ absent_days }}</div>
+                <div class="pc-att-label">Absent Days</div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value blue">{{ paid_leave_days|floatformat:2 }}</div>
+                <div class="pc-att-label">Paid Leave Days</div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value teal">{{ total_unpaid_leave|floatformat:2 }}</div>
+                <div class="pc-att-label">Total Unpaid Leave<br><small>(Unpaid Leaves + Half Days + Absent)</small></div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value purple">{{ total_overtime_hours }}h</div>
+                <div class="pc-att-label">Overtime</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Earnings & Deductions -->
+    <div class="pc-ed-grid">
+        <!-- Earnings -->
+        <div class="pc-ed-card">
+            <h3 class="pc-ed-title earning"><i class="fas fa-chart-line"></i> Earnings</h3>
+            <div class="pc-ed-row">
+                <span class="pc-ed-name">Basic Salary</span>
+                <span class="pc-ed-amount green">रू{{ basic_salary|floatformat:2 }}</span>
+            </div>
+            {% for e in earnings %}
+            <div class="pc-ed-row">
+                <span class="pc-ed-name">{{ e.name }}</span>
+                <span class="pc-ed-amount green">रू{{ e.amount|floatformat:2 }}</span>
+            </div>
+            {% endfor %}
+            <div class="pc-ed-total earning-total">
+                <span>Total Earnings</span>
+                <span class="pc-ed-amount green">रू{{ total_earnings|floatformat:2 }}</span>
+            </div>
+        </div>
+
+        <!-- Deductions -->
+        <div class="pc-ed-card">
+            <h3 class="pc-ed-title deduction"><i class="fas fa-chart-line" style="transform: rotate(180deg);"></i> Deductions</h3>
+            {% for d in deductions %}
+            <div class="pc-ed-row">
+                <span class="pc-ed-name">{{ d.name }}</span>
+                <span class="pc-ed-amount red">रू{{ d.amount|floatformat:2 }}</span>
+            </div>
+            {% empty %}
+            <div class="pc-ed-row">
+                <span class="pc-ed-name" style="color:#9ca3af;">No deductions</span>
+                <span class="pc-ed-amount" style="color:#9ca3af;">रू0.00</span>
+            </div>
+            {% endfor %}
+            <div class="pc-ed-total deduction-total">
+                <span>Total Deductions</span>
+                <span class="pc-ed-amount red">रू{{ total_deductions_amount|floatformat:2 }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Daily Attendance Records -->
+    <div class="pc-section">
+        <h3 class="pc-section-title">Daily Attendance Records</h3>
+        <div class="pc-table-wrapper">
+            <table class="pc-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Clock In</th>
+                        <th>Clock Out</th>
+                        <th>Total Hours</th>
+                        <th>Overtime</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rec in attendance_data %}
+                    <tr>
+                        <td>{{ rec.date|date:"Y-m-d" }}</td>
+                        <td class="pc-clock-in">{{ rec.clock_in|time:"H:i"|default:"-" }}</td>
+                        <td class="pc-clock-out">{{ rec.clock_out|time:"H:i"|default:"-" }}</td>
+                        <td>{{ rec.total_hours }}</td>
+                        <td>{% if rec.overtime != '-' %}<span class="pc-overtime-val">{{ rec.overtime }}</span>{% else %}-{% endif %}</td>
+                        <td>
+                            {% for tag_label, tag_class in rec.status_tags %}
+                            <span class="pc-status-tag pc-tag-{{ tag_class }}">{{ tag_label }}</span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" style="text-align:center;color:#9ca3af;padding:40px;">No attendance records found for {{ month_name }} {{ year }}.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Final Calculation -->
+    <div class="pc-final-section">
+        <h3 class="pc-section-title">Final Calculation</h3>
+
+        <div class="pc-final-row">
+            <span class="pc-final-label">Base Salary</span>
+            <span class="pc-final-value green">रू{{ basic_salary|floatformat:2 }}</span>
+        </div>
+        <div class="pc-final-row">
+            <span class="pc-final-label">Total Earnings</span>
+            <span class="pc-final-value green">रू{{ total_earnings|floatformat:2 }}</span>
+        </div>
+        <div class="pc-final-row">
+            <span class="pc-final-label">Per Day Salary</span>
+            <span class="pc-final-value purple">रू{{ per_day_salary|floatformat:2 }}</span>
+        </div>
+        <div class="pc-final-row">
+            <span class="pc-final-label">Unpaid Leave Deduction ({{ absent_days }} days)</span>
+            <span class="pc-final-value red">- रू{{ unpaid_leave_deduction|floatformat:2 }}</span>
+        </div>
+        <div class="pc-final-row">
+            <span class="pc-final-label">Half Day Deduction ({{ half_days|floatformat:2 }} × 0.5)</span>
+            <span class="pc-final-value red">- रू{{ half_day_deduction|floatformat:2 }}</span>
+        </div>
+        <div class="pc-final-row">
+            <span class="pc-final-label">Absent Day Deduction ({{ absent_days }} days)</span>
+            <span class="pc-final-value red">- रू{{ absent_day_deduction|floatformat:2 }}</span>
+        </div>
+        <div class="pc-final-row">
+            <span class="pc-final-label">Overtime Amount</span>
+            <span class="pc-final-value green">+ रू{{ overtime_amount|floatformat:2 }}</span>
+        </div>
+        <div class="pc-final-row">
+            <span class="pc-final-label">Total Deductions</span>
+            <span class="pc-final-value red">- रू{{ total_deductions_amount|floatformat:2 }}</span>
+        </div>
+
+        <div class="pc-net-salary-row">
+            <span class="pc-net-salary-label">Net Salary</span>
+            <span class="pc-net-salary-value">रू{{ net_salary|floatformat:2 }}</span>
+        </div>
+
+        <!-- Formula Box -->
+        <div class="pc-formula-box">
+            <div class="pc-formula-title">Calculation Formula:</div>
+            <p class="pc-formula-text">Net Salary = (Basic Salary + Allowances) – (Per Day Salary × Unpaid Leave Days) + Overtime – Deductions</p>
+            <div class="pc-formula-breakdown">
+                <strong>Unpaid Leave Days Breakdown:</strong>
+                <div class="pc-fb-item">· Unpaid Leaves: {{ absent_days }} days</div>
+                <div class="pc-fb-item">· Absent Days: {{ absent_days }} days</div>
+                <div class="pc-fb-item">· Half Days: {{ half_days|floatformat:2 }} × 0.5 = {{ half_day_deduction_days|floatformat:2 }} days</div>
+                <div class="pc-formula-total">Total Unpaid Days: {{ total_unpaid_leave|floatformat:2 }} days</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function changeMonth(val) {
+    const parts = val.split('-');
+    const month = parts[0];
+    const year = parts[1];
+    const url = new URL(window.location.href);
+    url.searchParams.set('month', month);
+    url.searchParams.set('year', year);
+    window.location.href = url.toString();
+}
+</script>
+
+{% endblock %}

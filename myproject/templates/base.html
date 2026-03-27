@@ -847,8 +847,24 @@
                         </li>
 
                         <!-- Payroll Management -->
-                        <li class="{% if request.resolver_match.url_name == 'payroll_management' %}active{% endif %}">
-                            <a href="{% url 'hrm:payroll_management' %}">Payroll Management</a>
+                        <li>
+                            <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmPayroll" aria-expanded="{% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management' %}true{% else %}false{% endif %}" class="d-flex justify-content-between align-items-center">
+                                Payroll Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
+                            </a>
+                            <ul class="collapse list-unstyled ps-3 {% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management' %}show{% endif %}" id="hrmPayroll">
+                                <li class="{% if request.resolver_match.url_name == 'salary_component_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:salary_component_list' %}">Salary Components</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'employee_salary_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:employee_salary_list' %}">Employee Salaries</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'payroll_run_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:payroll_run_list' %}">Payroll Runs</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'payslip_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:payslip_list' %}">Payslips</a>
+                                </li>
+                            </ul>
                         </li>
                     </ul>
                 </li>
