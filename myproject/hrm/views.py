@@ -3493,15 +3493,24 @@ def iclock_getrequest(request):
         except Exception as e:
             adms_logger.error(f"[HEARTBEAT] Failed to update device SN={sn}: {e}")
 
-    # Push Nepal Standard Time (UTC+5:45) to device via two command formats for compatibility.
-    # C:ID:DATA SYNC TIME is the standard ADMS clock-set command for ZKTeco devices.
+    # Force-overwrite the device clock with Nepal Standard Time (UTC+5:45).
+    # SET TIME is the direct write command — it overwrites the device RTC unconditionally.
+    # Multiple formats sent for maximum firmware compatibility across K20 Pro firmware variants.
     nst = pytz.timezone('Asia/Kathmandu')
     now_nst = timezone.now().astimezone(nst)
     nst_str = now_nst.strftime('%Y-%m-%d %H:%M:%S')
+    compact_str = now_nst.strftime('%Y%m%d%H%M%S')
     seq = int(_time.time())  # monotonically increasing command ID
-    # Both formats sent for maximum firmware compatibility
-    sync_cmd = f'C:{seq}:DATA SYNC TIME {nst_str}\r\nC:{seq+1}:DATE TIME {now_nst.strftime("%Y%m%d%H%M%S")}\r\nOK'
-    adms_logger.info(f"[HEARTBEAT] Sending time sync to SN={sn}: {nst_str}")
+    # C:ID:SET TIME  — direct RTC overwrite (most reliable for K20 Pro)
+    # C:ID:SET OPTION Date=  — alternative SET OPTION form used by some firmware
+    # C:ID:DATE TIME  — legacy compact format fallback
+    sync_cmd = (
+        f'C:{seq}:SET TIME {nst_str}\r\n'
+        f'C:{seq+1}:SET OPTION Date={nst_str}\r\n'
+        f'C:{seq+2}:DATE TIME {compact_str}\r\n'
+        f'OK'
+    )
+    adms_logger.info(f"[HEARTBEAT] Force-writing time to SN={sn}: {nst_str}")
     return HttpResponse(sync_cmd, content_type='text/plain')
 
 
