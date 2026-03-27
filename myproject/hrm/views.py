@@ -2593,12 +2593,127 @@ def document_list(request):
 
 # ==================== Attendance Records ====================
 
+
+def _sync_biometric_to_attendance():
+    """
+    Aggregate raw BiometricAttendance punches into AttendanceRecord entries.
+    For each unique (pin, date) group, finds the matching Employee by employee_code,
+    computes clock_in (earliest punch) and clock_out (latest punch), calculates
+    working hours, and creates or updates the AttendanceRecord.
+    """
+    from .models import BiometricAttendance, AttendanceRecord, Employee, Shift
+    from django.db.models import Min, Max, Count
+    from django.db.models.functions import TruncDate
+    import pytz
+
+    nst = pytz.timezone('Asia/Kathmandu')
+
+    # Build PIN → Employee lookup
+    emp_map = {}
+    for emp in Employee.objects.all():
+        if emp.employee_code:
+            emp_map[emp.employee_code] = emp
+
+    if not emp_map:
+        return
+
+    # Aggregate biometric punches by (pin, date)
+    punch_groups = (
+        BiometricAttendance.objects
+        .annotate(punch_date=TruncDate('timestamp'))
+        .values('pin', 'punch_date')
+        .annotate(
+            first_punch=Min('timestamp'),
+            last_punch=Max('timestamp'),
+            punch_count=Count('id'),
+        )
+    )
+
+    for group in punch_groups:
+        pin = group['pin']
+        punch_date = group['punch_date']
+        first_punch = group['first_punch']
+        last_punch = group['last_punch']
+        punch_count = group['punch_count']
+
+        employee = emp_map.get(pin)
+        if not employee:
+            continue
+
+        # Convert UTC-stored timestamps to Nepal time
+        clock_in_time = first_punch.astimezone(nst).time() if first_punch else None
+        clock_out_time = last_punch.astimezone(nst).time() if last_punch and punch_count > 1 else None
+
+        # Calculate working hours
+        working_hours = 0
+        if clock_in_time and clock_out_time:
+            from datetime import datetime, timedelta
+            cin_dt = datetime.combine(punch_date, clock_in_time)
+            cout_dt = datetime.combine(punch_date, clock_out_time)
+            diff = (cout_dt - cin_dt).total_seconds() / 3600
+            if diff < 0:
+                diff += 24
+            working_hours = round(diff, 2)
+
+        # Compute shift-based overtime, late arrival, early departure
+        overtime_hours = 0
+        is_late = False
+        is_early = False
+        shift = None
+
+        # Try to find an assigned shift for this employee
+        # (use the first active shift as fallback if employee doesn't have one assigned)
+        existing_record = AttendanceRecord.objects.filter(
+            employee=employee, date=punch_date
+        ).first()
+
+        if existing_record and existing_record.shift:
+            shift = existing_record.shift
+
+        if shift and clock_in_time and clock_out_time:
+            from datetime import datetime, timedelta
+            shift_hours = float(shift.working_hours)
+            if working_hours > shift_hours:
+                overtime_hours = round(working_hours - shift_hours, 2)
+            grace = shift.grace_period or 0
+            shift_start = datetime.combine(punch_date, shift.start_time)
+            shift_end = datetime.combine(punch_date, shift.end_time)
+            cin_full = datetime.combine(punch_date, clock_in_time)
+            cout_full = datetime.combine(punch_date, clock_out_time)
+            if cin_full > shift_start + timedelta(minutes=grace):
+                is_late = True
+            if cout_full < shift_end - timedelta(minutes=grace):
+                is_early = True
+
+        # Create or update the AttendanceRecord
+        record, created = AttendanceRecord.objects.update_or_create(
+            employee=employee,
+            date=punch_date,
+            defaults={
+                'clock_in': clock_in_time,
+                'clock_out': clock_out_time,
+                'status': 'present',
+                'working_hours': working_hours,
+                'overtime_hours': overtime_hours,
+                'is_late_arrival': is_late,
+                'is_early_departure': is_early,
+            }
+        )
+        # Preserve shift if it was already set
+        if not created and shift and not record.shift:
+            record.shift = shift
+            record.save(update_fields=['shift'])
+
+
 @login_required
 def attendance_list(request):
     from .models import AttendanceRecord, Employee, Shift
     from django.core.paginator import Paginator
     from django.db.models import Q, Count, Sum
     from datetime import date as dt_date
+
+    # Sync biometric punches into attendance records before loading
+    _sync_biometric_to_attendance()
 
     search = request.GET.get('search', '')
     per_page = request.GET.get('per_page', 9)
@@ -3558,15 +3673,19 @@ def biometric_attendance_view(request, pin, date_str):
 
 @login_required
 def biometric_sync_all(request):
-    """Re-aggregate from raw logs — no external API call needed with ADMS."""
+    """Re-aggregate from raw logs and sync to attendance records."""
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
     from .models import BiometricAttendance
     count = BiometricAttendance.objects.count()
+
+    # Sync biometric punches into AttendanceRecord
+    _sync_biometric_to_attendance()
+
     return JsonResponse({
         'success': True,
-        'message': f'Re-aggregated from {count} raw punch records. Table refreshed.',
+        'message': f'Re-aggregated from {count} raw punch records and synced to attendance. Table refreshed.',
     })
 
 

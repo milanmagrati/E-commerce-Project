@@ -179,14 +179,14 @@
                     <div class="d-flex align-items-center justify-content-between mt-2 mb-2">
                         <div class="d-flex align-items-center gap-1">
                             <i class="fas fa-sign-in-alt" style="color:#28a745;font-size:.75rem;"></i>
-                            <span class="fw-semibold" style="font-size:.85rem;">{{ r.clock_in|default:"--:--" }}</span>
+                            <span class="fw-semibold" style="font-size:.85rem;">{% if r.clock_in %}{{ r.clock_in|time:"g:i A" }}{% else %}--:--{% endif %}</span>
                         </div>
                         <div class="text-center">
                             <div class="text-muted" style="font-size:.68rem;">Duration</div>
                             <div class="fw-bold" style="font-size:.85rem;">{{ r.working_hours }}h</div>
                         </div>
                         <div class="d-flex align-items-center gap-1">
-                            <span class="fw-semibold" style="font-size:.85rem;">{{ r.clock_out|default:"--:--" }}</span>
+                            <span class="fw-semibold" style="font-size:.85rem;">{% if r.clock_out %}{{ r.clock_out|time:"g:i A" }}{% else %}--:--{% endif %}</span>
                             <i class="fas fa-sign-out-alt" style="color:#6366f1;font-size:.75rem;"></i>
                         </div>
                     </div>
