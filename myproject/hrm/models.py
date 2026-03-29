@@ -601,6 +601,46 @@ class AttendanceRegularization(models.Model):
         return f"{self.employee} - {self.date}"
 
 
+# ==================== Employee Weekend / Holiday Assignment ====================
+
+class EmployeeWeekend(models.Model):
+    WEEKEND_TYPE_CHOICES = [
+        ('weekend', 'Weekend'),
+        ('holiday', 'Holiday'),
+    ]
+    DAY_CHOICES = [
+        ('monday',    'Monday'),
+        ('tuesday',   'Tuesday'),
+        ('wednesday', 'Wednesday'),
+        ('thursday',  'Thursday'),
+        ('friday',    'Friday'),
+        ('saturday',  'Saturday'),
+        ('sunday',    'Sunday'),
+    ]
+
+    employee       = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='weekend_assignments')
+    weekend_type   = models.CharField(max_length=10, choices=WEEKEND_TYPE_CHOICES, default='weekend')
+    weekend_days   = models.JSONField(default=list, help_text='List of day names e.g. ["saturday","sunday"]')
+    effective_from = models.DateField()
+    effective_to   = models.DateField(null=True, blank=True)
+    notes          = models.TextField(blank=True, default='')
+    created_at     = models.DateTimeField(auto_now_add=True)
+    updated_at     = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Employee Weekend'
+        verbose_name_plural = 'Employee Weekends'
+
+    def __str__(self):
+        days = ', '.join(d.capitalize() for d in (self.weekend_days or []))
+        return f"{self.employee.full_name} — {days}"
+
+    @property
+    def days_display(self):
+        return [d.capitalize() for d in (self.weekend_days or [])]
+
+
 # ==================== ZKTeco ADMS Device ====================
 
 class ZKDevice(models.Model):

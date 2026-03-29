@@ -23,6 +23,9 @@
         <div>
             <h2 class="mb-0 fw-bold">Shifts</h2>
         </div>
+        <button class="btn btn-primary px-3 me-2" onclick="openSetWeekendsModal()">
+            <i class="fas fa-calendar-alt me-1"></i> Set Weekends
+        </button>
         <button class="btn btn-success px-3" onclick="openAddModal()">
             <i class="fas fa-plus me-1"></i> Add Shift
         </button>
@@ -249,6 +252,157 @@
         </div>
     </div>
     {% endif %}
+
+    <!-- Employee Wise Weekend Assignments Section -->
+    <div class="card shadow-sm border mt-4" id="wkndSection">
+        <div class="card-header d-flex align-items-center justify-content-between py-2 px-3" style="background:linear-gradient(135deg,#4f46e5,#6366f1);cursor:pointer;" onclick="toggleWkndSection()">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fas fa-calendar-week text-white"></i>
+                <span class="fw-semibold text-white">Employee Wise Weekend Assignments</span>
+                <span class="badge bg-white text-primary ms-1">{{ weekend_assignments|length }}</span>
+            </div>
+            <i class="fas fa-chevron-down text-white" id="wkndChevron" style="transition:transform .3s;"></i>
+        </div>
+        <div id="wkndSectionBody">
+            {% if weekend_assignments %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 small">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">#</th>
+                            <th>Employee</th>
+                            <th>Department</th>
+                            <th>Type</th>
+                            <th>Days</th>
+                            <th>Effective From</th>
+                            <th>Effective To</th>
+                            <th>Notes</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for wa in weekend_assignments %}
+                        <tr>
+                            <td class="ps-3 text-muted">{{ forloop.counter }}</td>
+                            <td>
+                                <div class="fw-semibold">{{ wa.employee.full_name }}</div>
+                                <div class="text-muted" style="font-size:.78rem;">{{ wa.employee.employee_id }}</div>
+                            </td>
+                            <td class="text-muted">{{ wa.employee.department.name|default:"—" }}</td>
+                            <td>
+                                {% if wa.weekend_type == 'holiday' %}
+                                <span class="badge" style="background:#f59e0b;">Holiday</span>
+                                {% else %}
+                                <span class="badge" style="background:#6366f1;">Weekend</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% for d in wa.days_display %}
+                                <span class="badge me-1" style="background:{% if d == 'Saturday' or d == 'Sunday' %}#ef4444{% else %}#10b981{% endif %};font-size:.72rem;">{{ d }}</span>
+                                {% endfor %}
+                            </td>
+                            <td class="text-muted">{{ wa.effective_from|date:"d M Y" }}</td>
+                            <td class="text-muted">{{ wa.effective_to|date:"d M Y"|default:"—" }}</td>
+                            <td class="text-muted" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{ wa.notes }}">{{ wa.notes|default:"—" }}</td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteWeekend({{ wa.id }})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <i class="fas fa-calendar-times fa-2x mb-2 d-block"></i>
+                No weekend assignments yet. Click <strong>Set Weekends</strong> to add one.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Set Weekends Modal -->
+<div class="modal fade" id="setWeekendsModal" tabindex="-1" aria-labelledby="setWeekendsModalTitle">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="modal-header text-white py-3 px-4" style="background:linear-gradient(135deg,#4f46e5,#6366f1);">
+                <h5 class="modal-title fw-bold" id="setWeekendsModalTitle">
+                    <i class="fas fa-calendar-alt me-2"></i>Set Employee Weekends
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body px-4 py-3">
+                <input type="hidden" id="swRecordId" value="">
+
+                <!-- Employee -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold text-dark small mb-1">Employee <span class="text-danger">*</span></label>
+                    <select id="swEmployee" class="form-select form-select-sm">
+                        <option value="">— Select Employee —</option>
+                        {% for emp in employees %}
+                        <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }}){% if emp.department %} — {{ emp.department.name }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Type -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold text-dark small mb-1">Type</label>
+                    <div class="d-flex gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="swType" id="swTypeWeekend" value="weekend" checked>
+                            <label class="form-check-label small" for="swTypeWeekend">Weekend (Regular)</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="swType" id="swTypeHoliday" value="holiday">
+                            <label class="form-check-label small" for="swTypeHoliday">Holiday</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Days -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold text-dark small mb-1">Weekend Days <span class="text-danger">*</span></label>
+                    <div class="d-flex flex-wrap gap-2" id="swDaysContainer">
+                        <button type="button" class="btn btn-sm wknd-day-btn" data-day="monday" onclick="toggleWkndDay(this)">Mon</button>
+                        <button type="button" class="btn btn-sm wknd-day-btn" data-day="tuesday" onclick="toggleWkndDay(this)">Tue</button>
+                        <button type="button" class="btn btn-sm wknd-day-btn" data-day="wednesday" onclick="toggleWkndDay(this)">Wed</button>
+                        <button type="button" class="btn btn-sm wknd-day-btn" data-day="thursday" onclick="toggleWkndDay(this)">Thu</button>
+                        <button type="button" class="btn btn-sm wknd-day-btn" data-day="friday" onclick="toggleWkndDay(this)">Fri</button>
+                        <button type="button" class="btn btn-sm wknd-day-btn wknd-day-selected" data-day="saturday" onclick="toggleWkndDay(this)">Sat</button>
+                        <button type="button" class="btn btn-sm wknd-day-btn wknd-day-selected" data-day="sunday" onclick="toggleWkndDay(this)">Sun</button>
+                    </div>
+                </div>
+
+                <!-- Dates -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold text-dark small mb-1">Effective From <span class="text-danger">*</span></label>
+                        <input type="date" id="swEffFrom" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold text-dark small mb-1">Effective To <span class="text-muted">(optional)</span></label>
+                        <input type="date" id="swEffTo" class="form-control form-control-sm">
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div class="mb-1">
+                    <label class="form-label fw-semibold text-dark small mb-1">Notes <span class="text-muted">(optional)</span></label>
+                    <textarea id="swNotes" class="form-control form-control-sm" rows="2" placeholder="Any remarks..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer px-4 py-2 border-top">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm px-4" onclick="saveWeekends()">
+                    <i class="fas fa-save me-1"></i>Save Assignment
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Add/Edit Shift Modal -->
@@ -695,6 +849,26 @@
     @keyframes toastCountdown {
         from { width: 100%; } to { width: 0%; }
     }
+
+    /* ── Weekend Feature ── */
+    .wknd-day-btn {
+        min-width: 48px;
+        border: 2px solid #c7d2fe;
+        color: #4f46e5;
+        background: #eef2ff;
+        font-size: .78rem;
+        font-weight: 600;
+        border-radius: 8px;
+        transition: all .15s;
+    }
+    .wknd-day-btn:hover { background: #c7d2fe; color: #3730a3; }
+    .wknd-day-btn.wknd-day-selected {
+        background: linear-gradient(135deg, #4f46e5, #6366f1);
+        color: #fff;
+        border-color: #4f46e5;
+    }
+    #wkndSection .card-header:hover { opacity: .92; }
+    #wkndSectionBody { transition: all .25s; }
 </style>
 
 {% block extra_js %}
@@ -1073,6 +1247,105 @@
             }
         })
         .catch(function() { alert('Failed to toggle status.'); });
+    }
+
+    /* ── Weekend Feature ── */
+    var wkndSectionOpen = true;
+
+    function openSetWeekendsModal() {
+        document.getElementById('swRecordId').value = '';
+        document.getElementById('swEmployee').value = '';
+        document.getElementById('swEffFrom').value = '';
+        document.getElementById('swEffTo').value = '';
+        document.getElementById('swNotes').value = '';
+        document.querySelector('input[name="swType"][value="weekend"]').checked = true;
+        document.querySelectorAll('.wknd-day-btn').forEach(function(btn) {
+            var day = btn.getAttribute('data-day');
+            if (day === 'saturday' || day === 'sunday') {
+                btn.classList.add('wknd-day-selected');
+            } else {
+                btn.classList.remove('wknd-day-selected');
+            }
+        });
+        getModal('setWeekendsModal').show();
+    }
+
+    function toggleWkndDay(btn) {
+        btn.classList.toggle('wknd-day-selected');
+    }
+
+    function saveWeekends() {
+        var empId = document.getElementById('swEmployee').value;
+        var effFrom = document.getElementById('swEffFrom').value;
+        var selectedDays = [];
+        document.querySelectorAll('.wknd-day-btn.wknd-day-selected').forEach(function(btn) {
+            selectedDays.push(btn.getAttribute('data-day'));
+        });
+        if (!empId) { alert('Please select an employee.'); return; }
+        if (selectedDays.length === 0) { alert('Please select at least one day.'); return; }
+        if (!effFrom) { alert('Please enter the Effective From date.'); return; }
+
+        var fd = new FormData();
+        fd.append('employee_id', empId);
+        fd.append('weekend_type', document.querySelector('input[name="swType"]:checked').value);
+        selectedDays.forEach(function(d) { fd.append('weekend_days', d); });
+        fd.append('effective_from', effFrom);
+        fd.append('effective_to', document.getElementById('swEffTo').value);
+        fd.append('notes', document.getElementById('swNotes').value);
+        var rid = document.getElementById('swRecordId').value;
+        if (rid) fd.append('record_id', rid);
+
+        fetch('/hrm/shifts/weekends/save/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': CSRF},
+            body: fd
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                getModal('setWeekendsModal').hide();
+                sessionStorage.setItem('shiftToast', JSON.stringify({
+                    type: 'success', title: 'Weekend Saved', msg: data.message || 'Weekend assignment saved successfully.'
+                }));
+                location.reload();
+            } else {
+                alert(data.error || 'Failed to save weekend assignment.');
+            }
+        })
+        .catch(function() { alert('Network error while saving.'); });
+    }
+
+    function deleteWeekend(id) {
+        if (!confirm('Delete this weekend assignment?')) return;
+        fetch('/hrm/shifts/weekends/' + id + '/delete/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': CSRF}
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                sessionStorage.setItem('shiftToast', JSON.stringify({
+                    type: 'warning', title: 'Assignment Deleted', msg: 'Weekend assignment has been removed.'
+                }));
+                location.reload();
+            } else {
+                alert(data.error || 'Failed to delete.');
+            }
+        })
+        .catch(function() { alert('Network error while deleting.'); });
+    }
+
+    function toggleWkndSection() {
+        var body = document.getElementById('wkndSectionBody');
+        var chevron = document.getElementById('wkndChevron');
+        if (wkndSectionOpen) {
+            body.style.display = 'none';
+            chevron.style.transform = 'rotate(-90deg)';
+        } else {
+            body.style.display = '';
+            chevron.style.transform = 'rotate(0deg)';
+        }
+        wkndSectionOpen = !wkndSectionOpen;
     }
 </script>
 {% endblock %}

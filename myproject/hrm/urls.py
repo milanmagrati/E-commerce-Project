@@ -119,6 +119,9 @@ urlpatterns = [
     path('shifts/<int:pk>/update/', views.shift_update, name='shift_update'),
     path('shifts/<int:pk>/delete/', views.shift_delete, name='shift_delete'),
     path('shifts/<int:pk>/toggle-status/', views.shift_toggle_status, name='shift_toggle_status'),
+    path('shifts/weekends/save/', views.employee_weekend_save, name='employee_weekend_save'),
+    path('shifts/weekends/list/', views.employee_weekend_list, name='employee_weekend_list'),
+    path('shifts/weekends/<int:pk>/delete/', views.employee_weekend_delete, name='employee_weekend_delete'),
 
     # Attendance Policies
     path('attendance-policies/', views.attendance_policy_list, name='attendance_policy_list'),

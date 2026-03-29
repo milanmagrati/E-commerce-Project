@@ -2924,7 +2924,7 @@ def attendance_delete(request, pk):
 
 @login_required
 def shift_list(request):
-    from .models import Shift
+    from .models import Shift, Employee, EmployeeWeekend
     search = request.GET.get('search', '')
     per_page = request.GET.get('per_page', '9')
     shifts = Shift.objects.all()
@@ -2943,6 +2943,9 @@ def shift_list(request):
     page_number = request.GET.get('page', 1)
     page_obj = paginator.get_page(page_number)
 
+    employees = Employee.objects.filter(employee_status='active').select_related('department').order_by('full_name')
+    weekend_assignments = EmployeeWeekend.objects.select_related('employee', 'employee__department').order_by('-created_at')
+
     context = {
         'page_title': 'Shifts',
         'shifts': page_obj,
@@ -2952,6 +2955,8 @@ def shift_list(request):
         'active_shifts': active_shifts,
         'night_shifts': night_shifts,
         'day_shifts': day_shifts,
+        'employees': employees,
+        'weekend_assignments': weekend_assignments,
     }
     return render(request, 'hrm/shift_list.html', context)
 
@@ -3048,6 +3053,86 @@ def shift_toggle_status(request, pk):
     shift.is_active = not shift.is_active
     shift.save()
     return JsonResponse({'success': True, 'is_active': shift.is_active})
+
+
+@login_required
+def employee_weekend_save(request):
+    from .models import EmployeeWeekend, Employee
+    from datetime import datetime
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    emp_id = request.POST.get('employee_id', '').strip()
+    weekend_days = request.POST.getlist('weekend_days')
+    weekend_type = request.POST.get('weekend_type', 'weekend')
+    effective_from = request.POST.get('effective_from', '').strip()
+    effective_to = request.POST.get('effective_to', '').strip() or None
+    notes = request.POST.get('notes', '').strip()
+    record_id = request.POST.get('record_id', '').strip()
+    if not emp_id:
+        return JsonResponse({'error': 'Employee is required'}, status=400)
+    if not weekend_days:
+        return JsonResponse({'error': 'Select at least one day'}, status=400)
+    if not effective_from:
+        return JsonResponse({'error': 'Effective From date is required'}, status=400)
+    try:
+        employee = Employee.objects.get(id=int(emp_id))
+    except (Employee.DoesNotExist, ValueError):
+        return JsonResponse({'error': 'Employee not found'}, status=404)
+    try:
+        effective_from_date = datetime.strptime(effective_from, '%Y-%m-%d').date()
+        effective_to_date = datetime.strptime(effective_to, '%Y-%m-%d').date() if effective_to else None
+    except ValueError:
+        return JsonResponse({'error': 'Invalid date format'}, status=400)
+    if record_id:
+        try:
+            rec = EmployeeWeekend.objects.get(id=int(record_id))
+        except EmployeeWeekend.DoesNotExist:
+            rec = EmployeeWeekend(employee=employee)
+    else:
+        rec = EmployeeWeekend(employee=employee)
+    rec.employee = employee
+    rec.weekend_days = weekend_days
+    rec.weekend_type = weekend_type
+    rec.effective_from = effective_from_date
+    rec.effective_to = effective_to_date
+    rec.notes = notes
+    rec.save()
+    return JsonResponse({'success': True, 'id': rec.id, 'message': f'Weekend assignment saved for {employee.full_name}'})
+
+
+@login_required
+def employee_weekend_list(request):
+    from .models import EmployeeWeekend
+    records = EmployeeWeekend.objects.select_related('employee', 'employee__department').order_by('-created_at')
+    data = []
+    for r in records:
+        data.append({
+            'id': r.id,
+            'employee_id': r.employee.employee_id,
+            'employee_name': r.employee.full_name,
+            'department': r.employee.department.name if r.employee.department else '—',
+            'weekend_type': r.weekend_type,
+            'weekend_type_display': r.get_weekend_type_display(),
+            'weekend_days': r.weekend_days,
+            'days_display': r.days_display,
+            'effective_from': r.effective_from.strftime('%d %b %Y'),
+            'effective_to': r.effective_to.strftime('%d %b %Y') if r.effective_to else None,
+            'notes': r.notes,
+        })
+    return JsonResponse({'records': data})
+
+
+@login_required
+def employee_weekend_delete(request, pk):
+    from .models import EmployeeWeekend
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        rec = EmployeeWeekend.objects.get(id=pk)
+        rec.delete()
+        return JsonResponse({'success': True})
+    except EmployeeWeekend.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
 
 
 # ==================== Attendance Policies ====================
