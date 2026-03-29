@@ -142,66 +142,73 @@
     .pv-week-day .day-status { font-size:0.68rem; font-weight:600; border-radius:12px; padding:2px 7px; display:inline-block; }
 
     /* Month calendar */
-    .pv-cal-wrap { padding: 1.25rem 1.5rem; }
-    .pv-cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .pv-cal-wrap { padding:0.9rem 1.1rem 0.75rem; }
+    .pv-cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
     .pv-cal-nav-btn {
-        width:32px; height:32px; border-radius:8px; border:1.5px solid #e2e8f0;
+        width:26px; height:26px; border-radius:7px; border:1.5px solid #e2e8f0;
         background:#fff; cursor:pointer; display:flex; align-items:center;
-        justify-content:center; font-size:0.8rem; color:#475569; transition:all 0.12s;
+        justify-content:center; font-size:0.7rem; color:#475569; transition:all 0.12s;
     }
     .pv-cal-nav-btn:hover { background:#6366f1; border-color:#6366f1; color:#fff; }
-    .pv-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+    .pv-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
     .pv-cal-head {
-        text-align:center; font-size:0.68rem; font-weight:700; color:#94a3b8;
-        padding:6px 2px; text-transform:uppercase; letter-spacing:0.06em;
-        border-bottom:2px solid #f1f5f9; margin-bottom:2px;
+        text-align:center; font-size:0.62rem; font-weight:800; color:#94a3b8;
+        padding:5px 1px 4px; text-transform:uppercase; letter-spacing:0.07em;
     }
+    .pv-cal-head.wknd { color:#a78bfa; }
     .pv-cal-cell {
-        border-radius:8px; display:flex; flex-direction:column;
+        border-radius:6px; display:flex; flex-direction:column;
         align-items:flex-start; justify-content:flex-start;
-        cursor:default; border:1.5px solid #f1f5f9;
-        font-size:0.75rem; min-height:62px; padding:5px 7px;
+        cursor:default; border:1px solid #f1f5f9;
+        font-size:0.7rem; min-height:46px; padding:4px 5px;
         transition:all 0.12s; position:relative; overflow:hidden;
-        background:#fafbfc;
+        background:#f8fafc;
     }
     .pv-cal-cell.has-record {
         cursor:pointer;
-        box-shadow:0 1px 4px rgba(0,0,0,0.06);
+        box-shadow:0 1px 3px rgba(0,0,0,0.07);
     }
     .pv-cal-cell.has-record:hover {
-        transform:translateY(-2px);
-        box-shadow:0 4px 12px rgba(0,0,0,0.12);
-        z-index:2;
+        transform:translateY(-2px) scale(1.03);
+        box-shadow:0 4px 14px rgba(0,0,0,0.13);
+        z-index:3;
     }
     .pv-cal-cell.empty { background:transparent; border:none; }
-    .pv-cal-cell.today { outline:2px solid #6366f1; outline-offset:1px; }
+    .pv-cal-cell.today {
+        outline:2px solid #6366f1; outline-offset:1px;
+        background:linear-gradient(135deg,#f5f3ff,#ede9fe) !important;
+        border-color:#c4b5fd !important;
+    }
+    .pv-cal-cell.wknd-cell { background:#fdf4ff; border-color:#f3e8ff; }
+    .pv-cal-cell.wknd-cell.pv-status-no_record { background:#fdf4ff; color:#d8b4fe; }
     .pv-cal-cell .cal-num {
-        font-weight:700; font-size:0.85rem; line-height:1;
-        margin-bottom:4px;
+        font-weight:800; font-size:0.78rem; line-height:1;
+        margin-bottom:2px;
     }
     .pv-cal-cell .cal-status-chip {
-        font-size:0.6rem; font-weight:700; border-radius:6px;
-        padding:1px 5px; display:inline-block; margin-bottom:3px;
+        font-size:0.54rem; font-weight:800; border-radius:5px;
+        padding:1px 4px; display:inline-block; margin-bottom:2px;
+        letter-spacing:0.02em;
     }
     .pv-cal-cell .cal-time {
-        font-size:0.6rem; color:inherit; opacity:0.75;
+        font-size:0.54rem; color:inherit; opacity:0.7;
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;
     }
     .pv-cal-cell .cal-hours {
-        font-size:0.65rem; font-weight:700; margin-top:auto;
-        opacity:0.9;
+        font-size:0.58rem; font-weight:800; margin-top:auto; opacity:0.85;
     }
-    .pv-status-present  { background:#f0fdf4; color:#065f46; border-color:#bbf7d0; }
-    .pv-status-absent   { background:#fff1f2; color:#991b1b; border-color:#fecdd3; }
-    .pv-status-late     { background:#fffbeb; color:#92400e; border-color:#fde68a; }
-    .pv-status-half_day { background:#eff6ff; color:#1e3a8a; border-color:#bfdbfe; }
-    .pv-status-on_leave { background:#faf5ff; color:#4c1d95; border-color:#e9d5ff; }
-    .pv-status-no_record{ background:#fafbfc; color:#94a3b8; border-color:#f1f5f9; }
-    .cal-chip-present  { background:#bbf7d0; color:#065f46; }
-    .cal-chip-absent   { background:#fecdd3; color:#991b1b; }
-    .cal-chip-late     { background:#fde68a; color:#92400e; }
-    .cal-chip-half_day { background:#bfdbfe; color:#1e3a8a; }
-    .cal-chip-on_leave { background:#e9d5ff; color:#4c1d95; }
+    /* Vibrant gradient status colors */
+    .pv-status-present  { background:linear-gradient(150deg,#f0fdf4,#dcfce7); color:#065f46; border-color:#86efac; }
+    .pv-status-absent   { background:linear-gradient(150deg,#fff1f2,#ffe4e6); color:#9f1239; border-color:#fda4af; }
+    .pv-status-late     { background:linear-gradient(150deg,#fffbeb,#fef3c7); color:#92400e; border-color:#fcd34d; }
+    .pv-status-half_day { background:linear-gradient(150deg,#eff6ff,#dbeafe); color:#1e40af; border-color:#93c5fd; }
+    .pv-status-on_leave { background:linear-gradient(150deg,#faf5ff,#ede9fe); color:#5b21b6; border-color:#c4b5fd; }
+    .pv-status-no_record{ background:#f8fafc; color:#cbd5e1; border-color:#f1f5f9; }
+    .cal-chip-present  { background:#86efac; color:#064e3b; }
+    .cal-chip-absent   { background:#fda4af; color:#881337; }
+    .cal-chip-late     { background:#fcd34d; color:#78350f; }
+    .cal-chip-half_day { background:#93c5fd; color:#1e3a8a; }
+    .cal-chip-on_leave { background:#c4b5fd; color:#3b0764; }
     /* Calendar day detail mini popup */
     #pvCalDayPopup {
         position:fixed; z-index:9999;
@@ -956,8 +963,8 @@ function renderMonthView(data) {
     const firstDay  = data.month_first_weekday; // 0=Mon
     const today     = new Date().toISOString().slice(0,10);
 
-    const dayHdrs = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d =>
-        `<div class="pv-cal-head">${d}</div>`).join('');
+    const dayHdrs = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, i) =>
+        `<div class="pv-cal-head${i>=5?' wknd':''}">${d}</div>`).join('');
 
     // Build month nav data attribute so prev/next can re-query
     const prevMonth = month === 1 ? `${year-1}-12` : `${year}-${String(month-1).padStart(2,'0')}`;
@@ -970,15 +977,15 @@ function renderMonthView(data) {
         const iso = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
         const rec = byDate[iso];
         const isTd = iso === today;
+        const col = (firstDay + d - 1) % 7;  // 0=Mon … 5=Sat, 6=Sun
+        const isWknd = col >= 5;
         if (rec) {
             const ci  = rec.clock_in  || '–';
-            const co  = rec.clock_out || '–';
             const wh  = rec.working_hours ? rec.working_hours + 'h' : '';
             const lbl = (rec.status_display || rec.status).replace('_',' ');
-            // Store all record fields as data attributes for the click popup
-            cells += `<div class="pv-cal-cell has-record pv-status-${rec.status}${isTd?' today':''}"
+            cells += `<div class="pv-cal-cell has-record pv-status-${rec.status}${isTd?' today':''}${isWknd?' wknd-cell':''}"
                           data-date="${iso}" data-status="${rec.status}" data-status-display="${lbl}"
-                          data-clock-in="${ci}" data-clock-out="${co}"
+                          data-clock-in="${ci}" data-clock-out="${rec.clock_out||'–'}"
                           data-working-hours="${rec.working_hours||''}"
                           data-overtime="${rec.overtime_hours||''}"
                           data-shift="${rec.shift||''}"
@@ -993,9 +1000,8 @@ function renderMonthView(data) {
                 ${wh ? `<span class="cal-hours">${wh}</span>` : ''}
             </div>`;
         } else {
-            cells += `<div class="pv-cal-cell pv-status-no_record${isTd?' today':''}">
-                <span class="cal-num">${d}</span>
-                <span class="cal-time" style="font-size:0.58rem;">No record</span>
+            cells += `<div class="pv-cal-cell pv-status-no_record${isTd?' today':''}${isWknd?' wknd-cell':''}">
+                <span class="cal-num" style="color:${isWknd?'#d8b4fe':'#cbd5e1'}">${d}</span>
             </div>`;
         }
     }
