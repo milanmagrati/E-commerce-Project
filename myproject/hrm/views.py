@@ -5433,3 +5433,240 @@ def leave_update_status(request, pk):
         'message': f'Leave request {leave_req.get_status_display().lower()} successfully.',
     })
 
+
+# ==================== ADVANCE PAYMENTS ====================
+
+@login_required
+def advance_payment_list(request):
+    from .models import AdvancePayment
+    search_query = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '')
+    per_page = request.GET.get('per_page', '10')
+
+    advances = AdvancePayment.objects.select_related('employee', 'approved_by').all()
+
+    if search_query:
+        advances = advances.filter(
+            Q(employee__full_name__icontains=search_query) |
+            Q(advance_number__icontains=search_query) |
+            Q(employee__employee_id__icontains=search_query)
+        )
+    if status_filter:
+        advances = advances.filter(status=status_filter)
+
+    VALID_PER_PAGE = [10, 25, 50, 100]
+    try:
+        per_page_int = int(per_page)
+    except (ValueError, TypeError):
+        per_page_int = 10
+    if per_page_int not in VALID_PER_PAGE:
+        per_page_int = 10
+    per_page = str(per_page_int)
+    paginator = Paginator(advances, per_page_int)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    total_amount = advances.aggregate(t=Sum('amount'))['t'] or 0
+    total_disbursed = advances.filter(status__in=['disbursed', 'repaying', 'cleared']).aggregate(t=Sum('amount'))['t'] or 0
+    total_pending = advances.filter(status='pending').count()
+    total_cleared = advances.filter(status='cleared').count()
+
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+
+    context = {
+        'page_title': 'Advance Payments',
+        'page_obj': page_obj,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'per_page': per_page,
+        'total_amount': total_amount,
+        'total_disbursed': total_disbursed,
+        'total_pending': total_pending,
+        'total_cleared': total_cleared,
+        'status_choices': AdvancePayment.STATUS_CHOICES,
+        'employees': employees,
+    }
+    return render(request, 'hrm/advance_payment_list.html', context)
+
+
+@login_required
+def advance_payment_create(request):
+    from .models import AdvancePayment
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+    try:
+        employee_id = request.POST.get('employee')
+        amount = request.POST.get('amount', '').strip()
+        payment_date = request.POST.get('payment_date') or None
+        reason = request.POST.get('reason', '').strip()
+        repayment_mode = request.POST.get('repayment_mode', 'salary_deduction')
+        repayment_start_date = request.POST.get('repayment_start_date') or None
+        installment_amount = request.POST.get('installment_amount') or None
+        total_installments = request.POST.get('total_installments') or None
+        notes = request.POST.get('notes', '').strip()
+
+        if not employee_id or not amount:
+            return JsonResponse({'success': False, 'error': 'Employee and amount are required.'}, status=400)
+
+        employee = get_object_or_404(Employee, pk=employee_id)
+        advance = AdvancePayment(
+            employee=employee,
+            amount=Decimal(amount),
+            payment_date=payment_date,
+            reason=reason,
+            repayment_mode=repayment_mode,
+            repayment_start_date=repayment_start_date,
+            installment_amount=Decimal(installment_amount) if installment_amount else None,
+            total_installments=int(total_installments) if total_installments else None,
+            notes=notes,
+            created_by=request.user,
+        )
+        advance.save()
+        return JsonResponse({
+            'success': True,
+            'message': f'Advance payment {advance.advance_number} created successfully.',
+            'advance_id': advance.pk,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def advance_payment_detail(request, pk):
+    from .models import AdvancePayment
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+    try:
+        adv = AdvancePayment.objects.select_related('employee', 'approved_by', 'created_by').get(pk=pk)
+    except AdvancePayment.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    data = {
+        'success': True,
+        'advance': {
+            'id': adv.pk,
+            'advance_number': adv.advance_number,
+            'employee_id': adv.employee.pk,
+            'employee_name': adv.employee.full_name,
+            'employee_code': adv.employee.employee_id,
+            'amount': str(adv.amount),
+            'amount_repaid': str(adv.amount_repaid),
+            'remaining_amount': str(adv.remaining_amount),
+            'payment_date': adv.payment_date.strftime('%Y-%m-%d') if adv.payment_date else '',
+            'reason': adv.reason,
+            'repayment_mode': adv.repayment_mode,
+            'repayment_start_date': adv.repayment_start_date.strftime('%Y-%m-%d') if adv.repayment_start_date else '',
+            'installment_amount': str(adv.installment_amount) if adv.installment_amount else '',
+            'total_installments': adv.total_installments or '',
+            'paid_installments': adv.paid_installments,
+            'status': adv.status,
+            'status_display': adv.get_status_display(),
+            'rejection_reason': adv.rejection_reason,
+            'notes': adv.notes,
+            'approved_by': adv.approved_by.get_full_name() if adv.approved_by else '',
+            'approved_at': adv.approved_at.strftime('%Y-%m-%d %H:%M') if adv.approved_at else '',
+        }
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def advance_payment_update(request, pk):
+    from .models import AdvancePayment
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+    try:
+        adv = AdvancePayment.objects.get(pk=pk)
+    except AdvancePayment.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+
+    try:
+        employee_id = request.POST.get('employee')
+        amount = request.POST.get('amount', '').strip()
+        reason = request.POST.get('reason', '').strip()
+        if not employee_id or not amount:
+            return JsonResponse({'success': False, 'error': 'Employee and amount are required.'}, status=400)
+
+        adv.employee = get_object_or_404(Employee, pk=employee_id)
+        adv.amount = Decimal(amount)
+        adv.payment_date = request.POST.get('payment_date') or None
+        adv.reason = reason
+        adv.repayment_mode = request.POST.get('repayment_mode', adv.repayment_mode)
+        adv.repayment_start_date = request.POST.get('repayment_start_date') or None
+        inst_amt = request.POST.get('installment_amount') or None
+        adv.installment_amount = Decimal(inst_amt) if inst_amt else None
+        total_inst = request.POST.get('total_installments') or None
+        adv.total_installments = int(total_inst) if total_inst else None
+        paid_inst = request.POST.get('paid_installments') or None
+        if paid_inst:
+            adv.paid_installments = int(paid_inst)
+        amt_repaid = request.POST.get('amount_repaid') or None
+        if amt_repaid:
+            adv.amount_repaid = Decimal(amt_repaid)
+        adv.notes = request.POST.get('notes', adv.notes)
+        adv.save()
+        return JsonResponse({'success': True, 'message': 'Advance payment updated successfully.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def advance_payment_delete(request, pk):
+    from .models import AdvancePayment
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+    try:
+        adv = AdvancePayment.objects.get(pk=pk)
+    except AdvancePayment.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    adv_number = adv.advance_number
+    adv.delete()
+    return JsonResponse({'success': True, 'message': f'Advance payment {adv_number} deleted successfully.'})
+
+
+@login_required
+def advance_payment_update_status(request, pk):
+    from .models import AdvancePayment
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+    try:
+        adv = AdvancePayment.objects.get(pk=pk)
+    except AdvancePayment.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+
+    action = request.POST.get('action', '').strip()
+    rejection_reason = request.POST.get('rejection_reason', '').strip()
+
+    if action == 'approve':
+        adv.status = 'approved'
+        adv.approved_by = request.user
+        adv.approved_at = timezone.now()
+        adv.rejection_reason = ''
+    elif action == 'reject':
+        adv.status = 'rejected'
+        adv.approved_by = request.user
+        adv.approved_at = timezone.now()
+        adv.rejection_reason = rejection_reason
+    elif action == 'disburse':
+        adv.status = 'disbursed'
+        if not adv.payment_date:
+            adv.payment_date = date.today()
+    elif action == 'mark_repaying':
+        adv.status = 'repaying'
+    elif action == 'clear':
+        adv.status = 'cleared'
+        adv.amount_repaid = adv.amount
+    elif action == 'set_pending':
+        adv.status = 'pending'
+        adv.approved_by = None
+        adv.rejection_reason = ''
+    else:
+        return JsonResponse({'success': False, 'error': 'Invalid action.'}, status=400)
+
+    adv.save()
+    return JsonResponse({
+        'success': True,
+        'status': adv.status,
+        'status_display': adv.get_status_display(),
+        'message': f'Advance payment marked as {adv.get_status_display()}.',
+    })
+

@@ -873,10 +873,10 @@
                         <!-- Payroll Management -->
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_payroll %}
                         <li>
-                            <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmPayroll" aria-expanded="{% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management' %}true{% else %}false{% endif %}" class="d-flex justify-content-between align-items-center">
+                            <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmPayroll" aria-expanded="{% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management,advance_payment_list' %}true{% else %}false{% endif %}" class="d-flex justify-content-between align-items-center">
                                 Payroll Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
                             </a>
-                            <ul class="collapse list-unstyled ps-3 {% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management' %}show{% endif %}" id="hrmPayroll">
+                            <ul class="collapse list-unstyled ps-3 {% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management,advance_payment_list' %}show{% endif %}" id="hrmPayroll">
                                 <li class="{% if request.resolver_match.url_name == 'salary_component_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:salary_component_list' %}">Salary Components</a>
                                 </li>
@@ -888,6 +888,9 @@
                                 </li>
                                 <li class="{% if request.resolver_match.url_name == 'payslip_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:payslip_list' %}">Payslips</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'advance_payment_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:advance_payment_list' %}">Advance Payments</a>
                                 </li>
                             </ul>
                         </li>

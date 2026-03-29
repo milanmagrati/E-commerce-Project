@@ -179,6 +179,14 @@ urlpatterns = [
     path('payroll/payslips/<int:pk>/', views.payslip_detail, name='payslip_detail'),
     path('payroll/payslips/<int:pk>/download/', views.payslip_download, name='payslip_download'),
 
+    # Advance Payments
+    path('payroll/advance-payments/', views.advance_payment_list, name='advance_payment_list'),
+    path('payroll/advance-payments/create/', views.advance_payment_create, name='advance_payment_create'),
+    path('payroll/advance-payments/<int:pk>/', views.advance_payment_detail, name='advance_payment_detail'),
+    path('payroll/advance-payments/<int:pk>/update/', views.advance_payment_update, name='advance_payment_update'),
+    path('payroll/advance-payments/<int:pk>/delete/', views.advance_payment_delete, name='advance_payment_delete'),
+    path('payroll/advance-payments/<int:pk>/update-status/', views.advance_payment_update_status, name='advance_payment_update_status'),
+
     # Attendance Reports
     path('attendance/report/', views.attendance_report, name='attendance_report'),
     path('attendance/report/period/', views.employee_period_attendance, name='employee_period_attendance'),

@@ -1,0 +1,1026 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Advance Payments — HRM{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ===== PAGE HEADER ===== */
+.ap-page-header {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #7c3aed 100%);
+    border-radius: 16px;
+    padding: 1.75rem 2rem;
+    color: #fff;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+}
+.ap-page-header::before {
+    content: '';
+    position: absolute;
+    top: -40px; right: -40px;
+    width: 180px; height: 180px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 50%;
+}
+.ap-page-header::after {
+    content: '';
+    position: absolute;
+    bottom: -50px; left: -30px;
+    width: 220px; height: 220px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50%;
+}
+.ap-page-header h3 { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.ap-page-header p  { margin: 0; opacity: 0.85; font-size: 0.9rem; }
+
+/* ===== STAT CARDS ===== */
+.ap-stat-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border: 1px solid #f1f5f9;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.ap-stat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.10); }
+.ap-stat-icon {
+    width: 52px; height: 52px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem; flex-shrink: 0;
+}
+.ap-stat-icon.purple { background: linear-gradient(135deg,#ede9fe,#c4b5fd); color: #7c3aed; }
+.ap-stat-icon.green  { background: linear-gradient(135deg,#dcfce7,#86efac); color: #16a34a; }
+.ap-stat-icon.amber  { background: linear-gradient(135deg,#fef3c7,#fcd34d); color: #d97706; }
+.ap-stat-icon.blue   { background: linear-gradient(135deg,#dbeafe,#93c5fd); color: #2563eb; }
+.ap-stat-val  { font-size: 1.4rem; font-weight: 700; color: #1e293b; line-height: 1; }
+.ap-stat-lbl  { font-size: 0.8rem; color: #64748b; margin-top: 0.2rem; }
+
+/* ===== FILTER BAR ===== */
+.ap-filter-bar {
+    background: #fff;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+    border: 1px solid #f1f5f9;
+    margin-bottom: 1.25rem;
+}
+
+/* ===== TABLE CARD ===== */
+.ap-table-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border: 1px solid #f1f5f9;
+    overflow: visible;
+}
+.ap-table-card .card-header {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 1rem 1.5rem;
+    font-weight: 600;
+    color: #334155;
+}
+.ap-table thead th {
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid #e2e8f0;
+    padding: 0.85rem 1rem;
+    white-space: nowrap;
+}
+.ap-table tbody td {
+    padding: 0.9rem 1rem;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+    font-size: 0.875rem;
+}
+.ap-table tbody tr:last-child td { border-bottom: none; }
+.ap-table tbody tr:hover { background: #f8fafc; }
+
+/* ===== EMPLOYEE AVATAR ===== */
+.emp-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg,#6366f1,#8b5cf6);
+    color: #fff;
+    font-weight: 700; font-size: 0.85rem;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+
+/* ===== STATUS BADGES ===== */
+.ap-badge {
+    padding: 0.28rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    display: inline-block;
+}
+.ap-badge.pending   { background: #fef9c3; color: #854d0e; }
+.ap-badge.approved  { background: #dcfce7; color: #166534; }
+.ap-badge.rejected  { background: #fee2e2; color: #991b1b; }
+.ap-badge.disbursed { background: #dbeafe; color: #1e40af; }
+.ap-badge.repaying  { background: #e0f2fe; color: #0369a1; }
+.ap-badge.cleared   { background: #d1fae5; color: #065f46; }
+
+/* ===== ACTION BUTTONS ===== */
+.ap-action-btn {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    border: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.ap-action-btn.view   { background: #ede9fe; color: #7c3aed; }
+.ap-action-btn.edit   { background: #dbeafe; color: #2563eb; }
+.ap-action-btn.delete { background: #fee2e2; color: #dc2626; }
+.ap-action-btn:hover  { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
+
+/* ===== PROGRESS BAR ===== */
+.ap-progress {
+    height: 6px;
+    border-radius: 3px;
+    background: #e2e8f0;
+    overflow: hidden;
+    margin-top: 4px;
+}
+.ap-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6);
+    transition: width 0.5s ease;
+}
+
+/* ===== MODAL ===== */
+.ap-modal .modal-content {
+    border: none;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.ap-modal .modal-header {
+    background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+    color: #fff;
+    padding: 1.25rem 1.5rem;
+    border-bottom: none;
+}
+.ap-modal .modal-header .modal-title { font-weight: 700; font-size: 1.05rem; }
+.ap-modal .modal-header .btn-close { filter: brightness(0) invert(1); opacity: 0.8; }
+.ap-modal .modal-body  { padding: 1.5rem; max-height: 70vh; overflow-y: auto; }
+.ap-modal .modal-body::-webkit-scrollbar { width: 5px; }
+.ap-modal .modal-body::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 3px; }
+.ap-modal .modal-body::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 3px; }
+.ap-modal .modal-footer{ padding: 1rem 1.5rem; border-top: 1px solid #f1f5f9; }
+.ap-modal .form-label  { font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 0.35rem; }
+.ap-modal .form-control,
+.ap-modal .form-select {
+    border-radius: 8px;
+    border: 1.5px solid #e2e8f0;
+    font-size: 0.875rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ap-modal .form-control:focus,
+.ap-modal .form-select:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+.ap-modal .section-divider {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    margin: 1.35rem 0 0.85rem;
+    display: flex; align-items: center; gap: 0.5rem;
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid #e2e8f0;
+}
+.ap-modal .section-divider i { color: #6366f1; font-size: 0.8rem; }
+.ap-modal .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e2e8f0;
+}
+
+/* ===== VIEW MODAL (detail) ===== */
+.detail-row { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 1rem; }
+.detail-lbl { font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+.detail-val { font-size: 0.9rem; color: #1e293b; font-weight: 500; }
+.detail-card { background: #f8fafc; border-radius: 10px; padding: 1rem; border: 1px solid #e2e8f0; }
+
+/* ===== REPAYMENT VISIBILITY ===== */
+#installmentFields { display: none; }
+
+/* ===== EMPTY STATE ===== */
+.ap-empty {
+    text-align: center;
+    padding: 3.5rem 1rem;
+}
+.ap-empty i { font-size: 3.5rem; color: #cbd5e1; margin-bottom: 1rem; display: block; }
+.ap-empty h6 { color: #64748b; font-weight: 600; }
+.ap-empty p  { color: #94a3b8; font-size: 0.875rem; }
+
+/* ===== ADD BUTTON ===== */
+.btn-add-advance {
+    background: linear-gradient(135deg,#6366f1,#7c3aed);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 0.55rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+}
+.btn-add-advance:hover {
+    background: linear-gradient(135deg,#4f46e5,#6d28d9);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(99,102,241,0.4);
+}
+
+/* ===== TOAST ===== */
+.ap-toast-container { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 9999; }
+.ap-toast {
+    min-width: 300px;
+    padding: 0.85rem 1.25rem;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    animation: toastIn 0.3s ease;
+    display: flex; align-items: center; gap: 0.6rem;
+}
+.ap-toast.success { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
+.ap-toast.error   { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+@keyframes toastIn { from { opacity:0; transform: translateX(30px); } to { opacity:1; transform: translateX(0); } }
+
+/* ===== STATUS ACTION DROPDOWN ===== */
+#apFloatingMenu {
+    position: fixed;
+    z-index: 99999;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.14);
+    min-width: 180px;
+    padding: 0.4rem 0;
+    display: none;
+    animation: menuIn 0.15s ease;
+}
+@keyframes menuIn {
+    from { opacity:0; transform: translateY(-6px) scale(0.97); }
+    to   { opacity:1; transform: translateY(0)  scale(1); }
+}
+#apFloatingMenu .fm-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+    color: #334155;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+}
+#apFloatingMenu .fm-item:hover { background: #f8fafc; }
+#apFloatingMenu .fm-item.success { color: #16a34a; }
+#apFloatingMenu .fm-item.danger  { color: #dc2626; }
+#apFloatingMenu .fm-item.primary { color: #2563eb; }
+#apFloatingMenu .fm-divider { height:1px; background:#f1f5f9; margin:0.3rem 0; }
+#apFloatingMenu .fm-label { font-size:0.7rem; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; padding:0.4rem 0.8rem 0.2rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ap-toast-container" id="apToastContainer"></div>
+
+<!-- Page Header -->
+<div class="ap-page-header d-flex align-items-center justify-content-between flex-wrap gap-3">
+    <div style="position:relative;z-index:1;">
+        <h3><i class="fas fa-hand-holding-usd me-2"></i>Advance Payments</h3>
+        <p>Manage employee salary advances, approvals, and repayment tracking.</p>
+    </div>
+    <div style="position:relative;z-index:1;">
+        <button class="btn-add-advance" data-bs-toggle="modal" data-bs-target="#addAdvanceModal">
+            <i class="fas fa-plus me-1"></i> New Advance
+        </button>
+    </div>
+</div>
+
+<!-- Stat Cards -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="ap-stat-card">
+            <div class="ap-stat-icon purple"><i class="fas fa-money-bill-wave"></i></div>
+            <div>
+                <div class="ap-stat-val">Rs. {{ total_amount|floatformat:0 }}</div>
+                <div class="ap-stat-lbl">Total Advanced</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="ap-stat-card">
+            <div class="ap-stat-icon green"><i class="fas fa-paper-plane"></i></div>
+            <div>
+                <div class="ap-stat-val">Rs. {{ total_disbursed|floatformat:0 }}</div>
+                <div class="ap-stat-lbl">Total Disbursed</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="ap-stat-card">
+            <div class="ap-stat-icon amber"><i class="fas fa-clock"></i></div>
+            <div>
+                <div class="ap-stat-val">{{ total_pending }}</div>
+                <div class="ap-stat-lbl">Pending Approvals</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="ap-stat-card">
+            <div class="ap-stat-icon blue"><i class="fas fa-check-double"></i></div>
+            <div>
+                <div class="ap-stat-val">{{ total_cleared }}</div>
+                <div class="ap-stat-lbl">Fully Cleared</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="ap-filter-bar">
+    <form method="get" class="row g-2 align-items-center">
+        <div class="col-md-5">
+            <div class="input-group">
+                <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted" style="font-size:0.8rem;"></i></span>
+                <input type="text" name="search" class="form-control border-start-0" placeholder="Search by name, employee ID, advance no…" value="{{ search_query }}">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select name="status" class="form-select">
+                <option value="">All Statuses</option>
+                {% for val, label in status_choices %}
+                <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="per_page" class="form-select">
+                <option value="10" {% if per_page == "10" %}selected{% endif %}>10 / page</option>
+                <option value="25" {% if per_page == "25" %}selected{% endif %}>25 / page</option>
+                <option value="50" {% if per_page == "50" %}selected{% endif %}>50 / page</option>
+                <option value="100" {% if per_page == "100" %}selected{% endif %}>100 / page</option>
+            </select>
+        </div>
+        <div class="col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm flex-fill" style="border-radius:8px;">
+                <i class="fas fa-filter me-1"></i>Filter
+            </button>
+            <a href="{% url 'hrm:advance_payment_list' %}" class="btn btn-outline-secondary btn-sm flex-fill" style="border-radius:8px;">
+                <i class="fas fa-undo"></i>
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Table Card -->
+<div class="ap-table-card">
+    <div class="card-header d-flex align-items-center justify-content-between" style="border-radius:14px 14px 0 0;">
+        <span><i class="fas fa-list me-2 text-indigo-600"></i>Advance Payment Records</span>
+        <span class="badge bg-secondary" style="border-radius:8px;">{{ page_obj.paginator.count }} record{{ page_obj.paginator.count|pluralize }}</span>
+    </div>
+    <div class="table-responsive">
+        {% if page_obj.object_list %}
+        <table class="table ap-table mb-0">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Advance No.</th>
+                    <th>Employee</th>
+                    <th>Amount</th>
+                    <th>Repaid</th>
+                    <th>Remaining</th>
+                    <th>Repayment</th>
+                    <th>Payment Date</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for adv in page_obj %}
+                <tr data-id="{{ adv.pk }}">
+                    <td class="text-muted" style="font-size:0.8rem;">{{ forloop.counter|add:page_obj.start_index|add:"-1" }}</td>
+                    <td>
+                        <span class="fw-semibold" style="color:#6366f1;font-size:0.82rem;">{{ adv.advance_number }}</span>
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            {% if adv.employee.profile_image %}
+                            <img src="{{ adv.employee.profile_image.url }}" class="emp-avatar" style="object-fit:cover;" alt="">
+                            {% else %}
+                            <div class="emp-avatar">{{ adv.employee.full_name|slice:":1"|upper }}</div>
+                            {% endif %}
+                            <div>
+                                <div class="fw-semibold" style="font-size:0.88rem;">{{ adv.employee.full_name }}</div>
+                                <div style="font-size:0.75rem;color:#94a3b8;">{{ adv.employee.employee_id }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><strong>Rs. {{ adv.amount|floatformat:2 }}</strong></td>
+                    <td style="color:#16a34a;">Rs. {{ adv.amount_repaid|floatformat:2 }}</td>
+                    <td>
+                        <div>Rs. {{ adv.remaining_amount|floatformat:2 }}</div>
+                        {% if adv.amount %}
+                        <div class="ap-progress">
+                            {% widthratio adv.amount_repaid adv.amount 100 as pct %}
+                            <div class="ap-progress-fill" style="width:{{ pct }}%;"></div>
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span style="font-size:0.8rem;color:#475569;">{{ adv.get_repayment_mode_display }}</span>
+                    </td>
+                    <td style="font-size:0.82rem;color:#475569;">
+                        {% if adv.payment_date %}{{ adv.payment_date|date:"M d, Y" }}{% else %}&mdash;{% endif %}
+                    </td>
+                    <td>
+                        <span class="ap-badge {{ adv.status }}">{{ adv.get_status_display }}</span>
+                    </td>
+                    <td>
+                        <div class="d-flex gap-1 align-items-center">
+                            <button class="ap-action-btn view" title="View Details" onclick="viewAdvance({{ adv.pk }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            {% if adv.status == 'pending' %}
+                            <button class="ap-action-btn edit" title="Edit" onclick="editAdvance({{ adv.pk }})">
+                                <i class="fas fa-pencil-alt"></i>
+                            </button>
+                            {% endif %}
+                            <button class="ap-action-btn" style="background:#f1f5f9;color:#475569;" title="Change Status" onclick="openStatusMenu(event,{{ adv.pk }},'{{ adv.status }}','{{ adv.advance_number }}')">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="ap-empty">
+            <i class="fas fa-hand-holding-usd"></i>
+            <h6>No Advance Payments Found</h6>
+            <p>No records match your filters. Click <strong>New Advance</strong> to create one.</p>
+        </div>
+        {% endif %}
+    </div>
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="d-flex justify-content-between align-items-center px-4 py-3 border-top" style="background:#f8fafc;">
+        <small class="text-muted">
+            Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+        </small>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}&search={{ search_query }}&status={{ status_filter }}&per_page={{ per_page }}">
+                        <i class="fas fa-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+                {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ num }}&search={{ search_query }}&status={{ status_filter }}&per_page={{ per_page }}">{{ num }}</a>
+                </li>
+                {% endif %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}&search={{ search_query }}&status={{ status_filter }}&per_page={{ per_page }}">
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+
+<!-- ===================== ADD ADVANCE MODAL ===================== -->
+<div class="modal fade ap-modal" id="addAdvanceModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i>New Advance Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addAdvanceForm">
+                    {% csrf_token %}
+                    <!-- Employee & Amount -->
+                    <div class="section-divider"><i class="fas fa-user-tie"></i> Employee Details</div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Employee <span class="text-danger">*</span></label>
+                            <select name="employee" id="addEmployee" class="form-select" required>
+                                <option value="">— Select Employee —</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.pk }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Advance Amount (Rs.) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text">Rs.</span>
+                                <input type="number" name="amount" id="addAmount" class="form-control" placeholder="0.00" step="0.01" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Payment Date</label>
+                            <input type="date" name="payment_date" id="addPaymentDate" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Reason / Purpose</label>
+                            <textarea name="reason" id="addReason" class="form-control" rows="3" placeholder="Describe the purpose of this advance…"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Repayment -->
+                    <div class="section-divider"><i class="fas fa-calendar-alt"></i> Repayment Details</div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Repayment Mode</label>
+                            <select name="repayment_mode" id="addRepaymentMode" class="form-select" onchange="toggleInstallmentFields('add')">
+                                <option value="salary_deduction">Salary Deduction</option>
+                                <option value="lump_sum">Lump Sum</option>
+                                <option value="installments">Installments</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Repayment Start Date</label>
+                            <input type="date" name="repayment_start_date" id="addRepaymentStartDate" class="form-control">
+                        </div>
+                        <div class="col-12" id="addInstallmentFields" style="display:none;">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Installment Amount (Rs.)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">Rs.</span>
+                                        <input type="number" name="installment_amount" class="form-control" placeholder="0.00" step="0.01" min="0">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Total Installments</label>
+                                    <input type="number" name="total_installments" class="form-control" placeholder="e.g. 6" min="1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Notes -->
+                    <div class="section-divider"><i class="fas fa-sticky-note"></i> Additional Notes</div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <textarea name="notes" class="form-control" rows="2" placeholder="Any additional remarks…"></textarea>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="submitAddAdvance()" style="background:linear-gradient(135deg,#6366f1,#7c3aed);border:none;border-radius:8px;">
+                    <i class="fas fa-save me-1"></i> Save Advance
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ===================== EDIT ADVANCE MODAL ===================== -->
+<div class="modal fade ap-modal" id="editAdvanceModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-pencil-alt me-2"></i>Edit Advance Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editAdvanceForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="editAdvanceId">
+                    <div class="section-divider"><i class="fas fa-user-tie"></i> Employee Details</div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Employee <span class="text-danger">*</span></label>
+                            <select name="employee" id="editEmployee" class="form-select" required>
+                                <option value="">— Select Employee —</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.pk }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Advance Amount (Rs.) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text">Rs.</span>
+                                <input type="number" name="amount" id="editAmount" class="form-control" placeholder="0.00" step="0.01" min="1" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Payment Date</label>
+                            <input type="date" name="payment_date" id="editPaymentDate" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Reason / Purpose</label>
+                            <textarea name="reason" id="editReason" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="section-divider"><i class="fas fa-calendar-alt"></i> Repayment Details</div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Repayment Mode</label>
+                            <select name="repayment_mode" id="editRepaymentMode" class="form-select" onchange="toggleInstallmentFields('edit')">
+                                <option value="salary_deduction">Salary Deduction</option>
+                                <option value="lump_sum">Lump Sum</option>
+                                <option value="installments">Installments</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Repayment Start Date</label>
+                            <input type="date" name="repayment_start_date" id="editRepaymentStartDate" class="form-control">
+                        </div>
+                        <div class="col-12" id="editInstallmentFields" style="display:none;">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">Installment Amount (Rs.)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">Rs.</span>
+                                        <input type="number" name="installment_amount" id="editInstallmentAmount" class="form-control" step="0.01" min="0">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Total Installments</label>
+                                    <input type="number" name="total_installments" id="editTotalInstallments" class="form-control" min="1">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Paid Installments</label>
+                                    <input type="number" name="paid_installments" id="editPaidInstallments" class="form-control" min="0">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Amount Repaid (Rs.)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">Rs.</span>
+                                <input type="number" name="amount_repaid" id="editAmountRepaid" class="form-control" step="0.01" min="0">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="section-divider"><i class="fas fa-sticky-note"></i> Notes</div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <textarea name="notes" id="editNotes" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="submitEditAdvance()" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:8px;">
+                    <i class="fas fa-save me-1"></i> Update
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ===================== VIEW DETAIL MODAL ===================== -->
+<div class="modal fade ap-modal" id="viewAdvanceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-eye me-2"></i>Advance Payment Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="viewAdvanceBody">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ===================== REJECT REASON MODAL ===================== -->
+<div class="modal fade ap-modal" id="rejectModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#dc2626,#b91c1c);">
+                <h5 class="modal-title"><i class="fas fa-times-circle me-2"></i>Reject Advance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="rejectAdvanceId">
+                <label class="form-label">Rejection Reason</label>
+                <textarea id="rejectReason" class="form-control" rows="3" placeholder="Reason for rejection…"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="submitReject()" style="border-radius:8px;">
+                    <i class="fas fa-times me-1"></i>Reject
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Floating status menu — appended to body to escape overflow clipping -->
+<div id="apFloatingMenu"></div>
+
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+const CSRF_TOKEN = '{{ csrf_token }}';
+
+// ===== TOAST =====
+function showToast(msg, type = 'success') {
+    const c = document.getElementById('apToastContainer');
+    const t = document.createElement('div');
+    t.className = `ap-toast ${type}`;
+    t.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${msg}`;
+    c.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateX(30px)'; t.style.transition = '0.3s'; setTimeout(() => t.remove(), 300); }, 3500);
+}
+
+// ===== INSTALLMENT TOGGLE =====
+function toggleInstallmentFields(prefix) {
+    const mode = document.getElementById(prefix + 'RepaymentMode').value;
+    const fields = document.getElementById(prefix + 'InstallmentFields');
+    fields.style.display = mode === 'installments' ? 'block' : 'none';
+}
+
+// ===== ADD ADVANCE =====
+function submitAddAdvance() {
+    const form = document.getElementById('addAdvanceForm');
+    const data = new FormData(form);
+    fetch('{% url "hrm:advance_payment_create" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF_TOKEN },
+        body: data,
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            bootstrap.Modal.getInstance(document.getElementById('addAdvanceModal')).hide();
+            showToast(d.message);
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            showToast(d.error || 'An error occurred.', 'error');
+        }
+    })
+    .catch(() => showToast('Network error. Please try again.', 'error'));
+}
+
+// ===== EDIT ADVANCE =====
+function editAdvance(pk) {
+    fetch(`/hrm/payroll/advance-payments/${pk}/`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.success) { showToast(d.error, 'error'); return; }
+        const a = d.advance;
+        document.getElementById('editAdvanceId').value = a.id;
+        document.getElementById('editEmployee').value = a.employee_id;
+        document.getElementById('editAmount').value = a.amount;
+        document.getElementById('editPaymentDate').value = a.payment_date;
+        document.getElementById('editReason').value = a.reason;
+        document.getElementById('editRepaymentMode').value = a.repayment_mode;
+        document.getElementById('editRepaymentStartDate').value = a.repayment_start_date;
+        document.getElementById('editInstallmentAmount').value = a.installment_amount;
+        document.getElementById('editTotalInstallments').value = a.total_installments;
+        document.getElementById('editPaidInstallments').value = a.paid_installments;
+        document.getElementById('editAmountRepaid').value = a.amount_repaid;
+        document.getElementById('editNotes').value = a.notes;
+        toggleInstallmentFields('edit');
+        new bootstrap.Modal(document.getElementById('editAdvanceModal')).show();
+    })
+    .catch(() => showToast('Failed to load data.', 'error'));
+}
+
+function submitEditAdvance() {
+    const pk = document.getElementById('editAdvanceId').value;
+    const form = document.getElementById('editAdvanceForm');
+    const data = new FormData(form);
+    fetch(`/hrm/payroll/advance-payments/${pk}/update/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF_TOKEN },
+        body: data,
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editAdvanceModal')).hide();
+            showToast(d.message);
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            showToast(d.error || 'An error occurred.', 'error');
+        }
+    })
+    .catch(() => showToast('Network error.', 'error'));
+}
+
+// ===== VIEW DETAIL =====
+function viewAdvance(pk) {
+    document.getElementById('viewAdvanceBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+    new bootstrap.Modal(document.getElementById('viewAdvanceModal')).show();
+    fetch(`/hrm/payroll/advance-payments/${pk}/`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.success) { document.getElementById('viewAdvanceBody').innerHTML = '<p class="text-danger">Failed to load.</p>'; return; }
+        const a = d.advance;
+        const pct = a.amount > 0 ? Math.round((parseFloat(a.amount_repaid) / parseFloat(a.amount)) * 100) : 0;
+        document.getElementById('viewAdvanceBody').innerHTML = `
+        <div class="row g-3">
+            <div class="col-12">
+                <div class="detail-card d-flex align-items-center gap-3">
+                    <div class="emp-avatar" style="width:48px;height:48px;font-size:1.1rem;">${a.employee_name.charAt(0).toUpperCase()}</div>
+                    <div>
+                        <div style="font-size:1.05rem;font-weight:700;color:#1e293b;">${a.employee_name}</div>
+                        <div style="font-size:0.8rem;color:#94a3b8;">ID: ${a.employee_code}</div>
+                    </div>
+                    <div class="ms-auto">
+                        <span class="ap-badge ${a.status}">${a.status_display}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4"><div class="detail-row"><span class="detail-lbl">Advance No.</span><span class="detail-val" style="color:#6366f1;font-weight:700;">${a.advance_number}</span></div></div>
+            <div class="col-md-4"><div class="detail-row"><span class="detail-lbl">Amount</span><span class="detail-val">Rs. ${parseFloat(a.amount).toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div></div>
+            <div class="col-md-4"><div class="detail-row"><span class="detail-lbl">Payment Date</span><span class="detail-val">${a.payment_date || '—'}</span></div></div>
+            <div class="col-12">
+                <div class="detail-row"><span class="detail-lbl">Reason</span><span class="detail-val">${a.reason}</span></div>
+            </div>
+            <div class="col-md-4"><div class="detail-row"><span class="detail-lbl">Repayment Mode</span><span class="detail-val">${a.repayment_mode.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase())}</span></div></div>
+            <div class="col-md-4"><div class="detail-row"><span class="detail-lbl">Repayment Start</span><span class="detail-val">${a.repayment_start_date || '—'}</span></div></div>
+            <div class="col-md-4"><div class="detail-row"><span class="detail-lbl">Installment Amt</span><span class="detail-val">${a.installment_amount ? 'Rs. '+a.installment_amount : '—'}</span></div></div>
+            <div class="col-12">
+                <div class="detail-card">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="detail-lbl" style="font-size:0.8rem;">REPAYMENT PROGRESS</span>
+                        <span style="font-size:0.8rem;font-weight:700;color:#6366f1;">${pct}%</span>
+                    </div>
+                    <div class="ap-progress" style="height:10px;">
+                        <div class="ap-progress-fill" style="width:${pct}%;"></div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2" style="font-size:0.8rem;color:#64748b;">
+                        <span>Repaid: Rs. ${parseFloat(a.amount_repaid).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                        <span>Remaining: Rs. ${parseFloat(a.remaining_amount).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                    </div>
+                </div>
+            </div>
+            ${a.approved_by ? `<div class="col-md-6"><div class="detail-row"><span class="detail-lbl">Approved By</span><span class="detail-val">${a.approved_by}</span></div></div><div class="col-md-6"><div class="detail-row"><span class="detail-lbl">Approved At</span><span class="detail-val">${a.approved_at}</span></div></div>` : ''}
+            ${a.rejection_reason ? `<div class="col-12"><div class="detail-row"><span class="detail-lbl">Rejection Reason</span><span class="detail-val text-danger">${a.rejection_reason}</span></div></div>` : ''}
+            ${a.notes ? `<div class="col-12"><div class="detail-row"><span class="detail-lbl">Notes</span><span class="detail-val">${a.notes}</span></div></div>` : ''}
+        </div>`;
+    })
+    .catch(() => { document.getElementById('viewAdvanceBody').innerHTML = '<p class="text-danger">Network error.</p>'; });
+}
+
+// ===== UPDATE STATUS =====
+function updateStatus(pk, action) {
+    if (!confirm(`Are you sure you want to ${action.replace('_',' ')} this advance payment?`)) return;
+    const fd = new FormData();
+    fd.append('action', action);
+    fetch(`/hrm/payroll/advance-payments/${pk}/update-status/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF_TOKEN },
+        body: fd,
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) { showToast(d.message); setTimeout(() => location.reload(), 1200); }
+        else showToast(d.error || 'Error.', 'error');
+    })
+    .catch(() => showToast('Network error.', 'error'));
+}
+
+// ===== REJECT =====
+function promptReject(pk) {
+    document.getElementById('rejectAdvanceId').value = pk;
+    document.getElementById('rejectReason').value = '';
+    new bootstrap.Modal(document.getElementById('rejectModal')).show();
+}
+
+function submitReject() {
+    const pk = document.getElementById('rejectAdvanceId').value;
+    const reason = document.getElementById('rejectReason').value.trim();
+    const fd = new FormData();
+    fd.append('action', 'reject');
+    fd.append('rejection_reason', reason);
+    fetch(`/hrm/payroll/advance-payments/${pk}/update-status/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF_TOKEN },
+        body: fd,
+    })
+    .then(r => r.json())
+    .then(d => {
+        bootstrap.Modal.getInstance(document.getElementById('rejectModal')).hide();
+        if (d.success) { showToast(d.message); setTimeout(() => location.reload(), 1200); }
+        else showToast(d.error || 'Error.', 'error');
+    })
+    .catch(() => showToast('Network error.', 'error'));
+}
+
+// ===== DELETE =====
+function deleteAdvance(pk, num) {
+    if (!confirm(`Delete advance payment ${num}? This cannot be undone.`)) return;
+    const fd = new FormData();
+    fetch(`/hrm/payroll/advance-payments/${pk}/delete/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF_TOKEN },
+        body: fd,
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) { showToast(d.message); setTimeout(() => location.reload(), 1200); }
+        else showToast(d.error || 'Error.', 'error');
+    })
+    .catch(() => showToast('Network error.', 'error'));
+}
+
+// ===== FLOATING STATUS MENU =====
+function openStatusMenu(event, pk, status, advNum) {
+    event.stopPropagation();
+    const menu = document.getElementById('apFloatingMenu');
+    let items = '<div class="fm-label">Change Status To</div>';
+    if (status !== 'pending')
+        items += `<button class="fm-item" onclick="closeMenu();updateStatus(${pk},'set_pending')"><i class="fas fa-clock me-2" style="color:#f59e0b"></i>Pending</button>`;
+    if (status !== 'approved')
+        items += `<button class="fm-item success" onclick="closeMenu();updateStatus(${pk},'approve')"><i class="fas fa-check me-2"></i>Approved</button>`;
+    if (status !== 'rejected')
+        items += `<button class="fm-item danger" onclick="closeMenu();promptReject(${pk})"><i class="fas fa-times me-2"></i>Rejected</button>`;
+    if (status !== 'disbursed')
+        items += `<button class="fm-item primary" onclick="closeMenu();updateStatus(${pk},'disburse')"><i class="fas fa-paper-plane me-2"></i>Disbursed</button>`;
+    if (status !== 'repaying')
+        items += `<button class="fm-item" onclick="closeMenu();updateStatus(${pk},'mark_repaying')"><i class="fas fa-undo me-2" style="color:#7c3aed"></i>Repaying</button>`;
+    if (status !== 'cleared')
+        items += `<button class="fm-item success" onclick="closeMenu();updateStatus(${pk},'clear')"><i class="fas fa-check-double me-2"></i>Cleared</button>`;
+    items += `<div class="fm-divider"></div>`;
+    items += `<button class="fm-item danger" onclick="closeMenu();deleteAdvance(${pk},'${advNum}')"><i class="fas fa-trash-alt me-2"></i>Delete</button>`;
+    menu.innerHTML = items;
+
+    // Position relative to button using fixed coords
+    const btn = event.currentTarget;
+    const rect = btn.getBoundingClientRect();
+    menu.style.display = 'block';
+    const menuW = menu.offsetWidth || 180;
+    let left = rect.right - menuW;
+    if (left < 8) left = 8;
+    let top = rect.bottom + 4;
+    if (top + menu.offsetHeight > window.innerHeight - 8) top = rect.top - menu.offsetHeight - 4;
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+}
+function closeMenu() {
+    const menu = document.getElementById('apFloatingMenu');
+    if (menu) menu.style.display = 'none';
+}
+document.addEventListener('click', function(e) {
+    const menu = document.getElementById('apFloatingMenu');
+    if (menu && !menu.contains(e.target)) closeMenu();
+});
+</script>
+{% endblock %}

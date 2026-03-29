@@ -892,3 +892,71 @@ class LeaveRequest(models.Model):
             delta = (self.end_date - self.start_date).days + 1
             self.days = max(delta, 1)
         super().save(*args, **kwargs)
+
+
+class AdvancePayment(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('disbursed', 'Disbursed'),
+        ('repaying', 'Repaying'),
+        ('cleared', 'Cleared'),
+    ]
+    REPAYMENT_MODE_CHOICES = [
+        ('lump_sum', 'Lump Sum'),
+        ('salary_deduction', 'Salary Deduction'),
+        ('installments', 'Installments'),
+    ]
+
+    advance_number = models.CharField(max_length=30, unique=True, blank=True)
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name='advance_payments'
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_date = models.DateField(null=True, blank=True)
+    reason = models.TextField()
+    repayment_mode = models.CharField(
+        max_length=20, choices=REPAYMENT_MODE_CHOICES, default='salary_deduction'
+    )
+    repayment_start_date = models.DateField(null=True, blank=True)
+    installment_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True
+    )
+    total_installments = models.PositiveIntegerField(null=True, blank=True)
+    paid_installments = models.PositiveIntegerField(default=0)
+    amount_repaid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='approved_advance_payments'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='created_advance_payments'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Advance Payment'
+        verbose_name_plural = 'Advance Payments'
+
+    def __str__(self):
+        return f"{self.advance_number} - {self.employee.full_name} (Rs. {self.amount})"
+
+    @property
+    def remaining_amount(self):
+        return max(self.amount - self.amount_repaid, 0)
+
+    def save(self, *args, **kwargs):
+        if not self.advance_number:
+            from django.utils import timezone as tz
+            last = AdvancePayment.objects.order_by('-id').first()
+            next_id = (last.id + 1) if last else 1
+            self.advance_number = f"ADV-{tz.now().year}-{next_id:04d}"
+        super().save(*args, **kwargs)
