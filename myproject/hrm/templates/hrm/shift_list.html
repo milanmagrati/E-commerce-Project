@@ -255,7 +255,7 @@
 
     <!-- Employee Wise Weekend Assignments Section -->
     <div class="card shadow-sm border mt-4" id="wkndSection">
-        <div class="card-header d-flex align-items-center justify-content-between py-2 px-3" style="background:linear-gradient(135deg,#4f46e5,#6366f1);cursor:pointer;" onclick="toggleWkndSection()">
+        <div class="card-header d-flex align-items-center justify-content-between py-2 px-3" style="background:linear-gradient(135deg,#4f46e5,#6366f1);cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#wkndSectionBody" aria-expanded="true" aria-controls="wkndSectionBody">
             <div class="d-flex align-items-center gap-2">
                 <i class="fas fa-calendar-week text-white"></i>
                 <span class="fw-semibold text-white">Employee Wise Weekend Assignments</span>
@@ -263,7 +263,7 @@
             </div>
             <i class="fas fa-chevron-down text-white" id="wkndChevron" style="transition:transform .3s;"></i>
         </div>
-        <div id="wkndSectionBody">
+        <div id="wkndSectionBody" class="collapse show">
             {% if weekend_assignments %}
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0 small">
@@ -305,7 +305,12 @@
                             <td class="text-muted">{{ wa.effective_to|date:"d M Y"|default:"—" }}</td>
                             <td class="text-muted" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{ wa.notes }}">{{ wa.notes|default:"—" }}</td>
                             <td class="text-center">
-                                <button class="btn btn-sm btn-outline-danger" onclick="deleteWeekend({{ wa.id }})">
+                                <button class="btn btn-sm btn-outline-primary me-1"
+                                    onclick="editWeekend({{ wa.id }}, '{{ wa.employee.id }}', '{{ wa.weekend_type }}', '{{ wa.weekend_days|join:',' }}', '{{ wa.effective_from|date:'Y-m-d' }}', '{{ wa.effective_to|date:'Y-m-d'|default:'' }}', '{{ wa.notes|escapejs }}')"
+                                    title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteWeekend({{ wa.id }})" title="Delete">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </td>
@@ -867,8 +872,9 @@
         color: #fff;
         border-color: #4f46e5;
     }
+    .wknd-day-btn:focus, .wknd-day-btn:focus-visible { box-shadow: none; outline: none; }
     #wkndSection .card-header:hover { opacity: .92; }
-    #wkndSectionBody { transition: all .25s; }
+    #wkndSectionBody.collapsing { transition: height .25s ease; }
 </style>
 
 {% block extra_js %}
@@ -1250,11 +1256,11 @@
     }
 
     /* ── Weekend Feature ── */
-    var wkndSectionOpen = true;
 
     function openSetWeekendsModal() {
         document.getElementById('swRecordId').value = '';
         document.getElementById('swEmployee').value = '';
+        document.getElementById('swEmployee').disabled = false;
         document.getElementById('swEffFrom').value = '';
         document.getElementById('swEffTo').value = '';
         document.getElementById('swNotes').value = '';
@@ -1267,6 +1273,30 @@
                 btn.classList.remove('wknd-day-selected');
             }
         });
+        document.getElementById('setWeekendsModalTitle').innerHTML = '<i class="fas fa-calendar-alt me-2"></i>Set Employee Weekends';
+        document.querySelector('#setWeekendsModal .btn-primary').innerHTML = '<i class="fas fa-save me-1"></i>Save Assignment';
+        getModal('setWeekendsModal').show();
+    }
+
+    function editWeekend(id, empId, wkndType, daysStr, effFrom, effTo, notes) {
+        document.getElementById('swRecordId').value = id;
+        document.getElementById('swEmployee').value = empId;
+        document.getElementById('swEmployee').disabled = false;
+        document.querySelector('input[name="swType"][value="' + wkndType + '"]').checked = true;
+        var selectedDays = daysStr ? daysStr.split(',') : [];
+        document.querySelectorAll('.wknd-day-btn').forEach(function(btn) {
+            var day = btn.getAttribute('data-day');
+            if (selectedDays.indexOf(day) !== -1) {
+                btn.classList.add('wknd-day-selected');
+            } else {
+                btn.classList.remove('wknd-day-selected');
+            }
+        });
+        document.getElementById('swEffFrom').value = effFrom;
+        document.getElementById('swEffTo').value = effTo || '';
+        document.getElementById('swNotes').value = notes || '';
+        document.getElementById('setWeekendsModalTitle').innerHTML = '<i class="fas fa-edit me-2"></i>Edit Weekend Assignment';
+        document.querySelector('#setWeekendsModal .btn-primary').innerHTML = '<i class="fas fa-save me-1"></i>Update Assignment';
         getModal('setWeekendsModal').show();
     }
 
@@ -1325,7 +1355,7 @@
         .then(function(data) {
             if (data.success) {
                 sessionStorage.setItem('shiftToast', JSON.stringify({
-                    type: 'warning', title: 'Assignment Deleted', msg: 'Weekend assignment has been removed.'
+                    type: 'danger', title: 'Assignment Deleted', msg: 'Weekend assignment has been removed.'
                 }));
                 location.reload();
             } else {
@@ -1335,18 +1365,13 @@
         .catch(function() { alert('Network error while deleting.'); });
     }
 
-    function toggleWkndSection() {
-        var body = document.getElementById('wkndSectionBody');
-        var chevron = document.getElementById('wkndChevron');
-        if (wkndSectionOpen) {
-            body.style.display = 'none';
-            chevron.style.transform = 'rotate(-90deg)';
-        } else {
-            body.style.display = '';
-            chevron.style.transform = 'rotate(0deg)';
-        }
-        wkndSectionOpen = !wkndSectionOpen;
-    }
+    /* Sync chevron with Bootstrap collapse events */
+    document.getElementById('wkndSectionBody').addEventListener('hide.bs.collapse', function() {
+        document.getElementById('wkndChevron').style.transform = 'rotate(-90deg)';
+    });
+    document.getElementById('wkndSectionBody').addEventListener('show.bs.collapse', function() {
+        document.getElementById('wkndChevron').style.transform = 'rotate(0deg)';
+    });
 </script>
 {% endblock %}
 {% endblock %}
