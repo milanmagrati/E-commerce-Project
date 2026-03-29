@@ -4441,11 +4441,47 @@ def update_order_next_followup(request, order_id):
 @login_required
 @permission_required('can_view_orders')
 def order_invoice(request, order_id):
-    order = get_object_or_404(Order, id=order_id, created_by=request.user)
-    order_items = order.items.all()
+    from decimal import Decimal
+    # Allow admins/managers to view any invoice; restrict regular staff to their own
+    if request.user.role in ('admin', 'manager') or request.user.is_staff or request.user.is_superuser:
+        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+    else:
+        order = get_object_or_404(Order, id=order_id, created_by=request.user, is_deleted=False)
+
+    order_items = order.items.select_related(
+        'product', 'product_variation'
+    ).prefetch_related(
+        'product__bundle_components__component_product'
+    ).all()
+
+    subtotal = sum(item.total for item in order_items) or Decimal('0.00')
+    discount = order.discount_amount or Decimal('0.00')
+    after_discount = subtotal - discount
+    tax_amount = (after_discount * (order.tax_percent or Decimal('0'))) / Decimal('100')
+    shipping = order.shipping_charge or Decimal('0.00')
+    delivery = order.delivery_charge or Decimal('0.00')
+
+    order_status_label = (
+        order.status_setup.name if order.status_setup else (order.order_status or order.status or 'pending')
+    )
+    payment_status_label = (
+        order.payment_status_setup.name if order.payment_status_setup else (order.payment_status or 'pending')
+    )
+    payment_method_label = (
+        order.payment_setup.name if order.payment_setup else (order.payment_method or 'N/A')
+    )
+
     return render(request, "order_invoice.html", {
         "order": order,
         "order_items": order_items,
+        "subtotal": subtotal,
+        "tax_amount": tax_amount,
+        "shipping": shipping,
+        "delivery": delivery,
+        "discount": discount,
+        "order_status_label": order_status_label,
+        "payment_status_label": payment_status_label,
+        "payment_method_label": payment_method_label,
         "user": request.user,
     })
 

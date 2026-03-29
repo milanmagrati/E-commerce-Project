@@ -103,6 +103,10 @@
 {% block content %}
 <div class="container-fluid py-3">
 
+    <!-- Status Alert (shown after approve/reject/cancel reload) -->
+    <div id="lrToast" style="display:none;" role="alert" class="alert alert-dismissible d-flex align-items-center mb-3"></div>
+
+
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
         <div>
@@ -294,7 +298,10 @@
                         data-reason="{{ req.reason }}"
                         data-applied-on="{{ req.created_at|date:'d M Y' }}"
                         data-status="{{ req.status }}"
-                        data-status-display="{{ req.get_status_display }}">
+                        data-status-display="{{ req.get_status_display }}"
+                        data-req-id="{{ req.id }}"
+                        data-rejection-reason="{{ req.rejection_reason|default:'' }}"
+                        data-approved-by="{{ req.approved_by.full_name|default:'' }}">
                         <td class="text-muted">{{ forloop.counter|add:requests.start_index|add:"-1" }}</td>
                         <td>
                             <div class="d-flex align-items-center gap-2">
@@ -455,12 +462,54 @@
                 <div id="leaveModalReason" style="font-size:0.87rem;color:#334155;line-height:1.6;"></div>
               </div>
             </div>
+            <div class="col-12" id="leaveModalApprovedByWrap" style="display:none;">
+              <div class="detail-card" style="background:#f0fdf4;border-left:3px solid #16a34a;">
+                <div class="detail-label" style="color:#16a34a;"><i class="fas fa-user-check me-1"></i>Reviewed By</div>
+                <div id="leaveModalApprovedBy" class="detail-value"></div>
+              </div>
+            </div>
+            <div class="col-12" id="leaveModalRejectionWrap" style="display:none;">
+              <div class="detail-card" style="background:#fff5f5;border-left:3px solid #ef4444;">
+                <div class="detail-label mb-1" style="color:#ef4444;"><i class="fas fa-times-circle me-1"></i>Rejection Reason</div>
+                <div id="leaveModalRejectionReason" style="font-size:0.87rem;color:#334155;line-height:1.6;"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="modal-footer border-0 pt-0 pb-3 px-4 justify-content-end">
-        <button type="button" class="btn btn-sm px-4" data-bs-dismiss="modal"
-                style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-weight:600;">Close</button>
+      <div class="modal-footer border-0 pt-0 pb-3 px-4 flex-column align-items-stretch">
+        <!-- Reject reason textarea (shown when clicking Reject) -->
+        <div id="leaveRejectReasonBox" class="w-100 mb-2" style="display:none;">
+          <label class="small text-muted mb-1">Rejection Reason <span class="text-danger">*</span></label>
+          <textarea id="leaveRejectReasonText" class="form-control form-control-sm" rows="2" placeholder="Enter reason for rejection..."></textarea>
+        </div>
+        <!-- Footer buttons row -->
+        <div class="d-flex align-items-center justify-content-between w-100 gap-2 flex-wrap">
+          <!-- Primary action buttons (Approve / Reject / Cancel) -->
+          <div id="leaveActionBtns" class="d-flex gap-2" style="display:none;">
+            <button type="button" class="btn btn-sm btn-success px-3" id="leaveApproveBtn" onclick="updateLeaveStatus('approve')">
+              <i class="fas fa-check me-1"></i>Approve
+            </button>
+            <button type="button" class="btn btn-sm btn-danger px-3" id="leaveRejectBtn" onclick="showRejectBox()">
+              <i class="fas fa-times me-1"></i>Reject
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-warning px-3" id="leaveCancelBtn" onclick="updateLeaveStatus('cancel')" style="display:none;">
+              <i class="fas fa-ban me-1"></i>Cancel Leave
+            </button>
+          </div>
+          <!-- Confirm reject buttons (shown after clicking Reject) -->
+          <div id="leaveRejectConfirmBtns" class="d-flex gap-2" style="display:none;">
+            <button type="button" class="btn btn-sm btn-danger px-3" onclick="updateLeaveStatus('reject')">
+              <i class="fas fa-check me-1"></i>Confirm Reject
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="hideRejectBox()">
+              <i class="fas fa-arrow-left me-1"></i>Back
+            </button>
+          </div>
+          <!-- Close always visible on the right -->
+          <button type="button" class="btn btn-sm px-4 ms-auto" data-bs-dismiss="modal"
+                  style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-weight:600;">Close</button>
+        </div>
       </div>
     </div>
   </div>
@@ -470,6 +519,9 @@
 
 {% block extra_js %}
 <script>
+var CSRF_TOKEN = '{{ csrf_token }}';
+var currentLeaveId = null;
+
 function changePerPage(val) {
     const url = new URL(window.location.href);
     url.searchParams.set('per_page', val);
@@ -477,36 +529,161 @@ function changePerPage(val) {
     window.location.href = url.toString();
 }
 
+/* ── Show sessionStorage alert on page reload ── */
+(function() {
+    var raw = sessionStorage.getItem('leaveReportToast');
+    if (!raw) return;
+    sessionStorage.removeItem('leaveReportToast');
+    try {
+        var d = JSON.parse(raw);
+        var toast = document.getElementById('lrToast');
+        var iconMap = { success: 'fa-check-circle', danger: 'fa-times-circle', info: 'fa-info-circle' };
+        var classMap = { success: 'alert-success', danger: 'alert-danger', info: 'alert-info' };
+        toast.className = 'alert alert-dismissible d-flex align-items-center mb-3 ' + (classMap[d.type] || 'alert-info');
+        toast.innerHTML = '<i class="fas ' + (iconMap[d.type] || 'fa-info-circle') + ' me-2"></i>'
+            + '<div><strong>' + d.title + ':</strong> ' + d.msg + '</div>'
+            + '<button type="button" class="btn-close ms-auto" onclick="this.parentElement.style.display=\'none\'"></button>';
+        toast.style.display = 'flex';
+        setTimeout(function() { toast.style.display = 'none'; }, 6000);
+    } catch(e) {}
+})();
+
+/* ── Modal singleton helper ── */
+function getLrModal() {
+    var el = document.getElementById('leaveDetailModal');
+    return bootstrap.Modal.getOrCreateInstance(el);
+}
+
+/* ── Row click → open detail modal ── */
 document.querySelectorAll('.leave-row-clickable').forEach(function(row) {
     row.addEventListener('click', function() {
-        const d = this.dataset;
+        var d = this.dataset;
+        currentLeaveId = d.reqId;
+
+        // Header
         document.getElementById('leaveModalAvatar').textContent = (d.empName || '?').charAt(0).toUpperCase();
         document.getElementById('leaveModalName').textContent = d.empName;
         document.getElementById('leaveModalEmpId').textContent = d.empId;
         document.getElementById('leaveModalDept').textContent = '\uD83D\uDCCD ' + d.dept;
         document.getElementById('leaveModalTypeLabel').textContent = '\uD83C\uDFF7 ' + d.leaveType;
-        const statusEl = document.getElementById('leaveModalStatusBadge');
-        const sm = {
+
+        // Status badge
+        var statusEl = document.getElementById('leaveModalStatusBadge');
+        var sm = {
             pending:   ['#fef3c7','#92400e'],
             approved:  ['#d1fae5','#065f46'],
             rejected:  ['#fee2e2','#991b1b'],
             cancelled: ['#f1f5f9','#475569']
         };
-        const sc = sm[d.status] || ['#e2e8f0','#475569'];
+        var sc = sm[d.status] || ['#e2e8f0','#475569'];
         statusEl.style.background = sc[0];
         statusEl.style.color = sc[1];
         statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:0.45rem;vertical-align:middle;margin-right:4px;"></i>' + d.statusDisplay;
+
+        // Duration
         document.getElementById('leaveModalStartDate').textContent = d.startDate;
         document.getElementById('leaveModalEndDate').textContent = d.endDate;
-        const days = parseInt(d.days) || 0;
+        var days = parseInt(d.days) || 0;
         document.getElementById('leaveModalDays').textContent = days + ' day' + (days !== 1 ? 's' : '');
+
+        // Detail cards
         document.getElementById('leaveModalLeaveType').textContent = d.leaveType;
         document.getElementById('leaveModalAppliedOn').textContent = d.appliedOn;
         document.getElementById('leaveModalDeptCard').textContent = d.dept;
         document.getElementById('leaveModalEmpIdCard').textContent = d.empId;
-        document.getElementById('leaveModalReason').textContent = d.reason || '—';
-        new bootstrap.Modal(document.getElementById('leaveDetailModal')).show();
+        document.getElementById('leaveModalReason').textContent = d.reason || '\u2014';
+
+        // Reviewed By
+        var approvedByWrap = document.getElementById('leaveModalApprovedByWrap');
+        if (d.approvedBy) {
+            approvedByWrap.style.display = '';
+            document.getElementById('leaveModalApprovedBy').textContent = d.approvedBy;
+        } else {
+            approvedByWrap.style.display = 'none';
+        }
+
+        // Rejection Reason
+        var rejectionWrap = document.getElementById('leaveModalRejectionWrap');
+        if (d.status === 'rejected' && d.rejectionReason) {
+            rejectionWrap.style.display = '';
+            document.getElementById('leaveModalRejectionReason').textContent = d.rejectionReason;
+        } else {
+            rejectionWrap.style.display = 'none';
+        }
+
+        // Reset reject box
+        document.getElementById('leaveRejectReasonBox').style.display = 'none';
+        document.getElementById('leaveRejectConfirmBtns').style.display = 'none';
+        document.getElementById('leaveRejectReasonText').value = '';
+
+        // Action buttons visibility
+        var actionBtns = document.getElementById('leaveActionBtns');
+        var approveBtn = document.getElementById('leaveApproveBtn');
+        var rejectBtn  = document.getElementById('leaveRejectBtn');
+        var cancelBtn  = document.getElementById('leaveCancelBtn');
+        if (d.status === 'pending') {
+            actionBtns.style.display = 'flex';
+            approveBtn.style.display = '';
+            rejectBtn.style.display  = '';
+            cancelBtn.style.display  = 'none';
+        } else if (d.status === 'approved') {
+            actionBtns.style.display = 'flex';
+            approveBtn.style.display = 'none';
+            rejectBtn.style.display  = 'none';
+            cancelBtn.style.display  = '';
+        } else {
+            actionBtns.style.display = 'none';
+        }
+
+        getLrModal().show();
     });
 });
+
+function showRejectBox() {
+    document.getElementById('leaveActionBtns').style.display = 'none';
+    document.getElementById('leaveRejectReasonBox').style.display = '';
+    document.getElementById('leaveRejectConfirmBtns').style.display = 'flex';
+    document.getElementById('leaveRejectReasonText').focus();
+}
+
+function hideRejectBox() {
+    document.getElementById('leaveRejectReasonBox').style.display = 'none';
+    document.getElementById('leaveRejectConfirmBtns').style.display = 'none';
+    document.getElementById('leaveRejectReasonText').value = '';
+    document.getElementById('leaveActionBtns').style.display = 'flex';
+}
+
+function updateLeaveStatus(action) {
+    if (!currentLeaveId) return;
+    var rejectionReason = '';
+    if (action === 'reject') {
+        rejectionReason = document.getElementById('leaveRejectReasonText').value.trim();
+        if (!rejectionReason) { alert('Please enter a rejection reason.'); return; }
+    }
+    var fd = new FormData();
+    fd.append('action', action);
+    fd.append('rejection_reason', rejectionReason);
+    fetch('/hrm/attendance/leave-request/' + currentLeaveId + '/update-status/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': CSRF_TOKEN},
+        body: fd
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            getLrModal().hide();
+            var typeMap = { approved: 'success', rejected: 'danger', cancelled: 'info' };
+            sessionStorage.setItem('leaveReportToast', JSON.stringify({
+                type: typeMap[data.status] || 'info',
+                title: 'Leave ' + data.status_display,
+                msg: data.message
+            }));
+            location.reload();
+        } else {
+            alert(data.error || 'Failed to update leave status.');
+        }
+    })
+    .catch(function() { alert('Network error. Please try again.'); });
+}
 </script>
 {% endblock %}

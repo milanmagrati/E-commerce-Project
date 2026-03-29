@@ -5389,3 +5389,46 @@ def leave_report(request):
     }
     return render(request, 'hrm/leave_report.html', context)
 
+
+@login_required
+def leave_update_status(request, pk):
+    from .models import LeaveRequest
+    from django.utils import timezone
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        leave_req = LeaveRequest.objects.select_related('employee').get(pk=pk)
+    except LeaveRequest.DoesNotExist:
+        return JsonResponse({'error': 'Leave request not found'}, status=404)
+    action = request.POST.get('action', '').strip()
+    rejection_reason = request.POST.get('rejection_reason', '').strip()
+    if action not in ['approve', 'reject', 'cancel']:
+        return JsonResponse({'error': 'Invalid action'}, status=400)
+    if action == 'reject' and not rejection_reason:
+        return JsonResponse({'error': 'Rejection reason is required'}, status=400)
+    approver = None
+    try:
+        approver = request.user.employee_profile
+    except Exception:
+        pass
+    if action == 'approve':
+        leave_req.status = 'approved'
+        leave_req.approved_by = approver
+        leave_req.approved_at = timezone.now()
+        leave_req.rejection_reason = ''
+    elif action == 'reject':
+        leave_req.status = 'rejected'
+        leave_req.approved_by = approver
+        leave_req.approved_at = timezone.now()
+        leave_req.rejection_reason = rejection_reason
+    elif action == 'cancel':
+        leave_req.status = 'cancelled'
+        leave_req.rejection_reason = ''
+    leave_req.save()
+    return JsonResponse({
+        'success': True,
+        'status': leave_req.status,
+        'status_display': leave_req.get_status_display(),
+        'message': f'Leave request {leave_req.get_status_display().lower()} successfully.',
+    })
+
