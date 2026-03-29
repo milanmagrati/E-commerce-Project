@@ -1,0 +1,1156 @@
+{% extends 'base.html' %}
+{% block title %}Attendance Report - HRM{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        background: #fff;
+    }
+    .stat-box {
+        border-radius: 10px;
+        padding: 1.1rem 1.4rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    .stat-icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .stat-value { font-size: 1.55rem; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: 0.78rem; color: #6c757d; margin-top: 3px; }
+    .filter-bar {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 10px;
+        padding: 1rem 1.2rem;
+    }
+    .table thead th {
+        background: #f8f9fa;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #6c757d;
+        border-bottom: 2px solid #dee2e6;
+        padding: 0.65rem 0.9rem;
+        white-space: nowrap;
+    }
+    .table tbody td {
+        padding: 0.65rem 0.9rem;
+        vertical-align: middle;
+        font-size: 0.87rem;
+    }
+    .table tbody tr:hover { background: #f8f9fa; }
+    .badge-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .badge-present  { background: #d1fae5; color: #065f46; }
+    .badge-absent   { background: #fee2e2; color: #991b1b; }
+    .badge-late     { background: #fef3c7; color: #92400e; }
+    .badge-half_day { background: #dbeafe; color: #1e3a8a; }
+    .badge-on_leave { background: #ede9fe; color: #4c1d95; }
+    .emp-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg,#6366f1,#8b5cf6);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+    .pagination .page-link { border-radius: 6px !important; margin: 0 2px; font-size: 0.85rem; }
+    .pagination .page-item.active .page-link {
+        background: #6366f1; border-color: #6366f1;
+    }
+    .export-btn { border-radius: 8px; font-size: 0.83rem; }
+    .active-filter-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: #e0e7ff; color: #3730a3; padding: 2px 8px;
+        border-radius: 12px; font-size: 0.75rem; font-weight: 600;
+    }
+    .per-page-select { width: auto; display: inline-block; }
+    .att-row-clickable { cursor: pointer; transition: background 0.12s; }
+    .att-row-clickable:hover { background: #eef2ff !important; }
+    .detail-card { background:#f8fafc; border-radius:10px; padding:0.85rem 1rem; }
+    .detail-label { font-size:0.7rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; }
+    .detail-value { font-weight:600; font-size:0.9rem; color:#1e293b; }
+
+    /* ── Period View ─────────────────────────────────────── */
+    .period-panel {
+        background: linear-gradient(135deg,#f0f4ff 0%,#fff 60%);
+        border: 1.5px solid #c7d2fe;
+        border-radius: 14px;
+        box-shadow: 0 2px 12px rgba(99,102,241,0.08);
+    }
+    .period-toggle .btn { border-radius:8px; font-size:0.82rem; font-weight:600; padding:5px 16px; }
+    .period-toggle .btn.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+    .period-toggle .btn:not(.active) { background:#f1f5f9; color:#64748b; border-color:#e2e8f0; }
+    .pv-emp-header {
+        background: linear-gradient(135deg,#6366f1,#8b5cf6);
+        border-radius:12px 12px 0 0;
+        padding:1.1rem 1.4rem;
+    }
+    .pv-emp-avatar {
+        width:52px; height:52px; border-radius:50%;
+        background:rgba(255,255,255,0.25); border:2.5px solid rgba(255,255,255,0.6);
+        color:#fff; display:flex; align-items:center; justify-content:center;
+        font-size:1.3rem; font-weight:700; flex-shrink:0;
+    }
+    .pv-summary-bar {
+        background:#f8fafc; border-top:1px solid #e9ecef; border-bottom:1px solid #e9ecef;
+        display:flex; flex-wrap:wrap;
+    }
+    .pv-sum-item { flex:1 1 80px; text-align:center; padding:0.75rem 0.5rem; border-right:1px solid #e9ecef; }
+    .pv-sum-item:last-child { border-right:none; }
+    .pv-sum-val { font-size:1.25rem; font-weight:700; line-height:1; }
+    .pv-sum-lbl { font-size:0.68rem; color:#94a3b8; margin-top:3px; text-transform:uppercase; letter-spacing:0.04em; }
+
+    /* Day card */
+    .pv-day-card { border-radius:12px; border:1px solid #e9ecef; overflow:hidden; }
+    .pv-day-metric { text-align:center; padding:1rem 0.5rem; border-right:1px solid #e9ecef; flex:1; }
+    .pv-day-metric:last-child { border-right:none; }
+
+    /* Week view */
+    .pv-week-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+    .pv-week-day {
+        border-radius:10px; border:1.5px solid #e2e8f0;
+        padding:0.7rem 0.4rem; text-align:center; transition:transform 0.12s;
+    }
+    .pv-week-day:hover { transform:translateY(-2px); }
+    .pv-week-day.no-record { background:#f8fafc; border-style:dashed; }
+    .pv-week-day .day-lbl { font-size:0.68rem; font-weight:700; text-transform:uppercase; color:#94a3b8; }
+    .pv-week-day .day-num { font-size:1.2rem; font-weight:700; color:#1e293b; margin:4px 0; }
+    .pv-week-day .day-status { font-size:0.68rem; font-weight:600; border-radius:12px; padding:2px 7px; display:inline-block; }
+
+    /* Month calendar */
+    .pv-cal-wrap { padding: 1.25rem 1.5rem; }
+    .pv-cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .pv-cal-nav-btn {
+        width:32px; height:32px; border-radius:8px; border:1.5px solid #e2e8f0;
+        background:#fff; cursor:pointer; display:flex; align-items:center;
+        justify-content:center; font-size:0.8rem; color:#475569; transition:all 0.12s;
+    }
+    .pv-cal-nav-btn:hover { background:#6366f1; border-color:#6366f1; color:#fff; }
+    .pv-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+    .pv-cal-head {
+        text-align:center; font-size:0.68rem; font-weight:700; color:#94a3b8;
+        padding:6px 2px; text-transform:uppercase; letter-spacing:0.06em;
+        border-bottom:2px solid #f1f5f9; margin-bottom:2px;
+    }
+    .pv-cal-cell {
+        border-radius:8px; display:flex; flex-direction:column;
+        align-items:flex-start; justify-content:flex-start;
+        cursor:default; border:1.5px solid #f1f5f9;
+        font-size:0.75rem; min-height:62px; padding:5px 7px;
+        transition:all 0.12s; position:relative; overflow:hidden;
+        background:#fafbfc;
+    }
+    .pv-cal-cell.has-record {
+        cursor:pointer;
+        box-shadow:0 1px 4px rgba(0,0,0,0.06);
+    }
+    .pv-cal-cell.has-record:hover {
+        transform:translateY(-2px);
+        box-shadow:0 4px 12px rgba(0,0,0,0.12);
+        z-index:2;
+    }
+    .pv-cal-cell.empty { background:transparent; border:none; }
+    .pv-cal-cell.today { outline:2px solid #6366f1; outline-offset:1px; }
+    .pv-cal-cell .cal-num {
+        font-weight:700; font-size:0.85rem; line-height:1;
+        margin-bottom:4px;
+    }
+    .pv-cal-cell .cal-status-chip {
+        font-size:0.6rem; font-weight:700; border-radius:6px;
+        padding:1px 5px; display:inline-block; margin-bottom:3px;
+    }
+    .pv-cal-cell .cal-time {
+        font-size:0.6rem; color:inherit; opacity:0.75;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;
+    }
+    .pv-cal-cell .cal-hours {
+        font-size:0.65rem; font-weight:700; margin-top:auto;
+        opacity:0.9;
+    }
+    .pv-status-present  { background:#f0fdf4; color:#065f46; border-color:#bbf7d0; }
+    .pv-status-absent   { background:#fff1f2; color:#991b1b; border-color:#fecdd3; }
+    .pv-status-late     { background:#fffbeb; color:#92400e; border-color:#fde68a; }
+    .pv-status-half_day { background:#eff6ff; color:#1e3a8a; border-color:#bfdbfe; }
+    .pv-status-on_leave { background:#faf5ff; color:#4c1d95; border-color:#e9d5ff; }
+    .pv-status-no_record{ background:#fafbfc; color:#94a3b8; border-color:#f1f5f9; }
+    .cal-chip-present  { background:#bbf7d0; color:#065f46; }
+    .cal-chip-absent   { background:#fecdd3; color:#991b1b; }
+    .cal-chip-late     { background:#fde68a; color:#92400e; }
+    .cal-chip-half_day { background:#bfdbfe; color:#1e3a8a; }
+    .cal-chip-on_leave { background:#e9d5ff; color:#4c1d95; }
+    /* Calendar day detail mini popup */
+    #pvCalDayPopup {
+        position:fixed; z-index:9999;
+        background:#fff; border-radius:12px;
+        box-shadow:0 8px 30px rgba(0,0,0,0.18);
+        border:1px solid #e2e8f0; min-width:220px;
+        pointer-events:auto;
+        animation: fadeInPop 0.15s ease;
+    }
+    @keyframes fadeInPop { from{opacity:0;transform:scale(0.9)} to{opacity:1;transform:scale(1)} }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0" style="color:#1a1a2e;">
+                <i class="fas fa-chart-bar me-2" style="color:#6366f1;"></i>Attendance Report
+            </h4>
+            <small class="text-muted">Analyse employee attendance across any date range</small>
+            {% if search or date_from or date_to or department or sel_status %}
+            <div class="mt-1 d-flex flex-wrap gap-1">
+                {% if search %}<span class="active-filter-badge"><i class="fas fa-search" style="font-size:0.65rem;"></i> {{ search }}</span>{% endif %}
+                {% if date_from %}<span class="active-filter-badge"><i class="fas fa-calendar" style="font-size:0.65rem;"></i> From {{ date_from }}</span>{% endif %}
+                {% if date_to %}<span class="active-filter-badge"><i class="fas fa-calendar" style="font-size:0.65rem;"></i> To {{ date_to }}</span>{% endif %}
+                {% if sel_status %}<span class="active-filter-badge">{{ sel_status|title }}</span>{% endif %}
+                <a href="{% url 'hrm:attendance_report' %}" class="text-danger" style="font-size:0.78rem; text-decoration:none;"><i class="fas fa-times-circle"></i> Clear</a>
+            </div>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="?search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}&department={{ department }}&status={{ sel_status }}&export=csv"
+               class="btn btn-outline-success export-btn px-3">
+                <i class="fas fa-file-csv me-1"></i> Export CSV
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#f0fdf4;">
+                <div class="stat-icon" style="background:#bbf7d0; color:#16a34a;"><i class="fas fa-user-check"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#16a34a;">{{ stats.present|default:"0" }}</div>
+                    <div class="stat-label">Present</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#fff1f2;">
+                <div class="stat-icon" style="background:#fecdd3; color:#e11d48;"><i class="fas fa-user-times"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#e11d48;">{{ stats.absent|default:"0" }}</div>
+                    <div class="stat-label">Absent</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#fffbeb;">
+                <div class="stat-icon" style="background:#fde68a; color:#d97706;"><i class="fas fa-clock"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#d97706;">{{ stats.late|default:"0" }}</div>
+                    <div class="stat-label">Late</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#eff6ff;">
+                <div class="stat-icon" style="background:#bfdbfe; color:#2563eb;"><i class="fas fa-adjust"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#2563eb;">{{ stats.half_day|default:"0" }}</div>
+                    <div class="stat-label">Half Day</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#fdf4ff;">
+                <div class="stat-icon" style="background:#f3e8ff; color:#7c3aed;"><i class="fas fa-umbrella-beach"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#7c3aed;">{{ stats.on_leave|default:"0" }}</div>
+                    <div class="stat-label">On Leave</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#f8fafc;">
+                <div class="stat-icon" style="background:#e2e8f0; color:#475569;"><i class="fas fa-database"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#475569;">{{ stats.total|default:"0" }}</div>
+                    <div class="stat-label">Total Records</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Per-Employee Attendance Summary -->
+    {% if emp_summary %}
+    <div class="report-card mb-3">
+        <div class="d-flex align-items-center justify-content-between px-4 py-3 border-bottom"
+             style="cursor:pointer;" onclick="toggleEmpSummary()" id="empSummaryToggle">
+            <div class="d-flex align-items-center gap-2">
+                <div style="width:34px;height:34px;border-radius:9px;background:#e0e7ff;display:flex;align-items:center;justify-content:center;">
+                    <i class="fas fa-users" style="color:#4f46e5;font-size:0.85rem;"></i>
+                </div>
+                <div>
+                    <div class="fw-bold" style="font-size:0.9rem;color:#1e293b;">Employee Attendance Summary</div>
+                    <div class="text-muted" style="font-size:0.75rem;">
+                        {{ emp_summary|length }} employee{{ emp_summary|length|pluralize }} &mdash; present / absent / late breakdown
+                    </div>
+                </div>
+            </div>
+            <i class="fas fa-chevron-down text-muted" id="empSummaryChevron"
+               style="transition:transform 0.2s;"></i>
+        </div>
+        <div id="empSummaryBody" style="display:none;">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" style="font-size:0.82rem;">
+                    <thead style="background:#f8fafc;">
+                        <tr>
+                            <th class="ps-4" style="color:#94a3b8;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;">#</th>
+                            <th style="color:#94a3b8;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;">Employee</th>
+                            <th style="color:#94a3b8;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;">Dept</th>
+                            <th class="text-center" style="color:#16a34a;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-check me-1"></i>Present</th>
+                            <th class="text-center" style="color:#e11d48;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-times me-1"></i>Absent</th>
+                            <th class="text-center" style="color:#d97706;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-clock me-1"></i>Late</th>
+                            <th class="text-center" style="color:#2563eb;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-adjust me-1"></i>Half Day</th>
+                            <th class="text-center" style="color:#7c3aed;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-umbrella-beach me-1"></i>On Leave</th>
+                            <th class="text-center" style="color:#475569;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;">Total Days</th>
+                            <th class="pe-4 text-center" style="color:#475569;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;">Working Hrs</th>
+                            <th class="pe-4 text-center" style="color:#475569;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;">Attendance %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for emp in emp_summary %}
+                        <tr>
+                            <td class="ps-4 text-muted">{{ forloop.counter }}</td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="emp-avatar" style="width:28px;height:28px;font-size:0.7rem;">
+                                        {{ emp.employee__full_name|slice:":1"|upper }}
+                                    </div>
+                                    <div>
+                                        <div class="fw-semibold" style="font-size:0.83rem;">{{ emp.employee__full_name }}</div>
+                                        <div class="text-muted" style="font-size:0.7rem;">{{ emp.employee__employee_id }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="text-muted">{{ emp.employee__department__name|default:"—" }}</td>
+                            <td class="text-center">
+                                <span class="fw-bold" style="color:#16a34a;">{{ emp.present }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="fw-bold" style="color:#e11d48;">{{ emp.absent }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="fw-bold" style="color:#d97706;">{{ emp.late }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="fw-bold" style="color:#2563eb;">{{ emp.half_day }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="fw-bold" style="color:#7c3aed;">{{ emp.on_leave }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge" style="background:#f1f5f9;color:#475569;font-size:0.75rem;font-weight:700;border-radius:6px;padding:3px 8px;">
+                                    {{ emp.total }}
+                                </span>
+                            </td>
+                            <td class="pe-4 text-center text-muted fw-semibold">
+                                {% if emp.total_working_hours %}{{ emp.total_working_hours|floatformat:1 }}h{% else %}—{% endif %}
+                            </td>
+                            <td class="pe-4 text-center">
+                                {% if emp.total > 0 %}
+                                <div style="display:flex;align-items:center;gap:6px;">
+                                    <div style="flex:1;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;">
+                                        <div style="width:{{ emp.pct }}%;height:100%;background:{{ emp.pct_color }};border-radius:3px;"></div>
+                                    </div>
+                                    <span style="font-size:0.72rem;font-weight:700;color:#475569;min-width:30px;">{{ emp.pct }}%</span>
+                                </div>
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Period View Panel -->
+    <div class="period-panel p-0 mb-3 overflow-hidden">
+        <!-- Panel Header -->
+        <div class="d-flex align-items-center justify-content-between px-4 py-3 border-bottom" style="background:#fff;">
+            <div class="d-flex align-items-center gap-2">
+                <div style="width:36px;height:36px;border-radius:10px;background:#ede9fe;display:flex;align-items:center;justify-content:center;">
+                    <i class="fas fa-calendar-week" style="color:#7c3aed;font-size:0.9rem;"></i>
+                </div>
+                <div>
+                    <div class="fw-bold" style="color:#1a1a2e;font-size:0.95rem;">Employee Period View</div>
+                    <div class="text-muted" style="font-size:0.75rem;">Generate a day, week or month attendance report for any employee</div>
+                </div>
+            </div>
+            <button class="btn btn-sm" type="button" onclick="togglePeriodPanel()"
+                    id="pvToggleBtn" style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-size:0.8rem;font-weight:600;">
+                <i class="fas fa-chevron-down" id="pvChevron"></i>
+            </button>
+        </div>
+        <!-- Panel Controls -->
+        <div id="pvControls" class="px-4 py-3" style="background:#fafbff;border-bottom:1px solid #e9ecef;">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-4">
+                    <label class="form-label text-muted small mb-1"><i class="fas fa-user me-1"></i>Select Employee</label>
+                    <select class="form-select form-select-sm" id="pvEmployee">
+                        <option value="">-- Choose Employee --</option>
+                        {% for emp in employees %}
+                        <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label text-muted small mb-1"><i class="fas fa-layer-group me-1"></i>Period Type</label>
+                    <div class="d-flex period-toggle gap-1" style="background:#f1f5f9;padding:4px;border-radius:10px;">
+                        <button type="button" class="btn flex-fill active" id="pvBtnDay" onclick="setPeriod('day')">Day</button>
+                        <button type="button" class="btn flex-fill" id="pvBtnWeek" onclick="setPeriod('week')">Week</button>
+                        <button type="button" class="btn flex-fill" id="pvBtnMonth" onclick="setPeriod('month')">Month</button>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label text-muted small mb-1" id="pvDateLabel"><i class="fas fa-calendar-alt me-1"></i>Select Date</label>
+                    <input type="date" class="form-control form-control-sm" id="pvDateInput" value="">
+                    <input type="month" class="form-control form-control-sm d-none" id="pvMonthInput" value="">
+                </div>
+                <div class="col-12 col-md-2">
+                    <button type="button" class="btn btn-primary btn-sm w-100" onclick="generatePeriodView()"
+                            style="background:#6366f1;border-color:#6366f1;border-radius:8px;font-weight:600;">
+                        <i class="fas fa-chart-bar me-1"></i> Generate
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Results Area -->
+        <div id="pvResults" class="px-0 py-0" style="display:none;"></div>
+        <div id="pvLoading" style="display:none;" class="text-center py-5">
+            <div class="spinner-border text-primary" style="width:2rem;height:2rem;"></div>
+            <div class="text-muted small mt-2">Loading attendance data...</div>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar mb-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-12 col-md-3">
+                <label class="form-label text-muted small mb-1">Search Employee</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted fa-xs"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-1" name="search"
+                           placeholder="Name or Employee ID..." value="{{ search }}">
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label text-muted small mb-1">From Date</label>
+                <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label text-muted small mb-1">To Date</label>
+                <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label text-muted small mb-1">Department</label>
+                <select class="form-select form-select-sm" name="department">
+                    <option value="">All Departments</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.id }}" {% if department == dept.id|stringformat:"s" %}selected{% endif %}>{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label text-muted small mb-1">Status</label>
+                <select class="form-select form-select-sm" name="status">
+                    <option value="">All Statuses</option>
+                    {% for val, label in status_choices %}
+                    <option value="{{ val }}" {% if sel_status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-1 d-flex gap-1">
+                <button class="btn btn-success btn-sm flex-grow-1" type="submit">
+                    <i class="fas fa-search"></i>
+                </button>
+                <a href="{% url 'hrm:attendance_report' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-times"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Table -->
+    <div class="report-card">
+        <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted small">Show</span>
+                <select class="form-select form-select-sm per-page-select" onchange="changePerPage(this.value)">
+                    <option value="10"  {% if per_page == 10  %}selected{% endif %}>10</option>
+                    <option value="25"  {% if per_page == 25  %}selected{% endif %}>25</option>
+                    <option value="50"  {% if per_page == 50  %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                </select>
+                <span class="text-muted small">entries</span>
+            </div>
+            <span class="text-muted small">
+                {% if records.paginator.count > 0 %}
+                Showing {{ records.start_index }}&ndash;{{ records.end_index }} of {{ records.paginator.count }} records
+                {% else %}
+                No records found
+                {% endif %}
+            </span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Employee</th>
+                        <th>Department</th>
+                        <th>Date</th>
+                        <th>Check In</th>
+                        <th>Check Out</th>
+                        <th>Working Hrs</th>
+                        <th>OT Hrs</th>
+                        <th>Shift</th>
+                        <th>Status</th>
+                        <th>Flags</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rec in records %}
+                    <tr class="att-row-clickable"
+                        data-emp-name="{{ rec.employee.full_name }}"
+                        data-emp-id="{{ rec.employee.employee_id }}"
+                        data-dept="{{ rec.employee.department.name|default:'—' }}"
+                        data-date="{{ rec.date|date:'d M Y' }}"
+                        data-checkin="{% if rec.clock_in %}{{ rec.clock_in|time:'H:i' }}{% else %}—{% endif %}"
+                        data-checkout="{% if rec.clock_out %}{{ rec.clock_out|time:'H:i' }}{% else %}—{% endif %}"
+                        data-working-hrs="{% if rec.working_hours %}{{ rec.working_hours }}h{% else %}—{% endif %}"
+                        data-ot-hrs="{% if rec.overtime_hours and rec.overtime_hours > 0 %}{{ rec.overtime_hours }}h{% else %}—{% endif %}"
+                        data-shift="{{ rec.shift.name|default:'—' }}"
+                        data-status="{{ rec.status }}"
+                        data-status-display="{{ rec.get_status_display }}"
+                        data-is-late="{% if rec.is_late_arrival %}1{% else %}0{% endif %}"
+                        data-is-early="{% if rec.is_early_departure %}1{% else %}0{% endif %}"
+                        data-is-holiday="{% if rec.is_holiday %}1{% else %}0{% endif %}">
+                        <td class="text-muted">{{ forloop.counter|add:records.start_index|add:"-1" }}</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="emp-avatar">{{ rec.employee.full_name|slice:":1"|upper }}</div>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:0.87rem;">{{ rec.employee.full_name }}</div>
+                                    <div class="text-muted" style="font-size:0.75rem;">{{ rec.employee.employee_id }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{ rec.employee.department.name|default:"—" }}</td>
+                        <td>{{ rec.date|date:"d M Y" }}</td>
+                        <td>{% if rec.clock_in %}{{ rec.clock_in|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{% if rec.clock_out %}{{ rec.clock_out|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>
+                            {% if rec.working_hours %}
+                            <span class="fw-semibold">{{ rec.working_hours }}h</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if rec.overtime_hours and rec.overtime_hours > 0 %}
+                            <span style="color:#d97706; font-weight:600;">{{ rec.overtime_hours }}h</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td>{{ rec.shift.name|default:"—" }}</td>
+                        <td>
+                            <span class="badge-status badge-{{ rec.status }}">
+                                {% if rec.status == 'present' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
+                                {% if rec.status == 'absent' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
+                                {% if rec.status == 'late' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
+                                {% if rec.status == 'half_day' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
+                                {% if rec.status == 'on_leave' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
+                                {{ rec.get_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if rec.is_late_arrival %}
+                            <span class="badge bg-warning text-dark" style="font-size:0.68rem;" title="Late Arrival"><i class="fas fa-chevron-right fa-xs"></i></span>
+                            {% endif %}
+                            {% if rec.is_early_departure %}
+                            <span class="badge bg-info text-dark" style="font-size:0.68rem;" title="Early Departure"><i class="fas fa-chevron-left fa-xs"></i></span>
+                            {% endif %}
+                            {% if rec.is_holiday %}
+                            <span class="badge bg-secondary" style="font-size:0.68rem;" title="Holiday"><i class="fas fa-star fa-xs"></i></span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="11" class="text-center py-5">
+                            <div style="color:#94a3b8;">
+                                <i class="fas fa-chart-bar" style="font-size:2.5rem; opacity:0.3;"></i>
+                                <div class="mt-2 fw-semibold">No attendance records found</div>
+                                <div class="text-muted small">Try adjusting your filters</div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if records.has_other_pages %}
+        <div class="d-flex justify-content-center py-3 border-top">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if records.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ records.previous_page_number }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}&department={{ department }}&status={{ sel_status }}&per_page={{ per_page }}">
+                            <i class="fas fa-chevron-left fa-xs"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% for num in records.paginator.page_range %}
+                    {% if records.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num > records.number|add:"-4" and num < records.number|add:"4" %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}&department={{ department }}&status={{ sel_status }}&per_page={{ per_page }}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+                    {% if records.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ records.next_page_number }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}&department={{ department }}&status={{ sel_status }}&per_page={{ per_page }}">
+                            <i class="fas fa-chevron-right fa-xs"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- Attendance Detail Modal -->
+<div class="modal fade" id="attDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:520px;">
+    <div class="modal-content" style="border:none;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.18);">
+      <!-- Gradient Header -->
+      <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:1.4rem 1.5rem 0;position:relative;">
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" style="position:absolute;top:1rem;right:1rem;opacity:0.85;"></button>
+        <div class="d-flex align-items-center gap-3 pb-3">
+          <div id="attModalAvatar" style="width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,0.22);border:3px solid rgba(255,255,255,0.55);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;flex-shrink:0;"></div>
+          <div class="flex-fill">
+            <div id="attModalName" style="color:#fff;font-size:1.05rem;font-weight:700;line-height:1.2;"></div>
+            <div id="attModalEmpId" style="color:rgba(255,255,255,0.78);font-size:0.78rem;margin-top:2px;"></div>
+            <div id="attModalDept" style="color:rgba(255,255,255,0.65);font-size:0.75rem;margin-top:2px;"></div>
+          </div>
+          <div>
+            <span id="attModalStatusBadge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 13px;border-radius:20px;font-size:0.78rem;font-weight:700;"></span>
+          </div>
+        </div>
+      </div>
+      <!-- Body -->
+      <div class="modal-body p-0">
+        <!-- Key Metrics Row -->
+        <div class="d-flex border-bottom" style="background:#f8fafc;">
+          <div class="flex-fill text-center py-3 border-end">
+            <div class="detail-label"><i class="fas fa-sign-in-alt me-1"></i>Check In</div>
+            <div id="attModalCheckin" style="font-size:1.15rem;font-weight:700;color:#1e293b;margin-top:3px;"></div>
+          </div>
+          <div class="flex-fill text-center py-3 border-end">
+            <div class="detail-label"><i class="fas fa-sign-out-alt me-1"></i>Check Out</div>
+            <div id="attModalCheckout" style="font-size:1.15rem;font-weight:700;color:#1e293b;margin-top:3px;"></div>
+          </div>
+          <div class="flex-fill text-center py-3 border-end">
+            <div class="detail-label"><i class="fas fa-hourglass-half me-1"></i>Working</div>
+            <div id="attModalWorkingHrs" style="font-size:1.15rem;font-weight:700;color:#6366f1;margin-top:3px;"></div>
+          </div>
+          <div class="flex-fill text-center py-3">
+            <div class="detail-label"><i class="fas fa-bolt me-1"></i>Overtime</div>
+            <div id="attModalOtHrs" style="font-size:1.15rem;font-weight:700;color:#d97706;margin-top:3px;"></div>
+          </div>
+        </div>
+        <!-- Details Grid -->
+        <div class="p-4">
+          <div class="row g-3">
+            <div class="col-6">
+              <div class="detail-card">
+                <div class="detail-label"><i class="fas fa-calendar-day me-1"></i>Date</div>
+                <div id="attModalDate" class="detail-value"></div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="detail-card">
+                <div class="detail-label"><i class="fas fa-business-time me-1"></i>Shift</div>
+                <div id="attModalShift" class="detail-value"></div>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="detail-card">
+                <div class="detail-label mb-2"><i class="fas fa-flag me-1"></i>Flags</div>
+                <div id="attModalFlags"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0 pb-3 px-4 justify-content-end">
+        <button type="button" class="btn btn-sm px-4" data-bs-dismiss="modal"
+                style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-weight:600;">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const PV_API_URL = "{% url 'hrm:employee_period_attendance' %}";
+let pvCurrentPeriod = 'day';
+
+// ── Toggle panel collapse ────────────────────────────────────────────────────
+function togglePeriodPanel() {
+    const ctrl = document.getElementById('pvControls');
+    const res  = document.getElementById('pvResults');
+    const load = document.getElementById('pvLoading');
+    const chev = document.getElementById('pvChevron');
+    const isHidden = ctrl.style.display === 'none';
+    ctrl.style.display = isHidden ? '' : 'none';
+    if (!isHidden) { res.style.display = 'none'; load.style.display = 'none'; }
+    chev.className = isHidden ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+}
+
+// ── Period toggle ─────────────────────────────────────────────────────────────
+function setPeriod(p) {
+    pvCurrentPeriod = p;
+    ['day','week','month'].forEach(x => {
+        document.getElementById('pvBtn' + x.charAt(0).toUpperCase() + x.slice(1)).classList.toggle('active', x === p);
+    });
+    const dateInp  = document.getElementById('pvDateInput');
+    const monthInp = document.getElementById('pvMonthInput');
+    const lbl      = document.getElementById('pvDateLabel');
+    if (p === 'month') {
+        dateInp.classList.add('d-none');
+        monthInp.classList.remove('d-none');
+        lbl.innerHTML = '<i class="fas fa-calendar-alt me-1"></i>Select Month';
+    } else {
+        dateInp.classList.remove('d-none');
+        monthInp.classList.add('d-none');
+        lbl.innerHTML = p === 'week'
+            ? '<i class="fas fa-calendar-alt me-1"></i>Any Date in Week'
+            : '<i class="fas fa-calendar-alt me-1"></i>Select Date';
+    }
+}
+
+// ── Initialise date inputs to today / current month ───────────────────────────
+(function initDates() {
+    const today = new Date();
+    const ymd = today.toISOString().slice(0,10);
+    const ym  = today.toISOString().slice(0,7);
+    document.getElementById('pvDateInput').value  = ymd;
+    document.getElementById('pvMonthInput').value = ym;
+})();
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+function generatePeriodView() {
+    const empId = document.getElementById('pvEmployee').value;
+    if (!empId) { alert('Please select an employee.'); return; }
+    const period = pvCurrentPeriod;
+    let refDate;
+    if (period === 'month') {
+        const mv = document.getElementById('pvMonthInput').value;
+        refDate = mv ? mv + '-01' : new Date().toISOString().slice(0,10);
+    } else {
+        refDate = document.getElementById('pvDateInput').value || new Date().toISOString().slice(0,10);
+    }
+    document.getElementById('pvResults').style.display = 'none';
+    document.getElementById('pvLoading').style.display  = 'block';
+    fetch(`${PV_API_URL}?employee_id=${empId}&period=${period}&ref_date=${refDate}`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('pvLoading').style.display = 'none';
+            renderPeriodView(data);
+        })
+        .catch(() => {
+            document.getElementById('pvLoading').style.display = 'none';
+            document.getElementById('pvResults').innerHTML =
+                '<div class="text-center py-4 text-danger"><i class="fas fa-exclamation-circle me-1"></i>Failed to load data.</div>';
+            document.getElementById('pvResults').style.display = 'block';
+        });
+}
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+const STATUS_COLORS = {
+    present:  { bg:'#d1fae5', color:'#065f46', dot:'#16a34a', label:'Present' },
+    absent:   { bg:'#fee2e2', color:'#991b1b', dot:'#ef4444', label:'Absent'  },
+    late:     { bg:'#fef3c7', color:'#92400e', dot:'#f59e0b', label:'Late'    },
+    half_day: { bg:'#dbeafe', color:'#1e3a8a', dot:'#3b82f6', label:'Half Day'},
+    on_leave: { bg:'#ede9fe', color:'#4c1d95', dot:'#8b5cf6', label:'On Leave'},
+};
+function statusBadge(status, label) {
+    const s = STATUS_COLORS[status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8' };
+    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;background:${s.bg};color:${s.color};">
+        <span style="width:6px;height:6px;border-radius:50%;background:${s.dot};flex-shrink:0;"></span>${label || s.label}
+    </span>`;
+}
+
+// ── Render dispatcher ─────────────────────────────────────────────────────────
+function renderPeriodView(data) {
+    let html = renderEmpHeader(data) + renderSummaryBar(data);
+    if (data.period === 'day')   html += renderDayView(data);
+    if (data.period === 'week')  html += renderWeekView(data);
+    if (data.period === 'month') html += renderMonthView(data);
+    const el = document.getElementById('pvResults');
+    el.innerHTML = html;
+    el.style.display = 'block';
+}
+
+// ── Employee header ───────────────────────────────────────────────────────────
+function renderEmpHeader(data) {
+    const e = data.employee;
+    const ini = (e.full_name || '?').charAt(0).toUpperCase();
+    return `
+    <div class="pv-emp-header d-flex align-items-center gap-3">
+        <div class="pv-emp-avatar">${ini}</div>
+        <div class="flex-fill">
+            <div style="color:#fff;font-size:1rem;font-weight:700;">${e.full_name}</div>
+            <div style="color:rgba(255,255,255,0.75);font-size:0.78rem;">${e.employee_id} &nbsp;·&nbsp; ${e.department} &nbsp;·&nbsp; ${e.designation}</div>
+        </div>
+        <div class="text-end">
+            <div style="color:rgba(255,255,255,0.65);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">${data.period.charAt(0).toUpperCase()+data.period.slice(1)} View</div>
+            <div style="color:#fff;font-size:0.83rem;font-weight:600;margin-top:2px;">${data.date_from_display}${data.period!=='day' ? ' &ndash; '+data.date_to_display : ''}</div>
+        </div>
+    </div>`;
+}
+
+// ── Summary bar ───────────────────────────────────────────────────────────────
+function renderSummaryBar(data) {
+    const s = data.summary;
+    return `
+    <div class="pv-summary-bar">
+        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#16a34a;">${s.present}</div><div class="pv-sum-lbl">Present</div></div>
+        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#ef4444;">${s.absent}</div><div class="pv-sum-lbl">Absent</div></div>
+        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#f59e0b;">${s.late}</div><div class="pv-sum-lbl">Late</div></div>
+        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#3b82f6;">${s.half_day}</div><div class="pv-sum-lbl">Half Day</div></div>
+        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#8b5cf6;">${s.on_leave}</div><div class="pv-sum-lbl">On Leave</div></div>
+        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#6366f1;">${s.total_working_hours}h</div><div class="pv-sum-lbl">Working Hrs</div></div>
+        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#d97706;">${s.total_overtime_hours}h</div><div class="pv-sum-lbl">Overtime Hrs</div></div>
+        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#475569;">${s.total}</div><div class="pv-sum-lbl">Total Days</div></div>
+    </div>`;
+}
+
+// ── Day view ──────────────────────────────────────────────────────────────────
+function renderDayView(data) {
+    const rec = data.records[0];
+    if (!rec) return `<div class="p-4 text-center text-muted"><i class="fas fa-calendar-times mb-2" style="font-size:2rem;opacity:0.3;display:block;"></i>No attendance record for this day.</div>`;
+    const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#64748b' };
+    let flags = '';
+    if (rec.is_late_arrival)   flags += `<span class="badge bg-warning text-dark me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-chevron-right fa-xs me-1"></i>Late Arrival</span>`;
+    if (rec.is_early_departure)flags += `<span class="badge bg-info text-dark me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-chevron-left fa-xs me-1"></i>Early Departure</span>`;
+    if (rec.is_holiday)        flags += `<span class="badge bg-secondary me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>`;
+    return `
+    <div class="p-4">
+        <div class="pv-day-card">
+            <div style="background:${sc.bg};padding:1.2rem 1.5rem;border-bottom:1px solid #e9ecef;">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div>
+                        <div style="font-size:1.05rem;font-weight:700;color:#1e293b;">${rec.day_name}, ${rec.date_display}</div>
+                        <div style="font-size:0.8rem;color:#64748b;margin-top:2px;">${rec.shift || 'No Shift Assigned'}</div>
+                    </div>
+                    ${statusBadge(rec.status, rec.status_display)}
+                </div>
+            </div>
+            <div class="d-flex flex-wrap">
+                <div class="pv-day-metric">
+                    <div class="detail-label"><i class="fas fa-sign-in-alt me-1"></i>Check In</div>
+                    <div style="font-size:1.4rem;font-weight:700;color:#1e293b;margin-top:4px;">${rec.clock_in || '—'}</div>
+                </div>
+                <div class="pv-day-metric">
+                    <div class="detail-label"><i class="fas fa-sign-out-alt me-1"></i>Check Out</div>
+                    <div style="font-size:1.4rem;font-weight:700;color:#1e293b;margin-top:4px;">${rec.clock_out || '—'}</div>
+                </div>
+                <div class="pv-day-metric">
+                    <div class="detail-label"><i class="fas fa-hourglass-half me-1"></i>Working Hrs</div>
+                    <div style="font-size:1.4rem;font-weight:700;color:#6366f1;margin-top:4px;">${rec.working_hours ? rec.working_hours + 'h' : '—'}</div>
+                </div>
+                <div class="pv-day-metric" style="border-right:none;">
+                    <div class="detail-label"><i class="fas fa-bolt me-1"></i>Overtime Hrs</div>
+                    <div style="font-size:1.4rem;font-weight:700;color:#d97706;margin-top:4px;">${rec.overtime_hours ? rec.overtime_hours + 'h' : '—'}</div>
+                </div>
+            </div>
+            ${flags || rec.notes ? `<div class="px-4 py-3 border-top" style="background:#f8fafc;">
+                ${flags ? `<div class="mb-2">${flags}</div>` : ''}
+                ${rec.notes ? `<div style="font-size:0.83rem;color:#475569;"><i class="fas fa-sticky-note me-1 text-warning"></i>${rec.notes}</div>` : ''}
+            </div>` : ''}
+        </div>
+    </div>`;
+}
+
+// ── Week view ─────────────────────────────────────────────────────────────────
+function renderWeekView(data) {
+    const byDate = {};
+    data.records.forEach(r => { byDate[r.date] = r; });
+    const start = new Date(data.date_from);
+    let cards = '';
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(start); d.setDate(start.getDate() + i);
+        const iso = d.toISOString().slice(0,10);
+        const rec = byDate[iso];
+        const today = new Date().toISOString().slice(0,10);
+        const isTd = iso === today;
+        const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+        if (rec) {
+            const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.bg};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${rec.status_display}</span>
+                <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
+                <div style="font-size:0.68rem;font-weight:700;color:${sc.color};margin-top:2px;">${rec.working_hours ? rec.working_hours + 'h' : ''}</div>
+            </div>`;
+        } else {
+            cards += `<div class="pv-week-day no-record${isTd ? ' today' : ''}">
+                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-num">${d.getDate()}</div>
+                <span class="day-status" style="background:#f1f5f9;color:#94a3b8;">—</span>
+            </div>`;
+        }
+    }
+    return `<div class="p-4"><div class="pv-week-grid">${cards}</div></div>`;
+}
+
+// ── Month view ────────────────────────────────────────────────────────────────
+function renderMonthView(data) {
+    const byDate = {};
+    data.records.forEach(r => { byDate[r.date] = r; });
+    const year      = data.year;
+    const month     = data.month; // 1-indexed
+    const totalDays = data.month_days;
+    const firstDay  = data.month_first_weekday; // 0=Mon
+    const today     = new Date().toISOString().slice(0,10);
+
+    const dayHdrs = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d =>
+        `<div class="pv-cal-head">${d}</div>`).join('');
+
+    // Build month nav data attribute so prev/next can re-query
+    const prevMonth = month === 1 ? `${year-1}-12` : `${year}-${String(month-1).padStart(2,'0')}`;
+    const nextMonth = month === 12 ? `${year+1}-01` : `${year}-${String(month+1).padStart(2,'0')}`;
+
+    let cells = '';
+    for (let i = 0; i < firstDay; i++) cells += '<div class="pv-cal-cell empty"></div>';
+
+    for (let d = 1; d <= totalDays; d++) {
+        const iso = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const rec = byDate[iso];
+        const isTd = iso === today;
+        if (rec) {
+            const ci  = rec.clock_in  || '–';
+            const co  = rec.clock_out || '–';
+            const wh  = rec.working_hours ? rec.working_hours + 'h' : '';
+            const lbl = (rec.status_display || rec.status).replace('_',' ');
+            // Store all record fields as data attributes for the click popup
+            cells += `<div class="pv-cal-cell has-record pv-status-${rec.status}${isTd?' today':''}"
+                          data-date="${iso}" data-status="${rec.status}" data-status-display="${lbl}"
+                          data-clock-in="${ci}" data-clock-out="${co}"
+                          data-working-hours="${rec.working_hours||''}"
+                          data-overtime="${rec.overtime_hours||''}"
+                          data-shift="${rec.shift||''}"
+                          data-is-late="${rec.is_late_arrival?'1':'0'}"
+                          data-is-early="${rec.is_early_departure?'1':'0'}"
+                          data-is-holiday="${rec.is_holiday?'1':'0'}"
+                          data-notes="${(rec.notes||'').replace(/"/g,'&quot;')}"
+                          onclick="pvShowCalPopup(event,this)">
+                <span class="cal-num">${d}</span>
+                <span class="cal-status-chip cal-chip-${rec.status}">${lbl}</span>
+                <span class="cal-time"><i class="fas fa-sign-in-alt fa-xs me-1"></i>${ci}</span>
+                ${wh ? `<span class="cal-hours">${wh}</span>` : ''}
+            </div>`;
+        } else {
+            cells += `<div class="pv-cal-cell pv-status-no_record${isTd?' today':''}">
+                <span class="cal-num">${d}</span>
+                <span class="cal-time" style="font-size:0.58rem;">No record</span>
+            </div>`;
+        }
+    }
+
+    // Legend
+    const legend = Object.entries(STATUS_COLORS).map(([k,v]) =>
+        `<span class="d-inline-flex align-items-center gap-1 me-3 mb-1" style="font-size:0.72rem;">
+            <span style="width:10px;height:10px;border-radius:3px;background:${v.bg};border:1px solid ${v.dot};flex-shrink:0;display:inline-block;"></span>
+            <span style="color:#475569;font-weight:600;">${v.label}</span>
+        </span>`).join('');
+
+    return `
+    <div class="pv-cal-wrap">
+        <div class="pv-cal-nav">
+            <button class="pv-cal-nav-btn" onclick="pvNavMonth('${prevMonth}')" title="Previous month">
+                <i class="fas fa-chevron-left fa-xs"></i>
+            </button>
+            <span style="font-weight:700;color:#1e293b;font-size:0.95rem;">
+                <i class="fas fa-calendar-alt me-1" style="color:#6366f1;"></i>${data.month_name} ${year}
+            </span>
+            <button class="pv-cal-nav-btn" onclick="pvNavMonth('${nextMonth}')" title="Next month">
+                <i class="fas fa-chevron-right fa-xs"></i>
+            </button>
+        </div>
+        <div class="pv-cal-grid mb-3">${dayHdrs}${cells}</div>
+        <div class="d-flex flex-wrap align-items-center gap-0 pt-2 border-top">${legend}</div>
+    </div>`;
+}
+
+// ── Calendar month navigation ─────────────────────────────────────────────────
+function pvNavMonth(ym) {
+    document.getElementById('pvMonthInput').value = ym;
+    generatePeriodView();
+}
+
+// ── Calendar cell click = floating popup ─────────────────────────────────────
+function pvShowCalPopup(evt, el) {
+    evt.stopPropagation();
+    const d     = el.dataset;
+    const sc    = STATUS_COLORS[d.status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8', label: d.status };
+    let flags = '';
+    if (d.isLate    === '1') flags += `<span class="badge me-1 mb-1" style="background:#fef3c7;color:#92400e;font-size:0.7rem;"><i class="fas fa-clock fa-xs me-1"></i>Late Arrival</span>`;
+    if (d.isEarly   === '1') flags += `<span class="badge me-1 mb-1" style="background:#dbeafe;color:#1e3a8a;font-size:0.7rem;"><i class="fas fa-door-open fa-xs me-1"></i>Early Departure</span>`;
+    if (d.isHoliday === '1') flags += `<span class="badge me-1 mb-1" style="background:#e0e7ff;color:#3730a3;font-size:0.7rem;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>`;
+
+    let popup = document.getElementById('pvCalDayPopup');
+    if (!popup) {
+        popup = document.createElement('div');
+        popup.id = 'pvCalDayPopup';
+        document.body.appendChild(popup);
+        document.addEventListener('click', function(e) {
+            if (!popup.contains(e.target)) popup.style.display = 'none';
+        });
+    }
+    popup.innerHTML = `
+    <div style="background:linear-gradient(135deg,${sc.dot},${sc.bg});border-radius:11px 11px 0 0;padding:10px 14px;display:flex;align-items:center;gap:10px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;">
+            <i class="fas fa-calendar-day" style="color:#fff;font-size:0.85rem;"></i>
+        </div>
+        <div>
+            <div style="font-weight:700;font-size:0.88rem;color:#fff;">${d.date}</div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);">${d.statusDisplay}</div>
+        </div>
+        <button onclick="document.getElementById('pvCalDayPopup').style.display='none'"
+                style="margin-left:auto;background:rgba(255,255,255,0.25);border:none;border-radius:6px;
+                       width:22px;height:22px;cursor:pointer;color:#fff;font-size:0.7rem;
+                       display:flex;align-items:center;justify-content:center;">✕</button>
+    </div>
+    <div style="padding:12px 14px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+            <div style="background:#f8fafc;border-radius:8px;padding:7px 10px;border:1px solid #f1f5f9;">
+                <div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Check In</div>
+                <div style="font-weight:700;color:#1e293b;font-size:0.85rem;">${d.clockIn||'–'}</div>
+            </div>
+            <div style="background:#f8fafc;border-radius:8px;padding:7px 10px;border:1px solid #f1f5f9;">
+                <div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Check Out</div>
+                <div style="font-weight:700;color:#1e293b;font-size:0.85rem;">${d.clockOut||'–'}</div>
+            </div>
+            <div style="background:#f8fafc;border-radius:8px;padding:7px 10px;border:1px solid #f1f5f9;">
+                <div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Working Hrs</div>
+                <div style="font-weight:700;color:#1e293b;font-size:0.85rem;">${d.workingHours||'–'}</div>
+            </div>
+            <div style="background:#f8fafc;border-radius:8px;padding:7px 10px;border:1px solid #f1f5f9;">
+                <div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Overtime</div>
+                <div style="font-weight:700;color:#1e293b;font-size:0.85rem;">${d.overtime||'–'}</div>
+            </div>
+        </div>
+        ${d.shift ? `<div style="font-size:0.72rem;color:#475569;margin-bottom:6px;"><i class="fas fa-layer-group fa-xs me-1 text-indigo-400"></i><b>Shift:</b> ${d.shift}</div>` : ''}
+        ${flags ? `<div class="d-flex flex-wrap">${flags}</div>` : ''}
+        ${d.notes ? `<div style="font-size:0.72rem;color:#64748b;margin-top:4px;padding:6px 8px;background:#f8fafc;border-radius:6px;border-left:3px solid #c7d2fe;"><i class="fas fa-sticky-note fa-xs me-1 text-purple-400"></i>${d.notes}</div>` : ''}
+    </div>`;
+
+    // Position popup near the clicked cell
+    const rect = el.getBoundingClientRect();
+    popup.style.display = 'block';
+    const pw = 240;
+    let left = rect.right + 8;
+    if (left + pw > window.innerWidth - 12) left = rect.left - pw - 8;
+    let top = rect.top + window.scrollY;
+    popup.style.left = Math.max(8, left) + 'px';
+    popup.style.top  = top + 'px';
+    popup.style.minWidth = pw + 'px';
+}
+
+// ── changePerPage (existing) ──────────────────────────────────────────────────
+function changePerPage(val) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('per_page', val);
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+}
+
+// ── Employee summary panel toggle ─────────────────────────────────────────────
+function toggleEmpSummary() {
+    const body     = document.getElementById('empSummaryBody');
+    const chevron  = document.getElementById('empSummaryChevron');
+    const open     = body.style.display !== 'none';
+    body.style.display   = open ? 'none' : 'block';
+    chevron.style.transform = open ? '' : 'rotate(180deg)';
+}
+
+// ── Row-click detail modal ────────────────────────────────────────────────────
+document.querySelectorAll('.att-row-clickable').forEach(function(row) {
+    row.addEventListener('click', function() {
+        const d = this.dataset;
+        document.getElementById('attModalAvatar').textContent = (d.empName || '?').charAt(0).toUpperCase();
+        document.getElementById('attModalName').textContent = d.empName;
+        document.getElementById('attModalEmpId').textContent = d.empId;
+        document.getElementById('attModalDept').textContent = '\uD83D\uDCCD ' + d.dept;
+        const statusEl = document.getElementById('attModalStatusBadge');
+        const sm = {
+            present:  ['#d1fae5','#065f46'],
+            absent:   ['#fee2e2','#991b1b'],
+            late:     ['#fef3c7','#92400e'],
+            half_day: ['#dbeafe','#1e3a8a'],
+            on_leave: ['#ede9fe','#4c1d95']
+        };
+        const sc = sm[d.status] || ['#e2e8f0','#475569'];
+        statusEl.style.background = sc[0];
+        statusEl.style.color = sc[1];
+        statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:0.45rem;vertical-align:middle;margin-right:4px;"></i>' + d.statusDisplay;
+        document.getElementById('attModalCheckin').textContent = d.checkin;
+        document.getElementById('attModalCheckout').textContent = d.checkout;
+        document.getElementById('attModalWorkingHrs').textContent = d.workingHrs;
+        document.getElementById('attModalOtHrs').textContent = d.otHrs;
+        document.getElementById('attModalDate').textContent = d.date;
+        document.getElementById('attModalShift').textContent = d.shift;
+        let flags = '';
+        if (d.isLate === '1') flags += '<span class="badge bg-warning text-dark me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-chevron-right fa-xs me-1"></i>Late Arrival</span>';
+        if (d.isEarly === '1') flags += '<span class="badge bg-info text-dark me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-chevron-left fa-xs me-1"></i>Early Departure</span>';
+        if (d.isHoliday === '1') flags += '<span class="badge bg-secondary me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>';
+        document.getElementById('attModalFlags').innerHTML = flags || '<span class="text-muted" style="font-size:0.83rem;"><i class="fas fa-check-circle me-1 text-success"></i>No flags recorded</span>';
+        new bootstrap.Modal(document.getElementById('attDetailModal')).show();
+    });
+});
+</script>
+{% endblock %}
+

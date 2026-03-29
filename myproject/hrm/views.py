@@ -4959,4 +4959,348 @@ def payroll_calculation(request, pk):
     return render(request, 'hrm/payroll_calculation.html', context)
 
 
+@login_required
+def attendance_report(request):
+    from .models import AttendanceRecord, Employee, Department
+    from django.core.paginator import Paginator
+    from django.db.models import Q, Count, Sum
+    from django.http import HttpResponse
+    import csv
+    from datetime import datetime
+
+    # ── Filters from GET ────────────────────────────────────────────────────
+    search     = request.GET.get('search', '').strip()
+    date_from  = request.GET.get('date_from', '')
+    date_to    = request.GET.get('date_to', '')
+    department = request.GET.get('department', '')
+    status     = request.GET.get('status', '')
+    per_page   = request.GET.get('per_page', 25)
+    export     = request.GET.get('export', '')
+
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 25, 50, 100]:
+            per_page = 25
+    except (ValueError, TypeError):
+        per_page = 25
+
+    qs = AttendanceRecord.objects.select_related(
+        'employee', 'employee__department', 'employee__branch', 'shift'
+    ).order_by('-date', 'employee__full_name')
+
+    if search:
+        qs = qs.filter(
+            Q(employee__full_name__icontains=search) |
+            Q(employee__employee_id__icontains=search)
+        )
+    if date_from:
+        try:
+            qs = qs.filter(date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            qs = qs.filter(date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    if department:
+        qs = qs.filter(employee__department_id=department)
+    if status:
+        qs = qs.filter(status=status)
+
+    # ── Aggregate stats over the filtered queryset ───────────────────────────
+    stats = qs.aggregate(
+        total=Count('id'),
+        present=Count('id', filter=Q(status='present')),
+        absent=Count('id', filter=Q(status='absent')),
+        late=Count('id', filter=Q(status='late')),
+        half_day=Count('id', filter=Q(status='half_day')),
+        on_leave=Count('id', filter=Q(status='on_leave')),
+        total_working_hours=Sum('working_hours'),
+        total_overtime=Sum('overtime_hours'),
+    )
+
+    # ── Per-employee summary ─────────────────────────────────────────────────
+    _emp_qs = (
+        qs.values(
+            'employee__id',
+            'employee__employee_id',
+            'employee__full_name',
+            'employee__department__name',
+        )
+        .annotate(
+            total=Count('id'),
+            present=Count('id', filter=Q(status='present')),
+            absent=Count('id', filter=Q(status='absent')),
+            late=Count('id', filter=Q(status='late')),
+            half_day=Count('id', filter=Q(status='half_day')),
+            on_leave=Count('id', filter=Q(status='on_leave')),
+            total_working_hours=Sum('working_hours'),
+        )
+        .order_by('employee__full_name')
+    )
+    emp_summary = []
+    for e in _emp_qs:
+        pct = round(e['present'] * 100 / e['total']) if e['total'] > 0 else 0
+        e['pct'] = pct
+        e['pct_color'] = '#16a34a' if pct >= 90 else ('#d97706' if pct >= 70 else '#e11d48')
+        emp_summary.append(e)
+
+    # ── CSV export ───────────────────────────────────────────────────────────
+    if export == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="attendance_report.csv"'
+        writer = csv.writer(response)
+        writer.writerow([
+            'Employee ID', 'Employee Name', 'Department', 'Date',
+            'Check In', 'Check Out', 'Working Hours', 'Overtime Hours', 'Status',
+        ])
+        for rec in qs.iterator():
+            writer.writerow([
+                rec.employee.employee_id,
+                rec.employee.full_name,
+                rec.employee.department.name if rec.employee.department else '',
+                rec.date.strftime('%Y-%m-%d'),
+                rec.clock_in.strftime('%H:%M') if rec.clock_in else '',
+                rec.clock_out.strftime('%H:%M') if rec.clock_out else '',
+                rec.working_hours,
+                rec.overtime_hours,
+                rec.get_status_display(),
+            ])
+        return response
+
+    # ── Pagination ────────────────────────────────────────────────────────────
+    paginator = Paginator(qs, per_page)
+    page_num  = request.GET.get('page', 1)
+    records   = paginator.get_page(page_num)
+
+    departments = Department.objects.filter(status='active').order_by('name')
+    employees = Employee.objects.filter(employee_status='active').select_related('department').order_by('full_name')
+
+    context = {
+        'records':     records,
+        'stats':       stats,
+        'emp_summary': emp_summary,
+        'departments': departments,
+        'employees':   employees,
+        'search':      search,
+        'date_from':   date_from,
+        'date_to':     date_to,
+        'department':  department,
+        'sel_status':  status,
+        'per_page':    per_page,
+        'status_choices': AttendanceRecord.STATUS_CHOICES,
+    }
+    return render(request, 'hrm/attendance_report.html', context)
+
+
+@login_required
+def employee_period_attendance(request):
+    from .models import AttendanceRecord, Employee
+    from django.http import JsonResponse
+    from datetime import date, timedelta
+    import calendar
+
+    emp_id = request.GET.get('employee_id', '').strip()
+    period = request.GET.get('period', 'month')
+    ref_date_str = request.GET.get('ref_date', '')
+
+    if not emp_id:
+        return JsonResponse({'error': 'Employee ID required'}, status=400)
+    try:
+        employee = Employee.objects.select_related('department', 'designation').get(id=emp_id)
+    except Employee.DoesNotExist:
+        return JsonResponse({'error': 'Employee not found'}, status=404)
+
+    try:
+        ref_date = date.fromisoformat(ref_date_str) if ref_date_str else date.today()
+    except ValueError:
+        ref_date = date.today()
+
+    if period == 'day':
+        date_from = date_to = ref_date
+    elif period == 'week':
+        weekday = ref_date.weekday()
+        date_from = ref_date - timedelta(days=weekday)
+        date_to = date_from + timedelta(days=6)
+    else:
+        date_from = ref_date.replace(day=1)
+        _, last_day = calendar.monthrange(ref_date.year, ref_date.month)
+        date_to = ref_date.replace(day=last_day)
+
+    records_qs = AttendanceRecord.objects.filter(
+        employee=employee, date__gte=date_from, date__lte=date_to
+    ).select_related('shift').order_by('date')
+
+    records_data = []
+    for rec in records_qs:
+        records_data.append({
+            'date': rec.date.isoformat(),
+            'date_display': rec.date.strftime('%d %b %Y'),
+            'day_name': rec.date.strftime('%A'),
+            'day_short': rec.date.strftime('%a'),
+            'day_num': rec.date.day,
+            'clock_in': rec.clock_in.strftime('%H:%M') if rec.clock_in else None,
+            'clock_out': rec.clock_out.strftime('%H:%M') if rec.clock_out else None,
+            'working_hours': float(rec.working_hours) if rec.working_hours else 0,
+            'overtime_hours': float(rec.overtime_hours) if rec.overtime_hours else 0,
+            'status': rec.status,
+            'status_display': rec.get_status_display(),
+            'shift': rec.shift.name if rec.shift else None,
+            'is_late_arrival': rec.is_late_arrival,
+            'is_early_departure': rec.is_early_departure,
+            'is_holiday': rec.is_holiday,
+            'notes': rec.notes,
+        })
+
+    total_working = sum(r['working_hours'] for r in records_data)
+    total_ot = sum(r['overtime_hours'] for r in records_data)
+    sc = {}
+    for r in records_data:
+        sc[r['status']] = sc.get(r['status'], 0) + 1
+
+    _, month_days = calendar.monthrange(ref_date.year, ref_date.month) if period == 'month' else (None, None)
+
+    return JsonResponse({
+        'employee': {
+            'id': employee.id,
+            'employee_id': employee.employee_id,
+            'full_name': employee.full_name,
+            'department': employee.department.name if employee.department else '—',
+            'designation': employee.designation.name if employee.designation else '—',
+        },
+        'period': period,
+        'year': ref_date.year,
+        'month': ref_date.month,
+        'month_name': ref_date.strftime('%B'),
+        'date_from': date_from.isoformat(),
+        'date_to': date_to.isoformat(),
+        'date_from_display': date_from.strftime('%d %b %Y'),
+        'date_to_display': date_to.strftime('%d %b %Y'),
+        'month_first_weekday': date_from.weekday() if period == 'month' else None,
+        'month_days': month_days,
+        'records': records_data,
+        'records_by_date': {r['date']: r for r in records_data},
+        'summary': {
+            'total': len(records_data),
+            'present': sc.get('present', 0),
+            'absent': sc.get('absent', 0),
+            'late': sc.get('late', 0),
+            'half_day': sc.get('half_day', 0),
+            'on_leave': sc.get('on_leave', 0),
+            'total_working_hours': round(total_working, 2),
+            'total_overtime_hours': round(total_ot, 2),
+        },
+    })
+
+
+@login_required
+def leave_report(request):
+    from .models import LeaveRequest, LeaveType, Employee, Department
+    from django.core.paginator import Paginator
+    from django.db.models import Q, Count, Sum
+    from django.http import HttpResponse
+    import csv
+    from datetime import datetime
+
+    # ── Filters from GET ────────────────────────────────────────────────────
+    search     = request.GET.get('search', '').strip()
+    date_from  = request.GET.get('date_from', '')
+    date_to    = request.GET.get('date_to', '')
+    leave_type = request.GET.get('leave_type', '')
+    department = request.GET.get('department', '')
+    status     = request.GET.get('status', '')
+    per_page   = request.GET.get('per_page', 25)
+    export     = request.GET.get('export', '')
+
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 25, 50, 100]:
+            per_page = 25
+    except (ValueError, TypeError):
+        per_page = 25
+
+    qs = LeaveRequest.objects.select_related(
+        'employee', 'employee__department', 'leave_type', 'approved_by'
+    ).order_by('-created_at')
+
+    if search:
+        qs = qs.filter(
+            Q(employee__full_name__icontains=search) |
+            Q(employee__employee_id__icontains=search)
+        )
+    if date_from:
+        try:
+            qs = qs.filter(start_date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            qs = qs.filter(end_date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    if leave_type:
+        qs = qs.filter(leave_type_id=leave_type)
+    if department:
+        qs = qs.filter(employee__department_id=department)
+    if status:
+        qs = qs.filter(status=status)
+
+    # ── Aggregate stats ──────────────────────────────────────────────────────
+    stats = qs.aggregate(
+        total=Count('id'),
+        pending=Count('id', filter=Q(status='pending')),
+        approved=Count('id', filter=Q(status='approved')),
+        rejected=Count('id', filter=Q(status='rejected')),
+        cancelled=Count('id', filter=Q(status='cancelled')),
+        total_days=Sum('days'),
+        approved_days=Sum('days', filter=Q(status='approved')),
+    )
+
+    # ── CSV export ───────────────────────────────────────────────────────────
+    if export == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="leave_report.csv"'
+        writer = csv.writer(response)
+        writer.writerow([
+            'Employee ID', 'Employee Name', 'Department', 'Leave Type',
+            'From', 'To', 'Days', 'Reason', 'Status', 'Applied On',
+        ])
+        for req in qs.iterator():
+            writer.writerow([
+                req.employee.employee_id,
+                req.employee.full_name,
+                req.employee.department.name if req.employee.department else '',
+                req.leave_type.name if req.leave_type else '',
+                req.start_date.strftime('%Y-%m-%d'),
+                req.end_date.strftime('%Y-%m-%d'),
+                req.days,
+                req.reason,
+                req.get_status_display(),
+                req.created_at.strftime('%Y-%m-%d'),
+            ])
+        return response
+
+    # ── Pagination ────────────────────────────────────────────────────────────
+    paginator = Paginator(qs, per_page)
+    page_num  = request.GET.get('page', 1)
+    requests_page = paginator.get_page(page_num)
+
+    leave_types = LeaveType.objects.filter(is_active=True).order_by('name')
+    departments = Department.objects.filter(status='active').order_by('name')
+
+    context = {
+        'requests':       requests_page,
+        'stats':          stats,
+        'leave_types':    leave_types,
+        'departments':    departments,
+        'search':         search,
+        'date_from':      date_from,
+        'date_to':        date_to,
+        'sel_leave_type': leave_type,
+        'sel_department': department,
+        'sel_status':     status,
+        'per_page':       per_page,
+    }
+    return render(request, 'hrm/leave_report.html', context)
 

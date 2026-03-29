@@ -1,0 +1,512 @@
+{% extends 'base.html' %}
+{% block title %}Leave Report - HRM{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        background: #fff;
+    }
+    .stat-box {
+        border-radius: 10px;
+        padding: 1.1rem 1.4rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    .stat-icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .stat-value { font-size: 1.55rem; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: 0.78rem; color: #6c757d; margin-top: 3px; }
+    .filter-bar {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 10px;
+        padding: 1rem 1.2rem;
+    }
+    .table thead th {
+        background: #f8f9fa;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #6c757d;
+        border-bottom: 2px solid #dee2e6;
+        padding: 0.65rem 0.9rem;
+        white-space: nowrap;
+    }
+    .table tbody td {
+        padding: 0.65rem 0.9rem;
+        vertical-align: middle;
+        font-size: 0.87rem;
+    }
+    .table tbody tr:hover { background: #f8f9fa; }
+    .badge-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .badge-approved  { background: #d1fae5; color: #065f46; }
+    .badge-rejected  { background: #fee2e2; color: #991b1b; }
+    .badge-pending   { background: #fef3c7; color: #92400e; }
+    .badge-cancelled { background: #f1f5f9; color: #475569; }
+    .emp-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg,#e11d48,#be123c);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+    .leave-type-pill {
+        background: #eff6ff;
+        color: #1d4ed8;
+        border-radius: 12px;
+        padding: 2px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .pagination .page-link { border-radius: 6px !important; margin: 0 2px; font-size: 0.85rem; }
+    .pagination .page-item.active .page-link { background: #e11d48; border-color: #e11d48; }
+    .active-filter-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: #ffe4e6; color: #9f1239; padding: 2px 8px;
+        border-radius: 12px; font-size: 0.75rem; font-weight: 600;
+    }
+    .per-page-select { width: auto; display: inline-block; }
+    .leave-row-clickable { cursor: pointer; transition: background 0.12s; }
+    .leave-row-clickable:hover { background: #fff1f2 !important; }
+    .detail-card { background:#f8fafc; border-radius:10px; padding:0.85rem 1rem; }
+    .detail-label { font-size:0.7rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; }
+    .detail-value { font-weight:600; font-size:0.9rem; color:#1e293b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0" style="color:#1a1a2e;">
+                <i class="fas fa-calendar-minus me-2" style="color:#e11d48;"></i>Leave Report
+            </h4>
+            <small class="text-muted">Analyse employee leave requests across any date range</small>
+            {% if search or date_from or date_to or sel_leave_type or sel_department or sel_status %}
+            <div class="mt-1 d-flex flex-wrap gap-1">
+                {% if search %}<span class="active-filter-badge"><i class="fas fa-search" style="font-size:0.65rem;"></i> {{ search }}</span>{% endif %}
+                {% if date_from %}<span class="active-filter-badge"><i class="fas fa-calendar" style="font-size:0.65rem;"></i> From {{ date_from }}</span>{% endif %}
+                {% if date_to %}<span class="active-filter-badge"><i class="fas fa-calendar" style="font-size:0.65rem;"></i> To {{ date_to }}</span>{% endif %}
+                {% if sel_status %}<span class="active-filter-badge">{{ sel_status|title }}</span>{% endif %}
+                <a href="{% url 'hrm:leave_report' %}" class="text-danger" style="font-size:0.78rem; text-decoration:none;"><i class="fas fa-times-circle"></i> Clear</a>
+            </div>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="?search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}&leave_type={{ sel_leave_type }}&department={{ sel_department }}&status={{ sel_status }}&export=csv"
+               class="btn btn-outline-danger px-3" style="border-radius:8px; font-size:0.83rem;">
+                <i class="fas fa-file-csv me-1"></i> Export CSV
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#fffbeb;">
+                <div class="stat-icon" style="background:#fde68a; color:#d97706;"><i class="fas fa-hourglass-half"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#d97706;">{{ stats.pending|default:"0" }}</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#f0fdf4;">
+                <div class="stat-icon" style="background:#bbf7d0; color:#16a34a;"><i class="fas fa-check-circle"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#16a34a;">{{ stats.approved|default:"0" }}</div>
+                    <div class="stat-label">Approved</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#fff1f2;">
+                <div class="stat-icon" style="background:#fecdd3; color:#e11d48;"><i class="fas fa-times-circle"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#e11d48;">{{ stats.rejected|default:"0" }}</div>
+                    <div class="stat-label">Rejected</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#f8fafc;">
+                <div class="stat-icon" style="background:#e2e8f0; color:#64748b;"><i class="fas fa-ban"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#64748b;">{{ stats.cancelled|default:"0" }}</div>
+                    <div class="stat-label">Cancelled</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#eff6ff;">
+                <div class="stat-icon" style="background:#bfdbfe; color:#2563eb;"><i class="fas fa-calendar-alt"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#2563eb;">{{ stats.approved_days|default:"0" }}</div>
+                    <div class="stat-label">Approved Days</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#f8fafc;">
+                <div class="stat-icon" style="background:#e2e8f0; color:#475569;"><i class="fas fa-database"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#475569;">{{ stats.total|default:"0" }}</div>
+                    <div class="stat-label">Total Requests</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar mb-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-12 col-md-3">
+                <label class="form-label text-muted small mb-1">Search Employee</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted fa-xs"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-1" name="search"
+                           placeholder="Name or Employee ID..." value="{{ search }}">
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label text-muted small mb-1">From Date</label>
+                <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label text-muted small mb-1">To Date</label>
+                <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
+            </div>
+            <div class="col-6 col-md-1">
+                <label class="form-label text-muted small mb-1">Leave Type</label>
+                <select class="form-select form-select-sm" name="leave_type">
+                    <option value="">All Types</option>
+                    {% for lt in leave_types %}
+                    <option value="{{ lt.id }}" {% if sel_leave_type == lt.id|stringformat:"s" %}selected{% endif %}>{{ lt.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label text-muted small mb-1">Department</label>
+                <select class="form-select form-select-sm" name="department">
+                    <option value="">All Departments</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.id }}" {% if sel_department == dept.id|stringformat:"s" %}selected{% endif %}>{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-1">
+                <label class="form-label text-muted small mb-1">Status</label>
+                <select class="form-select form-select-sm" name="status">
+                    <option value="">All</option>
+                    <option value="pending"   {% if sel_status == "pending"   %}selected{% endif %}>Pending</option>
+                    <option value="approved"  {% if sel_status == "approved"  %}selected{% endif %}>Approved</option>
+                    <option value="rejected"  {% if sel_status == "rejected"  %}selected{% endif %}>Rejected</option>
+                    <option value="cancelled" {% if sel_status == "cancelled" %}selected{% endif %}>Cancelled</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-1 d-flex gap-1">
+                <button class="btn btn-danger btn-sm flex-grow-1" type="submit">
+                    <i class="fas fa-search"></i>
+                </button>
+                <a href="{% url 'hrm:leave_report' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-times"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Table -->
+    <div class="report-card">
+        <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted small">Show</span>
+                <select class="form-select form-select-sm per-page-select" onchange="changePerPage(this.value)">
+                    <option value="10"  {% if per_page == 10  %}selected{% endif %}>10</option>
+                    <option value="25"  {% if per_page == 25  %}selected{% endif %}>25</option>
+                    <option value="50"  {% if per_page == 50  %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                </select>
+                <span class="text-muted small">entries</span>
+            </div>
+            <span class="text-muted small">
+                {% if requests.paginator.count > 0 %}
+                Showing {{ requests.start_index }}&ndash;{{ requests.end_index }} of {{ requests.paginator.count }} requests
+                {% else %}
+                No requests found
+                {% endif %}
+            </span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Employee</th>
+                        <th>Department</th>
+                        <th>Leave Type</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Days</th>
+                        <th>Reason</th>
+                        <th>Applied On</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in requests %}
+                    <tr class="leave-row-clickable"
+                        data-emp-name="{{ req.employee.full_name }}"
+                        data-emp-id="{{ req.employee.employee_id }}"
+                        data-dept="{{ req.employee.department.name|default:'—' }}"
+                        data-leave-type="{{ req.leave_type.name|default:'—' }}"
+                        data-start-date="{{ req.start_date|date:'d M Y' }}"
+                        data-end-date="{{ req.end_date|date:'d M Y' }}"
+                        data-days="{{ req.days }}"
+                        data-reason="{{ req.reason }}"
+                        data-applied-on="{{ req.created_at|date:'d M Y' }}"
+                        data-status="{{ req.status }}"
+                        data-status-display="{{ req.get_status_display }}">
+                        <td class="text-muted">{{ forloop.counter|add:requests.start_index|add:"-1" }}</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="emp-avatar">{{ req.employee.full_name|slice:":1"|upper }}</div>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:0.87rem;">{{ req.employee.full_name }}</div>
+                                    <div class="text-muted" style="font-size:0.75rem;">{{ req.employee.employee_id }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{ req.employee.department.name|default:"—" }}</td>
+                        <td>
+                            {% if req.leave_type %}
+                            <span class="leave-type-pill">{{ req.leave_type.name }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td>{{ req.start_date|date:"d M Y" }}</td>
+                        <td>{{ req.end_date|date:"d M Y" }}</td>
+                        <td>
+                            <span class="fw-semibold">{{ req.days }}</span>
+                            <span class="text-muted" style="font-size:0.75rem;">day{{ req.days|pluralize }}</span>
+                        </td>
+                        <td>
+                            <span title="{{ req.reason }}" style="max-width:160px; display:inline-block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle;">
+                                {{ req.reason|truncatechars:40 }}
+                            </span>
+                        </td>
+                        <td class="text-muted">{{ req.created_at|date:"d M Y" }}</td>
+                        <td>
+                            <span class="badge-status badge-{{ req.status }}">
+                                <i class="fas fa-circle" style="font-size:0.45rem;"></i>
+                                {{ req.get_status_display }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center py-5">
+                            <div style="color:#94a3b8;">
+                                <i class="fas fa-calendar-minus" style="font-size:2.5rem; opacity:0.3;"></i>
+                                <div class="mt-2 fw-semibold">No leave requests found</div>
+                                <div class="text-muted small">Try adjusting your filters or add leave types first</div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if requests.has_other_pages %}
+        <div class="d-flex justify-content-center py-3 border-top">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if requests.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ requests.previous_page_number }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}&leave_type={{ sel_leave_type }}&department={{ sel_department }}&status={{ sel_status }}&per_page={{ per_page }}">
+                            <i class="fas fa-chevron-left fa-xs"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% for num in requests.paginator.page_range %}
+                    {% if requests.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num > requests.number|add:"-4" and num < requests.number|add:"4" %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}&leave_type={{ sel_leave_type }}&department={{ sel_department }}&status={{ sel_status }}&per_page={{ per_page }}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+                    {% if requests.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ requests.next_page_number }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}&leave_type={{ sel_leave_type }}&department={{ sel_department }}&status={{ sel_status }}&per_page={{ per_page }}">
+                            <i class="fas fa-chevron-right fa-xs"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- Leave Detail Modal -->
+<div class="modal fade" id="leaveDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:520px;">
+    <div class="modal-content" style="border:none;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.18);">
+      <!-- Gradient Header -->
+      <div style="background:linear-gradient(135deg,#e11d48,#be123c);padding:1.4rem 1.5rem 0;position:relative;">
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" style="position:absolute;top:1rem;right:1rem;opacity:0.85;"></button>
+        <div class="d-flex align-items-center gap-3 pb-3">
+          <div id="leaveModalAvatar" style="width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,0.22);border:3px solid rgba(255,255,255,0.55);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;flex-shrink:0;"></div>
+          <div class="flex-fill">
+            <div id="leaveModalName" style="color:#fff;font-size:1.05rem;font-weight:700;line-height:1.2;"></div>
+            <div id="leaveModalEmpId" style="color:rgba(255,255,255,0.78);font-size:0.78rem;margin-top:2px;"></div>
+            <div id="leaveModalDept" style="color:rgba(255,255,255,0.65);font-size:0.75rem;margin-top:2px;"></div>
+          </div>
+          <div class="text-end">
+            <span id="leaveModalStatusBadge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 13px;border-radius:20px;font-size:0.78rem;font-weight:700;"></span>
+            <div id="leaveModalTypeLabel" style="color:rgba(255,255,255,0.8);font-size:0.73rem;margin-top:5px;"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Body -->
+      <div class="modal-body p-0">
+        <!-- Duration Banner -->
+        <div style="background:#fff7ed;border-bottom:1px solid #fed7aa;padding:1.1rem 1.5rem;">
+          <div class="d-flex align-items-center">
+            <div class="text-center" style="min-width:110px;">
+              <div style="font-size:0.68rem;color:#9a3412;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">From</div>
+              <div id="leaveModalStartDate" style="font-size:1rem;font-weight:700;color:#1e293b;margin-top:3px;"></div>
+            </div>
+            <div class="flex-fill text-center px-2">
+              <div style="position:relative;margin:0 8px;">
+                <div style="border-top:2px dashed #fb923c;margin-top:14px;"></div>
+                <span id="leaveModalDays" style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff7ed;padding:0 10px;font-size:0.78rem;font-weight:700;color:#ea580c;white-space:nowrap;border-radius:20px;border:1px solid #fed7aa;"></span>
+              </div>
+            </div>
+            <div class="text-center" style="min-width:110px;">
+              <div style="font-size:0.68rem;color:#9a3412;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">To</div>
+              <div id="leaveModalEndDate" style="font-size:1rem;font-weight:700;color:#1e293b;margin-top:3px;"></div>
+            </div>
+          </div>
+        </div>
+        <!-- Details Grid -->
+        <div class="p-4">
+          <div class="row g-3">
+            <div class="col-6">
+              <div class="detail-card">
+                <div class="detail-label"><i class="fas fa-tag me-1"></i>Leave Type</div>
+                <div id="leaveModalLeaveType" class="detail-value"></div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="detail-card">
+                <div class="detail-label"><i class="fas fa-calendar-plus me-1"></i>Applied On</div>
+                <div id="leaveModalAppliedOn" class="detail-value"></div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="detail-card">
+                <div class="detail-label"><i class="fas fa-building me-1"></i>Department</div>
+                <div id="leaveModalDeptCard" class="detail-value"></div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="detail-card">
+                <div class="detail-label"><i class="fas fa-id-badge me-1"></i>Employee ID</div>
+                <div id="leaveModalEmpIdCard" class="detail-value"></div>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="detail-card">
+                <div class="detail-label mb-2"><i class="fas fa-comment-alt me-1"></i>Reason</div>
+                <div id="leaveModalReason" style="font-size:0.87rem;color:#334155;line-height:1.6;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0 pb-3 px-4 justify-content-end">
+        <button type="button" class="btn btn-sm px-4" data-bs-dismiss="modal"
+                style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-weight:600;">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function changePerPage(val) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('per_page', val);
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+}
+
+document.querySelectorAll('.leave-row-clickable').forEach(function(row) {
+    row.addEventListener('click', function() {
+        const d = this.dataset;
+        document.getElementById('leaveModalAvatar').textContent = (d.empName || '?').charAt(0).toUpperCase();
+        document.getElementById('leaveModalName').textContent = d.empName;
+        document.getElementById('leaveModalEmpId').textContent = d.empId;
+        document.getElementById('leaveModalDept').textContent = '\uD83D\uDCCD ' + d.dept;
+        document.getElementById('leaveModalTypeLabel').textContent = '\uD83C\uDFF7 ' + d.leaveType;
+        const statusEl = document.getElementById('leaveModalStatusBadge');
+        const sm = {
+            pending:   ['#fef3c7','#92400e'],
+            approved:  ['#d1fae5','#065f46'],
+            rejected:  ['#fee2e2','#991b1b'],
+            cancelled: ['#f1f5f9','#475569']
+        };
+        const sc = sm[d.status] || ['#e2e8f0','#475569'];
+        statusEl.style.background = sc[0];
+        statusEl.style.color = sc[1];
+        statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:0.45rem;vertical-align:middle;margin-right:4px;"></i>' + d.statusDisplay;
+        document.getElementById('leaveModalStartDate').textContent = d.startDate;
+        document.getElementById('leaveModalEndDate').textContent = d.endDate;
+        const days = parseInt(d.days) || 0;
+        document.getElementById('leaveModalDays').textContent = days + ' day' + (days !== 1 ? 's' : '');
+        document.getElementById('leaveModalLeaveType').textContent = d.leaveType;
+        document.getElementById('leaveModalAppliedOn').textContent = d.appliedOn;
+        document.getElementById('leaveModalDeptCard').textContent = d.dept;
+        document.getElementById('leaveModalEmpIdCard').textContent = d.empId;
+        document.getElementById('leaveModalReason').textContent = d.reason || '—';
+        new bootstrap.Modal(document.getElementById('leaveDetailModal')).show();
+    });
+});
+</script>
+{% endblock %}

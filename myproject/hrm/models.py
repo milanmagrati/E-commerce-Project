@@ -789,3 +789,66 @@ class Payslip(models.Model):
 
     def __str__(self):
         return f"{self.payslip_number} - {self.employee}"
+
+
+# ==================== Leave Management ====================
+
+class LeaveType(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, default='')
+    max_days_per_year = models.PositiveIntegerField(default=0, help_text='0 = unlimited')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Leave Type'
+        verbose_name_plural = 'Leave Types'
+
+    def __str__(self):
+        return self.name
+
+
+class LeaveRequest(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name='leave_requests'
+    )
+    leave_type = models.ForeignKey(
+        LeaveType, on_delete=models.SET_NULL, null=True, blank=True, related_name='requests'
+    )
+    start_date = models.DateField()
+    end_date = models.DateField()
+    days = models.PositiveIntegerField(default=1)
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    approved_by = models.ForeignKey(
+        Employee, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_leave_requests'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Leave Request'
+        verbose_name_plural = 'Leave Requests'
+
+    def __str__(self):
+        leave_name = self.leave_type.name if self.leave_type else 'N/A'
+        return f"{self.employee.full_name} - {leave_name} ({self.start_date} to {self.end_date})"
+
+    def save(self, *args, **kwargs):
+        if self.start_date and self.end_date:
+            delta = (self.end_date - self.start_date).days + 1
+            self.days = max(delta, 1)
+        super().save(*args, **kwargs)

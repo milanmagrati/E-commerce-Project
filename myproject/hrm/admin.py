@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Branch, Department, Designation, Employee, EmployeeDocument, AssetType, Asset
+from .models import Branch, Department, Designation, Employee, EmployeeDocument, AssetType, Asset, LeaveType, LeaveRequest
 
 
 @admin.register(Branch)
@@ -48,3 +48,17 @@ class AssetAdmin(admin.ModelAdmin):
     list_display = ('name', 'asset_type', 'asset_code', 'status', 'condition', 'assigned_to', 'location')
     list_filter = ('status', 'condition', 'asset_type', 'depreciation_method')
     search_fields = ('name', 'asset_code', 'serial_number', 'location', 'supplier')
+
+
+@admin.register(LeaveType)
+class LeaveTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'max_days_per_year', 'is_active', 'created_at')
+    list_filter = ('is_active',)
+    search_fields = ('name',)
+
+
+@admin.register(LeaveRequest)
+class LeaveRequestAdmin(admin.ModelAdmin):
+    list_display = ('employee', 'leave_type', 'start_date', 'end_date', 'days', 'status', 'created_at')
+    list_filter = ('status', 'leave_type')
+    search_fields = ('employee__full_name', 'employee__employee_id', 'reason')

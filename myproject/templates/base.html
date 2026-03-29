@@ -842,6 +842,20 @@
                                 <li class="{% if request.resolver_match.url_name == 'attendance_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:attendance_list' %}">Attendance Records</a>
                                 </li>
+                                <!-- Report nested submenu -->
+                                <li>
+                                    <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAttendanceReport" aria-expanded="{% if request.resolver_match.url_name == 'attendance_report' or request.resolver_match.url_name == 'leave_report' %}true{% else %}false{% endif %}" class="d-flex justify-content-between align-items-center">
+                                        Report <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
+                                    </a>
+                                    <ul class="collapse list-unstyled ps-3 {% if request.resolver_match.url_name == 'attendance_report' or request.resolver_match.url_name == 'leave_report' %}show{% endif %}" id="hrmAttendanceReport">
+                                        <li class="{% if request.resolver_match.url_name == 'attendance_report' %}active{% endif %}">
+                                            <a href="{% url 'hrm:attendance_report' %}">Attendance Report</a>
+                                        </li>
+                                        <li class="{% if request.resolver_match.url_name == 'leave_report' %}active{% endif %}">
+                                            <a href="{% url 'hrm:leave_report' %}">Leave Report</a>
+                                        </li>
+                                    </ul>
+                                </li>
                                 <li class="{% if request.resolver_match.url_name == 'attendance_regularization_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:attendance_regularization_list' %}">Attendance Regularizations</a>
                                 </li>

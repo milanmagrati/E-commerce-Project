@@ -175,4 +175,9 @@ urlpatterns = [
     path('payroll/payslips/', views.payslip_list, name='payslip_list'),
     path('payroll/payslips/<int:pk>/', views.payslip_detail, name='payslip_detail'),
     path('payroll/payslips/<int:pk>/download/', views.payslip_download, name='payslip_download'),
+
+    # Attendance Reports
+    path('attendance/report/', views.attendance_report, name='attendance_report'),
+    path('attendance/report/period/', views.employee_period_attendance, name='employee_period_attendance'),
+    path('attendance/leave-report/', views.leave_report, name='leave_report'),
 ]
