@@ -3472,7 +3472,8 @@ def iclock_cdata(request):
         # Date= forces the device to sync its clock to Nepal Standard Time on every handshake.
         import pytz as _pytz
         _nst = _pytz.timezone('Asia/Kathmandu')
-        _now_nst = timezone.now().astimezone(_nst)
+        # Line 3475 — +45 min added (device runs UTC+5, Nepal is UTC+5:45 = 45 min ahead)
+        _now_nst = (timezone.now() + timedelta(minutes=45)).astimezone(_nst)
         _date_str = _now_nst.strftime('%Y-%m-%d %H:%M:%S')
         options = (
             "GET OPTION FROM: {sn}\r\n"
@@ -3483,7 +3484,7 @@ def iclock_cdata(request):
             "TransTimes=00:00;14:05\r\n"
             "TransInterval=1\r\n"
             "TransFlag=TransData AttLog OpLog\r\n"
-            "TimeZone=5.75\r\n"
+            "TimeZone=345\r\n"   # 345 minutes = UTC+5:45 in minutes (correct Nepal offset)
             "Realtime=1\r\n"
             "Encrypt=0\r\n"
             "Date={date_str}\r\n"
