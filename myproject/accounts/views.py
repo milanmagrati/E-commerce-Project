@@ -310,6 +310,13 @@ def user_create(request):
                 user.can_sync_ncm_orders = True
                 user.can_view_ncm_branches = True
                 user.can_manage_ncm_branches = True
+
+                # HRM MODULE
+                user.can_view_hrm = True
+                user.can_view_hrm_hr_management = True
+                user.can_view_hrm_asset_management = True
+                user.can_view_hrm_attendance = True
+                user.can_view_hrm_payroll = True
                 
                 # Dashboard Module
                 user.can_view_dashboard = True
@@ -419,6 +426,19 @@ def user_create(request):
                 user.can_sync_ncm_orders = request.POST.get('can_sync_ncm_orders') == 'on'
                 user.can_view_ncm_branches = request.POST.get('can_view_ncm_branches') == 'on'
                 user.can_manage_ncm_branches = request.POST.get('can_manage_ncm_branches') == 'on'
+
+                # HRM MODULE
+                user.can_view_hrm = request.POST.get('can_view_hrm') == 'on'
+                if user.can_view_hrm:
+                    user.can_view_hrm_hr_management = request.POST.get('can_view_hrm_hr_management') == 'on'
+                    user.can_view_hrm_asset_management = request.POST.get('can_view_hrm_asset_management') == 'on'
+                    user.can_view_hrm_attendance = request.POST.get('can_view_hrm_attendance') == 'on'
+                    user.can_view_hrm_payroll = request.POST.get('can_view_hrm_payroll') == 'on'
+                else:
+                    user.can_view_hrm_hr_management = False
+                    user.can_view_hrm_asset_management = False
+                    user.can_view_hrm_attendance = False
+                    user.can_view_hrm_payroll = False
             
             user.save()
             
@@ -553,6 +573,13 @@ def user_edit(request, user_id):
             edit_user.can_view_ncm_branches = True
             edit_user.can_manage_ncm_branches = True
 
+            # HRM MODULE
+            edit_user.can_view_hrm = True
+            edit_user.can_view_hrm_hr_management = True
+            edit_user.can_view_hrm_asset_management = True
+            edit_user.can_view_hrm_attendance = True
+            edit_user.can_view_hrm_payroll = True
+
             # Dashboard Module
             edit_user.can_view_dashboard = True
             edit_user.can_view_total_revenue = True
@@ -668,6 +695,19 @@ def user_edit(request, user_id):
             edit_user.can_sync_ncm_orders = request.POST.get('can_sync_ncm_orders') == 'on'
             edit_user.can_view_ncm_branches = request.POST.get('can_view_ncm_branches') == 'on'
             edit_user.can_manage_ncm_branches = request.POST.get('can_manage_ncm_branches') == 'on'
+
+            # HRM MODULE
+            edit_user.can_view_hrm = request.POST.get('can_view_hrm') == 'on'
+            if edit_user.can_view_hrm:
+                edit_user.can_view_hrm_hr_management = request.POST.get('can_view_hrm_hr_management') == 'on'
+                edit_user.can_view_hrm_asset_management = request.POST.get('can_view_hrm_asset_management') == 'on'
+                edit_user.can_view_hrm_attendance = request.POST.get('can_view_hrm_attendance') == 'on'
+                edit_user.can_view_hrm_payroll = request.POST.get('can_view_hrm_payroll') == 'on'
+            else:
+                edit_user.can_view_hrm_hr_management = False
+                edit_user.can_view_hrm_asset_management = False
+                edit_user.can_view_hrm_attendance = False
+                edit_user.can_view_hrm_payroll = False
         
         try:
             edit_user.save()

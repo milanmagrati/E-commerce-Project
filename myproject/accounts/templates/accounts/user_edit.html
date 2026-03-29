@@ -550,6 +550,39 @@
                                     </div>
                                 </div>
                                 
+                                <!-- HRM Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);">
+                                            <i class="fas fa-users-cog"></i> HRM Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item" style="border-bottom: 2px solid #e0e0e0;">
+                                                <input type="checkbox" class="form-check-input" name="can_view_hrm" id="can_view_hrm" {% if edit_user.can_view_hrm %}checked{% endif %} onchange="toggleHrmSubPermissions(this)">
+                                                <label for="can_view_hrm"><strong>HRM</strong></label>
+                                            </div>
+                                            <div id="hrmSubPermissions" style="{% if not edit_user.can_view_hrm %}opacity: 0.5; pointer-events: none;{% endif %}">
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_hr_management" id="can_view_hrm_hr_management" {% if edit_user.can_view_hrm_hr_management %}checked{% endif %}>
+                                                    <label for="can_view_hrm_hr_management">HR Management</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_asset_management" id="can_view_hrm_asset_management" {% if edit_user.can_view_hrm_asset_management %}checked{% endif %}>
+                                                    <label for="can_view_hrm_asset_management">Asset Management</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_attendance" id="can_view_hrm_attendance" {% if edit_user.can_view_hrm_attendance %}checked{% endif %}>
+                                                    <label for="can_view_hrm_attendance">Attendance</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_payroll" id="can_view_hrm_payroll" {% if edit_user.can_view_hrm_payroll %}checked{% endif %}>
+                                                    <label for="can_view_hrm_payroll">Payroll Management</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Pricing & Discounts Module -->
                                 <div class="col-12 mb-3">
                                     <div class="perm-card">
@@ -739,6 +772,8 @@ function checkAll() {
     });
     document.getElementById('max_discount_percent').value = '100.00';
     updateDiscountInput();
+    const hrmSub = document.getElementById('hrmSubPermissions');
+    if (hrmSub) { hrmSub.style.opacity = '1'; hrmSub.style.pointerEvents = 'auto'; }
 }
 
 // Uncheck all permissions
@@ -748,6 +783,19 @@ function uncheckAll() {
     });
     document.getElementById('max_discount_percent').value = '0.00';
     updateDiscountInput();
+}
+
+// HRM sub-permissions toggle
+function toggleHrmSubPermissions(mainCheckbox) {
+    const subPerms = document.getElementById('hrmSubPermissions');
+    if (mainCheckbox.checked) {
+        subPerms.style.opacity = '1';
+        subPerms.style.pointerEvents = 'auto';
+    } else {
+        subPerms.style.opacity = '0.5';
+        subPerms.style.pointerEvents = 'none';
+        subPerms.querySelectorAll('.hrm-sub-perm').forEach(cb => cb.checked = false);
+    }
 }
 
 // Hide/show permissions based on role
@@ -766,6 +814,14 @@ document.getElementById('roleSelect').addEventListener('change', function() {
         document.getElementById('can_give_discounts').checked = false;
         document.getElementById('max_discount_percent').value = '0.00';
         document.getElementById('max_discount_percent').disabled = true;
+        // Reset HRM checkboxes
+        const hrmMain = document.getElementById('can_view_hrm');
+        if (hrmMain) {
+            hrmMain.checked = false;
+            const hrmSub = document.getElementById('hrmSubPermissions');
+            if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
+            document.querySelectorAll('.hrm-sub-perm').forEach(cb => cb.checked = false);
+        }
     } else {
         if (permSection) permSection.style.display = 'block';
         roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleName} role selected:</strong> Customize permissions below.`;

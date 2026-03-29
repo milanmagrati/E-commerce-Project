@@ -153,6 +153,13 @@ class CustomUser(AbstractUser):
     can_view_ncm_branches = models.BooleanField(default=False, verbose_name="Can View NCM Branches")
     can_manage_ncm_branches = models.BooleanField(default=False, verbose_name="Can Manage NCM Branches")
 
+    # HRM PERMISSIONS
+    can_view_hrm = models.BooleanField(default=False, verbose_name="Can View HRM")
+    can_view_hrm_hr_management = models.BooleanField(default=False, verbose_name="Can View HR Management")
+    can_view_hrm_asset_management = models.BooleanField(default=False, verbose_name="Can View Asset Management")
+    can_view_hrm_attendance = models.BooleanField(default=False, verbose_name="Can View Attendance")
+    can_view_hrm_payroll = models.BooleanField(default=False, verbose_name="Can View Payroll Management")
+
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
     

@@ -734,7 +734,7 @@
                 {% endif %}
 
                 <!-- ==================== HRM ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm %}
                 <li class="hrm-menu {% if '/hrm/' in request.path %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmMenu" aria-expanded="false">
                         <i class="fas fa-users-cog"></i> HRM
@@ -747,6 +747,7 @@
                         </li>
 
                         <!-- HR Management (nested submenu) -->
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_hr_management %}
                         <li>
                             <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmHrManagement" aria-expanded="false" class="d-flex justify-content-between align-items-center">
                                 HR Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
@@ -790,8 +791,10 @@
                                 </li>
                             </ul>
                         </li>
+                        {% endif %}
 
                         <!-- Asset Management -->
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_asset_management %}
                         <li>
                             <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAssetManagement" aria-expanded="false" class="d-flex justify-content-between align-items-center">
                                 Asset Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
@@ -811,6 +814,7 @@
                                 </li>
                             </ul>
                         </li>
+                        {% endif %}
 
                         <!-- Contract Management -->
                         <li class="{% if request.resolver_match.url_name == 'contract_list' %}active{% endif %}">
@@ -823,6 +827,7 @@
                         </li>
 
                         <!-- Attendance (nested submenu) -->
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_attendance %}
                         <li>
                             <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAttendance" aria-expanded="false" class="d-flex justify-content-between align-items-center">
                                 Attendance <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
@@ -842,13 +847,17 @@
                                 </li>
                             </ul>
                         </li>
+                        {% endif %}
 
                         <!-- Biometric Attendance -->
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_attendance %}
                         <li class="{% if request.resolver_match.url_name == 'biometric_attendance' %}active{% endif %}">
                             <a href="{% url 'hrm:biometric_attendance' %}">Biometric Attendance</a>
                         </li>
+                        {% endif %}
 
                         <!-- Payroll Management -->
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_payroll %}
                         <li>
                             <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmPayroll" aria-expanded="{% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management' %}true{% else %}false{% endif %}" class="d-flex justify-content-between align-items-center">
                                 Payroll Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
@@ -868,6 +877,7 @@
                                 </li>
                             </ul>
                         </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}
