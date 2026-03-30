@@ -4560,18 +4560,59 @@ def generate_payslips(request, pk):
 
         gross_salary = (basic + earnings).quantize(Decimal('0.01'))
         total_deductions_val = deductions.quantize(Decimal('0.01'))
-        net_salary = max(gross_salary - total_deductions_val, Decimal('0'))
+
+        # Calculate advance payment deductions for salary-deduction mode advances
+        from .models import AdvancePayment as _AdvPay
+        active_advances = _AdvPay.objects.filter(
+            employee=employee,
+            status__in=['disbursed', 'repaying']
+        )
+        advance_deduction = Decimal('0')
+        for adv in active_advances:
+            remaining = max(adv.amount - adv.amount_repaid, Decimal('0'))
+            inst = adv.installment_amount or Decimal('0')
+            if adv.repayment_mode in ('salary_deduction', 'installments') or not adv.repayment_mode:
+                advance_deduction += inst if inst > 0 else remaining
+            elif adv.repayment_mode == 'lump_sum':
+                advance_deduction += remaining
+            else:
+                advance_deduction += inst if inst > 0 else remaining
+        advance_deduction = advance_deduction.quantize(Decimal('0.01'))
+
+        net_salary = max(gross_salary - total_deductions_val - advance_deduction, Decimal('0'))
 
         Payslip.objects.create(
             payroll_run=run,
             employee=employee,
             gross_salary=gross_salary,
             total_deductions=total_deductions_val,
+            advance_deduction=advance_deduction,
             net_salary=net_salary,
             status='generated',
             generated_on=today,
         )
         created_count += 1
+
+        # ── Update advance records: apply this period's deductions ──
+        from django.db.models import F as _F
+        for adv in active_advances:
+            _rem = max(adv.amount - adv.amount_repaid, Decimal('0'))
+            _inst = adv.installment_amount or Decimal('0')
+            if adv.repayment_mode in ('salary_deduction', 'installments') or not adv.repayment_mode:
+                _ded = _inst if _inst > 0 else _rem
+            elif adv.repayment_mode == 'lump_sum':
+                _ded = _rem
+            else:
+                _ded = _inst if _inst > 0 else _rem
+            _ded = min(_ded, _rem)
+            if _ded > 0:
+                _new_repaid = adv.amount_repaid + _ded
+                _new_status = 'cleared' if _new_repaid >= adv.amount else 'repaying'
+                _AdvPay.objects.filter(pk=adv.pk).update(
+                    amount_repaid=_new_repaid,
+                    paid_installments=_F('paid_installments') + 1,
+                    status=_new_status,
+                )
 
     # Refresh run totals from all payslips (including previously existing ones)
     from django.db.models import Sum as _Sum
@@ -4601,7 +4642,7 @@ def generate_payslips(request, pk):
 
 @login_required
 def payslip_list(request):
-    from .models import Payslip
+    from .models import Payslip, AdvancePayment
     search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
     per_page = request.GET.get('per_page', '10')
@@ -4624,10 +4665,72 @@ def payslip_list(request):
         per_page_int = 10
     if per_page_int not in VALID_PER_PAGE:
         per_page_int = 10
-    per_page = str(per_page_int)  # normalize back so template comparison always matches
+    per_page = str(per_page_int)
     paginator = Paginator(payslips, per_page_int)
     page_number = request.GET.get('page', 1)
     page_obj = paginator.get_page(page_number)
+
+    # Build live advance data for employees on this page
+    page_slips = list(page_obj)
+    employee_ids = list({slip.employee_id for slip in page_slips})
+
+    # Fetch all relevant advances in one query
+    all_advances = list(
+        AdvancePayment.objects.filter(
+            employee_id__in=employee_ids
+        ).values(
+            'employee_id', 'status', 'repayment_mode',
+            'installment_amount', 'amount', 'amount_repaid', 'advance_number'
+        )
+    )
+
+    # Build per-employee summary
+    advance_info = {}
+    for adv in all_advances:
+        eid = adv['employee_id']
+        if eid not in advance_info:
+            advance_info[eid] = {'live_deduction': Decimal('0'), 'has_pending': False, 'has_cleared': False, 'has_rejected': False, 'advance_status': adv['status']}
+        amt = adv['amount'] or Decimal('0')
+        repaid = adv['amount_repaid'] or Decimal('0')
+        remaining = max(amt - repaid, Decimal('0'))
+
+        if adv['status'] in ('disbursed', 'repaying'):
+            mode = adv['repayment_mode']
+            inst = adv['installment_amount'] or Decimal('0')
+            if mode in ('salary_deduction', 'installments') or not mode:
+                deduct_amt = inst if inst > 0 else remaining
+                advance_info[eid]['live_deduction'] += deduct_amt
+            elif mode == 'lump_sum':
+                advance_info[eid]['live_deduction'] += remaining
+            else:
+                advance_info[eid]['live_deduction'] += inst if inst > 0 else remaining
+            # Fully repaid but status not yet cleared
+            if remaining == 0:
+                advance_info[eid]['has_cleared'] = True
+        elif adv['status'] in ('pending', 'approved'):
+            advance_info[eid]['has_pending'] = True
+            advance_info[eid]['advance_status'] = adv['status']
+        elif adv['status'] == 'cleared':
+            advance_info[eid]['has_cleared'] = True
+        elif adv['status'] == 'rejected':
+            advance_info[eid]['has_rejected'] = True
+            # Do NOT overwrite advance_status — it's only used for pending/approved badge text
+
+    # Attach live advance data to each payslip object
+    for slip in page_slips:
+        info = advance_info.get(slip.employee_id, {})
+        slip.live_advance_deduction = info.get('live_deduction', Decimal('0'))
+        slip.has_pending_advance = info.get('has_pending', False)
+        slip.has_cleared_advance = info.get('has_cleared', False)
+        slip.has_rejected_advance = info.get('has_rejected', False)
+        slip.advance_status = info.get('advance_status', '')
+
+    # Count payslips that have stale advance data (stored != live, or stored > 0 but advance rejected)
+    stale_count = sum(
+        1 for s in page_slips
+        if s.live_advance_deduction != s.advance_deduction
+        or (s.has_rejected_advance and s.advance_deduction > 0)
+    )
 
     context = {
         'page_title': 'Payslips',
@@ -4636,8 +4739,81 @@ def payslip_list(request):
         'search_query': search_query,
         'status_filter': status_filter,
         'per_page': per_page,
+        'stale_count': stale_count,
     }
     return render(request, 'hrm/payslip_list.html', context)
+
+
+@login_required
+def payslip_sync_advances(request):
+    """Recalculate and save advance_deduction + net_salary for all payslips."""
+    from .models import Payslip, AdvancePayment
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
+
+    payslips = list(Payslip.objects.select_related('employee').all())
+    employee_ids = list({s.employee_id for s in payslips})
+
+    # Fetch active advances grouped by employee
+    active_advances = list(
+        AdvancePayment.objects.filter(
+            employee_id__in=employee_ids,
+            status__in=['disbursed', 'repaying']
+        ).values('id', 'employee_id', 'repayment_mode', 'installment_amount', 'amount', 'amount_repaid')
+    )
+    advance_by_emp = {}
+    to_clear_ids = []  # advances that are fully repaid but not marked cleared
+    for adv in active_advances:
+        eid = adv['employee_id']
+        if eid not in advance_by_emp:
+            advance_by_emp[eid] = Decimal('0')
+        inst = adv['installment_amount'] or Decimal('0')
+        amt = adv['amount'] or Decimal('0')
+        repaid = adv['amount_repaid'] or Decimal('0')
+        remaining = max(amt - repaid, Decimal('0'))
+        mode = adv['repayment_mode']
+
+        if remaining <= 0:
+            # Fully repaid — mark for auto-clearing
+            to_clear_ids.append(adv['id'])
+        else:
+            if mode in ('salary_deduction', 'installments') or not mode:
+                # Fall back to remaining balance if installment_amount not set
+                deduct_amt = inst if inst > 0 else remaining
+                advance_by_emp[eid] += deduct_amt
+            elif mode == 'lump_sum':
+                advance_by_emp[eid] += remaining
+            else:
+                advance_by_emp[eid] += inst if inst > 0 else remaining
+
+    # Auto-clear fully-repaid advances
+    if to_clear_ids:
+        AdvancePayment.objects.filter(id__in=to_clear_ids).update(status='cleared')
+
+    updated = 0
+    to_update = []
+    for slip in payslips:
+        new_adv = (advance_by_emp.get(slip.employee_id, Decimal('0'))).quantize(Decimal('0.01'))
+        if slip.advance_deduction != new_adv:
+            slip.advance_deduction = new_adv
+            slip.net_salary = max(
+                slip.gross_salary - slip.total_deductions - new_adv,
+                Decimal('0')
+            ).quantize(Decimal('0.01'))
+            to_update.append(slip)
+            updated += 1
+
+    if to_update:
+        now = timezone.now()
+        for slip in to_update:
+            slip.updated_at = now
+        Payslip.objects.bulk_update(to_update, ['advance_deduction', 'net_salary', 'updated_at'])
+
+    return JsonResponse({
+        'success': True,
+        'updated': updated,
+        'message': f'{updated} payslip(s) updated.' if updated else 'All payslips are already up to date.',
+    })
 
 
 @login_required
@@ -4662,6 +4838,7 @@ def payslip_detail(request, pk):
             'pay_date': slip.payroll_run.pay_date.strftime('%Y-%m-%d') if slip.payroll_run.pay_date else '-',
             'gross_salary': str(slip.gross_salary),
             'total_deductions': str(slip.total_deductions),
+            'advance_deduction': str(slip.advance_deduction),
             'net_salary': str(slip.net_salary),
             'status': slip.get_status_display(),
             'status_key': slip.status,
@@ -4699,15 +4876,40 @@ def payslip_download(request, pk):
     month = run.month or (run.pay_period_start.month if run.pay_period_start else timezone.now().month)
     year = run.year or (run.pay_period_start.year if run.pay_period_start else timezone.now().year)
 
-    # ── Working days in month (Mon-Fri) ──
+    # ── Calendar bounds ──
     first_day = dt_date(year, month, 1)
     last_day = dt_date(year, month, calendar.monthrange(year, month)[1])
+
+    # ── Employee-specific weekend days ──
+    from .models import EmployeeWeekend as _EmpWeekend
+    from django.db.models import Q as _Q
+    _DAY_MAP = {
+        'monday': 0, 'tuesday': 1, 'wednesday': 2,
+        'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6,
+    }
+    _emp_weekend = _EmpWeekend.objects.filter(
+        employee=employee,
+        weekend_type='weekend',
+        effective_from__lte=last_day,
+    ).filter(
+        _Q(effective_to__isnull=True) | _Q(effective_to__gte=first_day)
+    ).order_by('-effective_from').first()
+    _weekend_day_nums = {
+        _DAY_MAP[d.lower()] for d in (_emp_weekend.weekend_days or [])
+        if d.lower() in _DAY_MAP
+    } if _emp_weekend else {5, 6}  # default Sat+Sun if no assignment
+
+    # ── Working days = total calendar days minus employee's weekend days ──
     working_days = 0
+    total_weekends = 0
     d = first_day
     while d <= last_day:
-        if d.weekday() < 5:
+        if d.weekday() in _weekend_day_nums:
+            total_weekends += 1
+        else:
             working_days += 1
         d += timedelta(days=1)
+    employee_weekends = total_weekends
 
     # ── Attendance summary ──
     records = AttendanceRecord.objects.filter(employee=employee, date__year=year, date__month=month)
@@ -4792,9 +4994,67 @@ def payslip_download(request, pk):
         pass
     overtime_amount = (total_overtime_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
+    # ── Advance Payment Deduction (added as named rows in deductions_list) ──
+    # Bug 1 fix: include 'disbursed' (newly issued) AND 'repaying' (in-progress) advances
+    from .models import AdvancePayment as _AdvPay
+    active_advances_for_display = list(
+        _AdvPay.objects.filter(
+            employee=employee,
+            status__in=['disbursed', 'repaying']
+        ).order_by('advance_number')
+    )
+    _calc_advance_total = Decimal('0')
+    for _adv in active_advances_for_display:
+        _remaining = max((_adv.amount or Decimal('0')) - (_adv.amount_repaid or Decimal('0')), Decimal('0'))
+        # Bug 2 fix: treat any salary/installment mode (or blank) as salary_deduction
+        if _adv.repayment_mode in ('salary_deduction', 'installments', '', None):
+            _inst = _adv.installment_amount or Decimal('0')
+            _deducted = (_inst if _inst > 0 else _remaining).quantize(Decimal('0.01'))
+        elif _adv.repayment_mode == 'lump_sum':
+            _deducted = _remaining.quantize(Decimal('0.01'))
+        else:
+            # Unknown mode — fall back to full remaining
+            _deducted = _remaining.quantize(Decimal('0.01'))
+        _adv.deducted_this_month = _deducted
+        if _deducted > 0:
+            deductions_list.append({'name': f'Advance ({_adv.advance_number})', 'amount': _deducted})
+            _calc_advance_total += _deducted
+
+            # Bug 2 fix: update advance record on first deduction (guard: only when still 'disbursed'
+            # so generate_payslips-updated advances are never touched twice)
+            if _adv.status == 'disbursed':
+                _new_repaid = (_adv.amount_repaid or Decimal('0')) + _deducted
+                _new_status = 'cleared' if _new_repaid >= (_adv.amount or Decimal('0')) else 'repaying'
+                from django.db.models import F as _F
+                _AdvPay.objects.filter(pk=_adv.pk).update(
+                    amount_repaid=_new_repaid,
+                    paid_installments=_F('paid_installments') + 1,
+                    status=_new_status,
+                )
+
+    # If advances were already cleared by generate_payslips, the stored
+    # advance_deduction preserves what was actually deducted. Use it as floor.
+    _stored_advance = slip.advance_deduction or Decimal('0')
+    _diff = _stored_advance - _calc_advance_total
+    if _diff > Decimal('0'):
+        deductions_list.append({'name': 'Advance Payment Deduction', 'amount': _diff.quantize(Decimal('0.01'))})
+        _calc_advance_total += _diff
+    total_deductions_comp += _calc_advance_total
+
+    # advance_deduction kept as 0 — advance is now included in deductions_list / total_deductions
+    advance_deduction = Decimal('0')
+
+    # All advances for the employee (for summary table display)
+    all_employee_advances = list(
+        _AdvPay.objects.filter(employee=employee).order_by('-created_at')
+    )
+    _active_map = {a.pk: a.deducted_this_month for a in active_advances_for_display}
+    for _adv in all_employee_advances:
+        _adv.deducted_this_month = _active_map.get(_adv.pk, Decimal('0'))
+
     # ── Net salary ──
     total_deductions = total_deductions_comp + attendance_deduction
-    net_salary = total_earnings + overtime_amount - total_deductions
+    net_salary = max(total_earnings + overtime_amount - total_deductions, Decimal('0'))
 
     # ── Build side-by-side salary rows ──
     max_rows = max(len(earnings_list), len(deductions_list))
@@ -4824,6 +5084,8 @@ def payslip_download(request, pk):
         'pay_date': run.pay_date,
         'basic_salary': basic_salary,
         'working_days': working_days,
+        'total_weekends': total_weekends,
+        'employee_weekends': employee_weekends,
         'present_days': present_days,
         'absent_days': absent_days,
         'half_days': half_days,
@@ -4832,11 +5094,13 @@ def payslip_download(request, pk):
         'earnings_list': earnings_list,
         'deductions_list': deductions_list,
         'salary_rows': salary_rows,
-        'total_earnings': total_earnings + overtime_amount,
+        'total_earnings': total_earnings,
         'total_deductions': total_deductions,
         'overtime_amount': overtime_amount,
         'overtime_rate': overtime_rate,
         'attendance_deduction': attendance_deduction,
+        'advance_deduction': advance_deduction,
+        'all_advances': all_employee_advances,
         'net_salary': net_salary,
     }
     return render(request, 'hrm/payslip_print.html', context)

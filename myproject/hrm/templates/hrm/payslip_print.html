@@ -3,455 +3,599 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payslip - {{ payslip.payslip_number }}</title>
+    <title>Payslip — {{ payslip.payslip_number }}</title>
     <style>
-        /* ── Reset & Base ── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 14px;
+            font-size: 13px;
             color: #1e293b;
-            background: #f1f5f9;
+            background: #e8edf3;
             line-height: 1.5;
-            margin: 0;
-            padding: 0;
-        }
-        @page {
-            size: A4;
-            margin: 8mm;
         }
 
-        /* ── Slip Container ── */
-        .slip {
-            max-width: 960px;
-            margin: 20px auto;
-            background: #fff;
-            border: 1px solid #cbd5e1;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 2px 12px rgba(0,0,0,.08);
-        }
+        @page { size: A4; margin: 8mm; }
 
-        /* ── Header ── */
-        .slip-header {
-            background: linear-gradient(135deg, #25a35a 0%, #1e8449 100%);
-            color: #fff;
-            padding: 16px 26px;
+        /* ═══ ACTION BAR (hidden on print) ═══ */
+        .action-bar {
+            max-width: 900px;
+            margin: 18px auto 10px;
+            padding: 0 6px;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        .slip-header .company h1 {
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: .3px;
-        }
-        .slip-header .company p {
+        .action-bar .ab-title { font-size: 13px; font-weight: 600; color: #475569; }
+        .action-bar .ab-title span { color: #1d4ed8; font-weight: 700; }
+        .action-bar .ab-btns { display: flex; gap: 8px; }
+        .btn-back {
+            padding: 7px 18px;
+            background: #fff;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
             font-size: 12px;
-            opacity: .88;
-            margin-top: 2px;
-        }
-        .slip-header .slip-title { text-align: right; }
-        .slip-header .slip-title h2 {
-            font-size: 16px;
             font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
+            color: #475569;
+            cursor: pointer;
         }
-        .slip-header .slip-title p {
+        .btn-print {
+            padding: 7px 20px;
+            background: linear-gradient(135deg, #25a35a, #1a7a44);
+            border: none;
+            border-radius: 7px;
             font-size: 12px;
-            opacity: .85;
-            margin-top: 2px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(37,163,90,.35);
         }
 
-        /* ── Body ── */
-        .slip-body { padding: 16px 26px 12px; }
+        /* ═══ SLIP WRAPPER ═══ */
+        .slip {
+            max-width: 900px;
+            margin: 0 auto 30px;
+            background: #fff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,.10);
+        }
 
-        /* ── Section Title ── */
-        .section-title {
-            font-size: 12px;
-            font-weight: 700;
-            color: #25a35a;
+        /* ─── HEADER BAND ─── */
+        .slip-header {
+            background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 50%, #1e3a8a 100%);
+            color: #fff;
+            padding: 22px 28px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .hdr-left .company-name { font-size: 22px; font-weight: 800; letter-spacing: .4px; }
+        .hdr-left .company-sub { font-size: 11.5px; opacity: .80; margin-top: 3px; }
+        .hdr-right { text-align: right; }
+        .hdr-right .slip-label { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; opacity: .75; font-weight: 600; }
+        .hdr-right .slip-num { font-size: 18px; font-weight: 800; letter-spacing: .5px; margin-top: 2px; }
+        .hdr-right .pay-period-badge {
+            display: inline-block;
+            margin-top: 6px;
+            padding: 3px 10px;
+            background: rgba(255,255,255,.18);
+            border: 1px solid rgba(255,255,255,.30);
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        /* ─── STATUS STRIP ─── */
+        .status-strip {
+            background: #f0f9ff;
+            border-bottom: 1px solid #bae6fd;
+            padding: 8px 28px;
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .ss-item { display: flex; align-items: center; gap: 6px; font-size: 11.5px; }
+        .ss-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+        .ss-label { color: #64748b; font-weight: 500; }
+        .ss-value { color: #0f172a; font-weight: 700; }
+
+        /* ─── BODY ─── */
+        .slip-body { padding: 20px 28px 16px; }
+
+        /* ─── SECTION HEADING ─── */
+        .sec-head {
+            font-size: 11px;
+            font-weight: 800;
+            color: #1d4ed8;
             text-transform: uppercase;
-            letter-spacing: .8px;
-            margin-bottom: 7px;
-            padding-bottom: 4px;
-            border-bottom: 2px solid #e2e8f0;
+            letter-spacing: 1px;
+            padding: 0 0 5px;
+            border-bottom: 2px solid #dbeafe;
+            margin-bottom: 11px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .sec-head::before {
+            content: '';
+            display: inline-block;
+            width: 3px; height: 13px;
+            background: #1d4ed8;
+            border-radius: 2px;
+            flex-shrink: 0;
         }
 
-        /* ── Info Grid ── */
+        /* ─── INFO GRID ─── */
         .info-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 3px 28px;
-            margin-bottom: 14px;
+            column-gap: 24px;
+            row-gap: 0;
+            margin-bottom: 18px;
         }
-        .info-grid .info-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            border-bottom: 1px dashed #f1f5f9;
-        }
-        .info-row .label {
-            font-weight: 600;
-            color: #64748b;
-            font-size: 12px;
-        }
-        .info-row .value {
-            font-weight: 600;
-            color: #1e293b;
-            font-size: 12px;
-            text-align: right;
-        }
-
-        /* ── Attendance Bar ── */
-        .attendance-bar {
-            display: flex;
-            gap: 0;
-            margin-bottom: 14px;
-            border-radius: 5px;
-            overflow: hidden;
-            border: 1px solid #e2e8f0;
-        }
-        .attendance-bar .att-item {
-            flex: 1;
-            text-align: center;
-            padding: 8px 5px;
-            border-right: 1px solid #e2e8f0;
-        }
-        .attendance-bar .att-item:last-child { border-right: none; }
-        .att-item .att-value {
-            font-size: 18px;
-            font-weight: 700;
-            color: #1e293b;
-        }
-        .att-item .att-label {
-            font-size: 10px;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: .4px;
-            margin-top: 2px;
-        }
-
-        /* ── Salary Table ── */
-        .salary-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 12px;
-        }
-        .salary-table thead th {
-            background: #f8fafc;
-            font-size: 11.5px;
-            text-transform: uppercase;
-            letter-spacing: .4px;
-            color: #64748b;
-            font-weight: 700;
-            padding: 7px 13px;
-            border-bottom: 2px solid #e2e8f0;
-        }
-        .salary-table thead th:nth-child(1),
-        .salary-table thead th:nth-child(3) { text-align: left; }
-        .salary-table thead th:nth-child(2),
-        .salary-table thead th:nth-child(4) { text-align: right; }
-        .salary-table tbody td {
-            padding: 6px 13px;
-            border-bottom: 1px solid #f1f5f9;
-            font-size: 12.5px;
-        }
-        .salary-table tbody td:nth-child(2),
-        .salary-table tbody td:nth-child(4) {
-            text-align: right;
-            font-weight: 600;
-            font-variant-numeric: tabular-nums;
-        }
-        .salary-table tbody td:nth-child(3) { padding-left: 26px; }
-        .salary-table tbody td.empty { color: transparent; }
-        .salary-table .row-even td { background: #fafbfc; }
-
-        /* ── Bottom area: totals + QR side by side ── */
-        .bottom-area {
-            display: flex;
-            gap: 16px;
-            align-items: flex-start;
-            margin-bottom: 10px;
-        }
-        .bottom-left { flex: 1; }
-
-        /* ── Totals ── */
-        .totals-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 13px;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 5px;
-            margin-bottom: 6px;
-            font-size: 13px;
-        }
-        .totals-row .t-label { font-weight: 600; color: #475569; }
-        .totals-row .t-value { font-weight: 700; color: #1e293b; font-variant-numeric: tabular-nums; }
-
-        .net-row {
+        .info-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 11px 15px;
-            background: linear-gradient(135deg, #25a35a, #1e8449);
-            color: #fff;
-            border-radius: 6px;
-        }
-        .net-row .net-label {
-            font-size: 14px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: .8px;
-        }
-        .net-row .net-value {
-            font-size: 20px;
-            font-weight: 800;
-            font-variant-numeric: tabular-nums;
-        }
-
-        /* ── QR Section ── */
-        .qr-section {
-            text-align: center;
-            padding: 16px 18px;
-            border: 2px dashed #25a35a;
-            border-radius: 10px;
-            background: #fafbfc;
-            min-width: 220px;
-            width: 220px;
-            flex-shrink: 0;
-        }
-        .qr-section p {
+            padding: 5px 0;
+            border-bottom: 1px dashed #f1f5f9;
             font-size: 12px;
-            color: #25a35a;
-            margin-bottom: 12px;
-            font-weight: 700;
+        }
+        .info-row .lbl { color: #64748b; font-weight: 500; }
+        .info-row .val { color: #0f172a; font-weight: 700; text-align: right; max-width: 55%; word-break: break-word; }
+
+        /* ─── ATTENDANCE BAR ─── */
+        .att-bar {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 18px;
+        }
+        .att-cell { text-align: center; padding: 10px 6px; border-right: 1px solid #e2e8f0; }
+        .att-cell:last-child { border-right: none; }
+        .att-cell .av { font-size: 20px; font-weight: 800; color: #1e293b; line-height: 1; }
+        .att-cell .al { font-size: 9.5px; color: #64748b; text-transform: uppercase; letter-spacing: .5px; margin-top: 3px; }
+        .att-cell.highlight { background: #eff6ff; }
+        .att-cell.highlight .av { color: #1d4ed8; }
+        .att-cell.danger .av { color: #dc2626; }
+        .att-cell.success .av { color: #16a34a; }
+
+        /* ─── SALARY TABLE ─── */
+        .stbl {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .stbl thead tr { background: linear-gradient(135deg, #f8fafc, #f1f5f9); }
+        .stbl thead th {
+            font-size: 11px;
             text-transform: uppercase;
             letter-spacing: .6px;
+            color: #475569;
+            font-weight: 700;
+            padding: 9px 14px;
+            border-bottom: 2px solid #e2e8f0;
         }
-        .qr-section img {
-            width: 190px;
-            height: 190px;
-            object-fit: contain;
-            border-radius: 6px;
-            border: 1px solid #e2e8f0;
-        }
+        .stbl thead th.earn-col { text-align: left; border-right: 2px solid #e2e8f0; }
+        .stbl thead th.amt-col  { text-align: right; border-right: 2px solid #e2e8f0; }
+        .stbl thead th.ded-col  { text-align: left; }
+        .stbl thead th.amt-col2 { text-align: right; }
+        .stbl tbody td { padding: 7px 14px; border-bottom: 1px solid #f8fafc; font-size: 12.5px; }
+        .stbl tbody td.earn-col { border-right: 2px solid #f1f5f9; }
+        .stbl tbody td.amt-col  { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; border-right: 2px solid #f1f5f9; color: #0f172a; }
+        .stbl tbody td.amt-col2 { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: #b91c1c; }
+        .stbl tbody td.empty-cell { color: #cbd5e1; font-size: 12px; }
+        .stbl .row-alt td { background: #fafbfc; }
+        .stbl .adv-row td { background: #fff7ed; }
+        .stbl .adv-row td.amt-col2 { color: #c2410c; font-weight: 700; }
 
-        /* ── Footer ── */
-        .slip-footer {
-            text-align: center;
-            padding: 8px 24px;
-            background: #f8fafc;
-            border-top: 1px solid #e2e8f0;
-            font-size: 10px;
-            color: #94a3b8;
-        }
-
-        /* ── Print Actions (hidden on print) ── */
-        .print-actions {
-            max-width: 960px;
-            margin: 16px auto 12px;
-            padding: 0 4px;
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-        }
-        .print-actions button {
-            padding: 7px 20px;
-            border: none;
-            border-radius: 6px;
+        /* ─── ADVANCE SUMMARY TABLE ─── */
+        .adv-tbl {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #fde68a;
+            border-radius: 8px;
+            overflow: hidden;
             font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all .2s;
+            margin-bottom: 18px;
         }
-        .btn-print { background: #25a35a; color: #fff; }
-        .btn-print:hover { background: #1e8449; }
-        .btn-back { background: #e2e8f0; color: #475569; }
-        .btn-back:hover { background: #cbd5e1; }
+        .adv-tbl thead tr { background: linear-gradient(135deg, #fef9c3, #fef3c7); }
+        .adv-tbl thead th {
+            font-size: 10.5px;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: #a16207;
+            font-weight: 700;
+            padding: 7px 12px;
+            border-bottom: 1px solid #fde68a;
+            text-align: left;
+        }
+        .adv-tbl thead th:not(:first-child) { text-align: right; }
+        .adv-tbl thead th:nth-child(5),
+        .adv-tbl thead th:nth-child(6) { text-align: left; }
+        .adv-tbl thead th:last-child { text-align: center; }
+        .adv-tbl tbody td { padding: 7px 12px; border-bottom: 1px solid #fef9c3; }
+        .adv-tbl tbody tr:last-child td { border-bottom: none; }
+        .adv-tbl tbody td:not(:first-child) { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .adv-tbl tbody td:nth-child(5),
+        .adv-tbl tbody td:nth-child(6) { text-align: left; }
+        .adv-tbl tbody td:last-child { text-align: center; }
+        .adv-status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10.5px;
+            font-weight: 700;
+        }
+        .adv-status-disbursed { background: #dbeafe; color: #1d4ed8; }
+        .adv-status-repaying  { background: #d1fae5; color: #065f46; }
+        .adv-status-cleared   { background: #f0fdf4; color: #16a34a; border: 1px solid #86efac; }
+        .adv-status-pending   { background: #fef9c3; color: #a16207; }
+        .adv-status-approved  { background: #ede9fe; color: #5b21b6; }
+        .adv-status-rejected  { background: #fee2e2; color: #b91c1c; }
+
+        /* ─── TOTALS ─── */
+        .totals-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .total-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+        .total-card .tc-label { font-size: 12px; font-weight: 600; color: #475569; }
+        .total-card .tc-value { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; color: #1e293b; }
+        .total-card.earnings-card  { border-left: 3px solid #1d4ed8; }
+        .total-card.earnings-card .tc-value { color: #1d4ed8; }
+        .total-card.deductions-card { border-left: 3px solid #dc2626; }
+        .total-card.deductions-card .tc-value { color: #dc2626; }
+        .total-card.advance-card { border-left: 3px solid #d97706; background: #fffbeb; border-color: #fde68a; }
+        .total-card.advance-card .tc-label { color: #92400e; }
+        .total-card.advance-card .tc-value { color: #d97706; }
+        .total-card.overtime-card { border-left: 3px solid #7c3aed; }
+        .total-card.overtime-card .tc-value { color: #7c3aed; }
+
+        /* ─── NET BANNER ─── */
+        .net-banner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 60%, #1e3a8a 100%);
+            color: #fff;
+            border-radius: 10px;
+            margin-bottom: 18px;
+            box-shadow: 0 4px 14px rgba(29,78,216,.35);
+        }
+        .nb-label { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; opacity: .90; }
+        .nb-calc  { font-size: 11px; opacity: .68; margin-top: 3px; }
+        .nb-currency { font-size: 13px; opacity: .82; text-align: right; }
+        .nb-amount { font-size: 28px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -.5px; text-align: right; }
+
+        /* ─── SIGNATURES ─── */
+        .sig-row { display: flex; justify-content: space-between; margin-bottom: 14px; gap: 16px; }
+        .sig-box {
+            flex: 1;
+            text-align: center;
+            padding-top: 32px;
+            border-top: 1.5px solid #cbd5e1;
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 600;
+        }
+
+        /* ─── QR ─── */
+        .qr-wrap { text-align: center; margin-bottom: 16px; }
+        .qr-box {
+            display: inline-block;
+            border: 2px dashed #1d4ed8;
+            border-radius: 10px;
+            padding: 12px 16px;
+            background: #eff6ff;
+        }
+        .qr-box p { font-size: 10px; color: #1d4ed8; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
+        .qr-box img { width: 120px; height: 120px; object-fit: contain; border-radius: 5px; }
+
+        /* ─── FOOTER ─── */
+        .slip-footer {
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            color: rgba(255,255,255,.55);
+            text-align: center;
+            padding: 10px 24px;
+            font-size: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
         @media print {
             body { background: #fff; }
-            .slip { margin: 0; border: none; border-radius: 0; max-width: 100%; box-shadow: none; }
-            .print-actions { display: none !important; }
+            .action-bar { display: none !important; }
+            .slip { margin: 0; border-radius: 0; box-shadow: none; max-width: 100%; }
         }
     </style>
 </head>
 <body>
 
-<div class="print-actions">
-    <button class="btn-back" onclick="window.history.back()">&#8592; Back</button>
-    <button class="btn-print" onclick="window.print()">&#128438; Print / Download PDF</button>
+<!-- Action Bar -->
+<div class="action-bar">
+    <div class="ab-title">Payslip &rarr; <span>{{ payslip.payslip_number }}</span></div>
+    <div class="ab-btns">
+        <button class="btn-back" onclick="window.history.back()">&#8592; Back</button>
+        <button class="btn-print" onclick="window.print()">&#128438; Print / Download PDF</button>
+    </div>
 </div>
 
 <div class="slip">
-    <!-- ── Header ── -->
+
+    <!-- ═══ HEADER ═══ -->
     <div class="slip-header">
-        <div class="company">
-            <h1>{{ company_name }}</h1>
-            <p>Pay Period: {{ pay_period_start|date:"M d, Y" }} &mdash; {{ pay_period_end|date:"M d, Y" }}</p>
+        <div class="hdr-left">
+            <div class="company-name">{{ company_name }}</div>
+            <div class="company-sub">Official Salary Statement &bull; Confidential Document</div>
         </div>
-        <div class="slip-title">
-            <h2>Salary Slip</h2>
-            <p>{{ payslip.payslip_number }}</p>
+        <div class="hdr-right">
+            <div class="slip-label">Salary Slip</div>
+            <div class="slip-num">{{ payslip.payslip_number }}</div>
+            <div class="pay-period-badge">
+                {{ pay_period_start|date:"M d" }} &ndash; {{ pay_period_end|date:"M d, Y" }}
+            </div>
         </div>
     </div>
 
-    <!-- ── Body ── -->
+    <!-- ═══ STATUS STRIP ═══ -->
+    <div class="status-strip">
+        <div class="ss-item">
+            <span class="ss-dot" style="background:#1d4ed8"></span>
+            <span class="ss-label">Pay Date:</span>
+            <span class="ss-value">{{ pay_date|date:"M d, Y"|default:"—" }}</span>
+        </div>
+        <div class="ss-item">
+            <span class="ss-dot" style="background:#16a34a"></span>
+            <span class="ss-label">Generated On:</span>
+            <span class="ss-value">{{ payslip.generated_on|date:"M d, Y"|default:"—" }}</span>
+        </div>
+        <div class="ss-item">
+            <span class="ss-dot" style="
+                {% if payslip.status == 'paid' %}background:#16a34a
+                {% elif payslip.status == 'generated' %}background:#d97706
+                {% elif payslip.status == 'downloaded' %}background:#7c3aed
+                {% else %}background:#94a3b8{% endif %}
+            "></span>
+            <span class="ss-label">Status:</span>
+            <span class="ss-value">{{ payslip.get_status_display }}</span>
+        </div>
+        {% if payslip.paid_date %}
+        <div class="ss-item">
+            <span class="ss-dot" style="background:#16a34a"></span>
+            <span class="ss-label">Paid On:</span>
+            <span class="ss-value">{{ payslip.paid_date|date:"M d, Y" }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ═══ BODY ═══ -->
     <div class="slip-body">
 
         <!-- Employee Information -->
-        <div class="section-title">Employee Information</div>
+        <div class="sec-head">Employee Information</div>
         <div class="info-grid">
             <div class="info-row">
-                <span class="label">Employee Name</span>
-                <span class="value">{{ employee.full_name }}</span>
+                <span class="lbl">Full Name</span>
+                <span class="val">{{ employee.full_name }}</span>
             </div>
             <div class="info-row">
-                <span class="label">Employee ID</span>
-                <span class="value">{{ employee.employee_id }}</span>
+                <span class="lbl">Employee ID</span>
+                <span class="val">{{ employee.employee_id }}</span>
             </div>
             <div class="info-row">
-                <span class="label">Department</span>
-                <span class="value">{{ employee.department.name|default:"-" }}</span>
+                <span class="lbl">Department</span>
+                <span class="val">{{ employee.department.name|default:"—" }}</span>
             </div>
             <div class="info-row">
-                <span class="label">Designation</span>
-                <span class="value">{{ employee.designation.name|default:"-" }}</span>
+                <span class="lbl">Designation</span>
+                <span class="val">{{ employee.designation.name|default:"—" }}</span>
             </div>
             <div class="info-row">
-                <span class="label">Email</span>
-                <span class="value">{{ employee.email }}</span>
+                <span class="lbl">Email</span>
+                <span class="val" style="font-size:11px">{{ employee.email }}</span>
             </div>
             <div class="info-row">
-                <span class="label">Basic Salary</span>
-                <span class="value">Rs. {{ basic_salary|floatformat:2 }}</span>
+                <span class="lbl">Basic Salary</span>
+                <span class="val" style="color:#1d4ed8">Rs. {{ basic_salary|floatformat:2 }}</span>
             </div>
             <div class="info-row">
-                <span class="label">Bank Name</span>
-                <span class="value">{{ employee.bank_name|default:"-" }}</span>
+                <span class="lbl">Bank Name</span>
+                <span class="val">{{ employee.bank_name|default:"—" }}</span>
             </div>
             <div class="info-row">
-                <span class="label">Account Number</span>
-                <span class="value">{{ employee.account_number|default:"-" }}</span>
-            </div>
-            <div class="info-row">
-                <span class="label">Pay Date</span>
-                <span class="value">{{ pay_date|date:"M d, Y"|default:"-" }}</span>
-            </div>
-            <div class="info-row">
-                <span class="label">Generated On</span>
-                <span class="value">{{ payslip.generated_on|date:"M d, Y"|default:"-" }}</span>
+                <span class="lbl">Account Number</span>
+                <span class="val">{{ employee.account_number|default:"—" }}</span>
             </div>
         </div>
 
         <!-- Attendance Summary -->
-        <div class="section-title">Attendance Summary</div>
-        <div class="attendance-bar">
-            <div class="att-item">
-                <div class="att-value">{{ working_days }}</div>
-                <div class="att-label">Working Days</div>
+        <div class="sec-head">Attendance Summary</div>
+        <div class="att-bar">
+            <div class="att-cell highlight">
+                <div class="av">{{ working_days }}</div>
+                <div class="al">Working Days</div>
             </div>
-            <div class="att-item">
-                <div class="att-value">{{ present_days }}</div>
-                <div class="att-label">Present</div>
+            <div class="att-cell success">
+                <div class="av">{{ present_days }}</div>
+                <div class="al">Present</div>
             </div>
-            <div class="att-item">
-                <div class="att-value">{{ paid_leave_days }}</div>
-                <div class="att-label">Paid Leave</div>
+            <div class="att-cell">
+                <div class="av">{{ paid_leave_days }}</div>
+                <div class="al">Paid Leave</div>
             </div>
-            <div class="att-item">
-                <div class="att-value">{{ absent_days }}</div>
-                <div class="att-label">Absent</div>
+            <div class="att-cell {% if absent_days > 0 %}danger{% endif %}">
+                <div class="av">{{ absent_days }}</div>
+                <div class="al">Absent</div>
             </div>
-            <div class="att-item">
-                <div class="att-value">{{ half_days }}</div>
-                <div class="att-label">Half Days</div>
+            <div class="att-cell">
+                <div class="av">{{ half_days }}</div>
+                <div class="al">Half Days</div>
             </div>
-            <div class="att-item">
-                <div class="att-value">{{ total_overtime_hours }}h</div>
-                <div class="att-label">Overtime</div>
+            <div class="att-cell">
+                <div class="av">{{ employee_weekends }} / {{ total_weekends }}</div>
+                <div class="al">Weekend</div>
+            </div>
+            <div class="att-cell {% if total_overtime_hours > 0 %}success{% endif %}">
+                <div class="av">{{ total_overtime_hours }}h</div>
+                <div class="al">Overtime</div>
             </div>
         </div>
 
         <!-- Salary Details -->
-        <div class="section-title">Salary Details</div>
-        <table class="salary-table">
+        <div class="sec-head">Salary Details</div>
+        <table class="stbl">
             <thead>
                 <tr>
-                    <th>Earnings</th>
-                    <th>Amount (Rs.)</th>
-                    <th>Deductions</th>
-                    <th>Amount (Rs.)</th>
+                    <th class="earn-col" style="width:38%">Earnings</th>
+                    <th class="amt-col"  style="width:12%">Amount (Rs.)</th>
+                    <th class="ded-col"  style="width:38%">Deductions</th>
+                    <th class="amt-col2" style="width:12%">Amount (Rs.)</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>Basic Salary</td>
-                    <td>{{ basic_salary|floatformat:2 }}</td>
-                    <td class="empty">&nbsp;</td>
-                    <td class="empty">&nbsp;</td>
+                    <td class="earn-col" style="font-weight:600">Basic Salary</td>
+                    <td class="amt-col" style="color:#1d4ed8">{{ basic_salary|floatformat:2 }}</td>
+                    <td class="ded-col empty-cell">&nbsp;</td>
+                    <td class="amt-col2 empty-cell">&nbsp;</td>
                 </tr>
                 {% for row in salary_rows %}
-                <tr{% if forloop.counter|divisibleby:2 %} class="row-even"{% endif %}>
-                    <td>{{ row.earning_name|default:"&nbsp;" }}</td>
-                    <td>{% if row.earning_amount %}{{ row.earning_amount|floatformat:2 }}{% else %}&nbsp;{% endif %}</td>
-                    <td>{{ row.deduction_name|default:"&nbsp;" }}</td>
-                    <td>{% if row.deduction_amount %}{{ row.deduction_amount|floatformat:2 }}{% else %}&nbsp;{% endif %}</td>
+                <tr{% if forloop.counter|divisibleby:2 %} class="row-alt"{% endif %}>
+                    <td class="earn-col">{{ row.earning_name|default:"" }}</td>
+                    <td class="amt-col">{% if row.earning_amount %}{{ row.earning_amount|floatformat:2 }}{% endif %}</td>
+                    <td class="ded-col">{{ row.deduction_name|default:"" }}</td>
+                    <td class="amt-col2">{% if row.deduction_amount %}{{ row.deduction_amount|floatformat:2 }}{% endif %}</td>
                 </tr>
                 {% endfor %}
                 {% if overtime_amount and overtime_amount > 0 %}
-                <tr class="row-even">
-                    <td>Overtime ({{ total_overtime_hours }}h &times; Rs.{{ overtime_rate|floatformat:2 }})</td>
-                    <td>{{ overtime_amount|floatformat:2 }}</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
+                <tr>
+                    <td class="earn-col" style="color:#7c3aed;font-weight:600">
+                        Overtime &mdash; {{ total_overtime_hours }}h &times; Rs.{{ overtime_rate|floatformat:2 }}
+                    </td>
+                    <td class="amt-col" style="color:#7c3aed">{{ overtime_amount|floatformat:2 }}</td>
+                    <td class="ded-col empty-cell">&nbsp;</td>
+                    <td class="amt-col2 empty-cell">&nbsp;</td>
                 </tr>
                 {% endif %}
                 {% if attendance_deduction and attendance_deduction > 0 %}
                 <tr>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td>Attendance Deduction</td>
-                    <td>{{ attendance_deduction|floatformat:2 }}</td>
+                    <td class="earn-col empty-cell">&nbsp;</td>
+                    <td class="amt-col empty-cell">&nbsp;</td>
+                    <td class="ded-col" style="color:#dc2626;font-weight:600">Attendance Deduction</td>
+                    <td class="amt-col2">{{ attendance_deduction|floatformat:2 }}</td>
                 </tr>
                 {% endif %}
             </tbody>
         </table>
 
-        <!-- Bottom: Totals + QR side by side -->
-        <div class="bottom-area">
-            <div class="bottom-left">
-                <div class="totals-row">
-                    <span class="t-label">Total Earnings</span>
-                    <span class="t-value">Rs. {{ total_earnings|floatformat:2 }}</span>
-                </div>
-                <div class="totals-row">
-                    <span class="t-label">Total Deductions</span>
-                    <span class="t-value">Rs. {{ total_deductions|floatformat:2 }}</span>
-                </div>
-                <div class="net-row">
-                    <span class="net-label">Net Salary (Take Home)</span>
-                    <span class="net-value">Rs. {{ net_salary|floatformat:2 }}</span>
-                </div>
+        <!-- Advance Payment Summary (always shown if employee has any advance) -->
+        {% if all_advances %}
+        <div class="sec-head">Advance Payment Summary</div>
+        <table class="adv-tbl">
+            <thead>
+                <tr>
+                    <th>Advance No.</th>
+                    <th>Total Amount</th>
+                    <th>Deducted This Month</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for adv in all_advances %}
+                <tr>
+                    <td style="font-weight:700;color:#1d4ed8">{{ adv.advance_number }}</td>
+                    <td>Rs. {{ adv.amount|floatformat:2 }}</td>
+                    <td>
+                        {% if adv.deducted_this_month %}Rs. {{ adv.deducted_this_month|floatformat:2 }}
+                        {% else %}&mdash;{% endif %}
+                    </td>
+                    <td><span class="adv-status adv-status-{{ adv.status }}">{{ adv.get_status_display }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <!-- Payment Summary -->
+        <div class="sec-head">Payment Summary</div>
+        <div class="totals-grid">
+            <div class="total-card earnings-card">
+                <span class="tc-label">&#43; Total Earnings</span>
+                <span class="tc-value">Rs. {{ total_earnings|floatformat:2 }}</span>
             </div>
-            {% if employee.payment_qr_code %}
-            <div class="qr-section">
-                <p>Payment QR Code</p>
-                <img src="{{ employee.payment_qr_code.url }}" alt="Payment QR Code">
+            <div class="total-card deductions-card">
+                <span class="tc-label">&#8722; Total Deductions</span>
+                <span class="tc-value">Rs. {{ total_deductions|floatformat:2 }}</span>
+            </div>
+            {% if overtime_amount and overtime_amount > 0 %}
+            <div class="total-card overtime-card">
+                <span class="tc-label">&#43; Overtime Pay</span>
+                <span class="tc-value">Rs. {{ overtime_amount|floatformat:2 }}</span>
             </div>
             {% endif %}
         </div>
 
-    </div>
+        <!-- Net Salary Banner -->
+        <div class="net-banner">
+            <div>
+                <div class="nb-label">&#127968; Net Salary (Take Home)</div>
+                <div class="nb-calc">
+                    Rs.{{ total_earnings|floatformat:2 }}
+                    {% if overtime_amount and overtime_amount > 0 %} + Rs.{{ overtime_amount|floatformat:2 }} (OT){% endif %}
+                    &minus; Rs.{{ total_deductions|floatformat:2 }}
+                    = Rs.{{ net_salary|floatformat:2 }}
+                </div>
+            </div>
+            <div>
+                <div class="nb-currency">Rs.</div>
+                <div class="nb-amount">{{ net_salary|floatformat:2 }}</div>
+            </div>
+        </div>
 
-    <!-- ── Footer ── -->
+        {% if employee.payment_qr_code %}
+        <div class="qr-wrap">
+            <div class="qr-box">
+                <p>&#128249; Payment QR Code</p>
+                <img src="{{ employee.payment_qr_code.url }}" alt="Payment QR">
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Signatures -->
+        <div class="sig-row">
+            <div class="sig-box">Employee Signature</div>
+            <div class="sig-box">HR Manager Signature</div>
+            <div class="sig-box">Authorised Signatory</div>
+        </div>
+
+    </div><!-- /slip-body -->
+
+    <!-- ═══ FOOTER ═══ -->
     <div class="slip-footer">
-        This is a system-generated payslip and does not require a signature. &bull; {{ company_name }}
+        <span>&#128274; System-generated payslip &mdash; does not require a physical signature &bull; {{ company_name }}</span>
+        <span>{{ payslip.payslip_number }} &bull; {{ payslip.generated_on|date:"M d, Y"|default:"—" }}</span>
     </div>
-</div>
 
+</div><!-- /slip -->
 </body>
 </html>

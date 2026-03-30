@@ -886,11 +886,11 @@
                                 <li class="{% if request.resolver_match.url_name == 'payroll_run_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:payroll_run_list' %}">Payroll Runs</a>
                                 </li>
-                                <li class="{% if request.resolver_match.url_name == 'payslip_list' %}active{% endif %}">
-                                    <a href="{% url 'hrm:payslip_list' %}">Payslips</a>
-                                </li>
                                 <li class="{% if request.resolver_match.url_name == 'advance_payment_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:advance_payment_list' %}">Advance Payments</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'payslip_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:payslip_list' %}">Payslips</a>
                                 </li>
                             </ul>
                         </li>

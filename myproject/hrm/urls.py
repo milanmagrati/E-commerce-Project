@@ -176,6 +176,7 @@ urlpatterns = [
     path('payroll/runs/<int:pk>/delete/', views.payroll_run_delete, name='payroll_run_delete'),
     path('payroll/runs/<int:pk>/generate-payslips/', views.generate_payslips, name='generate_payslips'),
     path('payroll/payslips/', views.payslip_list, name='payslip_list'),
+    path('payroll/payslips/sync-advances/', views.payslip_sync_advances, name='payslip_sync_advances'),
     path('payroll/payslips/<int:pk>/', views.payslip_detail, name='payslip_detail'),
     path('payroll/payslips/<int:pk>/download/', views.payslip_download, name='payslip_download'),
 

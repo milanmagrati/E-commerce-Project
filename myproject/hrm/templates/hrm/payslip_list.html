@@ -453,8 +453,8 @@
 /* Summary card inside detail modal */
 .ps-detail-summary {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
     margin: 16px 0 8px;
     padding: 16px;
     background: #f8fafc;
@@ -463,9 +463,15 @@
 }
 .ps-detail-summary-item {
     text-align: center;
+    padding: 8px 4px;
+    border-radius: 8px;
+}
+.ps-detail-summary-item.has-advance {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
 }
 .ps-detail-summary-item .ps-sum-label {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: .5px;
@@ -473,12 +479,72 @@
     margin-bottom: 4px;
 }
 .ps-detail-summary-item .ps-sum-val {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
 }
 .ps-sum-val.gross { color: #2563eb; }
 .ps-sum-val.deduction { color: #dc2626; }
+.ps-sum-val.advance { color: #dc2626; }
 .ps-sum-val.net { color: #059669; }
+
+/* ── Advance Status Badges ─────────────────────────────── */
+.adv-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 11px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.adv-badge-active   { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.adv-badge-stale    { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+.adv-badge-pending  { background: #fefce8; color: #a16207; border: 1px solid #fde68a; }
+.adv-badge-cleared  { background: #f0fdf4; color: #16a34a; border: 1px solid #86efac; }
+.adv-badge-rejected { background: #fafafa; color: #6b7280; border: 1px solid #e5e7eb; }
+.adv-badge-none     { color: #d1d5db; font-size: 16px; }
+
+/* ── Stale Alert Banner ────────────────────────────────── */
+.ps-stale-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    background: linear-gradient(135deg, #fff7ed, #fef3c7);
+    border: 1.5px solid #fcd34d;
+    border-radius: 12px;
+    margin-bottom: 14px;
+    flex-shrink: 0;
+}
+.ps-stale-banner i { color: #d97706; font-size: 16px; flex-shrink: 0; }
+.ps-stale-banner p { margin: 0; font-size: 13px; color: #92400e; flex: 1; }
+.ps-stale-banner strong { color: #78350f; }
+
+/* ── Sync Button ───────────────────────────────────────── */
+.btn-sync-advances {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 18px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #d97706, #f59e0b);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .2s, transform .15s;
+    box-shadow: 0 3px 10px rgba(217,119,6,.3);
+    flex-shrink: 0;
+}
+.btn-sync-advances:hover { opacity: .9; transform: translateY(-1px); }
+.btn-sync-advances:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+/* ── Gross / Net amount cells ──────────────────────────── */
+.ps-cell-gross  { font-weight: 700; color: #1d4ed8; font-size: 13px; }
+.ps-cell-deduct { font-weight: 600; color: #b91c1c; font-size: 13px; }
+.ps-cell-net    { font-weight: 700; color: #059669; font-size: 13px; }
 </style>
 
 <div class="ps-page-container">
@@ -493,8 +559,33 @@
 
     <!-- Header -->
     <div class="ps-header">
-        <h2><i class="fas fa-file-invoice-dollar"></i> Payslips</h2>
+        <div>
+            <h2><i class="fas fa-file-invoice-dollar"></i> Payslips</h2>
+            <p style="margin:4px 0 0;font-size:12.5px;color:#6b7280">Employee salary payslips with earnings, deductions &amp; advance recovery</p>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+            {% if stale_count > 0 %}
+            <button class="btn-sync-advances" id="btnSyncAdvances" onclick="syncAdvances()">
+                <i class="fas fa-sync-alt" id="syncIcon"></i> Sync Advance Data
+                <span style="background:rgba(255,255,255,.25);padding:1px 7px;border-radius:10px;font-size:11px">{{ stale_count }} stale</span>
+            </button>
+            {% else %}
+            <button class="btn-sync-advances" id="btnSyncAdvances" onclick="syncAdvances()" style="background:linear-gradient(135deg,#6b7280,#9ca3af);box-shadow:none">
+                <i class="fas fa-sync-alt" id="syncIcon"></i> Sync Advances
+            </button>
+            {% endif %}
+        </div>
     </div>
+
+    {% if stale_count > 0 %}
+    <div class="ps-stale-banner" id="staleBanner">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p><strong>{{ stale_count }} payslip(s)</strong> have advance deductions that don’t match current advance payment records. Click <strong>“Sync Advance Data”</strong> to recalculate and save the correct values.</p>
+        <button class="btn-sync-advances" onclick="syncAdvances()" style="padding:6px 14px;font-size:12px">
+            <i class="fas fa-sync-alt"></i> Fix Now
+        </button>
+    </div>
+    {% endif %}
 
     <!-- Filter / Search -->
     <div class="ps-filter-card">
@@ -540,14 +631,17 @@
             <table class="ps-table">
                 <thead>
                     <tr>
-                        <th>#</th>
-                        <th>Payslip Number</th>
+                        <th style="width:46px">#</th>
+                        <th>Payslip No.</th>
                         <th>Employee</th>
                         <th>Pay Period</th>
                         <th>Pay Date</th>
-                        <th>Net Pay</th>
+                        <th style="color:#1d4ed8">Gross Pay</th>
+                        <th style="color:#b91c1c">Deductions</th>
+                        <th style="color:#b45309">Advance Deduction</th>
+                        <th style="color:#059669">Net Pay</th>
                         <th>Status</th>
-                        <th>Generated On</th>
+                        <th>Generated</th>
                         <th class="text-center">Actions</th>
                     </tr>
                 </thead>
@@ -572,7 +666,44 @@
                             </div>
                         </td>
                         <td>{{ slip.payroll_run.pay_date|date:"Y-m-d"|default:"-" }}</td>
-                        <td><span class="ps-money">रू{{ slip.net_salary|floatformat:2 }}</span></td>
+                        <td><span class="ps-cell-gross">रू {{ slip.gross_salary|floatformat:2 }}</span></td>
+                        <td><span class="ps-cell-deduct">− रू {{ slip.total_deductions|floatformat:2 }}</span></td>
+                        <td>
+                            {% if slip.has_rejected_advance %}
+                                {# Advance was rejected — no deduction applied regardless of stored value #}
+                                <span class="adv-badge adv-badge-rejected" title="Advance payment was rejected — no deduction applied">
+                                    <i class="fas fa-times-circle" style="font-size:10px"></i>
+                                    Rejected
+                                </span>
+                            {% elif slip.advance_deduction > 0 %}
+                                {# Stored value is non-zero — show it in red #}
+                                <span class="adv-badge adv-badge-active">
+                                    <i class="fas fa-hand-holding-usd" style="font-size:10px"></i>
+                                    − रू {{ slip.advance_deduction|floatformat:2 }}
+                                </span>
+                            {% elif slip.live_advance_deduction > 0 %}
+                                {# Live advances exist but payslip hasn't been synced yet #}
+                                <span class="adv-badge adv-badge-stale" title="Active advance exists but payslip not synced. Click Sync Advance Data.">
+                                    <i class="fas fa-exclamation-circle" style="font-size:10px"></i>
+                                    Needs Sync
+                                </span>
+                            {% elif slip.has_cleared_advance %}
+                                {# Advance is fully repaid / cleared #}
+                                <span class="adv-badge adv-badge-cleared" title="Advance fully repaid">
+                                    <i class="fas fa-check-circle" style="font-size:10px"></i>
+                                    Repaid
+                                </span>
+                            {% elif slip.has_pending_advance %}
+                                {# Advance is pending/approved but not yet disbursed #}
+                                <span class="adv-badge adv-badge-pending" title="Advance pending — {{ slip.advance_status }}">
+                                    <i class="fas fa-clock" style="font-size:10px"></i>
+                                    {% if slip.advance_status == 'approved' %}Approved{% else %}Pending{% endif %}
+                                </span>
+                            {% else %}
+                                <span class="adv-badge-none">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td><span class="ps-cell-net">रू {{ slip.net_salary|floatformat:2 }}</span></td>
                         <td><span class="ps-badge ps-badge-{{ slip.status }}">{{ slip.get_status_display }}</span></td>
                         <td>{{ slip.generated_on|date:"Y-m-d"|default:"-" }}</td>
                         <td>
@@ -585,7 +716,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9">
+                        <td colspan="13">
                             <div class="ps-empty">
                                 <i class="fas fa-file-invoice-dollar"></i>
                                 <p>No payslips found.</p>
@@ -673,6 +804,46 @@ function downloadAndReload(url) {
     });
 })();
 
+// Sync all advance deductions
+function syncAdvances() {
+    const btn = document.getElementById('btnSyncAdvances');
+    const icon = document.getElementById('syncIcon');
+    if (!btn) return;
+    btn.disabled = true;
+    icon.className = 'fas fa-spinner fa-spin';
+    btn.childNodes[2] && (btn.childNodes[2].textContent = ' Syncing...');
+
+    fetch('{% url "hrm:payslip_sync_advances" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/json' },
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // Show success banner then reload
+            const banner = document.getElementById('staleBanner');
+            if (banner) {
+                banner.style.background = 'linear-gradient(135deg,#f0fdf4,#dcfce7)';
+                banner.style.borderColor = '#86efac';
+                banner.querySelector('i').className = 'fas fa-check-circle';
+                banner.querySelector('i').style.color = '#16a34a';
+                banner.querySelector('p').innerHTML = '<strong>Done!</strong> ' + data.message;
+                banner.querySelectorAll('button').forEach(b => b.remove());
+            }
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            alert('Error: ' + (data.error || 'Sync failed'));
+            btn.disabled = false;
+            icon.className = 'fas fa-sync-alt';
+        }
+    })
+    .catch(() => {
+        alert('Network error. Please try again.');
+        btn.disabled = false;
+        icon.className = 'fas fa-sync-alt';
+    });
+}
+
 // View payslip detail
 function viewPayslipDetail(pk) {
     const body = document.getElementById('viewSlipBody');
@@ -703,8 +874,12 @@ function viewPayslipDetail(pk) {
                             <div class="ps-sum-label">Deductions</div>
                             <div class="ps-sum-val deduction">- रू${parseFloat(s.total_deductions).toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
                         </div>
+                        <div class="ps-detail-summary-item ${parseFloat(s.advance_deduction) > 0 ? 'has-advance' : ''}">
+                            <div class="ps-sum-label">Adv. Deduction</div>
+                            <div class="ps-sum-val advance">${parseFloat(s.advance_deduction) > 0 ? '- रू' + parseFloat(s.advance_deduction).toLocaleString('en-IN', {minimumFractionDigits:2}) : '—'}</div>
+                        </div>
                         <div class="ps-detail-summary-item">
-                            <div class="ps-sum-label">Net Salary</div>
+                            <div class="ps-sum-label">Net Pay</div>
                             <div class="ps-sum-val net">रू${parseFloat(s.net_salary).toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
                         </div>
                     </div>

@@ -798,6 +798,7 @@ class Payslip(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='payslips')
     gross_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_deductions = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    advance_deduction = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text='Advance payment deduction for this pay period')
     net_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     paid_date = models.DateField(null=True, blank=True)
