@@ -86,8 +86,8 @@
                     <tr><td class="text-muted">Department</td><td>{{ employee.department.name|default:"-" }}</td></tr>
                     <tr><td class="text-muted">Designation</td><td>{{ employee.designation.name|default:"-" }}</td></tr>
                     <tr><td class="text-muted">Employment Type</td><td>{{ employee.get_employment_type_display }}</td></tr>
-                    <tr><td class="text-muted">Shift</td><td>{{ employee.shift|default:"-" }}</td></tr>
-                    <tr><td class="text-muted">Attendance Policy</td><td>{{ employee.attendance_policy|default:"-" }}</td></tr>
+                    <tr><td class="text-muted">Shift</td><td>{% if employee.shift %}{{ employee.shift.name }}{% else %}-{% endif %}</td></tr>
+                    <tr><td class="text-muted">Attendance Policy</td><td>{% if employee.attendance_policy %}{{ employee.attendance_policy.name }}{% else %}-{% endif %}</td></tr>
                 </table>
             </div>
         </div>

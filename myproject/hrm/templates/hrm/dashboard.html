@@ -124,15 +124,16 @@
     .badge-approved { background: #d1fae5; color: #059669; }
     .badge-pending { background: #fef3c7; color: #d97706; }
     .badge-rejected { background: #fee2e2; color: #dc2626; }
-    .badge-offer { background: #fee2e2; color: #dc2626; }
-    .badge-interview { background: #f3e8ff; color: #7c3aed; }
-    .badge-screening { background: #d1fae5; color: #059669; }
-    .badge-new { background: #dbeafe; color: #2563eb; }
-    .badge-scheduled { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .badge-cancelled { background: #f3f4f6; color: #6b7280; }
+    .badge-draft { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .badge-issued { background: #fef3c7; color: #d97706; }
+    .badge-acknowledged { background: #dbeafe; color: #2563eb; }
+    .badge-resolved { background: #d1fae5; color: #059669; }
+    .badge-escalated { background: #fee2e2; color: #dc2626; }
     .badge-completed { background: #d1fae5; color: #059669; }
-    .badge-high { background: #ef4444; color: #fff; }
-    .badge-medium { background: #f59e0b; color: #fff; }
-    .badge-low { background: #10b981; color: #fff; }
+    .badge-verbal { background: #dbeafe; color: #2563eb; }
+    .badge-written { background: #fef3c7; color: #d97706; }
+    .badge-final { background: #fee2e2; color: #dc2626; }
 
     .chart-container {
         padding: 20px;
@@ -159,6 +160,19 @@
 
     .hrm-list-body::-webkit-scrollbar { width: 4px; }
     .hrm-list-body::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+
+    .empty-state {
+        padding: 32px 20px;
+        text-align: center;
+        color: #9ca3af;
+        font-size: 0.85rem;
+    }
+    .empty-state i {
+        font-size: 1.5rem;
+        margin-bottom: 8px;
+        display: block;
+        color: #d1d5db;
+    }
 </style>
 {% endblock %}
 
@@ -233,12 +247,12 @@
         <div class="hrm-stat-card" style="border-left: 3px solid #ef4444;">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <div class="stat-label">Active Jobs</div>
-                    <div class="stat-value">{{ stats.active_jobs }}</div>
-                    <div class="stat-sub text-success">+{{ stats.jobs_this_month }} this month</div>
+                    <div class="stat-label">Active Warnings</div>
+                    <div class="stat-value">{{ stats.active_warnings }}</div>
+                    <div class="stat-sub text-muted">Issued &amp; draft</div>
                 </div>
                 <div class="stat-icon-circle icon-red">
-                    <i class="fas fa-briefcase"></i>
+                    <i class="fas fa-exclamation-triangle"></i>
                 </div>
             </div>
         </div>
@@ -247,12 +261,12 @@
         <div class="hrm-stat-card" style="border-left: 3px solid #6366f1;">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <div class="stat-label">Total Candidates</div>
-                    <div class="stat-value">{{ stats.total_candidates }}</div>
-                    <div class="stat-sub text-success">+{{ stats.candidates_this_month }} this month</div>
+                    <div class="stat-label">Pending Promotions</div>
+                    <div class="stat-value">{{ stats.pending_promotions }}</div>
+                    <div class="stat-sub text-muted">Awaiting approval</div>
                 </div>
                 <div class="stat-icon-circle icon-indigo">
-                    <i class="fas fa-user-plus"></i>
+                    <i class="fas fa-arrow-up"></i>
                 </div>
             </div>
         </div>
@@ -288,10 +302,10 @@
     <div class="col-lg-6">
         <div class="hrm-card">
             <div class="hrm-card-header">
-                <h6><i class="fas fa-user-friends me-2 text-muted"></i>Candidate Status</h6>
+                <h6><i class="fas fa-clipboard-check me-2 text-muted"></i>Leave Status</h6>
             </div>
             <div class="chart-container">
-                <canvas id="candidateStatusChart"></canvas>
+                <canvas id="leaveStatusChart"></canvas>
             </div>
         </div>
     </div>
@@ -307,7 +321,7 @@
     </div>
 </div>
 
-<!-- Recent Lists Row -->
+<!-- Recent Lists Row 1 -->
 <div class="row g-3 mb-4">
     <!-- Recent Leave Applications -->
     <div class="col-lg-6">
@@ -316,7 +330,7 @@
                 <h6><i class="fas fa-calendar-minus me-2 text-muted"></i>Recent Leave Applications</h6>
                 <div class="header-right">
                     <span class="count-badge">{{ total_leaves }}</span>
-                    <a href="#" class="view-all-btn">View All</a>
+                    <a href="{% url 'hrm:leave_report' %}" class="view-all-btn">View All</a>
                 </div>
             </div>
             <div class="hrm-list-body">
@@ -328,29 +342,39 @@
                     </div>
                     <div class="item-detail">{{ leave.leave_type }} &middot; {{ leave.start_date }} &ndash; {{ leave.end_date }}</div>
                 </div>
+                {% empty %}
+                <div class="empty-state">
+                    <i class="fas fa-calendar-minus"></i>
+                    No leave applications yet
+                </div>
                 {% endfor %}
             </div>
         </div>
     </div>
 
-    <!-- Recent Candidates -->
+    <!-- Recent Promotions -->
     <div class="col-lg-6">
         <div class="hrm-card">
             <div class="hrm-card-header">
-                <h6><i class="fas fa-user-plus me-2 text-muted"></i>Recent Candidates</h6>
+                <h6><i class="fas fa-arrow-up me-2 text-muted"></i>Recent Promotions</h6>
                 <div class="header-right">
-                    <span class="count-badge">{{ total_candidates_list }}</span>
-                    <a href="#" class="view-all-btn">View All</a>
+                    <span class="count-badge">{{ total_promotions }}</span>
+                    <a href="{% url 'hrm:promotion_list' %}" class="view-all-btn">View All</a>
                 </div>
             </div>
             <div class="hrm-list-body">
-                {% for candidate in recent_candidates %}
+                {% for promo in recent_promotions %}
                 <div class="hrm-list-item">
                     <div class="d-flex align-items-center gap-2">
-                        <span class="item-name">{{ candidate.name }}</span>
-                        <span class="status-badge badge-{{ candidate.status|lower }}">{{ candidate.status }}</span>
+                        <span class="item-name">{{ promo.employee }}</span>
+                        <span class="status-badge badge-{{ promo.status|lower }}">{{ promo.status }}</span>
                     </div>
-                    <div class="item-detail">{{ candidate.position }} &middot; {{ candidate.date }}</div>
+                    <div class="item-detail">To: {{ promo.new_designation }} &middot; {{ promo.date }}</div>
+                </div>
+                {% empty %}
+                <div class="empty-state">
+                    <i class="fas fa-arrow-up"></i>
+                    No promotions recorded yet
                 </div>
                 {% endfor %}
             </div>
@@ -358,50 +382,61 @@
     </div>
 </div>
 
-<!-- Announcements & Meetings Row -->
+<!-- Recent Lists Row 2 -->
 <div class="row g-3 mb-4">
-    <!-- Recent Announcements -->
+    <!-- Recent Warnings -->
     <div class="col-lg-6">
         <div class="hrm-card">
             <div class="hrm-card-header">
-                <h6><i class="fas fa-bullhorn me-2 text-muted"></i>Recent Announcements</h6>
+                <h6><i class="fas fa-exclamation-triangle me-2 text-muted"></i>Recent Warnings</h6>
                 <div class="header-right">
-                    <span class="count-badge">{{ total_announcements }}</span>
-                    <a href="#" class="view-all-btn">View All</a>
+                    <span class="count-badge">{{ total_warnings }}</span>
+                    <a href="{% url 'hrm:warning_list' %}" class="view-all-btn">View All</a>
                 </div>
             </div>
             <div class="hrm-list-body">
-                {% for ann in recent_announcements %}
+                {% for warn in recent_warnings %}
                 <div class="hrm-list-item">
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="item-name">{{ ann.title }}</span>
-                        <span class="status-badge badge-{{ ann.priority|lower }}">{{ ann.priority }} Priority</span>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="item-name">{{ warn.employee }}</span>
+                        <span class="status-badge badge-{{ warn.severity|lower }}">{{ warn.severity }}</span>
+                        <span class="status-badge badge-{{ warn.status|lower }}">{{ warn.status }}</span>
                     </div>
-                    <div class="item-detail">{{ ann.category }} &middot; {{ ann.date }}</div>
+                    <div class="item-detail">{{ warn.subject }} &middot; {{ warn.date }}</div>
+                </div>
+                {% empty %}
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    No warnings issued yet
                 </div>
                 {% endfor %}
             </div>
         </div>
     </div>
 
-    <!-- Recent Meetings -->
+    <!-- Recent Resignations -->
     <div class="col-lg-6">
         <div class="hrm-card">
             <div class="hrm-card-header">
-                <h6><i class="fas fa-handshake me-2 text-muted"></i>Recent Meetings</h6>
+                <h6><i class="fas fa-user-minus me-2 text-muted"></i>Recent Resignations</h6>
                 <div class="header-right">
-                    <span class="count-badge">{{ total_meetings }}</span>
-                    <a href="#" class="view-all-btn">View All</a>
+                    <span class="count-badge">{{ total_resignations }}</span>
+                    <a href="{% url 'hrm:resignation_list' %}" class="view-all-btn">View All</a>
                 </div>
             </div>
             <div class="hrm-list-body">
-                {% for meeting in recent_meetings %}
+                {% for res in recent_resignations %}
                 <div class="hrm-list-item">
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <span class="item-name">{{ meeting.title }}</span>
-                        <span class="status-badge badge-{{ meeting.status|lower }}">{{ meeting.status }}</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="item-name">{{ res.employee }}</span>
+                        <span class="status-badge badge-{{ res.status|lower }}">{{ res.status }}</span>
                     </div>
-                    <div class="item-detail">{{ meeting.date }}</div>
+                    <div class="item-detail">Resigned: {{ res.date }} &middot; Last day: {{ res.last_day }}</div>
+                </div>
+                {% empty %}
+                <div class="empty-state">
+                    <i class="fas fa-user-minus"></i>
+                    No resignations recorded
                 </div>
                 {% endfor %}
             </div>
@@ -414,7 +449,7 @@
     <div class="col-12">
         <div class="hrm-card">
             <div class="hrm-card-header">
-                <h6><i class="fas fa-chart-area me-2 text-muted"></i>Employee Growth (2026)</h6>
+                <h6><i class="fas fa-chart-area me-2 text-muted"></i>Employee Growth ({% now "Y" %})</h6>
             </div>
             <div class="chart-container" style="padding: 20px;">
                 <canvas id="employeeGrowthChart" style="max-height: 350px;"></canvas>
@@ -425,13 +460,18 @@
 {% endblock %}
 
 {% block extra_js %}
+{{ department_distribution|json_script:"dept-data" }}
+{{ hiring_trend|json_script:"hiring-data" }}
+{{ leave_status_distribution|json_script:"leave-status-data" }}
+{{ leave_types|json_script:"leave-types-data" }}
+{{ employee_growth|json_script:"growth-data" }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const deptData = {{ department_distribution|safe }};
-    const hiringData = {{ hiring_trend|safe }};
-    const candidateData = {{ candidate_status|safe }};
-    const leaveData = {{ leave_types|safe }};
-    const growthData = {{ employee_growth|safe }};
+    var deptData = JSON.parse(document.getElementById('dept-data').textContent);
+    var hiringData = JSON.parse(document.getElementById('hiring-data').textContent);
+    var leaveStatusData = JSON.parse(document.getElementById('leave-status-data').textContent);
+    var leaveData = JSON.parse(document.getElementById('leave-types-data').textContent);
+    var growthData = JSON.parse(document.getElementById('growth-data').textContent);
 
     // Department Distribution - Donut
     new Chart(document.getElementById('departmentChart'), {
@@ -450,7 +490,10 @@ document.addEventListener('DOMContentLoaded', function() {
             maintainAspectRatio: true,
             cutout: '55%',
             plugins: {
-                legend: { display: false }
+                legend: {
+                    position: 'bottom',
+                    labels: { usePointStyle: true, padding: 10, font: { size: 11 } }
+                }
             }
         }
     });
@@ -461,6 +504,7 @@ document.addEventListener('DOMContentLoaded', function() {
         data: {
             labels: hiringData.labels,
             datasets: [{
+                label: 'New Hires',
                 data: hiringData.data,
                 backgroundColor: '#3b82f6',
                 borderRadius: 4,
@@ -472,20 +516,20 @@ document.addEventListener('DOMContentLoaded', function() {
             maintainAspectRatio: true,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { stepSize: 5 } },
+                y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { stepSize: 1 } },
                 x: { grid: { display: false } }
             }
         }
     });
 
-    // Candidate Status - Pie Chart
-    new Chart(document.getElementById('candidateStatusChart'), {
+    // Leave Status - Pie Chart
+    new Chart(document.getElementById('leaveStatusChart'), {
         type: 'pie',
         data: {
-            labels: candidateData.labels,
+            labels: leaveStatusData.labels,
             datasets: [{
-                data: candidateData.data,
-                backgroundColor: candidateData.colors,
+                data: leaveStatusData.data,
+                backgroundColor: leaveStatusData.colors,
                 borderWidth: 0,
                 hoverOffset: 8
             }]
@@ -533,7 +577,7 @@ document.addEventListener('DOMContentLoaded', function() {
         data: {
             labels: growthData.labels,
             datasets: [{
-                label: 'employees',
+                label: 'Employees',
                 data: growthData.data,
                 borderColor: '#3b82f6',
                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -543,7 +587,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 pointBorderColor: '#3b82f6',
                 pointBorderWidth: 2,
                 pointRadius: 5,
-                pointHoverRadius: 7
+                pointHoverRadius: 7,
+                spanGaps: false
             }]
         },
         options: {
@@ -551,7 +596,7 @@ document.addEventListener('DOMContentLoaded', function() {
             maintainAspectRatio: true,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { stepSize: 15 } },
+                y: { beginAtZero: true, grid: { color: '#f3f4f6' } },
                 x: { grid: { color: '#f9fafb' } }
             },
             interaction: { intersect: false, mode: 'index' }

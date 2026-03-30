@@ -122,8 +122,8 @@ class Employee(models.Model):
     date_of_joining = models.DateField()
     employment_type = models.CharField(max_length=20, choices=EMPLOYMENT_TYPE_CHOICES, default='full-time')
     employee_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
-    shift = models.CharField(max_length=100, blank=True, default='')
-    attendance_policy = models.CharField(max_length=100, blank=True, default='')
+    shift = models.ForeignKey('Shift', on_delete=models.SET_NULL, null=True, blank=True, related_name='employees')
+    attendance_policy = models.ForeignKey('AttendancePolicy', on_delete=models.SET_NULL, null=True, blank=True, related_name='employees')
 
     # Contact Information
     address_line_1 = models.CharField(max_length=255, blank=True, default='')

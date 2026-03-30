@@ -1,5 +1,5 @@
 from django import forms
-from .models import Employee, EmployeeDocument, Branch, Department, Designation, DocumentType
+from .models import Employee, EmployeeDocument, Branch, Department, Designation, DocumentType, Shift, AttendancePolicy
 
 
 class EmployeeForm(forms.ModelForm):
@@ -60,15 +60,14 @@ class EmployeeForm(forms.ModelForm):
         self.fields['designation'].queryset = Designation.objects.none()
         self.fields['designation'].empty_label = 'Select Department First'
 
-        # Shift and attendance_policy are plain text, use TextInput
-        self.fields['shift'].widget = forms.TextInput(attrs={
-            'class': 'form-control', 'placeholder': 'Select Shift (Optional)'
-        })
+        # Shift and attendance_policy are ForeignKeys — widget already set in Meta.widgets
+        # Set queryset LAST so choices bind to the widget correctly
         self.fields['shift'].required = False
-        self.fields['attendance_policy'].widget = forms.TextInput(attrs={
-            'class': 'form-control', 'placeholder': 'Select Attendance Policy (Optional)'
-        })
+        self.fields['shift'].empty_label = 'Select Shift (Optional)'
+        self.fields['shift'].queryset = Shift.objects.filter(is_active=True).order_by('name')
         self.fields['attendance_policy'].required = False
+        self.fields['attendance_policy'].empty_label = 'Select Attendance Policy (Optional)'
+        self.fields['attendance_policy'].queryset = AttendancePolicy.objects.filter(is_active=True).order_by('name')
         self.fields['tax_payer_id'].required = False
         self.fields['address_line_2'].required = False
         self.fields['employee_code'].required = True

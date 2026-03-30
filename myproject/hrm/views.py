@@ -15,108 +15,231 @@ from .forms import EmployeeForm, EmployeeDocumentForm
 
 @login_required
 def hrm_dashboard(request):
+    from .models import (
+        Employee, Branch, Department, AttendanceRecord, LeaveRequest,
+        LeaveType, Promotion, Resignation, Warning, Complaint,
+        PayrollRun, AdvancePayment,
+    )
+    from django.db.models.functions import TruncMonth, ExtractMonth
+    from calendar import month_name
+
     now = timezone.now()
+    today = now.date()
+    current_year = today.year
+    month_start = today.replace(day=1)
 
-    # -- Stats cards data --
+    # ── Stats cards ──
+    total_employees = Employee.objects.count()
+    active_employees = Employee.objects.filter(employee_status='active').count()
+    employees_this_month = Employee.objects.filter(date_of_joining__gte=month_start).count()
+    branches_count = Branch.objects.filter(status='active').count()
+    departments_count = Department.objects.filter(status='active').count()
+
+    today_attendance = AttendanceRecord.objects.filter(date=today)
+    present_today = today_attendance.filter(status__in=['present', 'late']).count()
+    on_leave_today = today_attendance.filter(status='on_leave').count()
+    attendance_rate = round((present_today / active_employees * 100), 1) if active_employees else 0
+
+    pending_leaves = LeaveRequest.objects.filter(status='pending').count()
+    total_warnings = Warning.objects.filter(status__in=['issued', 'draft']).count()
+    pending_promotions = Promotion.objects.filter(status='pending').count()
+
     stats = {
-        'total_employees': 10,
-        'employees_this_month': 10,
-        'branches': 9,
-        'departments': 24,
-        'attendance_rate': 85.5,
-        'present_today': 45,
-        'pending_leaves': 0,
-        'on_leave_today': 0,
-        'active_jobs': 11,
-        'jobs_this_month': 15,
-        'total_candidates': 31,
-        'candidates_this_month': 31,
+        'total_employees': total_employees,
+        'employees_this_month': employees_this_month,
+        'branches': branches_count,
+        'departments': departments_count,
+        'attendance_rate': attendance_rate,
+        'present_today': present_today,
+        'pending_leaves': pending_leaves,
+        'on_leave_today': on_leave_today,
+        'active_warnings': total_warnings,
+        'pending_promotions': pending_promotions,
     }
 
-    # -- Chart data --
+    # ── Department Distribution Chart ──
+    chart_colors = [
+        '#6366f1', '#f97316', '#ec4899', '#ef4444', '#3b82f6', '#10b981',
+        '#8b5cf6', '#06b6d4', '#f59e0b', '#14b8a6', '#d946ef', '#22c55e',
+    ]
+    dept_data = (
+        Department.objects.filter(status='active')
+        .annotate(emp_count=Count('employees'))
+        .filter(emp_count__gt=0)
+        .order_by('-emp_count')[:12]
+    )
     department_distribution = {
-        'labels': ['Engineering', 'Marketing', 'HR', 'Finance', 'Operations', 'Sales'],
-        'data': [8, 5, 4, 3, 6, 5],
-        'colors': ['#6366f1', '#f97316', '#ec4899', '#ef4444', '#3b82f6', '#10b981'],
+        'labels': [d.name for d in dept_data],
+        'data': [d.emp_count for d in dept_data],
+        'colors': chart_colors[:len(dept_data)],
     }
+    if not department_distribution['labels']:
+        department_distribution = {'labels': ['No Data'], 'data': [0], 'colors': ['#d1d5db']}
+
+    # ── Hiring Trend (last 6 months by date_of_joining) ──
+    hiring_labels = []
+    hiring_data = []
+    for i in range(5, -1, -1):
+        total_months = today.year * 12 + today.month - 1 - i
+        y = total_months // 12
+        m = total_months % 12 + 1
+        hiring_labels.append(f"{month_name[m][:3]} {y}")
+        count = Employee.objects.filter(
+            date_of_joining__year=y, date_of_joining__month=m
+        ).count()
+        hiring_data.append(count)
 
     hiring_trend = {
-        'labels': ['Oct 2025', 'Nov 2025', 'Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026'],
-        'data': [8, 12, 10, 14, 18, 14],
+        'labels': hiring_labels,
+        'data': hiring_data,
     }
 
-    candidate_status = {
-        'labels': ['Interview', 'New', 'Offer', 'Screening'],
-        'data': [8, 5, 14, 4],
-        'colors': ['#8b5cf6', '#3b82f6', '#f97316', '#06b6d4'],
+    # ── Leave Status Distribution Chart ──
+    leave_status_qs = (
+        LeaveRequest.objects.values('status')
+        .annotate(cnt=Count('id'))
+        .order_by('status')
+    )
+    leave_status_map = {
+        'pending': ('#f59e0b', 'Pending'),
+        'approved': ('#10b981', 'Approved'),
+        'rejected': ('#ef4444', 'Rejected'),
+        'cancelled': ('#6b7280', 'Cancelled'),
+    }
+    leave_status_labels = []
+    leave_status_data = []
+    leave_status_colors = []
+    for item in leave_status_qs:
+        info = leave_status_map.get(item['status'], ('#94a3b8', item['status'].title()))
+        leave_status_labels.append(info[1])
+        leave_status_data.append(item['cnt'])
+        leave_status_colors.append(info[0])
+
+    leave_status_distribution = {
+        'labels': leave_status_labels or ['No Data'],
+        'data': leave_status_data or [0],
+        'colors': leave_status_colors or ['#d1d5db'],
     }
 
+    # ── Leave Types Chart ──
+    leave_type_colors = [
+        '#10b981', '#6b7280', '#06b6d4', '#f97316', '#ef4444',
+        '#ec4899', '#3b82f6', '#22c55e', '#8b5cf6', '#14b8a6',
+    ]
+    leave_type_qs = (
+        LeaveType.objects.filter(is_active=True)
+        .annotate(req_count=Count('requests'))
+        .filter(req_count__gt=0)
+        .order_by('-req_count')[:10]
+    )
     leave_types = {
-        'labels': ['Annual Leave', 'Bereavement Leave', 'Compensatory Leave', 'Emergency Leave',
-                    'Marriage Leave', 'Maternity Leave', 'Paternity Leave', 'Personal Leave',
-                    'Sick Leave', 'Study Leave'],
-        'data': [15, 2, 5, 3, 1, 8, 3, 4, 12, 2],
-        'colors': ['#10b981', '#6b7280', '#06b6d4', '#f97316', '#ef4444',
-                    '#ec4899', '#3b82f6', '#22c55e', '#ef4444', '#8b5cf6'],
+        'labels': [lt.name for lt in leave_type_qs],
+        'data': [lt.req_count for lt in leave_type_qs],
+        'colors': leave_type_colors[:len(leave_type_qs)],
     }
+    if not leave_types['labels']:
+        leave_types = {'labels': ['No Data'], 'data': [0], 'colors': ['#d1d5db']}
+
+    # ── Employee Growth (monthly cumulative for current year) ──
+    base_count = Employee.objects.filter(
+        date_of_joining__year__lt=current_year
+    ).count()
+    monthly_hires = (
+        Employee.objects.filter(date_of_joining__year=current_year)
+        .values('date_of_joining__month')
+        .annotate(cnt=Count('id'))
+    )
+    month_hire_map = {item['date_of_joining__month']: item['cnt'] for item in monthly_hires}
+    growth_labels = []
+    growth_data = []
+    cumulative = base_count
+    for m in range(1, 13):
+        growth_labels.append(month_name[m])
+        if m <= today.month:
+            cumulative += month_hire_map.get(m, 0)
+            growth_data.append(cumulative)
+        else:
+            growth_data.append(None)
 
     employee_growth = {
-        'labels': ['January', 'February', 'March', 'April', 'May', 'June',
-                    'July', 'August', 'September', 'October', 'November', 'December'],
-        'data': [15, 5, 22, 10, 28, 31, 35, 50, 42, 45, 47, 52],
+        'labels': growth_labels,
+        'data': growth_data,
     }
 
-    # -- Recent leave applications --
-    recent_leaves = [
-        {'employee': 'Amie Jerde', 'status': 'Approved', 'leave_type': 'Sick Leave', 'start_date': '2026-03-10', 'end_date': '2026-03-12'},
-        {'employee': 'Amie Jerde', 'status': 'Approved', 'leave_type': 'Personal Leave', 'start_date': '2026-03-05', 'end_date': '2026-03-06'},
-        {'employee': 'Amie Jerde', 'status': 'Approved', 'leave_type': 'Annual Leave', 'start_date': '2026-02-20', 'end_date': '2026-02-25'},
-        {'employee': 'Amie Jerde', 'status': 'Approved', 'leave_type': 'Annual Leave', 'start_date': '2026-02-10', 'end_date': '2026-02-15'},
-        {'employee': 'Amie Jerde', 'status': 'Approved', 'leave_type': 'Annual Leave', 'start_date': '2026-01-15', 'end_date': '2026-01-20'},
-    ]
+    # ── Recent Leave Applications ──
+    recent_leaves_qs = (
+        LeaveRequest.objects.select_related('employee', 'leave_type')
+        .order_by('-created_at')[:8]
+    )
+    recent_leaves = []
+    for lr in recent_leaves_qs:
+        recent_leaves.append({
+            'employee': lr.employee.full_name,
+            'status': lr.get_status_display(),
+            'leave_type': lr.leave_type.name if lr.leave_type else 'N/A',
+            'start_date': lr.start_date.strftime('%Y-%m-%d'),
+            'end_date': lr.end_date.strftime('%Y-%m-%d'),
+        })
 
-    # -- Recent candidates --
-    recent_candidates = [
-        {'name': 'Geeta Devi', 'status': 'Offer', 'position': 'Senior Software Engineer', 'date': '2026-03-15'},
-        {'name': 'Nisha Agarwal', 'status': 'Interview', 'position': 'Content Writer', 'date': '2026-03-14'},
-        {'name': 'Ramesh Babu', 'status': 'Screening', 'position': 'Network Administrator', 'date': '2026-03-13'},
-        {'name': 'Tarun Malhotra', 'status': 'Offer', 'position': 'Customer Support Representative', 'date': '2026-03-12'},
-    ]
+    # ── Recent Promotions ──
+    recent_promotions_qs = (
+        Promotion.objects.select_related('employee', 'new_designation')
+        .order_by('-created_at')[:5]
+    )
+    recent_promotions = []
+    for p in recent_promotions_qs:
+        recent_promotions.append({
+            'employee': p.employee.full_name,
+            'status': p.get_status_display(),
+            'new_designation': p.new_designation.name if p.new_designation else 'N/A',
+            'date': p.promotion_date.strftime('%Y-%m-%d') if p.promotion_date else '',
+        })
 
-    # -- Recent announcements --
-    recent_announcements = [
-        {'title': 'Updated Employee Handbook and Policies', 'priority': 'High', 'category': 'Policy Updates', 'date': '2026-03-15'},
-        {'title': 'Annual Performance Review Process', 'priority': 'High', 'category': 'HR Updates', 'date': '2026-03-14'},
-        {'title': 'New Employee Benefits Program Launch', 'priority': 'Medium', 'category': 'Benefits', 'date': '2026-03-13'},
-        {'title': 'IT Department System Maintenance', 'priority': 'Low', 'category': 'IT Updates', 'date': '2026-03-12'},
-        {'title': 'Company Town Hall Meeting', 'priority': 'Medium', 'category': 'Events', 'date': '2026-03-10'},
-    ]
+    # ── Recent Warnings ──
+    recent_warnings_qs = (
+        Warning.objects.select_related('employee')
+        .order_by('-created_at')[:5]
+    )
+    recent_warnings = []
+    for w in recent_warnings_qs:
+        recent_warnings.append({
+            'employee': w.employee.full_name,
+            'status': w.get_status_display(),
+            'severity': w.get_severity_display(),
+            'subject': w.subject,
+            'date': w.warning_date.strftime('%Y-%m-%d') if w.warning_date else '',
+        })
 
-    # -- Recent meetings --
-    recent_meetings = [
-        {'title': 'Daily Scrum Meeting', 'status': 'Scheduled', 'date': '2026-03-17'},
-        {'title': 'Daily Scrum Meeting', 'status': 'Scheduled', 'date': '2026-03-16'},
-        {'title': 'Daily Scrum Meeting', 'status': 'Scheduled', 'date': '2026-03-15'},
-        {'title': 'Daily Scrum Meeting', 'status': 'Scheduled', 'date': '2026-03-14'},
-        {'title': 'Weekly Sprint Review', 'status': 'Completed', 'date': '2026-03-13'},
-    ]
+    # ── Recent Resignations ──
+    recent_resignations_qs = (
+        Resignation.objects.select_related('employee')
+        .order_by('-created_at')[:5]
+    )
+    recent_resignations = []
+    for r in recent_resignations_qs:
+        recent_resignations.append({
+            'employee': r.employee.full_name,
+            'status': r.get_status_display(),
+            'date': r.resignation_date.strftime('%Y-%m-%d') if r.resignation_date else '',
+            'last_day': r.last_working_day.strftime('%Y-%m-%d') if r.last_working_day else 'TBD',
+        })
 
     context = {
         'page_title': 'Dashboard',
         'stats': stats,
-        'department_distribution': json.dumps(department_distribution),
-        'hiring_trend': json.dumps(hiring_trend),
-        'candidate_status': json.dumps(candidate_status),
-        'leave_types': json.dumps(leave_types),
-        'employee_growth': json.dumps(employee_growth),
+        'department_distribution': department_distribution,
+        'hiring_trend': hiring_trend,
+        'leave_status_distribution': leave_status_distribution,
+        'leave_types': leave_types,
+        'employee_growth': employee_growth,
         'recent_leaves': recent_leaves,
-        'total_leaves': 60,
-        'recent_candidates': recent_candidates,
-        'total_candidates_list': 5,
-        'recent_announcements': recent_announcements,
-        'total_announcements': 5,
-        'recent_meetings': recent_meetings,
-        'total_meetings': 5,
+        'total_leaves': LeaveRequest.objects.count(),
+        'recent_promotions': recent_promotions,
+        'total_promotions': Promotion.objects.count(),
+        'recent_warnings': recent_warnings,
+        'total_warnings': Warning.objects.count(),
+        'recent_resignations': recent_resignations,
+        'total_resignations': Resignation.objects.count(),
     }
     return render(request, 'hrm/dashboard.html', context)
 
@@ -653,7 +776,7 @@ def employee_list(request):
     if sort not in allowed_sorts:
         sort = 'full_name'
 
-    employees = Employee.objects.select_related('branch', 'department', 'designation').all()
+    employees = Employee.objects.select_related('branch', 'department', 'designation', 'shift', 'attendance_policy').all()
 
     if search_query:
         employees = employees.filter(
@@ -727,7 +850,7 @@ def employee_create(request):
 @login_required
 def employee_detail(request, employee_id):
     employee = get_object_or_404(
-        Employee.objects.select_related('branch', 'department', 'designation'),
+        Employee.objects.select_related('branch', 'department', 'designation', 'shift', 'attendance_policy'),
         id=employee_id
     )
     documents = employee.documents.all()
@@ -2608,9 +2731,9 @@ def _sync_biometric_to_attendance():
 
     nst = pytz.timezone('Asia/Kathmandu')
 
-    # Build PIN → Employee lookup
+    # Build PIN → Employee lookup (prefetch shift and attendance_policy)
     emp_map = {}
-    for emp in Employee.objects.all():
+    for emp in Employee.objects.select_related('shift', 'attendance_policy').all():
         if emp.employee_code:
             emp_map[emp.employee_code] = emp
 
@@ -2660,30 +2783,52 @@ def _sync_biometric_to_attendance():
         is_late = False
         is_early = False
         shift = None
+        status = 'present'
 
-        # Try to find an assigned shift for this employee
-        # (use the first active shift as fallback if employee doesn't have one assigned)
+        # Try to find shift: existing record > employee's assigned shift
         existing_record = AttendanceRecord.objects.filter(
             employee=employee, date=punch_date
         ).first()
 
         if existing_record and existing_record.shift:
             shift = existing_record.shift
+        elif employee.shift_id:
+            shift = employee.shift
+
+        # Get employee's attendance policy for grace periods
+        policy = employee.attendance_policy if employee.attendance_policy_id else None
 
         if shift and clock_in_time and clock_out_time:
             from datetime import datetime, timedelta
             shift_hours = float(shift.working_hours)
             if working_hours > shift_hours:
                 overtime_hours = round(working_hours - shift_hours, 2)
-            grace = shift.grace_period or 0
+
+            # Use AttendancePolicy grace values if available, else shift.grace_period
+            late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
+            early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
+
             shift_start = datetime.combine(punch_date, shift.start_time)
             shift_end = datetime.combine(punch_date, shift.end_time)
             cin_full = datetime.combine(punch_date, clock_in_time)
             cout_full = datetime.combine(punch_date, clock_out_time)
-            if cin_full > shift_start + timedelta(minutes=grace):
+
+            # Handle night shifts spanning midnight
+            if shift_end <= shift_start:
+                shift_end += timedelta(days=1)
+                if cout_full < cin_full:
+                    cout_full += timedelta(days=1)
+
+            if cin_full > shift_start + timedelta(minutes=late_grace):
                 is_late = True
-            if cout_full < shift_end - timedelta(minutes=grace):
+            if cout_full < shift_end - timedelta(minutes=early_grace):
                 is_early = True
+
+            # Auto-set status based on calculations
+            if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+                status = 'half_day'
+            elif is_late:
+                status = 'late'
 
         # Create or update the AttendanceRecord
         record, created = AttendanceRecord.objects.update_or_create(
@@ -2692,17 +2837,14 @@ def _sync_biometric_to_attendance():
             defaults={
                 'clock_in': clock_in_time,
                 'clock_out': clock_out_time,
-                'status': 'present',
+                'shift': shift,
+                'status': status,
                 'working_hours': working_hours,
                 'overtime_hours': overtime_hours,
                 'is_late_arrival': is_late,
                 'is_early_departure': is_early,
             }
         )
-        # Preserve shift if it was already set
-        if not created and shift and not record.shift:
-            record.shift = shift
-            record.save(update_fields=['shift'])
 
 
 @login_required
@@ -2778,14 +2920,16 @@ def attendance_create(request):
         if not employee_id or not date_val:
             return JsonResponse({'success': False, 'error': 'Employee and date are required.'})
 
-        employee = Employee.objects.filter(pk=employee_id).first()
+        employee = Employee.objects.select_related('shift', 'attendance_policy').filter(pk=employee_id).first()
         if not employee:
             return JsonResponse({'success': False, 'error': 'Employee not found.'})
 
         if AttendanceRecord.objects.filter(employee=employee, date=date_val).exists():
             return JsonResponse({'success': False, 'error': 'Attendance already exists for this employee on this date.'})
 
-        shift = Shift.objects.filter(pk=shift_id).first() if shift_id else None
+        # Use shift from form, fallback to employee's assigned shift
+        shift = Shift.objects.filter(pk=shift_id).first() if shift_id else employee.shift
+        policy = employee.attendance_policy
 
         working_hours = 0
         overtime_hours = 0
@@ -2804,15 +2948,33 @@ def attendance_create(request):
                 shift_hours = float(shift.working_hours)
                 if working_hours > shift_hours:
                     overtime_hours = round(working_hours - shift_hours, 2)
+
                 shift_start = datetime.combine(datetime.today(), shift.start_time)
                 shift_end = datetime.combine(datetime.today(), shift.end_time)
                 cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in, '%H:%M').time())
                 cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out, '%H:%M').time())
-                grace = shift.grace_period or 0
-                if cin_full > shift_start + timedelta(minutes=grace):
+
+                # Handle night shifts spanning midnight
+                if shift_end <= shift_start:
+                    shift_end += timedelta(days=1)
+                    if cout_full < cin_full:
+                        cout_full += timedelta(days=1)
+
+                # Use AttendancePolicy grace values if available, else shift.grace_period
+                late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
+                early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
+
+                if cin_full > shift_start + timedelta(minutes=late_grace):
                     is_late = True
-                if cout_full < shift_end - timedelta(minutes=grace):
+                if cout_full < shift_end - timedelta(minutes=early_grace):
                     is_early = True
+
+                # Auto-set status only if user left it as default 'present'
+                if status == 'present':
+                    if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+                        status = 'half_day'
+                    elif is_late:
+                        status = 'late'
 
         record = AttendanceRecord.objects.create(
             employee=employee,
@@ -2837,7 +2999,7 @@ def attendance_update(request, pk):
     from .models import AttendanceRecord, Shift
     from datetime import datetime, timedelta
 
-    record = get_object_or_404(AttendanceRecord, pk=pk)
+    record = get_object_or_404(AttendanceRecord.objects.select_related('employee__shift', 'employee__attendance_policy'), pk=pk)
 
     if request.method == 'POST':
         clock_in = request.POST.get('clock_in') or None
@@ -2847,7 +3009,9 @@ def attendance_update(request, pk):
         notes = request.POST.get('notes', '').strip()
         status = request.POST.get('status', 'present')
 
-        shift = Shift.objects.filter(pk=shift_id).first() if shift_id else record.shift
+        # Use shift from form, fallback to existing record shift, then employee's assigned shift
+        shift = Shift.objects.filter(pk=shift_id).first() if shift_id else (record.shift or record.employee.shift)
+        policy = record.employee.attendance_policy
 
         working_hours = 0
         overtime_hours = 0
@@ -2866,15 +3030,33 @@ def attendance_update(request, pk):
                 shift_hours = float(shift.working_hours)
                 if working_hours > shift_hours:
                     overtime_hours = round(working_hours - shift_hours, 2)
+
                 shift_start = datetime.combine(datetime.today(), shift.start_time)
                 shift_end = datetime.combine(datetime.today(), shift.end_time)
                 cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in, '%H:%M').time())
                 cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out, '%H:%M').time())
-                grace = shift.grace_period or 0
-                if cin_full > shift_start + timedelta(minutes=grace):
+
+                # Handle night shifts spanning midnight
+                if shift_end <= shift_start:
+                    shift_end += timedelta(days=1)
+                    if cout_full < cin_full:
+                        cout_full += timedelta(days=1)
+
+                # Use AttendancePolicy grace values if available, else shift.grace_period
+                late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
+                early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
+
+                if cin_full > shift_start + timedelta(minutes=late_grace):
                     is_late = True
-                if cout_full < shift_end - timedelta(minutes=grace):
+                if cout_full < shift_end - timedelta(minutes=early_grace):
                     is_early = True
+
+                # Auto-set status only if user left it as default 'present'
+                if status == 'present':
+                    if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+                        status = 'half_day'
+                    elif is_late:
+                        status = 'late'
 
         record.clock_in = clock_in if clock_in else None
         record.clock_out = clock_out if clock_out else None
@@ -3148,13 +3330,17 @@ def attendance_policy_list(request):
         per_page = int(per_page)
     except (ValueError, TypeError):
         per_page = 9
-    qs = AttendancePolicy.objects.all()
+
+    # Stats always use the full (unfiltered) queryset
+    all_qs = AttendancePolicy.objects.all()
+    total = all_qs.count()
+    active = all_qs.filter(is_active=True).count()
+    avg_late = all_qs.aggregate(avg=Avg('late_mark_after'))['avg'] or 0
+    avg_overtime = all_qs.aggregate(avg=Avg('overtime_rate'))['avg'] or 0
+
+    qs = all_qs
     if search:
         qs = qs.filter(name__icontains=search)
-    total = qs.count()
-    active = qs.filter(is_active=True).count()
-    avg_late = qs.aggregate(avg=Avg('late_mark_after'))['avg'] or 0
-    avg_overtime = qs.aggregate(avg=Avg('overtime_rate'))['avg'] or 0
     paginator = Paginator(qs, per_page)
     page_num = request.GET.get('page', 1)
     policies = paginator.get_page(page_num)
@@ -3178,14 +3364,26 @@ def attendance_policy_create(request):
         name = request.POST.get('name', '').strip()
         if not name:
             return JsonResponse({'success': False, 'error': 'Policy name is required.'})
+        if AttendancePolicy.objects.filter(name__iexact=name).exists():
+            return JsonResponse({'success': False, 'error': 'A policy with this name already exists.'})
+        try:
+            work_hours = float(request.POST.get('work_hours_per_day', 8) or 8)
+            late_mark = int(request.POST.get('late_mark_after', 15) or 15)
+            early_dep = int(request.POST.get('early_departure_grace', 15) or 15)
+            overtime = float(request.POST.get('overtime_rate', 0) or 0)
+            half_day = float(request.POST.get('half_day_hours', 4) or 4)
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Invalid numeric values provided.'})
+        if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0 or half_day <= 0:
+            return JsonResponse({'success': False, 'error': 'Values must be positive numbers.'})
         policy = AttendancePolicy.objects.create(
             name=name,
             description=request.POST.get('description', '').strip(),
-            work_hours_per_day=request.POST.get('work_hours_per_day', 8.0) or 8.0,
-            late_mark_after=request.POST.get('late_mark_after', 15) or 15,
-            early_departure_grace=request.POST.get('early_departure_grace', 15) or 15,
-            overtime_rate=request.POST.get('overtime_rate', 0.0) or 0.0,
-            half_day_hours=request.POST.get('half_day_hours', 4.0) or 4.0,
+            work_hours_per_day=work_hours,
+            late_mark_after=late_mark,
+            early_departure_grace=early_dep,
+            overtime_rate=overtime,
+            half_day_hours=half_day,
             is_active=(request.POST.get('is_active', 'true').lower() == 'true'),
         )
         return JsonResponse({'success': True, 'id': policy.id, 'name': policy.name})
@@ -3200,13 +3398,25 @@ def attendance_policy_update(request, pk):
         name = request.POST.get('name', '').strip()
         if not name:
             return JsonResponse({'success': False, 'error': 'Policy name is required.'})
+        if AttendancePolicy.objects.filter(name__iexact=name).exclude(pk=pk).exists():
+            return JsonResponse({'success': False, 'error': 'A policy with this name already exists.'})
+        try:
+            work_hours = float(request.POST.get('work_hours_per_day', 8) or 8)
+            late_mark = int(request.POST.get('late_mark_after', 15) or 15)
+            early_dep = int(request.POST.get('early_departure_grace', 15) or 15)
+            overtime = float(request.POST.get('overtime_rate', 0) or 0)
+            half_day = float(request.POST.get('half_day_hours', 4) or 4)
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Invalid numeric values provided.'})
+        if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0 or half_day <= 0:
+            return JsonResponse({'success': False, 'error': 'Values must be positive numbers.'})
         policy.name = name
         policy.description = request.POST.get('description', '').strip()
-        policy.work_hours_per_day = request.POST.get('work_hours_per_day', 8.0) or 8.0
-        policy.late_mark_after = request.POST.get('late_mark_after', 15) or 15
-        policy.early_departure_grace = request.POST.get('early_departure_grace', 15) or 15
-        policy.overtime_rate = request.POST.get('overtime_rate', 0.0) or 0.0
-        policy.half_day_hours = request.POST.get('half_day_hours', 4.0) or 4.0
+        policy.work_hours_per_day = work_hours
+        policy.late_mark_after = late_mark
+        policy.early_departure_grace = early_dep
+        policy.overtime_rate = overtime
+        policy.half_day_hours = half_day
         policy.is_active = (request.POST.get('is_active', 'true').lower() == 'true')
         policy.save()
         return JsonResponse({'success': True})
@@ -3237,6 +3447,8 @@ def attendance_policy_delete(request, pk):
 @login_required
 def attendance_policy_toggle_status(request, pk):
     from .models import AttendancePolicy
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request.'})
     policy = get_object_or_404(AttendancePolicy, pk=pk)
     policy.is_active = not policy.is_active
     policy.save()
@@ -5358,6 +5570,35 @@ def attendance_report(request):
     if status:
         qs = qs.filter(status=status)
 
+    # ── Calculate total working days (weekdays) in the date range ────────────
+    def _count_weekdays(start, end):
+        """Count weekdays (Mon-Fri) between two dates inclusive."""
+        if not start or not end:
+            return None
+        count = 0
+        current = start
+        one_day = timedelta(days=1)
+        while current <= end:
+            if current.weekday() < 5:  # Mon=0 .. Fri=4
+                count += 1
+            current += one_day
+        return count
+
+    # Reuse already-parsed dates for working-day calculation
+    _eff_from = None
+    _eff_to = None
+    try:
+        if date_from:
+            _eff_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+    except ValueError:
+        pass
+    try:
+        if date_to:
+            _eff_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+    except ValueError:
+        pass
+    working_days_in_range = _count_weekdays(_eff_from, _eff_to) if _eff_from and _eff_to else None
+
     # ── Aggregate stats over the filtered queryset ───────────────────────────
     stats = qs.aggregate(
         total=Count('id'),
@@ -5369,6 +5610,7 @@ def attendance_report(request):
         total_working_hours=Sum('working_hours'),
         total_overtime=Sum('overtime_hours'),
     )
+    stats['working_days'] = working_days_in_range
 
     # ── Per-employee summary ─────────────────────────────────────────────────
     _emp_qs = (
@@ -5391,9 +5633,16 @@ def attendance_report(request):
     )
     emp_summary = []
     for e in _emp_qs:
-        pct = round(e['present'] * 100 / e['total']) if e['total'] > 0 else 0
-        e['pct'] = pct
+        worked = e['present'] + e['late'] + e['half_day']
+        if working_days_in_range and working_days_in_range > 0:
+            pct = round(worked * 100 / working_days_in_range)
+        elif e['total'] > 0:
+            pct = round(worked * 100 / e['total'])
+        else:
+            pct = 0
+        e['pct'] = min(pct, 100)
         e['pct_color'] = '#16a34a' if pct >= 90 else ('#d97706' if pct >= 70 else '#e11d48')
+        e['working_days'] = working_days_in_range
         emp_summary.append(e)
 
     # ── CSV export ───────────────────────────────────────────────────────────
@@ -5509,6 +5758,14 @@ def employee_period_attendance(request):
     for r in records_data:
         sc[r['status']] = sc.get(r['status'], 0) + 1
 
+    # Count weekdays (Mon-Fri) in the date range
+    _wd_count = 0
+    _d = date_from
+    while _d <= date_to:
+        if _d.weekday() < 5:
+            _wd_count += 1
+        _d += timedelta(days=1)
+
     _, month_days = calendar.monthrange(ref_date.year, ref_date.month) if period == 'month' else (None, None)
 
     return JsonResponse({
@@ -5533,6 +5790,7 @@ def employee_period_attendance(request):
         'records_by_date': {r['date']: r for r in records_data},
         'summary': {
             'total': len(records_data),
+            'working_days': _wd_count,
             'present': sc.get('present', 0),
             'absent': sc.get('absent', 0),
             'late': sc.get('late', 0),

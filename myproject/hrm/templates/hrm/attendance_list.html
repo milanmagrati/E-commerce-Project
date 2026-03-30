@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load hrm_filters %}
 {% block title %}Attendance Records - HRM{% endblock %}
 
 {% block content %}
@@ -183,7 +184,7 @@
                         </div>
                         <div class="text-center">
                             <div class="text-muted" style="font-size:.68rem;">Duration</div>
-                            <div class="fw-bold" style="font-size:.85rem;">{{ r.working_hours }}h</div>
+                            <div class="fw-bold" style="font-size:.85rem;">{{ r.working_hours|smart_duration }}</div>
                         </div>
                         <div class="d-flex align-items-center gap-1">
                             <span class="fw-semibold" style="font-size:.85rem;">{% if r.clock_out %}{{ r.clock_out|time:"g:i A" }}{% else %}--:--{% endif %}</span>
@@ -215,7 +216,7 @@
                         </div>
                         <div>
                             {% if r.overtime_hours > 0 %}
-                            <span style="font-size:.72rem;color:#28a745;font-weight:600;">+{{ r.overtime_hours }}h OT</span>
+                            <span style="font-size:.72rem;color:#28a745;font-weight:600;">+{{ r.overtime_hours|smart_duration }} OT</span>
                             {% endif %}
                         </div>
                     </div>
@@ -367,6 +368,19 @@
                                 {% for s in shifts %}
                                 <option value="{{ s.id }}">{{ s.name }}</option>
                                 {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="pro-label">Status</label>
+                        <div class="pro-input-wrap">
+                            <i class="fas fa-info-circle pro-input-icon"></i>
+                            <select class="form-select pro-field" id="recordStatus">
+                                <option value="present">Present</option>
+                                <option value="absent">Absent</option>
+                                <option value="late">Late</option>
+                                <option value="half_day">Half Day</option>
+                                <option value="on_leave">On Leave</option>
                             </select>
                         </div>
                     </div>
@@ -579,11 +593,30 @@
         if (t) { try { var d = JSON.parse(t); showPageToast(d.type, d.title, d.msg); } catch(e){} sessionStorage.removeItem('attToast'); }
     })();
 
+    /* ── Escape HTML ── */
+    function esc(str) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(str));
+        return d.innerHTML;
+    }
+
+    /* ── Smart Duration (JS version of template filter) ── */
+    function smartDuration(hours) {
+        var h = parseFloat(hours);
+        if (isNaN(h) || h <= 0) return '0m';
+        var totalMin = Math.round(h * 60);
+        var hrs = Math.floor(totalMin / 60);
+        var mins = totalMin % 60;
+        if (hrs && mins) return hrs + 'h ' + mins + 'm';
+        if (hrs) return hrs + 'h';
+        return mins + 'm';
+    }
+
     /* ── Form Alert ── */
     function showFormAlert(type, title, msg) {
-        var html = '<div class="record-alert record-alert-' + type + '">'
+        var html = '<div class="record-alert record-alert-' + esc(type) + '">'
             + '<div class="record-alert-icon"><i class="fas ' + (type === 'danger' ? 'fa-exclamation-circle' : 'fa-check-circle') + '"></i></div>'
-            + '<div><div class="record-alert-title">' + title + '</div><div class="record-alert-msg">' + msg + '</div></div>'
+            + '<div><div class="record-alert-title">' + esc(title) + '</div><div class="record-alert-msg">' + esc(msg) + '</div></div>'
             + '<button class="record-alert-close" onclick="hideFormAlert()">&times;</button></div>';
         var el = document.getElementById('recordFormAlert');
         el.innerHTML = html; el.style.display = 'block';
@@ -629,6 +662,7 @@
         document.getElementById('recordClockIn').value = '';
         document.getElementById('recordClockOut').value = '';
         document.getElementById('recordShift').value = '';
+        document.getElementById('recordStatus').value = 'present';
         document.getElementById('recordHoliday').checked = false;
         document.getElementById('recordNotes').value = '';
         clearAllFieldErrors();
@@ -666,6 +700,7 @@
                 document.getElementById('recordClockIn').value = data.clock_in;
                 document.getElementById('recordClockOut').value = data.clock_out;
                 document.getElementById('recordShift').value = data.shift_id || '';
+                document.getElementById('recordStatus').value = data.status || 'present';
                 document.getElementById('recordHoliday').checked = data.is_holiday;
                 document.getElementById('recordNotes').value = data.notes || '';
                 clearAllFieldErrors();
@@ -678,26 +713,27 @@
 
     function viewRecord(id) {
         fetch('/hrm/attendance/' + id + '/update/')
-            .then(function(r){ return r.json(); })
+            .then(function(r){ if (!r.ok) throw new Error('Network error'); return r.json(); })
             .then(function(data){
                 document.getElementById('viewRecordName').textContent = data.employee_name;
                 var statusLabel = {present:'Present',absent:'Absent',late:'Late',half_day:'Half Day',on_leave:'On Leave'}[data.status] || data.status;
                 var html = '<dl class="row mb-0">'
-                    + '<dt class="col-5 text-muted small">Employee</dt><dd class="col-7 fw-semibold">' + data.employee_name + '</dd>'
-                    + '<dt class="col-5 text-muted small">Date</dt><dd class="col-7 fw-semibold">' + data.date + '</dd>'
-                    + '<dt class="col-5 text-muted small">Clock In</dt><dd class="col-7 fw-semibold">' + (data.clock_in || '--:--') + '</dd>'
-                    + '<dt class="col-5 text-muted small">Clock Out</dt><dd class="col-7 fw-semibold">' + (data.clock_out || '--:--') + '</dd>'
-                    + '<dt class="col-5 text-muted small">Working Hours</dt><dd class="col-7 fw-semibold">' + data.working_hours + 'h</dd>'
-                    + '<dt class="col-5 text-muted small">Overtime</dt><dd class="col-7 fw-semibold">' + data.overtime_hours + 'h</dd>'
-                    + '<dt class="col-5 text-muted small">Status</dt><dd class="col-7"><span class="badge att-status-' + data.status + '">' + statusLabel + '</span></dd>'
-                    + '<dt class="col-5 text-muted small">Shift</dt><dd class="col-7 fw-semibold">' + (data.shift_name || 'None') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Employee</dt><dd class="col-7 fw-semibold">' + esc(data.employee_name) + '</dd>'
+                    + '<dt class="col-5 text-muted small">Date</dt><dd class="col-7 fw-semibold">' + esc(data.date) + '</dd>'
+                    + '<dt class="col-5 text-muted small">Clock In</dt><dd class="col-7 fw-semibold">' + esc(data.clock_in || '--:--') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Clock Out</dt><dd class="col-7 fw-semibold">' + esc(data.clock_out || '--:--') + '</dd>'
+                    + '<dt class="col-5 text-muted small">Working Hours</dt><dd class="col-7 fw-semibold">' + esc(smartDuration(data.working_hours)) + '</dd>'
+                    + '<dt class="col-5 text-muted small">Overtime</dt><dd class="col-7 fw-semibold">' + esc(smartDuration(data.overtime_hours)) + '</dd>'
+                    + '<dt class="col-5 text-muted small">Status</dt><dd class="col-7"><span class="badge att-status-' + esc(data.status) + '">' + esc(statusLabel) + '</span></dd>'
+                    + '<dt class="col-5 text-muted small">Shift</dt><dd class="col-7 fw-semibold">' + esc(data.shift_name || 'None') + '</dd>'
                     + (data.is_late_arrival ? '<dt class="col-5 text-muted small">Late Arrival</dt><dd class="col-7"><span class="text-danger small">Yes</span></dd>' : '')
                     + (data.is_early_departure ? '<dt class="col-5 text-muted small">Early Departure</dt><dd class="col-7"><span class="text-warning small">Yes</span></dd>' : '')
-                    + (data.notes ? '<dt class="col-5 text-muted small">Notes</dt><dd class="col-7 small">' + data.notes + '</dd>' : '')
+                    + (data.notes ? '<dt class="col-5 text-muted small">Notes</dt><dd class="col-7 small">' + esc(data.notes) + '</dd>' : '')
                     + '</dl>';
                 document.getElementById('viewRecordBody').innerHTML = html;
                 getModal('viewRecordModal').show();
-            });
+            })
+            .catch(function(){ showPageToast('danger', 'Error', 'Failed to load record details.'); });
     }
 
     function saveRecord() {
@@ -732,7 +768,7 @@
             shift: document.getElementById('recordShift').value,
             is_holiday: document.getElementById('recordHoliday').checked ? 'true' : 'false',
             notes: document.getElementById('recordNotes').value.trim(),
-            status: 'present'
+            status: document.getElementById('recordStatus').value
         };
         if (!editingId) {
             bodyParams.employee = employee;
@@ -776,7 +812,7 @@
             method: 'POST',
             headers: { 'X-CSRFToken': CSRF }
         })
-        .then(function(r){ return r.json(); })
+        .then(function(r){ if (!r.ok) throw new Error('Network error'); return r.json(); })
         .then(function(data){
             if (data.success) {
                 getModal('deleteModal').hide();
@@ -784,7 +820,14 @@
                     type: 'danger', title: 'Record Deleted', msg: 'The attendance record has been removed.'
                 }));
                 location.reload();
+            } else {
+                getModal('deleteModal').hide();
+                showPageToast('danger', 'Error', data.error || 'Failed to delete record.');
             }
+        })
+        .catch(function(){
+            getModal('deleteModal').hide();
+            showPageToast('danger', 'Network Error', 'Could not connect. Please try again.');
         });
     }
 </script>

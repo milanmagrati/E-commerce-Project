@@ -101,10 +101,10 @@
                 <div class="card-body d-flex align-items-center gap-3 py-3">
                     <div>
                         <div class="text-muted small">Avg Overtime Rate</div>
-                        <div class="fw-bold fs-4 lh-1 mt-1">${{ avg_overtime_rate }}</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">Rs. {{ avg_overtime_rate }}</div>
                     </div>
                     <div class="ms-auto stat-icon-circle" style="background:#ecfdf5;">
-                        <i class="fas fa-dollar-sign" style="color:#28a745;"></i>
+                        <i class="fas fa-money-bill-wave" style="color:#28a745;"></i>
                     </div>
                 </div>
             </div>
@@ -159,9 +159,9 @@
                         </div>
                         <div class="col-6">
                             <div class="policy-detail-item">
-                                <i class="fas fa-dollar-sign" style="color:#28a745;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <i class="fas fa-money-bill-wave" style="color:#28a745;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
                                 <div>
-                                    <div class="fw-semibold" style="font-size:.85rem;">${{ policy.overtime_rate }}/hr</div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">Rs. {{ policy.overtime_rate }}/hr</div>
                                     <div class="text-muted" style="font-size:.72rem;">Overtime Rate</div>
                                 </div>
                             </div>
@@ -206,7 +206,12 @@
                 Showing {{ policies.start_index }} to {{ policies.end_index }} of {{ policies.paginator.count }} attendance policies
             </small>
             <div class="d-flex align-items-center gap-1">
-                <span class="text-muted small me-2">Previous</span>
+                {% if policies.has_previous %}
+                <a href="?page={{ policies.previous_page_number }}&search={{ search }}&per_page={{ per_page }}"
+                   class="btn btn-sm btn-outline-secondary" style="border-radius:6px;font-size:.8rem;">Previous</a>
+                {% else %}
+                <span class="btn btn-sm btn-outline-secondary disabled" style="border-radius:6px;font-size:.8rem;">Previous</span>
+                {% endif %}
                 {% for i in policies.paginator.page_range %}
                 <a href="?page={{ i }}&search={{ search }}&per_page={{ per_page }}"
                    class="btn btn-sm {% if policies.number == i %}btn-success{% else %}btn-outline-secondary{% endif %}"
@@ -214,7 +219,12 @@
                    {{ i }}
                 </a>
                 {% endfor %}
-                <span class="text-muted small ms-2">Next</span>
+                {% if policies.has_next %}
+                <a href="?page={{ policies.next_page_number }}&search={{ search }}&per_page={{ per_page }}"
+                   class="btn btn-sm btn-outline-secondary" style="border-radius:6px;font-size:.8rem;">Next</a>
+                {% else %}
+                <span class="btn btn-sm btn-outline-secondary disabled" style="border-radius:6px;font-size:.8rem;">Next</span>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -305,9 +315,9 @@
                         <div class="col-6">
                             <label class="pro-label">Overtime Rate Per Hour <span class="text-danger">*</span></label>
                             <div class="pro-input-wrap has-suffix">
-                                <i class="fas fa-dollar-sign pro-input-icon" style="color:#28a745;"></i>
+                                <i class="fas fa-money-bill-wave pro-input-icon" style="color:#28a745;"></i>
                                 <input type="number" class="form-control pro-field" id="policyOvertimeRate" value="150" min="0" step="0.01">
-                                <span class="pro-input-suffix">/hr</span>
+                                <span class="pro-input-suffix">Rs./hr</span>
                             </div>
                         </div>
                         <div class="col-6">
@@ -562,6 +572,13 @@
     var deletingId = null;
     var toastTimer = null;
 
+    /* ── HTML escape helper (prevent XSS) ── */
+    function esc(str) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(str));
+        return d.innerHTML;
+    }
+
     /* ── Modal singleton (prevent backdrop stacking bug) ── */
     function getModal(elId) {
         var el = document.getElementById(elId);
@@ -598,9 +615,9 @@
 
     /* ── Form Alerts ── */
     function showFormAlert(type, title, msg) {
-        var html = '<div class="policy-alert policy-alert-' + type + '">'
+        var html = '<div class="policy-alert policy-alert-' + esc(type) + '">'
             + '<div class="policy-alert-icon"><i class="fas ' + (type === 'danger' ? 'fa-exclamation-circle' : 'fa-check-circle') + '"></i></div>'
-            + '<div><div class="policy-alert-title">' + title + '</div><div class="policy-alert-msg">' + msg + '</div></div>'
+            + '<div><div class="policy-alert-title">' + esc(title) + '</div><div class="policy-alert-msg">' + esc(msg) + '</div></div>'
             + '<button class="policy-alert-close" onclick="hideFormAlert()">&times;</button>'
             + '</div>';
         var el = document.getElementById('policyFormAlert');
@@ -684,20 +701,21 @@
 
     function viewPolicy(id) {
         fetch('/hrm/attendance-policies/' + id + '/update/')
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
             .then(function(data) {
                 document.getElementById('viewPolicyName').textContent = data.name;
                 var html = '<dl class="row mb-0">'
-                    + '<dt class="col-6 text-muted small">Late Arrival Grace</dt><dd class="col-6 fw-semibold">' + data.late_mark_after + ' min</dd>'
-                    + '<dt class="col-6 text-muted small">Early Departure Grace</dt><dd class="col-6 fw-semibold">' + data.early_departure_grace + ' min</dd>'
-                    + '<dt class="col-6 text-muted small">Overtime Rate</dt><dd class="col-6 fw-semibold">$' + data.overtime_rate + '/hr</dd>'
-                    + '<dt class="col-6 text-muted small">Work Hours/Day</dt><dd class="col-6 fw-semibold">' + data.work_hours_per_day + ' hrs</dd>'
+                    + '<dt class="col-6 text-muted small">Late Arrival Grace</dt><dd class="col-6 fw-semibold">' + esc(String(data.late_mark_after)) + ' min</dd>'
+                    + '<dt class="col-6 text-muted small">Early Departure Grace</dt><dd class="col-6 fw-semibold">' + esc(String(data.early_departure_grace)) + ' min</dd>'
+                    + '<dt class="col-6 text-muted small">Overtime Rate</dt><dd class="col-6 fw-semibold">Rs. ' + esc(String(data.overtime_rate)) + '/hr</dd>'
+                    + '<dt class="col-6 text-muted small">Work Hours/Day</dt><dd class="col-6 fw-semibold">' + esc(String(data.work_hours_per_day)) + ' hrs</dd>'
                     + '<dt class="col-6 text-muted small">Status</dt><dd class="col-6"><span class="badge ' + (data.is_active ? 'bg-success' : 'bg-danger') + '">' + (data.is_active ? 'Active' : 'Inactive') + '</span></dd>'
-                    + (data.description ? '<dt class="col-6 text-muted small">Description</dt><dd class="col-6 small">' + data.description + '</dd>' : '')
+                    + (data.description ? '<dt class="col-6 text-muted small">Description</dt><dd class="col-6 small">' + esc(data.description) + '</dd>' : '')
                     + '</dl>';
                 document.getElementById('viewPolicyBody').innerHTML = html;
                 getModal('viewPolicyModal').show();
-            });
+            })
+            .catch(function() { showPageToast('danger', 'Error', 'Failed to load policy details.'); });
     }
 
     function savePolicy() {
@@ -727,7 +745,7 @@
                 is_active: document.getElementById('policyStatus').value,
             })
         })
-        .then(function(r) { return r.json(); })
+        .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
         .then(function(data) {
             setSaveLoading(false);
             if (data.success) {
@@ -759,7 +777,7 @@
             method: 'POST',
             headers: { 'X-CSRFToken': CSRF }
         })
-        .then(function(r) { return r.json(); })
+        .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
         .then(function(data) {
             if (data.success) {
                 getModal('deleteModal').hide();
@@ -767,7 +785,14 @@
                     type: 'danger', title: 'Policy Deleted', msg: 'The policy has been removed.'
                 }));
                 location.reload();
+            } else {
+                getModal('deleteModal').hide();
+                showPageToast('danger', 'Error', data.error || 'Failed to delete policy.');
             }
+        })
+        .catch(function() {
+            getModal('deleteModal').hide();
+            showPageToast('danger', 'Error', 'Could not connect. Please try again.');
         });
     }
 
@@ -776,7 +801,7 @@
             method: 'POST',
             headers: { 'X-CSRFToken': CSRF }
         })
-        .then(function(r) { return r.json(); })
+        .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
         .then(function(data) {
             if (data.success) {
                 sessionStorage.setItem('policyToast', JSON.stringify({
@@ -785,6 +810,9 @@
                 }));
                 location.reload();
             }
+        })
+        .catch(function() {
+            showPageToast('danger', 'Error', 'Failed to toggle status. Please try again.');
         });
     }
 
