@@ -2712,16 +2712,34 @@ def order_create(request):
                     except Setup.DoesNotExist:
                         payment_status_setup = None
 
-                discount_amount = Decimal(request.POST.get("discount") or "0")
-                shipping_charge = Decimal(request.POST.get("shipping_charge") or "0")
-                tax_percent = Decimal(request.POST.get("tax_percent") or "0")
-                total_amount = Decimal(request.POST.get("total_amount") or "0")
+                try:
+                    discount_amount = Decimal(request.POST.get("discount") or "0")
+                except (InvalidOperation, ValueError):
+                    discount_amount = Decimal("0")
+                try:
+                    shipping_charge = Decimal(request.POST.get("shipping_charge") or "0")
+                except (InvalidOperation, ValueError):
+                    shipping_charge = Decimal("0")
+                try:
+                    tax_percent = Decimal(request.POST.get("tax_percent") or "0")
+                except (InvalidOperation, ValueError):
+                    tax_percent = Decimal("0")
+                try:
+                    total_amount = Decimal(request.POST.get("total_amount") or "0")
+                except (InvalidOperation, ValueError):
+                    total_amount = Decimal("0")
                 notes = request.POST.get("notes") or ""
 
                 # GET PARTIAL PAYMENT DATA
                 is_partial_payment = request.POST.get("is_partial_payment") == "true"
-                partial_amount_paid = Decimal(request.POST.get("partial_amount_paid") or "0")
-                remaining_amount = Decimal(request.POST.get("remaining_amount") or "0")
+                try:
+                    partial_amount_paid = Decimal(request.POST.get("partial_amount_paid") or "0")
+                except (InvalidOperation, ValueError):
+                    partial_amount_paid = Decimal("0")
+                try:
+                    remaining_amount = Decimal(request.POST.get("remaining_amount") or "0")
+                except (InvalidOperation, ValueError):
+                    remaining_amount = Decimal("0")
 
                 # UPDATED: Added in_out to required fields check
                 missing = []
@@ -2745,7 +2763,14 @@ def order_create(request):
                     messages.error(request, err)
                     return redirect("order_create")
 
-                created_by = get_object_or_404(User, id=created_by_id)
+                try:
+                    created_by = User.objects.get(id=created_by_id)
+                except User.DoesNotExist:
+                    err = "Selected 'Created By' user not found."
+                    if _is_ajax:
+                        return _ajax_error(err)
+                    messages.error(request, err)
+                    return redirect("order_create")
 
                 # Get or create city from City model
                 city, city_created = City.objects.get_or_create(
@@ -2814,7 +2839,10 @@ def order_create(request):
                     order_number = f"T{Order.objects.count() + 1:03d}"
 
                 order_items_json = request.POST.get("order_items") or "[]"
-                cart = json.loads(order_items_json)
+                try:
+                    cart = json.loads(order_items_json)
+                except (json.JSONDecodeError, ValueError):
+                    cart = []
 
                 if not cart:
                     if _is_ajax:
@@ -2835,41 +2863,44 @@ def order_create(request):
                     remaining_amount = safe_decimal(remaining_amount, max_digits=10, decimal_places=2)
 
                 # UPDATED: Use branch_city from City model, added in_out field, and Setup fields
-                # ✅ WITH RETRY LOGIC FOR RACE CONDITIONS
+                # WITH RETRY LOGIC FOR RACE CONDITIONS
+                # Each retry uses its own nested savepoint so IntegrityError
+                # does not break the outer transaction.
                 order = None
                 retry_count = 0
                 max_retries = 5
-                
+
                 while order is None and retry_count < max_retries:
                     try:
-                        order = Order.objects.create(
-                            order_number=order_number,
-                            created_by=created_by,
-                            customer=customer,
-                            customer_name=customer_name,
-                            customer_phone=customer_phone,
-                            customer_email=customer_email,
-                            branch_city=branch_city_name,
-                            in_out=in_out,
-                            shipping_address=shipping_address,
-                            landmark=landmark,
-                            order_from=order_from,
-                            order_status=order_status,
-                            payment_method=payment_method,
-                            payment_status=payment_status,
-                            payment_setup=payment_setup,
-                            status_setup=status_setup,
-                            payment_status_setup=payment_status_setup,
-                            discount_amount=discount_amount_safe,
-                            shipping_charge=shipping_charge_safe,
-                            tax_percent=tax_percent_safe,
-                            total_amount=total_amount_safe,
-                            notes=notes,
-                            # ADD PARTIAL PAYMENT FIELDS
-                            is_partial_payment=is_partial_payment,
-                            partial_amount_paid=partial_amount_paid if is_partial_payment else None,
-                            remaining_amount=remaining_amount if is_partial_payment else None,
-                        )
+                        with transaction.atomic():
+                            order = Order.objects.create(
+                                order_number=order_number,
+                                created_by=created_by,
+                                customer=customer,
+                                customer_name=customer_name,
+                                customer_phone=customer_phone,
+                                customer_email=customer_email,
+                                branch_city=branch_city_name,
+                                in_out=in_out,
+                                shipping_address=shipping_address,
+                                landmark=landmark,
+                                order_from=order_from,
+                                order_status=order_status,
+                                payment_method=payment_method,
+                                payment_status=payment_status,
+                                payment_setup=payment_setup,
+                                status_setup=status_setup,
+                                payment_status_setup=payment_status_setup,
+                                discount_amount=discount_amount_safe,
+                                shipping_charge=shipping_charge_safe,
+                                tax_percent=tax_percent_safe,
+                                total_amount=total_amount_safe,
+                                notes=notes,
+                                # ADD PARTIAL PAYMENT FIELDS
+                                is_partial_payment=is_partial_payment,
+                                partial_amount_paid=partial_amount_paid if is_partial_payment else None,
+                                remaining_amount=remaining_amount if is_partial_payment else None,
+                            )
                     except IntegrityError as e:
                         if 'order_number' in str(e):
                             # Order number exists, generate a new one and retry
@@ -2877,7 +2908,7 @@ def order_create(request):
                             last_order = Order.objects.filter(
                                 order_number__startswith='T'
                             ).order_by('-order_number').first()
-                            
+
                             if last_order:
                                 try:
                                     n = int(last_order.order_number[1:])
@@ -2886,7 +2917,7 @@ def order_create(request):
                                     order_number = f"T{Order.objects.filter(order_number__startswith='T').count() + retry_count:03d}"
                             else:
                                 order_number = f"T{Order.objects.count() + retry_count:03d}"
-                            
+
                             if retry_count >= max_retries:
                                 err = 'Failed to create order after multiple attempts. Please try again.'
                                 if _is_ajax:
@@ -2909,20 +2940,39 @@ def order_create(request):
 
                 # CREATE ORDER ITEMS
                 for item in cart:
-                    product_id = int(item.get("id"))
+                    try:
+                        product_id = int(item.get("id") or 0)
+                    except (ValueError, TypeError):
+                        continue
+                    if not product_id:
+                        continue
                     var_id = item.get("varId")
-                    qty = int(item.get("qty") or 1)
-                    price = Decimal(str(item.get("price") or "0"))
+                    try:
+                        qty = int(item.get("qty") or 1)
+                        if qty < 1:
+                            qty = 1
+                    except (ValueError, TypeError):
+                        qty = 1
+                    try:
+                        price = Decimal(str(item.get("price") or "0"))
+                    except (InvalidOperation, ValueError, TypeError):
+                        price = Decimal("0")
                     sku = item.get("sku") or ""
 
-                    product = get_object_or_404(Product, id=product_id)
+                    try:
+                        product = Product.objects.get(id=product_id)
+                    except Product.DoesNotExist:
+                        continue
 
                     variation = None
                     variation_name = None
                     if var_id:
-                        variation = get_object_or_404(ProductVariation, id=int(var_id), product=product)
-                        sku = variation.sku
-                        variation_name = getattr(variation, 'variation_name', None) or variation.sku
+                        try:
+                            variation = ProductVariation.objects.get(id=int(var_id), product=product)
+                            sku = variation.sku
+                            variation_name = getattr(variation, 'variation_name', None) or variation.sku
+                        except (ProductVariation.DoesNotExist, ValueError, TypeError):
+                            variation = None
 
                     OrderItem.objects.create(
                         order=order,
@@ -3420,8 +3470,12 @@ def order_edit(request, order_id):
                 order.landmark = request.POST.get("landmark", "").strip()
                 
                 created_by_id = request.POST.get("created_by")
-                order.created_by = get_object_or_404(User, id=created_by_id)
-                
+                try:
+                    order.created_by = User.objects.get(id=created_by_id)
+                except (User.DoesNotExist, ValueError, TypeError):
+                    messages.error(request, "Selected 'Created By' user not found.")
+                    return redirect("order_edit", order_id=order.id)
+
                 order.order_from = request.POST.get("order_from")
 
                 # CRITICAL: Get payment_setup, status_setup, and payment_status_setup from POST
@@ -3498,10 +3552,22 @@ def order_edit(request, order_id):
                         except:
                             pass
                 
-                order.discount_amount = Decimal(request.POST.get("discount") or "0")
-                order.shipping_charge = Decimal(request.POST.get("shipping_charge") or "0")
-                order.tax_percent = Decimal(request.POST.get("tax_percent") or "0")
-                order.total_amount = Decimal(request.POST.get("total_amount") or "0")
+                try:
+                    order.discount_amount = Decimal(request.POST.get("discount") or "0")
+                except (InvalidOperation, ValueError):
+                    order.discount_amount = Decimal("0")
+                try:
+                    order.shipping_charge = Decimal(request.POST.get("shipping_charge") or "0")
+                except (InvalidOperation, ValueError):
+                    order.shipping_charge = Decimal("0")
+                try:
+                    order.tax_percent = Decimal(request.POST.get("tax_percent") or "0")
+                except (InvalidOperation, ValueError):
+                    order.tax_percent = Decimal("0")
+                try:
+                    order.total_amount = Decimal(request.POST.get("total_amount") or "0")
+                except (InvalidOperation, ValueError):
+                    order.total_amount = Decimal("0")
                 order.notes = request.POST.get("notes", "")
                 
                 # ✅ CREATE ADMIN NOTE
@@ -3516,8 +3582,14 @@ def order_edit(request, order_id):
 
                 # UPDATE PARTIAL PAYMENT DATA
                 is_partial_payment = request.POST.get("is_partial_payment") == "true"
-                partial_amount_paid = Decimal(request.POST.get("partial_amount_paid") or "0")
-                remaining_amount = Decimal(request.POST.get("remaining_amount") or "0")
+                try:
+                    partial_amount_paid = Decimal(request.POST.get("partial_amount_paid") or "0")
+                except (InvalidOperation, ValueError):
+                    partial_amount_paid = Decimal("0")
+                try:
+                    remaining_amount = Decimal(request.POST.get("remaining_amount") or "0")
+                except (InvalidOperation, ValueError):
+                    remaining_amount = Decimal("0")
                 
                 order.is_partial_payment = is_partial_payment
                 order.partial_amount_paid = partial_amount_paid if is_partial_payment else None
@@ -3568,26 +3640,48 @@ def order_edit(request, order_id):
                 order.items.all().delete()
                 
                 order_items_json = request.POST.get("order_items") or "[]"
-                cart = json.loads(order_items_json)
+                try:
+                    cart = json.loads(order_items_json)
+                except (json.JSONDecodeError, ValueError):
+                    cart = []
 
                 if not cart:
                     messages.error(request, "No products in cart.")
                     return redirect("order_edit", order_id=order.id)
 
                 for item in cart:
-                    product_id = int(item.get("id"))
+                    try:
+                        product_id = int(item.get("id") or 0)
+                    except (ValueError, TypeError):
+                        continue
+                    if not product_id:
+                        continue
                     var_id = item.get("varId")
-                    qty = int(item.get("qty") or 1)
-                    price = Decimal(str(item.get("price") or "0"))
+                    try:
+                        qty = int(item.get("qty") or 1)
+                        if qty < 1:
+                            qty = 1
+                    except (ValueError, TypeError):
+                        qty = 1
+                    try:
+                        price = Decimal(str(item.get("price") or "0"))
+                    except (InvalidOperation, ValueError, TypeError):
+                        price = Decimal("0")
                     sku = item.get("sku") or ""
 
-                    product = get_object_or_404(Product, id=product_id)
+                    try:
+                        product = Product.objects.get(id=product_id)
+                    except Product.DoesNotExist:
+                        continue
                     variation = None
                     variation_name = None
                     if var_id:
-                        variation = get_object_or_404(ProductVariation, id=int(var_id))
-                        sku = variation.sku
-                        variation_name = getattr(variation, 'variation_name', None) or variation.sku
+                        try:
+                            variation = ProductVariation.objects.get(id=int(var_id), product=product)
+                            sku = variation.sku
+                            variation_name = getattr(variation, 'variation_name', None) or variation.sku
+                        except (ProductVariation.DoesNotExist, ValueError, TypeError):
+                            variation = None
 
                     OrderItem.objects.create(
                         order=order,
@@ -8743,7 +8837,11 @@ def return_create(request):
                 
                 # Parse return items
                 return_items_json = request.POST.get('return_items', '[]')
-                return_items_data = json.loads(return_items_json)
+                try:
+                    return_items_data = json.loads(return_items_json)
+                except (json.JSONDecodeError, ValueError):
+                    messages.error(request, 'Invalid return items data.')
+                    return redirect('return_create')
                 
                 if not return_items_data:
                     messages.error(request, 'No items selected for return')
@@ -9255,8 +9353,14 @@ def return_detail(request, return_id):
                 messages.success(request, 'Quality check completed! Good/Damaged quantities updated.')
                 
             elif action == 'process_refund':
-                refund_amount = Decimal(request.POST.get('refund_amount', '0'))
-                restocking_fee = Decimal(request.POST.get('restocking_fee', '0'))
+                try:
+                    refund_amount = Decimal(request.POST.get('refund_amount', '0'))
+                except (InvalidOperation, ValueError):
+                    refund_amount = Decimal('0')
+                try:
+                    restocking_fee = Decimal(request.POST.get('restocking_fee', '0'))
+                except (InvalidOperation, ValueError):
+                    restocking_fee = Decimal('0')
                 
                 return_request.refund_amount = refund_amount
                 return_request.restocking_fee = restocking_fee

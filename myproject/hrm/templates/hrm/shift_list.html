@@ -162,7 +162,7 @@
                             <div class="shift-detail-item">
                                 <i class="far fa-clock text-muted me-1"></i>
                                 <div>
-                                    <div class="fw-semibold">{{ shift.start_time|time:"H:i" }} - {{ shift.end_time|time:"H:i" }}</div>
+                                    <div class="fw-semibold">{{ shift.start_time|time:"h:i A" }} - {{ shift.end_time|time:"h:i A" }}</div>
                                     <div class="text-muted small">Shift Hours</div>
                                 </div>
                             </div>
@@ -884,6 +884,17 @@
     var deletingId = null;
     var toastTimer = null;
 
+    /* ── Convert 24h time string (HH:MM or HH:MM:SS) to 12h format ── */
+    function to12Hr(t) {
+        if (!t) return '';
+        var parts = t.split(':');
+        var h = parseInt(parts[0], 10);
+        var m = parts[1];
+        var suffix = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return h + ':' + m + ' ' + suffix;
+    }
+
     /* ── Page Toast System ── */
     function showPageToast(type, title, msg) {
         var toast = document.getElementById('pageToast');
@@ -1131,10 +1142,10 @@
                 document.getElementById('viewShiftBody').innerHTML =
                     '<div class="mb-3 d-flex gap-2">' + typeBadge + ' ' + statusLabel + '</div>' +
                     '<table class="table table-sm mb-3">' +
-                    '<tr><td class="text-muted" style="width:45%">Shift Hours</td><td class="fw-semibold">' + data.start_time + ' - ' + data.end_time + '</td></tr>' +
+                    '<tr><td class="text-muted" style="width:45%">Shift Hours</td><td class="fw-semibold">' + to12Hr(data.start_time) + ' - ' + to12Hr(data.end_time) + '</td></tr>' +
                     '<tr><td class="text-muted">Break Duration</td><td class="fw-semibold">' + data.break_duration + ' min</td></tr>' +
-                    '<tr><td class="text-muted">Break Start</td><td class="fw-semibold">' + (data.break_start_time || '\u2014') + '</td></tr>' +
-                    '<tr><td class="text-muted">Break End</td><td class="fw-semibold">' + (data.break_end_time || '\u2014') + '</td></tr>' +
+                    '<tr><td class="text-muted">Break Start</td><td class="fw-semibold">' + (data.break_start_time ? to12Hr(data.break_start_time) : '\u2014') + '</td></tr>' +
+                    '<tr><td class="text-muted">Break End</td><td class="fw-semibold">' + (data.break_end_time ? to12Hr(data.break_end_time) : '\u2014') + '</td></tr>' +
                     '<tr><td class="text-muted">Working Hours</td><td class="fw-semibold">' + data.working_hours + ' hrs</td></tr>' +
                     '<tr><td class="text-muted">Grace Period</td><td class="fw-semibold">' + data.grace_period + ' min</td></tr>' +
                     '</table>' +
