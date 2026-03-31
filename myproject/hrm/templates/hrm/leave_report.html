@@ -316,6 +316,11 @@
                         <td>
                             {% if req.leave_type %}
                             <span class="leave-type-pill">{{ req.leave_type.name }}</span>
+                            {% if req.leave_type.is_paid %}
+                            <span class="badge" style="background:#d1fae5;color:#065f46;font-size:0.65rem;border-radius:8px;padding:2px 6px;margin-left:3px;">Paid</span>
+                            {% else %}
+                            <span class="badge" style="background:#fee2e2;color:#991b1b;font-size:0.65rem;border-radius:8px;padding:2px 6px;margin-left:3px;">Unpaid</span>
+                            {% endif %}
                             {% else %}<span class="text-muted">—</span>{% endif %}
                         </td>
                         <td>{{ req.start_date|date:"d M Y" }}</td>

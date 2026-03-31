@@ -337,12 +337,22 @@
                 </div>
             </div>
 
-            <div class="modal-footer border-top bg-light px-4 py-3">
-                <button type="button" class="btn btn-outline-secondary px-4" onclick="getModal('regModal').hide()">Cancel</button>
-                <button type="button" class="btn btn-success px-4" id="regSaveBtn" onclick="saveRecord()">
-                    <span id="regNormalState"><i class="fas fa-save me-1"></i><span id="regSaveBtnText">Save</span></span>
-                    <span id="regLoadingState" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Saving...</span>
-                </button>
+            <div class="modal-footer border-top bg-light px-4 py-3 justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <span id="draftIndicator" class="draft-indicator" style="display:none;">
+                        <i class="fas fa-pen-fancy me-1"></i>Draft
+                    </span>
+                    <button type="button" class="btn btn-outline-warning btn-sm px-3" id="clearDraftBtn" style="display:none;" onclick="clearDraftAndReset()">
+                        <i class="fas fa-eraser me-1"></i>Clear Draft
+                    </button>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary px-4" onclick="getModal('regModal').hide()">Cancel</button>
+                    <button type="button" class="btn btn-success px-4" id="regSaveBtn" onclick="saveRecord()">
+                        <span id="regNormalState"><i class="fas fa-save me-1"></i><span id="regSaveBtnText">Save</span></span>
+                        <span id="regLoadingState" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Saving...</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -448,6 +458,9 @@
     .reg-alert-icon { width:32px; height:32px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:.9rem; }
     .reg-alert-danger .reg-alert-icon  { background:#fee2e2; color:#dc2626; }
     .reg-alert-success .reg-alert-icon { background:#d1fae5; color:#059669; }
+    .reg-alert-info { background:linear-gradient(135deg,#eff6ff 0%,#f0f7ff 100%); border:1.5px solid #bfdbfe; }
+    .reg-alert-info .reg-alert-icon { background:#dbeafe; color:#2563eb; }
+    .reg-alert-info .reg-alert-title { color:#1e40af; }
     .reg-alert-title { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
     .reg-alert-danger  .reg-alert-title { color:#b91c1c; }
     .reg-alert-success .reg-alert-title { color:#065f46; }
@@ -478,6 +491,14 @@
     @keyframes toastCountdown { from{width:100%} to{width:0%} }
     @keyframes slideDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
     @keyframes fieldShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)} 40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
+
+    /* ── Draft Indicator ── */
+    .draft-indicator {
+        display:inline-flex; align-items:center; gap:4px;
+        font-size:.72rem; font-weight:600; text-transform:uppercase;
+        letter-spacing:.04em; color:#f59e0b; background:#fef3c7;
+        border:1px solid #fde68a; border-radius:20px; padding:3px 10px;
+    }
 </style>
 
 {% block extra_js %}
@@ -486,6 +507,8 @@
     var editingId = null;
     var deletingId = null;
     var toastTimer = null;
+    var draftFields = ['regEmployee','regRecord','regClockIn','regClockOut','regReason'];
+    var DRAFT_CHECKBOX_FIELDS = ['regDraft'];
 
     /* Modal singleton */
     function getModal(elId) {
@@ -522,8 +545,9 @@
 
     /* Form Alert */
     function showFormAlert(type, title, msg) {
+        var icons = { danger:'fa-exclamation-circle', success:'fa-check-circle', info:'fa-info-circle' };
         var html = '<div class="reg-alert reg-alert-' + type + '">'
-            + '<div class="reg-alert-icon"><i class="fas ' + (type==='danger'?'fa-exclamation-circle':'fa-check-circle') + '"></i></div>'
+            + '<div class="reg-alert-icon"><i class="fas ' + (icons[type]||'fa-info-circle') + '"></i></div>'
             + '<div><div class="reg-alert-title">' + title + '</div><div class="reg-alert-msg">' + msg + '</div></div>'
             + '<button class="reg-alert-close" onclick="hideFormAlert()">&times;</button></div>';
         var el = document.getElementById('regFormAlert');
@@ -584,6 +608,74 @@
             });
     }
 
+    /* ── Draft auto-save (sessionStorage) ── */
+    var REG_DRAFT_KEY = 'regFormDraft';
+    var DRAFT_DEFAULTS = {
+        regEmployee: '', regRecord: '', regClockIn: '', regClockOut: '',
+        regReason: '', regDraft: false
+    };
+    function saveDraft() {
+        if (editingId) return;
+        var d = {};
+        draftFields.forEach(function(id) { d[id] = document.getElementById(id).value; });
+        DRAFT_CHECKBOX_FIELDS.forEach(function(id) { d[id] = document.getElementById(id).checked; });
+        var changed = draftFields.some(function(id) { return d[id] !== DRAFT_DEFAULTS[id]; })
+            || DRAFT_CHECKBOX_FIELDS.some(function(id) { return d[id] !== DRAFT_DEFAULTS[id]; });
+        if (changed) {
+            sessionStorage.setItem(REG_DRAFT_KEY, JSON.stringify(d));
+            updateDraftIndicator(true);
+        } else {
+            sessionStorage.removeItem(REG_DRAFT_KEY);
+            updateDraftIndicator(false);
+        }
+    }
+    function getDraft() {
+        try { var s = sessionStorage.getItem(REG_DRAFT_KEY); return s ? JSON.parse(s) : null; } catch(e) { return null; }
+    }
+    function restoreDraft() {
+        var draft = getDraft();
+        if (!draft) return false;
+        /* Restore employee first, then load its records with the saved record pre-selected */
+        if (draft.regEmployee) {
+            document.getElementById('regEmployee').value = draft.regEmployee;
+            loadAttendanceRecords(draft.regRecord || null);
+        }
+        ['regClockIn','regClockOut','regReason'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el && draft[id] !== undefined) el.value = draft[id];
+        });
+        DRAFT_CHECKBOX_FIELDS.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el && draft[id] !== undefined) el.checked = !!draft[id];
+        });
+        return true;
+    }
+    function clearDraft() {
+        sessionStorage.removeItem(REG_DRAFT_KEY);
+        updateDraftIndicator(false);
+    }
+    function clearDraftAndReset() {
+        clearDraft();
+        resetForm();
+        showFormAlert('info', 'Draft Cleared', 'Your unsaved draft has been discarded.');
+    }
+    function updateDraftIndicator(hasDraft) {
+        var el = document.getElementById('draftIndicator');
+        if (el) el.style.display = hasDraft ? 'inline-flex' : 'none';
+        var btn = document.getElementById('clearDraftBtn');
+        if (btn) btn.style.display = hasDraft ? 'inline-block' : 'none';
+    }
+    function attachDraftListeners() {
+        draftFields.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.addEventListener('input', saveDraft); el.addEventListener('change', saveDraft); }
+        });
+        DRAFT_CHECKBOX_FIELDS.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('change', saveDraft);
+        });
+    }
+
     /* ═══ CRUD ═══ */
 
     function openAddModal() {
@@ -593,6 +685,11 @@
         document.getElementById('regModalIcon').className = 'fas fa-plus';
         document.getElementById('regSaveBtnText').textContent = 'Save';
         resetForm();
+        if (getDraft()) {
+            restoreDraft();
+            showFormAlert('info', 'Draft Restored', 'Your previous unsaved draft has been restored.');
+        }
+        updateDraftIndicator(!!getDraft());
         getModal('regModal').show();
     }
 
@@ -601,6 +698,8 @@
             .then(function(r){ return r.json(); })
             .then(function(data){
                 editingId = id;
+                updateDraftIndicator(false);
+                hideFormAlert();
                 document.getElementById('regModalTitle').textContent = 'Edit Regularization Request';
                 document.getElementById('regModalSubtitle').textContent = 'Update request for ' + data.employee_name;
                 document.getElementById('regModalIcon').className = 'fas fa-edit';
@@ -676,6 +775,7 @@
         .then(function(data){
             setSaveLoading(false);
             if (data.success) {
+                clearDraft();
                 getModal('regModal').hide();
                 sessionStorage.setItem('regToast', JSON.stringify({
                     type: 'success',
@@ -732,6 +832,9 @@
             }
         });
     }
+
+    /* Attach draft auto-save listeners */
+    attachDraftListeners();
 </script>
 {% endblock %}
 {% endblock %}

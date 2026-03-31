@@ -2810,20 +2810,21 @@ def _sync_biometric_to_attendance():
             early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
 
             shift_start = datetime.combine(punch_date, shift.start_time)
-            shift_end = datetime.combine(punch_date, shift.end_time)
             cin_full = datetime.combine(punch_date, clock_in_time)
             cout_full = datetime.combine(punch_date, clock_out_time)
 
-            # Handle night shifts spanning midnight
-            if shift_end <= shift_start:
-                shift_end += timedelta(days=1)
-                if cout_full < cin_full:
-                    cout_full += timedelta(days=1)
+            if shift.end_time:
+                shift_end = datetime.combine(punch_date, shift.end_time)
+                # Handle night shifts spanning midnight
+                if shift_end <= shift_start:
+                    shift_end += timedelta(days=1)
+                    if cout_full < cin_full:
+                        cout_full += timedelta(days=1)
+                if cout_full < shift_end - timedelta(minutes=early_grace):
+                    is_early = True
 
             if cin_full > shift_start + timedelta(minutes=late_grace):
                 is_late = True
-            if cout_full < shift_end - timedelta(minutes=early_grace):
-                is_early = True
 
             # Auto-set status based on calculations
             if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
@@ -2951,24 +2952,25 @@ def attendance_create(request):
                     overtime_hours = round(working_hours - shift_hours, 2)
 
                 shift_start = datetime.combine(datetime.today(), shift.start_time)
-                shift_end = datetime.combine(datetime.today(), shift.end_time)
                 cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in, '%H:%M').time())
                 cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out, '%H:%M').time())
-
-                # Handle night shifts spanning midnight
-                if shift_end <= shift_start:
-                    shift_end += timedelta(days=1)
-                    if cout_full < cin_full:
-                        cout_full += timedelta(days=1)
 
                 # Use AttendancePolicy grace values if available, else shift.grace_period
                 late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
                 early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
 
+                if shift.end_time:
+                    shift_end = datetime.combine(datetime.today(), shift.end_time)
+                    # Handle night shifts spanning midnight
+                    if shift_end <= shift_start:
+                        shift_end += timedelta(days=1)
+                        if cout_full < cin_full:
+                            cout_full += timedelta(days=1)
+                    if cout_full < shift_end - timedelta(minutes=early_grace):
+                        is_early = True
+
                 if cin_full > shift_start + timedelta(minutes=late_grace):
                     is_late = True
-                if cout_full < shift_end - timedelta(minutes=early_grace):
-                    is_early = True
 
                 # Auto-set status only if user left it as default 'present'
                 if status == 'present':
@@ -3033,24 +3035,25 @@ def attendance_update(request, pk):
                     overtime_hours = round(working_hours - shift_hours, 2)
 
                 shift_start = datetime.combine(datetime.today(), shift.start_time)
-                shift_end = datetime.combine(datetime.today(), shift.end_time)
                 cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in, '%H:%M').time())
                 cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out, '%H:%M').time())
-
-                # Handle night shifts spanning midnight
-                if shift_end <= shift_start:
-                    shift_end += timedelta(days=1)
-                    if cout_full < cin_full:
-                        cout_full += timedelta(days=1)
 
                 # Use AttendancePolicy grace values if available, else shift.grace_period
                 late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
                 early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
 
+                if shift.end_time:
+                    shift_end = datetime.combine(datetime.today(), shift.end_time)
+                    # Handle night shifts spanning midnight
+                    if shift_end <= shift_start:
+                        shift_end += timedelta(days=1)
+                        if cout_full < cin_full:
+                            cout_full += timedelta(days=1)
+                    if cout_full < shift_end - timedelta(minutes=early_grace):
+                        is_early = True
+
                 if cin_full > shift_start + timedelta(minutes=late_grace):
                     is_late = True
-                if cout_full < shift_end - timedelta(minutes=early_grace):
-                    is_early = True
 
                 # Auto-set status only if user left it as default 'present'
                 if status == 'present':
@@ -3159,12 +3162,12 @@ def shift_create(request):
         is_night_shift = request.POST.get('is_night_shift') == 'on'
         is_active = request.POST.get('status', 'active') == 'active'
         working_hours = request.POST.get('working_hours', '8.0').strip() or '8.0'
-        if not name or not start_time or not end_time:
-            return JsonResponse({'success': False, 'error': 'Name, start time and end time are required.'})
+        if not name or not start_time:
+            return JsonResponse({'success': False, 'error': 'Name and start time are required.'})
         shift = Shift.objects.create(
             name=name,
             start_time=start_time,
-            end_time=end_time,
+            end_time=end_time if end_time else None,
             description=description,
             break_duration=int(break_duration),
             break_start_time=break_start_time,
@@ -3187,11 +3190,11 @@ def shift_update(request, pk):
         start_time = request.POST.get('start_time', '').strip()
         end_time = request.POST.get('end_time', '').strip()
         description = request.POST.get('description', '').strip()
-        if not name or not start_time or not end_time:
-            return JsonResponse({'success': False, 'error': 'Name, start time and end time are required.'})
+        if not name or not start_time:
+            return JsonResponse({'success': False, 'error': 'Name and start time are required.'})
         shift.name = name
         shift.start_time = start_time
-        shift.end_time = end_time
+        shift.end_time = end_time if end_time else None
         shift.description = description
         shift.break_duration = int(request.POST.get('break_duration', '60') or '60')
         shift.break_start_time = request.POST.get('break_start_time', '').strip() or None
@@ -3206,7 +3209,7 @@ def shift_update(request, pk):
         'id': shift.id,
         'name': shift.name,
         'start_time': shift.start_time.strftime('%H:%M'),
-        'end_time': shift.end_time.strftime('%H:%M'),
+        'end_time': shift.end_time.strftime('%H:%M') if shift.end_time else '',
         'description': shift.description,
         'break_duration': shift.break_duration,
         'break_start_time': shift.break_start_time.strftime('%H:%M') if shift.break_start_time else '',
@@ -5524,12 +5527,18 @@ def payroll_calculation(request, pk):
 
 @login_required
 def attendance_report(request):
-    from .models import AttendanceRecord, Employee, Department
+    from .models import (
+        AttendanceRecord, Employee, Department, EmployeeWeekend,
+        LeaveRequest, LeaveType,
+    )
     from django.core.paginator import Paginator
-    from django.db.models import Q, Count, Sum
+    from django.db.models import Q, Count, Sum, F, DecimalField
+    from django.db.models.functions import Coalesce
     from django.http import HttpResponse
+    from collections import defaultdict
+    from decimal import Decimal
     import csv
-    from datetime import datetime
+    from datetime import datetime, date as dt_date
 
     # ── Filters from GET ────────────────────────────────────────────────────
     search     = request.GET.get('search', '').strip()
@@ -5571,21 +5580,7 @@ def attendance_report(request):
     if status:
         qs = qs.filter(status=status)
 
-    # ── Calculate total working days (weekdays) in the date range ────────────
-    def _count_weekdays(start, end):
-        """Count weekdays (Mon-Fri) between two dates inclusive."""
-        if not start or not end:
-            return None
-        count = 0
-        current = start
-        one_day = timedelta(days=1)
-        while current <= end:
-            if current.weekday() < 5:  # Mon=0 .. Fri=4
-                count += 1
-            current += one_day
-        return count
-
-    # Reuse already-parsed dates for working-day calculation
+    # ── Parse effective date range ──────────────────────────────────────────
     _eff_from = None
     _eff_to = None
     try:
@@ -5598,7 +5593,75 @@ def attendance_report(request):
             _eff_to = datetime.strptime(date_to, '%Y-%m-%d').date()
     except ValueError:
         pass
+
+    # ── Helper: count total calendar days ────────────────────────────────────
+    total_days_in_range = (_eff_to - _eff_from).days + 1 if _eff_from and _eff_to else None
+
+    # ── Helper: count weekdays (Mon-Fri) ─────────────────────────────────────
+    def _count_weekdays(start, end):
+        if not start or not end:
+            return None
+        count = 0
+        current = start
+        one_day = timedelta(days=1)
+        while current <= end:
+            if current.weekday() < 5:
+                count += 1
+            current += one_day
+        return count
+
     working_days_in_range = _count_weekdays(_eff_from, _eff_to) if _eff_from and _eff_to else None
+
+    # ── Helper: count employee weekend days in range ─────────────────────────
+    DAY_NAME_TO_NUM = {
+        'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+        'friday': 4, 'saturday': 5, 'sunday': 6,
+    }
+
+    def _count_weekend_days_for_employee(emp_id, start, end):
+        """Count how many days in [start..end] fall on the employee's weekend days."""
+        if not start or not end:
+            return 0
+        wk_records = EmployeeWeekend.objects.filter(
+            employee_id=emp_id,
+            weekend_type='weekend',
+            effective_from__lte=end,
+        ).filter(Q(effective_to__gte=start) | Q(effective_to__isnull=True))
+        weekend_nums = set()
+        for wr in wk_records:
+            for day_name in (wr.weekend_days or []):
+                num = DAY_NAME_TO_NUM.get(day_name.lower())
+                if num is not None:
+                    weekend_nums.add(num)
+        if not weekend_nums:
+            weekend_nums = {5, 6}  # default Sat+Sun
+        count = 0
+        current = start
+        one_day = timedelta(days=1)
+        while current <= end:
+            if current.weekday() in weekend_nums:
+                count += 1
+            current += one_day
+        return count
+
+    def _get_weekend_nums_for_employee(emp_id, start, end):
+        """Get the set of weekday numbers that are weekends for this employee."""
+        if not start or not end:
+            return {5, 6}
+        wk_records = EmployeeWeekend.objects.filter(
+            employee_id=emp_id,
+            weekend_type='weekend',
+            effective_from__lte=end,
+        ).filter(Q(effective_to__gte=start) | Q(effective_to__isnull=True))
+        weekend_nums = set()
+        for wr in wk_records:
+            for day_name in (wr.weekend_days or []):
+                num = DAY_NAME_TO_NUM.get(day_name.lower())
+                if num is not None:
+                    weekend_nums.add(num)
+        if not weekend_nums:
+            weekend_nums = {5, 6}
+        return weekend_nums
 
     # ── Aggregate stats over the filtered queryset ───────────────────────────
     stats = qs.aggregate(
@@ -5613,13 +5676,15 @@ def attendance_report(request):
     )
     stats['working_days'] = working_days_in_range
 
-    # ── Per-employee summary ─────────────────────────────────────────────────
+    # ── Per-employee summary with full column set ────────────────────────────
     _emp_qs = (
         qs.values(
             'employee__id',
             'employee__employee_id',
+            'employee__employee_code',
             'employee__full_name',
             'employee__department__name',
+            'employee__department__id',
         )
         .annotate(
             total=Count('id'),
@@ -5628,48 +5693,242 @@ def attendance_report(request):
             late=Count('id', filter=Q(status='late')),
             half_day=Count('id', filter=Q(status='half_day')),
             on_leave=Count('id', filter=Q(status='on_leave')),
-            total_working_hours=Sum('working_hours'),
+            total_working_hours=Coalesce(Sum('working_hours'), Decimal('0'), output_field=DecimalField()),
+            total_overtime_hours=Coalesce(Sum('overtime_hours'), Decimal('0'), output_field=DecimalField()),
+            holiday_present=Count('id', filter=Q(status__in=['present', 'late', 'half_day'], is_holiday=True)),
+            late_in_count=Count('id', filter=Q(is_late_arrival=True)),
+            early_out_count=Count('id', filter=Q(is_early_departure=True)),
+            holiday_days_count=Count('id', filter=Q(is_holiday=True)),
         )
-        .order_by('employee__full_name')
+        .order_by('employee__department__name', 'employee__full_name')
     )
+
+    # ── Build leave data per employee ────────────────────────────────────────
+    # Collect the employee IDs from the filtered queryset to scope leave data
+    _filtered_emp_ids = list(
+        qs.values_list('employee__id', flat=True).distinct()
+    )
+
+    leave_data = {}  # emp_id -> {'paid': X, 'unpaid': Y}
+    if _eff_from and _eff_to and _filtered_emp_ids:
+        leave_qs = LeaveRequest.objects.filter(
+            status='approved',
+            employee_id__in=_filtered_emp_ids,
+            start_date__lte=_eff_to,
+            end_date__gte=_eff_from,
+        ).select_related('leave_type')
+        for lr in leave_qs:
+            eid = lr.employee_id
+            if eid not in leave_data:
+                leave_data[eid] = {'paid': 0, 'unpaid': 0}
+            # Calculate overlapping days within the report range
+            overlap_start = max(lr.start_date, _eff_from)
+            overlap_end = min(lr.end_date, _eff_to)
+            days_in_range = (overlap_end - overlap_start).days + 1
+            if days_in_range > 0:
+                is_paid = lr.leave_type.is_paid if lr.leave_type else True
+                if is_paid:
+                    leave_data[eid]['paid'] += days_in_range
+                else:
+                    leave_data[eid]['unpaid'] += days_in_range
+
+    # ── Build detailed per-employee records for present on weekend/dayoff ────
+    emp_extra = {}  # emp_id -> {present_on_weekend: X, present_on_dayoff: X, ...}
+    if _eff_from and _eff_to:
+        # Get all records in range that are present/late/half_day
+        present_records = qs.filter(
+            status__in=['present', 'late', 'half_day'],
+        ).values_list('employee__id', 'date', 'shift__is_night_shift', 'is_holiday')
+
+        # Group by employee
+        emp_present_dates = defaultdict(list)
+        for emp_id, rec_date, is_night, is_hol in present_records:
+            emp_present_dates[emp_id].append((rec_date, is_night, is_hol))
+
+        for emp_id, dates_list in emp_present_dates.items():
+            weekend_nums = _get_weekend_nums_for_employee(emp_id, _eff_from, _eff_to)
+            present_on_off_day = 0
+            for rec_date, is_night, is_hol in dates_list:
+                if rec_date.weekday() in weekend_nums or is_hol:
+                    present_on_off_day += 1
+            emp_extra[emp_id] = {
+                'present_on_off': present_on_off_day,
+            }
+
+    # ── Pre-fetch notes & office-visit counts (batch, avoid N+1) ───────────
+    _emp_notes = {}      # emp_id -> list of notes
+    _emp_ov_count = {}   # emp_id -> office visit count
+    if _filtered_emp_ids:
+        # Batch: collect non-empty notes per employee (up to 3)
+        _notes_qs = (
+            qs.filter(notes__gt='')
+            .values_list('employee__id', 'notes')
+            .order_by('employee__id')
+        )
+        _notes_by_emp = defaultdict(set)
+        for eid, note in _notes_qs:
+            if len(_notes_by_emp[eid]) < 3:
+                _notes_by_emp[eid].add(note)
+        _emp_notes = {eid: list(notes) for eid, notes in _notes_by_emp.items()}
+
+        # Batch: office visit counts
+        _ov_qs = (
+            qs.filter(notes__icontains='office visit')
+            .values('employee__id')
+            .annotate(ov_count=Count('id'))
+        )
+        _emp_ov_count = {item['employee__id']: item['ov_count'] for item in _ov_qs}
+
+    # ── Build full summary ───────────────────────────────────────────────────
     emp_summary = []
+    dept_grouped = {}  # For grouping by department
     for e in _emp_qs:
+        emp_id = e['employee__id']
         worked = e['present'] + e['late'] + e['half_day']
-        if working_days_in_range and working_days_in_range > 0:
-            pct = round(worked * 100 / working_days_in_range)
+
+        # Weekend days for this employee in the range
+        weekend_days = _count_weekend_days_for_employee(emp_id, _eff_from, _eff_to) if _eff_from and _eff_to else 0
+
+        # Holiday days from attendance records marked as holiday
+        holiday_days = e['holiday_days_count']
+
+        # Total days: calendar days if range given, else total attendance records
+        total_days = total_days_in_range if total_days_in_range else e['total']
+
+        # Duty days = total days - weekend days - holiday days (only when range exists)
+        if total_days_in_range:
+            duty_days = max(total_days - weekend_days - holiday_days, 0)
+        else:
+            # No date range: duty = total records - holidays
+            duty_days = max(e['total'] - holiday_days, 0)
+
+        # Present days (including late + half_day)
+        present_days = worked
+
+        # Present on holiday
+        present_on_holiday = e['holiday_present']
+
+        # Present on weekend/day off/holiday
+        extra = emp_extra.get(emp_id, {})
+        present_on_off = extra.get('present_on_off', 0)
+
+        # Leave
+        emp_leave = leave_data.get(emp_id, {'paid': 0, 'unpaid': 0})
+
+        # Attendance percentage
+        if duty_days and duty_days > 0:
+            pct = round(worked * 100 / duty_days)
         elif e['total'] > 0:
             pct = round(worked * 100 / e['total'])
         else:
             pct = 0
-        e['pct'] = min(pct, 100)
-        e['pct_color'] = '#16a34a' if pct >= 90 else ('#d97706' if pct >= 70 else '#e11d48')
-        e['working_days'] = working_days_in_range
-        emp_summary.append(e)
+        pct = min(pct, 100)
+
+        # Notes/remarks — from pre-fetched batch
+        emp_notes_list = _emp_notes.get(emp_id, [])
+        remarks = '; '.join(emp_notes_list) if emp_notes_list else ''
+
+        # Office visit: from pre-fetched batch
+        office_visit = _emp_ov_count.get(emp_id, 0)
+
+        row = {
+            'employee__id': emp_id,
+            'employee__employee_id': e['employee__employee_id'],
+            'employee__employee_code': e['employee__employee_code'] or e['employee__employee_id'],
+            'employee__full_name': e['employee__full_name'],
+            'employee__department__name': e['employee__department__name'] or '—',
+            'employee__department__id': e['employee__department__id'],
+            'total_days': total_days,
+            'duty_days': duty_days,
+            'holiday_days': holiday_days,
+            'weekend_days': weekend_days,
+            'day_off': 0,
+            'night_off': 0,
+            'present_days': present_days,
+            'present_on_holiday': present_on_holiday,
+            'present_on_off': present_on_off,
+            'absent': e['absent'],
+            'misc_days': e['half_day'],
+            'leave_paid': emp_leave['paid'],
+            'leave_unpaid': emp_leave['unpaid'],
+            'worked_hours': e['total_working_hours'] or Decimal('0'),
+            'ot_hours': e['total_overtime_hours'] or Decimal('0'),
+            'late_in': e['late_in_count'],
+            'late_out': 0,
+            'early_in': 0,
+            'early_out': e['early_out_count'],
+            'office_visit': office_visit,
+            'remarks': remarks,
+            # Legacy fields
+            'total': e['total'],
+            'present': e['present'],
+            'late': e['late'],
+            'half_day': e['half_day'],
+            'on_leave': e['on_leave'],
+            'total_working_hours': e['total_working_hours'],
+            'pct': pct,
+            'pct_color': '#16a34a' if pct >= 90 else ('#d97706' if pct >= 70 else '#e11d48'),
+            'working_days': working_days_in_range,
+        }
+        emp_summary.append(row)
+
+        # Group by department
+        dept_name = row['employee__department__name']
+        dept_id = row['employee__department__id']
+        dept_key = f"{dept_id}-{dept_name}" if dept_id else f"0-{dept_name}"
+        if dept_key not in dept_grouped:
+            dept_grouped[dept_key] = {
+                'dept_label': f"{dept_id}-{dept_name}" if dept_id else dept_name,
+                'employees': [],
+            }
+        dept_grouped[dept_key]['employees'].append(row)
+
+    # Sort department groups by name
+    dept_groups = sorted(dept_grouped.values(), key=lambda g: g['dept_label'])
 
     # ── CSV export ───────────────────────────────────────────────────────────
     if export == 'csv':
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="attendance_report.csv"'
+        response['Content-Disposition'] = 'attachment; filename="employee_summary_report.csv"'
         writer = csv.writer(response)
         writer.writerow([
-            'Employee ID', 'Employee Name', 'Department', 'Date',
-            'Check In', 'Check Out', 'Working Hours', 'Overtime Hours', 'Status',
+            'Code', 'Name', 'Department', 'Total Days', 'Duty Days',
+            'Holiday Days', 'Weekend Days', 'Day Off', 'Night Off',
+            'Present Days', 'Present On Holiday', 'Present On Day Off/Night Off/Weekend',
+            'Absent Days', 'Misc Days', 'Leave Days - Paid', 'Leave Days - Unpaid',
+            'Worked Hours', 'OT Hours', 'Late In', 'Late Out', 'Early In', 'Early Out',
+            'Office Visit', 'Remarks',
         ])
-        for rec in qs.iterator():
+        for row in emp_summary:
             writer.writerow([
-                rec.employee.employee_id,
-                rec.employee.full_name,
-                rec.employee.department.name if rec.employee.department else '',
-                rec.date.strftime('%Y-%m-%d'),
-                rec.clock_in.strftime('%H:%M') if rec.clock_in else '',
-                rec.clock_out.strftime('%H:%M') if rec.clock_out else '',
-                rec.working_hours,
-                rec.overtime_hours,
-                rec.get_status_display(),
+                row['employee__employee_code'],
+                row['employee__full_name'],
+                row['employee__department__name'],
+                row['total_days'],
+                row['duty_days'],
+                row['holiday_days'],
+                row['weekend_days'],
+                row['day_off'],
+                row['night_off'],
+                row['present_days'],
+                row['present_on_holiday'],
+                row['present_on_off'],
+                row['absent'],
+                row['misc_days'],
+                row['leave_paid'],
+                row['leave_unpaid'],
+                row['worked_hours'],
+                row['ot_hours'],
+                row['late_in'],
+                row['late_out'],
+                row['early_in'],
+                row['early_out'],
+                row['office_visit'],
+                row['remarks'],
             ])
         return response
 
-    # ── Pagination ────────────────────────────────────────────────────────────
+    # ── Pagination (raw records table) ────────────────────────────────────────
     paginator = Paginator(qs, per_page)
     page_num  = request.GET.get('page', 1)
     records   = paginator.get_page(page_num)
@@ -5678,18 +5937,20 @@ def attendance_report(request):
     employees = Employee.objects.filter(employee_status='active').select_related('department').order_by('full_name')
 
     context = {
-        'records':     records,
-        'stats':       stats,
-        'emp_summary': emp_summary,
-        'departments': departments,
-        'employees':   employees,
-        'search':      search,
-        'date_from':   date_from,
-        'date_to':     date_to,
-        'department':  department,
-        'sel_status':  status,
-        'per_page':    per_page,
-        'status_choices': AttendanceRecord.STATUS_CHOICES,
+        'records':          records,
+        'stats':            stats,
+        'emp_summary':      emp_summary,
+        'dept_groups':      dept_groups,
+        'departments':      departments,
+        'employees':        employees,
+        'search':           search,
+        'date_from':        date_from,
+        'date_to':          date_to,
+        'department':       department,
+        'sel_status':       status,
+        'per_page':         per_page,
+        'status_choices':   AttendanceRecord.STATUS_CHOICES,
+        'company_name':     'HRM System',
     }
     return render(request, 'hrm/attendance_report.html', context)
 

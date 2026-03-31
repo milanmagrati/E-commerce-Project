@@ -162,7 +162,7 @@
                             <div class="shift-detail-item">
                                 <i class="far fa-clock text-muted me-1"></i>
                                 <div>
-                                    <div class="fw-semibold">{{ shift.start_time|time:"h:i A" }} - {{ shift.end_time|time:"h:i A" }}</div>
+                                    <div class="fw-semibold">{{ shift.start_time|time:"h:i A" }}{% if shift.end_time %} - {{ shift.end_time|time:"h:i A" }}{% else %} - <span class="text-muted">Open</span>{% endif %}</div>
                                     <div class="text-muted small">Shift Hours</div>
                                 </div>
                             </div>
@@ -448,6 +448,18 @@
                     </div>
                 </div>
 
+                <!-- Draft Restored Banner -->
+                <div id="draftBanner" class="draft-banner" style="display:none;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-file-alt text-info"></i>
+                        <span class="fw-semibold">Draft restored</span>
+                        <span class="text-muted">&mdash; pick up where you left off</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger draft-clear-btn" onclick="clearDraftAndReset()">
+                        <i class="fas fa-trash-alt me-1"></i>Clear Draft
+                    </button>
+                </div>
+
                 <!-- Section 1: Basic Information -->
                 <div class="modal-form-section">
                     <div class="modal-section-label">
@@ -484,7 +496,7 @@
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="pro-label">End Time <span class="text-danger">*</span></label>
+                            <label class="pro-label">End Time <span class="text-muted" style="font-size:.75rem;">(Optional)</span></label>
                             <div class="pro-input-wrap">
                                 <span class="pro-input-icon"><i class="far fa-clock"></i></span>
                                 <input type="time" class="form-control pro-field" id="shiftEndTime">
@@ -526,7 +538,7 @@
                             <label class="pro-label">Break Duration</label>
                             <div class="pro-input-wrap has-suffix">
                                 <span class="pro-input-icon"><i class="fas fa-pause-circle"></i></span>
-                                <input type="number" class="form-control pro-field" id="shiftBreakDuration" value="60" min="0" placeholder="60">
+                                <input type="number" class="form-control pro-field" id="shiftBreakDuration" value="0" min="0" placeholder="0">
                                 <span class="pro-input-suffix">min</span>
                             </div>
                             <small class="text-muted" style="font-size:.72rem;">Auto-filled from break times</small>
@@ -775,6 +787,22 @@
     }
     .shift-alert-close:hover { color: #374151; }
 
+    /* ── Draft banner ── */
+    .draft-banner {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 20px; margin: 0;
+        background: linear-gradient(135deg, #e0f2fe, #f0f9ff);
+        border-bottom: 1px solid #bae6fd;
+        font-size: .85rem;
+    }
+    .draft-clear-btn {
+        font-size: .78rem; padding: 3px 12px; border-radius: 6px;
+        transition: all .2s;
+    }
+    .draft-clear-btn:hover {
+        background: #dc3545; color: #fff; border-color: #dc3545;
+    }
+
     /* ── Field validation ── */
     .pro-field.field-error {
         border-color: #dc3545 !important;
@@ -981,7 +1009,7 @@
     }
 
     /* ── Auto-clear field error on typing ── */
-    ['shiftName','shiftStartTime','shiftEndTime'].forEach(function(fieldId) {
+    ['shiftName','shiftStartTime'].forEach(function(fieldId) {
         var el = document.getElementById(fieldId);
         if (el) {
             el.addEventListener('input', function() { markField(fieldId, false); });
@@ -1014,6 +1042,11 @@
     });
     document.getElementById('shiftEndTime').addEventListener('change', function() {
         workingHoursManual = false;
+        if (!this.value) {
+            /* End time was cleared — stop auto-calc, let user set working hours manually */
+            workingHoursManual = true;
+            return;
+        }
         calcWorkingHours();
     });
     /* User manually types working hours — freeze auto-fill until times change again */
@@ -1067,13 +1100,67 @@
         btn.disabled = loading;
     }
 
+    /* ══════════════ DRAFT SYSTEM (localStorage) ══════════════ */
+    var DRAFT_KEY = 'shiftFormDraft_v2';
+    var DRAFT_FIELDS = [
+        'shiftName','shiftDescription','shiftStartTime','shiftEndTime',
+        'shiftWorkingHours','shiftBreakStartTime','shiftBreakEndTime',
+        'shiftBreakDuration','shiftGracePeriod','shiftStatus'
+    ];
+
+    function saveDraft() {
+        if (editingId !== null) return;           /* only save drafts in "Add" mode */
+        var draft = {};
+        DRAFT_FIELDS.forEach(function(id) {
+            draft[id] = document.getElementById(id).value;
+        });
+        draft.shiftIsNightShift = document.getElementById('shiftIsNightShift').checked;
+        draft._ts = Date.now();
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    }
+
+    function loadDraft() {
+        var raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return false;
+        try { var draft = JSON.parse(raw); } catch(e) { return false; }
+        DRAFT_FIELDS.forEach(function(id) {
+            if (draft[id] !== undefined) document.getElementById(id).value = draft[id];
+        });
+        if (draft.shiftIsNightShift !== undefined) {
+            document.getElementById('shiftIsNightShift').checked = draft.shiftIsNightShift;
+        }
+        /* mark manual so auto-calc doesn't overwrite restored values */
+        if (draft.shiftWorkingHours) workingHoursManual = true;
+        if (draft.shiftBreakDuration) breakDurationManual = true;
+        return true;
+    }
+
+    function clearDraft() {
+        localStorage.removeItem(DRAFT_KEY);
+    }
+
+    function clearDraftAndReset() {
+        clearDraft();
+        resetForm();
+        document.getElementById('draftBanner').style.display = 'none';
+        document.getElementById('shiftModalSubtitle').textContent = 'Fill in the details to create a shift';
+    }
+
+    /* Attach draft-save listeners to every tracked field */
+    DRAFT_FIELDS.forEach(function(id) {
+        var el = document.getElementById(id);
+        el.addEventListener('input', saveDraft);
+        el.addEventListener('change', saveDraft);
+    });
+    document.getElementById('shiftIsNightShift').addEventListener('change', saveDraft);
+
     /* ── Reset form ── */
     function resetForm() {
         ['shiftName','shiftStartTime','shiftEndTime','shiftBreakStartTime','shiftBreakEndTime'].forEach(function(fieldId) {
             document.getElementById(fieldId).value = '';
         });
         document.getElementById('shiftDescription').value = '';
-        document.getElementById('shiftBreakDuration').value = '60';
+        document.getElementById('shiftBreakDuration').value = '0';
         document.getElementById('shiftGracePeriod').value = '15';
         document.getElementById('shiftWorkingHours').value = '8.0';
         document.getElementById('shiftIsNightShift').checked = false;
@@ -1095,6 +1182,9 @@
         document.getElementById('shiftModalIcon').className = 'fas fa-plus';
         document.getElementById('shiftSaveBtnText').textContent = 'Save Shift';
         resetForm();
+        /* Restore draft if one exists */
+        var hasDraft = loadDraft();
+        document.getElementById('draftBanner').style.display = hasDraft ? 'flex' : 'none';
         getModal('shiftModal').show();
     }
 
@@ -1103,6 +1193,7 @@
             .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
             .then(function(data) {
                 editingId = id;
+                document.getElementById('draftBanner').style.display = 'none';
                 document.getElementById('shiftModalTitle').textContent = 'Edit Shift';
                 document.getElementById('shiftModalSubtitle').textContent = 'Update the shift details below';
                 document.getElementById('shiftModalIcon').className = 'fas fa-edit';
@@ -1110,7 +1201,7 @@
                 document.getElementById('shiftName').value = data.name;
                 document.getElementById('shiftDescription').value = data.description || '';
                 document.getElementById('shiftStartTime').value = data.start_time;
-                document.getElementById('shiftEndTime').value = data.end_time;
+                document.getElementById('shiftEndTime').value = data.end_time || '';
                 document.getElementById('shiftBreakDuration').value = data.break_duration;
                 document.getElementById('shiftBreakStartTime').value = data.break_start_time || '';
                 document.getElementById('shiftBreakEndTime').value = data.break_end_time || '';
@@ -1142,7 +1233,7 @@
                 document.getElementById('viewShiftBody').innerHTML =
                     '<div class="mb-3 d-flex gap-2">' + typeBadge + ' ' + statusLabel + '</div>' +
                     '<table class="table table-sm mb-3">' +
-                    '<tr><td class="text-muted" style="width:45%">Shift Hours</td><td class="fw-semibold">' + to12Hr(data.start_time) + ' - ' + to12Hr(data.end_time) + '</td></tr>' +
+                    '<tr><td class="text-muted" style="width:45%">Shift Hours</td><td class="fw-semibold">' + to12Hr(data.start_time) + ' - ' + (data.end_time ? to12Hr(data.end_time) : '<span class="text-muted">Open</span>') + '</td></tr>' +
                     '<tr><td class="text-muted">Break Duration</td><td class="fw-semibold">' + data.break_duration + ' min</td></tr>' +
                     '<tr><td class="text-muted">Break Start</td><td class="fw-semibold">' + (data.break_start_time ? to12Hr(data.break_start_time) : '\u2014') + '</td></tr>' +
                     '<tr><td class="text-muted">Break End</td><td class="fw-semibold">' + (data.break_end_time ? to12Hr(data.break_end_time) : '\u2014') + '</td></tr>' +
@@ -1165,7 +1256,6 @@
         var hasErrors = false;
         if (!name) { markField('shiftName', true, 'Shift name is required'); hasErrors = true; }
         if (!startTime) { markField('shiftStartTime', true, 'Start time is required'); hasErrors = true; }
-        if (!endTime) { markField('shiftEndTime', true, 'End time is required'); hasErrors = true; }
 
         if (hasErrors) {
             showError('Please fill in all required fields highlighted below.');
@@ -1180,7 +1270,7 @@
         params.append('start_time', startTime);
         params.append('end_time', endTime);
         params.append('description', document.getElementById('shiftDescription').value.trim());
-        params.append('break_duration', document.getElementById('shiftBreakDuration').value || '60');
+        params.append('break_duration', document.getElementById('shiftBreakDuration').value || '0');
         params.append('break_start_time', document.getElementById('shiftBreakStartTime').value);
         params.append('break_end_time', document.getElementById('shiftBreakEndTime').value);
         params.append('grace_period', document.getElementById('shiftGracePeriod').value || '15');
@@ -1206,6 +1296,7 @@
         })
         .then(function(data) {
             if (data.success) {
+                clearDraft();
                 var toastMsg = editingId
                     ? 'Shift has been updated successfully!'
                     : 'New shift has been created successfully!';
