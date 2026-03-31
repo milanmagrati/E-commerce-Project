@@ -1747,8 +1747,7 @@ def warning_list(request):
 
     if search_query:
         warnings_qs = warnings_qs.filter(
-            Q(employee__first_name__icontains=search_query) |
-            Q(employee__last_name__icontains=search_query) |
+            Q(employee__full_name__icontains=search_query) |
             Q(employee__employee_id__icontains=search_query) |
             Q(subject__icontains=search_query) |
             Q(description__icontains=search_query)
@@ -1765,11 +1764,13 @@ def warning_list(request):
     paginator = Paginator(warnings_qs, int(per_page) if per_page.isdigit() else 10)
     page_number = request.GET.get('page', 1)
     warnings = paginator.get_page(page_number)
+    elided_page_range = paginator.get_elided_page_range(warnings.number, on_each_side=2, on_ends=1)
 
     context = {
         'page_title': 'Warnings',
         'warnings': warnings,
         'total_warnings': paginator.count,
+        'elided_page_range': elided_page_range,
         'employees': employees,
         'search_query': search_query,
         'status_filter': status_filter,

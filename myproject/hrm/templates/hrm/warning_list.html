@@ -176,7 +176,7 @@
             </table>
         </div>
 
-        {% if warnings %}
+        {% if warnings.paginator.num_pages > 1 %}
         <!-- Pagination -->
         <div class="d-flex justify-content-between align-items-center mt-3">
             <small class="text-muted">
@@ -184,21 +184,27 @@
             </small>
             <nav>
                 <ul class="pagination pagination-sm mb-0">
-                    {% if warnings.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ warnings.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}">Previous</a>
+                    <li class="page-item {% if not warnings.has_previous %}disabled{% endif %}">
+                        <a class="page-link" {% if warnings.has_previous %}href="?page={{ warnings.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}"{% endif %}>
+                            <i class="fas fa-chevron-left"></i> Prev
+                        </a>
                     </li>
-                    {% endif %}
-                    {% for num in warnings.paginator.page_range %}
-                    <li class="page-item {% if warnings.number == num %}active{% endif %}">
-                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}">{{ num }}</a>
-                    </li>
+                    {% for num in elided_page_range %}
+                        {% if num == warnings.paginator.ELLIPSIS %}
+                        <li class="page-item disabled">
+                            <span class="page-link">&hellip;</span>
+                        </li>
+                        {% else %}
+                        <li class="page-item {% if warnings.number == num %}active{% endif %}">
+                            <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}">{{ num }}</a>
+                        </li>
+                        {% endif %}
                     {% endfor %}
-                    {% if warnings.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ warnings.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}">Next</a>
+                    <li class="page-item {% if not warnings.has_next %}disabled{% endif %}">
+                        <a class="page-link" {% if warnings.has_next %}href="?page={{ warnings.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}&status={{ status_filter }}&type={{ type_filter }}&severity={{ severity_filter }}&employee={{ employee_filter }}"{% endif %}>
+                            Next <i class="fas fa-chevron-right"></i>
+                        </a>
                     </li>
-                    {% endif %}
                 </ul>
             </nav>
         </div>
@@ -439,7 +445,12 @@
             headers: { 'X-CSRFToken': csrfToken },
             body: formData,
         })
-        .then(res => res.json())
+        .then(res => {
+            if (res.redirected || !res.ok) {
+                throw new Error('Server error');
+            }
+            return res.json();
+        })
         .then(data => {
             saveBtn.disabled = false;
             saveBtn.innerHTML = 'Save';
@@ -460,7 +471,10 @@
 
     function viewWarning(id) {
         fetch("{% url 'hrm:warning_list' %}" + id + '/')
-            .then(res => res.json())
+            .then(res => {
+                if (res.redirected || !res.ok) throw new Error('Server error');
+                return res.json();
+            })
             .then(data => {
                 if (data.success) {
                     const w = data.warning;
@@ -495,7 +509,10 @@
 
     function editWarning(id) {
         fetch("{% url 'hrm:warning_list' %}" + id + '/')
-            .then(res => res.json())
+            .then(res => {
+                if (res.redirected || !res.ok) throw new Error('Server error');
+                return res.json();
+            })
             .then(data => {
                 if (data.success) {
                     clearAllErrors();
@@ -528,7 +545,12 @@
             headers: { 'X-CSRFToken': csrfToken },
             body: formData,
         })
-        .then(res => res.json())
+        .then(res => {
+            if (res.redirected || !res.ok) {
+                throw new Error('Server error');
+            }
+            return res.json();
+        })
         .then(data => {
             if (data.success) {
                 showToast(data.message, 'success');
@@ -537,7 +559,7 @@
                 showToast(data.error || 'Something went wrong.', 'error');
             }
         })
-        .catch(() => showToast('Network error.', 'error'));
+        .catch(() => showToast('Network error. Please refresh and try again.', 'error'));
     }
 
     let deleteId = null;
@@ -553,7 +575,10 @@
             method: 'POST',
             headers: { 'X-CSRFToken': csrfToken },
         })
-        .then(res => res.json())
+        .then(res => {
+            if (res.redirected || !res.ok) throw new Error('Server error');
+            return res.json();
+        })
         .then(data => {
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
@@ -609,6 +634,18 @@
             setTimeout(() => toast.remove(), 300);
         }, 3500);
     }
+
+    // Reposition fixed dropdowns so they appear next to the badge button
+    document.querySelectorAll('.dropdown').forEach(function(dd) {
+        dd.addEventListener('shown.bs.dropdown', function() {
+            var btn = dd.querySelector('.dropdown-toggle');
+            var menu = dd.querySelector('.dropdown-menu');
+            if (!btn || !menu) return;
+            var rect = btn.getBoundingClientRect();
+            menu.style.top = (rect.bottom + 2) + 'px';
+            menu.style.left = rect.left + 'px';
+        });
+    });
 </script>
 <style>
     @keyframes toastSlideIn {
@@ -722,6 +759,8 @@
     .dropdown-menu-sm {
         min-width: 150px;
         font-size: 13px;
+        position: fixed !important;
+        z-index: 1050;
     }
     .dropdown-menu-sm .dropdown-item {
         padding: 6px 14px;
