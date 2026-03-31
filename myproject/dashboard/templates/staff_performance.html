@@ -1956,7 +1956,7 @@
                             </td>
                             <td>
                                 <span style="font-size: 0.85rem; color: #666;">{{ order.created_at|date:"M d, Y" }}</span>
-                                <br><span style="font-size: 0.75rem; color: #999;">{{ order.created_at|date:"H:i" }}</span>
+                                <br><span style="font-size: 0.75rem; color: #999;">{{ order.created_at|date:"h:i A" }}</span>
                             </td>
                         </tr>
                         <!-- Expandable Detail Row -->
@@ -2007,13 +2007,13 @@
                                         {% if order.delivered_at %}
                                         <div class="sp-detail-block">
                                             <span class="sp-detail-label">Delivered At</span>
-                                            <span class="sp-detail-value">{{ order.delivered_at|date:"M d, Y H:i" }}</span>
+                                            <span class="sp-detail-value">{{ order.delivered_at|date:"M d, Y h:i A" }}</span>
                                         </div>
                                         {% endif %}
                                         {% if order.dispatch_date %}
                                         <div class="sp-detail-block">
                                             <span class="sp-detail-label">Dispatch Date</span>
-                                            <span class="sp-detail-value">{{ order.dispatch_date|date:"M d, Y H:i" }}</span>
+                                            <span class="sp-detail-value">{{ order.dispatch_date|date:"M d, Y h:i A" }}</span>
                                         </div>
                                         {% endif %}
                                     </div>
@@ -2338,7 +2338,7 @@
                             </td>
                             <td>
                                 <span style="font-size: 0.85rem; color: #666;">{{ return.created_at|date:"M d, Y" }}</span>
-                                <br><span style="font-size: 0.75rem; color: #999;">{{ return.created_at|date:"H:i" }}</span>
+                                <br><span style="font-size: 0.75rem; color: #999;">{{ return.created_at|date:"h:i A" }}</span>
                             </td>
                         </tr>
                         {% endfor %}
