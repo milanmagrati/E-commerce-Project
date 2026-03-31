@@ -244,21 +244,120 @@ def dashboard_view(request):
         logging.error(f"Error fetching recent orders: {e}")
         recent_orders = []
     
-    # Low stock products (use custom thresholds if set, fallback to stock <= 10)
-    low_stock_products = products.filter(
-        low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
-    ).order_by('stock')[:5]
-    if not low_stock_products.exists():
-        low_stock_products = products.filter(stock__lte=10, stock__gt=0).order_by('stock')[:5]
+    # ── Low Stock Alert: supports simple, variable, and bundle products ──
+    low_stock_items = []  # list of dicts for template
+    seen_product_ids = set()  # avoid duplicates
 
-    low_stock_alert_count = products.filter(
+    def _severity(stock, threshold):
+        if stock <= max(threshold // 3, 1):
+            return 'critical'
+        if stock <= threshold // 2:
+            return 'warning'
+        return 'low'
+
+    def _pct(stock, threshold):
+        if threshold <= 0:
+            return 0
+        return min(round(stock / threshold * 100), 100)
+
+    # 1) Simple & Variable products with custom thresholds
+    simple_var_custom = list(products.filter(
+        product_type__in=['simple', 'variable'],
         low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
-    ).count()
-    # Include variation alerts in count
-    low_stock_alert_count += ProductVariation.objects.filter(
+    ).order_by('stock'))
+    for p in simple_var_custom:
+        seen_product_ids.add(p.id)
+        low_stock_items.append({
+            'name': p.name,
+            'product_type': p.get_product_type_display(),
+            'type_key': p.product_type,
+            'stock': p.stock,
+            'threshold': p.low_stock_threshold,
+            'severity': _severity(p.stock, p.low_stock_threshold),
+            'pct': _pct(p.stock, p.low_stock_threshold),
+            'variation_name': None,
+            'bottleneck': None,
+        })
+
+    # Also include simple/variable products WITHOUT custom threshold but stock <= 10
+    for p in products.filter(
+        product_type__in=['simple', 'variable'],
+        low_stock_threshold=0, stock__lte=10, stock__gt=0
+    ).exclude(id__in=seen_product_ids).order_by('stock'):
+        seen_product_ids.add(p.id)
+        low_stock_items.append({
+            'name': p.name,
+            'product_type': p.get_product_type_display(),
+            'type_key': p.product_type,
+            'stock': p.stock,
+            'threshold': 10,
+            'severity': _severity(p.stock, 10),
+            'pct': _pct(p.stock, 10),
+            'variation_name': None,
+            'bottleneck': None,
+        })
+
+    # 2) Bundle products — use available_stock (min of components)
+    bundle_products = list(products.filter(
+        product_type='bundle'
+    ).prefetch_related('bundle_components__component_product'))
+    for bp in bundle_products:
+        # Use prefetched components (avoid extra queries)
+        components = list(bp.bundle_components.all())
+        if not components:
+            avail = 0
+        else:
+            avail = min(
+                c.component_product.stock // c.quantity_required
+                for c in components
+            )
+        threshold = bp.low_stock_threshold if bp.low_stock_threshold > 0 else 10
+        if avail <= threshold:
+            bottleneck = None
+            if components:
+                bottleneck_comp = min(
+                    components,
+                    key=lambda c: c.component_product.stock // c.quantity_required
+                )
+                bottleneck = (
+                    f"{bottleneck_comp.component_product.name} "
+                    f"({bottleneck_comp.component_product.stock} left)"
+                )
+            low_stock_items.append({
+                'name': bp.name,
+                'product_type': 'Bundle/Combo',
+                'type_key': 'bundle',
+                'stock': avail,
+                'threshold': threshold,
+                'severity': 'critical' if avail == 0 else _severity(avail, threshold),
+                'pct': _pct(avail, threshold),
+                'variation_name': None,
+                'bottleneck': bottleneck,
+            })
+
+    # 3) Product variations with low stock
+    low_var_qs = ProductVariation.objects.filter(
         product__is_deleted=False,
         low_stock_threshold__gt=0, stock__lte=F('low_stock_threshold'), stock__gt=0
-    ).count()
+    ).select_related('product').order_by('stock')
+    for v in low_var_qs:
+        low_stock_items.append({
+            'name': v.product.name,
+            'variation_name': v.variation_name or v.sku,
+            'product_type': 'Variation',
+            'type_key': 'variation',
+            'stock': v.stock,
+            'threshold': v.low_stock_threshold,
+            'severity': _severity(v.stock, v.low_stock_threshold),
+            'pct': _pct(v.stock, v.low_stock_threshold),
+            'bottleneck': None,
+        })
+
+    # Sort by severity (critical first) then by stock ascending, limit to 8
+    severity_order = {'critical': 0, 'warning': 1, 'low': 2}
+    low_stock_items.sort(key=lambda x: (severity_order.get(x['severity'], 3), x['stock']))
+    low_stock_alert_count = len(low_stock_items)
+    low_stock_items = low_stock_items[:8]
     
     # Monthly sales data for chart (last 6 months)
     monthly_sales = []
@@ -343,7 +442,7 @@ def dashboard_view(request):
         'delivered_orders': delivered_orders,
         'total_revenue': total_revenue,
         'recent_orders': recent_orders,
-        'low_stock_products': low_stock_products,
+        'low_stock_items': low_stock_items,
         'low_stock_alert_count': low_stock_alert_count,
         'monthly_sales': json.dumps(monthly_sales),
         'order_sources': json.dumps(order_sources),

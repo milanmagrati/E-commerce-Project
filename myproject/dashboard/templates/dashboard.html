@@ -201,44 +201,295 @@
     </div>
 
     <div class="col-xl-4">
-        <div class="card">
+        <div class="card low-stock-card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
+                <h5 class="mb-0 d-flex align-items-center gap-2">
+                    <span class="low-stock-icon-wrap">
+                        <i class="fas fa-boxes-stacked"></i>
+                    </span>
                     Low Stock Alert
                     {% if low_stock_alert_count > 0 %}
-                    <span class="badge bg-danger ms-2">{{ low_stock_alert_count }}</span>
+                    <span class="badge low-stock-count-badge">{{ low_stock_alert_count }}</span>
                     {% endif %}
                 </h5>
-                <a href="{% url 'low_stock_alerts' %}" class="btn btn-sm btn-outline-danger">View All</a>
+                <a href="{% url 'low_stock_alerts' %}" class="btn btn-sm btn-view-all">View All</a>
             </div>
-            <div class="card-body">
-                <div class="list-group list-group-flush">
-                    {% for product in low_stock_products %}
-                    <div class="list-group-item px-0">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1">{{ product.name }}</h6>
-                                <small class="text-danger">
-                                    <i class="fas fa-exclamation-triangle"></i>
-                                    Only {{ product.stock }} left
-                                    {% if product.low_stock_threshold > 0 %}
-                                    <span class="text-muted">(threshold: {{ product.low_stock_threshold }})</span>
-                                    {% endif %}
-                                </small>
+            <div class="card-body p-0">
+                {% if low_stock_items %}
+                <div class="low-stock-list">
+                    {% for item in low_stock_items %}
+                    <div class="low-stock-item severity-{{ item.severity }}">
+                        <div class="low-stock-item-top">
+                            <div class="low-stock-info">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="product-type-badge type-{{ item.type_key }}">
+                                        {% if item.type_key == 'simple' %}
+                                            <i class="fas fa-cube"></i>
+                                        {% elif item.type_key == 'variable' %}
+                                            <i class="fas fa-layer-group"></i>
+                                        {% elif item.type_key == 'bundle' %}
+                                            <i class="fas fa-boxes-stacked"></i>
+                                        {% elif item.type_key == 'variation' %}
+                                            <i class="fas fa-swatchbook"></i>
+                                        {% endif %}
+                                        {{ item.product_type }}
+                                    </span>
+                                    <span class="severity-dot severity-{{ item.severity }}"></span>
+                                </div>
+                                <h6 class="low-stock-name mb-0">{{ item.name }}</h6>
+                                {% if item.variation_name %}
+                                <span class="variation-label">{{ item.variation_name }}</span>
+                                {% endif %}
                             </div>
-                            <span class="badge bg-danger">Low</span>
+                            <div class="low-stock-count text-center">
+                                <span class="stock-number severity-text-{{ item.severity }}">{{ item.stock }}</span>
+                                <span class="stock-label">left</span>
+                            </div>
+                        </div>
+                        <div class="low-stock-bar-wrap">
+                            <div class="low-stock-bar">
+                                <div class="low-stock-bar-fill severity-bar-{{ item.severity }}" style="width: {{ item.pct }}%"></div>
+                            </div>
+                            <div class="low-stock-meta">
+                                <span class="threshold-text">Threshold: {{ item.threshold }}</span>
+                                {% if item.bottleneck %}
+                                <span class="bottleneck-text" title="Bottleneck component">
+                                    <i class="fas fa-link"></i> {{ item.bottleneck }}
+                                </span>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
-                    {% empty %}
-                    <p class="text-muted mb-0">All products have sufficient stock</p>
                     {% endfor %}
                 </div>
+                {% else %}
+                <div class="low-stock-empty">
+                    <div class="empty-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <p class="mb-0">All products have sufficient stock</p>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 
 <style>
+/* ── Low Stock Alert Card ── */
+.low-stock-card {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    overflow: hidden;
+}
+.low-stock-card .card-header {
+    background: linear-gradient(135deg, #fff5f5 0%, #fff 100%);
+    border-bottom: 1px solid #fee2e2;
+    padding: 16px 20px;
+}
+.low-stock-icon-wrap {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 14px;
+}
+.low-stock-count-badge {
+    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+    color: #fff;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    min-width: 24px;
+    text-align: center;
+    animation: pulse-badge 2s infinite;
+}
+@keyframes pulse-badge {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+.btn-view-all {
+    background: transparent;
+    color: #ef4444;
+    border: 1.5px solid #fca5a5;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 14px;
+    transition: all 0.2s ease;
+}
+.btn-view-all:hover {
+    background: #ef4444;
+    color: #fff;
+    border-color: #ef4444;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239,68,68,0.3);
+}
+
+/* List container */
+.low-stock-list {
+    max-height: 480px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #e5e7eb transparent;
+}
+.low-stock-list::-webkit-scrollbar { width: 4px; }
+.low-stock-list::-webkit-scrollbar-track { background: transparent; }
+.low-stock-list::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+
+/* Item */
+.low-stock-item {
+    padding: 14px 20px;
+    border-bottom: 1px solid #f3f4f6;
+    transition: background 0.2s ease;
+    border-left: 3px solid transparent;
+}
+.low-stock-item:last-child { border-bottom: none; }
+.low-stock-item:hover { background: #fafafa; }
+.low-stock-item.severity-critical { border-left-color: #ef4444; }
+.low-stock-item.severity-warning { border-left-color: #f59e0b; }
+.low-stock-item.severity-low { border-left-color: #3b82f6; }
+
+.low-stock-item-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+.low-stock-info { flex: 1; min-width: 0; }
+.low-stock-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+.variation-label {
+    font-size: 11px;
+    color: #6b7280;
+    display: block;
+    margin-top: 2px;
+}
+
+/* Product type badges */
+.product-type-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.type-simple { background: #eff6ff; color: #2563eb; }
+.type-variable { background: #f0fdf4; color: #16a34a; }
+.type-bundle { background: #fef3c7; color: #d97706; }
+.type-variation { background: #faf5ff; color: #7c3aed; }
+
+/* Severity dot */
+.severity-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+.severity-dot.severity-critical { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+.severity-dot.severity-warning { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+.severity-dot.severity-low { background: #3b82f6; box-shadow: 0 0 6px rgba(59,130,246,0.4); }
+
+/* Stock count */
+.low-stock-count {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+.stock-number {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+}
+.stock-label {
+    font-size: 10px;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+}
+.severity-text-critical { color: #ef4444; }
+.severity-text-warning { color: #f59e0b; }
+.severity-text-low { color: #3b82f6; }
+
+/* Progress bar */
+.low-stock-bar-wrap { margin-top: 2px; }
+.low-stock-bar {
+    height: 4px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.low-stock-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease;
+}
+.severity-bar-critical { background: linear-gradient(90deg, #ef4444, #f87171); }
+.severity-bar-warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.severity-bar-low { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+
+.low-stock-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 4px;
+}
+.threshold-text {
+    font-size: 10px;
+    color: #9ca3af;
+}
+.bottleneck-text {
+    font-size: 10px;
+    color: #d97706;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+/* Empty state */
+.low-stock-empty {
+    padding: 40px 20px;
+    text-align: center;
+}
+.low-stock-empty .empty-icon {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: #059669;
+    margin-bottom: 12px;
+}
+.low-stock-empty p {
+    color: #6b7280;
+    font-size: 13px;
+}
+
 .stat-card {
     border: none;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
