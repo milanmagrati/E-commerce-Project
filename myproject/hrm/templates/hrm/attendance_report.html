@@ -253,6 +253,28 @@
     .pv-sum-val { font-size:1.25rem; font-weight:700; line-height:1; }
     .pv-sum-lbl { font-size:0.68rem; color:#94a3b8; margin-top:3px; text-transform:uppercase; letter-spacing:0.04em; }
 
+    /* ── Period View Detail Table ─────────────────────── */
+    .pv-detail-table-wrap { overflow-x:auto; background:#fff; border-top:1px solid #e9ecef; border-bottom:1px solid #e9ecef; }
+    .pv-detail-table { width:100%; border-collapse:collapse; font-size:0.78rem; white-space:nowrap; }
+    .pv-detail-table thead th {
+        background:#f8fafc; color:#475569; font-weight:700; font-size:0.7rem;
+        text-transform:uppercase; letter-spacing:0.04em; padding:8px 10px;
+        border:1px solid #e2e8f0; text-align:center; vertical-align:middle;
+    }
+    .pv-detail-table thead th.pv-th-group { border-bottom:none; }
+    .pv-detail-table thead th.pv-th-sub { border-top:none; font-size:0.65rem; }
+    .pv-detail-table tbody td {
+        padding:7px 10px; border:1px solid #e9ecef; text-align:center;
+        color:#1e293b; font-weight:500;
+    }
+    .pv-detail-table tbody tr:hover { background:#f0f4ff; }
+    .pv-dept-divider {
+        background:#f8fafc; text-align:center; padding:8px 12px;
+        font-size:0.82rem; font-weight:700; color:#7c3aed;
+        border:1px solid #e2e8f0;
+    }
+    .pv-dept-divider i { margin-right:6px; }
+
     /* Day card */
     .pv-day-card { border-radius:12px; border:1px solid #e9ecef; overflow:hidden; }
     .pv-day-metric { text-align:center; padding:1rem 0.5rem; border-right:1px solid #e9ecef; flex:1; }
@@ -271,73 +293,136 @@
     .pv-week-day .day-status { font-size:0.68rem; font-weight:600; border-radius:12px; padding:2px 7px; display:inline-block; }
 
     /* Month calendar */
-    .pv-cal-wrap { padding:0.9rem 1.1rem 0.75rem; }
-    .pv-cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+    .pv-cal-wrap {
+        padding:1.4rem 1.5rem 1.1rem;
+        background:linear-gradient(170deg,#eef2ff 0%,#fdf4ff 40%,#fff7ed 100%);
+        border-radius:0 0 14px 14px;
+    }
+    .pv-cal-nav {
+        display:flex; align-items:center; justify-content:space-between;
+        margin-bottom:16px; padding:0 4px;
+    }
     .pv-cal-nav-btn {
-        width:26px; height:26px; border-radius:7px; border:1.5px solid #e2e8f0;
-        background:#fff; cursor:pointer; display:flex; align-items:center;
-        justify-content:center; font-size:0.7rem; color:#475569; transition:all 0.12s;
+        width:36px; height:36px; border-radius:10px; border:2px solid #c7d2fe;
+        background:linear-gradient(135deg,#eef2ff,#e0e7ff); cursor:pointer;
+        display:flex; align-items:center; justify-content:center;
+        font-size:0.78rem; color:#6366f1; transition:all 0.2s;
+        box-shadow:0 2px 8px rgba(99,102,241,0.15);
     }
-    .pv-cal-nav-btn:hover { background:#6366f1; border-color:#6366f1; color:#fff; }
-    .pv-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+    .pv-cal-nav-btn:hover {
+        background:linear-gradient(135deg,#6366f1,#8b5cf6); border-color:#6366f1;
+        color:#fff; box-shadow:0 4px 14px rgba(99,102,241,0.35); transform:scale(1.1);
+    }
+    .pv-cal-month-title {
+        font-weight:800; font-size:1.15rem;
+        background:linear-gradient(135deg,#6366f1,#a855f7);
+        -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+        background-clip:text;
+        display:flex; align-items:center; gap:8px;
+    }
+    .pv-cal-month-title i {
+        -webkit-text-fill-color:#6366f1; background:none;
+        color:#6366f1; font-size:1rem;
+    }
+    .pv-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; }
     .pv-cal-head {
-        text-align:center; font-size:0.62rem; font-weight:800; color:#94a3b8;
-        padding:5px 1px 4px; text-transform:uppercase; letter-spacing:0.07em;
+        text-align:center; font-size:0.73rem; font-weight:800; color:#4f46e5;
+        padding:9px 2px 7px; text-transform:uppercase; letter-spacing:0.08em;
+        background:linear-gradient(180deg,#e0e7ff,#c7d2fe);
+        border-radius:9px; margin-bottom:3px; border:1px solid #a5b4fc;
     }
-    .pv-cal-head.wknd { color:#a78bfa; }
+    .pv-cal-head.wknd {
+        color:#7c3aed; background:linear-gradient(180deg,#f3e8ff,#e9d5ff);
+        border-color:#c4b5fd;
+    }
     .pv-cal-cell {
-        border-radius:6px; display:flex; flex-direction:column;
+        border-radius:12px; display:flex; flex-direction:column;
         align-items:flex-start; justify-content:flex-start;
-        cursor:default; border:1px solid #f1f5f9;
-        font-size:0.7rem; min-height:46px; padding:4px 5px;
-        transition:all 0.12s; position:relative; overflow:hidden;
-        background:#f8fafc;
+        cursor:default; border:2px solid #e2e8f0;
+        font-size:0.72rem; min-height:76px; padding:8px 9px 7px;
+        transition:all 0.2s; position:relative; overflow:hidden;
+        background:linear-gradient(150deg,#f8faff,#f0f4ff);
+    }
+    .pv-cal-cell::before {
+        content:''; position:absolute; top:0; right:0;
+        width:28px; height:28px; border-radius:0 12px 0 28px;
+        background:rgba(99,102,241,0.05);
     }
     .pv-cal-cell.has-record {
         cursor:pointer;
-        box-shadow:0 1px 3px rgba(0,0,0,0.07);
+        box-shadow:0 2px 8px rgba(0,0,0,0.07);
     }
     .pv-cal-cell.has-record:hover {
-        transform:translateY(-2px) scale(1.03);
-        box-shadow:0 4px 14px rgba(0,0,0,0.13);
+        transform:translateY(-4px) scale(1.04);
+        box-shadow:0 8px 24px rgba(0,0,0,0.14);
         z-index:3;
     }
-    .pv-cal-cell.empty { background:transparent; border:none; }
+    .pv-cal-cell.empty { background:transparent; border:none; min-height:0; }
     .pv-cal-cell.today {
-        outline:2px solid #6366f1; outline-offset:1px;
-        background:linear-gradient(135deg,#f5f3ff,#ede9fe) !important;
-        border-color:#c4b5fd !important;
+        outline:3px solid #6366f1; outline-offset:2px;
+        background:linear-gradient(135deg,#ede9fe,#ddd6fe) !important;
+        border-color:#a78bfa !important;
+        box-shadow:0 0 0 4px rgba(99,102,241,0.12) !important;
     }
-    .pv-cal-cell.wknd-cell { background:#fdf4ff; border-color:#f3e8ff; }
-    .pv-cal-cell.wknd-cell.pv-status-no_record { background:#fdf4ff; color:#d8b4fe; }
+    .pv-cal-cell.today .cal-num { color:#6d28d9 !important; }
+    .pv-cal-cell.wknd-cell {
+        background:linear-gradient(150deg,#fce7f3,#f3e8ff);
+        border-color:#e879f9;
+    }
+    .pv-cal-cell.wknd-cell.pv-status-no_record {
+        background:linear-gradient(150deg,#fce7f3,#f3e8ff);
+        border-color:#e879f9;
+    }
     .pv-cal-cell .cal-num {
-        font-weight:800; font-size:0.78rem; line-height:1;
-        margin-bottom:2px;
+        font-weight:800; font-size:0.92rem; line-height:1;
+        margin-bottom:5px; color:#334155;
     }
+    .pv-cal-cell.wknd-cell .cal-num { color:#9333ea; }
     .pv-cal-cell .cal-status-chip {
-        font-size:0.54rem; font-weight:800; border-radius:5px;
-        padding:1px 4px; display:inline-block; margin-bottom:2px;
-        letter-spacing:0.02em;
+        font-size:0.58rem; font-weight:800; border-radius:6px;
+        padding:2px 7px; display:inline-block; margin-bottom:3px;
+        letter-spacing:0.03em; box-shadow:0 1px 3px rgba(0,0,0,0.1);
     }
     .pv-cal-cell .cal-time {
-        font-size:0.54rem; color:inherit; opacity:0.7;
+        font-size:0.58rem; color:inherit; opacity:0.8;
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;
     }
     .pv-cal-cell .cal-hours {
-        font-size:0.58rem; font-weight:800; margin-top:auto; opacity:0.85;
+        font-size:0.62rem; font-weight:800; margin-top:auto; opacity:0.9;
     }
     /* Vibrant gradient status colors */
-    .pv-status-present  { background:linear-gradient(150deg,#f0fdf4,#dcfce7); color:#065f46; border-color:#86efac; }
-    .pv-status-absent   { background:linear-gradient(150deg,#fff1f2,#ffe4e6); color:#9f1239; border-color:#fda4af; }
-    .pv-status-late     { background:linear-gradient(150deg,#fffbeb,#fef3c7); color:#92400e; border-color:#fcd34d; }
-    .pv-status-half_day { background:linear-gradient(150deg,#eff6ff,#dbeafe); color:#1e40af; border-color:#93c5fd; }
-    .pv-status-on_leave { background:linear-gradient(150deg,#faf5ff,#ede9fe); color:#5b21b6; border-color:#c4b5fd; }
-    .pv-status-no_record{ background:#f8fafc; color:#cbd5e1; border-color:#f1f5f9; }
-    .cal-chip-present  { background:#86efac; color:#064e3b; }
-    .cal-chip-absent   { background:#fda4af; color:#881337; }
-    .cal-chip-late     { background:#fcd34d; color:#78350f; }
-    .cal-chip-half_day { background:#93c5fd; color:#1e3a8a; }
-    .cal-chip-on_leave { background:#c4b5fd; color:#3b0764; }
+    .pv-status-present  { background:linear-gradient(150deg,#dcfce7,#bbf7d0); color:#065f46; border-color:#4ade80; box-shadow:0 2px 8px rgba(34,197,94,0.18); }
+    .pv-status-absent   { background:linear-gradient(150deg,#fee2e2,#fecaca); color:#991b1b; border-color:#f87171; box-shadow:0 2px 8px rgba(239,68,68,0.18); }
+    .pv-status-late     { background:linear-gradient(150deg,#fef9c3,#fef08a); color:#854d0e; border-color:#facc15; box-shadow:0 2px 8px rgba(234,179,8,0.18); }
+    .pv-status-half_day { background:linear-gradient(150deg,#dbeafe,#bfdbfe); color:#1e40af; border-color:#3b82f6; box-shadow:0 2px 8px rgba(59,130,246,0.18); }
+    .pv-status-on_leave { background:linear-gradient(150deg,#ede9fe,#ddd6fe); color:#5b21b6; border-color:#8b5cf6; box-shadow:0 2px 8px rgba(139,92,246,0.18); }
+    .pv-status-no_record{ background:linear-gradient(150deg,#f8faff,#f0f4ff); color:#94a3b8; border-color:#e2e8f0; }
+    .cal-chip-present  { background:linear-gradient(135deg,#22c55e,#16a34a); color:#fff; }
+    .cal-chip-absent   { background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; }
+    .cal-chip-late     { background:linear-gradient(135deg,#eab308,#ca8a04); color:#fff; }
+    .cal-chip-half_day { background:linear-gradient(135deg,#3b82f6,#2563eb); color:#fff; }
+    .cal-chip-on_leave { background:linear-gradient(135deg,#8b5cf6,#7c3aed); color:#fff; }
+
+    /* Calendar legend */
+    .pv-cal-legend {
+        display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+        padding:12px 0 0; border-top:2px solid #e0e7ff; margin-top:4px;
+    }
+    .pv-cal-legend-item {
+        display:inline-flex; align-items:center; gap:6px;
+        font-size:0.76rem; font-weight:700; color:#475569;
+        padding:5px 12px; border-radius:20px; background:#fff;
+        border:1.5px solid #e0e7ff;
+        box-shadow:0 1px 4px rgba(99,102,241,0.07);
+    }
+    .pv-cal-legend-dot {
+        width:13px; height:13px; border-radius:4px; flex-shrink:0;
+        display:inline-block; border:1.5px solid transparent;
+    }
+    .pv-cal-legend-dot {
+        width:12px; height:12px; border-radius:4px; flex-shrink:0;
+        display:inline-block; border:1.5px solid transparent;
+    }
     /* Calendar day detail mini popup */
     #pvCalDayPopup {
         position:fixed; z-index:9999;
@@ -1026,20 +1111,74 @@ function renderEmpHeader(data) {
     </div>`;
 }
 
-// ── Summary bar ───────────────────────────────────────────────────────────────
+// ── Summary bar (detail table) ────────────────────────────────────────────────
 function renderSummaryBar(data) {
-    const s = data.summary;
+    const d = data.detail_summary;
+    if (!d) return '';
     return `
-    <div class="pv-summary-bar">
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#16a34a;">${s.present}</div><div class="pv-sum-lbl">Present</div></div>
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#ef4444;">${s.absent}</div><div class="pv-sum-lbl">Absent</div></div>
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#f59e0b;">${s.late}</div><div class="pv-sum-lbl">Late</div></div>
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#3b82f6;">${s.half_day}</div><div class="pv-sum-lbl">Half Day</div></div>
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#8b5cf6;">${s.on_leave}</div><div class="pv-sum-lbl">On Leave</div></div>
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#6366f1;">${s.total_working_hours}h</div><div class="pv-sum-lbl">Working Hrs</div></div>
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#d97706;">${s.total_overtime_hours}h</div><div class="pv-sum-lbl">Overtime Hrs</div></div>
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#4338ca;">${s.working_days}</div><div class="pv-sum-lbl">Working Days</div></div>
-        <div class="pv-sum-item"><div class="pv-sum-val" style="color:#475569;">${s.total}</div><div class="pv-sum-lbl">Total Days</div></div>
+    <div class="pv-detail-table-wrap">
+        <table class="pv-detail-table">
+            <thead>
+                <tr>
+                    <th rowspan="2">Code</th>
+                    <th rowspan="2">Name</th>
+                    <th rowspan="2">Total<br>Days</th>
+                    <th rowspan="2">Duty<br>Days</th>
+                    <th rowspan="2">Holiday<br>Days</th>
+                    <th rowspan="2">Weekend<br>Days</th>
+                    <th rowspan="2">Day<br>Off</th>
+                    <th rowspan="2">Night<br>Off</th>
+                    <th rowspan="2">Present<br>Days</th>
+                    <th rowspan="2">Present On<br>Holiday</th>
+                    <th rowspan="2">Present On Day Off<br>/Night Off/Weekend</th>
+                    <th rowspan="2">Absent<br>Days</th>
+                    <th rowspan="2">Misc<br>Days</th>
+                    <th class="pv-th-group" colspan="2">Leave Days</th>
+                    <th rowspan="2">Worked<br>Hours</th>
+                    <th rowspan="2">OT<br>Hours</th>
+                    <th rowspan="2">Late<br>In</th>
+                    <th rowspan="2">Late<br>Out</th>
+                    <th rowspan="2">Early<br>In</th>
+                    <th rowspan="2">Early<br>Out</th>
+                    <th rowspan="2">Office<br>Visit</th>
+                    <th rowspan="2">Remarks</th>
+                </tr>
+                <tr>
+                    <th class="pv-th-sub" style="color:#16a34a;">Paid</th>
+                    <th class="pv-th-sub" style="color:#ef4444;">Unpaid</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="font-weight:700;color:#6366f1;">${esc(d.code)}</td>
+                    <td style="text-align:left;font-weight:600;">${esc(d.name)}</td>
+                    <td>${d.total_days}</td>
+                    <td>${d.duty_days}</td>
+                    <td>${d.holiday_days}</td>
+                    <td>${d.weekend_days}</td>
+                    <td>${d.day_off}</td>
+                    <td>${d.night_off}</td>
+                    <td style="color:#16a34a;font-weight:700;">${d.present_days}</td>
+                    <td>${d.present_on_holiday}</td>
+                    <td>${d.present_on_off}</td>
+                    <td style="color:#ef4444;font-weight:700;">${d.absent_days}</td>
+                    <td>${d.misc_days}</td>
+                    <td style="color:#16a34a;font-weight:600;">${d.leave_paid}</td>
+                    <td style="color:#ef4444;font-weight:600;">${d.leave_unpaid}</td>
+                    <td style="color:#6366f1;font-weight:600;">${d.worked_hours}</td>
+                    <td style="color:#d97706;font-weight:600;">${d.ot_hours}</td>
+                    <td style="color:#f59e0b;font-weight:600;">${d.late_in}</td>
+                    <td>${d.late_out}</td>
+                    <td>${d.early_in}</td>
+                    <td style="color:#06b6d4;font-weight:600;">${d.early_out}</td>
+                    <td>${d.office_visit}</td>
+                    <td style="text-align:left;font-size:0.72rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${esc(d.remarks)}">${esc(d.remarks)}</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="pv-dept-divider">
+            <i class="fas fa-building"></i> Department: ${esc(d.department)}
+        </div>
     </div>`;
 }
 
@@ -1178,9 +1317,9 @@ function renderMonthView(data) {
 
     // Legend
     const legend = Object.entries(STATUS_COLORS).map(([k,v]) =>
-        `<span class="d-inline-flex align-items-center gap-1 me-3 mb-1" style="font-size:0.72rem;">
-            <span style="width:10px;height:10px;border-radius:3px;background:${v.bg};border:1px solid ${v.dot};flex-shrink:0;display:inline-block;"></span>
-            <span style="color:#475569;font-weight:600;">${v.label}</span>
+        `<span class="pv-cal-legend-item">
+            <span class="pv-cal-legend-dot" style="background:${v.bg};border-color:${v.dot};"></span>
+            ${v.label}
         </span>`).join('');
 
     return `
@@ -1189,15 +1328,15 @@ function renderMonthView(data) {
             <button class="pv-cal-nav-btn" onclick="pvNavMonth('${prevMonth}')" title="Previous month">
                 <i class="fas fa-chevron-left fa-xs"></i>
             </button>
-            <span style="font-weight:700;color:#1e293b;font-size:0.95rem;">
-                <i class="fas fa-calendar-alt me-1" style="color:#6366f1;"></i>${data.month_name} ${year}
+            <span class="pv-cal-month-title">
+                <i class="fas fa-calendar-alt"></i>${data.month_name} ${year}
             </span>
             <button class="pv-cal-nav-btn" onclick="pvNavMonth('${nextMonth}')" title="Next month">
                 <i class="fas fa-chevron-right fa-xs"></i>
             </button>
         </div>
         <div class="pv-cal-grid mb-3">${dayHdrs}${cells}</div>
-        <div class="d-flex flex-wrap align-items-center gap-0 pt-2 border-top">${legend}</div>
+        <div class="pv-cal-legend">${legend}</div>
     </div>`;
 }
 

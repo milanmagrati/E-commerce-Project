@@ -5957,10 +5957,17 @@ def attendance_report(request):
 
 @login_required
 def employee_period_attendance(request):
-    from .models import AttendanceRecord, Employee
+    from .models import AttendanceRecord, Employee, EmployeeWeekend, LeaveRequest
+    from django.db.models import Q
     from django.http import JsonResponse
     from datetime import date, timedelta
+    from collections import defaultdict
     import calendar
+
+    DAY_NAME_TO_NUM = {
+        'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+        'friday': 4, 'saturday': 5, 'sunday': 6,
+    }
 
     emp_id = request.GET.get('employee_id', '').strip()
     period = request.GET.get('period', 'month')
@@ -6011,6 +6018,7 @@ def employee_period_attendance(request):
             'is_late_arrival': rec.is_late_arrival,
             'is_early_departure': rec.is_early_departure,
             'is_holiday': rec.is_holiday,
+            'is_night_shift': rec.shift.is_night_shift if rec.shift else False,
             'notes': rec.notes,
         })
 
@@ -6020,7 +6028,77 @@ def employee_period_attendance(request):
     for r in records_data:
         sc[r['status']] = sc.get(r['status'], 0) + 1
 
-    # Count weekdays (Mon-Fri) in the date range
+    # ── Compute weekend days using EmployeeWeekend ──
+    wk_records = EmployeeWeekend.objects.filter(
+        employee=employee, weekend_type='weekend', effective_from__lte=date_to,
+    ).filter(Q(effective_to__gte=date_from) | Q(effective_to__isnull=True))
+    weekend_nums = set()
+    for wr in wk_records:
+        for day_name in (wr.weekend_days or []):
+            num = DAY_NAME_TO_NUM.get(day_name.lower())
+            if num is not None:
+                weekend_nums.add(num)
+    if not weekend_nums:
+        weekend_nums = {5, 6}
+
+    total_days_in_range = (date_to - date_from).days + 1
+    weekend_day_count = 0
+    _d = date_from
+    while _d <= date_to:
+        if _d.weekday() in weekend_nums:
+            weekend_day_count += 1
+        _d += timedelta(days=1)
+
+    # Holiday days count
+    holiday_days_count = sum(1 for r in records_data if r['is_holiday'])
+
+    # Duty days = total - weekend - holiday (avoid double-count)
+    duty_days = max(total_days_in_range - weekend_day_count - holiday_days_count, 0)
+
+    # Present count (present + late + half_day)
+    present_cnt = sc.get('present', 0) + sc.get('late', 0) + sc.get('half_day', 0)
+
+    # Present on holiday
+    present_on_holiday = sum(1 for r in records_data if r['is_holiday'] and r['status'] in ('present', 'late', 'half_day'))
+
+    # Present on day off / night off / weekend
+    present_on_off = 0
+    for r in records_data:
+        rec_date = date.fromisoformat(r['date'])
+        if r['status'] in ('present', 'late', 'half_day'):
+            if rec_date.weekday() in weekend_nums or r['is_holiday']:
+                present_on_off += 1
+
+    # Late-in and early-out counts
+    late_in_count = sum(1 for r in records_data if r['is_late_arrival'])
+    early_out_count = sum(1 for r in records_data if r['is_early_departure'])
+
+    # Office visit: records with 'office visit' in notes
+    office_visit_count = sum(1 for r in records_data if r.get('notes') and 'office visit' in r['notes'].lower())
+
+    # Leave data (paid / unpaid)
+    leave_paid = 0
+    leave_unpaid = 0
+    leave_qs = LeaveRequest.objects.filter(
+        status='approved', employee=employee,
+        start_date__lte=date_to, end_date__gte=date_from,
+    ).select_related('leave_type')
+    for lr in leave_qs:
+        overlap_start = max(lr.start_date, date_from)
+        overlap_end = min(lr.end_date, date_to)
+        days_in_range = (overlap_end - overlap_start).days + 1
+        if days_in_range > 0:
+            is_paid = lr.leave_type.is_paid if lr.leave_type else True
+            if is_paid:
+                leave_paid += days_in_range
+            else:
+                leave_unpaid += days_in_range
+
+    # Remarks from notes
+    notes_list = [r['notes'] for r in records_data if r.get('notes')]
+    remarks = '; '.join(notes_list[:3]) if notes_list else ''
+
+    # Count weekdays (Mon-Fri) for working_days
     _wd_count = 0
     _d = date_from
     while _d <= date_to:
@@ -6060,6 +6138,32 @@ def employee_period_attendance(request):
             'on_leave': sc.get('on_leave', 0),
             'total_working_hours': round(total_working, 2),
             'total_overtime_hours': round(total_ot, 2),
+        },
+        'detail_summary': {
+            'code': employee.employee_id,
+            'name': employee.full_name,
+            'department': employee.department.name if employee.department else '—',
+            'total_days': total_days_in_range,
+            'duty_days': duty_days,
+            'holiday_days': holiday_days_count,
+            'weekend_days': weekend_day_count,
+            'day_off': 0,
+            'night_off': 0,
+            'present_days': present_cnt,
+            'present_on_holiday': present_on_holiday,
+            'present_on_off': present_on_off,
+            'absent_days': sc.get('absent', 0),
+            'misc_days': sc.get('half_day', 0),
+            'leave_paid': leave_paid,
+            'leave_unpaid': leave_unpaid,
+            'worked_hours': round(total_working, 2),
+            'ot_hours': round(total_ot, 2),
+            'late_in': late_in_count,
+            'late_out': 0,
+            'early_in': 0,
+            'early_out': early_out_count,
+            'office_visit': office_visit_count,
+            'remarks': remarks,
         },
     })
 
