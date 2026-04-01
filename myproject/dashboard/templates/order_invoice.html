@@ -8,110 +8,140 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 13px; line-height: 1.5; color: #222;
-            background: #eef0f5; padding: 18px;
+            font-size: 12px; line-height: 1.4; color: #1a1a2e;
+            background: #f0f2f5; padding: 10px;
         }
         .invoice-container {
-            max-width: 820px; margin: 0 auto; background: #fff;
-            padding: 28px 32px; box-shadow: 0 2px 16px rgba(0,0,0,.10); border-radius: 6px;
+            max-width: 780px; margin: 0 auto; background: #fff;
+            padding: 0; box-shadow: 0 2px 16px rgba(0,0,0,.08); border-radius: 8px;
+            overflow: hidden;
         }
-        .action-bar { display:flex; gap:8px; justify-content:flex-end; margin-bottom:14px; }
+
+        /* Action Bar */
+        .action-bar {
+            display: flex; gap: 6px; justify-content: flex-end;
+            padding: 8px 20px; background: #fafbfc; border-bottom: 1px solid #eee;
+        }
         .btn-action {
-            border:none; padding:7px 18px; border-radius:5px; font-size:13px;
-            cursor:pointer; font-weight:600;
+            border: none; padding: 5px 14px; border-radius: 5px; font-size: 12px;
+            cursor: pointer; font-weight: 600; transition: all .2s;
         }
-        .btn-print { background:#667eea; color:#fff; }
-        .btn-print:hover { background:#5568d3; }
-        .btn-close { background:#6b7280; color:#fff; }
-        .btn-close:hover { background:#4b5563; }
+        .btn-print { background: #4f46e5; color: #fff; }
+        .btn-print:hover { background: #4338ca; }
+        .btn-close { background: #e5e7eb; color: #374151; }
+        .btn-close:hover { background: #d1d5db; }
+
+        /* Header */
         .invoice-header {
-            display:flex; justify-content:space-between; align-items:flex-start;
-            padding-bottom:14px; border-bottom:3px solid #667eea; margin-bottom:18px;
+            display: flex; justify-content: space-between; align-items: flex-start;
+            padding: 16px 20px 12px; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: #fff;
         }
-        .brand-name { font-size:1.6rem; font-weight:800; color:#667eea; letter-spacing:-.5px; }
-        .brand-sub { color:#666; font-size:12px; margin-top:2px; }
-        .invoice-meta { text-align:right; }
-        .inv-title { font-size:1.8rem; font-weight:800; color:#667eea; letter-spacing:2px; }
-        .invoice-meta table { margin-left:auto; border-collapse:collapse; }
-        .invoice-meta td { padding:1px 0 1px 14px; font-size:12.5px; }
-        .invoice-meta td:first-child { color:#666; text-align:right; }
-        .invoice-meta td:last-child { font-weight:600; text-align:right; }
-        .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
-        .info-box {
-            background:#f8f9fc; border-left:3px solid #667eea;
-            border-radius:4px; padding:10px 14px;
+        .brand-name { font-size: 1.25rem; font-weight: 800; letter-spacing: -.3px; }
+        .brand-sub { color: rgba(255,255,255,.75); font-size: 11px; margin-top: 1px; }
+        .invoice-meta { text-align: right; }
+        .inv-title { font-size: 1.3rem; font-weight: 800; letter-spacing: 3px; opacity: .9; margin-bottom: 2px; }
+        .invoice-meta table { margin-left: auto; border-collapse: collapse; }
+        .invoice-meta td { padding: 0 0 0 10px; font-size: 11px; }
+        .invoice-meta td:first-child { color: rgba(255,255,255,.6); text-align: right; }
+        .invoice-meta td:last-child { font-weight: 600; text-align: right; }
+
+        /* Content Area */
+        .invoice-body { padding: 14px 20px 16px; }
+
+        /* Bill To Section */
+        .bill-to {
+            margin-bottom: 12px; padding: 10px 14px; background: #f8f9fc;
+            border-radius: 6px; border: 1px solid #e8eaf0;
         }
-        .info-box h4 {
-            font-size:11px; text-transform:uppercase; letter-spacing:.8px;
-            color:#667eea; margin-bottom:6px; font-weight:700;
+        .bill-to-extra {
+            margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d1d5db;
+            display: flex; gap: 18px; flex-wrap: wrap;
         }
-        .info-box p { margin:2px 0; font-size:12.5px; color:#333; }
-        .info-box .name { font-size:13.5px; font-weight:700; color:#111; }
-        .badges { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
-        .badge {
-            display:inline-block; padding:3px 10px; border-radius:12px;
-            font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+        .bill-to-extra-item { font-size: 11.5px; color: #4b5563; }
+        .bill-to-extra-item .extra-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .8px; color: #4f46e5; font-weight: 700; display: block; margin-bottom: 1px; }
+        .bill-to-extra-item .extra-val { font-weight: 600; color: #374151; font-size: 11px; }
+        .section-label {
+            font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
+            color: #4f46e5; font-weight: 700; margin-bottom: 4px;
         }
-        .badge-success { background:#10b981; color:#fff; }
-        .badge-warning { background:#f59e0b; color:#fff; }
-        .badge-info    { background:#3b82f6; color:#fff; }
-        .badge-danger  { background:#ef4444; color:#fff; }
-        .badge-purple  { background:#8b5cf6; color:#fff; }
-        .items-table { width:100%; border-collapse:collapse; font-size:13px; }
-        .items-table thead tr { background:#667eea; color:#fff; }
+        .customer-name { font-size: 13.5px; font-weight: 700; color: #111827; margin-bottom: 2px; }
+        .bill-to p { margin: 1px 0; font-size: 11.5px; color: #4b5563; }
+        .bill-to .detail-icon { color: #9ca3af; margin-right: 1px; font-size: 11px; }
+
+        /* Items Table */
+        .items-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .items-table thead tr { background: #f9fafb; }
         .items-table th {
-            padding:9px 11px; font-weight:600; font-size:12px;
-            text-transform:uppercase; letter-spacing:.4px;
+            padding: 6px 10px; font-weight: 700; font-size: 10px;
+            text-transform: uppercase; letter-spacing: .5px; color: #6b7280;
+            border-bottom: 2px solid #e5e7eb;
         }
-        .items-table tbody tr { border-bottom:1px solid #e8eaf0; }
-        .items-table tbody tr:last-child { border-bottom:none; }
-        .items-table td { padding:8px 11px; vertical-align:top; }
-        .items-table tbody tr:nth-child(even) { background:#fafbfd; }
+        .items-table tbody tr { border-bottom: 1px solid #f3f4f6; }
+        .items-table tbody tr:last-child { border-bottom: none; }
+        .items-table td { padding: 6px 10px; vertical-align: top; }
         .type-tag {
-            display:inline-block; font-size:10px; font-weight:600;
-            padding:1px 6px; border-radius:3px; margin-left:5px;
-            vertical-align:middle; text-transform:uppercase; letter-spacing:.3px;
+            display: inline-block; font-size: 8px; font-weight: 700;
+            padding: 1px 5px; border-radius: 3px; margin-left: 4px;
+            vertical-align: middle; text-transform: uppercase; letter-spacing: .3px;
         }
-        .type-simple   { background:#dbeafe; color:#1d4ed8; }
-        .type-variable { background:#ede9fe; color:#6d28d9; }
-        .type-bundle   { background:#dcfce7; color:#166534; }
-        .product-name  { font-weight:700; color:#111; }
-        .product-sku   { font-size:11px; color:#999; margin-top:2px; }
-        .variant-label { font-size:11.5px; color:#555; margin-top:2px; font-style:italic; }
-        .bundle-components { margin-top:4px; padding-left:10px; border-left:2px solid #a7f3d0; }
-        .bundle-components li { font-size:11.5px; color:#555; list-style:none; padding:1px 0; }
-        .bundle-components li::before { content:"• "; color:#10b981; }
-        .tr { text-align:right; }
-        .tc { text-align:center; }
+        .type-simple   { background: #dbeafe; color: #1d4ed8; }
+        .type-variable { background: #ede9fe; color: #6d28d9; }
+        .type-bundle   { background: #dcfce7; color: #166534; }
+        .product-name  { font-weight: 700; color: #111827; }
+        .product-sku   { font-size: 10px; color: #9ca3af; margin-top: 1px; }
+        .variant-label { font-size: 10.5px; color: #6b7280; margin-top: 1px; font-style: italic; }
+        .bundle-components { margin-top: 2px; padding-left: 8px; border-left: 2px solid #a7f3d0; }
+        .bundle-components li { font-size: 10.5px; color: #6b7280; list-style: none; padding: 0; }
+        .bundle-components li::before { content: "· "; color: #10b981; font-weight: 700; }
+        .tr { text-align: right; }
+        .tc { text-align: center; }
+
+        /* Totals */
         .totals-wrapper {
-            display:flex; justify-content:flex-end;
-            border-top:2px solid #e8eaf0;
+            display: flex; justify-content: flex-end;
+            padding: 10px 0 0; margin-top: 2px; border-top: 2px solid #e5e7eb;
         }
-        .totals-table { width:290px; border-collapse:collapse; }
-        .totals-table td { padding:6px 10px; font-size:13px; }
-        .totals-table tr { border-bottom:1px solid #f0f0f0; }
-        .totals-table tr:last-child { border-bottom:none; }
-        .totals-table .lbl { color:#555; text-align:right; }
-        .totals-table .val { font-weight:600; text-align:right; white-space:nowrap; }
-        .discount-val { color:#ef4444 !important; }
+        .totals-table { width: 260px; border-collapse: collapse; }
+        .totals-table td { padding: 3px 0; font-size: 12px; }
+        .totals-table tr { border-bottom: 1px solid #f3f4f6; }
+        .totals-table tr:last-child { border-bottom: none; }
+        .totals-table .lbl { color: #6b7280; text-align: right; padding-right: 14px; }
+        .totals-table .val { font-weight: 600; text-align: right; color: #111827; white-space: nowrap; }
+        .discount-val { color: #ef4444 !important; }
         .grand-row td {
-            background:#10b981; color:#fff !important; font-size:14px;
-            font-weight:800; padding:9px 10px;
+            background: #fff; color: #111827 !important;
+            font-size: 13px; font-weight: 800; padding: 7px 10px; border-radius: 5px;
+            border-top: 2px solid #e5e7eb;
         }
-        .invoice-footer { margin-top:18px; padding-top:14px; border-top:2px solid #e8eaf0; }
+
+        /* Footer */
+        .invoice-footer {
+            margin-top: 10px; padding: 12px 20px 14px;
+            background: #f9fafb; border-top: 1px solid #e5e7eb;
+        }
         .note-box {
-            padding:9px 14px; border-radius:4px; border-left:3px solid #f59e0b;
-            background:#fffbeb; margin-bottom:10px; font-size:12.5px;
+            padding: 7px 10px; border-radius: 5px; border-left: 3px solid #f59e0b;
+            background: #fffbeb; margin-bottom: 8px; font-size: 11.5px;
         }
-        .note-box h5 { color:#b45309; font-size:11.5px; margin-bottom:4px; font-weight:700; }
-        .note-box p { color:#444; }
-        .footer-info { text-align:center; color:#666; font-size:12px; margin-top:10px; }
-        .footer-info .payment-line { font-size:13px; font-weight:600; color:#333; margin-bottom:4px; }
-        .footer-info .thanks { font-size:13px; font-weight:700; color:#667eea; margin:6px 0 2px; }
+        .note-box h5 { color: #b45309; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; font-weight: 700; }
+        .note-box p { color: #4b5563; }
+        .footer-bottom { text-align: center; padding-top: 6px; }
+        .payment-line {
+            display: inline-block; padding: 3px 12px; border-radius: 20px;
+            background: #eef2ff; color: #4f46e5; font-size: 11px; font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .partial-info { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+        .thanks { font-size: 12px; font-weight: 700; color: #4f46e5; margin: 4px 0 2px; }
+        .footer-note { font-size: 10.5px; color: #9ca3af; }
+        .printed-by { color: #d1d5db; font-size: 10px; margin-top: 3px; }
+
         @media print {
-            body { background:#fff; padding:0; }
-            .invoice-container { box-shadow:none; padding:16px; border-radius:0; }
-            .action-bar { display:none !important; }
+            body { background: #fff; padding: 0; }
+            .invoice-container { box-shadow: none; border-radius: 0; }
+            .action-bar { display: none !important; }
+            .invoice-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
     </style>
 </head>
@@ -119,18 +149,15 @@
 <div class="invoice-container">
 
     <div class="action-bar">
-        <button class="btn-action btn-print" onclick="window.print()">🖨 Print Invoice</button>
-        <button class="btn-action btn-close" onclick="window.close()">✖ Close</button>
+        <button class="btn-action btn-print" onclick="window.print()">🖨 Print</button>
+        <button class="btn-action btn-close" onclick="window.close()">✕ Close</button>
     </div>
 
     <!-- Header -->
     <div class="invoice-header">
         <div>
             <div class="brand-name">Trendy Shopping</div>
-            <div class="brand-sub">
-                {% if order.branch %}{{ order.branch.name }}{% if order.branch.city %}, {{ order.branch.city }}{% endif %}{% else %}{{ order.branch_city|default:"Nepal" }}{% endif %}
-            </div>
-            {% if order.branch.phone %}<div class="brand-sub">📞 {{ order.branch.phone }}</div>{% endif %}
+            {% if order.branch.phone %}<div class="brand-sub">{{ order.branch.phone }}</div>{% endif %}
         </div>
         <div class="invoice-meta">
             <div class="inv-title">INVOICE</div>
@@ -143,33 +170,32 @@
         </div>
     </div>
 
-    <!-- Bill To / Order Info -->
-    <div class="info-grid">
-        <div class="info-box">
-            <h4>📋 Bill To</h4>
-            <p class="name">{{ order.customer_name }}</p>
-            {% if order.customer_phone %}<p>📞 {{ order.customer_phone }}</p>{% endif %}
-            {% if order.customer_email %}<p>✉ {{ order.customer_email }}</p>{% endif %}
-            {% if order.shipping_address %}<p style="margin-top:4px;">📍 {{ order.shipping_address }}</p>{% endif %}
-            {% if order.landmark %}<p style="font-style:italic;color:#888;">Landmark: {{ order.landmark }}</p>{% endif %}
-        </div>
-        <div class="info-box">
-            <h4>🚚 Order Info</h4>
-            {% if order.logistics %}<p><strong>Logistics:</strong> {{ order.get_logistics_display|default:order.logistics }}</p>{% endif %}
-            {% if order.tracking_number %}<p><strong>Tracking #:</strong> {{ order.tracking_number }}</p>{% endif %}
-            {% if order.ncm_order_id %}<p><strong>NCM ID:</strong> {{ order.ncm_order_id }}</p>{% endif %}
-            {% if order.pnd_order_id %}<p><strong>P&amp;D ID:</strong> {{ order.pnd_order_id }}</p>{% endif %}
-            <div class="badges">
-                {% with st=order.order_status|default:"pending" %}
-                <span class="badge {% if st == 'delivered' %}badge-success{% elif st == 'cancelled' or st == 'return' or st == 'returned' %}badge-danger{% elif st == 'dispatched' or st == 'shipped' %}badge-purple{% else %}badge-info{% endif %}">
-                    {{ order_status_label }}
-                </span>
-                {% endwith %}
-                {% with ps=order.payment_status|default:"pending" %}
-                <span class="badge {% if ps == 'paid' %}badge-success{% elif ps == 'failed' or ps == 'refunded' %}badge-danger{% else %}badge-warning{% endif %}">
-                    {{ payment_status_label }}
-                </span>
-                {% endwith %}
+    <div class="invoice-body">
+
+    <!-- Bill To -->
+    <div class="bill-to">
+        <div class="section-label">Bill To</div>
+        <div class="customer-name">{{ order.customer_name }}</div>
+        {% if order.customer_phone %}<p><span class="detail-icon">📞</span> {{ order.customer_phone }}</p>{% endif %}
+        {% if order.customer_email %}<p><span class="detail-icon">✉</span> {{ order.customer_email }}</p>{% endif %}
+        {% if order.shipping_address %}<p><span class="detail-icon">📍</span> {{ order.shipping_address }}</p>{% endif %}
+        {% if order.landmark %}<p style="font-style:italic;color:#9ca3af;">Landmark: {{ order.landmark }}</p>{% endif %}
+        <div class="bill-to-extra">
+            <div class="bill-to-extra-item">
+                <span class="extra-label">Branch</span>
+                <span class="extra-val">Tinkune</span>
+            </div>
+            <div class="bill-to-extra-item">
+                <span class="extra-label">Destination Branch</span>
+                {% if order.branch_city %}
+                    <span class="extra-val">{{ order.branch_city|title }}</span>
+                {% elif order.ncm_destination_branch %}
+                    <span class="extra-val">{{ order.ncm_destination_branch|title }}</span>
+                {% elif order.pnd_destination_branch %}
+                    <span class="extra-val">{{ order.pnd_destination_branch|title }}</span>
+                {% else %}
+                    <span class="extra-val" style="color:#9ca3af;">—</span>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -178,9 +204,9 @@
     <table class="items-table">
         <thead>
             <tr>
-                <th style="width:28px;">#</th>
-                <th>Product</th>
-                <th class="tc" style="width:60px;">Qty</th>
+                <th style="width:32px;">#</th>
+                <th style="text-align:left;">Product</th>
+                <th class="tc" style="width:55px;">Qty</th>
                 <th class="tr" style="width:105px;">Unit Price</th>
                 <th class="tr" style="width:105px;">Total</th>
             </tr>
@@ -222,7 +248,7 @@
                 <td class="tr">रू {{ item.total|floatformat:2 }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" style="text-align:center;color:#999;padding:14px;">No items found.</td></tr>
+            <tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px;">No items found.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -250,31 +276,33 @@
         </table>
     </div>
 
+    </div><!-- /invoice-body -->
+
     <!-- Footer -->
     <div class="invoice-footer">
         {% if order.notes %}
         <div class="note-box">
-            <h5>📝 Order Notes</h5>
+            <h5>Order Notes</h5>
             <p>{{ order.notes }}</p>
         </div>
         {% endif %}
         {% if order.admin_notes %}
         <div class="note-box" style="background:#fdf2f8;border-left-color:#db2777;">
-            <h5 style="color:#9d174d;">🔒 Admin Notes</h5>
+            <h5 style="color:#9d174d;">Admin Notes</h5>
             <p>{{ order.admin_notes }}</p>
         </div>
         {% endif %}
 
-        <div class="footer-info">
-            <div class="payment-line">Payment Method: {{ payment_method_label }}</div>
+        <div class="footer-bottom">
+            <div class="payment-line">{{ payment_method_label }}</div>
             {% if order.is_partial_payment %}
-            <div style="font-size:12.5px;color:#555;margin-bottom:4px;">
-                Paid: रू {{ order.partial_amount_paid|floatformat:2 }} &nbsp;|&nbsp; Remaining: रू {{ order.remaining_amount|floatformat:2 }}
+            <div class="partial-info">
+                Paid: रू {{ order.partial_amount_paid|floatformat:2 }} | Remaining: रू {{ order.remaining_amount|floatformat:2 }}
             </div>
             {% endif %}
             <div class="thanks">Thank you for shopping with Trendy Shopping!</div>
-            <div>This is a computer-generated invoice — no signature required.</div>
-            <div style="color:#bbb;margin-top:4px;font-size:11px;">Printed by {{ user.get_full_name|default:user.username }}</div>
+            <div class="footer-note">Computer-generated invoice — no signature required.</div>
+            <div class="printed-by">Printed by {{ user.get_full_name|default:user.username }}</div>
         </div>
     </div>
 
