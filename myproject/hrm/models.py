@@ -167,10 +167,10 @@ class Employee(models.Model):
             # Extract numeric part from employee_id
             try:
                 num = int(''.join(filter(str.isdigit, last.employee_id)))
-                return f"EMP{num + 1:06d}"
+                return f"EMP{num + 1:03d}"
             except ValueError:
                 pass
-        return "EMP000001"
+        return "EMP001"
 
 
 class EmployeeDocument(models.Model):

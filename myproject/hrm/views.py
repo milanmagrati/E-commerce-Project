@@ -6065,6 +6065,205 @@ def employee_period_attendance(request):
 
 
 @login_required
+def employee_summary_report_ajax(request):
+    """AJAX endpoint: return filtered employee summary data as JSON."""
+    from .models import (
+        AttendanceRecord, Employee, Department, EmployeeWeekend,
+        LeaveRequest, LeaveType,
+    )
+    from django.db.models import Q, Count, Sum, DecimalField
+    from django.db.models.functions import Coalesce
+    from django.http import JsonResponse
+    from collections import defaultdict
+    from decimal import Decimal
+    from datetime import datetime, timedelta
+
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    employee_ids = request.GET.getlist('employee')
+    department_ids = request.GET.getlist('department')
+
+    if not date_from or not date_to:
+        return JsonResponse({'error': 'Date range is required.'}, status=400)
+
+    try:
+        _eff_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+        _eff_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Invalid date format.'}, status=400)
+
+    # Start from Employee — so ALL matching employees appear even with 0 records
+    emp_qs = Employee.objects.filter(
+        employee_status='active',
+    ).select_related('department').order_by('department__name', 'full_name')
+
+    if employee_ids:
+        emp_qs = emp_qs.filter(id__in=employee_ids)
+    if department_ids:
+        emp_qs = emp_qs.filter(department_id__in=department_ids)
+
+    # Attendance records in date range — filtered once
+    att_qs = AttendanceRecord.objects.select_related('shift').filter(
+        date__gte=_eff_from, date__lte=_eff_to,
+        employee__in=emp_qs,
+    )
+
+    total_days_in_range = (_eff_to - _eff_from).days + 1
+
+    DAY_NAME_TO_NUM = {
+        'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+        'friday': 4, 'saturday': 5, 'sunday': 6,
+    }
+
+    def _count_weekend_days(emp_id, start, end):
+        wk_records = EmployeeWeekend.objects.filter(
+            employee_id=emp_id, weekend_type='weekend', effective_from__lte=end,
+        ).filter(Q(effective_to__gte=start) | Q(effective_to__isnull=True))
+        weekend_nums = set()
+        for wr in wk_records:
+            for day_name in (wr.weekend_days or []):
+                num = DAY_NAME_TO_NUM.get(day_name.lower())
+                if num is not None:
+                    weekend_nums.add(num)
+        if not weekend_nums:
+            weekend_nums = {5, 6}
+        count = 0
+        current = start
+        one_day = timedelta(days=1)
+        while current <= end:
+            if current.weekday() in weekend_nums:
+                count += 1
+            current += one_day
+        return count, weekend_nums
+
+    # Pre-aggregate attendance per employee via queryset annotation
+    att_agg = (
+        att_qs.values('employee_id').annotate(
+            total=Count('id'),
+            present=Count('id', filter=Q(status='present')),
+            absent=Count('id', filter=Q(status='absent')),
+            late=Count('id', filter=Q(status='late')),
+            half_day=Count('id', filter=Q(status='half_day')),
+            on_leave=Count('id', filter=Q(status='on_leave')),
+            total_working_hours=Coalesce(Sum('working_hours'), Decimal('0'), output_field=DecimalField()),
+            total_overtime_hours=Coalesce(Sum('overtime_hours'), Decimal('0'), output_field=DecimalField()),
+            holiday_present=Count('id', filter=Q(status__in=['present', 'late', 'half_day'], is_holiday=True)),
+            late_in_count=Count('id', filter=Q(is_late_arrival=True)),
+            early_out_count=Count('id', filter=Q(is_early_departure=True)),
+            holiday_days_count=Count('id', filter=Q(is_holiday=True)),
+        )
+    )
+    att_map = {a['employee_id']: a for a in att_agg}
+
+    # Leave data
+    all_emp_ids = list(emp_qs.values_list('id', flat=True))
+    leave_data = {}
+    if all_emp_ids:
+        leave_qs = LeaveRequest.objects.filter(
+            status='approved', employee_id__in=all_emp_ids,
+            start_date__lte=_eff_to, end_date__gte=_eff_from,
+        ).select_related('leave_type')
+        for lr in leave_qs:
+            eid = lr.employee_id
+            if eid not in leave_data:
+                leave_data[eid] = {'paid': 0, 'unpaid': 0}
+            overlap_start = max(lr.start_date, _eff_from)
+            overlap_end = min(lr.end_date, _eff_to)
+            days_in_range = (overlap_end - overlap_start).days + 1
+            if days_in_range > 0:
+                is_paid = lr.leave_type.is_paid if lr.leave_type else True
+                if is_paid:
+                    leave_data[eid]['paid'] += days_in_range
+                else:
+                    leave_data[eid]['unpaid'] += days_in_range
+
+    # Present on off days
+    present_records = att_qs.filter(
+        status__in=['present', 'late', 'half_day'],
+    ).values_list('employee_id', 'date', 'shift__is_night_shift', 'is_holiday')
+    emp_present_dates = defaultdict(list)
+    for emp_id, rec_date, is_night, is_hol in present_records:
+        emp_present_dates[emp_id].append((rec_date, is_night, is_hol))
+
+    # Notes & office visit batch
+    _emp_notes = {}
+    _emp_ov_count = {}
+    if all_emp_ids:
+        _notes_qs = att_qs.filter(notes__gt='').values_list('employee_id', 'notes').order_by('employee_id')
+        _notes_by_emp = defaultdict(set)
+        for eid, note in _notes_qs:
+            if len(_notes_by_emp[eid]) < 3:
+                _notes_by_emp[eid].add(note)
+        _emp_notes = {eid: list(notes) for eid, notes in _notes_by_emp.items()}
+        _ov_qs = att_qs.filter(notes__icontains='office visit').values('employee_id').annotate(ov_count=Count('id'))
+        _emp_ov_count = {item['employee_id']: item['ov_count'] for item in _ov_qs}
+
+    # Build rows — iterate over ALL employees
+    dept_grouped = {}
+    for emp in emp_qs:
+        emp_id = emp.id
+        a = att_map.get(emp_id, {})
+        present_cnt = a.get('present', 0) + a.get('late', 0) + a.get('half_day', 0)
+        weekend_days, weekend_nums = _count_weekend_days(emp_id, _eff_from, _eff_to)
+        holiday_days = a.get('holiday_days_count', 0)
+        total_days = total_days_in_range
+        duty_days = max(total_days - weekend_days - holiday_days, 0)
+
+        # Present on off
+        present_on_off = 0
+        if emp_id in emp_present_dates:
+            for rec_date, is_night, is_hol in emp_present_dates[emp_id]:
+                if rec_date.weekday() in weekend_nums or is_hol:
+                    present_on_off += 1
+
+        emp_leave = leave_data.get(emp_id, {'paid': 0, 'unpaid': 0})
+        emp_notes_list = _emp_notes.get(emp_id, [])
+        remarks = '; '.join(emp_notes_list) if emp_notes_list else ''
+        office_visit = _emp_ov_count.get(emp_id, 0)
+
+        row = {
+            'code': emp.employee_id,
+            'name': emp.full_name,
+            'total_days': total_days,
+            'duty_days': duty_days,
+            'holiday_days': holiday_days,
+            'weekend_days': weekend_days,
+            'day_off': 0,
+            'night_off': 0,
+            'present_days': present_cnt,
+            'present_on_holiday': a.get('holiday_present', 0),
+            'present_on_off': present_on_off,
+            'absent': a.get('absent', 0),
+            'misc_days': a.get('half_day', 0),
+            'leave_paid': emp_leave['paid'],
+            'leave_unpaid': emp_leave['unpaid'],
+            'worked_hours': float(a.get('total_working_hours') or 0),
+            'ot_hours': float(a.get('total_overtime_hours') or 0),
+            'late_in': a.get('late_in_count', 0),
+            'late_out': 0,
+            'early_in': 0,
+            'early_out': a.get('early_out_count', 0),
+            'office_visit': office_visit,
+            'remarks': remarks,
+        }
+
+        dept_name = emp.department.name if emp.department else '—'
+        dept_id = emp.department_id
+        dept_key = f"{dept_id}-{dept_name}" if dept_id else f"0-{dept_name}"
+        if dept_key not in dept_grouped:
+            dept_grouped[dept_key] = {'dept_label': dept_name, 'employees': []}
+        dept_grouped[dept_key]['employees'].append(row)
+
+    dept_groups = sorted(dept_grouped.values(), key=lambda g: g['dept_label'])
+
+    return JsonResponse({
+        'dept_groups': dept_groups,
+        'date_from': date_from,
+        'date_to': date_to,
+    })
+
+
+@login_required
 def leave_report(request):
     from .models import LeaveRequest, LeaveType, Employee, Department
     from django.core.paginator import Paginator

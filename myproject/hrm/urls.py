@@ -191,6 +191,7 @@ urlpatterns = [
     # Attendance Reports
     path('attendance/report/', views.attendance_report, name='attendance_report'),
     path('attendance/report/period/', views.employee_period_attendance, name='employee_period_attendance'),
+    path('attendance/report/summary/', views.employee_summary_report_ajax, name='employee_summary_report_ajax'),
     path('attendance/leave-report/', views.leave_report, name='leave_report'),
     path('attendance/leave-request/<int:pk>/update-status/', views.leave_update_status, name='leave_update_status'),
 ]
