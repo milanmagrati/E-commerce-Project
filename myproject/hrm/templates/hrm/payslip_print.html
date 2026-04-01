@@ -149,7 +149,7 @@
         /* ─── ATTENDANCE BAR ─── */
         .att-bar {
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
+            grid-template-columns: repeat(9, 1fr);
             border: 1px solid #e2e8f0;
             border-radius: 8px;
             overflow: hidden;
@@ -431,8 +431,20 @@
         <!-- Attendance Summary -->
         <div class="sec-head">Attendance Summary</div>
         <div class="att-bar">
+            <div class="att-cell">
+                <div class="av">{{ total_days }}</div>
+                <div class="al">Total Days</div>
+            </div>
+            <div class="att-cell">
+                <div class="av">{{ weekend_days }}</div>
+                <div class="al">Weekend</div>
+            </div>
+            <div class="att-cell">
+                <div class="av">{{ holiday_days }}</div>
+                <div class="al">Holidays</div>
+            </div>
             <div class="att-cell highlight">
-                <div class="av">{{ working_days }}</div>
+                <div class="av">{{ duty_days }}</div>
                 <div class="al">Working Days</div>
             </div>
             <div class="att-cell success">
@@ -451,12 +463,8 @@
                 <div class="av">{{ half_days }}</div>
                 <div class="al">Half Days</div>
             </div>
-            <div class="att-cell">
-                <div class="av">{{ employee_weekends }} / {{ total_weekends }}</div>
-                <div class="al">Weekend</div>
-            </div>
-            <div class="att-cell {% if total_overtime_hours > 0 %}success{% endif %}">
-                <div class="av">{{ total_overtime_hours }}h</div>
+            <div class="att-cell {% if ot_hours > 0 %}success{% endif %}">
+                <div class="av">{{ ot_hours }}h</div>
                 <div class="al">Overtime</div>
             </div>
         </div>
@@ -495,14 +503,6 @@
                     <td class="amt-col" style="color:#7c3aed">{{ overtime_amount|floatformat:2 }}</td>
                     <td class="ded-col empty-cell">&nbsp;</td>
                     <td class="amt-col2 empty-cell">&nbsp;</td>
-                </tr>
-                {% endif %}
-                {% if attendance_deduction and attendance_deduction > 0 %}
-                <tr>
-                    <td class="earn-col empty-cell">&nbsp;</td>
-                    <td class="amt-col empty-cell">&nbsp;</td>
-                    <td class="ded-col" style="color:#dc2626;font-weight:600">Attendance Deduction</td>
-                    <td class="amt-col2">{{ attendance_deduction|floatformat:2 }}</td>
                 </tr>
                 {% endif %}
             </tbody>
@@ -544,9 +544,21 @@
                 <span class="tc-value">Rs. {{ total_earnings|floatformat:2 }}</span>
             </div>
             <div class="total-card deductions-card">
-                <span class="tc-label">&#8722; Total Deductions</span>
-                <span class="tc-value">Rs. {{ total_deductions|floatformat:2 }}</span>
+                <span class="tc-label">&#8722; Salary Components</span>
+                <span class="tc-value">Rs. {{ salary_comp_deductions|floatformat:2 }}</span>
             </div>
+            {% if advance_deduction and advance_deduction > 0 %}
+            <div class="total-card advance-card">
+                <span class="tc-label">&#8722; Advance Deduction</span>
+                <span class="tc-value">Rs. {{ advance_deduction|floatformat:2 }}</span>
+            </div>
+            {% endif %}
+            {% if deduction_amount and deduction_amount > 0 %}
+            <div class="total-card deductions-card">
+                <span class="tc-label">&#8722; Absent Deduction</span>
+                <span class="tc-value">Rs. {{ deduction_amount|floatformat:2 }}</span>
+            </div>
+            {% endif %}
             {% if overtime_amount and overtime_amount > 0 %}
             <div class="total-card overtime-card">
                 <span class="tc-label">&#43; Overtime Pay</span>
@@ -562,7 +574,9 @@
                 <div class="nb-calc">
                     Rs.{{ total_earnings|floatformat:2 }}
                     {% if overtime_amount and overtime_amount > 0 %} + Rs.{{ overtime_amount|floatformat:2 }} (OT){% endif %}
-                    &minus; Rs.{{ total_deductions|floatformat:2 }}
+                    &minus; Rs.{{ salary_comp_deductions|floatformat:2 }} (Components)
+                    {% if advance_deduction and advance_deduction > 0 %} &minus; Rs.{{ advance_deduction|floatformat:2 }} (Advance){% endif %}
+                    {% if deduction_amount and deduction_amount > 0 %} &minus; Rs.{{ deduction_amount|floatformat:2 }} (Absent){% endif %}
                     = Rs.{{ net_salary|floatformat:2 }}
                 </div>
             </div>

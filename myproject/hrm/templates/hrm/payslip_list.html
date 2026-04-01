@@ -453,7 +453,7 @@
 /* Summary card inside detail modal */
 .ps-detail-summary {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 10px;
     margin: 16px 0 8px;
     padding: 16px;
@@ -639,6 +639,7 @@
                         <th style="color:#1d4ed8">Gross Pay</th>
                         <th style="color:#b91c1c">Deductions</th>
                         <th style="color:#b45309">Advance Deduction</th>
+                        <th style="color:#dc2626">Absent Deduction</th>
                         <th style="color:#059669">Net Pay</th>
                         <th>Status</th>
                         <th>Generated</th>
@@ -699,6 +700,13 @@
                                     <i class="fas fa-clock" style="font-size:10px"></i>
                                     {% if slip.advance_status == 'approved' %}Approved{% else %}Pending{% endif %}
                                 </span>
+                            {% else %}
+                                <span class="adv-badge-none">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if slip.absent_deduction > 0 %}
+                                <span class="ps-cell-deduct">- रू {{ slip.absent_deduction|floatformat:2 }}</span>
                             {% else %}
                                 <span class="adv-badge-none">&mdash;</span>
                             {% endif %}
@@ -877,6 +885,10 @@ function viewPayslipDetail(pk) {
                         <div class="ps-detail-summary-item ${parseFloat(s.advance_deduction) > 0 ? 'has-advance' : ''}">
                             <div class="ps-sum-label">Adv. Deduction</div>
                             <div class="ps-sum-val advance">${parseFloat(s.advance_deduction) > 0 ? '- रू' + parseFloat(s.advance_deduction).toLocaleString('en-IN', {minimumFractionDigits:2}) : '—'}</div>
+                        </div>
+                        <div class="ps-detail-summary-item">
+                            <div class="ps-sum-label">Absent Deduction</div>
+                            <div class="ps-sum-val deduction">${parseFloat(s.absent_deduction) > 0 ? '- रू' + parseFloat(s.absent_deduction).toLocaleString('en-IN', {minimumFractionDigits:2}) : '—'}</div>
                         </div>
                         <div class="ps-detail-summary-item">
                             <div class="ps-sum-label">Net Pay</div>

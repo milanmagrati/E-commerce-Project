@@ -411,15 +411,15 @@
         <div class="pc-summary-row">
             <div class="pc-summary-card basic">
                 <div class="pc-sc-label"><i class="fas fa-dollar-sign"></i> Basic Salary</div>
-                <div class="pc-sc-value">रू{{ basic_salary|floatformat:2 }}</div>
+                <div class="pc-sc-value">&#2352;&#2370;{{ basic_salary|floatformat:2 }}</div>
             </div>
             <div class="pc-summary-card working">
-                <div class="pc-sc-label"><i class="fas fa-clock"></i> Working Days</div>
-                <div class="pc-sc-value">{{ working_days_in_month }}</div>
+                <div class="pc-sc-label"><i class="fas fa-clock"></i> Working Days (Duty)</div>
+                <div class="pc-sc-value">{{ duty_days }}</div>
             </div>
             <div class="pc-summary-card net">
                 <div class="pc-sc-label"><i class="fas fa-chart-line"></i> Net Salary</div>
-                <div class="pc-sc-value">रू{{ net_salary|floatformat:2 }}</div>
+                <div class="pc-sc-value">Rs. {{ net_salary|floatformat:2 }}</div>
             </div>
         </div>
     </div>
@@ -429,31 +429,39 @@
         <h3 class="pc-section-title">Attendance Summary</h3>
         <div class="pc-att-summary">
             <div class="pc-att-item">
-                <div class="pc-att-value blue">{{ working_days_in_month }}</div>
+                <div class="pc-att-value blue">{{ total_days }}</div>
+                <div class="pc-att-label">Total Days</div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value teal">{{ weekend_days }}</div>
+                <div class="pc-att-label">Weekend</div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value orange">{{ holiday_days }}</div>
+                <div class="pc-att-label">Holidays</div>
+            </div>
+            <div class="pc-att-item">
+                <div class="pc-att-value blue">{{ duty_days }}</div>
                 <div class="pc-att-label">Working Days</div>
             </div>
             <div class="pc-att-item">
-                <div class="pc-att-value green">{{ present_days|floatformat:2 }}</div>
-                <div class="pc-att-label">Present Days</div>
+                <div class="pc-att-value green">{{ present_days }}</div>
+                <div class="pc-att-label">Present</div>
             </div>
             <div class="pc-att-item">
-                <div class="pc-att-value orange">{{ half_days|floatformat:2 }}</div>
-                <div class="pc-att-label">Half Days</div>
+                <div class="pc-att-value blue">{{ paid_leave_days }}</div>
+                <div class="pc-att-label">Paid Leave</div>
             </div>
             <div class="pc-att-item">
                 <div class="pc-att-value red">{{ absent_days }}</div>
-                <div class="pc-att-label">Absent Days</div>
+                <div class="pc-att-label">Absent</div>
             </div>
             <div class="pc-att-item">
-                <div class="pc-att-value blue">{{ paid_leave_days|floatformat:2 }}</div>
-                <div class="pc-att-label">Paid Leave Days</div>
+                <div class="pc-att-value orange">{{ half_days }}</div>
+                <div class="pc-att-label">Half Days</div>
             </div>
             <div class="pc-att-item">
-                <div class="pc-att-value teal">{{ total_unpaid_leave|floatformat:2 }}</div>
-                <div class="pc-att-label">Total Unpaid Leave<br><small>(Unpaid Leaves + Half Days + Absent)</small></div>
-            </div>
-            <div class="pc-att-item">
-                <div class="pc-att-value purple">{{ total_overtime_hours }}h</div>
+                <div class="pc-att-value purple">{{ ot_hours }}h</div>
                 <div class="pc-att-label">Overtime</div>
             </div>
         </div>
@@ -466,17 +474,17 @@
             <h3 class="pc-ed-title earning"><i class="fas fa-chart-line"></i> Earnings</h3>
             <div class="pc-ed-row">
                 <span class="pc-ed-name">Basic Salary</span>
-                <span class="pc-ed-amount green">रू{{ basic_salary|floatformat:2 }}</span>
+                <span class="pc-ed-amount green">Rs. {{ basic_salary|floatformat:2 }}</span>
             </div>
             {% for e in earnings %}
             <div class="pc-ed-row">
                 <span class="pc-ed-name">{{ e.name }}</span>
-                <span class="pc-ed-amount green">रू{{ e.amount|floatformat:2 }}</span>
+                <span class="pc-ed-amount green">Rs. {{ e.amount|floatformat:2 }}</span>
             </div>
             {% endfor %}
             <div class="pc-ed-total earning-total">
                 <span>Total Earnings</span>
-                <span class="pc-ed-amount green">रू{{ total_earnings|floatformat:2 }}</span>
+                <span class="pc-ed-amount green">Rs. {{ total_earnings|floatformat:2 }}</span>
             </div>
         </div>
 
@@ -486,17 +494,17 @@
             {% for d in deductions %}
             <div class="pc-ed-row">
                 <span class="pc-ed-name">{{ d.name }}</span>
-                <span class="pc-ed-amount red">रू{{ d.amount|floatformat:2 }}</span>
+                <span class="pc-ed-amount red">Rs. {{ d.amount|floatformat:2 }}</span>
             </div>
             {% empty %}
             <div class="pc-ed-row">
                 <span class="pc-ed-name" style="color:#9ca3af;">No deductions</span>
-                <span class="pc-ed-amount" style="color:#9ca3af;">रू0.00</span>
+                <span class="pc-ed-amount" style="color:#9ca3af;">Rs. 0.00</span>
             </div>
             {% endfor %}
             <div class="pc-ed-total deduction-total">
                 <span>Total Deductions</span>
-                <span class="pc-ed-amount red">रू{{ total_deductions_amount|floatformat:2 }}</span>
+                <span class="pc-ed-amount red">Rs. {{ total_deductions_amount|floatformat:2 }}</span>
             </div>
         </div>
     </div>
@@ -546,52 +554,49 @@
 
         <div class="pc-final-row">
             <span class="pc-final-label">Base Salary</span>
-            <span class="pc-final-value green">रू{{ basic_salary|floatformat:2 }}</span>
+            <span class="pc-final-value green">Rs. {{ basic_salary|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Total Earnings</span>
-            <span class="pc-final-value green">रू{{ total_earnings|floatformat:2 }}</span>
+            <span class="pc-final-label">Total Earnings (Basic + Allowances)</span>
+            <span class="pc-final-value green">Rs. {{ total_earnings|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Per Day Salary</span>
-            <span class="pc-final-value purple">रू{{ per_day_salary|floatformat:2 }}</span>
+            <span class="pc-final-label">Per Day Salary (Basic / {{ duty_days }} duty days)</span>
+            <span class="pc-final-value purple">Rs. {{ per_day_salary|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Unpaid Leave Deduction ({{ absent_days }} days)</span>
-            <span class="pc-final-value red">- रू{{ unpaid_leave_deduction|floatformat:2 }}</span>
+            <span class="pc-final-label">Salary Component Deductions</span>
+            <span class="pc-final-value red">- Rs. {{ total_deductions_amount|floatformat:2 }}</span>
         </div>
+        {% if deduction_amount and deduction_amount > 0 %}
         <div class="pc-final-row">
-            <span class="pc-final-label">Half Day Deduction ({{ half_days|floatformat:2 }} × 0.5)</span>
-            <span class="pc-final-value red">- रू{{ half_day_deduction|floatformat:2 }}</span>
+            <span class="pc-final-label">Absent Deduction ({{ absent_days }} days &times; Rs. {{ per_day_salary|floatformat:2 }}/day)</span>
+            <span class="pc-final-value red">- Rs. {{ deduction_amount|floatformat:2 }}</span>
         </div>
-        <div class="pc-final-row">
-            <span class="pc-final-label">Absent Day Deduction ({{ absent_days }} days)</span>
-            <span class="pc-final-value red">- रू{{ absent_day_deduction|floatformat:2 }}</span>
-        </div>
+        {% endif %}
         <div class="pc-final-row">
             <span class="pc-final-label">Overtime Amount</span>
-            <span class="pc-final-value green">+ रू{{ overtime_amount|floatformat:2 }}</span>
-        </div>
-        <div class="pc-final-row">
-            <span class="pc-final-label">Total Deductions</span>
-            <span class="pc-final-value red">- रू{{ total_deductions_amount|floatformat:2 }}</span>
+            <span class="pc-final-value green">+ Rs. {{ overtime_amount|floatformat:2 }}</span>
         </div>
 
         <div class="pc-net-salary-row">
             <span class="pc-net-salary-label">Net Salary</span>
-            <span class="pc-net-salary-value">रू{{ net_salary|floatformat:2 }}</span>
+            <span class="pc-net-salary-value">Rs. {{ net_salary|floatformat:2 }}</span>
         </div>
 
         <!-- Formula Box -->
         <div class="pc-formula-box">
             <div class="pc-formula-title">Calculation Formula:</div>
-            <p class="pc-formula-text">Net Salary = (Basic Salary + Allowances) – (Per Day Salary × Unpaid Leave Days) + Overtime – Deductions</p>
+            <p class="pc-formula-text">Net Salary = Total Earnings &minus; Salary Components &minus; Absent Deduction + Overtime</p>
             <div class="pc-formula-breakdown">
-                <strong>Unpaid Leave Days Breakdown:</strong>
-                <div class="pc-fb-item">· Unpaid Leaves: {{ absent_days }} days</div>
-                <div class="pc-fb-item">· Absent Days: {{ absent_days }} days</div>
-                <div class="pc-fb-item">· Half Days: {{ half_days|floatformat:2 }} × 0.5 = {{ half_day_deduction_days|floatformat:2 }} days</div>
-                <div class="pc-formula-total">Total Unpaid Days: {{ total_unpaid_leave|floatformat:2 }} days</div>
+                <strong>Breakdown:</strong>
+                <div class="pc-fb-item">&middot; Total Earnings: Rs. {{ total_earnings|floatformat:2 }}</div>
+                <div class="pc-fb-item">&middot; Salary Component Deductions: Rs. {{ total_deductions_amount|floatformat:2 }}</div>
+                {% if deduction_amount and deduction_amount > 0 %}
+                <div class="pc-fb-item">&middot; Absent Deduction: {{ absent_days }} days &times; Rs. {{ per_day_salary|floatformat:2 }} = Rs. {{ deduction_amount|floatformat:2 }}</div>
+                {% endif %}
+                <div class="pc-fb-item">&middot; Overtime: Rs. {{ overtime_amount|floatformat:2 }}</div>
+                <div class="pc-formula-total">Net Salary: Rs. {{ net_salary|floatformat:2 }}</div>
             </div>
         </div>
     </div>

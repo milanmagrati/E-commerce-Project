@@ -4701,9 +4701,29 @@ def payroll_run_delete(request, pk):
 
 
 @login_required
+def active_employees_api(request):
+    """Return active employees as JSON for the generate-payslips employee picker."""
+    from .models import Employee
+    employees = Employee.objects.filter(employee_status='active').select_related('department').order_by('full_name')
+    data = [
+        {
+            'id': e.pk,
+            'name': e.full_name,
+            'employee_id': e.employee_id,
+            'department': e.department.name if e.department else '',
+        }
+        for e in employees
+    ]
+    return JsonResponse({'success': True, 'employees': data})
+
+
+@login_required
 def generate_payslips(request, pk):
-    from .models import PayrollRun, Payslip, Employee, EmployeeSalary
-    import datetime
+    from .models import PayrollRun, Payslip, Employee, EmployeeSalary, AttendanceRecord
+    from .models import EmployeeWeekend as _EmpWeekend
+    import datetime, calendar
+    from datetime import date as dt_date
+    from decimal import Decimal, ROUND_HALF_UP
 
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
@@ -4716,13 +4736,36 @@ def generate_payslips(request, pk):
     if run.status == 'cancelled':
         return JsonResponse({'success': False, 'error': 'Cannot generate payslips for a cancelled payroll run.'}, status=400)
 
+    # ── Parse optional employee_ids from JSON body ──
+    import json as _json
+    employee_ids = None
+    try:
+        body = _json.loads(request.body) if request.body else {}
+        employee_ids = body.get('employee_ids')  # list of int PKs or None
+    except (ValueError, TypeError):
+        pass
+
     employees = Employee.objects.filter(employee_status='active')
+    if employee_ids:
+        employee_ids = [int(x) for x in employee_ids if str(x).isdigit()]
+        employees = employees.filter(pk__in=employee_ids)
     if not employees.exists():
         return JsonResponse({'success': False, 'error': 'No active employees found.'}, status=400)
 
     created_count = 0
     skipped_count = 0
     today = datetime.date.today()
+
+    # ── Determine month / year from pay period ──
+    _month = run.month or (run.pay_period_start.month if run.pay_period_start else today.month)
+    _year = run.year or (run.pay_period_start.year if run.pay_period_start else today.year)
+    _first_day = dt_date(_year, _month, 1)
+    _last_day = dt_date(_year, _month, calendar.monthrange(_year, _month)[1])
+
+    _DAY_MAP = {
+        'monday': 0, 'tuesday': 1, 'wednesday': 2,
+        'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6,
+    }
 
     for employee in employees:
         # Skip if payslip already exists for this run + employee
@@ -4740,6 +4783,7 @@ def generate_payslips(request, pk):
         )
 
         basic = salary_record.basic_salary if salary_record else employee.base_salary
+        basic = basic or Decimal('0')
 
         earnings = Decimal('0')
         deductions = Decimal('0')
@@ -4777,6 +4821,61 @@ def generate_payslips(request, pk):
         gross_salary = (basic + earnings).quantize(Decimal('0.01'))
         total_deductions_val = deductions.quantize(Decimal('0.01'))
 
+        # ── Attendance-based absent deduction ──
+        # 1. Employee-specific weekend days
+        _emp_weekend = _EmpWeekend.objects.filter(
+            employee=employee,
+            weekend_type='weekend',
+            effective_from__lte=_last_day,
+        ).filter(
+            Q(effective_to__isnull=True) | Q(effective_to__gte=_first_day)
+        ).order_by('-effective_from').first()
+        _weekend_day_nums = {
+            _DAY_MAP[d.lower()] for d in (_emp_weekend.weekend_days or [])
+            if d.lower() in _DAY_MAP
+        } if _emp_weekend else {5, 6}
+
+        # 2. Count total_days, weekend_days, holiday_days → derive duty_days
+        _total_days = (_last_day - _first_day).days + 1
+        _weekend_count = 0
+        _d = _first_day
+        while _d <= _last_day:
+            if _d.weekday() in _weekend_day_nums:
+                _weekend_count += 1
+            _d += timedelta(days=1)
+
+        _records = AttendanceRecord.objects.filter(
+            employee=employee, date__year=_year, date__month=_month
+        )
+        _holiday_count = _records.filter(is_holiday=True).values('date').distinct().count()
+        _duty_days = max(_total_days - _weekend_count - _holiday_count, 0)
+
+        # 3. Read absent_days and present_days from attendance records
+        _absent_days = Decimal('0')
+        for _rec in _records:
+            if _rec.status == 'absent':
+                _absent_days += 1
+
+        # 4. Calculate per_day_salary and absent deduction
+        _absent_deduction = Decimal('0')
+        if _duty_days > 0 and _absent_days > 0:
+            _per_day = (basic / Decimal(str(_duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            _absent_deduction = (_per_day * _absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+        # ── Overtime calculation ──
+        _total_ot_hours = Decimal('0')
+        for _rec in _records:
+            _total_ot_hours += _rec.overtime_hours
+        from .models import AttendancePolicy as _AttPolicy
+        _ot_rate = Decimal('0')
+        try:
+            _policy = _AttPolicy.objects.filter(is_active=True).first()
+            if _policy:
+                _ot_rate = _policy.overtime_rate
+        except Exception:
+            pass
+        _overtime_amount = (_total_ot_hours * _ot_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
         # Calculate advance payment deductions for salary-deduction mode advances
         from .models import AdvancePayment as _AdvPay
         active_advances = _AdvPay.objects.filter(
@@ -4795,7 +4894,7 @@ def generate_payslips(request, pk):
                 advance_deduction += inst if inst > 0 else remaining
         advance_deduction = advance_deduction.quantize(Decimal('0.01'))
 
-        net_salary = max(gross_salary - total_deductions_val - advance_deduction, Decimal('0'))
+        net_salary = max(gross_salary + _overtime_amount - total_deductions_val - advance_deduction - _absent_deduction, Decimal('0'))
 
         Payslip.objects.create(
             payroll_run=run,
@@ -4803,6 +4902,7 @@ def generate_payslips(request, pk):
             gross_salary=gross_salary,
             total_deductions=total_deductions_val,
             advance_deduction=advance_deduction,
+            absent_deduction=_absent_deduction,
             net_salary=net_salary,
             status='generated',
             generated_on=today,
@@ -5011,9 +5111,12 @@ def payslip_sync_advances(request):
     for slip in payslips:
         new_adv = (advance_by_emp.get(slip.employee_id, Decimal('0'))).quantize(Decimal('0.01'))
         if slip.advance_deduction != new_adv:
+            old_adv = slip.advance_deduction or Decimal('0')
             slip.advance_deduction = new_adv
+            # Use delta approach: adjust net by the difference in advance deduction
+            # This preserves all other components (overtime, etc.) that were in the stored net
             slip.net_salary = max(
-                slip.gross_salary - slip.total_deductions - new_adv,
+                slip.net_salary + old_adv - new_adv,
                 Decimal('0')
             ).quantize(Decimal('0.01'))
             to_update.append(slip)
@@ -5055,6 +5158,7 @@ def payslip_detail(request, pk):
             'gross_salary': str(slip.gross_salary),
             'total_deductions': str(slip.total_deductions),
             'advance_deduction': str(slip.advance_deduction),
+            'absent_deduction': str(slip.absent_deduction),
             'net_salary': str(slip.net_salary),
             'status': slip.get_status_display(),
             'status_key': slip.status,
@@ -5095,6 +5199,7 @@ def payslip_download(request, pk):
     # ── Calendar bounds ──
     first_day = dt_date(year, month, 1)
     last_day = dt_date(year, month, calendar.monthrange(year, month)[1])
+    total_days = (last_day - first_day).days + 1
 
     # ── Employee-specific weekend days ──
     from .models import EmployeeWeekend as _EmpWeekend
@@ -5115,19 +5220,15 @@ def payslip_download(request, pk):
         if d.lower() in _DAY_MAP
     } if _emp_weekend else {5, 6}  # default Sat+Sun if no assignment
 
-    # ── Working days = total calendar days minus employee's weekend days ──
-    working_days = 0
-    total_weekends = 0
+    # ── Count weekend days for this employee ──
+    weekend_days = 0
     d = first_day
     while d <= last_day:
         if d.weekday() in _weekend_day_nums:
-            total_weekends += 1
-        else:
-            working_days += 1
+            weekend_days += 1
         d += timedelta(days=1)
-    employee_weekends = total_weekends
 
-    # ── Attendance summary ──
+    # ── Attendance records ──
     records = AttendanceRecord.objects.filter(employee=employee, date__year=year, date__month=month)
     present_days = Decimal('0')
     half_days = Decimal('0')
@@ -5146,7 +5247,14 @@ def payslip_download(request, pk):
             on_leave_days += 1
         total_overtime_hours += rec.overtime_hours
 
+    # ── Holiday days from attendance records ──
+    holiday_days = records.filter(is_holiday=True).values('date').distinct().count()
+
+    # ── Derived attendance values ──
     paid_leave_days = on_leave_days
+    duty_days = max(total_days - weekend_days - holiday_days, 0)
+    paid_days = present_days + paid_leave_days
+    misc_days = half_days
 
     # ── Salary component breakdown ──
     salary_record = (
@@ -5191,14 +5299,14 @@ def payslip_download(request, pk):
 
     total_earnings = basic_salary + total_earnings_comp
 
-    # ── Attendance-based deductions ──
+    # ── Attendance-based absent deduction (per_day_salary = basic_salary / duty_days) ──
     per_day_salary = Decimal('0')
-    if working_days > 0:
-        per_day_salary = (total_earnings / Decimal(str(working_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if duty_days > 0:
+        per_day_salary = (basic_salary / Decimal(str(duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-    half_day_deduction = (per_day_salary * half_days * Decimal('0.5')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    absent_deduction = (per_day_salary * absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    attendance_deduction = half_day_deduction + absent_deduction
+    deduction_amount = Decimal('0')
+    if absent_days > 0:
+        deduction_amount = (per_day_salary * absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # ── Overtime ──
     overtime_rate = Decimal('0')
@@ -5208,10 +5316,10 @@ def payslip_download(request, pk):
             overtime_rate = policy.overtime_rate
     except Exception:
         pass
-    overtime_amount = (total_overtime_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    ot_hours = total_overtime_hours
+    overtime_amount = (ot_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # ── Advance Payment Deduction (added as named rows in deductions_list) ──
-    # Bug 1 fix: include 'disbursed' (newly issued) AND 'repaying' (in-progress) advances
     from .models import AdvancePayment as _AdvPay
     active_advances_for_display = list(
         _AdvPay.objects.filter(
@@ -5222,22 +5330,19 @@ def payslip_download(request, pk):
     _calc_advance_total = Decimal('0')
     for _adv in active_advances_for_display:
         _remaining = max((_adv.amount or Decimal('0')) - (_adv.amount_repaid or Decimal('0')), Decimal('0'))
-        # Bug 2 fix: treat any salary/installment mode (or blank) as salary_deduction
         if _adv.repayment_mode in ('salary_deduction', 'installments', '', None):
             _inst = _adv.installment_amount or Decimal('0')
             _deducted = (_inst if _inst > 0 else _remaining).quantize(Decimal('0.01'))
         elif _adv.repayment_mode == 'lump_sum':
             _deducted = _remaining.quantize(Decimal('0.01'))
         else:
-            # Unknown mode — fall back to full remaining
             _deducted = _remaining.quantize(Decimal('0.01'))
         _adv.deducted_this_month = _deducted
         if _deducted > 0:
             deductions_list.append({'name': f'Advance ({_adv.advance_number})', 'amount': _deducted})
             _calc_advance_total += _deducted
 
-            # Bug 2 fix: update advance record on first deduction (guard: only when still 'disbursed'
-            # so generate_payslips-updated advances are never touched twice)
+            # Update advance record on first deduction (guard: only when still 'disbursed')
             if _adv.status == 'disbursed':
                 _new_repaid = (_adv.amount_repaid or Decimal('0')) + _deducted
                 _new_status = 'cleared' if _new_repaid >= (_adv.amount or Decimal('0')) else 'repaying'
@@ -5248,8 +5353,6 @@ def payslip_download(request, pk):
                     status=_new_status,
                 )
 
-    # If advances were already cleared by generate_payslips, the stored
-    # advance_deduction preserves what was actually deducted. Use it as floor.
     _stored_advance = slip.advance_deduction or Decimal('0')
     _diff = _stored_advance - _calc_advance_total
     if _diff > Decimal('0'):
@@ -5257,8 +5360,7 @@ def payslip_download(request, pk):
         _calc_advance_total += _diff
     total_deductions_comp += _calc_advance_total
 
-    # advance_deduction kept as 0 — advance is now included in deductions_list / total_deductions
-    advance_deduction = Decimal('0')
+    advance_deduction = _calc_advance_total
 
     # All advances for the employee (for summary table display)
     all_employee_advances = list(
@@ -5268,8 +5370,17 @@ def payslip_download(request, pk):
     for _adv in all_employee_advances:
         _adv.deducted_this_month = _active_map.get(_adv.pk, Decimal('0'))
 
+    # ── Add absent deduction row to deductions_list if absent_days > 0 ──
+    if absent_days > 0 and deduction_amount > 0:
+        deductions_list.append({
+            'name': f'Absent Deduction ({int(absent_days)} days \u00d7 Rs. {per_day_salary}/day)',
+            'amount': deduction_amount,
+        })
+
     # ── Net salary ──
-    total_deductions = total_deductions_comp + attendance_deduction
+    # salary_comp_deductions = only salary component deductions (before advance/absent)
+    salary_comp_deductions = total_deductions_comp - _calc_advance_total  # remove advance that was added
+    total_deductions = salary_comp_deductions + _calc_advance_total + deduction_amount
     net_salary = max(total_earnings + overtime_amount - total_deductions, Decimal('0'))
 
     # ── Build side-by-side salary rows ──
@@ -5299,22 +5410,29 @@ def payslip_download(request, pk):
         'pay_period_end': run.pay_period_end,
         'pay_date': run.pay_date,
         'basic_salary': basic_salary,
-        'working_days': working_days,
-        'total_weekends': total_weekends,
-        'employee_weekends': employee_weekends,
+        # Attendance data from records
+        'total_days': total_days,
+        'weekend_days': weekend_days,
+        'holiday_days': holiday_days,
+        'duty_days': duty_days,
         'present_days': present_days,
-        'absent_days': absent_days,
-        'half_days': half_days,
         'paid_leave_days': paid_leave_days,
+        'absent_days': absent_days,
+        'misc_days': misc_days,
+        'half_days': half_days,
+        'ot_hours': ot_hours,
         'total_overtime_hours': total_overtime_hours,
+        # Salary calculation
+        'per_day_salary': per_day_salary,
+        'deduction_amount': deduction_amount,
         'earnings_list': earnings_list,
         'deductions_list': deductions_list,
         'salary_rows': salary_rows,
         'total_earnings': total_earnings,
         'total_deductions': total_deductions,
+        'salary_comp_deductions': salary_comp_deductions,
         'overtime_amount': overtime_amount,
         'overtime_rate': overtime_rate,
-        'attendance_deduction': attendance_deduction,
         'advance_deduction': advance_deduction,
         'all_advances': all_employee_advances,
         'net_salary': net_salary,
@@ -5325,6 +5443,7 @@ def payslip_download(request, pk):
 @login_required
 def payroll_calculation(request, pk):
     from .models import EmployeeSalary, AttendanceRecord, AttendancePolicy
+    from .models import EmployeeWeekend as _EmpWeekend
     import calendar
     from datetime import date as dt_date
     from decimal import Decimal, ROUND_HALF_UP
@@ -5348,15 +5467,32 @@ def payroll_calculation(request, pk):
         month, year = now.month, now.year
 
     month_name = calendar.month_name[month]
-    working_days_in_month = 0
     first_day = dt_date(year, month, 1)
     last_day = dt_date(year, month, calendar.monthrange(year, month)[1])
+    total_days = (last_day - first_day).days + 1
 
-    # Count working days (Mon-Fri) in the month
+    # ── Employee-specific weekend days ──
+    _DAY_MAP = {
+        'monday': 0, 'tuesday': 1, 'wednesday': 2,
+        'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6,
+    }
+    _emp_weekend = _EmpWeekend.objects.filter(
+        employee=employee,
+        weekend_type='weekend',
+        effective_from__lte=last_day,
+    ).filter(
+        Q(effective_to__isnull=True) | Q(effective_to__gte=first_day)
+    ).order_by('-effective_from').first()
+    _weekend_day_nums = {
+        _DAY_MAP[d.lower()] for d in (_emp_weekend.weekend_days or [])
+        if d.lower() in _DAY_MAP
+    } if _emp_weekend else {5, 6}
+
+    weekend_days = 0
     d = first_day
     while d <= last_day:
-        if d.weekday() < 5:
-            working_days_in_month += 1
+        if d.weekday() in _weekend_day_nums:
+            weekend_days += 1
         d += timedelta(days=1)
 
     # Fetch attendance records for this employee in the selected month
@@ -5365,6 +5501,12 @@ def payroll_calculation(request, pk):
         date__year=year,
         date__month=month
     ).order_by('date')
+
+    # Holiday days from attendance records
+    holiday_days = attendance_records.filter(is_holiday=True).values('date').distinct().count()
+
+    # duty_days = total_days - weekend_days - holiday_days
+    duty_days = max(total_days - weekend_days - holiday_days, 0)
 
     # Attendance summary
     present_days = Decimal('0')
@@ -5397,8 +5539,6 @@ def payroll_calculation(request, pk):
 
         if rec.is_early_departure and rec.status not in ('absent', 'on_leave', 'half_day'):
             status_tags.append(('Early', 'early'))
-        if rec.is_late_arrival and rec.status not in ('late',):
-            pass  # already shown as Late for 'late' status
 
         total_overtime_hours += rec.overtime_hours
         total_working_hours += rec.working_hours
@@ -5412,13 +5552,24 @@ def payroll_calculation(request, pk):
             'status_tags': status_tags,
         })
 
-    # Paid leave days = on_leave_days (treat on_leave as paid)
+    # Derived attendance values
     paid_leave_days = on_leave_days
-    total_unpaid_leave = Decimal('0')  # unpaid = absent + half_day * 0.5
+    paid_days = present_days + paid_leave_days
+    misc_days = half_days
+    ot_hours = total_overtime_hours
 
     # Salary calculations
     basic_salary = salary.basic_salary
     components = salary.components.all()
+
+    # Two-pass calculation for %_of_gross
+    pre_gross = basic_salary
+    for comp in components:
+        if comp.component_type == 'earning':
+            if comp.calculation_type == 'fixed':
+                pre_gross += comp.amount
+            elif comp.calculation_type == 'percentage_of_basic':
+                pre_gross += (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # Calculate component amounts
     earnings = []
@@ -5431,10 +5582,8 @@ def payroll_calculation(request, pk):
             calc_amount = comp.amount
         elif comp.calculation_type == 'percentage_of_basic':
             calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        elif comp.calculation_type == 'percentage_of_gross':
-            calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        elif comp.calculation_type == 'percentage_of_ctc':
-            calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
+            calc_amount = (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         else:
             calc_amount = comp.amount
 
@@ -5447,17 +5596,15 @@ def payroll_calculation(request, pk):
 
     total_earnings = basic_salary + total_earnings_components
 
-    # Per day salary
+    # Per day salary = basic_salary / duty_days
     per_day_salary = Decimal('0')
-    if working_days_in_month > 0:
-        per_day_salary = (total_earnings / Decimal(str(working_days_in_month))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if duty_days > 0:
+        per_day_salary = (basic_salary / Decimal(str(duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-    # Deductions based on attendance
-    half_day_deduction_days = half_days * Decimal('0.5')
-    total_unpaid_leave = absent_days + half_day_deduction_days
-    unpaid_leave_deduction = (per_day_salary * absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    half_day_deduction = (per_day_salary * half_day_deduction_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    absent_day_deduction = unpaid_leave_deduction
+    # Absent deduction
+    deduction_amount = Decimal('0')
+    if absent_days > 0:
+        deduction_amount = (per_day_salary * absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # Overtime calculation
     overtime_rate = Decimal('0')
@@ -5469,9 +5616,8 @@ def payroll_calculation(request, pk):
         pass
     overtime_amount = (total_overtime_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-    # Net salary
-    total_attendance_deduction = unpaid_leave_deduction + half_day_deduction
-    net_salary = total_earnings - total_attendance_deduction + overtime_amount - total_deductions_amount
+    # Net salary = basic_salary - salary_component_deductions - absent_deduction + overtime
+    net_salary = total_earnings - total_deductions_amount - deduction_amount + overtime_amount
 
     # Build available months for the dropdown (last 12 months)
     available_months = []
@@ -5481,7 +5627,6 @@ def payroll_calculation(request, pk):
         if m <= 0:
             m += 12
             y -= 1
-        month_start = dt_date(y, m, 1)
         month_end = dt_date(y, m, calendar.monthrange(y, m)[1])
         label = f"{calendar.month_name[m]} {y} Payroll ({m}/1/{y} - {m}/{calendar.monthrange(y, m)[1]}/{y})"
         available_months.append({
@@ -5498,27 +5643,29 @@ def payroll_calculation(request, pk):
         'month': month,
         'year': year,
         'month_name': month_name,
-        'working_days_in_month': working_days_in_month,
-        'basic_salary': basic_salary,
-        'net_salary': net_salary,
+        # Attendance data
+        'total_days': total_days,
+        'weekend_days': weekend_days,
+        'holiday_days': holiday_days,
+        'duty_days': duty_days,
         'present_days': present_days,
-        'half_days': half_days,
-        'absent_days': absent_days,
         'paid_leave_days': paid_leave_days,
-        'total_unpaid_leave': total_unpaid_leave,
+        'absent_days': absent_days,
+        'misc_days': misc_days,
+        'half_days': half_days,
+        'ot_hours': ot_hours,
         'total_overtime_hours': total_overtime_hours,
+        # Salary
+        'basic_salary': basic_salary,
+        'per_day_salary': per_day_salary,
+        'deduction_amount': deduction_amount,
+        'net_salary': net_salary,
         'earnings': earnings,
         'deductions': deductions,
         'total_earnings': total_earnings,
         'total_deductions_amount': total_deductions_amount,
-        'per_day_salary': per_day_salary,
-        'unpaid_leave_deduction': unpaid_leave_deduction,
-        'half_day_deduction': half_day_deduction,
-        'half_day_deduction_days': half_day_deduction_days,
-        'absent_day_deduction': absent_day_deduction,
         'overtime_amount': overtime_amount,
         'overtime_rate': overtime_rate,
-        'total_attendance_deduction': total_attendance_deduction,
         'attendance_data': attendance_data,
         'available_months': available_months,
     }

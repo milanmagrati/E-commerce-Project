@@ -799,6 +799,7 @@ class Payslip(models.Model):
     gross_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_deductions = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     advance_deduction = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text='Advance payment deduction for this pay period')
+    absent_deduction = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text='Absent-based salary deduction for this pay period')
     net_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     paid_date = models.DateField(null=True, blank=True)
