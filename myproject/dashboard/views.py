@@ -181,6 +181,30 @@ def sync_order_status_setup(order):
     return order
 
 
+def _get_next_order_number():
+    """Return the next available unique order number (e.g. T1218 when T1217 is the last)."""
+    for _ in range(100):
+        last_order = Order.objects.filter(
+            order_number__startswith='T'
+        ).order_by('-order_number').first()
+
+        if last_order:
+            try:
+                n = int(last_order.order_number[1:])
+                candidate = f"T{n + 1:03d}"
+            except (ValueError, AttributeError, IndexError):
+                candidate = f"T{Order.objects.filter(order_number__startswith='T').count() + 1:03d}"
+        else:
+            candidate = "T001"
+
+        if not Order.objects.filter(order_number=candidate).exists():
+            return candidate
+
+    # Ultimate fallback: use timestamp-based suffix to guarantee uniqueness
+    import time
+    return f"T{int(time.time()) % 1000000:06d}"
+
+
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
@@ -2931,11 +2955,11 @@ def order_create(request):
                             break
                     
                     if not order_number:
-                        order_number = f"T{Order.objects.count() + 1:03d}"
+                        order_number = _get_next_order_number()  # finds T1217 → returns T1218
                         
                 except Exception as e:
                     logger.error(f"Error generating order number: {str(e)}")
-                    order_number = f"T{Order.objects.count() + 1:03d}"
+                    order_number = _get_next_order_number()  # finds T1217 → returns T1218
 
                 order_items_json = request.POST.get("order_items") or "[]"
                 try:
@@ -3013,9 +3037,9 @@ def order_create(request):
                                     n = int(last_order.order_number[1:])
                                     order_number = f"T{n+1:03d}"
                                 except (ValueError, AttributeError, IndexError):
-                                    order_number = f"T{Order.objects.filter(order_number__startswith='T').count() + retry_count:03d}"
+                                    order_number = _get_next_order_number()  # finds T1217 → returns T1218
                             else:
-                                order_number = f"T{Order.objects.count() + retry_count:03d}"
+                                order_number = _get_next_order_number()  # finds T1217 → returns T1218
 
                             if retry_count >= max_retries:
                                 err = 'Failed to create order after multiple attempts. Please try again.'

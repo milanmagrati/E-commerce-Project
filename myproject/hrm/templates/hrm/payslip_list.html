@@ -580,7 +580,7 @@
     {% if stale_count > 0 %}
     <div class="ps-stale-banner" id="staleBanner">
         <i class="fas fa-exclamation-triangle"></i>
-        <p><strong>{{ stale_count }} payslip(s)</strong> have advance deductions that don’t match current advance payment records. Click <strong>“Sync Advance Data”</strong> to recalculate and save the correct values.</p>
+        <p><strong>{{ stale_count }} payslip(s)</strong> have active advance payments not yet reflected in the stored deduction. Click <strong>”Sync Advance Data”</strong> to recalculate and save the correct values.</p>
         <button class="btn-sync-advances" onclick="syncAdvances()" style="padding:6px 14px;font-size:12px">
             <i class="fas fa-sync-alt"></i> Fix Now
         </button>

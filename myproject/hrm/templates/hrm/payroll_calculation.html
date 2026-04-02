@@ -566,12 +566,18 @@
         </div>
         <div class="pc-final-row">
             <span class="pc-final-label">Salary Component Deductions</span>
-            <span class="pc-final-value red">- Rs. {{ total_deductions_amount|floatformat:2 }}</span>
+            <span class="pc-final-value red">- Rs. {{ salary_comp_deductions|floatformat:2 }}</span>
         </div>
         {% if deduction_amount and deduction_amount > 0 %}
         <div class="pc-final-row">
             <span class="pc-final-label">Absent Deduction ({{ absent_days }} days &times; Rs. {{ per_day_salary|floatformat:2 }}/day)</span>
             <span class="pc-final-value red">- Rs. {{ deduction_amount|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+        {% if advance_deduction and advance_deduction > 0 %}
+        <div class="pc-final-row">
+            <span class="pc-final-label">Advance Payment Deduction</span>
+            <span class="pc-final-value red">- Rs. {{ advance_deduction|floatformat:2 }}</span>
         </div>
         {% endif %}
         <div class="pc-final-row">
@@ -587,13 +593,16 @@
         <!-- Formula Box -->
         <div class="pc-formula-box">
             <div class="pc-formula-title">Calculation Formula:</div>
-            <p class="pc-formula-text">Net Salary = Total Earnings &minus; Salary Components &minus; Absent Deduction + Overtime</p>
+            <p class="pc-formula-text">Net Salary = Total Earnings &minus; Salary Components &minus; Absent Deduction{% if advance_deduction and advance_deduction > 0 %} &minus; Advance Deduction{% endif %} + Overtime</p>
             <div class="pc-formula-breakdown">
                 <strong>Breakdown:</strong>
                 <div class="pc-fb-item">&middot; Total Earnings: Rs. {{ total_earnings|floatformat:2 }}</div>
-                <div class="pc-fb-item">&middot; Salary Component Deductions: Rs. {{ total_deductions_amount|floatformat:2 }}</div>
+                <div class="pc-fb-item">&middot; Salary Component Deductions: Rs. {{ salary_comp_deductions|floatformat:2 }}</div>
                 {% if deduction_amount and deduction_amount > 0 %}
                 <div class="pc-fb-item">&middot; Absent Deduction: {{ absent_days }} days &times; Rs. {{ per_day_salary|floatformat:2 }} = Rs. {{ deduction_amount|floatformat:2 }}</div>
+                {% endif %}
+                {% if advance_deduction and advance_deduction > 0 %}
+                <div class="pc-fb-item">&middot; Advance Payment Deduction: Rs. {{ advance_deduction|floatformat:2 }}</div>
                 {% endif %}
                 <div class="pc-fb-item">&middot; Overtime: Rs. {{ overtime_amount|floatformat:2 }}</div>
                 <div class="pc-formula-total">Net Salary: Rs. {{ net_salary|floatformat:2 }}</div>
