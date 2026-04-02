@@ -6,8 +6,8 @@ from django.views.decorators.http import require_POST, require_http_methods
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib import messages
-from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg
-from django.db.models.functions import TruncDate
+from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg, IntegerField
+from django.db.models.functions import TruncDate, Cast, Substr
 from django.http import JsonResponse, HttpResponse, Http404
 from django.core.paginator import Paginator
 from datetime import datetime, timedelta
@@ -182,27 +182,21 @@ def sync_order_status_setup(order):
 
 
 def _get_next_order_number():
-    """Return the next available unique order number (e.g. T1218 when T1217 is the last)."""
-    for _ in range(100):
-        last_order = Order.objects.filter(
-            order_number__startswith='T'
-        ).order_by('-order_number').first()
+    """Return the next available unique order number (e.g. T1346 when T1345 is the highest).
 
-        if last_order:
-            try:
-                n = int(last_order.order_number[1:])
-                candidate = f"T{n + 1:03d}"
-            except (ValueError, AttributeError, IndexError):
-                candidate = f"T{Order.objects.filter(order_number__startswith='T').count() + 1:03d}"
-        else:
-            candidate = "T001"
-
-        if not Order.objects.filter(order_number=candidate).exists():
-            return candidate
-
-    # Ultimate fallback: use timestamp-based suffix to guarantee uniqueness
-    import time
-    return f"T{int(time.time()) % 1000000:06d}"
+    Uses a numeric MAX aggregation so T1345 is correctly found as higher than T999,
+    avoiding the old lexicographic-sort bug that caused hundreds of wasted queries.
+    """
+    result = (
+        Order.objects
+        .filter(order_number__regex=r'^T\d+$')
+        .annotate(num=Cast(Substr('order_number', 2), IntegerField()))
+        .aggregate(max_num=Max('num'))
+    )
+    max_num = result['max_num']
+    if max_num is not None:
+        return f"T{max_num + 1:03d}"
+    return "T001"
 
 
 def login_view(request):
@@ -2931,35 +2925,7 @@ def order_create(request):
 
                 # ✅ FIXED: Generate unique order number with race condition handling
                 from .decimal_utils import safe_decimal
-                try:
-                    max_attempts = 100
-                    order_number = None
-                    
-                    for attempt in range(max_attempts):
-                        # Get the highest order number currently in database
-                        last_order = Order.objects.filter(
-                            order_number__startswith='T'
-                        ).order_by('-order_number').first()
-                        
-                        if last_order:
-                            try:
-                                n = int(last_order.order_number[1:])  # Extract number after 'T'
-                                order_number = f"T{n+1:03d}"
-                            except (ValueError, AttributeError, IndexError):
-                                order_number = f"T{Order.objects.filter(order_number__startswith='T').count() + 1:03d}"
-                        else:
-                            order_number = "T001"
-                        
-                        # Check if this order number already exists
-                        if not Order.objects.filter(order_number=order_number).exists():
-                            break
-                    
-                    if not order_number:
-                        order_number = _get_next_order_number()  # finds T1217 → returns T1218
-                        
-                except Exception as e:
-                    logger.error(f"Error generating order number: {str(e)}")
-                    order_number = _get_next_order_number()  # finds T1217 → returns T1218
+                order_number = _get_next_order_number()
 
                 order_items_json = request.POST.get("order_items") or "[]"
                 try:
@@ -3028,18 +2994,7 @@ def order_create(request):
                         if 'order_number' in str(e):
                             # Order number exists, generate a new one and retry
                             retry_count += 1
-                            last_order = Order.objects.filter(
-                                order_number__startswith='T'
-                            ).order_by('-order_number').first()
-
-                            if last_order:
-                                try:
-                                    n = int(last_order.order_number[1:])
-                                    order_number = f"T{n+1:03d}"
-                                except (ValueError, AttributeError, IndexError):
-                                    order_number = _get_next_order_number()  # finds T1217 → returns T1218
-                            else:
-                                order_number = _get_next_order_number()  # finds T1217 → returns T1218
+                            order_number = _get_next_order_number()
 
                             if retry_count >= max_retries:
                                 err = 'Failed to create order after multiple attempts. Please try again.'
@@ -5780,26 +5735,7 @@ def import_orders_excel(request):
                     )
 
                     # Generate unique order number (T001, T002, ...)
-                    new_order_number = None
-                    for attempt in range(100):
-                        last_order = Order.objects.filter(
-                            order_number__regex=r'^T\d+$'
-                        ).extra(
-                            select={'num': "CAST(SUBSTR(order_number, 2) AS INTEGER)"}
-                        ).order_by('-num').first()
-
-                        if last_order:
-                            try:
-                                n = int(last_order.order_number[1:])
-                                new_order_number = f"T{n + 1:03d}"
-                            except (ValueError, AttributeError, IndexError):
-                                count = Order.objects.filter(order_number__regex=r'^T\d+$').count()
-                                new_order_number = f"T{count + 1:03d}"
-                        else:
-                            new_order_number = "T001"
-
-                        if not Order.objects.filter(order_number=new_order_number).exists():
-                            break
+                    new_order_number = _get_next_order_number()
 
                     # Create the order
                     order = Order.objects.create(
