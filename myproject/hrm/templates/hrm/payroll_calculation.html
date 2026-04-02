@@ -473,8 +473,8 @@
         <div class="pc-ed-card">
             <h3 class="pc-ed-title earning"><i class="fas fa-chart-line"></i> Earnings</h3>
             <div class="pc-ed-row">
-                <span class="pc-ed-name">Basic Salary</span>
-                <span class="pc-ed-amount green">Rs. {{ basic_salary|floatformat:2 }}</span>
+                <span class="pc-ed-name">Basic Salary ({{ payable_days }}/{{ duty_days }} days)</span>
+                <span class="pc-ed-amount green">Rs. {{ earned_basic|floatformat:2 }}</span>
             </div>
             {% for e in earnings %}
             <div class="pc-ed-row">
@@ -553,27 +553,25 @@
         <h3 class="pc-section-title">Final Calculation</h3>
 
         <div class="pc-final-row">
-            <span class="pc-final-label">Base Salary</span>
+            <span class="pc-final-label">Base Salary (Monthly)</span>
             <span class="pc-final-value green">Rs. {{ basic_salary|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Total Earnings (Basic + Allowances)</span>
-            <span class="pc-final-value green">Rs. {{ total_earnings|floatformat:2 }}</span>
+            <span class="pc-final-label">Per Day Salary (Rs. {{ basic_salary|floatformat:2 }} / {{ duty_days }} duty days)</span>
+            <span class="pc-final-value purple">Rs. {{ per_day_salary|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Per Day Salary (Basic / {{ duty_days }} duty days)</span>
-            <span class="pc-final-value purple">Rs. {{ per_day_salary|floatformat:2 }}</span>
+            <span class="pc-final-label">Earned Basic ({{ payable_days }}/{{ duty_days }} payable days)</span>
+            <span class="pc-final-value green">Rs. {{ earned_basic|floatformat:2 }}</span>
+        </div>
+        <div class="pc-final-row">
+            <span class="pc-final-label">Total Earnings (Earned Basic + Allowances)</span>
+            <span class="pc-final-value green">Rs. {{ total_earnings|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
             <span class="pc-final-label">Salary Component Deductions</span>
             <span class="pc-final-value red">- Rs. {{ salary_comp_deductions|floatformat:2 }}</span>
         </div>
-        {% if deduction_amount and deduction_amount > 0 %}
-        <div class="pc-final-row">
-            <span class="pc-final-label">Absent Deduction ({{ absent_days }} days &times; Rs. {{ per_day_salary|floatformat:2 }}/day)</span>
-            <span class="pc-final-value red">- Rs. {{ deduction_amount|floatformat:2 }}</span>
-        </div>
-        {% endif %}
         {% if advance_deduction and advance_deduction > 0 %}
         <div class="pc-final-row">
             <span class="pc-final-label">Advance Payment Deduction</span>
@@ -593,14 +591,11 @@
         <!-- Formula Box -->
         <div class="pc-formula-box">
             <div class="pc-formula-title">Calculation Formula:</div>
-            <p class="pc-formula-text">Net Salary = Total Earnings &minus; Salary Components &minus; Absent Deduction{% if advance_deduction and advance_deduction > 0 %} &minus; Advance Deduction{% endif %} + Overtime</p>
+            <p class="pc-formula-text">Net Salary = Total Earnings &minus; Salary Components{% if advance_deduction and advance_deduction > 0 %} &minus; Advance Deduction{% endif %} + Overtime</p>
             <div class="pc-formula-breakdown">
                 <strong>Breakdown:</strong>
-                <div class="pc-fb-item">&middot; Total Earnings: Rs. {{ total_earnings|floatformat:2 }}</div>
+                <div class="pc-fb-item">&middot; Total Earnings (Earned Basic + Allowances): Rs. {{ total_earnings|floatformat:2 }}</div>
                 <div class="pc-fb-item">&middot; Salary Component Deductions: Rs. {{ salary_comp_deductions|floatformat:2 }}</div>
-                {% if deduction_amount and deduction_amount > 0 %}
-                <div class="pc-fb-item">&middot; Absent Deduction: {{ absent_days }} days &times; Rs. {{ per_day_salary|floatformat:2 }} = Rs. {{ deduction_amount|floatformat:2 }}</div>
-                {% endif %}
                 {% if advance_deduction and advance_deduction > 0 %}
                 <div class="pc-fb-item">&middot; Advance Payment Deduction: Rs. {{ advance_deduction|floatformat:2 }}</div>
                 {% endif %}

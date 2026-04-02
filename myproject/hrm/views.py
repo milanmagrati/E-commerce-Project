@@ -4785,43 +4785,7 @@ def generate_payslips(request, pk):
         basic = salary_record.basic_salary if salary_record else employee.base_salary
         basic = basic or Decimal('0')
 
-        earnings = Decimal('0')
-        deductions = Decimal('0')
-
-        if salary_record:
-            components = salary_record.components.filter(is_active=True)
-
-            # First pass: compute a provisional gross (basic + fixed earnings + %_of_basic earnings)
-            # used later for %_of_gross calculations
-            pre_gross = basic
-            for comp in components:
-                if comp.component_type == 'earning':
-                    if comp.calculation_type == 'fixed':
-                        pre_gross += comp.amount
-                    elif comp.calculation_type == 'percentage_of_basic':
-                        pre_gross += (basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
-
-            # Second pass: full component calculation
-            for comp in components:
-                if comp.component_type == 'earning':
-                    if comp.calculation_type == 'fixed':
-                        earnings += comp.amount
-                    elif comp.calculation_type == 'percentage_of_basic':
-                        earnings += (basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
-                    elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
-                        earnings += (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
-                elif comp.component_type == 'deduction':
-                    if comp.calculation_type == 'fixed':
-                        deductions += comp.amount
-                    elif comp.calculation_type == 'percentage_of_basic':
-                        deductions += (basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
-                    elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
-                        deductions += (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
-
-        gross_salary = (basic + earnings).quantize(Decimal('0.01'))
-        total_deductions_val = deductions.quantize(Decimal('0.01'))
-
-        # ── Attendance-based absent deduction ──
+        # ── Attendance & weekend calculation (needed for pro-rating) ──
         # 1. Employee-specific weekend days
         _emp_weekend = _EmpWeekend.objects.filter(
             employee=employee,
@@ -4850,17 +4814,65 @@ def generate_payslips(request, pk):
         _holiday_count = _records.filter(is_holiday=True).values('date').distinct().count()
         _duty_days = max(_total_days - _weekend_count - _holiday_count, 0)
 
-        # 3. Read absent_days and present_days from attendance records
-        _absent_days = Decimal('0')
+        # 3. Count present, paid-leave, half-day from attendance records
+        _present_days = Decimal('0')
+        _paid_leave_days = Decimal('0')
+        _half_days_count = Decimal('0')
         for _rec in _records:
-            if _rec.status == 'absent':
-                _absent_days += 1
+            if _rec.status in ('present', 'late'):
+                _present_days += 1
+            elif _rec.status == 'half_day':
+                _half_days_count += 1
+            elif _rec.status == 'on_leave':
+                _paid_leave_days += 1
 
-        # 4. Calculate per_day_salary and absent deduction
+        # 4. Pro-rate salary based on payable (present) days
+        _payable_days = _present_days + _paid_leave_days + (_half_days_count * Decimal('0.5'))
+        _payable_days = min(_payable_days, Decimal(str(_duty_days)))  # cap at duty days
+        if _duty_days > 0:
+            _earned_basic = (basic / Decimal(str(_duty_days)) * _payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            _earned_basic = min(_earned_basic, basic)  # cap at full basic for rounding safety
+        else:
+            _earned_basic = Decimal('0')
+
+        earnings = Decimal('0')
+        deductions = Decimal('0')
+
+        if salary_record:
+            components = salary_record.components.filter(is_active=True)
+
+            # First pass: compute a provisional gross (earned_basic + fixed earnings + %_of_basic earnings)
+            # used later for %_of_gross calculations
+            pre_gross = _earned_basic
+            for comp in components:
+                if comp.component_type == 'earning':
+                    if comp.calculation_type == 'fixed':
+                        pre_gross += comp.amount
+                    elif comp.calculation_type == 'percentage_of_basic':
+                        pre_gross += (_earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+
+            # Second pass: full component calculation
+            for comp in components:
+                if comp.component_type == 'earning':
+                    if comp.calculation_type == 'fixed':
+                        earnings += comp.amount
+                    elif comp.calculation_type == 'percentage_of_basic':
+                        earnings += (_earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+                    elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
+                        earnings += (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+                elif comp.component_type == 'deduction':
+                    if comp.calculation_type == 'fixed':
+                        deductions += comp.amount
+                    elif comp.calculation_type == 'percentage_of_basic':
+                        deductions += (_earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+                    elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
+                        deductions += (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
+
+        gross_salary = (_earned_basic + earnings).quantize(Decimal('0.01'))
+        total_deductions_val = deductions.quantize(Decimal('0.01'))
+
+        # Absent deduction is no longer needed — salary is already pro-rated based on present days
         _absent_deduction = Decimal('0')
-        if _duty_days > 0 and _absent_days > 0:
-            _per_day = (basic / Decimal(str(_duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            _absent_deduction = (_per_day * _absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
         # ── Overtime calculation ──
         _total_ot_hours = Decimal('0')
@@ -5268,14 +5280,26 @@ def payslip_download(request, pk):
     basic_salary = salary_record.basic_salary if salary_record else (employee.base_salary or Decimal('0'))
     components = salary_record.components.filter(is_active=True) if salary_record else []
 
-    # Two-pass calculation (matches generate_payslips logic)
-    pre_gross = basic_salary
+    # ── Pro-rate salary based on payable (present) days ──
+    per_day_salary = Decimal('0')
+    if duty_days > 0:
+        per_day_salary = (basic_salary / Decimal(str(duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5'))
+    payable_days = min(payable_days, Decimal(str(duty_days)))  # cap at duty days
+    if duty_days > 0:
+        earned_basic = (basic_salary / Decimal(str(duty_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        earned_basic = min(earned_basic, basic_salary)  # cap at full basic for rounding safety
+    else:
+        earned_basic = Decimal('0')
+
+    # Two-pass calculation (matches generate_payslips logic — uses earned_basic)
+    pre_gross = earned_basic
     for comp in components:
         if comp.component_type == 'earning':
             if comp.calculation_type == 'fixed':
                 pre_gross += comp.amount
             elif comp.calculation_type == 'percentage_of_basic':
-                pre_gross += (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                pre_gross += (earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     earnings_list = []
     deductions_list = []
@@ -5286,7 +5310,7 @@ def payslip_download(request, pk):
         if comp.calculation_type == 'fixed':
             calc_amount = comp.amount
         elif comp.calculation_type == 'percentage_of_basic':
-            calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            calc_amount = (earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
             calc_amount = (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         else:
@@ -5299,16 +5323,10 @@ def payslip_download(request, pk):
             deductions_list.append({'name': comp.name, 'amount': calc_amount})
             total_deductions_comp += calc_amount
 
-    total_earnings = basic_salary + total_earnings_comp
+    total_earnings = earned_basic + total_earnings_comp
 
-    # ── Attendance-based absent deduction (per_day_salary = basic_salary / duty_days) ──
-    per_day_salary = Decimal('0')
-    if duty_days > 0:
-        per_day_salary = (basic_salary / Decimal(str(duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
+    # Absent deduction is no longer separate — salary is pro-rated based on present days
     deduction_amount = Decimal('0')
-    if absent_days > 0:
-        deduction_amount = (per_day_salary * absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # ── Overtime ──
     overtime_rate = Decimal('0')
@@ -5415,17 +5433,10 @@ def payslip_download(request, pk):
             })
     total_deductions_comp += advance_deduction
 
-    # ── Add absent deduction row to deductions_list if absent_days > 0 ──
-    if absent_days > 0 and deduction_amount > 0:
-        deductions_list.append({
-            'name': f'Absent Deduction ({int(absent_days)} days \u00d7 Rs. {per_day_salary}/day)',
-            'amount': deduction_amount,
-        })
-
     # ── Net salary ──
-    # salary_comp_deductions = only salary component deductions (before advance/absent)
+    # salary_comp_deductions = only salary component deductions (before advance)
     salary_comp_deductions = total_deductions_comp - advance_deduction  # remove advance that was added
-    total_deductions = salary_comp_deductions + advance_deduction + deduction_amount
+    total_deductions = salary_comp_deductions + advance_deduction
     net_salary = max(total_earnings + overtime_amount - total_deductions, Decimal('0'))
 
     # ── Build side-by-side salary rows ──
@@ -5455,6 +5466,8 @@ def payslip_download(request, pk):
         'pay_period_end': run.pay_period_end,
         'pay_date': run.pay_date,
         'basic_salary': basic_salary,
+        'earned_basic': earned_basic,
+        'payable_days': payable_days,
         # Attendance data from records
         'total_days': total_days,
         'weekend_days': weekend_days,
@@ -5607,14 +5620,26 @@ def payroll_calculation(request, pk):
     basic_salary = salary.basic_salary
     components = salary.components.all()
 
-    # Two-pass calculation for %_of_gross
-    pre_gross = basic_salary
+    # ── Pro-rate salary based on payable (present) days ──
+    per_day_salary = Decimal('0')
+    if duty_days > 0:
+        per_day_salary = (basic_salary / Decimal(str(duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5'))
+    payable_days = min(payable_days, Decimal(str(duty_days)))  # cap at duty days
+    if duty_days > 0:
+        earned_basic = (basic_salary / Decimal(str(duty_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        earned_basic = min(earned_basic, basic_salary)  # cap at full basic for rounding safety
+    else:
+        earned_basic = Decimal('0')
+
+    # Two-pass calculation for %_of_gross (uses earned_basic)
+    pre_gross = earned_basic
     for comp in components:
         if comp.component_type == 'earning':
             if comp.calculation_type == 'fixed':
                 pre_gross += comp.amount
             elif comp.calculation_type == 'percentage_of_basic':
-                pre_gross += (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                pre_gross += (earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # Calculate component amounts
     earnings = []
@@ -5626,7 +5651,7 @@ def payroll_calculation(request, pk):
         if comp.calculation_type == 'fixed':
             calc_amount = comp.amount
         elif comp.calculation_type == 'percentage_of_basic':
-            calc_amount = (basic_salary * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            calc_amount = (earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
             calc_amount = (pre_gross * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         else:
@@ -5639,17 +5664,10 @@ def payroll_calculation(request, pk):
             deductions.append({'name': comp.name, 'amount': calc_amount})
             total_deductions_amount += calc_amount
 
-    total_earnings = basic_salary + total_earnings_components
+    total_earnings = earned_basic + total_earnings_components
 
-    # Per day salary = basic_salary / duty_days
-    per_day_salary = Decimal('0')
-    if duty_days > 0:
-        per_day_salary = (basic_salary / Decimal(str(duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-    # Absent deduction
+    # Absent deduction is no longer separate — salary is pro-rated based on present days
     deduction_amount = Decimal('0')
-    if absent_days > 0:
-        deduction_amount = (per_day_salary * absent_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # Overtime calculation
     overtime_rate = Decimal('0')
@@ -5721,8 +5739,8 @@ def payroll_calculation(request, pk):
     # salary_comp_deductions = component deductions only (without advance)
     salary_comp_deductions = total_deductions_amount - advance_deduction
 
-    # Net salary = total_earnings - salary_component_deductions - absent_deduction - advance_deduction + overtime
-    net_salary = total_earnings - total_deductions_amount - deduction_amount + overtime_amount
+    # Net salary = total_earnings - all_deductions + overtime
+    net_salary = total_earnings - total_deductions_amount + overtime_amount
 
     # Build available months for the dropdown (last 12 months)
     available_months = []
@@ -5762,6 +5780,8 @@ def payroll_calculation(request, pk):
         'total_overtime_hours': total_overtime_hours,
         # Salary
         'basic_salary': basic_salary,
+        'earned_basic': earned_basic,
+        'payable_days': payable_days,
         'per_day_salary': per_day_salary,
         'deduction_amount': deduction_amount,
         'net_salary': net_salary,

@@ -482,8 +482,8 @@
             </thead>
             <tbody>
                 <tr>
-                    <td class="earn-col" style="font-weight:600">Basic Salary</td>
-                    <td class="amt-col" style="color:#1d4ed8">{{ basic_salary|floatformat:2 }}</td>
+                    <td class="earn-col" style="font-weight:600">Basic Salary &mdash; {{ payable_days }}/{{ duty_days }} payable days</td>
+                    <td class="amt-col" style="color:#1d4ed8">{{ earned_basic|floatformat:2 }}</td>
                     <td class="ded-col empty-cell">&nbsp;</td>
                     <td class="amt-col2 empty-cell">&nbsp;</td>
                 </tr>
