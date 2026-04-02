@@ -5325,9 +5325,6 @@ def payslip_download(request, pk):
 
     total_earnings = earned_basic + total_earnings_comp
 
-    # Absent deduction is no longer separate — salary is pro-rated based on present days
-    deduction_amount = Decimal('0')
-
     # ── Overtime ──
     overtime_rate = Decimal('0')
     try:
@@ -5407,7 +5404,7 @@ def payslip_download(request, pk):
         # generate_payslips (official run) or payslip_sync_advances (explicit user action).
         if _stored_adv == Decimal('0'):
             _new_net = max(
-                slip.gross_salary + overtime_amount - (total_deductions_comp + advance_deduction) - deduction_amount,
+                slip.gross_salary + overtime_amount - (total_deductions_comp + advance_deduction),
                 Decimal('0'),
             )
             Payslip.objects.filter(pk=slip.pk).update(
@@ -5482,7 +5479,6 @@ def payslip_download(request, pk):
         'total_overtime_hours': total_overtime_hours,
         # Salary calculation
         'per_day_salary': per_day_salary,
-        'deduction_amount': deduction_amount,
         'earnings_list': earnings_list,
         'deductions_list': deductions_list,
         'salary_rows': salary_rows,
@@ -5572,7 +5568,6 @@ def payroll_calculation(request, pk):
     absent_days = Decimal('0')
     on_leave_days = Decimal('0')
     total_overtime_hours = Decimal('0')
-    total_working_hours = Decimal('0')
 
     attendance_data = []
     for rec in attendance_records:
@@ -5599,13 +5594,11 @@ def payroll_calculation(request, pk):
             status_tags.append(('Early', 'early'))
 
         total_overtime_hours += rec.overtime_hours
-        total_working_hours += rec.working_hours
 
         attendance_data.append({
             'date': rec.date,
             'clock_in': rec.clock_in,
             'clock_out': rec.clock_out,
-            'total_hours': str(rec.working_hours) + 'h',
             'overtime': overtime_display,
             'status_tags': status_tags,
         })
@@ -5618,7 +5611,7 @@ def payroll_calculation(request, pk):
 
     # Salary calculations
     basic_salary = salary.basic_salary
-    components = salary.components.all()
+    components = salary.components.filter(is_active=True)
 
     # ── Pro-rate salary based on payable (present) days ──
     per_day_salary = Decimal('0')
@@ -5665,9 +5658,6 @@ def payroll_calculation(request, pk):
             total_deductions_amount += calc_amount
 
     total_earnings = earned_basic + total_earnings_components
-
-    # Absent deduction is no longer separate — salary is pro-rated based on present days
-    deduction_amount = Decimal('0')
 
     # Overtime calculation
     overtime_rate = Decimal('0')
@@ -5740,7 +5730,7 @@ def payroll_calculation(request, pk):
     salary_comp_deductions = total_deductions_amount - advance_deduction
 
     # Net salary = total_earnings - all_deductions + overtime
-    net_salary = total_earnings - total_deductions_amount + overtime_amount
+    net_salary = max(total_earnings - total_deductions_amount + overtime_amount, Decimal('0'))
 
     # Build available months for the dropdown (last 12 months)
     available_months = []
@@ -5783,7 +5773,6 @@ def payroll_calculation(request, pk):
         'earned_basic': earned_basic,
         'payable_days': payable_days,
         'per_day_salary': per_day_salary,
-        'deduction_amount': deduction_amount,
         'net_salary': net_salary,
         'earnings': earnings,
         'deductions': deductions,

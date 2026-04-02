@@ -553,12 +553,6 @@
                 <span class="tc-value">Rs. {{ advance_deduction|floatformat:2 }}</span>
             </div>
             {% endif %}
-            {% if deduction_amount and deduction_amount > 0 %}
-            <div class="total-card deductions-card">
-                <span class="tc-label">&#8722; Absent Deduction</span>
-                <span class="tc-value">Rs. {{ deduction_amount|floatformat:2 }}</span>
-            </div>
-            {% endif %}
             {% if overtime_amount and overtime_amount > 0 %}
             <div class="total-card overtime-card">
                 <span class="tc-label">&#43; Overtime Pay</span>
@@ -576,7 +570,6 @@
                     {% if overtime_amount and overtime_amount > 0 %} + Rs.{{ overtime_amount|floatformat:2 }} (OT){% endif %}
                     &minus; Rs.{{ salary_comp_deductions|floatformat:2 }} (Components)
                     {% if advance_deduction and advance_deduction > 0 %} &minus; Rs.{{ advance_deduction|floatformat:2 }} (Advance){% endif %}
-                    {% if deduction_amount and deduction_amount > 0 %} &minus; Rs.{{ deduction_amount|floatformat:2 }} (Absent){% endif %}
                     = Rs.{{ net_salary|floatformat:2 }}
                 </div>
             </div>

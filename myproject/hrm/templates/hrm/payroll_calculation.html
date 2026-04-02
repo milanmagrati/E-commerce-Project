@@ -519,7 +519,6 @@
                         <th>Date</th>
                         <th>Clock In</th>
                         <th>Clock Out</th>
-                        <th>Total Hours</th>
                         <th>Overtime</th>
                         <th>Status</th>
                     </tr>
@@ -530,7 +529,6 @@
                         <td>{{ rec.date|date:"Y-m-d" }}</td>
                         <td class="pc-clock-in">{{ rec.clock_in|time:"H:i"|default:"-" }}</td>
                         <td class="pc-clock-out">{{ rec.clock_out|time:"H:i"|default:"-" }}</td>
-                        <td>{{ rec.total_hours }}</td>
                         <td>{% if rec.overtime != '-' %}<span class="pc-overtime-val">{{ rec.overtime }}</span>{% else %}-{% endif %}</td>
                         <td>
                             {% for tag_label, tag_class in rec.status_tags %}
@@ -540,7 +538,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6" style="text-align:center;color:#9ca3af;padding:40px;">No attendance records found for {{ month_name }} {{ year }}.</td>
+                        <td colspan="5" style="text-align:center;color:#9ca3af;padding:40px;">No attendance records found for {{ month_name }} {{ year }}.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
