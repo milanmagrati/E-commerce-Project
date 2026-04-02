@@ -1026,6 +1026,12 @@
                                 <option value="0">Inactive</option>
                             </select>
                         </div>
+                        <div class="col-md-6" style="display:flex;align-items:end;">
+                            <label class="es-comp-item" style="margin:0;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;background:#fafafa;width:100%;cursor:pointer;">
+                                <input type="checkbox" name="pay_ot" value="1" id="addPayOt" style="accent-color:#7c3aed;width:16px;height:16px;">
+                                <span style="font-weight:600;color:#374151;font-size:13.5px;"><i class="fas fa-clock" style="color:#7c3aed;margin-right:5px;"></i>Pay Overtime (OT)</span>
+                            </label>
+                        </div>
                         <div class="col-12">
                             <label class="es-modal-label">Notes</label>
                             <textarea name="notes" class="form-control" rows="2" placeholder="Optional notes about this salary assignment..."></textarea>
@@ -1132,6 +1138,12 @@
                                 <option value="1">Active</option>
                                 <option value="0">Inactive</option>
                             </select>
+                        </div>
+                        <div class="col-md-6" style="display:flex;align-items:end;">
+                            <label class="es-comp-item" style="margin:0;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;background:#fafafa;width:100%;cursor:pointer;">
+                                <input type="checkbox" name="pay_ot" value="1" id="editPayOt" style="accent-color:#7c3aed;width:16px;height:16px;">
+                                <span style="font-weight:600;color:#374151;font-size:13.5px;"><i class="fas fa-clock" style="color:#7c3aed;margin-right:5px;"></i>Pay Overtime (OT)</span>
+                            </label>
                         </div>
                         <div class="col-12">
                             <label class="es-modal-label">Notes</label>
@@ -1287,6 +1299,10 @@ function viewSalary(id) {
                     <div class="es-view-value">${s.is_active ? '<span class="es-status es-status-active"><span class="es-status-dot"></span> Active</span>' : '<span class="es-status es-status-inactive"><span class="es-status-dot"></span> Inactive</span>'}</div>
                 </div>
                 <div class="es-view-row">
+                    <div class="es-view-label">Pay Overtime</div>
+                    <div class="es-view-value">${s.pay_ot ? '<span style="color:#7c3aed;font-weight:600;"><i class="fas fa-check-circle"></i> Yes — OT included in payroll</span>' : '<span style="color:#9ca3af;"><i class="fas fa-times-circle"></i> No — OT not included</span>'}</div>
+                </div>
+                <div class="es-view-row">
                     <div class="es-view-label">Components</div>
                     <div class="es-view-value"><div class="es-comp-badges">${compHtml}</div></div>
                 </div>
@@ -1318,6 +1334,7 @@ function editSalary(id) {
             document.getElementById('editEffectiveDate').value = s.effective_date;
             document.getElementById('editNotes').value = s.notes;
             document.getElementById('editIsActive').value = s.is_active ? '1' : '0';
+            document.getElementById('editPayOt').checked = s.pay_ot;
 
             // Reset and set component checkboxes
             document.querySelectorAll('.edit-comp-check').forEach(cb => cb.checked = false);

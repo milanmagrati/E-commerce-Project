@@ -4422,12 +4422,14 @@ def employee_salary_list(request):
             return redirect('hrm:employee_salary_list')
 
         is_active_val = request.POST.get('is_active', '1') == '1'
+        pay_ot_val = request.POST.get('pay_ot') == '1'
         salary = EmployeeSalary.objects.create(
             employee=employee,
             basic_salary=basic_salary_val,
             effective_date=effective_date,
             notes=notes,
             is_active=is_active_val,
+            pay_ot=pay_ot_val,
         )
         if component_ids:
             salary.components.set(component_ids)
@@ -4496,6 +4498,7 @@ def employee_salary_detail(request, pk):
             'effective_date': salary.effective_date.isoformat(),
             'notes': salary.notes,
             'is_active': salary.is_active,
+            'pay_ot': salary.pay_ot,
             'created_at': salary.created_at.strftime('%b %d, %Y %I:%M %p'),
             'components': [
                 {
@@ -4539,11 +4542,13 @@ def employee_salary_update(request, pk):
             return JsonResponse({'success': False, 'error': 'Invalid basic salary value.'})
 
         is_active_val = request.POST.get('is_active', '1') == '1'
+        pay_ot_val = request.POST.get('pay_ot') == '1'
         salary.employee = employee
         salary.basic_salary = basic_salary_val
         salary.effective_date = effective_date
         salary.notes = notes
         salary.is_active = is_active_val
+        salary.pay_ot = pay_ot_val
         salary.save()
         salary.components.set(component_ids)
         return JsonResponse({'success': True, 'message': f'Salary for "{employee.full_name}" updated successfully!'})
@@ -4813,9 +4818,11 @@ def generate_payslips(request, pk):
 
         # 2. Count total_days, weekend_days, holiday_days → derive duty_days
         _total_days = (_last_day - _first_day).days + 1
+        # Only count weekends/holidays up to today — future days not yet earned
+        _count_up_to = min(_last_day, dt_date.today())
         _weekend_count = 0
         _d = _first_day
-        while _d <= _last_day:
+        while _d <= _count_up_to:
             if _d.weekday() in _weekend_day_nums:
                 _weekend_count += 1
             _d += timedelta(days=1)
@@ -4823,14 +4830,26 @@ def generate_payslips(request, pk):
         _records = AttendanceRecord.objects.filter(
             employee=employee, date__year=_year, date__month=_month
         )
-        _holiday_count = _records.filter(is_holiday=True).values('date').distinct().count()
+        # Count holidays excluding those on weekends (weekends already paid)
+        _holiday_count = sum(
+            1 for d in _records.filter(is_holiday=True).values_list('date', flat=True).distinct()
+            if d.weekday() not in _weekend_day_nums and d <= _count_up_to
+        )
         _duty_days = max(_total_days - _weekend_count - _holiday_count, 0)
 
         # 3. Count present, paid-leave, half-day from attendance records
+        #    Skip records on weekend dates (already paid) and holiday dates (already paid)
+        _holiday_dates = set(
+            _records.filter(is_holiday=True).values_list('date', flat=True).distinct()
+        )
         _present_days = Decimal('0')
         _paid_leave_days = Decimal('0')
         _half_days_count = Decimal('0')
         for _rec in _records:
+            if _rec.date.weekday() in _weekend_day_nums:
+                continue  # weekend — already counted as paid
+            if _rec.date in _holiday_dates:
+                continue  # holiday — already counted as paid
             if _rec.status in ('present', 'late'):
                 _present_days += 1
             elif _rec.status == 'half_day':
@@ -4838,11 +4857,12 @@ def generate_payslips(request, pk):
             elif _rec.status == 'on_leave':
                 _paid_leave_days += 1
 
-        # 4. Pro-rate salary based on payable (present) days
-        _payable_days = _present_days + _paid_leave_days + (_half_days_count * Decimal('0.5'))
-        _payable_days = min(_payable_days, Decimal(str(_duty_days)))  # cap at duty days
-        if _duty_days > 0:
-            _earned_basic = (basic / Decimal(str(_duty_days)) * _payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        # 4. Pro-rate salary based on payable days
+        # Weekends + public holidays are paid; only absent days reduce salary
+        _payable_days = _present_days + _paid_leave_days + (_half_days_count * Decimal('0.5')) + Decimal(str(_weekend_count)) + Decimal(str(_holiday_count))
+        _payable_days = min(_payable_days, Decimal(str(_total_days)))  # cap at total days in month
+        if _total_days > 0:
+            _earned_basic = (basic / Decimal(str(_total_days)) * _payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             _earned_basic = min(_earned_basic, basic)  # cap at full basic for rounding safety
         else:
             _earned_basic = Decimal('0')
@@ -4886,23 +4906,26 @@ def generate_payslips(request, pk):
         # Absent deduction is no longer needed — salary is already pro-rated based on present days
         _absent_deduction = Decimal('0')
 
-        # ── Overtime calculation ──
+        # ── Overtime calculation (only if pay_ot is enabled on salary record) ──
         _total_ot_hours = Decimal('0')
-        for _rec in _records:
-            _total_ot_hours += _rec.overtime_hours
+        _overtime_amount = Decimal('0')
         _ot_rate = Decimal('0')
-        _emp_policy = employee.attendance_policy
-        if _emp_policy and _emp_policy.is_active:
-            _ot_rate = _emp_policy.overtime_rate
-        else:
-            from .models import AttendancePolicy as _AttPolicy
-            try:
-                _fallback = _AttPolicy.objects.filter(is_active=True).first()
-                if _fallback:
-                    _ot_rate = _fallback.overtime_rate
-            except Exception:
-                pass
-        _overtime_amount = (_total_ot_hours * _ot_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        _pay_ot = salary_record.pay_ot if salary_record else False
+        if _pay_ot:
+            for _rec in _records:
+                _total_ot_hours += _rec.overtime_hours
+            _emp_policy = employee.attendance_policy
+            if _emp_policy and _emp_policy.is_active:
+                _ot_rate = _emp_policy.overtime_rate
+            else:
+                from .models import AttendancePolicy as _AttPolicy
+                try:
+                    _fallback = _AttPolicy.objects.filter(is_active=True).first()
+                    if _fallback:
+                        _ot_rate = _fallback.overtime_rate
+                except Exception:
+                    pass
+            _overtime_amount = (_total_ot_hours * _ot_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
         # Calculate advance payment deductions for salary-deduction mode advances
         from .models import AdvancePayment as _AdvPay
@@ -5252,9 +5275,11 @@ def payslip_download(request, pk):
     } if _emp_weekend else {5, 6}  # default Sat+Sun if no assignment
 
     # ── Count weekend days for this employee ──
+    # Cap at today so future weekends don't inflate payable_days for the current month
+    _count_up_to = min(last_day, dt_date.today())
     weekend_days = 0
     d = first_day
-    while d <= last_day:
+    while d <= _count_up_to:
         if d.weekday() in _weekend_day_nums:
             weekend_days += 1
         d += timedelta(days=1)
@@ -5267,7 +5292,18 @@ def payslip_download(request, pk):
     on_leave_days = Decimal('0')
     total_overtime_hours = Decimal('0')
 
+    # Collect holiday dates for skip logic
+    _holiday_dates = set(
+        records.filter(is_holiday=True).values_list('date', flat=True).distinct()
+    )
+
     for rec in records:
+        # Skip weekend records (already paid) and holiday records (already paid)
+        _is_weekend = rec.date.weekday() in _weekend_day_nums
+        _is_holiday = rec.date in _holiday_dates
+        total_overtime_hours += rec.overtime_hours
+        if _is_weekend or _is_holiday:
+            continue
         if rec.status in ('present', 'late'):
             present_days += 1
         elif rec.status == 'absent':
@@ -5276,10 +5312,12 @@ def payslip_download(request, pk):
             half_days += 1
         elif rec.status == 'on_leave':
             on_leave_days += 1
-        total_overtime_hours += rec.overtime_hours
 
-    # ── Holiday days from attendance records ──
-    holiday_days = records.filter(is_holiday=True).values('date').distinct().count()
+    # ── Holiday days from attendance records (exclude holidays on weekends, cap at today) ──
+    holiday_days = sum(
+        1 for d in records.filter(is_holiday=True).values_list('date', flat=True).distinct()
+        if d.weekday() not in _weekend_day_nums and d <= _count_up_to
+    )
 
     # ── Derived attendance values ──
     paid_leave_days = on_leave_days
@@ -5297,14 +5335,15 @@ def payslip_download(request, pk):
     basic_salary = salary_record.basic_salary if salary_record else (employee.base_salary or Decimal('0'))
     components = salary_record.components.filter(is_active=True) if salary_record else []
 
-    # ── Pro-rate salary based on payable (present) days ──
+    # ── Pro-rate salary based on payable days ──
+    # Weekends + public holidays = paid; only absent days reduce salary
     per_day_salary = Decimal('0')
-    if duty_days > 0:
-        per_day_salary = (basic_salary / Decimal(str(duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5'))
-    payable_days = min(payable_days, Decimal(str(duty_days)))  # cap at duty days
-    if duty_days > 0:
-        earned_basic = (basic_salary / Decimal(str(duty_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if total_days > 0:
+        per_day_salary = (basic_salary / Decimal(str(total_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5')) + Decimal(str(weekend_days)) + Decimal(str(holiday_days))
+    payable_days = min(payable_days, Decimal(str(total_days)))  # cap at total days in month
+    if total_days > 0:
+        earned_basic = (basic_salary / Decimal(str(total_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         earned_basic = min(earned_basic, basic_salary)  # cap at full basic for rounding safety
     else:
         earned_basic = Decimal('0')
@@ -5342,20 +5381,25 @@ def payslip_download(request, pk):
 
     total_earnings = earned_basic + total_earnings_comp
 
-    # ── Overtime ──
+    # ── Overtime (only if pay_ot is enabled on salary record) ──
     overtime_rate = Decimal('0')
-    _emp_policy = employee.attendance_policy
-    if _emp_policy and _emp_policy.is_active:
-        overtime_rate = _emp_policy.overtime_rate
+    overtime_amount = Decimal('0')
+    _pay_ot = salary_record.pay_ot if salary_record else False
+    if _pay_ot:
+        _emp_policy = employee.attendance_policy
+        if _emp_policy and _emp_policy.is_active:
+            overtime_rate = _emp_policy.overtime_rate
+        else:
+            try:
+                _fallback_policy = AttendancePolicy.objects.filter(is_active=True).first()
+                if _fallback_policy:
+                    overtime_rate = _fallback_policy.overtime_rate
+            except Exception:
+                pass
+        ot_hours = total_overtime_hours
+        overtime_amount = (ot_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     else:
-        try:
-            _fallback_policy = AttendancePolicy.objects.filter(is_active=True).first()
-            if _fallback_policy:
-                overtime_rate = _fallback_policy.overtime_rate
-        except Exception:
-            pass
-    ot_hours = total_overtime_hours
-    overtime_amount = (ot_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        ot_hours = total_overtime_hours
 
     # ── Advance Payment Deduction ──
     from .models import AdvancePayment as _AdvPay
@@ -5508,6 +5552,7 @@ def payslip_download(request, pk):
         'salary_comp_deductions': salary_comp_deductions,
         'overtime_amount': overtime_amount,
         'overtime_rate': overtime_rate,
+        'pay_ot': _pay_ot,
         'advance_deduction': advance_deduction,
         'all_advances': all_employee_advances,
         'net_salary': net_salary,
@@ -5563,9 +5608,11 @@ def payroll_calculation(request, pk):
         if d.lower() in _DAY_MAP
     } if _emp_weekend else {5, 6}
 
+    # Cap at today so future weekends don't inflate payable_days for the current month
+    _count_up_to = min(last_day, dt_date.today())
     weekend_days = 0
     d = first_day
-    while d <= last_day:
+    while d <= _count_up_to:
         if d.weekday() in _weekend_day_nums:
             weekend_days += 1
         d += timedelta(days=1)
@@ -5577,13 +5624,16 @@ def payroll_calculation(request, pk):
         date__month=month
     ).order_by('date')
 
-    # Holiday days from attendance records
-    holiday_days = attendance_records.filter(is_holiday=True).values('date').distinct().count()
+    # Holiday days from attendance records (exclude holidays on weekends)
+    _holiday_dates = set(
+        attendance_records.filter(is_holiday=True).values_list('date', flat=True).distinct()
+    )
+    holiday_days = sum(1 for d in _holiday_dates if d.weekday() not in _weekend_day_nums and d <= _count_up_to)
 
     # duty_days = total_days - weekend_days - holiday_days
     duty_days = max(total_days - weekend_days - holiday_days, 0)
 
-    # Attendance summary
+    # Attendance summary — skip weekend & holiday records (already paid)
     present_days = Decimal('0')
     half_days = Decimal('0')
     absent_days = Decimal('0')
@@ -5592,24 +5642,31 @@ def payroll_calculation(request, pk):
 
     attendance_data = []
     for rec in attendance_records:
+        _is_weekend = rec.date.weekday() in _weekend_day_nums
+        _is_holiday = rec.date in _holiday_dates
         overtime_display = str(rec.overtime_hours) + 'h' if rec.overtime_hours > 0 else '-'
         status_tags = []
         if rec.status == 'present':
             status_tags.append(('Present', 'present'))
-            present_days += 1
+            if not _is_weekend and not _is_holiday:
+                present_days += 1
         elif rec.status == 'absent':
             status_tags.append(('Absent', 'absent'))
-            absent_days += 1
+            if not _is_weekend and not _is_holiday:
+                absent_days += 1
         elif rec.status == 'late':
             status_tags.append(('Present', 'present'))
             status_tags.append(('Late', 'late'))
-            present_days += 1
+            if not _is_weekend and not _is_holiday:
+                present_days += 1
         elif rec.status == 'half_day':
             status_tags.append(('Half Day', 'half_day'))
-            half_days += 1
+            if not _is_weekend and not _is_holiday:
+                half_days += 1
         elif rec.status == 'on_leave':
             status_tags.append(('On Leave', 'on_leave'))
-            on_leave_days += 1
+            if not _is_weekend and not _is_holiday:
+                on_leave_days += 1
 
         if rec.is_early_departure and rec.status not in ('absent', 'on_leave', 'half_day'):
             status_tags.append(('Early', 'early'))
@@ -5634,14 +5691,15 @@ def payroll_calculation(request, pk):
     basic_salary = salary.basic_salary
     components = salary.components.filter(is_active=True)
 
-    # ── Pro-rate salary based on payable (present) days ──
+    # ── Pro-rate salary based on payable days ──
+    # Weekends + public holidays = paid; only absent days reduce salary
     per_day_salary = Decimal('0')
-    if duty_days > 0:
-        per_day_salary = (basic_salary / Decimal(str(duty_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5'))
-    payable_days = min(payable_days, Decimal(str(duty_days)))  # cap at duty days
-    if duty_days > 0:
-        earned_basic = (basic_salary / Decimal(str(duty_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if total_days > 0:
+        per_day_salary = (basic_salary / Decimal(str(total_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5')) + Decimal(str(weekend_days)) + Decimal(str(holiday_days))
+    payable_days = min(payable_days, Decimal(str(total_days)))  # cap at total days in month
+    if total_days > 0:
+        earned_basic = (basic_salary / Decimal(str(total_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         earned_basic = min(earned_basic, basic_salary)  # cap at full basic for rounding safety
     else:
         earned_basic = Decimal('0')
@@ -5680,19 +5738,22 @@ def payroll_calculation(request, pk):
 
     total_earnings = earned_basic + total_earnings_components
 
-    # Overtime calculation
+    # Overtime calculation (only if pay_ot is enabled on salary record)
     overtime_rate = Decimal('0')
-    _emp_policy = employee.attendance_policy
-    if _emp_policy and _emp_policy.is_active:
-        overtime_rate = _emp_policy.overtime_rate
-    else:
-        try:
-            _fallback_policy = AttendancePolicy.objects.filter(is_active=True).first()
-            if _fallback_policy:
-                overtime_rate = _fallback_policy.overtime_rate
-        except Exception:
-            pass
-    overtime_amount = (total_overtime_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    overtime_amount = Decimal('0')
+    _pay_ot = salary.pay_ot if salary else False
+    if _pay_ot:
+        _emp_policy = employee.attendance_policy
+        if _emp_policy and _emp_policy.is_active:
+            overtime_rate = _emp_policy.overtime_rate
+        else:
+            try:
+                _fallback_policy = AttendancePolicy.objects.filter(is_active=True).first()
+                if _fallback_policy:
+                    overtime_rate = _fallback_policy.overtime_rate
+            except Exception:
+                pass
+        overtime_amount = (total_overtime_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # Advance payment deduction
     from .models import AdvancePayment as _AdvPay, Payslip as _Payslip
@@ -5806,6 +5867,7 @@ def payroll_calculation(request, pk):
         'salary_comp_deductions': salary_comp_deductions,
         'overtime_amount': overtime_amount,
         'overtime_rate': overtime_rate,
+        'pay_ot': _pay_ot,
         'advance_deduction': advance_deduction,
         'attendance_data': attendance_data,
         'available_months': available_months,

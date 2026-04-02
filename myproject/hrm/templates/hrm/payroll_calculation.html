@@ -555,11 +555,11 @@
             <span class="pc-final-value green">Rs. {{ basic_salary|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Per Day Salary (Rs. {{ basic_salary|floatformat:2 }} / {{ duty_days }} duty days)</span>
+            <span class="pc-final-label">Per Day Salary (Rs. {{ basic_salary|floatformat:2 }} / {{ total_days }} days)</span>
             <span class="pc-final-value purple">Rs. {{ per_day_salary|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Earned Basic ({{ payable_days }}/{{ duty_days }} payable days)</span>
+            <span class="pc-final-label">Earned Basic ({{ payable_days }}/{{ total_days }} payable days)</span>
             <span class="pc-final-value green">Rs. {{ earned_basic|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
@@ -576,10 +576,12 @@
             <span class="pc-final-value red">- Rs. {{ advance_deduction|floatformat:2 }}</span>
         </div>
         {% endif %}
+        {% if pay_ot and overtime_amount and overtime_amount > 0 %}
         <div class="pc-final-row">
             <span class="pc-final-label">Overtime Amount</span>
             <span class="pc-final-value green">+ Rs. {{ overtime_amount|floatformat:2 }}</span>
         </div>
+        {% endif %}
 
         <div class="pc-net-salary-row">
             <span class="pc-net-salary-label">Net Salary</span>
@@ -589,7 +591,7 @@
         <!-- Formula Box -->
         <div class="pc-formula-box">
             <div class="pc-formula-title">Calculation Formula:</div>
-            <p class="pc-formula-text">Net Salary = Total Earnings &minus; Salary Components{% if advance_deduction and advance_deduction > 0 %} &minus; Advance Deduction{% endif %} + Overtime</p>
+            <p class="pc-formula-text">Net Salary = Total Earnings &minus; Salary Components{% if advance_deduction and advance_deduction > 0 %} &minus; Advance Deduction{% endif %}{% if pay_ot and overtime_amount and overtime_amount > 0 %} + Overtime{% endif %}</p>
             <div class="pc-formula-breakdown">
                 <strong>Breakdown:</strong>
                 <div class="pc-fb-item">&middot; Total Earnings (Earned Basic + Allowances): Rs. {{ total_earnings|floatformat:2 }}</div>
@@ -597,7 +599,9 @@
                 {% if advance_deduction and advance_deduction > 0 %}
                 <div class="pc-fb-item">&middot; Advance Payment Deduction: Rs. {{ advance_deduction|floatformat:2 }}</div>
                 {% endif %}
+                {% if pay_ot and overtime_amount and overtime_amount > 0 %}
                 <div class="pc-fb-item">&middot; Overtime: Rs. {{ overtime_amount|floatformat:2 }}</div>
+                {% endif %}
                 <div class="pc-formula-total">Net Salary: Rs. {{ net_salary|floatformat:2 }}</div>
             </div>
         </div>
