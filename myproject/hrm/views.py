@@ -4818,24 +4818,31 @@ def generate_payslips(request, pk):
 
         # 2. Count total_days, weekend_days, holiday_days → derive duty_days
         _total_days = (_last_day - _first_day).days + 1
-        # Only count weekends/holidays up to today — future days not yet earned
+        # Full-month weekend count (for duty_days display) + capped count (for payable_days)
         _count_up_to = min(_last_day, dt_date.today())
-        _weekend_count = 0
+        _weekend_count_full = 0   # full month — for duty_days
+        _weekend_count = 0        # capped at today — for payable_days
         _d = _first_day
-        while _d <= _count_up_to:
+        while _d <= _last_day:
             if _d.weekday() in _weekend_day_nums:
-                _weekend_count += 1
+                _weekend_count_full += 1
+                if _d <= _count_up_to:
+                    _weekend_count += 1
             _d += timedelta(days=1)
 
         _records = AttendanceRecord.objects.filter(
             employee=employee, date__year=_year, date__month=_month
         )
-        # Count holidays excluding those on weekends (weekends already paid)
+        # Count holidays excluding those on weekends
+        _holiday_count_full = sum(
+            1 for d in _records.filter(is_holiday=True).values_list('date', flat=True).distinct()
+            if d.weekday() not in _weekend_day_nums
+        )  # full month — for duty_days
         _holiday_count = sum(
             1 for d in _records.filter(is_holiday=True).values_list('date', flat=True).distinct()
             if d.weekday() not in _weekend_day_nums and d <= _count_up_to
-        )
-        _duty_days = max(_total_days - _weekend_count - _holiday_count, 0)
+        )  # capped at today — for payable_days
+        _duty_days = max(_total_days - _weekend_count_full - _holiday_count_full, 0)
 
         # 3. Count present, paid-leave, half-day from attendance records
         #    Skip records on weekend dates (already paid) and holiday dates (already paid)
@@ -5275,13 +5282,16 @@ def payslip_download(request, pk):
     } if _emp_weekend else {5, 6}  # default Sat+Sun if no assignment
 
     # ── Count weekend days for this employee ──
-    # Cap at today so future weekends don't inflate payable_days for the current month
+    # Full-month count for display & duty_days; capped count for payable_days
     _count_up_to = min(last_day, dt_date.today())
-    weekend_days = 0
+    weekend_days = 0          # full month — for display & duty_days
+    _earned_weekends = 0      # capped at today — for payable_days
     d = first_day
-    while d <= _count_up_to:
+    while d <= last_day:
         if d.weekday() in _weekend_day_nums:
             weekend_days += 1
+            if d <= _count_up_to:
+                _earned_weekends += 1
         d += timedelta(days=1)
 
     # ── Attendance records ──
@@ -5313,11 +5323,15 @@ def payslip_download(request, pk):
         elif rec.status == 'on_leave':
             on_leave_days += 1
 
-    # ── Holiday days from attendance records (exclude holidays on weekends, cap at today) ──
+    # ── Holiday days from attendance records (exclude holidays on weekends) ──
     holiday_days = sum(
         1 for d in records.filter(is_holiday=True).values_list('date', flat=True).distinct()
+        if d.weekday() not in _weekend_day_nums
+    )  # full month — for display & duty_days
+    _earned_holidays = sum(
+        1 for d in records.filter(is_holiday=True).values_list('date', flat=True).distinct()
         if d.weekday() not in _weekend_day_nums and d <= _count_up_to
-    )
+    )  # capped at today — for payable_days
 
     # ── Derived attendance values ──
     paid_leave_days = on_leave_days
@@ -5340,7 +5354,7 @@ def payslip_download(request, pk):
     per_day_salary = Decimal('0')
     if total_days > 0:
         per_day_salary = (basic_salary / Decimal(str(total_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5')) + Decimal(str(weekend_days)) + Decimal(str(holiday_days))
+    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5')) + Decimal(str(_earned_weekends)) + Decimal(str(_earned_holidays))
     payable_days = min(payable_days, Decimal(str(total_days)))  # cap at total days in month
     if total_days > 0:
         earned_basic = (basic_salary / Decimal(str(total_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -5608,13 +5622,16 @@ def payroll_calculation(request, pk):
         if d.lower() in _DAY_MAP
     } if _emp_weekend else {5, 6}
 
-    # Cap at today so future weekends don't inflate payable_days for the current month
+    # Count weekends for the full month (display & duty_days) and up-to-today (payable_days)
     _count_up_to = min(last_day, dt_date.today())
-    weekend_days = 0
+    weekend_days = 0          # full month — for display & duty_days
+    _earned_weekends = 0      # capped at today — for payable_days
     d = first_day
-    while d <= _count_up_to:
+    while d <= last_day:
         if d.weekday() in _weekend_day_nums:
             weekend_days += 1
+            if d <= _count_up_to:
+                _earned_weekends += 1
         d += timedelta(days=1)
 
     # Fetch attendance records for this employee in the selected month
@@ -5628,9 +5645,10 @@ def payroll_calculation(request, pk):
     _holiday_dates = set(
         attendance_records.filter(is_holiday=True).values_list('date', flat=True).distinct()
     )
-    holiday_days = sum(1 for d in _holiday_dates if d.weekday() not in _weekend_day_nums and d <= _count_up_to)
+    holiday_days = sum(1 for d in _holiday_dates if d.weekday() not in _weekend_day_nums)  # full month
+    _earned_holidays = sum(1 for d in _holiday_dates if d.weekday() not in _weekend_day_nums and d <= _count_up_to)
 
-    # duty_days = total_days - weekend_days - holiday_days
+    # duty_days = total_days - weekend_days - holiday_days (full month)
     duty_days = max(total_days - weekend_days - holiday_days, 0)
 
     # Attendance summary — skip weekend & holiday records (already paid)
@@ -5696,7 +5714,7 @@ def payroll_calculation(request, pk):
     per_day_salary = Decimal('0')
     if total_days > 0:
         per_day_salary = (basic_salary / Decimal(str(total_days))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5')) + Decimal(str(weekend_days)) + Decimal(str(holiday_days))
+    payable_days = present_days + paid_leave_days + (half_days * Decimal('0.5')) + Decimal(str(_earned_weekends)) + Decimal(str(_earned_holidays))
     payable_days = min(payable_days, Decimal(str(total_days)))  # cap at total days in month
     if total_days > 0:
         earned_basic = (basic_salary / Decimal(str(total_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
