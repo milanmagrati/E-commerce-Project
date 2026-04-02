@@ -6147,6 +6147,19 @@ def attendance_report(request):
         )
         _emp_ov_count = {item['employee__id']: item['ov_count'] for item in _ov_qs}
 
+    # ── Pre-compute elapsed holiday counts (for absent = past days only) ────
+    today = dt_date.today()
+    _yesterday = today - timedelta(days=1)
+    _elapsed_to = min(_eff_to, _yesterday) if _eff_from and _eff_to else None
+    _elapsed_holidays_per_emp = {}
+    if _eff_from and _elapsed_to and _eff_from <= _yesterday and _elapsed_to < _eff_to:
+        _eh_qs = (
+            qs.filter(is_holiday=True, date__lte=_elapsed_to)
+            .values('employee__id')
+            .annotate(cnt=Count('id'))
+        )
+        _elapsed_holidays_per_emp = {item['employee__id']: item['cnt'] for item in _eh_qs}
+
     # ── Build full summary ───────────────────────────────────────────────────
     emp_summary = []
     dept_grouped = {}  # For grouping by department
@@ -6169,6 +6182,20 @@ def attendance_report(request):
         else:
             # No date range: duty = total records - holidays
             duty_days = max(e['total'] - holiday_days, 0)
+
+        # Elapsed duty days (absent counts only fully-completed past days, today excluded)
+        if _eff_from and _eff_to:
+            if _eff_from > _yesterday:
+                elapsed_duty_days = 0
+            elif _eff_to <= _yesterday:
+                elapsed_duty_days = duty_days
+            else:
+                elapsed_total = (_elapsed_to - _eff_from).days + 1
+                elapsed_weekend = _count_weekend_days_for_employee(emp_id, _eff_from, _elapsed_to)
+                elapsed_holiday = _elapsed_holidays_per_emp.get(emp_id, 0)
+                elapsed_duty_days = max(elapsed_total - elapsed_weekend - elapsed_holiday, 0)
+        else:
+            elapsed_duty_days = duty_days
 
         # Present days (including late + half_day)
         present_days = worked
@@ -6215,7 +6242,7 @@ def attendance_report(request):
             'present_days': present_days,
             'present_on_holiday': present_on_holiday,
             'present_on_off': present_on_off,
-            'absent': e['absent'],
+            'absent': max(elapsed_duty_days - (present_days - present_on_off) - e['on_leave'], 0),
             'misc_days': e['half_day'],
             'leave_paid': emp_leave['paid'],
             'leave_unpaid': emp_leave['unpaid'],
@@ -6423,6 +6450,26 @@ def employee_period_attendance(request):
     # Duty days = total - weekend - holiday (avoid double-count)
     duty_days = max(total_days_in_range - weekend_day_count - holiday_days_count, 0)
 
+    # Elapsed duty days (absent counts only fully-completed past days, today excluded)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    if date_from > yesterday:
+        elapsed_duty_days = 0
+    elif date_to <= yesterday:
+        elapsed_duty_days = duty_days
+    else:
+        elapsed_to = min(date_to, yesterday)
+        elapsed_total = (elapsed_to - date_from).days + 1
+        elapsed_weekend = 0
+        _d = date_from
+        while _d <= elapsed_to:
+            if _d.weekday() in weekend_nums:
+                elapsed_weekend += 1
+            _d += timedelta(days=1)
+        yesterday_iso = yesterday.isoformat()
+        elapsed_holiday = sum(1 for r in records_data if r['is_holiday'] and r['date'] <= yesterday_iso)
+        elapsed_duty_days = max(elapsed_total - elapsed_weekend - elapsed_holiday, 0)
+
     # Present count (present + late + half_day)
     present_cnt = sc.get('present', 0) + sc.get('late', 0) + sc.get('half_day', 0)
 
@@ -6494,13 +6541,15 @@ def employee_period_attendance(request):
         'date_to_display': date_to.strftime('%d %b %Y'),
         'month_first_weekday': date_from.weekday() if period == 'month' else None,
         'month_days': month_days,
+        'weekend_nums': sorted(weekend_nums),
+        'holiday_dates': [r['date'] for r in records_data if r['is_holiday']],
         'records': records_data,
         'records_by_date': {r['date']: r for r in records_data},
         'summary': {
             'total': len(records_data),
             'working_days': _wd_count,
             'present': sc.get('present', 0),
-            'absent': sc.get('absent', 0),
+            'absent': max(elapsed_duty_days - (present_cnt - present_on_off) - sc.get('on_leave', 0), 0),
             'late': sc.get('late', 0),
             'half_day': sc.get('half_day', 0),
             'on_leave': sc.get('on_leave', 0),
@@ -6520,7 +6569,7 @@ def employee_period_attendance(request):
             'present_days': present_cnt,
             'present_on_holiday': present_on_holiday,
             'present_on_off': present_on_off,
-            'absent_days': sc.get('absent', 0),
+            'absent_days': max(elapsed_duty_days - (present_cnt - present_on_off) - sc.get('on_leave', 0), 0),
             'misc_days': sc.get('half_day', 0),
             'leave_paid': leave_paid,
             'leave_unpaid': leave_unpaid,
@@ -6670,6 +6719,18 @@ def employee_summary_report_ajax(request):
         _ov_qs = att_qs.filter(notes__icontains='office visit').values('employee_id').annotate(ov_count=Count('id'))
         _emp_ov_count = {item['employee_id']: item['ov_count'] for item in _ov_qs}
 
+    # Pre-compute today/yesterday and elapsed holidays to avoid N+1 queries
+    _today = date.today()
+    _yesterday = _today - timedelta(days=1)
+    _elapsed_holiday_per_emp = {}
+    if _eff_from <= _yesterday < _eff_to:  # range straddles today
+        _eh_agg = (
+            att_qs.filter(is_holiday=True, date__lte=_yesterday)
+            .values('employee_id')
+            .annotate(cnt=Count('id'))
+        )
+        _elapsed_holiday_per_emp = {item['employee_id']: item['cnt'] for item in _eh_agg}
+
     # Build rows — iterate over ALL employees
     dept_grouped = {}
     for emp in emp_qs:
@@ -6680,6 +6741,17 @@ def employee_summary_report_ajax(request):
         holiday_days = a.get('holiday_days_count', 0)
         total_days = total_days_in_range
         duty_days = max(total_days - weekend_days - holiday_days, 0)
+
+        # Elapsed duty days (absent counts only fully-completed past days, today excluded)
+        if _eff_from > _yesterday:
+            elapsed_duty_days = 0
+        elif _eff_to <= _yesterday:
+            elapsed_duty_days = duty_days
+        else:
+            _el_total = (_yesterday - _eff_from).days + 1
+            _el_weekend, _ = _count_weekend_days(emp_id, _eff_from, _yesterday)
+            _el_holiday = _elapsed_holiday_per_emp.get(emp_id, 0)
+            elapsed_duty_days = max(_el_total - _el_weekend - _el_holiday, 0)
 
         # Present on off
         present_on_off = 0
@@ -6705,7 +6777,7 @@ def employee_summary_report_ajax(request):
             'present_days': present_cnt,
             'present_on_holiday': a.get('holiday_present', 0),
             'present_on_off': present_on_off,
-            'absent': a.get('absent', 0),
+            'absent': max(elapsed_duty_days - (present_cnt - present_on_off) - a.get('on_leave', 0), 0),
             'misc_days': a.get('half_day', 0),
             'leave_paid': emp_leave['paid'],
             'leave_unpaid': emp_leave['unpaid'],

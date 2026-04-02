@@ -374,12 +374,16 @@
     .pv-status-half_day { background:#eff6ff; }
     .pv-status-on_leave { background:#f5f3ff; }
     .pv-status-no_record{ background:#fff; }
+    .pv-status-weekend  { background:#fdf2f8; }
+    .pv-status-holiday  { background:#fefce8; }
     /* Status chip colors */
     .cal-chip-present  { background:#16a34a; color:#fff; }
     .cal-chip-absent   { background:#dc2626; color:#fff; }
     .cal-chip-late     { background:#d97706; color:#fff; }
     .cal-chip-half_day { background:#2563eb; color:#fff; }
     .cal-chip-on_leave { background:#7c3aed; color:#fff; }
+    .cal-chip-weekend  { background:#db2777; color:#fff; }
+    .cal-chip-holiday  { background:#ca8a04; color:#fff; }
     /* Calendar legend */
     .pv-cal-legend {
         display:flex; flex-wrap:wrap; align-items:center; gap:8px;
@@ -1003,10 +1007,16 @@ function setPeriod(p) {
 }
 
 // ── Initialise date inputs to today / current month ───────────────────────────
+function _localDateStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
 (function initDates() {
     const today = new Date();
-    const ymd = today.toISOString().slice(0,10);
-    const ym  = today.toISOString().slice(0,7);
+    const ymd = _localDateStr(today);
+    const ym  = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     document.getElementById('pvDateInput').value  = ymd;
     document.getElementById('pvMonthInput').value = ym;
 })();
@@ -1019,9 +1029,9 @@ function generatePeriodView() {
     let refDate;
     if (period === 'month') {
         const mv = document.getElementById('pvMonthInput').value;
-        refDate = mv ? mv + '-01' : new Date().toISOString().slice(0,10);
+        refDate = mv ? mv + '-01' : _localDateStr(new Date());
     } else {
-        refDate = document.getElementById('pvDateInput').value || new Date().toISOString().slice(0,10);
+        refDate = document.getElementById('pvDateInput').value || _localDateStr(new Date());
     }
     document.getElementById('pvResults').style.display = 'none';
     document.getElementById('pvLoading').style.display  = 'block';
@@ -1046,6 +1056,8 @@ const STATUS_COLORS = {
     late:     { bg:'#fef3c7', color:'#92400e', dot:'#f59e0b', label:'Late'    },
     half_day: { bg:'#dbeafe', color:'#1e3a8a', dot:'#3b82f6', label:'Half Day'},
     on_leave: { bg:'#ede9fe', color:'#4c1d95', dot:'#8b5cf6', label:'On Leave'},
+    weekend:  { bg:'#fdf2f8', color:'#9d174d', dot:'#db2777', label:'Weekend' },
+    holiday:  { bg:'#fefce8', color:'#854d0e', dot:'#ca8a04', label:'Holiday' },
 };
 function statusBadge(status, label) {
     const s = STATUS_COLORS[status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8' };
@@ -1157,7 +1169,34 @@ function renderSummaryBar(data) {
 // ── Day view ──────────────────────────────────────────────────────────────────
 function renderDayView(data) {
     const rec = data.records[0];
-    if (!rec) return `<div class="p-4 text-center text-muted"><i class="fas fa-calendar-times mb-2" style="font-size:2rem;opacity:0.3;display:block;"></i>No attendance record for this day.</div>`;
+    if (!rec) {
+        const weekendNums = data.weekend_nums || [5, 6];
+        const holidayDates = new Set(data.holiday_dates || []);
+        const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
+        const [_ry, _rm, _rd] = data.date_from.split('-').map(Number);
+        const refDate = new Date(_ry, _rm - 1, _rd); // local midnight, no timezone shift
+        const iso = data.date_from;
+        const jsDay = refDate.getDay();
+        const isWknd = jsWeekendDays.has(jsDay);
+        const isHol = holidayDates.has(iso);
+        const today = _localDateStr(new Date());
+        const isPast = iso < today;
+        let dayLabel = 'No Record';
+        let sc = { bg:'#f1f5f9', color:'#64748b' };
+        let icon = 'fa-calendar-times';
+        if (isWknd) { dayLabel = 'Weekend'; sc = STATUS_COLORS.weekend; icon = 'fa-couch'; }
+        else if (isHol) { dayLabel = 'Holiday'; sc = STATUS_COLORS.holiday; icon = 'fa-umbrella-beach'; }
+        else if (isPast) { dayLabel = 'Absent'; sc = STATUS_COLORS.absent; icon = 'fa-user-times'; }
+        const dayName = refDate.toLocaleDateString('en-US', {weekday:'long'});
+        const dateDisp = refDate.toLocaleDateString('en-US', {day:'2-digit', month:'short', year:'numeric'});
+        return `<div class="p-4 text-center">
+            <div style="background:${sc.bg};border-radius:12px;padding:2rem;display:inline-block;">
+                <i class="fas ${icon} mb-2" style="font-size:2rem;color:${sc.color};display:block;"></i>
+                <div style="font-weight:700;font-size:1rem;color:${sc.color};">${dayLabel}</div>
+                <div style="font-size:0.82rem;color:#64748b;margin-top:4px;">${dayName}, ${dateDisp}</div>
+            </div>
+        </div>`;
+    }
     const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#64748b' };
     let flags = '';
     if (rec.is_late_arrival)   flags += `<span class="badge bg-warning text-dark me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-chevron-right fa-xs me-1"></i>Late Arrival</span>`;
@@ -1205,14 +1244,23 @@ function renderDayView(data) {
 function renderWeekView(data) {
     const byDate = {};
     data.records.forEach(r => { byDate[r.date] = r; });
-    const start = new Date(data.date_from);
+    const [_wy, _wm, _wd] = data.date_from.split('-').map(Number);
+    const start = new Date(_wy, _wm - 1, _wd); // local midnight, no timezone shift
+    const today = _localDateStr(new Date());
+    const weekendNums = data.weekend_nums || [5, 6];
+    const holidayDates = new Set(data.holiday_dates || []);
+    const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
+    const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     let cards = '';
     for (let i = 0; i < 7; i++) {
         const d = new Date(start); d.setDate(start.getDate() + i);
-        const iso = d.toISOString().slice(0,10);
+        const iso = _localDateStr(d);
         const rec = byDate[iso];
-        const today = new Date().toISOString().slice(0,10);
         const isTd = iso === today;
+        const isPast = iso < today;
+        const jsDay = d.getDay();
+        const isWknd = jsWeekendDays.has(jsDay);
+        const isHol = holidayDates.has(iso);
         const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
         if (rec) {
             const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
@@ -1222,6 +1270,27 @@ function renderWeekView(data) {
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${esc(rec.status_display)}</span>
                 <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
                 <div style="font-size:0.68rem;font-weight:700;color:${sc.color};margin-top:2px;">${rec.working_hours ? rec.working_hours + 'h' : ''}</div>
+            </div>`;
+        } else if (isWknd) {
+            const sc = STATUS_COLORS.weekend;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Weekend</span>
+            </div>`;
+        } else if (isHol) {
+            const sc = STATUS_COLORS.holiday;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Holiday</span>
+            </div>`;
+        } else if (isPast) {
+            const sc = STATUS_COLORS.absent;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Absent</span>
             </div>`;
         } else {
             cards += `<div class="pv-week-day no-record${isTd ? ' today' : ''}">
@@ -1242,11 +1311,13 @@ function renderMonthView(data) {
     const month     = data.month; // 1-indexed
     const totalDays = data.month_days;
     const firstDay  = data.month_first_weekday; // 0=Mon
-    const today     = new Date().toISOString().slice(0,10);
+    const today     = _localDateStr(new Date());
+    const weekendNums = data.weekend_nums || [5, 6]; // Python weekday nums (0=Mon..6=Sun)
+    const holidayDates = new Set(data.holiday_dates || []);
 
     // Sun-first layout: Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
     const dayHdrs = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) =>
-        `<div class="pv-cal-head${i===6?' wknd':''}">${d}</div>`).join('');
+        `<div class="pv-cal-head${i===0||i===6?' wknd':''}">${d}</div>`).join('');
 
     // Build month nav data attribute so prev/next can re-query
     const prevMonth = month === 1 ? `${year-1}-12` : `${year}-${String(month-1).padStart(2,'0')}`;
@@ -1254,6 +1325,9 @@ function renderMonthView(data) {
 
     // Convert Python weekday (0=Mon…6=Sun) to Sun-first column (Sun→0, Mon→1…Sat→6)
     const firstDaySun = (firstDay + 1) % 7;
+
+    // Convert Python weekend_nums to JS Date.getDay() format (0=Sun..6=Sat)
+    const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
 
     let cells = '';
     for (let i = 0; i < firstDaySun; i++) cells += '<div class="pv-cal-cell empty"></div>';
@@ -1263,7 +1337,10 @@ function renderMonthView(data) {
         const rec = byDate[iso];
         const isTd = iso === today;
         const col = (firstDaySun + d - 1) % 7;  // 0=Sun, 6=Sat
-        const isWknd = col === 6; // only Saturday gets weekend styling
+        const jsDay = new Date(year, month - 1, d).getDay(); // 0=Sun..6=Sat
+        const isWknd = jsWeekendDays.has(jsDay);
+        const isHol = holidayDates.has(iso);
+        const isPast = iso < today;
         if (rec) {
             const ci  = rec.clock_in  || '–';
             const wh  = rec.working_hours ? rec.working_hours + 'h' : '';
@@ -1284,19 +1361,36 @@ function renderMonthView(data) {
                 <span class="cal-time"><i class="fas fa-sign-in-alt fa-xs me-1"></i>${ci}</span>
                 ${wh ? `<span class="cal-hours">${wh}</span>` : ''}
             </div>`;
+        } else if (isWknd) {
+            cells += `<div class="pv-cal-cell pv-status-weekend wknd-cell${isTd?' today':''}">
+                <span class="cal-num" style="color:#9d174d;">${d}</span>
+                <span class="cal-status-chip cal-chip-weekend">Weekend</span>
+            </div>`;
+        } else if (isHol) {
+            cells += `<div class="pv-cal-cell pv-status-holiday${isTd?' today':''}">
+                <span class="cal-num" style="color:#854d0e;">${d}</span>
+                <span class="cal-status-chip cal-chip-holiday">Holiday</span>
+            </div>`;
+        } else if (isPast) {
+            cells += `<div class="pv-cal-cell pv-status-absent${isTd?' today':''}">
+                <span class="cal-num">${d}</span>
+                <span class="cal-status-chip cal-chip-absent">Absent</span>
+            </div>`;
         } else {
-            cells += `<div class="pv-cal-cell pv-status-no_record${isTd?' today':''}${isWknd?' wknd-cell':''}">
+            cells += `<div class="pv-cal-cell pv-status-no_record${isTd?' today':''}">
                 <span class="cal-num">${d}</span>
             </div>`;
         }
     }
 
     // Legend
-    const legend = Object.entries(STATUS_COLORS).map(([k,v]) =>
-        `<span class="pv-cal-legend-item">
-            <span class="pv-cal-legend-dot" style="background:${v.bg};border-color:${v.dot};"></span>
-            ${v.label}
-        </span>`).join('');
+    const legendItems = [
+        ...Object.entries(STATUS_COLORS).map(([k,v]) =>
+            `<span class="pv-cal-legend-item">
+                <span class="pv-cal-legend-dot" style="background:${v.bg};border-color:${v.dot};"></span>
+                ${v.label}
+            </span>`)
+    ];
 
     return `
     <div class="pv-cal-wrap">
@@ -1312,7 +1406,7 @@ function renderMonthView(data) {
             </button>
         </div>
         <div class="pv-cal-grid mb-3">${dayHdrs}${cells}</div>
-        <div class="pv-cal-legend">${legend}</div>
+        <div class="pv-cal-legend">${legendItems.join('')}</div>
     </div>`;
 }
 
@@ -1580,7 +1674,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 function esSetQuickPeriod(period) {
     const today = new Date();
-    const fmt = d => d.toISOString().slice(0, 10);
+    const fmt = d => _localDateStr(d);
     const customWrap = document.getElementById('esCustomDateWrap');
     // Toggle active state
     document.querySelectorAll('.es-qbtn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
