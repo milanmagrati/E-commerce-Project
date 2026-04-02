@@ -2801,6 +2801,10 @@ def _sync_biometric_to_attendance():
 
         if shift and clock_in_time and clock_out_time:
             from datetime import datetime, timedelta
+            # Subtract break duration to get effective working hours
+            break_hrs = (shift.break_duration or 0) / 60.0
+            if working_hours > break_hrs:
+                working_hours = round(working_hours - break_hrs, 2)
             shift_hours = float(shift.working_hours)
             if working_hours > shift_hours:
                 overtime_hours = round(working_hours - shift_hours, 2)
@@ -2947,6 +2951,10 @@ def attendance_create(request):
             working_hours = round(diff, 2)
 
             if shift:
+                # Subtract break duration to get effective working hours
+                break_hrs = (shift.break_duration or 0) / 60.0
+                if working_hours > break_hrs:
+                    working_hours = round(working_hours - break_hrs, 2)
                 shift_hours = float(shift.working_hours)
                 if working_hours > shift_hours:
                     overtime_hours = round(working_hours - shift_hours, 2)
@@ -3030,6 +3038,10 @@ def attendance_update(request, pk):
             working_hours = round(diff, 2)
 
             if shift:
+                # Subtract break duration to get effective working hours
+                break_hrs = (shift.break_duration or 0) / 60.0
+                if working_hours > break_hrs:
+                    working_hours = round(working_hours - break_hrs, 2)
                 shift_hours = float(shift.working_hours)
                 if working_hours > shift_hours:
                     overtime_hours = round(working_hours - shift_hours, 2)
@@ -4745,7 +4757,7 @@ def generate_payslips(request, pk):
     except (ValueError, TypeError):
         pass
 
-    employees = Employee.objects.filter(employee_status='active')
+    employees = Employee.objects.select_related('attendance_policy').filter(employee_status='active')
     if employee_ids:
         employee_ids = [int(x) for x in employee_ids if str(x).isdigit()]
         employees = employees.filter(pk__in=employee_ids)
@@ -4878,14 +4890,18 @@ def generate_payslips(request, pk):
         _total_ot_hours = Decimal('0')
         for _rec in _records:
             _total_ot_hours += _rec.overtime_hours
-        from .models import AttendancePolicy as _AttPolicy
         _ot_rate = Decimal('0')
-        try:
-            _policy = _AttPolicy.objects.filter(is_active=True).first()
-            if _policy:
-                _ot_rate = _policy.overtime_rate
-        except Exception:
-            pass
+        _emp_policy = employee.attendance_policy
+        if _emp_policy and _emp_policy.is_active:
+            _ot_rate = _emp_policy.overtime_rate
+        else:
+            from .models import AttendancePolicy as _AttPolicy
+            try:
+                _fallback = _AttPolicy.objects.filter(is_active=True).first()
+                if _fallback:
+                    _ot_rate = _fallback.overtime_rate
+            except Exception:
+                pass
         _overtime_amount = (_total_ot_hours * _ot_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
         # Calculate advance payment deductions for salary-deduction mode advances
@@ -5193,7 +5209,8 @@ def payslip_download(request, pk):
 
     try:
         slip = Payslip.objects.select_related(
-            'employee', 'employee__department', 'employee__designation', 'payroll_run'
+            'employee', 'employee__department', 'employee__designation',
+            'employee__attendance_policy', 'payroll_run'
         ).get(pk=pk)
     except Payslip.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
@@ -5327,12 +5344,16 @@ def payslip_download(request, pk):
 
     # ── Overtime ──
     overtime_rate = Decimal('0')
-    try:
-        policy = AttendancePolicy.objects.filter(is_active=True).first()
-        if policy:
-            overtime_rate = policy.overtime_rate
-    except Exception:
-        pass
+    _emp_policy = employee.attendance_policy
+    if _emp_policy and _emp_policy.is_active:
+        overtime_rate = _emp_policy.overtime_rate
+    else:
+        try:
+            _fallback_policy = AttendancePolicy.objects.filter(is_active=True).first()
+            if _fallback_policy:
+                overtime_rate = _fallback_policy.overtime_rate
+        except Exception:
+            pass
     ot_hours = total_overtime_hours
     overtime_amount = (ot_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
@@ -5503,7 +5524,7 @@ def payroll_calculation(request, pk):
     from decimal import Decimal, ROUND_HALF_UP
 
     salary = get_object_or_404(
-        EmployeeSalary.objects.select_related('employee').prefetch_related('components'),
+        EmployeeSalary.objects.select_related('employee', 'employee__attendance_policy').prefetch_related('components'),
         id=pk
     )
     employee = salary.employee
@@ -5661,12 +5682,16 @@ def payroll_calculation(request, pk):
 
     # Overtime calculation
     overtime_rate = Decimal('0')
-    try:
-        policy = AttendancePolicy.objects.filter(is_active=True).first()
-        if policy:
-            overtime_rate = policy.overtime_rate
-    except Exception:
-        pass
+    _emp_policy = employee.attendance_policy
+    if _emp_policy and _emp_policy.is_active:
+        overtime_rate = _emp_policy.overtime_rate
+    else:
+        try:
+            _fallback_policy = AttendancePolicy.objects.filter(is_active=True).first()
+            if _fallback_policy:
+                overtime_rate = _fallback_policy.overtime_rate
+        except Exception:
+            pass
     overtime_amount = (total_overtime_hours * overtime_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # Advance payment deduction
