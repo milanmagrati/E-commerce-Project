@@ -2931,7 +2931,36 @@ def order_create(request):
 
                 # ✅ FIXED: Generate unique order number with race condition handling
                 from .decimal_utils import safe_decimal
-                order_number = _get_next_order_number()  # FIXED: uses max T-number, instant, no loops
+                try:
+                    max_attempts = 100
+                    order_number = None
+                    
+                    for attempt in range(max_attempts):
+                        # Get the highest order number currently in database
+                        last_order = Order.objects.filter(
+                            order_number__startswith='T'
+                        ).order_by('-order_number').first()
+                        
+                        if last_order:
+                            try:
+                                n = int(last_order.order_number[1:])  # Extract number after 'T'
+                                order_number = f"T{n+1:03d}"
+                            except (ValueError, AttributeError, IndexError):
+                                order_number = f"T{Order.objects.filter(order_number__startswith='T').count() + 1:03d}"
+                        else:
+                            order_number = "T001"
+                        
+                        # Check if this order number already exists
+                        if not Order.objects.filter(order_number=order_number).exists():
+                            break
+                    
+                    if not order_number:
+                        order_number = _get_next_order_number()  # finds T1217 → returns T1218
+                        
+                except Exception as e:
+                    logger.error(f"Error generating order number: {str(e)}")
+                    order_number = _get_next_order_number()  # finds T1217 → returns T1218
+
                 order_items_json = request.POST.get("order_items") or "[]"
                 try:
                     cart = json.loads(order_items_json)
