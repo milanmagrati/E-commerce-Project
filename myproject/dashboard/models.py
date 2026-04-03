@@ -411,6 +411,15 @@ class Order(models.Model):
     pnd_destination_branch = models.CharField(max_length=100, blank=True)
     pnd_tracking_url = models.URLField(max_length=500, blank=True)
 
+    # Selected API config for logistics
+    api_config = models.ForeignKey(
+        'LogisticsAPIConfig',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='orders',
+        help_text='Selected logistics API configuration'
+    )
 
     def calculate_totals(self):
         """Calculate order totals based on items, discount, shipping, and tax"""
@@ -1097,6 +1106,49 @@ class DispatchItem(models.Model):
         if self.order:
             return self.order.customer_name
         return "N/A"
+
+
+# ✅ Logistics API Configuration Model for dynamic API key management
+class LogisticsAPIConfig(models.Model):
+    LOGISTICS_PROVIDER_CHOICES = [
+        ('ncm', 'NCM Logistics'),
+        ('pick_and_drop', 'Pick and Drop'),
+        ('other', 'Other'),
+    ]
+    
+    api_name = models.CharField(max_length=100, help_text="Descriptive name for this API configuration")
+    logistics_provider = models.CharField(max_length=50, choices=LOGISTICS_PROVIDER_CHOICES)
+    api_key = models.CharField(max_length=500)
+    api_secret = models.CharField(max_length=500, blank=True, default='', help_text="API Secret (required for Pick and Drop)")
+    base_urls = models.JSONField(default=list, help_text="List of base URLs for this API")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='api_configs'
+    )
+    
+    class Meta:
+        ordering = ['logistics_provider', 'api_name']
+        verbose_name = 'Logistics API Configuration'
+        verbose_name_plural = 'Logistics API Configurations'
+    
+    def __str__(self):
+        status = "Active" if self.is_active else "Inactive"
+        return f"{self.api_name} ({self.get_logistics_provider_display()}) - {status}"
+    
+    def get_primary_base_url(self):
+        """Return the first base URL or empty string"""
+        if self.base_urls and len(self.base_urls) > 0:
+            return self.base_urls[0].rstrip('/')
+        return ''
+    
+    def get_base_url_v2(self):
+        """Return the second base URL (v2) or empty string"""
+        if self.base_urls and len(self.base_urls) > 1:
+            return self.base_urls[1].rstrip('/')
+        return ''
 
 
 # ✅ NEW: Setup/Configuration Model for dynamic dropdowns

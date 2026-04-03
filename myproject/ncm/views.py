@@ -199,8 +199,15 @@ def create_ncm_shipment(request, order_id):
             messages.error(request, '❌ Please select a destination branch')
             return redirect('order_detail', order_id=order_id)
         
+        # Use dynamic API config if provided, otherwise use default module-level service
+        api_config_id = request.POST.get('api_config_id', '') or None
+        if api_config_id:
+            active_service = NCMService(api_config_id=int(api_config_id))
+        else:
+            active_service = ncm_service
+        
         # Validate branch exists in NCM
-        branches_result = ncm_service.get_branches()
+        branches_result = active_service.get_branches()
         if branches_result['success']:
             available_codes = {(b.get('code', b.get('Code', '')).upper()) for b in branches_result['data']}
             available_names = {(b.get('name', b.get('Name', '')).upper()) for b in branches_result['data']}
@@ -257,7 +264,7 @@ def create_ncm_shipment(request, order_id):
         logger.info(f"NCM Data: name={ncm_data['name']}, phone={ncm_data['phone']}, address={ncm_data['address']}, fbranch={from_branch}, branch={to_branch_name}")
         logger.info(f"Full NCM Data: {ncm_data}")
         
-        result = ncm_service.create_order(ncm_data)
+        result = active_service.create_order(ncm_data)
         
         if result['success']:
             ncm_order_id = result['data'].get('orderid')

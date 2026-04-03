@@ -274,5 +274,13 @@ urlpatterns = [
     path('targets/<int:target_id>/edit/', views.edit_target, name='edit_target'),
     path('targets/<int:target_id>/delete/', views.delete_target, name='delete_target'),
     path('api/targets/<int:target_id>/', views.api_target_detail, name='api_target_detail'),
+
+    # ==================== API INTEGRATION ====================
+    path('api-integration/', views.api_integration_list, name='api_integration_list'),
+    path('api-integration/add/', views.api_integration_add, name='api_integration_add'),
+    path('api-integration/<int:config_id>/edit/', views.api_integration_edit, name='api_integration_edit'),
+    path('api-integration/<int:config_id>/delete/', views.api_integration_delete, name='api_integration_delete'),
+    path('api-integration/<int:config_id>/toggle/', views.api_integration_toggle, name='api_integration_toggle'),
+    path('api-integration/<int:config_id>/get/', views.api_integration_get, name='api_integration_get'),
 ]
     

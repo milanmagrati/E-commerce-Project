@@ -17,7 +17,7 @@ from .models import (Product, Order, OrderItem, Category, Customer,
                      ProductVariation, ProductImage, ProductVariantOption,
                      OrderActivityLog, StockIn, City, StockInItem, Setup,
                      Supplier, Purchase, PurchaseItem, SupplierPayment,
-                     BundleComponent, ProductPurchase)
+                     BundleComponent, ProductPurchase, LogisticsAPIConfig)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -2763,6 +2763,8 @@ def orders_list(request):
         'payment_setups': payment_setups,
         'order_status_bulk_options': order_status_bulk_options,
         'payment_status_bulk_options': payment_status_bulk_options,
+        'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
+        'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
     }
     
     return render(request, 'orders_list.html', context)
@@ -3269,6 +3271,23 @@ def order_detail(request, order_id):
                     order.logistics = new_logistics_input
                     changes_made.append('Logistics Provider')
                 
+                # ====== UPDATE API CONFIG (from logistics modal) ======
+                selected_api_config_id = request.POST.get('selected_api_config_id', '').strip()
+                old_api_config = order.api_config
+                if selected_api_config_id:
+                    try:
+                        new_config = LogisticsAPIConfig.objects.get(id=int(selected_api_config_id), is_active=True)
+                        if order.api_config != new_config:
+                            order.api_config = new_config
+                            changes_made.append('API Config')
+                    except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
+                        pass
+                elif new_logistics_input and not selected_api_config_id:
+                    # Provider changed without API config — clear old config
+                    if order.api_config:
+                        order.api_config = None
+                        changes_made.append('API Config')
+                
                 # ====== SET DELIVERED TIMESTAMP ======
                 if order.order_status == 'delivered' and old_order_status != 'delivered':
                     order.delivered_at = timezone.now()
@@ -3490,6 +3509,10 @@ def order_detail(request, order_id):
         'status_setups': status_setups,
         'payment_setups': payment_setups,
         'payment_status_setups': payment_status_setups,
+
+        # API Integration configs for logistics
+        'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
+        'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
     }
     
     # Calculate percentage for progress bar
@@ -6237,6 +6260,7 @@ def orders_bulk_ncm_send(request):
     order_ids = request.POST.getlist('order_ids')
     from_branch = request.POST.get('from_branch', 'TINKUNE')
     delivery_type = request.POST.get('delivery_type', 'Door2Door')
+    api_config_id = request.POST.get('api_config_id', '') or None
 
     # Handle auto_set_logistics checkbox
     auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
@@ -6292,7 +6316,8 @@ def orders_bulk_ncm_send(request):
             order=order,
             from_branch=from_branch,
             delivery_type=delivery_type,
-            default_weight=default_weight
+            default_weight=default_weight,
+            api_config_id=api_config_id
         )
 
         if result['status'] == 'success':
@@ -6372,10 +6397,10 @@ def orders_bulk_ncm_send(request):
 
     return redirect('orders_list')
 
-def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0):
+def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0, api_config_id=None):
     """
     Helper function to send a single order to NCM API.
-    ✅ FIXED: Improved bulk send support with robust vendor ID handling
+    Supports dynamic API configuration via api_config_id.
     """
     try:
         # Validate order has required fields
@@ -6389,13 +6414,24 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         if order.ncm_order_id:
             return {'status': 'skipped', 'message': 'Already has NCM ID'}
 
-        # 1. Get API Credentials from Settings
-        # Ensure NCM_API_BASE_URL does NOT have a trailing slash
-        base_url = getattr(settings, 'NCM_API_BASE_URL', '').rstrip('/')
-        api_key = getattr(settings, 'NCM_API_KEY', '')
+        # 1. Get API Credentials - from dynamic config or settings fallback
+        base_url = ''
+        api_key = ''
+        
+        if api_config_id:
+            try:
+                api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='ncm')
+                base_url = api_config.get_primary_base_url()
+                api_key = api_config.api_key
+            except LogisticsAPIConfig.DoesNotExist:
+                return {'status': 'error', 'message': 'Selected API configuration not found or inactive'}
+        
+        if not base_url or not api_key:
+            base_url = getattr(settings, 'NCM_API_BASE_URL', '').rstrip('/')
+            api_key = getattr(settings, 'NCM_API_KEY', '')
 
         if not base_url or not api_key:
-            return {'status': 'error', 'message': 'NCM configuration missing in settings.py'}
+            return {'status': 'error', 'message': 'NCM configuration missing. Add an API config in Settings > API Integration.'}
 
         # Construct Endpoint (use /order/create not /ordercreate)
         api_url = f"{base_url}/order/create"
@@ -10762,6 +10798,7 @@ def orders_bulk_ncm_send(request):
         delivery_type = request.POST.get('delivery_type', 'Door2Door')
         default_weight = float(request.POST.get('default_weight', 1.0))
         auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
+        api_config_id = request.POST.get('api_config_id', '') or None
 
         if not order_ids:
             messages.error(request, '❌ No orders selected')
@@ -10814,7 +10851,8 @@ def orders_bulk_ncm_send(request):
                 order,
                 from_branch=from_branch,
                 delivery_type=delivery_type,
-                default_weight=default_weight
+                default_weight=default_weight,
+                api_config_id=api_config_id
             )
 
             if result['status'] == 'success':
@@ -10936,7 +10974,7 @@ def ncm_single_order_send(request, order_id):
     return redirect('order_detail', order_id=order_id)
 
 
-def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0):
+def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0, api_config_id=None):
     """
     Helper function to send single order to NCM - COMPLETE VERSION
     Returns: dict with 'status' and 'message'
@@ -11002,9 +11040,25 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         if hasattr(order, 'branch_city') and order.branch_city:
             destination_branch = str(order.branch_city).upper()
         
-        # Get API credentials
-        base_url = getattr(settings, 'NCM_API_BASE_URL', None)
-        api_key = getattr(settings, 'NCM_API_KEY', None)
+        # Get API credentials - try dynamic config first, then fall back to settings
+        base_url = ''
+        api_key = ''
+
+        if api_config_id:
+            try:
+                api_config = LogisticsAPIConfig.objects.get(
+                    id=api_config_id, is_active=True, logistics_provider='ncm')
+                base_url = api_config.get_primary_base_url()
+                api_key = api_config.api_key
+            except LogisticsAPIConfig.DoesNotExist:
+                return {
+                    'status': 'error',
+                    'message': 'Selected NCM API configuration not found or inactive'
+                }
+
+        if not base_url or not api_key:
+            base_url = getattr(settings, 'NCM_API_BASE_URL', '') or ''
+            api_key = getattr(settings, 'NCM_API_KEY', '') or ''
         
         if not base_url or not api_key:
             return {
@@ -15281,9 +15335,10 @@ def _calculate_achievement(target):
 
 # ===================== PICK AND DROP LOGISTICS =====================
 
-def send_single_order_to_pnd(request, order, default_weight=1.0):
+def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=None):
     """
     Helper function to send single order to Pick and Drop
+    Supports dynamic API configuration via api_config_id.
     Returns: dict with 'status' and 'message'
     """
     import requests
@@ -15347,15 +15402,32 @@ def send_single_order_to_pnd(request, order, default_weight=1.0):
         if hasattr(order, 'branch_city') and order.branch_city:
             destination_branch = str(order.branch_city)
 
-        # Get API credentials
-        api_key = getattr(settings, 'PND_API_KEY', None)
-        api_secret = getattr(settings, 'PND_API_SECRET', None)
-        base_url = getattr(settings, 'PND_API_BASE_URL', None)
+        # Get API credentials - from dynamic config or settings fallback
+        api_key = None
+        api_secret = None
+        base_url = None
+        
+        if api_config_id:
+            try:
+                api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='pick_and_drop')
+                api_key = api_config.api_key
+                api_secret = api_config.api_secret
+                base_url = api_config.get_primary_base_url()
+            except LogisticsAPIConfig.DoesNotExist:
+                return {
+                    'status': 'error',
+                    'message': 'Selected API configuration not found or inactive'
+                }
+        
+        if not api_key or not api_secret or not base_url:
+            api_key = getattr(settings, 'PND_API_KEY', None)
+            api_secret = getattr(settings, 'PND_API_SECRET', None)
+            base_url = getattr(settings, 'PND_API_BASE_URL', None)
 
         if not base_url or not api_key or not api_secret:
             return {
                 'status': 'error',
-                'message': 'Pick and Drop API not configured in settings'
+                'message': 'Pick and Drop API not configured. Add an API config in Settings > API Integration.'
             }
 
         # Build API URL
@@ -15484,6 +15556,7 @@ def orders_bulk_pnd_send(request):
         order_ids = request.POST.getlist('order_ids')
         default_weight = float(request.POST.get('default_weight', 1.0))
         auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
+        api_config_id = request.POST.get('api_config_id', '') or None
 
         if not order_ids:
             messages.error(request, 'No orders selected')
@@ -15523,7 +15596,8 @@ def orders_bulk_pnd_send(request):
             result = send_single_order_to_pnd(
                 request,
                 order,
-                default_weight=default_weight
+                default_weight=default_weight,
+                api_config_id=api_config_id
             )
 
             if result['status'] == 'success':
@@ -16289,3 +16363,178 @@ def logistics_bulk_logs_empty_trash(request):
         messages.error(request, f'Error emptying trash: {str(e)}')
 
     return redirect('logistics_bulk_logs_trash')
+
+
+# ==================== API INTEGRATION MANAGEMENT ====================
+
+@login_required
+def api_integration_list(request):
+    """Display and manage Logistics API configurations"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, 'Access denied. Administrator privileges required.')
+        return redirect('dashboard')
+    
+    api_configs = LogisticsAPIConfig.objects.all()
+    
+    context = {
+        'api_configs': api_configs,
+        'provider_choices': LogisticsAPIConfig.LOGISTICS_PROVIDER_CHOICES,
+    }
+    return render(request, 'api_integration.html', context)
+
+
+@login_required
+@require_POST
+def api_integration_add(request):
+    """Add a new Logistics API configuration"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+    
+    try:
+        api_name = request.POST.get('api_name', '').strip()
+        logistics_provider = request.POST.get('logistics_provider', '').strip()
+        api_key = request.POST.get('api_key', '').strip()
+        api_secret = request.POST.get('api_secret', '').strip()
+        is_active = request.POST.get('is_active') == 'on'
+        
+        # Collect base URLs (multiple)
+        base_urls = []
+        base_url_values = request.POST.getlist('base_urls')
+        for url in base_url_values:
+            url = url.strip()
+            if url:
+                base_urls.append(url)
+        
+        # Validation
+        if not api_name:
+            messages.error(request, 'API Name is required.')
+            return redirect('api_integration_list')
+        if not logistics_provider:
+            messages.error(request, 'Logistics Provider is required.')
+            return redirect('api_integration_list')
+        if not api_key:
+            messages.error(request, 'API Key is required.')
+            return redirect('api_integration_list')
+        if not base_urls:
+            messages.error(request, 'At least one Base URL is required.')
+            return redirect('api_integration_list')
+        
+        LogisticsAPIConfig.objects.create(
+            api_name=api_name,
+            logistics_provider=logistics_provider,
+            api_key=api_key,
+            api_secret=api_secret,
+            base_urls=base_urls,
+            is_active=is_active,
+            created_by=request.user,
+        )
+        
+        messages.success(request, f'API configuration "{api_name}" added successfully.')
+    except Exception as e:
+        messages.error(request, f'Error adding API configuration: {str(e)}')
+    
+    return redirect('api_integration_list')
+
+
+@login_required
+@require_POST
+def api_integration_edit(request, config_id):
+    """Edit an existing Logistics API configuration"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+    
+    config = get_object_or_404(LogisticsAPIConfig, id=config_id)
+    
+    try:
+        api_name = request.POST.get('api_name', '').strip()
+        logistics_provider = request.POST.get('logistics_provider', '').strip()
+        api_key = request.POST.get('api_key', '').strip()
+        api_secret = request.POST.get('api_secret', '').strip()
+        is_active = request.POST.get('is_active') == 'on'
+        
+        # Collect base URLs (multiple)
+        base_urls = []
+        base_url_values = request.POST.getlist('base_urls')
+        for url in base_url_values:
+            url = url.strip()
+            if url:
+                base_urls.append(url)
+        
+        # Validation
+        if not api_name:
+            messages.error(request, 'API Name is required.')
+            return redirect('api_integration_list')
+        if not logistics_provider:
+            messages.error(request, 'Logistics Provider is required.')
+            return redirect('api_integration_list')
+        if not api_key:
+            messages.error(request, 'API Key is required.')
+            return redirect('api_integration_list')
+        if not base_urls:
+            messages.error(request, 'At least one Base URL is required.')
+            return redirect('api_integration_list')
+        
+        config.api_name = api_name
+        config.logistics_provider = logistics_provider
+        config.api_key = api_key
+        config.api_secret = api_secret
+        config.is_active = is_active
+        config.base_urls = base_urls
+        
+        config.save()
+        messages.success(request, f'API configuration "{config.api_name}" updated successfully.')
+    except Exception as e:
+        messages.error(request, f'Error updating API configuration: {str(e)}')
+    
+    return redirect('api_integration_list')
+
+
+@login_required
+@require_POST
+def api_integration_delete(request, config_id):
+    """Delete a Logistics API configuration"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+    
+    config = get_object_or_404(LogisticsAPIConfig, id=config_id)
+    name = config.api_name
+    config.delete()
+    messages.success(request, f'API configuration "{name}" deleted successfully.')
+    return redirect('api_integration_list')
+
+
+@login_required
+@require_POST
+def api_integration_toggle(request, config_id):
+    """Toggle active/inactive status of an API configuration"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+    
+    config = get_object_or_404(LogisticsAPIConfig, id=config_id)
+    config.is_active = not config.is_active
+    config.save()
+    
+    status = "activated" if config.is_active else "deactivated"
+    messages.success(request, f'API "{config.api_name}" {status}.')
+    return redirect('api_integration_list')
+
+
+@login_required
+def api_integration_get(request, config_id):
+    """Get API config data as JSON for edit modal"""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+    
+    config = get_object_or_404(LogisticsAPIConfig, id=config_id)
+    return JsonResponse({
+        'success': True,
+        'data': {
+            'id': config.id,
+            'api_name': config.api_name,
+            'logistics_provider': config.logistics_provider,
+            'api_key': config.api_key,
+            'api_secret': config.api_secret,
+            'base_urls': config.base_urls,
+            'is_active': config.is_active,
+        }
+    })

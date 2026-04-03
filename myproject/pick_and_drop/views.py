@@ -135,7 +135,14 @@ def create_pnd_shipment(request, order_id):
         logger.info(f"Creating Pick and Drop order for: {order.order_number}")
         logger.info(f"PND Data: {pnd_data}")
 
-        result = pnd_service.create_order(pnd_data)
+        # Use dynamic API config if provided, otherwise use default module-level service
+        api_config_id = request.POST.get('api_config_id', '') or None
+        if api_config_id:
+            active_service = PickAndDropService(api_config_id=int(api_config_id))
+        else:
+            active_service = pnd_service
+
+        result = active_service.create_order(pnd_data)
 
         if result['success']:
             response_data = result['data']

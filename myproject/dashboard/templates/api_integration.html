@@ -1,0 +1,431 @@
+{% extends 'base.html' %}
+{% block title %}API Integration - Settings{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h3 class="mb-1"><i class="fas fa-plug text-primary"></i> API Integration</h3>
+                <p class="text-muted mb-0">Manage logistics API keys and configurations</p>
+            </div>
+            <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#addApiModal">
+                <i class="fas fa-plus-circle"></i> Add New API
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- API Configs List -->
+<div class="row g-4">
+    {% for config in api_configs %}
+    <div class="col-md-6 col-xl-4">
+        <div class="card shadow-sm h-100 api-config-card {% if not config.is_active %}border-secondary opacity-75{% endif %}">
+            <div class="card-header d-flex justify-content-between align-items-center 
+                {% if config.logistics_provider == 'ncm' %}bg-gradient-ncm-card
+                {% elif config.logistics_provider == 'pick_and_drop' %}bg-gradient-pnd-card
+                {% else %}bg-gradient-other-card{% endif %} text-white">
+                <div class="d-flex align-items-center gap-2">
+                    {% if config.logistics_provider == 'ncm' %}
+                    <i class="fas fa-truck-loading fa-lg"></i>
+                    {% elif config.logistics_provider == 'pick_and_drop' %}
+                    <i class="fas fa-truck-moving fa-lg"></i>
+                    {% else %}
+                    <i class="fas fa-cogs fa-lg"></i>
+                    {% endif %}
+                    <div>
+                        <h6 class="mb-0 fw-bold">{{ config.api_name }}</h6>
+                        <small class="opacity-75">{{ config.get_logistics_provider_display }}</small>
+                    </div>
+                </div>
+                <div>
+                    {% if config.is_active %}
+                    <span class="badge bg-success"><i class="fas fa-check-circle"></i> Active</span>
+                    {% else %}
+                    <span class="badge bg-secondary"><i class="fas fa-pause-circle"></i> Inactive</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label text-muted small mb-1"><i class="fas fa-key"></i> API Key</label>
+                    <div class="input-group input-group-sm">
+                        <input type="password" class="form-control form-control-sm bg-light" 
+                               value="{{ config.api_key }}" readonly id="apiKey_{{ config.id }}">
+                        <button class="btn btn-outline-secondary" type="button" 
+                                onclick="toggleApiKeyVisibility('apiKey_{{ config.id }}', this)">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                {% if config.api_secret %}
+                <div class="mb-3">
+                    <label class="form-label text-muted small mb-1"><i class="fas fa-lock"></i> API Secret</label>
+                    <div class="input-group input-group-sm">
+                        <input type="password" class="form-control form-control-sm bg-light" 
+                               value="{{ config.api_secret }}" readonly id="apiSecret_{{ config.id }}">
+                        <button class="btn btn-outline-secondary" type="button" 
+                                onclick="toggleApiKeyVisibility('apiSecret_{{ config.id }}', this)">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="mb-3">
+                    <label class="form-label text-muted small mb-1"><i class="fas fa-link"></i> Base URL(s)</label>
+                    {% for url in config.base_urls %}
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-light text-dark border me-2">{{ forloop.counter }}</span>
+                        <code class="small text-break">{{ url }}</code>
+                    </div>
+                    {% empty %}
+                    <span class="text-muted small">No URLs configured</span>
+                    {% endfor %}
+                </div>
+                
+                <div class="text-muted small">
+                    <i class="fas fa-clock"></i> Created: {{ config.created_at|date:"M d, Y H:i" }}
+                    {% if config.created_by %}
+                    <br><i class="fas fa-user"></i> By: {{ config.created_by.get_full_name|default:config.created_by.username }}
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-footer bg-light d-flex justify-content-between">
+                <div>
+                    <form method="post" action="{% url 'api_integration_toggle' config.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm {% if config.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
+                            {% if config.is_active %}
+                            <i class="fas fa-pause"></i> Deactivate
+                            {% else %}
+                            <i class="fas fa-play"></i> Activate
+                            {% endif %}
+                        </button>
+                    </form>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary me-1" 
+                            data-get-url="{% url 'api_integration_get' config.id %}"
+                            data-edit-url="{% url 'api_integration_edit' config.id %}"
+                            onclick="editApiConfig(this)">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <form method="post" action="{% url 'api_integration_delete' config.id %}" class="d-inline"
+                          onsubmit="return confirm('Are you sure you want to delete &quot;{{ config.api_name }}&quot;? This cannot be undone.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="fas fa-plug fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No API Configurations Yet</h5>
+                <p class="text-muted">Add your first logistics API configuration to get started.</p>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addApiModal">
+                    <i class="fas fa-plus-circle"></i> Add API Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- ADD API MODAL -->
+<div class="modal fade" id="addApiModal" tabindex="-1" aria-labelledby="addApiModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="addApiModalLabel">
+                    <i class="fas fa-plus-circle"></i> Add New API Configuration
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'api_integration_add' %}" id="addApiForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-tag text-primary"></i> API Name <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" name="api_name" class="form-control" 
+                                   placeholder="e.g. NCM Production, PND Main Account" required>
+                            <small class="text-muted">A descriptive name for this configuration</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-truck text-success"></i> Logistics Provider <span class="text-danger">*</span>
+                            </label>
+                            <select name="logistics_provider" class="form-select" required>
+                                <option value="">-- Select Provider --</option>
+                                {% for value, label in provider_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-key text-warning"></i> API Key <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" name="api_key" class="form-control" placeholder="Enter API Key" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-lock text-info"></i> API Secret
+                            </label>
+                            <input type="text" name="api_secret" class="form-control" placeholder="Enter API Secret (if required)">
+                            <small class="text-muted">Required for Pick and Drop</small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-link text-danger"></i> Base URL(s) <span class="text-danger">*</span>
+                            </label>
+                            <div id="addBaseUrlsContainer">
+                                <div class="input-group mb-2 base-url-row">
+                                    <span class="input-group-text">URL 1</span>
+                                    <input type="url" name="base_urls" class="form-control" 
+                                           placeholder="https://api.example.com/v1" required>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addBaseUrlField('addBaseUrlsContainer')">
+                                <i class="fas fa-plus"></i> Add Another URL
+                            </button>
+                            <small class="text-muted d-block mt-1">Add multiple base URLs (e.g. v1, v2 endpoints)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mt-3">
+                                <input class="form-check-input" type="checkbox" id="addIsActive" name="is_active" checked>
+                                <label class="form-check-label fw-bold" for="addIsActive">
+                                    <i class="fas fa-toggle-on text-success"></i> Active
+                                </label>
+                            </div>
+                            <small class="text-muted">Only active APIs will be available for order dispatch</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save API Configuration
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- EDIT API MODAL -->
+<div class="modal fade" id="editApiModal" tabindex="-1" aria-labelledby="editApiModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="editApiModalLabel">
+                    <i class="fas fa-edit"></i> Edit API Configuration
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="editApiForm" action="">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-tag text-primary"></i> API Name <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" name="api_name" id="editApiName" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-truck text-success"></i> Logistics Provider <span class="text-danger">*</span>
+                            </label>
+                            <select name="logistics_provider" id="editLogisticsProvider" class="form-select" required>
+                                <option value="">-- Select Provider --</option>
+                                {% for value, label in provider_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-key text-warning"></i> API Key <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" name="api_key" id="editApiKey" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-lock text-info"></i> API Secret
+                            </label>
+                            <input type="text" name="api_secret" id="editApiSecret" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-link text-danger"></i> Base URL(s) <span class="text-danger">*</span>
+                            </label>
+                            <div id="editBaseUrlsContainer">
+                                <!-- Populated dynamically -->
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addBaseUrlField('editBaseUrlsContainer')">
+                                <i class="fas fa-plus"></i> Add Another URL
+                            </button>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mt-3">
+                                <input class="form-check-input" type="checkbox" id="editIsActive" name="is_active">
+                                <label class="form-check-label fw-bold" for="editIsActive">
+                                    <i class="fas fa-toggle-on text-success"></i> Active
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-save"></i> Update Configuration
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-ncm-card {
+        background: linear-gradient(135deg, #6f42c1, #5a2d91);
+    }
+    .bg-gradient-pnd-card {
+        background: linear-gradient(135deg, #e67e22, #d35400);
+    }
+    .bg-gradient-other-card {
+        background: linear-gradient(135deg, #17a2b8, #138496);
+    }
+    .api-config-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .api-config-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
+    }
+    .api-config-card .card-header {
+        border-bottom: none;
+    }
+    .api-config-card .card-footer {
+        border-top: 1px solid #eee;
+    }
+</style>
+
+<script>
+function toggleApiKeyVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerHTML = '<i class="fas fa-eye-slash"></i>';
+    } else {
+        input.type = 'password';
+        btn.innerHTML = '<i class="fas fa-eye"></i>';
+    }
+}
+
+function addBaseUrlField(containerId) {
+    const container = document.getElementById(containerId);
+    const count = container.querySelectorAll('.base-url-row').length + 1;
+    const row = document.createElement('div');
+    row.className = 'input-group mb-2 base-url-row';
+    row.innerHTML = `
+        <span class="input-group-text">URL ${count}</span>
+        <input type="url" name="base_urls" class="form-control" placeholder="https://api.example.com/v${count}">
+        <button type="button" class="btn btn-outline-danger" onclick="this.parentElement.remove()">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    container.appendChild(row);
+}
+
+function editApiConfig(btn) {
+    const getUrl = btn.getAttribute('data-get-url');
+    const editUrl = btn.getAttribute('data-edit-url');
+    fetch(getUrl)
+        .then(resp => resp.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'Failed to load config');
+                return;
+            }
+            const d = data.data;
+            document.getElementById('editApiName').value = d.api_name;
+            document.getElementById('editLogisticsProvider').value = d.logistics_provider;
+            document.getElementById('editApiKey').value = d.api_key;
+            document.getElementById('editApiSecret').value = d.api_secret || '';
+            document.getElementById('editIsActive').checked = d.is_active;
+            
+            // Set form action
+            document.getElementById('editApiForm').action = editUrl;
+            
+            // Populate base URLs
+            const container = document.getElementById('editBaseUrlsContainer');
+            container.innerHTML = '';
+            if (d.base_urls && d.base_urls.length > 0) {
+                d.base_urls.forEach((url, i) => {
+                    const row = document.createElement('div');
+                    row.className = 'input-group mb-2 base-url-row';
+                    
+                    const span = document.createElement('span');
+                    span.className = 'input-group-text';
+                    span.textContent = 'URL ' + (i + 1);
+                    row.appendChild(span);
+                    
+                    const input = document.createElement('input');
+                    input.type = 'url';
+                    input.name = 'base_urls';
+                    input.className = 'form-control';
+                    input.value = url;
+                    if (i === 0) input.required = true;
+                    row.appendChild(input);
+                    
+                    if (i > 0) {
+                        const removeBtn = document.createElement('button');
+                        removeBtn.type = 'button';
+                        removeBtn.className = 'btn btn-outline-danger';
+                        removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+                        removeBtn.addEventListener('click', function() { this.parentElement.remove(); });
+                        row.appendChild(removeBtn);
+                    }
+                    
+                    container.appendChild(row);
+                });
+            } else {
+                const row = document.createElement('div');
+                row.className = 'input-group mb-2 base-url-row';
+                row.innerHTML = `
+                    <span class="input-group-text">URL 1</span>
+                    <input type="url" name="base_urls" class="form-control" placeholder="https://api.example.com/v1" required>
+                `;
+                container.appendChild(row);
+            }
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('editApiModal'));
+            modal.show();
+        })
+        .catch(err => {
+            console.error('Error loading API config:', err);
+            alert('Failed to load configuration. Please try again.');
+        });
+}
+</script>
+{% endblock %}

@@ -9,10 +9,22 @@ logger = logging.getLogger('ncm')
 class NCMService:
     """Service for NCM (Nepal Can Move) API Integration"""
     
-    def __init__(self):
-        self.api_key = settings.NCM_API_KEY
-        self.base_url = settings.NCM_API_BASE_URL
-        self.base_url_v2 = settings.NCM_API_BASE_URL_V2
+    def __init__(self, api_config_id=None):
+        if api_config_id:
+            from dashboard.models import LogisticsAPIConfig
+            try:
+                config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='ncm')
+                self.api_key = config.api_key
+                self.base_url = config.get_primary_base_url()
+                self.base_url_v2 = config.get_base_url_v2() or self.base_url
+            except LogisticsAPIConfig.DoesNotExist:
+                self.api_key = settings.NCM_API_KEY
+                self.base_url = settings.NCM_API_BASE_URL
+                self.base_url_v2 = settings.NCM_API_BASE_URL_V2
+        else:
+            self.api_key = settings.NCM_API_KEY
+            self.base_url = settings.NCM_API_BASE_URL
+            self.base_url_v2 = settings.NCM_API_BASE_URL_V2
         self.headers = {
             'Authorization': f'Token {self.api_key}',
             'Content-Type': 'application/json'

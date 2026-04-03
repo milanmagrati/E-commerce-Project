@@ -8,10 +8,22 @@ logger = logging.getLogger(__name__)
 class PickAndDropService:
     """Service class for Pick and Drop logistics API integration"""
 
-    def __init__(self):
-        self.api_key = getattr(settings, 'PND_API_KEY', '')
-        self.api_secret = getattr(settings, 'PND_API_SECRET', '')
-        self.base_url = getattr(settings, 'PND_API_BASE_URL', 'https://pickndropnepal.com').rstrip('/')
+    def __init__(self, api_config_id=None):
+        if api_config_id:
+            from dashboard.models import LogisticsAPIConfig
+            try:
+                config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='pick_and_drop')
+                self.api_key = config.api_key
+                self.api_secret = config.api_secret
+                self.base_url = config.get_primary_base_url()
+            except LogisticsAPIConfig.DoesNotExist:
+                self.api_key = getattr(settings, 'PND_API_KEY', '')
+                self.api_secret = getattr(settings, 'PND_API_SECRET', '')
+                self.base_url = getattr(settings, 'PND_API_BASE_URL', 'https://pickndropnepal.com').rstrip('/')
+        else:
+            self.api_key = getattr(settings, 'PND_API_KEY', '')
+            self.api_secret = getattr(settings, 'PND_API_SECRET', '')
+            self.base_url = getattr(settings, 'PND_API_BASE_URL', 'https://pickndropnepal.com').rstrip('/')
 
     def _get_headers(self):
         return {

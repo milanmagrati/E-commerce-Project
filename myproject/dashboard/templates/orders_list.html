@@ -53,16 +53,39 @@
                         <span class="badge bg-white text-primary ms-2" id="logisticsCountBadge">0</span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li>
-                            <a class="dropdown-item py-2" href="#" onclick="openNCMModal(); return false;">
-                                <i class="fas fa-truck-loading text-primary me-2"></i> NCM Logistics
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item py-2" href="#" onclick="openPNDModal(); return false;">
-                                <i class="fas fa-truck-moving me-2" style="color: #e67e22;"></i> Pick & Drop
-                            </a>
-                        </li>
+                        <li class="dropdown-header"><i class="fas fa-truck-loading text-primary"></i> NCM Logistics</li>
+                        {% if ncm_api_configs %}
+                            {% for config in ncm_api_configs %}
+                            <li>
+                                <a class="dropdown-item py-2 ps-4" href="#" onclick="openNCMModal({{ config.id }}); return false;">
+                                    <i class="fas fa-key text-primary me-2"></i> {{ config.api_name }}
+                                </a>
+                            </li>
+                            {% endfor %}
+                        {% else %}
+                            <li>
+                                <a class="dropdown-item py-2 ps-4" href="#" onclick="openNCMModal(); return false;">
+                                    <i class="fas fa-truck-loading text-primary me-2"></i> NCM (Default)
+                                </a>
+                            </li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="dropdown-header"><i class="fas fa-truck-moving" style="color: #e67e22;"></i> Pick & Drop</li>
+                        {% if pnd_api_configs %}
+                            {% for config in pnd_api_configs %}
+                            <li>
+                                <a class="dropdown-item py-2 ps-4" href="#" onclick="openPNDModal({{ config.id }}); return false;">
+                                    <i class="fas fa-key me-2" style="color: #e67e22;"></i> {{ config.api_name }}
+                                </a>
+                            </li>
+                            {% endfor %}
+                        {% else %}
+                            <li>
+                                <a class="dropdown-item py-2 ps-4" href="#" onclick="openPNDModal(); return false;">
+                                    <i class="fas fa-truck-moving me-2" style="color: #e67e22;"></i> Pick & Drop (Default)
+                                </a>
+                            </li>
+                        {% endif %}
                     </ul>
                 </div>
                 
@@ -512,6 +535,29 @@
                         </div>
                     </div>
                     
+                    <!-- API Config Selection -->
+                    {% if ncm_api_configs %}
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <div class="ncm-settings-card">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-plug text-primary"></i> Select API Account <span class="text-danger">*</span>
+                                </label>
+                                <select name="api_config_id" class="form-select form-select-lg" required>
+                                    {% for config in ncm_api_configs %}
+                                    <option value="{{ config.id }}" {% if forloop.first %}selected{% endif %}>
+                                        {{ config.api_name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle"></i> Choose which NCM API account to use
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <div class="ncm-settings-card">
@@ -648,6 +694,29 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- API Config Selection -->
+                    {% if pnd_api_configs %}
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <div class="ncm-settings-card">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-plug" style="color: #e67e22;"></i> Select API Account <span class="text-danger">*</span>
+                                </label>
+                                <select name="api_config_id" class="form-select form-select-lg" required>
+                                    {% for config in pnd_api_configs %}
+                                    <option value="{{ config.id }}" {% if forloop.first %}selected{% endif %}>
+                                        {{ config.api_name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle"></i> Choose which Pick & Drop API account to use
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
@@ -1883,7 +1952,7 @@ function bulkSyncSelectedOrders() {
     }
 }
 
-function openNCMModal() {
+function openNCMModal(apiConfigId) {
     const checkedBoxes = document.querySelectorAll('.order-checkbox:checked');
     const count = checkedBoxes.length;
     
@@ -1923,6 +1992,14 @@ function openNCMModal() {
     } else {
         console.error('NCM Order IDs container not found!');
         return;
+    }
+    
+    // Pre-select API config if specified
+    if (apiConfigId) {
+        const apiSelect = document.querySelector('#ncmBulkSendForm select[name="api_config_id"]');
+        if (apiSelect) {
+            apiSelect.value = apiConfigId;
+        }
     }
     
     // Show Modal
@@ -2043,6 +2120,15 @@ function sendSingleOrderToNCM(orderId, orderNumber) {
         autoInput.name = 'auto_set_logistics';
         autoInput.value = 'on'; 
         form.appendChild(autoInput);
+
+        // Add first available NCM API config (if any)
+        {% if ncm_api_configs %}
+        const apiConfigInput = document.createElement('input');
+        apiConfigInput.type = 'hidden';
+        apiConfigInput.name = 'api_config_id';
+        apiConfigInput.value = '{{ ncm_api_configs.0.id }}';
+        form.appendChild(apiConfigInput);
+        {% endif %}
         
         document.body.appendChild(form);
         
@@ -2058,7 +2144,7 @@ function sendSingleOrderToNCM(orderId, orderNumber) {
 
 // ===================== PICK AND DROP FUNCTIONS =====================
 
-function openPNDModal() {
+function openPNDModal(apiConfigId) {
     const checkedBoxes = document.querySelectorAll('.order-checkbox:checked');
     const count = checkedBoxes.length;
 
@@ -2087,6 +2173,14 @@ function openPNDModal() {
     } else {
         console.error('PND Order IDs container not found!');
         return;
+    }
+
+    // Pre-select API config if specified
+    if (apiConfigId) {
+        const apiSelect = document.querySelector('#pndBulkSendForm select[name="api_config_id"]');
+        if (apiSelect) {
+            apiSelect.value = apiConfigId;
+        }
     }
 
     // Show Modal

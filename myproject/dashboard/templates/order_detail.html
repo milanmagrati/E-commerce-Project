@@ -456,22 +456,42 @@
                                 {% endif %}
                             </select>
                         </div>
-                        <!-- ✅✅✅ NEW: LOGISTICS FIELD ✅✅✅ -->
+                        <!-- ✅✅✅ NEW: LOGISTICS FIELD WITH MODAL ✅✅✅ -->
                         <div class="col-md-6">
                             <label class="form-label fw-bold">
                                 <i class="fas fa-truck"></i> Logistics Provider
                             </label>
-                            <select name="logistics" class="form-select form-select-lg" id="logisticsSelect">
-                                <option value="">-- Select Logistics --</option>
-                                <option value="ncm" {% if order.logistics == 'ncm' %}selected{% endif %}>🚛 NCM</option>
-                                <option value="pick_and_drop" {% if order.logistics == 'pick_and_drop' %}selected{% endif %}>🚚 Pick and Drop</option>
-                                <option value="sundarijal" {% if order.logistics == 'sundarijal' %}selected{% endif %}>Sundarijal</option>
-                                <option value="express" {% if order.logistics == 'express' %}selected{% endif %}>Express</option>
-                                <option value="local" {% if order.logistics == 'local' %}selected{% endif %}>Local Delivery</option>
-                                <option value="other" {% if order.logistics == 'other' %}selected{% endif %}>Other</option>
-                            </select>
+                            <input type="hidden" name="logistics" id="logisticsHiddenInput" value="{{ order.logistics|default:'' }}">
+                            <input type="hidden" name="selected_api_config_id" id="selectedApiConfigId" value="{{ order.api_config_id|default:'' }}">
+                            <div class="logistics-selector-btn" id="logisticsSelectorBtn" data-bs-toggle="modal" data-bs-target="#logisticsModal">
+                                <div class="logistics-selector-content">
+                                    {% if order.logistics == 'ncm' %}
+                                        <span class="logistics-provider-icon" style="background: linear-gradient(135deg, #1a73e8, #0d47a1);"><i class="fas fa-truck-fast"></i></span>
+                                        <span class="logistics-provider-name">NCM Logistics{% if order.api_config %} — {{ order.api_config.api_name }}{% endif %}</span>
+                                    {% elif order.logistics == 'pick_and_drop' %}
+                                        <span class="logistics-provider-icon" style="background: linear-gradient(135deg, #e67e22, #d35400);"><i class="fas fa-truck-moving"></i></span>
+                                        <span class="logistics-provider-name">Pick and Drop{% if order.api_config %} — {{ order.api_config.api_name }}{% endif %}</span>
+                                    {% elif order.logistics == 'sundarijal' %}
+                                        <span class="logistics-provider-icon" style="background: linear-gradient(135deg, #27ae60, #1e8449);"><i class="fas fa-truck"></i></span>
+                                        <span class="logistics-provider-name">Sundarijal</span>
+                                    {% elif order.logistics == 'express' %}
+                                        <span class="logistics-provider-icon" style="background: linear-gradient(135deg, #8e44ad, #6c3483);"><i class="fas fa-bolt"></i></span>
+                                        <span class="logistics-provider-name">Express</span>
+                                    {% elif order.logistics == 'local' %}
+                                        <span class="logistics-provider-icon" style="background: linear-gradient(135deg, #16a085, #1abc9c);"><i class="fas fa-bicycle"></i></span>
+                                        <span class="logistics-provider-name">Local Delivery</span>
+                                    {% elif order.logistics == 'other' %}
+                                        <span class="logistics-provider-icon" style="background: linear-gradient(135deg, #7f8c8d, #95a5a6);"><i class="fas fa-box"></i></span>
+                                        <span class="logistics-provider-name">Other</span>
+                                    {% else %}
+                                        <span class="logistics-provider-icon" style="background: linear-gradient(135deg, #bdc3c7, #95a5a6);"><i class="fas fa-truck"></i></span>
+                                        <span class="logistics-provider-name text-muted">Select Logistics Provider</span>
+                                    {% endif %}
+                                </div>
+                                <i class="fas fa-chevron-right logistics-selector-arrow"></i>
+                            </div>
                             <small class="text-info d-block mt-1">
-                                <i class="fas fa-info-circle"></i> Select <strong>NCM</strong> or <strong>Pick and Drop</strong> to enable logistics integration below
+                                <i class="fas fa-info-circle"></i> Click to choose a logistics provider and API account
                             </small>
                         </div>
                         <div class="col-md-6">
@@ -648,6 +668,20 @@
                     <!-- Create in NCM Button -->
                     <form method="POST" action="{% url 'ncm:create_shipment' order.id %}" id="ncmCreateForm">
                         {% csrf_token %}
+
+                        {% if ncm_api_configs %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-plug"></i> API Account
+                            </label>
+                            <select name="api_config_id" class="form-select">
+                                <option value="">-- Default (Settings) --</option>
+                                {% for config in ncm_api_configs %}
+                                <option value="{{ config.id }}">{{ config.api_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endif %}
                         
                         <div class="mb-3">
                             <label class="form-label fw-bold">
@@ -797,6 +831,20 @@
                     <!-- Create in Pick and Drop -->
                     <form method="POST" action="{% url 'pick_and_drop:create_shipment' order.id %}" id="pndCreateForm">
                         {% csrf_token %}
+
+                        {% if pnd_api_configs %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-plug"></i> API Account
+                            </label>
+                            <select name="api_config_id" class="form-select">
+                                <option value="">-- Default (Settings) --</option>
+                                {% for config in pnd_api_configs %}
+                                <option value="{{ config.id }}">{{ config.api_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endif %}
 
                         <div class="mb-3">
                             <label class="form-label fw-bold">
@@ -1154,6 +1202,178 @@
     </div>
 </div>
 
+<!-- ✅ LOGISTICS PROVIDER MODAL -->
+<div class="modal fade" id="logisticsModal" tabindex="-1" aria-labelledby="logisticsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content logistics-modal-content">
+            <div class="modal-header logistics-modal-header">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="logistics-modal-icon">
+                        <i class="fas fa-truck-fast"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title" id="logisticsModalLabel">Choose Logistics Provider</h5>
+                        <small class="text-white-50">Select a provider and API account for this order</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body logistics-modal-body">
+
+                <!-- NCM Section -->
+                {% if ncm_api_configs %}
+                <div class="logistics-provider-section">
+                    <div class="provider-section-header ncm-section">
+                        <div class="provider-section-icon" style="background: linear-gradient(135deg, #1a73e8, #0d47a1);">
+                            <i class="fas fa-truck-fast"></i>
+                        </div>
+                        <div>
+                            <h6 class="mb-0">NCM Logistics</h6>
+                            <small>{{ ncm_api_configs|length }} API account{{ ncm_api_configs|length|pluralize }} available</small>
+                        </div>
+                    </div>
+                    <div class="provider-api-cards">
+                        {% for config in ncm_api_configs %}
+                        <div class="api-config-card" 
+                             data-provider="ncm" 
+                             data-config-id="{{ config.id }}"
+                             data-config-name="{{ config.api_name }}"
+                             onclick="selectLogisticsConfig(this)">
+                            <div class="api-config-card-left">
+                                <div class="api-config-avatar ncm-avatar">
+                                    <i class="fas fa-key"></i>
+                                </div>
+                                <div class="api-config-info">
+                                    <h6 class="api-config-name">{{ config.api_name }}</h6>
+                                    <div class="api-config-meta">
+                                        <span class="api-config-key">
+                                            <i class="fas fa-lock"></i> {{ config.api_key|truncatechars:20 }}
+                                        </span>
+                                        {% if config.base_urls %}
+                                        <span class="api-config-url">
+                                            <i class="fas fa-link"></i> {{ config.get_primary_base_url|truncatechars:35 }}
+                                        </span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="api-config-card-right">
+                                <span class="api-config-status active"><i class="fas fa-circle"></i> Active</span>
+                                <i class="fas fa-check-circle api-config-check"></i>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Pick and Drop Section -->
+                {% if pnd_api_configs %}
+                <div class="logistics-provider-section">
+                    <div class="provider-section-header pnd-section">
+                        <div class="provider-section-icon" style="background: linear-gradient(135deg, #e67e22, #d35400);">
+                            <i class="fas fa-truck-moving"></i>
+                        </div>
+                        <div>
+                            <h6 class="mb-0">Pick and Drop</h6>
+                            <small>{{ pnd_api_configs|length }} API account{{ pnd_api_configs|length|pluralize }} available</small>
+                        </div>
+                    </div>
+                    <div class="provider-api-cards">
+                        {% for config in pnd_api_configs %}
+                        <div class="api-config-card" 
+                             data-provider="pick_and_drop" 
+                             data-config-id="{{ config.id }}"
+                             data-config-name="{{ config.api_name }}"
+                             onclick="selectLogisticsConfig(this)">
+                            <div class="api-config-card-left">
+                                <div class="api-config-avatar pnd-avatar">
+                                    <i class="fas fa-key"></i>
+                                </div>
+                                <div class="api-config-info">
+                                    <h6 class="api-config-name">{{ config.api_name }}</h6>
+                                    <div class="api-config-meta">
+                                        <span class="api-config-key">
+                                            <i class="fas fa-lock"></i> {{ config.api_key|truncatechars:20 }}
+                                        </span>
+                                        {% if config.base_urls %}
+                                        <span class="api-config-url">
+                                            <i class="fas fa-link"></i> {{ config.get_primary_base_url|truncatechars:35 }}
+                                        </span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="api-config-card-right">
+                                <span class="api-config-status active"><i class="fas fa-circle"></i> Active</span>
+                                <i class="fas fa-check-circle api-config-check"></i>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if not ncm_api_configs and not pnd_api_configs %}
+                <div class="text-center py-5">
+                    <div style="font-size: 3rem; color: #dee2e6;"><i class="fas fa-plug"></i></div>
+                    <h6 class="text-muted mt-3">No API Accounts Configured</h6>
+                    <p class="text-muted small">Go to <strong>Settings &gt; API Integration</strong> to add logistics API accounts.</p>
+                </div>
+                {% endif %}
+
+                <!-- Divider -->
+                <div class="logistics-divider">
+                    <span>Or choose without API</span>
+                </div>
+
+                <!-- Other Logistics (no API) -->
+                <div class="other-logistics-grid">
+                    <div class="other-logistics-option {% if order.logistics == 'ncm' and not ncm_api_configs %}selected{% endif %}" 
+                         data-provider="ncm" data-config-id="" onclick="selectLogisticsConfig(this)">
+                        <i class="fas fa-truck-fast" style="color: #1a73e8;"></i>
+                        <span>NCM (Default)</span>
+                    </div>
+                    <div class="other-logistics-option {% if order.logistics == 'pick_and_drop' and not pnd_api_configs %}selected{% endif %}" 
+                         data-provider="pick_and_drop" data-config-id="" onclick="selectLogisticsConfig(this)">
+                        <i class="fas fa-truck-moving" style="color: #e67e22;"></i>
+                        <span>Pick & Drop (Default)</span>
+                    </div>
+                    <div class="other-logistics-option {% if order.logistics == 'sundarijal' %}selected{% endif %}" 
+                         data-provider="sundarijal" data-config-id="" onclick="selectLogisticsConfig(this)">
+                        <i class="fas fa-truck" style="color: #27ae60;"></i>
+                        <span>Sundarijal</span>
+                    </div>
+                    <div class="other-logistics-option {% if order.logistics == 'express' %}selected{% endif %}" 
+                         data-provider="express" data-config-id="" onclick="selectLogisticsConfig(this)">
+                        <i class="fas fa-bolt" style="color: #8e44ad;"></i>
+                        <span>Express</span>
+                    </div>
+                    <div class="other-logistics-option {% if order.logistics == 'local' %}selected{% endif %}" 
+                         data-provider="local" data-config-id="" onclick="selectLogisticsConfig(this)">
+                        <i class="fas fa-bicycle" style="color: #16a085;"></i>
+                        <span>Local Delivery</span>
+                    </div>
+                    <div class="other-logistics-option {% if order.logistics == 'other' %}selected{% endif %}" 
+                         data-provider="other" data-config-id="" onclick="selectLogisticsConfig(this)">
+                        <i class="fas fa-box" style="color: #7f8c8d;"></i>
+                        <span>Other</span>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer logistics-modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-success" id="confirmLogisticsBtn" data-bs-dismiss="modal" disabled>
+                    <i class="fas fa-check"></i> Confirm Selection
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- NCM Loading Overlay -->
 <div id="ncmLoadingOverlay" class="ncm-loading-overlay">
     <div class="ncm-loading-container">
@@ -1169,6 +1389,313 @@
 </div>
 
 <style>
+/* ==================== LOGISTICS MODAL STYLES ==================== */
+.logistics-selector-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: white;
+    min-height: 52px;
+}
+.logistics-selector-btn:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    transform: translateY(-1px);
+}
+.logistics-selector-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.logistics-provider-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.logistics-provider-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #2d3748;
+}
+.logistics-selector-arrow {
+    color: #a0aec0;
+    transition: transform 0.3s;
+}
+.logistics-selector-btn:hover .logistics-selector-arrow {
+    transform: translateX(3px);
+    color: #667eea;
+}
+
+/* Modal Styles */
+.logistics-modal-content {
+    border: none;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+}
+.logistics-modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    padding: 20px 24px;
+}
+.logistics-modal-icon {
+    width: 44px;
+    height: 44px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.3rem;
+}
+.logistics-modal-body {
+    padding: 24px;
+    max-height: 65vh;
+    overflow-y: auto;
+    background: #f8fafc;
+}
+.logistics-modal-footer {
+    border-top: 1px solid #e2e8f0;
+    padding: 16px 24px;
+    background: white;
+}
+
+/* Provider Sections */
+.logistics-provider-section {
+    margin-bottom: 24px;
+}
+.provider-section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e2e8f0;
+}
+.provider-section-header h6 {
+    font-weight: 700;
+    color: #2d3748;
+    font-size: 1rem;
+}
+.provider-section-header small {
+    color: #718096;
+}
+.provider-section-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+/* API Config Cards */
+.provider-api-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.api-config-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    position: relative;
+}
+.api-config-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.12);
+    transform: translateY(-2px);
+}
+.api-config-card.selected {
+    border-color: #667eea;
+    background: linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%);
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.2);
+}
+.api-config-card.selected .api-config-check {
+    opacity: 1;
+    transform: scale(1);
+    color: #667eea;
+}
+.api-config-card-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 1;
+    min-width: 0;
+}
+.api-config-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.api-config-avatar.ncm-avatar {
+    background: linear-gradient(135deg, #1a73e8, #0d47a1);
+}
+.api-config-avatar.pnd-avatar {
+    background: linear-gradient(135deg, #e67e22, #d35400);
+}
+.api-config-info {
+    min-width: 0;
+}
+.api-config-name {
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #2d3748;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.api-config-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+}
+.api-config-key, .api-config-url {
+    font-size: 0.75rem;
+    color: #a0aec0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.api-config-key i, .api-config-url i {
+    font-size: 0.65rem;
+    width: 12px;
+    text-align: center;
+}
+.api-config-card-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+.api-config-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.api-config-status.active {
+    color: #38a169;
+}
+.api-config-status.active i {
+    font-size: 0.45rem;
+}
+.api-config-check {
+    font-size: 1.3rem;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.25s ease;
+}
+
+/* Divider */
+.logistics-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 20px 0;
+    color: #a0aec0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.logistics-divider::before,
+.logistics-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e2e8f0;
+}
+
+/* Other Logistics Grid */
+.other-logistics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+.other-logistics-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 10px;
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    text-align: center;
+}
+.other-logistics-option:hover {
+    border-color: #667eea;
+    background: #f7f9ff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+}
+.other-logistics-option.selected {
+    border-color: #667eea;
+    background: linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+}
+.other-logistics-option i {
+    font-size: 1.5rem;
+}
+.other-logistics-option span {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #4a5568;
+}
+.other-logistics-option.selected span {
+    color: #667eea;
+}
+
+@media (max-width: 576px) {
+    .other-logistics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .api-config-card-left {
+        gap: 10px;
+    }
+    .api-config-meta {
+        display: none;
+    }
+}
+
 /* ==================== EXISTING STYLES (keeping all your existing styles) ==================== */
 .bg-gradient-primary {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -2524,6 +3051,116 @@ tfoot td strong.text-danger {
 // Global flag to prevent double-click on NCM operations
 let ncmSendInProgress = false;
 
+// ==================== LOGISTICS MODAL LOGIC ====================
+let pendingLogisticsProvider = '';
+let pendingApiConfigId = '';
+let pendingConfigName = '';
+
+function selectLogisticsConfig(el) {
+    // Remove selected from all cards and options
+    document.querySelectorAll('.api-config-card, .other-logistics-option').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+
+    pendingLogisticsProvider = el.dataset.provider;
+    pendingApiConfigId = el.dataset.configId || '';
+    pendingConfigName = el.dataset.configName || '';
+
+    // Enable confirm button
+    const confirmBtn = document.getElementById('confirmLogisticsBtn');
+    if (confirmBtn) confirmBtn.disabled = false;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmBtn = document.getElementById('confirmLogisticsBtn');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', function() {
+            if (!pendingLogisticsProvider) return;
+
+            // Set hidden inputs
+            document.getElementById('logisticsHiddenInput').value = pendingLogisticsProvider;
+            document.getElementById('selectedApiConfigId').value = pendingApiConfigId;
+
+            // Update the selector button display
+            const btn = document.getElementById('logisticsSelectorBtn');
+            const providerIcons = {
+                'ncm': { icon: 'fa-truck-fast', bg: 'linear-gradient(135deg, #1a73e8, #0d47a1)', label: 'NCM Logistics' },
+                'pick_and_drop': { icon: 'fa-truck-moving', bg: 'linear-gradient(135deg, #e67e22, #d35400)', label: 'Pick and Drop' },
+                'sundarijal': { icon: 'fa-truck', bg: 'linear-gradient(135deg, #27ae60, #1e8449)', label: 'Sundarijal' },
+                'express': { icon: 'fa-bolt', bg: 'linear-gradient(135deg, #8e44ad, #6c3483)', label: 'Express' },
+                'local': { icon: 'fa-bicycle', bg: 'linear-gradient(135deg, #16a085, #1abc9c)', label: 'Local Delivery' },
+                'other': { icon: 'fa-box', bg: 'linear-gradient(135deg, #7f8c8d, #95a5a6)', label: 'Other' }
+            };
+
+            const info = providerIcons[pendingLogisticsProvider] || providerIcons['other'];
+            let label = info.label;
+            if (pendingConfigName) label += ' — ' + pendingConfigName;
+
+            const contentEl = btn.querySelector('.logistics-selector-content');
+            const iconEl = contentEl.querySelector('.logistics-provider-icon');
+            const nameEl = contentEl.querySelector('.logistics-provider-name');
+
+            iconEl.style.background = info.bg;
+            iconEl.innerHTML = '<i class="fas ' + info.icon + '"></i>';
+            nameEl.textContent = label;
+            nameEl.classList.remove('text-muted');
+
+            // Also update the NCM/PND integration form api_config_id selectors if they exist
+            if (pendingApiConfigId) {
+                const ncmSelect = document.querySelector('#ncmCreateForm select[name="api_config_id"]');
+                if (ncmSelect) {
+                    for (let i = 0; i < ncmSelect.options.length; i++) {
+                        if (ncmSelect.options[i].value === pendingApiConfigId) {
+                            ncmSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+                const pndSelect = document.querySelector('#pndCreateForm select[name="api_config_id"]');
+                if (pndSelect) {
+                    for (let i = 0; i < pndSelect.options.length; i++) {
+                        if (pndSelect.options[i].value === pendingApiConfigId) {
+                            pndSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // On modal open, reset confirm button & mark current selection
+    const logisticsModal = document.getElementById('logisticsModal');
+    if (logisticsModal) {
+        logisticsModal.addEventListener('show.bs.modal', function() {
+            const currentProvider = document.getElementById('logisticsHiddenInput').value;
+            const currentConfigId = document.getElementById('selectedApiConfigId').value;
+
+            // Clear all selections
+            document.querySelectorAll('.api-config-card, .other-logistics-option').forEach(c => c.classList.remove('selected'));
+
+            // Try to find and select the current config
+            let found = false;
+            if (currentConfigId) {
+                const card = document.querySelector('.api-config-card[data-config-id="' + currentConfigId + '"]');
+                if (card) {
+                    card.classList.add('selected');
+                    found = true;
+                }
+            }
+            if (!found && currentProvider) {
+                const opt = document.querySelector('.other-logistics-option[data-provider="' + currentProvider + '"]');
+                if (opt) opt.classList.add('selected');
+            }
+
+            pendingLogisticsProvider = currentProvider;
+            pendingApiConfigId = currentConfigId;
+            const confirmBtn = document.getElementById('confirmLogisticsBtn');
+            if (confirmBtn) confirmBtn.disabled = !currentProvider;
+        });
+    }
+});
+// ==================== END LOGISTICS MODAL LOGIC ====================
+
 function moveOrderToTrash(orderId, orderNumber) {
     if (confirm(`Move order ${orderNumber} to trash? This action can be undone from the trash section.`)) {
         const form = document.createElement('form');
@@ -2719,15 +3356,7 @@ function showNotification(type, message) {
     }, 4000);
 }
 
-// Highlight NCM section when logistics changed to NCM
-const logisticsSelect = document.getElementById('logisticsSelect');
-if (logisticsSelect) {
-    logisticsSelect.addEventListener('change', function() {
-        if (this.value === 'ncm') {
-            alert('✅ NCM Logistics selected!\n\nAfter clicking "Update Order", scroll down to see the NCM Integration section where you can create the shipment.');
-        }
-    });
-}
+// (Logistics provider is now selected via modal - no dropdown listener needed)
 
 // ============================================================
 // 🔄 REAL-TIME AUTO-SYNC WITH ALERTIFY NOTIFICATIONS
