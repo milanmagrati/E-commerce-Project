@@ -149,7 +149,7 @@
         /* ─── ATTENDANCE BAR ─── */
         .att-bar {
             display: grid;
-            grid-template-columns: repeat(9, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
             border: 1px solid #e2e8f0;
             border-radius: 8px;
             overflow: hidden;
@@ -467,6 +467,12 @@
                 <div class="av">{{ ot_hours }}h</div>
                 <div class="al">Overtime</div>
             </div>
+            {% if sandwich_days %}
+            <div class="att-cell danger">
+                <div class="av">{{ sandwich_days }}</div>
+                <div class="al">Sandwich</div>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Salary Details -->

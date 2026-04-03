@@ -5432,11 +5432,13 @@ def payslip_download(request, pk):
     components = salary_record.components.filter(is_active=True) if salary_record else []
 
     # ── Sandwich rule: reduce paid weekends/holidays if sandwiched between absences ──
+    sandwich_days = 0
     if salary_record and getattr(salary_record, 'sandwich_rule', False):
         _sw = _count_sandwich_unpaid(
             first_day, last_day, _weekend_day_nums, _holiday_dates,
             list(records), count_up_to=_count_up_to,
         )
+        sandwich_days = _sw['total_full']
         _earned_weekends = max(_earned_weekends - _sw['wknd_earned'], 0)
         weekend_days = max(weekend_days - _sw['wknd_full'], 0)
         _earned_holidays = max(_earned_holidays - _sw['hol_earned'], 0)
@@ -5664,6 +5666,7 @@ def payslip_download(request, pk):
         'advance_deduction': advance_deduction,
         'all_advances': all_employee_advances,
         'net_salary': net_salary,
+        'sandwich_days': sandwich_days,
     }
     return render(request, 'hrm/payslip_print.html', context)
 
