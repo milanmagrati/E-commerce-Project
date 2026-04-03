@@ -4423,6 +4423,7 @@ def employee_salary_list(request):
 
         is_active_val = request.POST.get('is_active', '1') == '1'
         pay_ot_val = request.POST.get('pay_ot') == '1'
+        sandwich_rule_val = request.POST.get('sandwich_rule') == '1'
         salary = EmployeeSalary.objects.create(
             employee=employee,
             basic_salary=basic_salary_val,
@@ -4430,6 +4431,7 @@ def employee_salary_list(request):
             notes=notes,
             is_active=is_active_val,
             pay_ot=pay_ot_val,
+            sandwich_rule=sandwich_rule_val,
         )
         if component_ids:
             salary.components.set(component_ids)
@@ -4499,6 +4501,7 @@ def employee_salary_detail(request, pk):
             'notes': salary.notes,
             'is_active': salary.is_active,
             'pay_ot': salary.pay_ot,
+            'sandwich_rule': salary.sandwich_rule,
             'created_at': salary.created_at.strftime('%b %d, %Y %I:%M %p'),
             'components': [
                 {
@@ -4543,12 +4546,14 @@ def employee_salary_update(request, pk):
 
         is_active_val = request.POST.get('is_active', '1') == '1'
         pay_ot_val = request.POST.get('pay_ot') == '1'
+        sandwich_rule_val = request.POST.get('sandwich_rule') == '1'
         salary.employee = employee
         salary.basic_salary = basic_salary_val
         salary.effective_date = effective_date
         salary.notes = notes
         salary.is_active = is_active_val
         salary.pay_ot = pay_ot_val
+        salary.sandwich_rule = sandwich_rule_val
         salary.save()
         salary.components.set(component_ids)
         return JsonResponse({'success': True, 'message': f'Salary for "{employee.full_name}" updated successfully!'})
@@ -4734,6 +4739,72 @@ def active_employees_api(request):
     return JsonResponse({'success': True, 'employees': data})
 
 
+def _count_sandwich_unpaid(first_day, last_day, weekend_day_nums, holiday_dates, attendance_records, count_up_to=None):
+    """
+    Count weekend/holiday days sandwiched between absences.
+    A weekend/holiday day is "sandwiched" if the nearest working day before it
+    AND the nearest working day after it are both absent.
+
+    Returns dict with separate weekend vs holiday counts:
+        {
+            'wknd_earned': int,  'wknd_full': int,
+            'hol_earned':  int,  'hol_full':  int,
+            'total_full':  int,
+        }
+    """
+    from datetime import timedelta
+    if count_up_to is None:
+        count_up_to = last_day
+
+    # Build status map: date → attendance status
+    status_map = {}
+    for rec in attendance_records:
+        status_map[rec.date] = rec.status
+
+    # Identify all non-working dates (weekends + holidays)
+    non_working = set()
+    d = first_day
+    while d <= last_day:
+        if d.weekday() in weekend_day_nums or d in holiday_dates:
+            non_working.add(d)
+        d += timedelta(days=1)
+
+    wknd_earned = 0; wknd_full = 0
+    hol_earned = 0;  hol_full = 0
+
+    for nw_date in sorted(non_working):
+        # Look backward for nearest working day
+        prev_d = nw_date - timedelta(days=1)
+        while prev_d >= first_day and prev_d in non_working:
+            prev_d -= timedelta(days=1)
+
+        # Look forward for nearest working day
+        next_d = nw_date + timedelta(days=1)
+        while next_d <= last_day and next_d in non_working:
+            next_d += timedelta(days=1)
+
+        # Both neighbors must exist and be absent
+        prev_absent = prev_d >= first_day and status_map.get(prev_d) == 'absent'
+        next_absent = next_d <= last_day and status_map.get(next_d) == 'absent'
+
+        if prev_absent and next_absent:
+            is_holiday = nw_date in holiday_dates and nw_date.weekday() not in weekend_day_nums
+            if is_holiday:
+                hol_full += 1
+                if nw_date <= count_up_to:
+                    hol_earned += 1
+            else:
+                wknd_full += 1
+                if nw_date <= count_up_to:
+                    wknd_earned += 1
+
+    return {
+        'wknd_earned': wknd_earned, 'wknd_full': wknd_full,
+        'hol_earned': hol_earned, 'hol_full': hol_full,
+        'total_full': wknd_full + hol_full,
+    }
+
+
 @login_required
 def generate_payslips(request, pk):
     from .models import PayrollRun, Payslip, Employee, EmployeeSalary, AttendanceRecord
@@ -4863,6 +4934,17 @@ def generate_payslips(request, pk):
                 _half_days_count += 1
             elif _rec.status == 'on_leave':
                 _paid_leave_days += 1
+
+        # 4a. Sandwich rule: reduce paid weekends/holidays if sandwiched between absences
+        if salary_record and getattr(salary_record, 'sandwich_rule', False):
+            _sw = _count_sandwich_unpaid(
+                _first_day, _last_day, _weekend_day_nums, _holiday_dates,
+                list(_records), count_up_to=_count_up_to,
+            )
+            _weekend_count = max(_weekend_count - _sw['wknd_earned'], 0)
+            _weekend_count_full = max(_weekend_count_full - _sw['wknd_full'], 0)
+            _holiday_count = max(_holiday_count - _sw['hol_earned'], 0)
+            _holiday_count_full = max(_holiday_count_full - _sw['hol_full'], 0)
 
         # 4. Pro-rate salary based on payable days
         # Weekends + public holidays are paid; only absent days reduce salary
@@ -5349,6 +5431,18 @@ def payslip_download(request, pk):
     basic_salary = salary_record.basic_salary if salary_record else (employee.base_salary or Decimal('0'))
     components = salary_record.components.filter(is_active=True) if salary_record else []
 
+    # ── Sandwich rule: reduce paid weekends/holidays if sandwiched between absences ──
+    if salary_record and getattr(salary_record, 'sandwich_rule', False):
+        _sw = _count_sandwich_unpaid(
+            first_day, last_day, _weekend_day_nums, _holiday_dates,
+            list(records), count_up_to=_count_up_to,
+        )
+        _earned_weekends = max(_earned_weekends - _sw['wknd_earned'], 0)
+        weekend_days = max(weekend_days - _sw['wknd_full'], 0)
+        _earned_holidays = max(_earned_holidays - _sw['hol_earned'], 0)
+        holiday_days = max(holiday_days - _sw['hol_full'], 0)
+        duty_days = max(total_days - weekend_days - holiday_days, 0)
+
     # ── Pro-rate salary based on payable days ──
     # Weekends + public holidays = paid; only absent days reduce salary
     per_day_salary = Decimal('0')
@@ -5709,6 +5803,20 @@ def payroll_calculation(request, pk):
     basic_salary = salary.basic_salary
     components = salary.components.filter(is_active=True)
 
+    # ── Sandwich rule: reduce paid weekends/holidays if sandwiched between absences ──
+    sandwich_days = 0
+    if getattr(salary, 'sandwich_rule', False):
+        _sw = _count_sandwich_unpaid(
+            first_day, last_day, _weekend_day_nums, _holiday_dates,
+            list(attendance_records), count_up_to=_count_up_to,
+        )
+        sandwich_days = _sw['total_full']
+        _earned_weekends = max(_earned_weekends - _sw['wknd_earned'], 0)
+        weekend_days = max(weekend_days - _sw['wknd_full'], 0)
+        _earned_holidays = max(_earned_holidays - _sw['hol_earned'], 0)
+        holiday_days = max(holiday_days - _sw['hol_full'], 0)
+        duty_days = max(total_days - weekend_days - holiday_days, 0)
+
     # ── Pro-rate salary based on payable days ──
     # Weekends + public holidays = paid; only absent days reduce salary
     per_day_salary = Decimal('0')
@@ -5889,6 +5997,7 @@ def payroll_calculation(request, pk):
         'advance_deduction': advance_deduction,
         'attendance_data': attendance_data,
         'available_months': available_months,
+        'sandwich_days': sandwich_days,
     }
     return render(request, 'hrm/payroll_calculation.html', context)
 

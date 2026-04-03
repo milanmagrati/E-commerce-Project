@@ -464,6 +464,12 @@
                 <div class="pc-att-value purple">{{ ot_hours }}h</div>
                 <div class="pc-att-label">Overtime</div>
             </div>
+            {% if sandwich_days %}
+            <div class="pc-att-item">
+                <div class="pc-att-value red">{{ sandwich_days }}</div>
+                <div class="pc-att-label">Sandwich Days</div>
+            </div>
+            {% endif %}
         </div>
     </div>
 

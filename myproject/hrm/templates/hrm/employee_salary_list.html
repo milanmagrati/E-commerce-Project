@@ -1032,6 +1032,12 @@
                                 <span style="font-weight:600;color:#374151;font-size:13.5px;"><i class="fas fa-clock" style="color:#7c3aed;margin-right:5px;"></i>Pay Overtime (OT)</span>
                             </label>
                         </div>
+                        <div class="col-md-6" style="display:flex;align-items:end;">
+                            <label class="es-comp-item" style="margin:0;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;background:#fafafa;width:100%;cursor:pointer;">
+                                <input type="checkbox" name="sandwich_rule" value="1" id="addSandwichRule" style="accent-color:#e67e22;width:16px;height:16px;">
+                                <span style="font-weight:600;color:#374151;font-size:13.5px;"><i class="fas fa-bread-slice" style="color:#e67e22;margin-right:5px;"></i>Sandwich Rule</span>
+                            </label>
+                        </div>
                         <div class="col-12">
                             <label class="es-modal-label">Notes</label>
                             <textarea name="notes" class="form-control" rows="2" placeholder="Optional notes about this salary assignment..."></textarea>
@@ -1143,6 +1149,12 @@
                             <label class="es-comp-item" style="margin:0;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;background:#fafafa;width:100%;cursor:pointer;">
                                 <input type="checkbox" name="pay_ot" value="1" id="editPayOt" style="accent-color:#7c3aed;width:16px;height:16px;">
                                 <span style="font-weight:600;color:#374151;font-size:13.5px;"><i class="fas fa-clock" style="color:#7c3aed;margin-right:5px;"></i>Pay Overtime (OT)</span>
+                            </label>
+                        </div>
+                        <div class="col-md-6" style="display:flex;align-items:end;">
+                            <label class="es-comp-item" style="margin:0;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;background:#fafafa;width:100%;cursor:pointer;">
+                                <input type="checkbox" name="sandwich_rule" value="1" id="editSandwichRule" style="accent-color:#e67e22;width:16px;height:16px;">
+                                <span style="font-weight:600;color:#374151;font-size:13.5px;"><i class="fas fa-bread-slice" style="color:#e67e22;margin-right:5px;"></i>Sandwich Rule</span>
                             </label>
                         </div>
                         <div class="col-12">
@@ -1303,6 +1315,10 @@ function viewSalary(id) {
                     <div class="es-view-value">${s.pay_ot ? '<span style="color:#7c3aed;font-weight:600;"><i class="fas fa-check-circle"></i> Yes — OT included in payroll</span>' : '<span style="color:#9ca3af;"><i class="fas fa-times-circle"></i> No — OT not included</span>'}</div>
                 </div>
                 <div class="es-view-row">
+                    <div class="es-view-label">Sandwich Rule</div>
+                    <div class="es-view-value">${s.sandwich_rule ? '<span style="color:#e67e22;font-weight:600;"><i class="fas fa-check-circle"></i> Yes — Weekends between absences are unpaid</span>' : '<span style="color:#9ca3af;"><i class="fas fa-times-circle"></i> No — All weekends are paid</span>'}</div>
+                </div>
+                <div class="es-view-row">
                     <div class="es-view-label">Components</div>
                     <div class="es-view-value"><div class="es-comp-badges">${compHtml}</div></div>
                 </div>
@@ -1335,6 +1351,7 @@ function editSalary(id) {
             document.getElementById('editNotes').value = s.notes;
             document.getElementById('editIsActive').value = s.is_active ? '1' : '0';
             document.getElementById('editPayOt').checked = s.pay_ot;
+            document.getElementById('editSandwichRule').checked = s.sandwich_rule;
 
             // Reset and set component checkboxes
             document.querySelectorAll('.edit-comp-check').forEach(cb => cb.checked = false);
