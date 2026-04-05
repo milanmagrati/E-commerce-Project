@@ -11,7 +11,7 @@
                     <div class="brand-content">
                         <div class="brand-logo mb-4">
                             <i class="fas fa-shield-alt fa-4x mb-3 opacity-90"></i>
-                            <h1 class="display-4 fw-bold mb-3">Trendy Shopping</h1>
+                            <h1 class="display-4 fw-bold mb-3">{{ COMPANY_NAME|default:'Trendy Shopping' }}</h1>
                             <p class="lead opacity-75 mb-4">Professional E-commerce Management System</p>
                         </div>
                         
@@ -55,7 +55,7 @@
                         <!-- Mobile Logo -->
                         <div class="mobile-brand text-center mb-4 d-lg-none">
                             <i class="fas fa-shield-alt fa-3x text-primary mb-2"></i>
-                            <h3 class="fw-bold text-dark">Trendy Shopping</h3>
+                            <h3 class="fw-bold text-dark">{{ COMPANY_NAME|default:'Trendy Shopping' }}</h3>
                         </div>
 
                         <!-- Form Card -->
@@ -184,7 +184,7 @@
 /* Base Wrapper */
 .auth-wrapper {
     min-height: 100vh;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--primary-color, #667eea) 0%, var(--secondary-color, #764ba2) 100%);
     position: relative;
     overflow: hidden;
 }
@@ -283,8 +283,8 @@
 }
 
 .form-floating > .form-control:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+    border-color: var(--primary-color, #667eea);
+    box-shadow: 0 0 0 4px rgba(0,0,0,0.08);
 }
 
 .form-floating > label {
@@ -299,12 +299,12 @@
 }
 
 .btn-link:hover {
-    color: #667eea !important;
+    color: var(--primary-color, #667eea) !important;
 }
 
 /* Primary Button */
 .btn-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--primary-color, #667eea) 0%, var(--secondary-color, #764ba2) 100%);
     border: none;
     border-radius: 12px;
     padding: 14px 28px;
@@ -332,7 +332,7 @@
 
 .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
 .btn-primary:active {
@@ -341,8 +341,8 @@
 
 /* Form Check */
 .form-check-input:checked {
-    background-color: #667eea;
-    border-color: #667eea;
+    background-color: var(--primary-color, #667eea);
+    border-color: var(--primary-color, #667eea);
 }
 
 /* Divider */
@@ -391,7 +391,7 @@
 /* Responsive Design */
 @media (max-width: 991.98px) {
     .auth-wrapper {
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(180deg, var(--primary-color, #667eea) 0%, var(--secondary-color, #764ba2) 100%);
     }
     
     .auth-form-wrapper {

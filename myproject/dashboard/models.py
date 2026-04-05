@@ -1442,3 +1442,43 @@ class OrderFollowUp(models.Model):
 
     def __str__(self):
         return f"Follow-up on {self.order.order_number} by {self.user} ({self.get_followup_type_display()})"
+
+
+class CompanySetup(models.Model):
+    """Singleton model to store company branding and theme configuration."""
+
+    THEME_CHOICES = [
+        ('default',  'Default Blue'),
+        ('dark',     'Dark Mode'),
+        ('purple',   'Purple Elegance'),
+        ('green',    'Forest Green'),
+        ('orange',   'Sunset Orange'),
+        ('red',      'Ruby Red'),
+        ('teal',     'Teal Ocean'),
+        ('indigo',   'Deep Indigo'),
+    ]
+
+    company_name = models.CharField(max_length=200, default='Trendy Shopping')
+    tagline = models.CharField(max_length=300, blank=True, default='')
+    logo = models.ImageField(upload_to='company/', blank=True, null=True)
+    favicon = models.ImageField(upload_to='company/', blank=True, null=True)
+    theme = models.CharField(max_length=30, choices=THEME_CHOICES, default='default')
+    primary_color = models.CharField(max_length=7, default='#5e72e4')
+    secondary_color = models.CharField(max_length=7, default='#825ee4')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Company Setup'
+        verbose_name_plural = 'Company Setup'
+
+    def __str__(self):
+        return self.company_name
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)

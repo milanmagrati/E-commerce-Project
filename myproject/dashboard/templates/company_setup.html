@@ -1,0 +1,744 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Company Setup — {{ COMPANY_NAME|default:'Admin' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ===================== PAGE SHELL ===================== */
+  .cs-page { padding-bottom: 3rem; }
+
+  /* ---------- Hero banner ---------- */
+  .cs-hero {
+    background: linear-gradient(135deg, var(--primary-color, #5e72e4) 0%, var(--secondary-color, #825ee4) 60%, #b721ff 100%);
+    border-radius: 20px;
+    padding: 2.5rem 2rem 2rem;
+    margin-bottom: 2rem;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  .cs-hero::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 220px; height: 220px;
+    background: rgba(255,255,255,.06);
+    border-radius: 50%;
+  }
+  .cs-hero::after {
+    content: '';
+    position: absolute;
+    bottom: -40px; left: -40px;
+    width: 160px; height: 160px;
+    background: rgba(255,255,255,.04);
+    border-radius: 50%;
+  }
+  .cs-hero h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: .3rem; }
+  .cs-hero p  { opacity: .85; margin: 0; font-size: .95rem; }
+  .cs-hero .hero-icon {
+    font-size: 3rem; opacity: .2;
+    position: absolute; right: 2rem; top: 50%;
+    transform: translateY(-50%);
+  }
+
+  /* ---------- Cards ---------- */
+  .cs-card {
+    background: #fff;
+    border: none;
+    border-radius: 18px;
+    box-shadow: 0 4px 24px rgba(94,114,228,.08);
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+    transition: box-shadow .25s;
+  }
+  .cs-card:hover { box-shadow: 0 8px 32px rgba(94,114,228,.14); }
+
+  .cs-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #32325d;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: .75rem;
+    border-bottom: 2px solid #f0f0f0;
+  }
+  .cs-card-title .icon-wrap {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .95rem;
+    flex-shrink: 0;
+  }
+
+  /* ---------- Labels ---------- */
+  .cs-label {
+    font-size: .82rem;
+    font-weight: 600;
+    color: #525f7f;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-bottom: .4rem;
+  }
+
+  /* ---------- Inputs ---------- */
+  .cs-input {
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    padding: .6rem 1rem;
+    font-size: .92rem;
+    transition: border-color .2s, box-shadow .2s;
+    width: 100%;
+  }
+  .cs-input:focus {
+    outline: none;
+    border-color: var(--primary-color, #5e72e4);
+    box-shadow: 0 0 0 3px rgba(0,0,0,.08);
+  }
+
+  /* ---------- Logo Upload ---------- */
+  .cs-upload-zone {
+    border: 2px dashed #c8d3ff;
+    border-radius: 14px;
+    padding: 2rem 1rem;
+    text-align: center;
+    background: #f8f9ff;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+  }
+  .cs-upload-zone:hover, .cs-upload-zone.drag-over {
+    border-color: var(--primary-color, #5e72e4);
+    background: #eef0ff;
+  }
+  .cs-upload-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  .cs-upload-zone .upload-icon {
+    font-size: 2.4rem; color: var(--primary-color, #5e72e4); margin-bottom: .5rem;
+  }
+  .cs-upload-zone p { margin: 0; color: #8898aa; font-size: .85rem; }
+  .cs-upload-zone .hint { font-size: .75rem; color: #b0bec5; margin-top: .3rem; }
+
+  .cs-preview-img {
+    max-width: 120px;
+    max-height: 80px;
+    border-radius: 10px;
+    border: 2px solid #e9ecef;
+    object-fit: contain;
+    background: #f8f9ff;
+    margin-bottom: .5rem;
+  }
+  .cs-preview-favicon {
+    width: 48px; height: 48px;
+    border-radius: 8px;
+    border: 2px solid #e9ecef;
+    object-fit: contain;
+    background: #f8f9ff;
+    margin-bottom: .5rem;
+  }
+
+  .cs-remove-btn {
+    font-size: .75rem;
+    color: #dc3545;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    position: relative;
+    z-index: 2;
+  }
+  .cs-remove-btn:hover { color: #b02a37; }
+
+  /* ---------- Theme Picker ---------- */
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 1rem;
+  }
+  .theme-card {
+    border: 3px solid #e9ecef;
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+  }
+  .theme-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.1); }
+  .theme-card input[type=radio] { position: absolute; opacity: 0; pointer-events: none; }
+  .theme-card.selected {
+    border-color: var(--primary-color, #5e72e4);
+    box-shadow: 0 0 0 3px rgba(94,114,228,.25);
+  }
+  .theme-card .theme-preview {
+    height: 60px;
+    display: flex;
+  }
+  .theme-preview-sidebar { width: 35%; }
+  .theme-preview-content { flex: 1; background: #f5f6fa; display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+  .theme-preview-bar { height: 8px; border-radius: 4px; background: #e0e0e0; }
+  .theme-preview-bar:first-child { width: 70%; }
+  .theme-preview-bar:last-child  { width: 50%; }
+  .theme-card .theme-name {
+    padding: .45rem .6rem;
+    font-size: .78rem;
+    font-weight: 600;
+    color: #32325d;
+    text-align: center;
+    background: #fff;
+  }
+  .theme-card .check-badge {
+    position: absolute;
+    top: 6px; right: 6px;
+    width: 20px; height: 20px;
+    background: var(--primary-color, #5e72e4);
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .theme-card .check-badge i { color: #fff; font-size: .65rem; }
+  .theme-card.selected .check-badge { display: flex; }
+
+  /* Theme colour palettes */
+  .t-default  { background: linear-gradient(135deg,#5e72e4,#825ee4); }
+  .t-dark     { background: linear-gradient(135deg,#1a1a2e,#16213e); }
+  .t-purple   { background: linear-gradient(135deg,#7b2ff7,#b721ff); }
+  .t-green    { background: linear-gradient(135deg,#22c55e,#16a34a); }
+  .t-orange   { background: linear-gradient(135deg,#f97316,#ea580c); }
+  .t-red      { background: linear-gradient(135deg,#ef4444,#dc2626); }
+  .t-teal     { background: linear-gradient(135deg,#14b8a6,#0d9488); }
+  .t-indigo   { background: linear-gradient(135deg,#4f46e5,#3730a3); }
+
+  /* ---------- Color Picker Row ---------- */
+  .cs-color-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+  }
+  .cs-color-swatch {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    border: 2px solid #e9ecef;
+    cursor: pointer;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .cs-color-swatch input[type=color] {
+    width: 200%; height: 200%;
+    margin: -25%; border: none; cursor: pointer;
+    padding: 0;
+  }
+  .cs-hex-input {
+    width: 110px;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    padding: .45rem .75rem;
+    font-size: .88rem;
+    font-family: monospace;
+    transition: border-color .2s;
+  }
+  .cs-hex-input:focus { outline: none; border-color: var(--primary-color, #5e72e4); }
+
+  /* ---------- Live Preview Panel ---------- */
+  .cs-live-preview {
+    background: #f8f9ff;
+    border-radius: 16px;
+    border: 2px solid #e9ecef;
+    overflow: hidden;
+    height: 280px;
+    display: flex;
+  }
+  .preview-sidebar {
+    width: 70px;
+    padding: .75rem .5rem;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    transition: background .3s;
+  }
+  .preview-logo-area {
+    height: 28px;
+    border-radius: 6px;
+    background: rgba(255,255,255,.2);
+    margin-bottom: .5rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .preview-logo-area img {
+    max-height: 22px; max-width: 54px;
+    object-fit: contain; border-radius: 4px;
+  }
+  .preview-logo-placeholder { font-size: .55rem; color: rgba(255,255,255,.7); text-align: center; font-weight: 700; }
+  .preview-nav-item {
+    height: 8px; border-radius: 4px;
+    background: rgba(255,255,255,.18);
+  }
+  .preview-nav-item.active { background: rgba(255,255,255,.5); }
+  .preview-main {
+    flex: 1;
+    padding: .75rem;
+    background: #fff;
+    overflow: hidden;
+  }
+  .preview-topbar {
+    height: 28px; border-radius: 8px;
+    margin-bottom: .75rem;
+    transition: background .3s;
+  }
+  .preview-stat-row {
+    display: flex; gap: .4rem; margin-bottom: .5rem;
+  }
+  .preview-stat {
+    flex: 1; height: 44px; border-radius: 8px;
+    background: #f0f4ff;
+  }
+  .preview-table { height: 80px; border-radius: 8px; background: #f8f9ff; }
+  .preview-company-name {
+    font-size: .7rem; font-weight: 700; color: rgba(255,255,255,.9);
+    text-align: center; padding: 0 .25rem;
+    word-break: break-word; line-height: 1.2;
+    margin-bottom: .3rem;
+  }
+
+  /* ---------- Save Button ---------- */
+  .cs-save-btn {
+    background: linear-gradient(135deg, var(--primary-color, #5e72e4) 0%, var(--secondary-color, #825ee4) 100%);
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    padding: .75rem 2.5rem;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    transition: all .25s;
+    cursor: pointer;
+  }
+  .cs-save-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  }
+  .cs-save-btn:active { transform: translateY(0); }
+
+  /* ---------- Section sticky header ---------- */
+  .cs-section-badge {
+    display: inline-flex; align-items: center; gap: .4rem;
+    background: #eef0ff;
+    color: var(--primary-color, #5e72e4);
+    font-size: .75rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em;
+    padding: .3rem .75rem;
+    border-radius: 20px;
+    margin-bottom: 1rem;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width:768px){
+    .cs-hero { padding: 1.5rem 1.2rem; }
+    .cs-hero h1 { font-size: 1.4rem;}
+    .theme-grid { grid-template-columns: repeat(auto-fill,minmax(100px,1fr)); }
+    .cs-live-preview { height: 200px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cs-page">
+
+  <!-- ==================== HERO ==================== -->
+  <div class="cs-hero">
+    <h1><i class="fas fa-building me-2"></i>Company Setup</h1>
+    <p>Manage your company branding, logo, and theme preferences.</p>
+    <i class="fas fa-palette hero-icon"></i>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" id="companySetupForm">
+    {% csrf_token %}
+
+    <div class="row g-4">
+
+      <!-- ==================== LEFT COLUMN ==================== -->
+      <div class="col-lg-7">
+
+        <!-- Brand Identity Card -->
+        <div class="cs-card">
+          <div class="cs-card-title">
+            <span class="icon-wrap" style="background:#eef0ff;color:#5e72e4;"><i class="fas fa-id-badge"></i></span>
+            Brand Identity
+          </div>
+
+          <div class="mb-3">
+            <div class="cs-label">Company Name</div>
+            <input type="text" name="company_name"
+                   value="{{ company.company_name }}"
+                   class="cs-input"
+                   id="companyNameInput"
+                   placeholder="e.g. Trendy Shopping"
+                   maxlength="200" required>
+          </div>
+
+          <div class="mb-0">
+            <div class="cs-label">Tagline <span class="text-muted fw-normal text-lowercase">(optional)</span></div>
+            <input type="text" name="tagline"
+                   value="{{ company.tagline }}"
+                   class="cs-input"
+                   placeholder="e.g. Fashion that defines you"
+                   maxlength="300">
+          </div>
+        </div>
+
+        <!-- Logo & Favicon Card -->
+        <div class="cs-card">
+          <div class="cs-card-title">
+            <span class="icon-wrap" style="background:#fff3e0;color:#fb8c00;"><i class="fas fa-image"></i></span>
+            Logo & Favicon
+          </div>
+
+          <div class="row g-4">
+            <!-- Logo -->
+            <div class="col-sm-8">
+              <div class="cs-label">Company Logo</div>
+              <div class="cs-upload-zone" id="logoZone">
+                <input type="file" name="logo" id="logoInput" accept="image/*">
+                <div id="logoPreviewWrap">
+                  {% if company.logo %}
+                    <img src="{{ company.logo.url }}" class="cs-preview-img" id="logoPreviewImg" alt="Logo">
+                    <br>
+                    <button type="button" class="cs-remove-btn" onclick="removeFile('logo')">
+                      <i class="fas fa-times me-1"></i>Remove Logo
+                    </button>
+                  {% else %}
+                    <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                    <p>Click or drag & drop your logo</p>
+                    <p class="hint">PNG, JPG, SVG · max 2 MB</p>
+                  {% endif %}
+                </div>
+              </div>
+              <input type="hidden" name="remove_logo" id="removeLogo" value="0">
+            </div>
+
+            <!-- Favicon -->
+            <div class="col-sm-4">
+              <div class="cs-label">Favicon</div>
+              <div class="cs-upload-zone" id="faviconZone" style="padding:1.2rem .5rem;">
+                <input type="file" name="favicon" id="faviconInput" accept="image/*,.ico">
+                <div id="faviconPreviewWrap">
+                  {% if company.favicon %}
+                    <img src="{{ company.favicon.url }}" class="cs-preview-favicon" id="faviconPreviewImg" alt="Favicon">
+                    <br>
+                    <button type="button" class="cs-remove-btn" onclick="removeFile('favicon')">
+                      <i class="fas fa-times me-1"></i>Remove
+                    </button>
+                  {% else %}
+                    <div class="upload-icon" style="font-size:1.6rem;"><i class="fas fa-star"></i></div>
+                    <p style="font-size:.78rem;">Favicon<br>.ico / 32×32</p>
+                  {% endif %}
+                </div>
+              </div>
+              <input type="hidden" name="remove_favicon" id="removeFavicon" value="0">
+            </div>
+          </div>
+        </div>
+
+        <!-- Accent Colors Card -->
+        <div class="cs-card">
+          <div class="cs-card-title">
+            <span class="icon-wrap" style="background:#fce4ec;color:#e91e63;"><i class="fas fa-fill-drip"></i></span>
+            Accent Colors
+          </div>
+
+          <div class="row g-3">
+            <div class="col-6">
+              <div class="cs-label">Primary Color</div>
+              <div class="cs-color-row">
+                <div class="cs-color-swatch">
+                  <input type="color" id="primaryColorPicker" value="{{ company.primary_color }}"
+                         oninput="syncColor('primary', this.value)">
+                </div>
+                <input type="text" name="primary_color" id="primaryHex"
+                       class="cs-hex-input" value="{{ company.primary_color }}"
+                       maxlength="7" placeholder="#5e72e4"
+                       oninput="syncHex('primary', this.value)">
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="cs-label">Secondary Color</div>
+              <div class="cs-color-row">
+                <div class="cs-color-swatch">
+                  <input type="color" id="secondaryColorPicker" value="{{ company.secondary_color }}"
+                         oninput="syncColor('secondary', this.value)">
+                </div>
+                <input type="text" name="secondary_color" id="secondaryHex"
+                       class="cs-hex-input" value="{{ company.secondary_color }}"
+                       maxlength="7" placeholder="#825ee4"
+                       oninput="syncHex('secondary', this.value)">
+              </div>
+            </div>
+          </div>
+
+          <p class="text-muted mt-3 mb-0" style="font-size:.8rem;">
+            <i class="fas fa-info-circle me-1 text-primary"></i>
+            These colors are used for gradients, buttons, and accents across the admin panel.
+          </p>
+        </div>
+
+      </div><!-- /LEFT COLUMN -->
+
+      <!-- ==================== RIGHT COLUMN ==================== -->
+      <div class="col-lg-5">
+
+        <!-- Live Preview Card -->
+        <div class="cs-card" style="position:sticky;top:80px;">
+          <div class="cs-card-title">
+            <span class="icon-wrap" style="background:#e8f5e9;color:#43a047;"><i class="fas fa-desktop"></i></span>
+            Live Preview
+          </div>
+
+          <div class="cs-live-preview" id="livePreview">
+            <div class="preview-sidebar" id="previewSidebar" style="background:linear-gradient(180deg,{{ company.primary_color }},{{ company.secondary_color }});">
+              <div class="preview-logo-area" id="previewLogoArea">
+                {% if company.logo %}
+                  <img src="{{ company.logo.url }}" id="previewLogoImg" alt="">
+                {% else %}
+                  <div class="preview-logo-placeholder" id="previewLogoText">{{ company.company_name|truncatechars:8 }}</div>
+                {% endif %}
+              </div>
+              <div class="preview-company-name" id="previewCompanyName">{{ company.company_name|truncatechars:12 }}</div>
+              <div class="preview-nav-item active"></div>
+              <div class="preview-nav-item"></div>
+              <div class="preview-nav-item"></div>
+              <div class="preview-nav-item"></div>
+              <div class="preview-nav-item"></div>
+            </div>
+            <div class="preview-main">
+              <div class="preview-topbar" id="previewTopbar"
+                   style="background:linear-gradient(90deg,{{ company.primary_color }},{{ company.secondary_color }});"></div>
+              <div class="preview-stat-row">
+                <div class="preview-stat" style="background:rgba(0,0,0,.06);"></div>
+                <div class="preview-stat" style="background:rgba(0,0,0,.06);"></div>
+                <div class="preview-stat" style="background:rgba(0,0,0,.06);"></div>
+              </div>
+              <div class="preview-table"></div>
+            </div>
+          </div>
+
+          <!-- Theme Grid -->
+          <div class="mt-3">
+            <div class="cs-label mb-2">Choose a Theme Preset</div>
+            <div class="theme-grid">
+              {% with current_theme=company.theme %}
+              {% for val, label in company.THEME_CHOICES %}
+              <label class="theme-card {% if current_theme == val %}selected{% endif %}" data-theme="{{ val }}">
+                <input type="radio" name="theme" value="{{ val }}" {% if current_theme == val %}checked{% endif %}>
+                <div class="theme-preview">
+                  <div class="theme-preview-sidebar t-{{ val }}"></div>
+                  <div class="theme-preview-content">
+                    <div class="theme-preview-bar"></div>
+                    <div class="theme-preview-bar"></div>
+                  </div>
+                </div>
+                <div class="theme-name">{{ label }}</div>
+                <div class="check-badge"><i class="fas fa-check"></i></div>
+              </label>
+              {% endfor %}
+              {% endwith %}
+            </div>
+          </div>
+
+        </div><!-- /sticky card -->
+      </div><!-- /RIGHT COLUMN -->
+
+    </div><!-- /row -->
+
+    <!-- ==================== SAVE BAR ==================== -->
+    <div class="cs-card d-flex align-items-center justify-content-between flex-wrap gap-3">
+      <div>
+        <div class="fw-bold text-dark" style="font-size:.95rem;">Save Company Settings</div>
+        <div class="text-muted" style="font-size:.8rem;">Changes will be applied globally across the admin panel.</div>
+      </div>
+      <button type="submit" class="cs-save-btn">
+        <i class="fas fa-save me-2"></i>Save Changes
+      </button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+/* ============================================================
+   THEME PRESET DATA  (sidebar gradient + topbar gradient)
+   ============================================================ */
+const THEMES = {
+  default : { p: '#5e72e4', s: '#825ee4' },
+  dark    : { p: '#1a1a2e', s: '#16213e' },
+  purple  : { p: '#7b2ff7', s: '#b721ff' },
+  green   : { p: '#22c55e', s: '#16a34a' },
+  orange  : { p: '#f97316', s: '#ea580c' },
+  red     : { p: '#ef4444', s: '#dc2626' },
+  teal    : { p: '#14b8a6', s: '#0d9488' },
+  indigo  : { p: '#4f46e5', s: '#3730a3' },
+};
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+function applyPreviewColors(p, s) {
+  document.getElementById('previewSidebar').style.background =
+    `linear-gradient(180deg,${p},${s})`;
+  document.getElementById('previewTopbar').style.background =
+    `linear-gradient(90deg,${p},${s})`;
+  // preview-stat uses a fixed soft background — no color tint needed
+}
+
+function syncColor(which, val) {
+  if(which === 'primary') {
+    document.getElementById('primaryHex').value = val;
+  } else {
+    document.getElementById('secondaryHex').value = val;
+  }
+  applyPreviewColors(
+    document.getElementById('primaryHex').value   || '#5e72e4',
+    document.getElementById('secondaryHex').value || '#825ee4'
+  );
+}
+
+function syncHex(which, val) {
+  if(!/^#[0-9a-fA-F]{6}$/.test(val)) return;
+  if(which === 'primary') {
+    document.getElementById('primaryColorPicker').value = val;
+  } else {
+    document.getElementById('secondaryColorPicker').value = val;
+  }
+  applyPreviewColors(
+    document.getElementById('primaryHex').value   || '#5e72e4',
+    document.getElementById('secondaryHex').value || '#825ee4'
+  );
+}
+
+/* ============================================================
+   THEME PICKER
+   ============================================================ */
+document.querySelectorAll('.theme-card').forEach(card => {
+  card.addEventListener('click', function() {
+    document.querySelectorAll('.theme-card').forEach(c => c.classList.remove('selected'));
+    this.classList.add('selected');
+    this.querySelector('input[type=radio]').checked = true;
+
+    const t = THEMES[this.dataset.theme];
+    if(t) {
+      document.getElementById('primaryHex').value  = t.p;
+      document.getElementById('secondaryHex').value = t.s;
+      document.getElementById('primaryColorPicker').value  = t.p;
+      document.getElementById('secondaryColorPicker').value = t.s;
+      applyPreviewColors(t.p, t.s);
+    }
+  });
+});
+
+/* ============================================================
+   COMPANY NAME  → live preview
+   ============================================================ */
+document.getElementById('companyNameInput').addEventListener('input', function() {
+  const name = this.value.trim() || 'Your Company';
+  const short = name.length > 12 ? name.slice(0, 12) + '…' : name;
+  const el = document.getElementById('previewCompanyName');
+  if(el) el.textContent = short;
+  const logoText = document.getElementById('previewLogoText');
+  if(logoText) {
+    const s = name.length > 8 ? name.slice(0,8)+'…' : name;
+    logoText.textContent = s;
+  }
+});
+
+/* ============================================================
+   FILE UPLOAD  → live preview
+   ============================================================ */
+function handleFilePreview(inputId, previewId, zoneId, isLogo) {
+  const input = document.getElementById(inputId);
+  if(!input) return;
+  input.addEventListener('change', function() {
+    const file = this.files[0];
+    if(!file) return;
+    // Reset stale remove flag so a newly selected file isn't deleted on submit
+    const removeField = document.getElementById(isLogo ? 'removeLogo' : 'removeFavicon');
+    if(removeField) removeField.value = '0';
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const wrap = document.getElementById(previewId + 'Wrap');
+      const cls  = isLogo ? 'cs-preview-img' : 'cs-preview-favicon';
+      const rmFn = isLogo ? 'removeFile(\'logo\')' : 'removeFile(\'favicon\')';
+      wrap.innerHTML = `
+        <img src="${e.target.result}" class="${cls}" id="${previewId}Img" alt="">
+        <br>
+        <button type="button" class="cs-remove-btn" onclick="${rmFn}">
+          <i class="fas fa-times me-1"></i>Remove
+        </button>`;
+
+      if(isLogo) {
+        // Update live preview sidebar logo
+        const logoArea = document.getElementById('previewLogoArea');
+        logoArea.innerHTML = `<img src="${e.target.result}" id="previewLogoImg" alt="" style="max-height:22px;max-width:54px;object-fit:contain;border-radius:4px;">`;
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+handleFilePreview('logoInput',    'logoPreview',    'logoZone',    true);
+handleFilePreview('faviconInput', 'faviconPreview', 'faviconZone', false);
+
+/* Drag-over styling and actual drop handling */
+['logoZone','faviconZone'].forEach(id => {
+  const zone = document.getElementById(id);
+  if(!zone) return;
+  const fileInput = zone.querySelector('input[type=file]');
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    if(e.dataTransfer.files.length && fileInput) {
+      // Use DataTransfer to simulate file selection
+      try {
+        const dt = new DataTransfer();
+        Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+        fileInput.files = dt.files;
+        fileInput.dispatchEvent(new Event('change'));
+      } catch(err) {
+        // Fallback: show file name
+        console.warn('DataTransfer not supported:', err);
+      }
+    }
+  });
+});
+
+/* ============================================================
+   REMOVE LOGO / FAVICON
+   ============================================================ */
+function removeFile(which) {
+  if(which === 'logo') {
+    document.getElementById('removeLogo').value = '1';
+    document.getElementById('logoPreviewWrap').innerHTML = `
+      <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+      <p>Click or drag & drop your logo</p><p class="hint">PNG, JPG, SVG · max 2 MB</p>`;
+    // Reset live preview
+    const logoArea = document.getElementById('previewLogoArea');
+    const name = document.getElementById('companyNameInput').value.trim() || 'Company';
+    const short = name.length > 8 ? name.slice(0,8)+'…' : name;
+    logoArea.innerHTML = `<div class="preview-logo-placeholder" id="previewLogoText">${short}</div>`;
+  } else {
+    document.getElementById('removeFavicon').value = '1';
+    document.getElementById('faviconPreviewWrap').innerHTML = `
+      <div class="upload-icon" style="font-size:1.6rem;"><i class="fas fa-star"></i></div>
+      <p style="font-size:.78rem;">Favicon<br>.ico / 32×32</p>`;
+  }
+  // Clear the file inputs
+  document.getElementById(which === 'logo' ? 'logoInput' : 'faviconInput').value = '';
+}
+</script>
+{% endblock %}

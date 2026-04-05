@@ -1,4 +1,58 @@
 from django.db.models import F
+import re
+
+_HEX_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
+
+def _safe_color(val, fallback):
+    """Only allow valid hex colors to prevent CSS injection."""
+    return val if val and _HEX_RE.match(val) else fallback
+
+
+def company_setup(request):
+    """Inject CompanySetup settings into every template context."""
+    from dashboard.models import CompanySetup
+    try:
+        cs = CompanySetup.get_settings()
+    except Exception:
+        cs = None
+
+    if cs:
+        # Safely build logo/favicon — only expose if the file actually exists on disk
+        logo = None
+        if cs.logo:
+            try:
+                if cs.logo.storage.exists(cs.logo.name):
+                    logo = cs.logo
+            except Exception:
+                pass
+
+        favicon = None
+        if cs.favicon:
+            try:
+                if cs.favicon.storage.exists(cs.favicon.name):
+                    favicon = cs.favicon
+            except Exception:
+                pass
+
+        return {
+            'company_settings': cs,
+            'COMPANY_NAME': cs.company_name,
+            'COMPANY_LOGO': logo,
+            'COMPANY_FAVICON': favicon,
+            'COMPANY_TAGLINE': cs.tagline,
+            'COMPANY_THEME': cs.theme,
+            'COMPANY_PRIMARY': _safe_color(cs.primary_color, '#5e72e4'),
+            'COMPANY_SECONDARY': _safe_color(cs.secondary_color, '#825ee4'),
+        }
+    return {
+        'COMPANY_NAME': 'Trendy Shopping',
+        'COMPANY_LOGO': None,
+        'COMPANY_FAVICON': None,
+        'COMPANY_TAGLINE': '',
+        'COMPANY_PRIMARY': '#5e72e4',
+        'COMPANY_SECONDARY': '#825ee4',
+        'COMPANY_THEME': 'default',
+    }
 
 
 def low_stock_notifications(request):

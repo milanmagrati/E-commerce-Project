@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice #{{ order.order_number }} — Trendy Shopping</title>
+    <title>Invoice #{{ order.order_number }} — {{ COMPANY_NAME|default:'Trendy Shopping' }}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -156,7 +156,7 @@
     <!-- Header -->
     <div class="invoice-header">
         <div>
-            <div class="brand-name">Trendy Shopping</div>
+            <div class="brand-name">{{ COMPANY_NAME|default:'Trendy Shopping' }}</div>
             {% if order.branch.phone %}<div class="brand-sub">{{ order.branch.phone }}</div>{% endif %}
         </div>
         <div class="invoice-meta">
@@ -300,7 +300,7 @@
                 Paid: रू {{ order.partial_amount_paid|floatformat:2 }} | Remaining: रू {{ order.remaining_amount|floatformat:2 }}
             </div>
             {% endif %}
-            <div class="thanks">Thank you for shopping with Trendy Shopping!</div>
+            <div class="thanks">Thank you for shopping with {{ COMPANY_NAME|default:'Trendy Shopping' }}!</div>
             <div class="footer-note">Computer-generated invoice — no signature required.</div>
             <div class="printed-by">Printed by {{ user.get_full_name|default:user.username }}</div>
         </div>

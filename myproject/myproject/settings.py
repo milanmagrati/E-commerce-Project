@@ -77,6 +77,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'dashboard.context_processors.company_setup',
                 'dashboard.context_processors.low_stock_notifications',
                 'chat.context_processors.unread_message_count',
             ],
