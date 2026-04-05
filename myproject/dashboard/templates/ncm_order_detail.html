@@ -176,6 +176,20 @@
                             {% endif %}
                         </td>
                     </tr>
+                    <tr>
+                        <th>API Account:</th>
+                        <td>
+                            {% if order.api_config %}
+                                <span class="badge rounded-pill" style="background: linear-gradient(135deg, #667eea, #764ba2); font-size: 0.82rem; padding: 6px 14px;">
+                                    <i class="fas fa-plug me-1"></i> {{ order.api_config.api_name }}
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary rounded-pill" style="font-size: 0.82rem; padding: 6px 14px;">
+                                    <i class="fas fa-cog me-1"></i> Default (.env)
+                                </span>
+                            {% endif %}
+                        </td>
+                    </tr>
                 </table>
             </div>
         </div>

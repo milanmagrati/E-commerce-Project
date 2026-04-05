@@ -3151,6 +3151,7 @@ def order_detail(request, order_id):
     # Use select_related to get ForeignKey relationships efficiently
     order = get_object_or_404(
         Order.objects.select_related(
+            'api_config',
             'status_setup',
             'payment_setup',
             'payment_status_setup',
@@ -3298,6 +3299,7 @@ def order_detail(request, order_id):
                 # CRITICAL: Ensure FK relationships are synced and setup records exist
                 # Re-fetch the order to apply any FK sync changes
                 order = Order.objects.select_related(
+                    'api_config',
                     'status_setup',
                     'payment_setup',
                     'payment_status_setup'
@@ -3445,6 +3447,7 @@ def order_detail(request, order_id):
     
     # CRITICAL: Re-fetch from database to get fresh FK relationships after sync
     order = Order.objects.select_related(
+        'api_config',
         'status_setup', 
         'payment_setup', 
         'payment_status_setup',
@@ -3533,6 +3536,7 @@ def order_edit(request, order_id):
     # Use select_related to load all ForeignKey relationships at once
     order = get_object_or_404(
         Order.objects.select_related(
+            'api_config',
             'status_setup', 
             'payment_setup', 
             'payment_status_setup',
@@ -3868,6 +3872,7 @@ def order_edit(request, order_id):
     # GET request - show form with fresh data
     # CRITICAL: Fetch fresh order data from database
     order = Order.objects.select_related(
+        'api_config',
         'status_setup', 
         'payment_setup', 
         'payment_status_setup',
@@ -3923,6 +3928,7 @@ def order_edit(request, order_id):
     
     # Reload fresh FK relationships after all syncs
     order = Order.objects.select_related(
+        'api_config',
         'status_setup', 
         'payment_setup', 
         'payment_status_setup',
@@ -4638,10 +4644,13 @@ def update_order_next_followup(request, order_id):
 def order_invoice(request, order_id):
     from decimal import Decimal
     # Allow admins/managers to view any invoice; restrict regular staff to their own
+    queryset = Order.objects.select_related(
+        'api_config', 'status_setup', 'payment_setup', 'payment_status_setup'
+    )
     if request.user.role in ('admin', 'manager') or request.user.is_staff or request.user.is_superuser:
-        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+        order = get_object_or_404(queryset, id=order_id, is_deleted=False)
     else:
-        order = get_object_or_404(Order, id=order_id, created_by=request.user, is_deleted=False)
+        order = get_object_or_404(queryset, id=order_id, created_by=request.user, is_deleted=False)
 
     order_items = order.items.select_related(
         'product', 'product_variation'
@@ -10305,7 +10314,10 @@ def ncm_order_detail(request, order_id):
     import requests
     from django.conf import settings
     
-    order = get_object_or_404(Order, id=order_id, is_deleted=False)
+    order = get_object_or_404(
+        Order.objects.select_related('api_config', 'status_setup', 'payment_setup', 'payment_status_setup', 'created_by'),
+        id=order_id, is_deleted=False
+    )
     
     ncm_order_found = True
     ncm_validation_error = None
@@ -10313,8 +10325,13 @@ def ncm_order_detail(request, order_id):
     # Check if order has NCM ID and validate it exists in NCM system
     if order.ncm_order_id:
         try:
-            base_url = getattr(settings, 'NCM_API_BASE_URL', None)
-            api_key = getattr(settings, 'NCM_API_KEY', None)
+            # Use order's api_config if available, otherwise fall back to settings
+            if order.api_config and order.api_config.is_active and order.api_config.logistics_provider == 'ncm':
+                base_url = order.api_config.get_primary_base_url()
+                api_key = order.api_config.api_key
+            else:
+                base_url = getattr(settings, 'NCM_API_BASE_URL', None)
+                api_key = getattr(settings, 'NCM_API_KEY', None)
             
             if base_url and api_key:
                 api_url = f"{base_url.rstrip('/')}/order/status"
@@ -15760,25 +15777,25 @@ def logistics_orders_list(request):
 
     # Build base queryset based on provider filter
     if provider == 'ncm':
-        orders = Order.objects.select_related('customer', 'created_by').filter(
+        orders = Order.objects.select_related('customer', 'created_by', 'api_config').filter(
             is_deleted=False,
             logistics='ncm',
             ncm_order_id__isnull=False
         ).order_by('-ncm_created_at')
     elif provider == 'pnd':
-        orders = Order.objects.select_related('customer', 'created_by').filter(
+        orders = Order.objects.select_related('customer', 'created_by', 'api_config').filter(
             is_deleted=False,
             logistics='pick_and_drop',
             pnd_order_id__isnull=False
         ).order_by('-pnd_created_at')
     else:
         # All logistics orders
-        ncm_orders = Order.objects.select_related('customer', 'created_by').filter(
+        ncm_orders = Order.objects.select_related('customer', 'created_by', 'api_config').filter(
             is_deleted=False,
             logistics='ncm',
             ncm_order_id__isnull=False
         )
-        pnd_orders = Order.objects.select_related('customer', 'created_by').filter(
+        pnd_orders = Order.objects.select_related('customer', 'created_by', 'api_config').filter(
             is_deleted=False,
             logistics='pick_and_drop',
             pnd_order_id__isnull=False
