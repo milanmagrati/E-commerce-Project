@@ -6426,18 +6426,24 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         # 1. Get API Credentials - from dynamic config or settings fallback
         base_url = ''
         api_key = ''
+        matched_api_config = None
         
         if api_config_id:
             try:
-                api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='ncm')
-                base_url = api_config.get_primary_base_url()
-                api_key = api_config.api_key
+                matched_api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='ncm')
+                base_url = matched_api_config.get_primary_base_url()
+                api_key = matched_api_config.api_key
             except LogisticsAPIConfig.DoesNotExist:
                 return {'status': 'error', 'message': 'Selected API configuration not found or inactive'}
         
         if not base_url or not api_key:
-            base_url = getattr(settings, 'NCM_API_BASE_URL', '').rstrip('/')
-            api_key = getattr(settings, 'NCM_API_KEY', '')
+            base_url = (getattr(settings, 'NCM_API_BASE_URL', '') or '').rstrip('/')
+            api_key = getattr(settings, 'NCM_API_KEY', '') or ''
+            # Auto-match default .env credentials to a DB config by API key
+            if not matched_api_config and api_key:
+                matched_api_config = LogisticsAPIConfig.objects.filter(
+                    logistics_provider='ncm', is_active=True, api_key=api_key
+                ).order_by('-id').first()
 
         if not base_url or not api_key:
             return {'status': 'error', 'message': 'NCM configuration missing. Add an API config in Settings > API Integration.'}
@@ -6534,6 +6540,8 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 if ncm_id:
                     order.ncm_order_id = int(ncm_id)
                 order.logistics = 'ncm' # Ensure logistics is set
+                if matched_api_config:
+                    order.api_config = matched_api_config
                 order.save()
 
                 # ✅ FETCH DELIVERY CHARGE FROM NCM API
@@ -11060,13 +11068,14 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         # Get API credentials - try dynamic config first, then fall back to settings
         base_url = ''
         api_key = ''
+        matched_api_config = None
 
         if api_config_id:
             try:
-                api_config = LogisticsAPIConfig.objects.get(
+                matched_api_config = LogisticsAPIConfig.objects.get(
                     id=api_config_id, is_active=True, logistics_provider='ncm')
-                base_url = api_config.get_primary_base_url()
-                api_key = api_config.api_key
+                base_url = matched_api_config.get_primary_base_url()
+                api_key = matched_api_config.api_key
             except LogisticsAPIConfig.DoesNotExist:
                 return {
                     'status': 'error',
@@ -11076,6 +11085,11 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         if not base_url or not api_key:
             base_url = getattr(settings, 'NCM_API_BASE_URL', '') or ''
             api_key = getattr(settings, 'NCM_API_KEY', '') or ''
+            # Auto-match default .env credentials to a DB config by API key
+            if not matched_api_config and api_key:
+                matched_api_config = LogisticsAPIConfig.objects.filter(
+                    logistics_provider='ncm', is_active=True, api_key=api_key
+                ).order_by('-id').first()
         
         if not base_url or not api_key:
             return {
@@ -11143,6 +11157,8 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 order.ncm_from_branch = from_branch
                 order.ncm_delivery_type = delivery_type
                 order.ncm_destination_branch = destination_branch
+                if matched_api_config:
+                    order.api_config = matched_api_config
                 order.save()
                 
                 
@@ -11646,7 +11662,7 @@ def ncm_bulk_log_detail(request, log_id):
     from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
 
     bulk_log = get_object_or_404(NCMBulkLog, id=log_id, is_deleted=False)
-    batch_orders = NCMBulkLogOrder.objects.filter(batch=bulk_log)
+    batch_orders = NCMBulkLogOrder.objects.filter(batch=bulk_log).select_related('order__api_config')
     log_details = NCMBulkLogDetail.objects.filter(batch=bulk_log).order_by('timestamp')
 
     context = {
@@ -15423,13 +15439,14 @@ def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=N
         api_key = None
         api_secret = None
         base_url = None
+        matched_api_config = None
         
         if api_config_id:
             try:
-                api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='pick_and_drop')
-                api_key = api_config.api_key
-                api_secret = api_config.api_secret
-                base_url = api_config.get_primary_base_url()
+                matched_api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='pick_and_drop')
+                api_key = matched_api_config.api_key
+                api_secret = matched_api_config.api_secret
+                base_url = matched_api_config.get_primary_base_url()
             except LogisticsAPIConfig.DoesNotExist:
                 return {
                     'status': 'error',
@@ -15516,6 +15533,19 @@ def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=N
                 order.pnd_created_at = timezone.now()
                 order.pnd_destination_branch = destination_branch
                 order.pnd_tracking_url = tracking_url or ''
+                # Auto-match default .env credentials to a DB config by API key
+                if not matched_api_config:
+                    env_pnd_key = getattr(settings, 'PND_API_KEY', None)
+                    if env_pnd_key:
+                        matched_api_config = LogisticsAPIConfig.objects.filter(
+                            logistics_provider='pick_and_drop', is_active=True, api_key=env_pnd_key
+                        ).order_by('-id').first()
+                    if not matched_api_config:
+                        matched_api_config = LogisticsAPIConfig.objects.filter(
+                            logistics_provider='pick_and_drop', is_active=True
+                        ).order_by('id').first()
+                if matched_api_config:
+                    order.api_config = matched_api_config
                 order.save()
 
                 # Log activity
@@ -15717,7 +15747,7 @@ def pnd_bulk_log_detail(request, log_id):
     from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder, PNDBulkLogDetail
 
     bulk_log = get_object_or_404(PNDBulkLog, id=log_id, is_deleted=False)
-    batch_orders = PNDBulkLogOrder.objects.filter(batch=bulk_log)
+    batch_orders = PNDBulkLogOrder.objects.filter(batch=bulk_log).select_related('order__api_config')
     log_details = PNDBulkLogDetail.objects.filter(batch=bulk_log).order_by('timestamp')
 
     context = {
@@ -16016,9 +16046,12 @@ def logistics_bulk_logs_list(request):
         try:
             # Determine which model to query based on ajax_provider param
             if ajax_provider == 'pnd':
-                batch_orders = PNDBulkLogOrder.objects.filter(batch_id=ajax_batch_id)
+                batch_orders = PNDBulkLogOrder.objects.filter(batch_id=ajax_batch_id).select_related('order__api_config')
                 orders_data = []
                 for o in batch_orders:
+                    api_name = ''
+                    if o.order and o.order.api_config:
+                        api_name = o.order.api_config.api_name
                     orders_data.append({
                         'order_number': o.order_number,
                         'customer_name': o.customer_name,
@@ -16029,11 +16062,15 @@ def logistics_bulk_logs_list(request):
                         'logistics_order_id': o.pnd_order_id or '',
                         'status': o.status,
                         'status_display': o.get_status_display(),
+                        'api_config_name': api_name,
                     })
             else:
-                batch_orders = NCMBulkLogOrder.objects.filter(batch_id=ajax_batch_id)
+                batch_orders = NCMBulkLogOrder.objects.filter(batch_id=ajax_batch_id).select_related('order__api_config')
                 orders_data = []
                 for o in batch_orders:
+                    api_name = ''
+                    if o.order and o.order.api_config:
+                        api_name = o.order.api_config.api_name
                     orders_data.append({
                         'order_number': o.order_number,
                         'customer_name': o.customer_name,
@@ -16044,6 +16081,7 @@ def logistics_bulk_logs_list(request):
                         'logistics_order_id': o.ncm_order_id or '',
                         'status': o.status,
                         'status_display': o.get_status_display(),
+                        'api_config_name': api_name,
                     })
             return JsonResponse({'orders': orders_data})
         except Exception:

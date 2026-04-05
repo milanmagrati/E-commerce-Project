@@ -505,9 +505,12 @@ function toggleExpandRow(batchId, logProvider) {
                 if (data.orders && data.orders.length > 0) {
                     let html = '<table class="table inner-orders-table"><thead><tr>';
                     html += '<th>Order ID</th><th>Receiver</th><th>Phone</th><th>Address</th>';
-                    html += '<th>COD</th><th>Branch</th><th>Logistics ID</th><th>Status</th></tr></thead><tbody>';
+                    html += '<th>COD</th><th>Branch</th><th>API Account</th><th>Logistics ID</th><th>Status</th></tr></thead><tbody>';
                     data.orders.forEach(order => {
                         let statusClass = 'order-status-' + order.status;
+                        let apiAccountHtml = order.api_config_name
+                            ? `<span class="badge rounded-pill bg-secondary">${order.api_config_name}</span>`
+                            : '<span class="text-muted">-</span>';
                         html += `<tr>`;
                         html += `<td><strong>${order.order_number}</strong></td>`;
                         html += `<td>${order.customer_name}</td>`;
@@ -515,6 +518,7 @@ function toggleExpandRow(batchId, logProvider) {
                         html += `<td><small>${order.address}</small></td>`;
                         html += `<td><strong class="text-success">${order.cod_amount}</strong></td>`;
                         html += `<td><span class="badge bg-info">${order.branch}</span></td>`;
+                        html += `<td>${apiAccountHtml}</td>`;
                         html += `<td>${order.logistics_order_id || '-'}</td>`;
                         html += `<td><span class="${statusClass}">${order.status_display}</span></td>`;
                         html += `</tr>`;

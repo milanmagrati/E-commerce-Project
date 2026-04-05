@@ -90,6 +90,7 @@
                             <th>Address</th>
                             <th>COD Amount</th>
                             <th>Branch</th>
+                            <th>API Account</th>
                             <th>NCM ID</th>
                             <th>Status</th>
                             <th>Message</th>
@@ -114,6 +115,13 @@
                             <td><strong class="text-success">{{ order.cod_amount|floatformat:2 }}</strong></td>
                             <td><span class="badge bg-info">{{ order.destination_branch|default:"-" }}</span></td>
                             <td>
+                                {% if order.order and order.order.api_config %}
+                                <span class="badge rounded-pill bg-primary">{{ order.order.api_config.api_name }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
                                 {% if order.ncm_order_id %}
                                 <strong class="text-primary">{{ order.ncm_order_id }}</strong>
                                 {% else %}
@@ -133,7 +141,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="10" class="text-center py-4 text-muted">No orders found</td>
+                            <td colspan="11" class="text-center py-4 text-muted">No orders found</td>
                         </tr>
                         {% endfor %}
                     </tbody>
