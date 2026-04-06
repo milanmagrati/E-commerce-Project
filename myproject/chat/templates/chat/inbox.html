@@ -178,6 +178,24 @@
         background: linear-gradient(180deg, #667eea, #764ba2);
         border-radius: 0 4px 4px 0;
     }
+    /* Task notification thread item */
+    .task-notif-thread {
+        border-left: 3px solid #6366f1;
+        background: linear-gradient(90deg, #f5f3ff 0%, #fff 100%) !important;
+    }
+    .task-notif-thread:hover {
+        background: linear-gradient(135deg, #ede9fe 0%, #eef2ff 100%) !important;
+    }
+    .task-notif-thread.has-unread {
+        background: linear-gradient(90deg, #ede9fe 0%, #f5f3ff 100%) !important;
+    }
+    .task-notif-thread.has-unread::before {
+        background: linear-gradient(180deg, #6366f1, #4f46e5);
+    }
+    .task-board-avatar {
+        background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
+        font-size: 1rem !important;
+    }
 
     /* Avatars */
     .chat-avatar {
@@ -479,6 +497,11 @@
             <p>Internal team messaging &mdash; stay connected with your team</p>
         </div>
         <div class="d-flex gap-2 flex-wrap" style="position:relative;z-index:1;">
+            {% if request.user.is_superuser or request.user.role == 'administrator' or request.user.can_access_todo %}
+            <a href="{% url 'todo:board' %}" class="chat-header-btn" style="text-decoration:none;">
+                <i class="fas fa-tasks me-2"></i> Todo
+            </a>
+            {% endif %}
             <button class="chat-header-btn" data-bs-toggle="modal" data-bs-target="#newChatModal">
                 <i class="fas fa-plus me-2"></i> New Chat
             </button>
@@ -531,7 +554,11 @@
 
     {% if thread_list %}
         {% for item in thread_list %}
+        {% if item.last_message and '📋' in item.last_message.content %}
+        <a href="{% url 'todo:board' %}" class="chat-thread-item task-notif-thread {% if item.unread_count > 0 %}has-unread{% endif %}">
+        {% else %}
         <a href="{% url 'chat:thread' item.thread.id %}" class="chat-thread-item {% if item.unread_count > 0 %}has-unread{% endif %}">
+        {% endif %}
 
             {% if item.is_group %}
                 <!-- Group Thread Avatar -->
@@ -555,15 +582,25 @@
                 </div>
             {% else %}
                 <!-- 1-on-1 Thread Avatar -->
+                {% if item.last_message and '📋' in item.last_message.content %}
+                <div class="chat-avatar task-board-avatar">
+                    <i class="fas fa-tasks"></i>
+                </div>
+                {% else %}
                 <div class="chat-avatar chat-avatar-{{ item.other_user.role }}">
                     {{ item.other_user.username|make_list|first|upper }}
                 </div>
+                {% endif %}
                 <div class="chat-thread-info">
                     <div class="chat-thread-name">
                         {{ item.other_user.get_full_name|default:item.other_user.username }}
+                        {% if item.last_message and '📋' in item.last_message.content %}
+                        <span class="chat-role-pill" style="background:#ede9fe;color:#4f46e5;"><i class="fas fa-tasks fa-xs me-1"></i> Task</span>
+                        {% else %}
                         <span class="chat-role-pill {% if item.other_user.role == 'administrator' %}admin{% elif item.other_user.role == 'sales' %}sales{% elif item.other_user.role == 'warehouse' %}warehouse{% endif %}">
                             {{ item.other_user.get_role_display }}
                         </span>
+                        {% endif %}
                     </div>
                     <div class="chat-thread-preview {% if item.unread_count > 0 %}unread-text{% endif %}">
                         {% if item.last_message %}

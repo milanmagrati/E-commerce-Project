@@ -1,0 +1,184 @@
+{% extends 'base.html' %}
+{% block title %}{% if task %}Edit Task{% else %}Create Task{% endif %} - Task Board{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-header {
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #7c3aed 100%);
+        border-radius: 16px;
+        padding: 1.5rem 2rem;
+        color: #fff;
+        margin-bottom: 1.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .form-header h4 { font-weight: 700; margin: 0; position: relative; z-index: 1; }
+    .form-header-back {
+        background: rgba(255,255,255,.2); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,.3); color: #fff;
+        width: 40px; height: 40px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        text-decoration: none; transition: all .3s;
+        flex-shrink: 0; position: relative; z-index: 1;
+    }
+    .form-header-back:hover { background: rgba(255,255,255,.35); color: #fff; transform: translateY(-2px); }
+
+    .form-card {
+        background: #fff; border-radius: 16px;
+        border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        padding: 2rem;
+    }
+    .form-group-label {
+        font-size: .8rem; font-weight: 700; color: #475569;
+        text-transform: uppercase; letter-spacing: .5px;
+        margin-bottom: .45rem;
+    }
+    .form-group-label .required { color: #dc2626; }
+    .styled-input, .styled-select, .styled-textarea {
+        border: 1.5px solid #e2e8f0; border-radius: 10px;
+        padding: .6rem .9rem; font-size: .92rem; color: #1e293b;
+        transition: border-color .2s, box-shadow .2s;
+        width: 100%;
+    }
+    .styled-input:focus, .styled-select:focus, .styled-textarea:focus {
+        border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12); outline: none;
+    }
+    .styled-textarea { resize: vertical; min-height: 120px; }
+
+    .priority-selector { display: flex; gap: .6rem; flex-wrap: wrap; }
+    .priority-opt input[type="radio"] { display: none; }
+    .priority-opt label {
+        padding: .4rem 1rem; border-radius: 10px;
+        border: 2px solid transparent; font-weight: 600; font-size: .82rem;
+        cursor: pointer; transition: all .2s; display: block;
+    }
+    .priority-opt.low label { background: #dcfce7; color: #166534; border-color: #86efac; }
+    .priority-opt.medium label { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+    .priority-opt.high label { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
+    .priority-opt.urgent label { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+    .priority-opt input:checked + label { filter: saturate(1.5); box-shadow: 0 2px 8px rgba(0,0,0,.12); transform: scale(1.04); }
+
+    .submit-btn {
+        background: linear-gradient(135deg, #6366f1, #7c3aed);
+        border: none; color: #fff; padding: .65rem 2rem;
+        border-radius: 12px; font-weight: 600; font-size: .95rem;
+        transition: all .25s; cursor: pointer;
+    }
+    .submit-btn:hover { opacity: .9; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(99,102,241,.3); }
+    .cancel-btn {
+        background: #f1f5f9; border: none; color: #64748b;
+        padding: .65rem 1.5rem; border-radius: 12px; font-weight: 600; font-size: .95rem;
+        text-decoration: none; transition: all .25s; display: inline-block;
+    }
+    .cancel-btn:hover { background: #e2e8f0; color: #334155; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="form-header">
+    <div class="d-flex align-items-center gap-3">
+        <a href="{% if task %}{% url 'todo:task_detail' task.id %}{% else %}{% url 'todo:board' %}{% endif %}" class="form-header-back">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <h4>
+            {% if task %}
+            <i class="fas fa-pen me-2"></i> Edit Task
+            {% else %}
+            <i class="fas fa-plus-circle me-2"></i> Create New Task
+            {% endif %}
+        </h4>
+    </div>
+</div>
+
+{% if messages %}
+<div class="mb-3">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show border-0" style="border-radius:12px;">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="form-card">
+    <form method="POST">
+        {% csrf_token %}
+        <div class="row g-4">
+            <!-- Title -->
+            <div class="col-12">
+                <div class="form-group-label">Title <span class="required">*</span></div>
+                <input type="text" name="title" class="styled-input"
+                    value="{{ task.title|default:'' }}"
+                    placeholder="Enter task title…" required>
+            </div>
+
+            <!-- Description -->
+            <div class="col-12">
+                <div class="form-group-label">Description</div>
+                <textarea name="description" class="styled-textarea"
+                    placeholder="Describe the task in detail…">{{ task.description|default:'' }}</textarea>
+            </div>
+
+            <!-- Priority -->
+            <div class="col-md-6">
+                <div class="form-group-label">Priority</div>
+                <div class="priority-selector">
+                    {% for val, label in priorities %}
+                    <div class="priority-opt {{ val }}">
+                        <input type="radio" name="priority" id="priority_{{ val }}" value="{{ val }}"
+                            {% if task.priority == val or not task and val == 'medium' %}checked{% endif %}>
+                        <label for="priority_{{ val }}">{{ label }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Status (edit only) -->
+            {% if task and statuses %}
+            <div class="col-md-6">
+                <div class="form-group-label">Status</div>
+                <select name="status" class="styled-select">
+                    {% for val, label in statuses %}
+                    <option value="{{ val }}" {% if task.status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <!-- Assigned To -->
+            <div class="col-md-6">
+                <div class="form-group-label">Assign To</div>
+                <select name="assigned_to" class="styled-select">
+                    <option value="">-- Unassigned --</option>
+                    {% for u in assignable_users %}
+                    <option value="{{ u.id }}"
+                        {% if task.assigned_to_id == u.id %}selected{% endif %}>
+                        {{ u.get_full_name|default:u.username }} ({{ u.role }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Due Date -->
+            <div class="col-md-6">
+                <div class="form-group-label">Due Date</div>
+                <input type="date" name="due_date" class="styled-input"
+                    value="{{ task.due_date|date:'Y-m-d'|default:'' }}">
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="d-flex justify-content-between align-items-center mt-4 pt-3" style="border-top:1px solid #f1f5f9;">
+            <a href="{% if task %}{% url 'todo:task_detail' task.id %}{% else %}{% url 'todo:board' %}{% endif %}" class="cancel-btn">
+                <i class="fas fa-times me-1"></i> Cancel
+            </a>
+            <button type="submit" class="submit-btn">
+                <i class="fas fa-save me-1"></i>
+                {% if task %}Save Changes{% else %}Create Task{% endif %}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

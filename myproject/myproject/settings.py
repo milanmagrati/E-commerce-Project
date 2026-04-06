@@ -50,6 +50,7 @@ EXTERNAL_APPS = [
     "pick_and_drop",
     "chat",
     "hrm",
+    "todo",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 

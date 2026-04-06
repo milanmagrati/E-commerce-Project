@@ -160,6 +160,9 @@ class CustomUser(AbstractUser):
     can_view_hrm_attendance = models.BooleanField(default=False, verbose_name="Can View Attendance")
     can_view_hrm_payroll = models.BooleanField(default=False, verbose_name="Can View Payroll Management")
 
+    # TODO / TICKETING PERMISSIONS
+    can_access_todo = models.BooleanField(default=False, verbose_name="Access to Todo/Ticketing")
+
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
     

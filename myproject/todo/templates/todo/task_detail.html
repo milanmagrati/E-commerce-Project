@@ -1,0 +1,423 @@
+{% extends 'base.html' %}
+{% block title %}{{ task.title }} - Task Detail{% endblock %}
+
+{% block extra_css %}
+<style>
+    .detail-header {
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #7c3aed 100%);
+        border-radius: 16px;
+        padding: 1.5rem 2rem;
+        color: #fff;
+        margin-bottom: 1.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .detail-header::before {
+        content: ''; position: absolute; top: -50%; right: -8%;
+        width: 180px; height: 180px; background: rgba(255,255,255,.07); border-radius: 50%;
+    }
+    .detail-header h4 { font-weight: 700; position: relative; z-index: 1; }
+    .detail-back-btn {
+        background: rgba(255,255,255,.2); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,.3); color: #fff;
+        width: 40px; height: 40px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        text-decoration: none; transition: all .3s;
+        flex-shrink: 0; position: relative; z-index: 1;
+    }
+    .detail-back-btn:hover { background: rgba(255,255,255,.35); color: #fff; transform: translateY(-2px); }
+    .detail-action-btn {
+        background: rgba(255,255,255,.2); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,.3); color: #fff;
+        padding: .5rem 1.1rem; border-radius: 10px; font-weight: 600;
+        text-decoration: none; font-size: .85rem; transition: all .3s;
+        display: inline-flex; align-items: center; gap: .4rem;
+        position: relative; z-index: 1;
+    }
+    .detail-action-btn:hover { background: rgba(255,255,255,.35); color: #fff; transform: translateY(-2px); }
+    .detail-action-btn.danger { background: rgba(220,38,38,.3); border-color: rgba(220,38,38,.4); }
+    .detail-action-btn.danger:hover { background: rgba(220,38,38,.5); }
+
+    .task-body-card {
+        background: #fff; border-radius: 16px;
+        border: 1px solid #f1f5f9;
+        box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        padding: 1.75rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .status-selector { display: flex; gap: .6rem; flex-wrap: wrap; }
+    .status-btn {
+        padding: .45rem 1.1rem; border-radius: 10px;
+        border: 2px solid transparent; font-weight: 600; font-size: .85rem;
+        cursor: pointer; transition: all .2s;
+    }
+    .status-btn.todo { background: #eef2ff; color: #4f46e5; border-color: #c7d2fe; }
+    .status-btn.todo:hover, .status-btn.todo.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+    .status-btn.doing { background: #fff7ed; color: #d97706; border-color: #fed7aa; }
+    .status-btn.doing:hover, .status-btn.doing.active { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+    .status-btn.completed { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
+    .status-btn.completed:hover, .status-btn.completed.active { background: #10b981; color: #fff; border-color: #10b981; }
+
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+    .meta-item { }
+    .meta-label { font-size: .72rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; margin-bottom: .25rem; }
+    .meta-value { font-size: .9rem; font-weight: 600; color: #334155; }
+
+    .priority-badge { font-size: .78rem; font-weight: 700; padding: .2rem .65rem; border-radius: 8px; text-transform: uppercase; }
+    .priority-low { background: #dcfce7; color: #166534; }
+    .priority-medium { background: #dbeafe; color: #1d4ed8; }
+    .priority-high { background: #fef3c7; color: #b45309; }
+    .priority-urgent { background: #fee2e2; color: #dc2626; }
+
+    .task-desc { 
+        font-size: .95rem; color: #475569; line-height: 1.7;
+        white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* Comments */
+    .comments-section { background: #fff; border-radius: 16px; border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,.04); padding: 1.5rem; }
+    .comments-title { font-weight: 700; color: #334155; font-size: .95rem; margin-bottom: 1rem; padding-bottom: .75rem; border-bottom: 1px solid #f1f5f9; }
+    .comment-item { display: flex; gap: .85rem; margin-bottom: 1.1rem; }
+    .comment-avatar {
+        width: 36px; height: 36px; border-radius: 10px;
+        background: linear-gradient(135deg, #6366f1, #7c3aed);
+        color: #fff; font-weight: 700; font-size: .85rem;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .comment-bubble {
+        background: #f8fafc; border-radius: 12px; padding: .75rem 1rem;
+        flex: 1; border: 1px solid #f1f5f9;
+    }
+    .comment-author { font-weight: 700; font-size: .82rem; color: #334155; }
+    .comment-time { font-size: .72rem; color: #94a3b8; margin-left: .5rem; }
+    .comment-text { font-size: .87rem; color: #475569; margin-top: .35rem; white-space: pre-wrap; word-break: break-word; }
+    .comment-form-wrap {
+        background: #f8fafc; border-radius: 14px;
+        padding: 1rem; border: 1.5px solid #e2e8f0;
+        transition: border-color .2s;
+    }
+    .comment-form-wrap:focus-within { border-color: #6366f1; }
+    .comment-input {
+        border: none; background: transparent; resize: none;
+        width: 100%; font-size: .9rem; outline: none; color: #334155;
+    }
+    .comment-submit {
+        background: linear-gradient(135deg, #6366f1, #7c3aed);
+        border: none; color: #fff; padding: .45rem 1.25rem;
+        border-radius: 10px; font-weight: 600; font-size: .85rem;
+        transition: all .25s; cursor: pointer;
+    }
+    .comment-submit:hover { opacity: .9; transform: translateY(-1px); }
+
+    .move-toast {
+        position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+        background: #1e293b; color: #fff;
+        padding: .75rem 1.25rem; border-radius: 12px; font-size: .85rem; font-weight: 600;
+        box-shadow: 0 8px 24px rgba(0,0,0,.2);
+        transform: translateY(20px); opacity: 0; transition: all .3s; pointer-events: none;
+    }
+    .move-toast.show { transform: translateY(0); opacity: 1; }
+
+    /* ===== ENHANCED POLISH ===== */
+
+    /* Second decorative orb in header */
+    .detail-header::after {
+        content: '';
+        position: absolute;
+        bottom: -40%; left: 40%;
+        width: 130px; height: 130px;
+        background: rgba(255,255,255,.04);
+        border-radius: 50%;
+    }
+
+    /* Card hover lift */
+    .task-body-card {
+        transition: box-shadow .25s ease, transform .25s ease;
+    }
+    .task-body-card:hover {
+        box-shadow: 0 10px 30px rgba(0,0,0,.08);
+        transform: translateY(-2px);
+    }
+
+    /* Section label with indigo accent */
+    .task-section-label {
+        font-size: .74rem;
+        font-weight: 700;
+        color: #6366f1;
+        text-transform: uppercase;
+        letter-spacing: .7px;
+        margin-bottom: .9rem;
+        padding-bottom: .65rem;
+        border-bottom: 2px solid #eef2ff;
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+    }
+    .task-section-label i { font-size: .78rem; opacity: .85; }
+
+    /* Meta grid — clean vertical list */
+    .meta-grid { display: flex; flex-direction: column; gap: 0; }
+    .meta-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: .6rem 0;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .meta-item:last-child { border-bottom: none; }
+    .meta-label {
+        font-size: .72rem; font-weight: 700; color: #94a3b8;
+        text-transform: uppercase; letter-spacing: .5px;
+        margin-bottom: 0; padding-top: .1rem;
+        flex-shrink: 0; width: 48%;
+    }
+    .meta-value {
+        font-size: .85rem; font-weight: 600; color: #334155;
+        text-align: right; flex: 1;
+    }
+
+    /* Description card left accent */
+    .task-desc-card { border-left: 3px solid #6366f1 !important; }
+
+    /* Card entrance animations */
+    @keyframes tdFadeInUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .col-lg-8 .task-body-card:nth-child(1) { animation: tdFadeInUp .35s .04s ease both; }
+    .col-lg-8 .task-body-card:nth-child(2) { animation: tdFadeInUp .35s .11s ease both; }
+    .col-lg-8 .comments-section { animation: tdFadeInUp .35s .18s ease both; }
+    .col-lg-4 .task-body-card { animation: tdFadeInUp .35s .08s ease both; }
+
+    /* Comment hover */
+    .comment-bubble { transition: background .2s, border-color .2s; }
+    .comment-item:hover .comment-bubble { background: #f1f5f9; border-color: #e2e8f0; }
+
+    /* Status buttons uniform */
+    .status-selector { gap: .75rem; }
+    .status-btn {
+        min-width: 110px;
+        justify-content: center;
+        display: inline-flex;
+        align-items: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="detail-header">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+        <a href="{% url 'todo:board' %}" class="detail-back-btn" title="Back to Board">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <div style="flex:1; position:relative; z-index:1; min-width:0;">
+            <h4 class="mb-1">{{ task.title }}</h4>
+            <span style="font-size:.82rem;opacity:.85;">
+                Created by {{ task.created_by.get_full_name|default:task.created_by.username }}
+                &bull; {{ task.created_at|date:"M d, Y" }}
+            </span>
+        </div>
+        <div class="d-flex gap-2 flex-wrap" style="position:relative;z-index:1;">
+            {% if can_edit %}
+            <a href="{% url 'todo:task_edit' task.id %}" class="detail-action-btn">
+                <i class="fas fa-pen"></i> Edit
+            </a>
+            {% endif %}
+            {% if is_manager %}
+            <form method="POST" action="{% url 'todo:task_delete' task.id %}" style="display:inline;" onsubmit="return confirm('Delete this task permanently?');">
+                {% csrf_token %}
+                <button type="submit" class="detail-action-btn danger">
+                    <i class="fas fa-trash-alt"></i> Delete
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Main Content -->
+    <div class="col-lg-8">
+        <!-- Description -->
+        <div class="task-body-card task-desc-card">
+            <div class="task-section-label"><i class="fas fa-align-left"></i> Description</div>
+            {% if task.description %}
+            <div class="task-desc">{{ task.description }}</div>
+            {% else %}
+            <span style="color:#cbd5e1;font-size:.9rem;">No description provided.</span>
+            {% endif %}
+        </div>
+
+        <!-- Status Control -->
+        {% if can_change_status %}
+        <div class="task-body-card">
+            <div class="task-section-label"><i class="fas fa-arrows-alt"></i> Move Task</div>
+            <div class="status-selector">
+                <button class="status-btn todo {% if task.status == 'todo' %}active{% endif %}"
+                    onclick="changeStatus({{ task.id }}, 'todo', this)">
+                    <i class="fas fa-clipboard-list me-1"></i> To Do
+                </button>
+                <button class="status-btn doing {% if task.status == 'doing' %}active{% endif %}"
+                    onclick="changeStatus({{ task.id }}, 'doing', this)">
+                    <i class="fas fa-spinner me-1"></i> Doing
+                </button>
+                <button class="status-btn completed {% if task.status == 'completed' %}active{% endif %}"
+                    onclick="changeStatus({{ task.id }}, 'completed', this)">
+                    <i class="fas fa-check-circle me-1"></i> Completed
+                </button>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Comments -->
+        <div class="comments-section">
+            <div class="comments-title">
+                <i class="fas fa-comments me-2" style="color:#6366f1;"></i>
+                Comments <span style="font-size:.8rem;color:#94a3b8;font-weight:400;">({{ comments.count }})</span>
+            </div>
+
+            {% for comment in comments %}
+            <div class="comment-item">
+                <div class="comment-avatar">{{ comment.author.username|slice:":1"|upper }}</div>
+                <div class="comment-bubble">
+                    <span class="comment-author">{{ comment.author.get_full_name|default:comment.author.username }}</span>
+                    <span class="comment-time">{{ comment.created_at|date:"M d, Y H:i" }}</span>
+                    <div class="comment-text">{{ comment.content }}</div>
+                </div>
+            </div>
+            {% empty %}
+            <div style="text-align:center;color:#94a3b8;padding:1.5rem 0;">
+                <i class="fas fa-comment-slash" style="font-size:1.5rem;opacity:.3;"></i>
+                <p style="font-size:.85rem;margin-top:.5rem;">No comments yet. Be the first!</p>
+            </div>
+            {% endfor %}
+
+            <!-- Add Comment -->
+            <div class="mt-3">
+                <form method="POST">
+                    {% csrf_token %}
+                    <div class="comment-form-wrap mb-2">
+                        <textarea name="content" class="comment-input" rows="3" placeholder="Add a comment…" required></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="comment-submit">
+                            <i class="fas fa-paper-plane me-1"></i> Post Comment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar Meta -->
+    <div class="col-lg-4">
+        <div class="task-body-card">
+            <div class="task-section-label"><i class="fas fa-info-circle"></i> Task Details</div>
+            <div class="meta-grid">
+                <div class="meta-item">
+                    <div class="meta-label">Status</div>
+                    <div class="meta-value">
+                        {% if task.status == 'todo' %}
+                        <span style="background:#eef2ff;color:#4f46e5;padding:.2rem .6rem;border-radius:7px;font-size:.82rem;">📋 To Do</span>
+                        {% elif task.status == 'doing' %}
+                        <span style="background:#fff7ed;color:#d97706;padding:.2rem .6rem;border-radius:7px;font-size:.82rem;">⚙️ Doing</span>
+                        {% else %}
+                        <span style="background:#ecfdf5;color:#059669;padding:.2rem .6rem;border-radius:7px;font-size:.82rem;">✅ Completed</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-label">Priority</div>
+                    <div class="meta-value">
+                        <span class="priority-badge priority-{{ task.priority }}">{{ task.get_priority_display }}</span>
+                    </div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-label">Assigned To</div>
+                    <div class="meta-value">
+                        {% if task.assigned_to %}
+                        {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
+                        {% else %}
+                        <span style="color:#cbd5e1;">Unassigned</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-label">Created By</div>
+                    <div class="meta-value">{{ task.created_by.get_full_name|default:task.created_by.username }}</div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-label">Due Date</div>
+                    <div class="meta-value">
+                        {% if task.due_date %}
+                        <span {% if task.is_overdue %}style="color:#dc2626;"{% endif %}>
+                            {{ task.due_date|date:"M d, Y" }}{% if task.is_overdue %} <strong>(Overdue)</strong>{% endif %}
+                        </span>
+                        {% else %}
+                        <span style="color:#cbd5e1;">No due date</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-label">Created</div>
+                    <div class="meta-value">{{ task.created_at|date:"M d, Y" }}</div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-label">Last Updated</div>
+                    <div class="meta-value">{{ task.updated_at|date:"M d, Y H:i" }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="moveToast" class="move-toast"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function getCookie(name) {
+    let v = null;
+    document.cookie.split(';').forEach(c => {
+        c = c.trim();
+        if (c.startsWith(name+'=')) v = decodeURIComponent(c.slice(name.length+1));
+    });
+    return v;
+}
+function showToast(msg, success) {
+    const t = document.getElementById('moveToast');
+    t.textContent = msg;
+    t.style.background = success ? '#065f46' : '#dc2626';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+}
+function changeStatus(taskId, newStatus, btn) {
+    // Disable all status buttons
+    document.querySelectorAll('.status-btn').forEach(b => b.disabled = true);
+    fetch(`/todo/api/task/${taskId}/status/`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+        body: JSON.stringify({status: newStatus}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // Update active state
+            document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            showToast('✅ Status updated to "' + data.status_display + '"', true);
+        } else {
+            showToast('❌ ' + (data.message || 'Failed'), false);
+        }
+        document.querySelectorAll('.status-btn').forEach(b => b.disabled = false);
+    })
+    .catch(() => {
+        showToast('❌ Network error', false);
+        document.querySelectorAll('.status-btn').forEach(b => b.disabled = false);
+    });
+}
+</script>
+{% endblock %}

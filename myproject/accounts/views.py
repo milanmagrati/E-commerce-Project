@@ -321,6 +321,9 @@ def user_create(request):
                 # Dashboard Module
                 user.can_view_dashboard = True
                 user.can_view_total_revenue = True
+
+                # TODO / TICKETING MODULE
+                user.can_access_todo = True
             else:
                 # Apply custom permissions from checkboxes
                 # Dashboard Module
@@ -439,10 +442,11 @@ def user_create(request):
                     user.can_view_hrm_asset_management = False
                     user.can_view_hrm_attendance = False
                     user.can_view_hrm_payroll = False
+
+                # TODO / TICKETING MODULE
+                user.can_access_todo = request.POST.get('can_access_todo') == 'on'
             
             user.save()
-            
-            messages.success(request, f'✅ User "{username}" created successfully with role: {role.title()}!')
             if is_ajax:
                 from django.urls import reverse
                 return JsonResponse({'success': True, 'redirect': reverse('user_list')})
@@ -584,6 +588,9 @@ def user_edit(request, user_id):
             edit_user.can_view_dashboard = True
             edit_user.can_view_total_revenue = True
 
+            # TODO / TICKETING MODULE
+            edit_user.can_access_todo = True
+
             messages.info(request, '👑 Administrator role - All permissions granted automatically')
         else:
             # Remove admin privileges
@@ -708,6 +715,9 @@ def user_edit(request, user_id):
                 edit_user.can_view_hrm_asset_management = False
                 edit_user.can_view_hrm_attendance = False
                 edit_user.can_view_hrm_payroll = False
+
+            # TODO / TICKETING MODULE
+            edit_user.can_access_todo = request.POST.get('can_access_todo') == 'on'
         
         try:
             edit_user.save()

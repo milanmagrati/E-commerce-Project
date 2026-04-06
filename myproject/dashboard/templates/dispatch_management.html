@@ -7,26 +7,26 @@
 <div class="container-fluid py-4">
 
     <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h2 class="mb-1">
-                <i class="fas fa-shipping-fast text-primary"></i> Dispatch Management
-            </h2>
-            <p class="text-muted mb-0">Scan order barcodes to create a dispatch batch</p>
-        </div>
-        <div class="d-flex gap-2 flex-wrap">
-            <a href="{% url 'dispatch_list' %}" class="btn btn-outline-primary btn-sm">
-                <i class="fas fa-list"></i> View All Dispatches
-            </a>
-            <a href="{% url 'dispatch_trash' %}" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-trash"></i> Trash
-            </a>
-            <button type="button" class="btn btn-warning btn-sm" id="removeDuplicatesBtn" disabled>
-                <i class="fas fa-eraser"></i> Remove Duplicates
-            </button>
-            <button type="button" class="btn btn-danger btn-sm" id="clearAllBtn" disabled>
-                <i class="fas fa-trash"></i> Clear All
-            </button>
+    <div class="dispatch-page-header">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h2 class="mb-1"><i class="fas fa-shipping-fast me-2"></i>Dispatch Management</h2>
+                <p>Scan order barcodes to create a dispatch batch</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap" style="position:relative;z-index:1;">
+                <a href="{% url 'dispatch_list' %}" class="dispatch-hdr-btn">
+                    <i class="fas fa-list"></i> View All Dispatches
+                </a>
+                <a href="{% url 'dispatch_trash' %}" class="dispatch-hdr-btn">
+                    <i class="fas fa-trash-alt"></i> Trash
+                </a>
+                <button type="button" class="dispatch-hdr-btn dispatch-hdr-btn-warning" id="removeDuplicatesBtn" disabled>
+                    <i class="fas fa-eraser"></i> Remove Duplicates
+                </button>
+                <button type="button" class="dispatch-hdr-btn dispatch-hdr-btn-danger" id="clearAllBtn" disabled>
+                    <i class="fas fa-trash"></i> Clear All
+                </button>
+            </div>
         </div>
     </div>
 
@@ -198,6 +198,93 @@
 </div>
 
 <style>
+    /* ===== PROFESSIONAL PAGE HEADER ===== */
+    .dispatch-page-header {
+        background: linear-gradient(135deg, #667eea 0%, #5a54d8 40%, #764ba2 100%);
+        border-radius: 16px;
+        padding: 1.75rem 2rem;
+        color: #fff;
+        margin-bottom: 1.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .dispatch-page-header::before {
+        content: '';
+        position: absolute;
+        top: -50%; right: -5%;
+        width: 220px; height: 220px;
+        background: rgba(255,255,255,.07);
+        border-radius: 50%;
+    }
+    .dispatch-page-header::after {
+        content: '';
+        position: absolute;
+        bottom: -40%; left: 35%;
+        width: 140px; height: 140px;
+        background: rgba(255,255,255,.05);
+        border-radius: 50%;
+    }
+    .dispatch-page-header h2 {
+        font-weight: 700;
+        font-size: 1.6rem;
+        position: relative;
+        z-index: 1;
+        margin-bottom: .25rem;
+    }
+    .dispatch-page-header p {
+        position: relative;
+        z-index: 1;
+        opacity: .85;
+        margin: 0;
+        font-size: .92rem;
+    }
+    .dispatch-hdr-btn {
+        background: rgba(255,255,255,.18);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,.3);
+        color: #fff;
+        padding: .5rem 1.1rem;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: .82rem;
+        transition: all .25s;
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        text-decoration: none;
+        position: relative;
+        z-index: 1;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .dispatch-hdr-btn:hover:not(:disabled) {
+        background: rgba(255,255,255,.32);
+        color: #fff;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 14px rgba(0,0,0,.15);
+    }
+    .dispatch-hdr-btn:disabled {
+        opacity: .35;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    .dispatch-hdr-btn-warning {
+        background: rgba(245,158,11,.25);
+        border-color: rgba(245,158,11,.45);
+    }
+    .dispatch-hdr-btn-warning:hover:not(:disabled) {
+        background: rgba(245,158,11,.45);
+    }
+    .dispatch-hdr-btn-danger {
+        background: rgba(239,68,68,.25);
+        border-color: rgba(239,68,68,.45);
+    }
+    .dispatch-hdr-btn-danger:hover:not(:disabled) {
+        background: rgba(239,68,68,.45);
+    }
+
     .dispatch-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 1rem 1.5rem;
