@@ -96,6 +96,10 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        'OPTIONS': {
+            'timeout': 20,  # wait up to 20s for the lock to clear instead of failing immediately
+        },
+        'CONN_MAX_AGE': 0,  # close DB connections after each request to avoid stale locks
     }
 }
 
