@@ -34,17 +34,17 @@
         /* Header */
         .invoice-header {
             display: flex; justify-content: space-between; align-items: flex-start;
-            padding: 16px 20px 12px; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            color: #fff;
+            padding: 16px 20px 12px; background: #fff;
+            color: #111827; border-bottom: 2px solid #e5e7eb;
         }
-        .brand-name { font-size: 1.25rem; font-weight: 800; letter-spacing: -.3px; }
-        .brand-sub { color: rgba(255,255,255,.75); font-size: 11px; margin-top: 1px; }
+        .brand-name { font-size: 1.25rem; font-weight: 800; letter-spacing: -.3px; color: #111827; }
+        .brand-sub { color: #111827; font-size: 11px; margin-top: 1px; }
         .invoice-meta { text-align: right; }
-        .inv-title { font-size: 1.3rem; font-weight: 800; letter-spacing: 3px; opacity: .9; margin-bottom: 2px; }
+        .inv-title { font-size: 1.3rem; font-weight: 800; letter-spacing: 3px; color: #111827; margin-bottom: 2px; }
         .invoice-meta table { margin-left: auto; border-collapse: collapse; }
-        .invoice-meta td { padding: 0 0 0 10px; font-size: 11px; }
-        .invoice-meta td:first-child { color: rgba(255,255,255,.6); text-align: right; }
-        .invoice-meta td:last-child { font-weight: 600; text-align: right; }
+        .invoice-meta td { padding: 0 0 0 10px; font-size: 11px; color: #111827; }
+        .invoice-meta td:first-child { color: #111827; text-align: right; }
+        .invoice-meta td:last-child { font-weight: 600; text-align: right; color: #111827; }
 
         /* Content Area */
         .invoice-body { padding: 14px 20px 16px; }
@@ -59,22 +59,22 @@
             display: flex; gap: 18px; flex-wrap: wrap;
         }
         .bill-to-extra-item { font-size: 11.5px; color: #4b5563; }
-        .bill-to-extra-item .extra-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .8px; color: #4f46e5; font-weight: 700; display: block; margin-bottom: 1px; }
+        .bill-to-extra-item .extra-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .8px; color: #111827; font-weight: 700; display: block; margin-bottom: 1px; }
         .bill-to-extra-item .extra-val { font-weight: 600; color: #374151; font-size: 11px; }
         .section-label {
             font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
-            color: #4f46e5; font-weight: 700; margin-bottom: 4px;
+            color: #111827; font-weight: 700; margin-bottom: 4px;
         }
         .customer-name { font-size: 13.5px; font-weight: 700; color: #111827; margin-bottom: 2px; }
-        .bill-to p { margin: 1px 0; font-size: 11.5px; color: #4b5563; }
-        .bill-to .detail-icon { color: #9ca3af; margin-right: 1px; font-size: 11px; }
+        .bill-to p { margin: 1px 0; font-size: 11.5px; color: #111827; }
+        .bill-to .detail-icon { color: #111827; margin-right: 1px; font-size: 11px; }
 
         /* Items Table */
         .items-table { width: 100%; border-collapse: collapse; font-size: 12px; }
         .items-table thead tr { background: #f9fafb; }
         .items-table th {
             padding: 6px 10px; font-weight: 700; font-size: 10px;
-            text-transform: uppercase; letter-spacing: .5px; color: #6b7280;
+            text-transform: uppercase; letter-spacing: .5px; color: #111827;
             border-bottom: 2px solid #e5e7eb;
         }
         .items-table tbody tr { border-bottom: 1px solid #f3f4f6; }
@@ -89,10 +89,10 @@
         .type-variable { background: #ede9fe; color: #6d28d9; }
         .type-bundle   { background: #dcfce7; color: #166534; }
         .product-name  { font-weight: 700; color: #111827; }
-        .product-sku   { font-size: 10px; color: #9ca3af; margin-top: 1px; }
-        .variant-label { font-size: 10.5px; color: #6b7280; margin-top: 1px; font-style: italic; }
+        .product-sku   { font-size: 10px; color: #111827; margin-top: 1px; }
+        .variant-label { font-size: 10.5px; color: #111827; margin-top: 1px; font-style: italic; }
         .bundle-components { margin-top: 2px; padding-left: 8px; border-left: 2px solid #a7f3d0; }
-        .bundle-components li { font-size: 10.5px; color: #6b7280; list-style: none; padding: 0; }
+        .bundle-components li { font-size: 10.5px; color: #111827; list-style: none; padding: 0; }
         .bundle-components li::before { content: "· "; color: #10b981; font-weight: 700; }
         .tr { text-align: right; }
         .tc { text-align: center; }
@@ -106,7 +106,7 @@
         .totals-table td { padding: 3px 0; font-size: 12px; }
         .totals-table tr { border-bottom: 1px solid #f3f4f6; }
         .totals-table tr:last-child { border-bottom: none; }
-        .totals-table .lbl { color: #6b7280; text-align: right; padding-right: 14px; }
+        .totals-table .lbl { color: #111827; text-align: right; padding-right: 14px; }
         .totals-table .val { font-weight: 600; text-align: right; color: #111827; white-space: nowrap; }
         .discount-val { color: #ef4444 !important; }
         .grand-row td {
@@ -129,19 +129,18 @@
         .footer-bottom { text-align: center; padding-top: 6px; }
         .payment-line {
             display: inline-block; padding: 3px 12px; border-radius: 20px;
-            background: #eef2ff; color: #4f46e5; font-size: 11px; font-weight: 700;
+            background: #eef2ff; color: #111827; font-size: 11px; font-weight: 700;
             margin-bottom: 4px;
         }
-        .partial-info { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
-        .thanks { font-size: 12px; font-weight: 700; color: #4f46e5; margin: 4px 0 2px; }
-        .footer-note { font-size: 10.5px; color: #9ca3af; }
+        .partial-info { font-size: 11px; color: #111827; margin-bottom: 4px; }
+        .thanks { font-size: 12px; font-weight: 700; color: #111827; margin: 4px 0 2px; }
+        .footer-note { font-size: 10.5px; color: #111827; }
         .printed-by { color: #d1d5db; font-size: 10px; margin-top: 3px; }
 
         @media print {
             body { background: #fff; padding: 0; }
             .invoice-container { box-shadow: none; border-radius: 0; }
             .action-bar { display: none !important; }
-            .invoice-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
     </style>
 </head>
@@ -165,7 +164,7 @@
                 <tr><td>Invoice #</td><td>{{ order.order_number }}</td></tr>
                 <tr><td>Date</td><td>{{ order.created_at|date:"d M Y" }}</td></tr>
                 <tr><td>Time</td><td>{{ order.created_at|date:"h:i A" }}</td></tr>
-                {% if order.order_from %}<tr><td>Source</td><td>{{ order.order_from }}</td></tr>{% endif %}
+
             </table>
         </div>
     </div>
@@ -179,25 +178,8 @@
         {% if order.customer_phone %}<p><span class="detail-icon">📞</span> {{ order.customer_phone }}</p>{% endif %}
         {% if order.customer_email %}<p><span class="detail-icon">✉</span> {{ order.customer_email }}</p>{% endif %}
         {% if order.shipping_address %}<p><span class="detail-icon">📍</span> {{ order.shipping_address }}</p>{% endif %}
-        {% if order.landmark %}<p style="font-style:italic;color:#9ca3af;">Landmark: {{ order.landmark }}</p>{% endif %}
-        <div class="bill-to-extra">
-            <div class="bill-to-extra-item">
-                <span class="extra-label">Branch</span>
-                <span class="extra-val">Tinkune</span>
-            </div>
-            <div class="bill-to-extra-item">
-                <span class="extra-label">Destination Branch</span>
-                {% if order.branch_city %}
-                    <span class="extra-val">{{ order.branch_city|title }}</span>
-                {% elif order.ncm_destination_branch %}
-                    <span class="extra-val">{{ order.ncm_destination_branch|title }}</span>
-                {% elif order.pnd_destination_branch %}
-                    <span class="extra-val">{{ order.pnd_destination_branch|title }}</span>
-                {% else %}
-                    <span class="extra-val" style="color:#9ca3af;">—</span>
-                {% endif %}
-            </div>
-        </div>
+        {% if order.landmark %}<p style="font-style:italic;color:#111827;">Landmark: {{ order.landmark }}</p>{% endif %}
+
     </div>
 
     <!-- Items -->
@@ -280,12 +262,7 @@
 
     <!-- Footer -->
     <div class="invoice-footer">
-        {% if order.notes %}
-        <div class="note-box">
-            <h5>Order Notes</h5>
-            <p>{{ order.notes }}</p>
-        </div>
-        {% endif %}
+
         {% if order.admin_notes %}
         <div class="note-box" style="background:#fdf2f8;border-left-color:#db2777;">
             <h5 style="color:#9d174d;">Admin Notes</h5>
@@ -302,7 +279,7 @@
             {% endif %}
             <div class="thanks">Thank you for shopping with {{ COMPANY_NAME|default:'Trendy Shopping' }}!</div>
             <div class="footer-note">Computer-generated invoice — no signature required.</div>
-            <div class="printed-by">Printed by {{ user.get_full_name|default:user.username }}</div>
+
         </div>
     </div>
 

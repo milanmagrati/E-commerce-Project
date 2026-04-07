@@ -9363,6 +9363,96 @@ def api_get_order_by_barcode(request):
         }, status=500)
 
 
+def _calc_stock_status(stock, low_stock_threshold):
+    """Helper: derive stock_status string from a stock level."""
+    if stock <= 0:
+        return 'out_of_stock'
+    if low_stock_threshold and stock <= low_stock_threshold:
+        return 'low_stock'
+    if stock <= 10:
+        return 'low_stock'
+    return 'in_stock'
+
+
+def _restock_item(item, restock_qty, user):
+    """
+    Atomically restock a ReturnItem's product/variation using F() expressions.
+    Handles simple, variable, and bundle products.
+    Returns the quantity actually restocked.
+    """
+    if restock_qty <= 0 or item.restocked:
+        return 0
+
+    if item.product_variation_id:
+        # ── Variable product: update variation stock atomically ─────────
+        ProductVariation.objects.filter(id=item.product_variation_id).update(
+            stock=F('stock') + restock_qty
+        )
+        new_var_stock = ProductVariation.objects.values_list('stock', flat=True).get(
+            id=item.product_variation_id
+        )
+        var_threshold = ProductVariation.objects.values_list('low_stock_threshold', flat=True).get(
+            id=item.product_variation_id
+        ) or 0
+        if new_var_stock == 0:
+            new_status = 'out_of_stock'
+        elif var_threshold > 0 and new_var_stock <= var_threshold:
+            new_status = 'inactive'
+        else:
+            new_status = 'active'
+        ProductVariation.objects.filter(id=item.product_variation_id).update(
+            status=new_status
+        )
+        # ── Recalculate parent product stock_status from all variations ──
+        if item.product_id:
+            total_var_stock = ProductVariation.objects.filter(
+                product_id=item.product_id
+            ).aggregate(total=Sum('stock'))['total'] or 0
+            p_threshold = Product.objects.values_list(
+                'low_stock_threshold', flat=True
+            ).get(id=item.product_id) or 0
+            Product.objects.filter(id=item.product_id).update(
+                stock_status=_calc_stock_status(total_var_stock, p_threshold)
+            )
+
+    elif item.product_id:
+        if item.product.is_bundle:
+            # ── Bundle: restock each component atomically ────────────────
+            for comp in item.product.bundle_components.select_related('component_product').all():
+                restore_qty = comp.quantity_required * restock_qty
+                Product.objects.filter(id=comp.component_product_id).update(
+                    stock=F('stock') + restore_qty
+                )
+                comp_data = Product.objects.values('stock', 'low_stock_threshold').get(
+                    id=comp.component_product_id
+                )
+                Product.objects.filter(id=comp.component_product_id).update(
+                    stock_status=_calc_stock_status(comp_data['stock'], comp_data['low_stock_threshold'])
+                )
+            # Refresh bundle product's stock_status from its components
+            bundle_obj = Product.objects.prefetch_related(
+                'bundle_components__component_product'
+            ).get(id=item.product_id)
+            Product.objects.filter(id=item.product_id).update(
+                stock_status=_calc_stock_status(bundle_obj.available_stock, bundle_obj.low_stock_threshold)
+            )
+        else:
+            # ── Simple product: restock atomically ───────────────────────
+            Product.objects.filter(id=item.product_id).update(
+                stock=F('stock') + restock_qty
+            )
+            prod_data = Product.objects.values('stock', 'low_stock_threshold').get(id=item.product_id)
+            Product.objects.filter(id=item.product_id).update(
+                stock_status=_calc_stock_status(prod_data['stock'], prod_data['low_stock_threshold'])
+            )
+
+    item.restocked = True
+    item.restocked_at = timezone.now()
+    item.restocked_by = user
+    item.save(update_fields=['restocked', 'restocked_at', 'restocked_by'])
+    return restock_qty
+
+
 @login_required
 @permission_required('can_view_returns')
 def return_detail(request, return_id):
@@ -9381,6 +9471,9 @@ def return_detail(request, return_id):
         
         try:
             if action == 'approve':
+                if return_request.return_status != 'pending':
+                    messages.error(request, '❌ Only pending returns can be approved.')
+                    return redirect('return_detail', return_id=return_request.id)
                 return_request.return_status = 'approved'
                 return_request.approved_by = request.user
                 return_request.approved_at = timezone.now()
@@ -9396,6 +9489,9 @@ def return_detail(request, return_id):
                 messages.success(request, '✅ Return request approved!')
                 
             elif action == 'reject':
+                if return_request.return_status != 'pending':
+                    messages.error(request, '❌ Only pending returns can be rejected.')
+                    return redirect('return_detail', return_id=return_request.id)
                 rejection_reason = request.POST.get('rejection_reason', '')
                 return_request.return_status = 'rejected'
                 return_request.rejection_reason = rejection_reason
@@ -9413,6 +9509,9 @@ def return_detail(request, return_id):
                 messages.warning(request, '⚠️ Return request rejected!')
                 
             elif action == 'mark_received':
+                if return_request.return_status != 'approved':
+                    messages.error(request, '❌ Can only mark approved returns as received.')
+                    return redirect('return_detail', return_id=return_request.id)
                 return_request.return_status = 'received'
                 return_request.save()
                 
@@ -9426,6 +9525,10 @@ def return_detail(request, return_id):
                 messages.success(request, '✅ Return marked as received!')
                 
             elif action == 'quality_check':
+                if return_request.return_status != 'received':
+                    messages.error(request, '❌ Quality check can only be performed on received returns.')
+                    return redirect('return_detail', return_id=return_request.id)
+
                 condition = request.POST.get('condition_received')
                 quality_notes = request.POST.get('quality_check_notes', '')
 
@@ -9441,15 +9544,20 @@ def return_detail(request, return_id):
                     good_key = f'good_qty_{item.id}'
                     damaged_key = f'damaged_qty_{item.id}'
                     if good_key in request.POST or damaged_key in request.POST:
-                        new_good = int(request.POST.get(good_key, item.good_qty))
-                        new_damaged = int(request.POST.get(damaged_key, item.damaged_qty))
-
-                        # Validation
-                        new_good = max(0, new_good)
-                        new_damaged = max(0, new_damaged)
-                        if (new_good + new_damaged) > item.return_quantity:
+                        try:
+                            new_good = max(0, int(request.POST.get(good_key) or 0))
+                            new_damaged = max(0, int(request.POST.get(damaged_key) or 0))
+                        except (ValueError, TypeError):
                             new_good = item.good_qty
                             new_damaged = item.damaged_qty
+
+                        # Clamp: if sum exceeds return_quantity, reduce damaged first
+                        if (new_good + new_damaged) > item.return_quantity:
+                            new_damaged = max(0, item.return_quantity - new_good)
+                            # If still over (good alone > return_qty), clamp good too
+                            if new_good > item.return_quantity:
+                                new_good = item.return_quantity
+                                new_damaged = 0
 
                         item.good_qty = new_good
                         item.damaged_qty = new_damaged
@@ -9465,6 +9573,10 @@ def return_detail(request, return_id):
                 messages.success(request, 'Quality check completed! Good/Damaged quantities updated.')
                 
             elif action == 'process_refund':
+                if return_request.return_status != 'inspecting':
+                    messages.error(request, '❌ Refund can only be processed for returns in "Quality Inspection" stage.')
+                    return redirect('return_detail', return_id=return_request.id)
+
                 try:
                     refund_amount = Decimal(request.POST.get('refund_amount', '0'))
                 except (InvalidOperation, ValueError):
@@ -9473,79 +9585,42 @@ def return_detail(request, return_id):
                     restocking_fee = Decimal(request.POST.get('restocking_fee', '0'))
                 except (InvalidOperation, ValueError):
                     restocking_fee = Decimal('0')
-                
-                return_request.refund_amount = refund_amount
-                return_request.restocking_fee = restocking_fee
-                return_request.return_status = 'refunded'
-                return_request.refunded_at = timezone.now()
-                return_request.save()
-                
-                # ✅ Update order status to 'returned' with Setup link
-                from .models import Setup
-                order = return_request.order
-                order.status = 'returned'
-                order.order_status = 'returned'
-                
-                # Link to the "Returned" Setup object
-                try:
-                    returned_setup = Setup.objects.get(setup_type='status', name='Returned')
-                    order.status_setup = returned_setup
-                except Setup.DoesNotExist:
-                    # Fallback: create it if it doesn't exist
-                    returned_setup, _ = Setup.objects.get_or_create(
-                        setup_type='status',
-                        name='Returned',
-                        defaults={'is_active': True}
-                    )
-                    order.status_setup = returned_setup
-                
-                order.save()
-                
-                # Restock items - only restock good_qty items
-                restocked_count = 0
-                damaged_count = 0
 
-                for item in return_request.items.all():
-                    restock_qty = item.good_qty  # Only restock good quantity
+                with transaction.atomic():
+                    return_request.refund_amount = refund_amount
+                    return_request.restocking_fee = restocking_fee
+                    return_request.return_status = 'refunded'
+                    return_request.refunded_at = timezone.now()
+                    return_request.save()
+                    
+                    # Update order status to 'returned' with Setup link
+                    from .models import Setup
+                    order = return_request.order
+                    order.status = 'returned'
+                    order.order_status = 'returned'
+                    
+                    try:
+                        returned_setup = Setup.objects.get(setup_type='status', name='Returned')
+                        order.status_setup = returned_setup
+                    except Setup.DoesNotExist:
+                        returned_setup, _ = Setup.objects.get_or_create(
+                            setup_type='status',
+                            name='Returned',
+                            defaults={'is_active': True}
+                        )
+                        order.status_setup = returned_setup
+                    
+                    order.save()
+                    
+                    # Restock good items using the atomic helper
+                    restocked_count = 0
+                    damaged_count = 0
 
-                    if restock_qty > 0:
-                        if item.product_variation:
-                            item.product_variation.stock += restock_qty
-                            if item.product_variation.stock > 0:
-                                item.product_variation.status = 'active'
-                            item.product_variation.save()
-
-                        if item.product:
-                            if item.product.is_bundle:
-                                # ── Bundle product: restock each component ──────
-                                components = item.product.bundle_components.select_related('component_product').all()
-                                for comp in components:
-                                    comp_product = comp.component_product
-                                    restore_qty = comp.quantity_required * restock_qty
-                                    comp_product.stock += restore_qty
-                                    if comp_product.stock > 0:
-                                        if comp_product.low_stock_threshold and comp_product.stock <= comp_product.low_stock_threshold:
-                                            comp_product.stock_status = 'low_stock'
-                                        else:
-                                            comp_product.stock_status = 'in_stock'
-                                    comp_product.save(update_fields=['stock', 'stock_status'])
-                            else:
-                                # ── Simple product: restock directly ─────────────
-                                item.product.stock += restock_qty
-                                if item.product.stock > 0:
-                                    if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
-                                        item.product.stock_status = 'low_stock'
-                                    else:
-                                        item.product.stock_status = 'in_stock'
-                                item.product.save(update_fields=['stock', 'stock_status'])
-
-                        item.restocked = True
-                        item.restocked_at = timezone.now()
-                        item.restocked_by = request.user
-                        item.save()
-                        restocked_count += restock_qty
-
-                    damaged_count += item.damaged_qty
+                    for item in return_request.items.select_related('product', 'product_variation').all():
+                        damaged_count += item.damaged_qty
+                        if item.restocked:
+                            continue  # Already restocked, skip
+                        restocked_count += _restock_item(item, item.good_qty, request.user)
 
                 restock_msg = f' | {restocked_count} good items restocked, {damaged_count} damaged items'
                 ReturnActivityLog.objects.create(
@@ -9710,147 +9785,138 @@ def returns_empty_trash(request):
 # BULK ACTIONS
 
 @login_required
+@require_POST
+@permission_required('can_view_returns')
 def returns_bulk_action(request):
     """Handle bulk actions on returns"""
 
-    if request.method == 'POST':
-        return_ids = request.POST.getlist('return_ids')
-        action = request.POST.get('bulk_action')
-        batch_id = request.POST.get('batch_id', '')
+    return_ids = request.POST.getlist('return_ids')
+    action = request.POST.get('bulk_action')
+    batch_id = request.POST.get('batch_id', '')
 
-        if not return_ids:
-            messages.error(request, 'No returns selected!')
-            return redirect('returns_list')
+    if not return_ids:
+        messages.error(request, 'No returns selected!')
+        return redirect('returns_list')
 
-        returns = ReturnRequest.objects.filter(id__in=return_ids, is_deleted=False)
-        count = returns.count()
+    returns = ReturnRequest.objects.filter(id__in=return_ids, is_deleted=False)
+    count = returns.count()
 
-        if action == 'trash':
-            for return_request in returns:
-                return_request.soft_delete(request.user)
-                ReturnActivityLog.objects.create(
-                    return_request=return_request,
-                    user=request.user,
-                    action_type='trashed',
-                    description=f'Bulk moved to trash by {request.user.username}'
-                )
-            messages.success(request, f'{count} return(s) moved to trash!')
+    if action == 'trash':
+        for return_request in returns:
+            return_request.soft_delete(request.user)
+            ReturnActivityLog.objects.create(
+                return_request=return_request,
+                user=request.user,
+                action_type='trashed',
+                description=f'Bulk moved to trash by {request.user.username}'
+            )
+        messages.success(request, f'{count} return(s) moved to trash!')
 
-        elif action == 'approve':
-            approved = returns.filter(return_status='pending')
-            approved_count = approved.count()
-            for ret in approved:
-                ret.return_status = 'approved'
-                ret.approved_by = request.user
-                ret.approved_at = timezone.now()
-                ret.save()
-                ReturnActivityLog.objects.create(
-                    return_request=ret,
-                    user=request.user,
-                    action_type='approved',
-                    description=f'Bulk approved by {request.user.username}'
-                )
-            messages.success(request, f'{approved_count} return(s) approved!')
+    elif action == 'approve':
+        approved = returns.filter(return_status='pending')
+        approved_count = approved.count()
+        for ret in approved:
+            ret.return_status = 'approved'
+            ret.approved_by = request.user
+            ret.approved_at = timezone.now()
+            ret.save()
+            ReturnActivityLog.objects.create(
+                return_request=ret,
+                user=request.user,
+                action_type='approved',
+                description=f'Bulk approved by {request.user.username}'
+            )
+        messages.success(request, f'{approved_count} return(s) approved!')
 
-        elif action == 'reject':
-            rejected = returns.filter(return_status='pending')
-            rejected_count = rejected.count()
-            for ret in rejected:
-                ret.return_status = 'rejected'
-                ret.approved_by = request.user
-                ret.approved_at = timezone.now()
-                ret.save()
-                ReturnActivityLog.objects.create(
-                    return_request=ret,
-                    user=request.user,
-                    action_type='rejected',
-                    description=f'Bulk rejected by {request.user.username}'
-                )
-            messages.success(request, f'{rejected_count} return(s) rejected!')
+    elif action == 'reject':
+        rejected = returns.filter(return_status='pending')
+        rejected_count = rejected.count()
+        for ret in rejected:
+            ret.return_status = 'rejected'
+            ret.approved_by = request.user
+            ret.approved_at = timezone.now()
+            ret.save()
+            ReturnActivityLog.objects.create(
+                return_request=ret,
+                user=request.user,
+                action_type='rejected',
+                description=f'Bulk rejected by {request.user.username}'
+            )
+        messages.success(request, f'{rejected_count} return(s) rejected!')
 
-        elif action == 'mark_received':
-            received = returns.filter(return_status='approved')
-            received_count = received.count()
-            for ret in received:
-                ret.return_status = 'received'
-                ret.save()
-                ReturnActivityLog.objects.create(
-                    return_request=ret,
-                    user=request.user,
-                    action_type='received',
-                    description=f'Bulk marked as received by {request.user.username}'
-                )
-            messages.success(request, f'{received_count} return(s) marked as received!')
+    elif action == 'mark_received':
+        received = returns.filter(return_status='approved')
+        received_count = received.count()
+        for ret in received:
+            ret.return_status = 'received'
+            ret.save()
+            ReturnActivityLog.objects.create(
+                return_request=ret,
+                user=request.user,
+                action_type='received',
+                description=f'Bulk marked as received by {request.user.username}'
+            )
+        messages.success(request, f'{received_count} return(s) marked as received!')
 
-        elif action == 'quality_check':
-            inspected = returns.filter(return_status='received')
-            inspected_count = inspected.count()
-            for ret in inspected:
-                ret.return_status = 'inspecting'
-                ret.condition_received = 'opened'
-                ret.quality_checked_by = request.user
-                ret.quality_checked_at = timezone.now()
-                ret.save()
-                ReturnActivityLog.objects.create(
-                    return_request=ret,
-                    user=request.user,
-                    action_type='quality_checked',
-                    description=f'Bulk quality check completed by {request.user.username}'
-                )
-            messages.success(request, f'{inspected_count} return(s) quality checked!')
+    elif action == 'quality_check':
+        inspected = returns.filter(return_status='received')
+        inspected_count = inspected.count()
+        for ret in inspected:
+            ret.return_status = 'inspecting'
+            ret.condition_received = 'opened'
+            ret.quality_checked_by = request.user
+            ret.quality_checked_at = timezone.now()
+            ret.save()
+            # Default: mark all items as good (full return_quantity)
+            for item in ret.items.all():
+                if item.good_qty == 0 and item.damaged_qty == 0:
+                    item.good_qty = item.return_quantity
+                    item.damaged_qty = 0
+                    item.save()
+            ReturnActivityLog.objects.create(
+                return_request=ret,
+                user=request.user,
+                action_type='quality_checked',
+                description=f'Bulk quality check completed by {request.user.username}'
+            )
+        messages.success(request, f'{inspected_count} return(s) quality checked!')
 
-        elif action == 'process_refund':
-            refunded_returns = returns.filter(return_status='inspecting')
-            refunded_count = 0
-            total_restocked = 0
-            total_damaged = 0
-            
-            # Get the "Returned" Setup object once
-            from .models import Setup
-            try:
-                returned_setup = Setup.objects.get(setup_type='status', name='Returned')
-            except Setup.DoesNotExist:
-                returned_setup, _ = Setup.objects.get_or_create(
-                    setup_type='status',
-                    name='Returned',
-                    defaults={'is_active': True}
-                )
+    elif action == 'process_refund':
+        refunded_returns = returns.filter(return_status='inspecting')
+        refunded_count = 0
+        total_restocked = 0
+        total_damaged = 0
+        
+        # Get the "Returned" Setup object once
+        from .models import Setup
+        try:
+            returned_setup = Setup.objects.get(setup_type='status', name='Returned')
+        except Setup.DoesNotExist:
+            returned_setup, _ = Setup.objects.get_or_create(
+                setup_type='status',
+                name='Returned',
+                defaults={'is_active': True}
+            )
 
+        with transaction.atomic():
             for ret in refunded_returns:
                 ret.return_status = 'refunded'
                 ret.refunded_at = timezone.now()
                 ret.save()
                 
-                # ✅ Update order status to 'returned' with Setup link
+                # Update order status to 'returned' with Setup link
                 order = ret.order
                 order.status = 'returned'
                 order.order_status = 'returned'
                 order.status_setup = returned_setup
                 order.save()
 
-                # Restock good items
-                for item in ret.items.all():
-                    restock_qty = item.good_qty
-                    if restock_qty > 0:
-                        if item.product_variation:
-                            item.product_variation.stock += restock_qty
-                            if item.product_variation.stock > 0:
-                                item.product_variation.status = 'active'
-                            item.product_variation.save()
-                        if item.product:
-                            item.product.stock += restock_qty
-                            if item.product.stock > 0:
-                                if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
-                                    item.product.stock_status = 'low_stock'
-                                else:
-                                    item.product.stock_status = 'in_stock'
-                            item.product.save()
-                        item.restocked = True
-                        item.restocked_at = timezone.now()
-                        item.restocked_by = request.user
-                        item.save()
-                        total_restocked += restock_qty
+                # Restock good items via atomic helper
+                for item in ret.items.select_related('product', 'product_variation').all():
                     total_damaged += item.damaged_qty
+                    if item.restocked:
+                        continue
+                    total_restocked += _restock_item(item, item.good_qty, request.user)
 
                 ReturnActivityLog.objects.create(
                     return_request=ret,
@@ -9860,21 +9926,21 @@ def returns_bulk_action(request):
                 )
                 refunded_count += 1
 
-            messages.success(
-                request,
-                f'{refunded_count} return(s) refunded! {total_restocked} good items restocked, {total_damaged} damaged items.'
-            )
+        messages.success(
+            request,
+            f'{refunded_count} return(s) refunded! {total_restocked} good items restocked, {total_damaged} damaged items.'
+        )
 
-        # Redirect back to batch detail if batch_id was provided
-        if batch_id:
-            from django.urls import reverse
-            return redirect(f'{reverse("returns_list")}?batch={batch_id}')
-        return redirect('returns_list')
-
+    # Redirect back to batch detail if batch_id was provided
+    if batch_id:
+        from django.urls import reverse
+        return redirect(f'{reverse("returns_list")}?batch={batch_id}')
     return redirect('returns_list')
+
 
 @login_required
 @require_POST
+@permission_required('can_view_returns')
 def returns_batch_bulk_action(request):
     """Handle bulk actions on entire batches from the main batch list.
     Supports AJAX (returns JSON) and regular form submission (redirects).
@@ -9944,6 +10010,12 @@ def returns_batch_bulk_action(request):
             if qc_notes:
                 ret.quality_check_notes = qc_notes
             ret.save()
+            # Default: mark all items as good (full return_quantity) if not set
+            for item in ret.items.all():
+                if item.good_qty == 0 and item.damaged_qty == 0:
+                    item.good_qty = item.return_quantity
+                    item.damaged_qty = 0
+                    item.save()
             ReturnActivityLog.objects.create(
                 return_request=ret, user=request.user,
                 action_type='quality_checked',
@@ -9965,46 +10037,30 @@ def returns_batch_bulk_action(request):
                 defaults={'is_active': True}
             )
         
-        for ret in returns_qs.filter(return_status='inspecting'):
-            ret.return_status = 'refunded'
-            ret.refunded_at = timezone.now()
-            ret.save()
-            
-            # ✅ Update order status to 'returned' with Setup link
-            order = ret.order
-            order.status = 'returned'
-            order.order_status = 'returned'
-            order.status_setup = returned_setup
-            order.save()
-            
-            for item in ret.items.all():
-                restock_qty = item.good_qty
-                if restock_qty > 0:
-                    if item.product_variation:
-                        item.product_variation.stock += restock_qty
-                        if item.product_variation.stock > 0:
-                            item.product_variation.status = 'active'
-                        item.product_variation.save()
-                    if item.product:
-                        item.product.stock += restock_qty
-                        if item.product.stock > 0:
-                            if item.product.low_stock_threshold and item.product.stock <= item.product.low_stock_threshold:
-                                item.product.stock_status = 'low_stock'
-                            else:
-                                item.product.stock_status = 'in_stock'
-                        item.product.save()
-                    item.restocked = True
-                    item.restocked_at = timezone.now()
-                    item.restocked_by = request.user
-                    item.save()
-                    total_restocked += restock_qty
-                total_damaged += item.damaged_qty
-            ReturnActivityLog.objects.create(
-                return_request=ret, user=request.user,
-                action_type='refunded',
-                description=f'Batch bulk refund by {request.user.username}. Amount: Rs. {ret.refund_amount}'
-            )
-            count += 1
+        with transaction.atomic():
+            for ret in returns_qs.filter(return_status='inspecting'):
+                ret.return_status = 'refunded'
+                ret.refunded_at = timezone.now()
+                ret.save()
+                
+                # Update order status to 'returned' with Setup link
+                order = ret.order
+                order.status = 'returned'
+                order.order_status = 'returned'
+                order.status_setup = returned_setup
+                order.save()
+                
+                for item in ret.items.select_related('product', 'product_variation').all():
+                    total_damaged += item.damaged_qty
+                    if item.restocked:
+                        continue
+                    total_restocked += _restock_item(item, item.good_qty, request.user)
+                ReturnActivityLog.objects.create(
+                    return_request=ret, user=request.user,
+                    action_type='refunded',
+                    description=f'Batch bulk refund by {request.user.username}. Amount: Rs. {ret.refund_amount}'
+                )
+                count += 1
         msg = f'{count} return(s) refunded from {len(batch_ids)} batch(es)! {total_restocked} good items restocked, {total_damaged} damaged.'
 
     if is_ajax:
@@ -10036,6 +10092,7 @@ def returns_batch_bulk_action(request):
 
 @login_required
 @require_POST
+@permission_required('can_delete_returns')
 def returns_trash_bulk_action(request):
     """Handle bulk actions on trashed returns"""
     return_ids = request.POST.getlist('return_ids')
