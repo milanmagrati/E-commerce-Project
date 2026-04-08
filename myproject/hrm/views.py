@@ -5630,10 +5630,12 @@ def payslip_download(request, pk):
             row['deduction_amount'] = None
         salary_rows.append(row)
 
+    from dashboard.models import CompanySetup
+    _co = CompanySetup.get_settings()
     context = {
         'payslip': slip,
         'employee': employee,
-        'company_name': 'HRM System',
+        'company_name': _co.company_name,
         'pay_period_start': run.pay_period_start,
         'pay_period_end': run.pay_period_end,
         'pay_date': run.pay_date,
