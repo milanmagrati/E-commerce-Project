@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}Financial Report - NCM Revenue{% endblock %}
+{% block title %}Financial Report - Logistics Revenue{% endblock %}
 
 {% block content %}
 <div class="container-fluid financial-report-container">
@@ -58,7 +58,7 @@
                 <div class="stat-icon"><i class="fas fa-shipping-fast"></i></div>
                 <div class="stat-content">
                     <h3 id="ncmDeliveryCharges">0</h3>
-                    <p>NCM Delivery Charges</p>
+                    <p>Logistics Delivery Charges</p>
                 </div>
             </div>
         </div>
@@ -133,7 +133,7 @@
                                 <th>Date</th>
                                 <th>Orders</th>
                                 <th>Revenue</th>
-                                <th>NCM Charges</th>
+                                <th>Logistics Charges</th>
                                 <th>Expenses</th>
                                 <th>Net Profit</th>
                             </tr>
@@ -179,7 +179,7 @@
         <div class="col-12 mb-3">
             <div class="card">
                 <div class="card-header bg-gradient-ncm text-white">
-                    <i class="fas fa-table"></i> NCM Delivery Revenue
+                    <i class="fas fa-table"></i> Logistics Delivery Revenue
                     <span class="table-badge" id="ncmRevenueCount">0</span>
                     <small style="font-size: 0.75rem; font-weight: normal; margin-left: 12px; opacity: 0.9;">
                         <i class="fas fa-check-circle"></i> Shows only delivered &amp; paid orders
@@ -192,7 +192,7 @@
                                 <th>Date</th>
                                 <th>Order ID</th>
                                 <th>Customer</th>
-                                <th>NCM Status</th>
+                                <th>Status</th>
                                 <th>Delivery Charge</th>
                                 <th>Payment Status</th>
                                 <th>COD Collected</th>
@@ -201,6 +201,14 @@
                         <tbody>
                             <!-- Data will be loaded via AJAX -->
                         </tbody>
+                        <tfoot id="logisticsRevenueTotals" style="display:none;">
+                            <tr class="daily-summary-total-row">
+                                <td colspan="4"><strong>Total</strong></td>
+                                <td id="lr-total-delivery-charge"><strong>0.00</strong></td>
+                                <td></td>
+                                <td id="lr-total-cod"><strong>0.00</strong></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
                 <div class="pagination-container">
@@ -278,7 +286,7 @@
                                 <th>Branch</th>
                                 <th>Orders</th>
                                 <th>Revenue</th>
-                                <th>Total NCM Charges</th>
+                                <th>Total Logistics Charges</th>
                                 <th>Profit</th>
                             </tr>
                         </thead>
@@ -325,7 +333,7 @@
         <div class="col-md-3">
             <div class="card">
                 <div class="card-body text-center">
-                    <h5>Total NCM Charges</h5>
+                    <h5>Total Logistics Charges</h5>
                     <h3 id="totalNcmCharges">0</h3>
                 </div>
             </div>
@@ -1440,7 +1448,7 @@
             if (netProfitEl) netProfitEl.textContent = formatNumber(stats.net_profit, 2);
             
             const ncmDeliveryChargesEl = document.getElementById('ncmDeliveryCharges');
-            if (ncmDeliveryChargesEl) ncmDeliveryChargesEl.textContent = formatNumber(stats.ncm_delivery_charges, 2);
+            if (ncmDeliveryChargesEl) ncmDeliveryChargesEl.textContent = formatNumber(stats.logistics_delivery_charges, 2);
         } catch (error) {
             console.error('Error rendering stats:', error);
             showErrorAlert('Error rendering statistics: ' + error.message);
@@ -1465,7 +1473,7 @@
             if (avgOrderValueEl) avgOrderValueEl.textContent = formatNumber(metrics.avg_order_value, 2);
             
             const totalNcmChargesEl = document.getElementById('totalNcmCharges');
-            if (totalNcmChargesEl) totalNcmChargesEl.textContent = formatNumber(metrics.total_ncm_charges, 2);
+            if (totalNcmChargesEl) totalNcmChargesEl.textContent = formatNumber(metrics.total_logistics_charges, 2);
             
             const profitMarginEl = document.getElementById('profitMargin');
             if (profitMarginEl) profitMarginEl.textContent = formatNumber(metrics.profit_margin, 2) + '%';
@@ -1563,7 +1571,7 @@
             revenueCell.textContent = row.revenue ? parseFloat(row.revenue).toFixed(2) : '0.00';
 
             const chargesCell = document.createElement('td');
-            chargesCell.textContent = row.ncm_charges ? parseFloat(row.ncm_charges).toFixed(2) : '0.00';
+            chargesCell.textContent = row.logistics_charges ? parseFloat(row.logistics_charges).toFixed(2) : '0.00';
 
             const profitCell = document.createElement('td');
             profitCell.textContent = row.profit ? parseFloat(row.profit).toFixed(2) : '0.00';
@@ -1633,9 +1641,9 @@
             const revenueCell = document.createElement('td');
             revenueCell.textContent = row.revenue ? parseFloat(row.revenue).toFixed(2) : '0.00';
 
-            // NCM Charges
+            // Logistics Charges
             const chargesCell = document.createElement('td');
-            chargesCell.textContent = row.ncm_charges ? parseFloat(row.ncm_charges).toFixed(2) : '0.00';
+            chargesCell.textContent = row.logistics_charges ? parseFloat(row.logistics_charges).toFixed(2) : '0.00';
 
             // Expenses
             const expensesCell = document.createElement('td');
@@ -1669,7 +1677,7 @@
         data.forEach(row => {
             totalOrders   += parseInt(row.orders || 0, 10);
             totalRevenue  += parseFloat(row.revenue || 0);
-            totalCharges  += parseFloat(row.ncm_charges || 0);
+            totalCharges  += parseFloat(row.logistics_charges || 0);
             totalExpenses += parseFloat(row.expenses || 0);
             totalProfit   += parseFloat(row.net_profit || 0);
         });
@@ -1703,12 +1711,12 @@
     function renderNcmRevenueTablePaginated(data) {
         const table = document.getElementById('ncmRevenueTable');
         if (!table) {
-            console.warn('⚠️ NCM Revenue table not found');
+            console.warn('⚠️ Logistics Revenue table not found');
             return;
         }
         const tbody = table.querySelector('tbody');
         if (!tbody) {
-            console.warn('⚠️ NCM Revenue table body not found');
+            console.warn('⚠️ Logistics Revenue table body not found');
             return;
         }
         tbody.innerHTML = '';
@@ -1717,7 +1725,7 @@
             const tr = document.createElement('tr');
             tr.innerHTML = `<td colspan="7" class="text-center text-muted py-4">
             <i class="fas fa-inbox fa-2x mb-2"></i><br>
-            No NCM orders for this period
+            No logistics orders for this period
         </td>`;
             tbody.appendChild(tr);
             return;
@@ -1732,7 +1740,6 @@
                 const rawDate = row.delivered_at || row.created_at;
                 if (rawDate) {
                     try {
-                        // Parse date safely
                         let dateObj;
                         if (typeof rawDate === 'string') {
                             dateObj = new Date(rawDate);
@@ -1760,9 +1767,10 @@
             const customerCell = document.createElement('td');
             customerCell.textContent = row.customer__name || '-';
 
-            // NCM Status
+            // Status (from system order_status)
             const statusCell = document.createElement('td');
-            statusCell.textContent = row.ncm_status || 'Pending';
+            const statusText = row.order_status || 'Pending';
+            statusCell.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
 
             // Delivery Charge
             const chargeCell = document.createElement('td');
@@ -1775,7 +1783,6 @@
             // COD Collected - use total_amount if payment status is paid
             const codCell = document.createElement('td');
             let codAmount = '0.00';
-            // If payment status is 'paid', assume that amount was collected
             if (row.payment_status && row.payment_status.toLowerCase() === 'paid') {
                 codAmount = row.total_amount ? parseFloat(row.total_amount).toFixed(2) : '0.00';
             } else if (row.cod_collected) {
@@ -1798,6 +1805,31 @@
         });
     }
 
+    function renderLogisticsRevenueTotals(data) {
+        const tfoot = document.getElementById('logisticsRevenueTotals');
+        if (!tfoot) return;
+
+        if (!data || data.length === 0) {
+            tfoot.style.display = 'none';
+            return;
+        }
+
+        let totalDeliveryCharge = 0, totalCod = 0;
+        data.forEach(row => {
+            totalDeliveryCharge += parseFloat(row.delivery_charge || 0);
+            if (row.payment_status && row.payment_status.toLowerCase() === 'paid') {
+                totalCod += parseFloat(row.total_amount || 0);
+            } else {
+                totalCod += parseFloat(row.cod_collected || 0);
+            }
+        });
+
+        document.getElementById('lr-total-delivery-charge').innerHTML = `<strong>${totalDeliveryCharge.toFixed(2)}</strong>`;
+        document.getElementById('lr-total-cod').innerHTML = `<strong>${totalCod.toFixed(2)}</strong>`;
+
+        tfoot.style.display = '';
+    }
+
     function renderNcmRevenueTable(data) {
         // Store full data in pagination state
         paginationState.ncmRevenue.data = data || [];
@@ -1808,8 +1840,11 @@
         const badgeEl = document.getElementById('ncmRevenueCount');
         if (badgeEl) badgeEl.textContent = paginationState.ncmRevenue.totalRows;
 
-        console.log(`📊 Rendering ${paginationState.ncmRevenue.totalRows} NCM revenue rows`);
+        console.log(`📊 Rendering ${paginationState.ncmRevenue.totalRows} logistics revenue rows`);
         
+        // Render totals from full dataset
+        renderLogisticsRevenueTotals(paginationState.ncmRevenue.data);
+
         // Render first page
         renderTableWithPagination('ncmRevenue');
     }
@@ -1946,7 +1981,7 @@
                 }
 
                 console.log('✅ Full response data:', data);
-                console.log('📊 NCM Revenue orders count:', data.ncm_revenue?.length || 0);
+                console.log('📊 Logistics Revenue orders count:', data.logistics_revenue?.length || 0);
 
                 // Remove loading indicator
                 const loading = document.querySelector('.loading-indicator');
@@ -1961,7 +1996,7 @@
                     renderPaymentStatusTable(data.payment_status || []);
                     renderBranchSummaryTable(data.branch_summary || []);
                     renderDailySummaryTable(data.daily_summary || []);
-                    renderNcmRevenueTable(data.ncm_revenue || []);
+                    renderNcmRevenueTable(data.logistics_revenue || []);
                     renderCharts(data);
                 } catch (renderError) {
                     console.error('❌ Error rendering component:', renderError);

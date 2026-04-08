@@ -157,6 +157,15 @@ def create_pnd_shipment(request, order_id):
             order.pnd_destination_branch = destination_branch
             order.pnd_tracking_url = tracking_url or ''
             order.status = 'processing'
+            # Save delivery charge from PnD API response
+            if delivery_charge:
+                try:
+                    from decimal import Decimal
+                    charge_val = Decimal(str(delivery_charge))
+                    if charge_val > 0:
+                        order.delivery_charge = charge_val
+                except (ValueError, TypeError):
+                    pass
             order.save()
 
             OrderActivityLog.objects.create(

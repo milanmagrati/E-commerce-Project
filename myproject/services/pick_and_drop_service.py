@@ -99,6 +99,63 @@ class PickAndDropService:
             logger.error(f'Pick and Drop API error: {str(e)}')
             return {'success': False, 'error': str(e)}
 
+    def get_order_details(self, order_id):
+        """
+        Get order details from Pick and Drop system.
+
+        Args:
+            order_id: The PND order ID (e.g. "XGAD-8")
+
+        Returns:
+            dict with 'success', 'data'/'error', and 'raw_response'
+        """
+        url = f"{self.base_url}/api/method/logi360.api.get_order"
+
+        try:
+            response = requests.get(
+                url,
+                params={'orderID': str(order_id)},
+                headers=self._get_headers(),
+                timeout=30,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                msg = data.get('message', {})
+                if isinstance(msg, dict) and msg.get('status') == 'success':
+                    return {
+                        'success': True,
+                        'data': msg.get('data', {}),
+                        'raw_response': data,
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': msg if isinstance(msg, str) else str(msg),
+                        'raw_response': data,
+                    }
+            else:
+                try:
+                    error_data = response.json()
+                except Exception:
+                    error_data = {'raw_text': response.text[:500]}
+
+                return {
+                    'success': False,
+                    'error': f'HTTP {response.status_code}',
+                    'raw_response': error_data,
+                }
+
+        except requests.exceptions.Timeout:
+            logger.error('Pick and Drop get_order API timeout')
+            return {'success': False, 'error': 'API request timed out'}
+        except requests.exceptions.ConnectionError:
+            logger.error('Pick and Drop get_order API connection error')
+            return {'success': False, 'error': 'Could not connect to Pick and Drop API'}
+        except Exception as e:
+            logger.error(f'Pick and Drop get_order API error: {str(e)}')
+            return {'success': False, 'error': str(e)}
+
     def cancel_order(self, order_id):
         """
         Cancel an order in Pick and Drop system.
