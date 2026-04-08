@@ -321,6 +321,7 @@ def user_create(request):
                 # Dashboard Module
                 user.can_view_dashboard = True
                 user.can_view_total_revenue = True
+                user.can_view_low_stock_alerts = True
 
                 # TODO / TICKETING MODULE
                 user.can_access_todo = True
@@ -329,6 +330,7 @@ def user_create(request):
                 # Dashboard Module
                 user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
                 user.can_view_total_revenue = request.POST.get('can_view_total_revenue') == 'on'
+                user.can_view_low_stock_alerts = request.POST.get('can_view_low_stock_alerts') == 'on'
                 
                 # Orders Module
                 user.can_view_orders = request.POST.get('can_view_orders') == 'on'
@@ -587,6 +589,7 @@ def user_edit(request, user_id):
             # Dashboard Module
             edit_user.can_view_dashboard = True
             edit_user.can_view_total_revenue = True
+            edit_user.can_view_low_stock_alerts = True
 
             # TODO / TICKETING MODULE
             edit_user.can_access_todo = True
@@ -600,6 +603,7 @@ def user_edit(request, user_id):
             # Dashboard Module
             edit_user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
             edit_user.can_view_total_revenue = request.POST.get('can_view_total_revenue') == 'on'
+            edit_user.can_view_low_stock_alerts = request.POST.get('can_view_low_stock_alerts') == 'on'
             
             # Orders Module
             edit_user.can_view_orders = request.POST.get('can_view_orders') == 'on'

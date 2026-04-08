@@ -64,6 +64,11 @@ def low_stock_notifications(request):
     if not request.user.is_authenticated:
         return {}
 
+    # Check role-based permission
+    user = request.user
+    if not (getattr(user, 'is_administrator', False) or getattr(user, 'can_view_low_stock_alerts', False)):
+        return {}
+
     from dashboard.models import Product, ProductVariation
 
     items = []

@@ -140,6 +140,7 @@ class CustomUser(AbstractUser):
 
     # DASHBOARD PERMISSIONS
     can_view_dashboard = models.BooleanField(default=True, verbose_name="Can View Dashboard")
+    can_view_low_stock_alerts = models.BooleanField(default=False, verbose_name="Can View Low Stock Alerts")
 
     # NCM LOGISTICS PERMISSIONS
     can_view_ncm_orders = models.BooleanField(default=False, verbose_name="Can View NCM Orders")

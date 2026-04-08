@@ -126,6 +126,10 @@
                                                 <input type="checkbox" class="form-check-input" name="can_view_total_revenue" id="can_view_total_revenue" {% if edit_user.can_view_total_revenue %}checked{% endif %}>
                                                 <label for="can_view_total_revenue">View Total Revenue</label>
                                             </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_low_stock_alerts" id="can_view_low_stock_alerts" {% if edit_user.can_view_low_stock_alerts %}checked{% endif %}>
+                                                <label for="can_view_low_stock_alerts">Show Low Stock Alert</label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
