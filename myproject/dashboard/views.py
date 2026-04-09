@@ -12831,6 +12831,7 @@ def daily_sales_report(request):
 @login_required
 @permission_required('can_view_financial_reports')
 @login_required
+@login_required
 def financial_report(request):
     """
     Render the financial report page for NCM delivered orders with delivery charges and all required stats, charts, and tables.
@@ -12842,26 +12843,25 @@ def financial_report(request):
 def financial_report_data(request):
     """
     Returns JSON data for the financial report page, filtered by period or custom date range.
-    - Daily Summary: Shows all dispatched orders (from dispatch management) grouped by dispatch date
-    - NCM Revenue: Shows dispatched orders with NCM data, delivery charges synced from NCM API
-    - Stats/Charts: Based on all dispatched orders in the selected period
-    - Filters: today, yesterday, last 7 days, last 30 days, custom, all
+    Optimized: NCM/PnD sync is skipped by default for fast response. Only runs when do_sync=1.
     """
     try:
         from decimal import Decimal
-        
+        from django.db.models.functions import Coalesce
+
         # Get filter params
         period = request.GET.get('period', 'all')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
+        # Sync is OFF by default for speed; only run when explicitly requested
+        do_sync = request.GET.get('do_sync', '0') == '1'
         tz = pytz.timezone('Asia/Kathmandu')
         now = datetime.now(tz)
 
-        # Date range logic - matches frontend labels
+        # Date range logic
         start = None
         end = None
         if period == 'all':
-            # No date restriction
             pass
         elif period == 'today':
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -12871,32 +12871,25 @@ def financial_report_data(request):
             start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
             end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
         elif period == 'week':
-            # Last 7 Days
             start = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         elif period == 'month':
-            # Last 30 Days
             start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         elif period == 'custom' and start_date and end_date:
             try:
                 start = tz.localize(datetime.strptime(start_date, '%Y-%m-%d'))
                 end = tz.localize(datetime.strptime(end_date, '%Y-%m-%d')).replace(hour=23, minute=59, second=59, microsecond=999999)
-            except ValueError as e:
-                logger.error(f"Date parsing error: {str(e)}")
+            except ValueError:
                 start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
                 end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         else:
-            # Fallback to last 30 days
             start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         from .models import Order, DispatchItem
-        from django.db.models import Q
 
-        logger.info(f"=== FINANCIAL REPORT: Period={period}, Start={start}, End={end} ===")
-
-        # Get all dispatched orders (orders linked through DispatchItem)
+        # Get all dispatched order IDs (single query, cached as subquery)
         dispatched_order_ids = DispatchItem.objects.filter(
             order__isnull=False
         ).values_list('order_id', flat=True).distinct()
@@ -12905,10 +12898,8 @@ def financial_report_data(request):
             id__in=dispatched_order_ids
         ).exclude(is_deleted=True)
 
-        # Apply date filter using dispatch_date (fallback to created_at)
-        if period == 'all':
-            orders = orders_base
-        elif start and end:
+        # Apply date filter
+        if period != 'all' and start and end:
             orders = orders_base.filter(
                 Q(dispatch_date__range=(start, end)) |
                 Q(dispatch_date__isnull=True, created_at__range=(start, end))
@@ -12916,218 +12907,208 @@ def financial_report_data(request):
         else:
             orders = orders_base
 
-        logger.info(f"Dispatched orders in period: {orders.count()}")
+        # --- NCM/PnD sync: only run if explicitly requested (do_sync=1) ---
+        needs_sync = False
+        if do_sync:
+            ncm_orders_to_sync = list(
+                orders.filter(
+                    ncm_order_id__isnull=False
+                ).filter(
+                    Q(delivery_charge__isnull=True) | Q(delivery_charge=0)
+                ).values_list('id', 'ncm_order_id', named=True)[:20]
+            )
 
-        # Sync NCM delivery charges from NCM API for orders that need it
-        ncm_orders_to_sync = list(
-            orders.filter(
-                ncm_order_id__isnull=False
-            ).filter(
-                Q(delivery_charge__isnull=True) | Q(delivery_charge=0)
-            ).values_list('id', 'ncm_order_id', named=True)[:50]
-        )
+            if ncm_orders_to_sync:
+                needs_sync = True
+                try:
+                    from services.ncm_service import NCMService
+                    ncm_service = NCMService()
+                    for item in ncm_orders_to_sync:
+                        try:
+                            result = ncm_service.get_order_details(item.ncm_order_id)
+                            if result.get('success') and result.get('data'):
+                                ncm_data = result['data']
+                                update_fields = []
+                                charge = None
+                                for field_name in ['chargeDetail', 'deliveryCharge', 'delivery_charge', 'charge', 'serviceCharge']:
+                                    val = ncm_data.get(field_name)
+                                    if val is not None:
+                                        try:
+                                            charge = Decimal(str(val))
+                                            if charge > 0:
+                                                break
+                                        except (ValueError, TypeError):
+                                            pass
+                                order_obj = Order.objects.get(id=item.id)
+                                if charge and charge > 0:
+                                    order_obj.delivery_charge = charge
+                                    update_fields.append('delivery_charge')
+                                ncm_status_val = ncm_data.get('status') or ncm_data.get('Status', '')
+                                if ncm_status_val and ncm_status_val != order_obj.ncm_status:
+                                    order_obj.ncm_status = ncm_status_val
+                                    update_fields.append('ncm_status')
+                                if update_fields:
+                                    order_obj.save(update_fields=update_fields)
+                        except Exception:
+                            pass
+                except (ImportError, Exception):
+                    pass
 
-        if ncm_orders_to_sync:
-            try:
-                from services.ncm_service import NCMService
-                ncm_service = NCMService()
+            pnd_orders_to_sync = list(
+                orders.filter(
+                    pnd_order_id__isnull=False
+                ).exclude(pnd_order_id='').filter(
+                    Q(delivery_charge__isnull=True) | Q(delivery_charge=0)
+                ).values_list('id', 'pnd_order_id', named=True)[:20]
+            )
 
-                for item in ncm_orders_to_sync:
-                    try:
-                        result = ncm_service.get_order_details(item.ncm_order_id)
-                        if result.get('success') and result.get('data'):
-                            ncm_data = result['data']
-                            update_fields = []
+            if pnd_orders_to_sync:
+                needs_sync = True
+                try:
+                    from services.pick_and_drop_service import PickAndDropService
+                    pnd_service = PickAndDropService()
+                    for item in pnd_orders_to_sync:
+                        try:
+                            result = pnd_service.get_order_details(item.pnd_order_id)
+                            if result.get('success') and result.get('data'):
+                                pnd_data = result['data']
+                                update_fields = []
+                                charge = None
+                                for field_name in ['delivery_charge', 'deliveryCharge', 'charge', 'serviceCharge']:
+                                    val = pnd_data.get(field_name)
+                                    if val is not None:
+                                        try:
+                                            charge = Decimal(str(val))
+                                            if charge > 0:
+                                                break
+                                        except (ValueError, TypeError):
+                                            pass
+                                order_obj = Order.objects.get(id=item.id)
+                                if charge and charge > 0:
+                                    order_obj.delivery_charge = charge
+                                    update_fields.append('delivery_charge')
+                                pnd_status_val = pnd_data.get('status') or pnd_data.get('Status', '')
+                                if pnd_status_val and pnd_status_val != order_obj.pnd_status:
+                                    order_obj.pnd_status = pnd_status_val
+                                    update_fields.append('pnd_status')
+                                if update_fields:
+                                    order_obj.save(update_fields=update_fields)
+                        except Exception:
+                            pass
+                except (ImportError, Exception):
+                    pass
 
-                            # Extract delivery charge from NCM API response
-                            charge = None
-                            for field_name in ['chargeDetail', 'deliveryCharge', 'delivery_charge', 'charge', 'serviceCharge']:
-                                val = ncm_data.get(field_name)
-                                if val is not None:
-                                    try:
-                                        charge = Decimal(str(val))
-                                        if charge > 0:
-                                            break
-                                    except (ValueError, TypeError):
-                                        pass
+            # Re-query only if sync actually ran
+            if needs_sync:
+                if period != 'all' and start and end:
+                    orders = orders_base.filter(
+                        Q(dispatch_date__range=(start, end)) |
+                        Q(dispatch_date__isnull=True, created_at__range=(start, end))
+                    )
+                else:
+                    orders = orders_base
 
-                            order_obj = Order.objects.get(id=item.id)
-                            if charge and charge > 0:
-                                order_obj.delivery_charge = charge
-                                update_fields.append('delivery_charge')
-
-                            # Update NCM status if available
-                            ncm_status_val = ncm_data.get('status') or ncm_data.get('Status', '')
-                            if ncm_status_val and ncm_status_val != order_obj.ncm_status:
-                                order_obj.ncm_status = ncm_status_val
-                                update_fields.append('ncm_status')
-
-                            if update_fields:
-                                order_obj.save(update_fields=update_fields)
-                                logger.info(f"Synced NCM data for order {item.ncm_order_id}: {update_fields}")
-                    except Exception as e:
-                        logger.warning(f"NCM sync failed for order {item.ncm_order_id}: {e}")
-            except ImportError:
-                logger.error("NCMService not available for sync")
-            except Exception as e:
-                logger.error(f"NCM batch sync error: {e}")
-
-        # Sync Pick and Drop delivery charges from PnD API for orders that need it
-        pnd_orders_to_sync = list(
-            orders.filter(
-                pnd_order_id__isnull=False
-            ).exclude(
-                pnd_order_id=''
-            ).filter(
-                Q(delivery_charge__isnull=True) | Q(delivery_charge=0)
-            ).values_list('id', 'pnd_order_id', named=True)[:50]
-        )
-
-        if pnd_orders_to_sync:
-            try:
-                from services.pick_and_drop_service import PickAndDropService
-                pnd_service = PickAndDropService()
-
-                for item in pnd_orders_to_sync:
-                    try:
-                        result = pnd_service.get_order_details(item.pnd_order_id)
-                        if result.get('success') and result.get('data'):
-                            pnd_data = result['data']
-                            update_fields = []
-
-                            # Extract delivery charge from PnD API response
-                            charge = None
-                            for field_name in ['delivery_charge', 'deliveryCharge', 'charge', 'serviceCharge']:
-                                val = pnd_data.get(field_name)
-                                if val is not None:
-                                    try:
-                                        charge = Decimal(str(val))
-                                        if charge > 0:
-                                            break
-                                    except (ValueError, TypeError):
-                                        pass
-
-                            order_obj = Order.objects.get(id=item.id)
-                            if charge and charge > 0:
-                                order_obj.delivery_charge = charge
-                                update_fields.append('delivery_charge')
-
-                            # Update PnD status if available
-                            pnd_status_val = pnd_data.get('status') or pnd_data.get('Status', '')
-                            if pnd_status_val and pnd_status_val != order_obj.pnd_status:
-                                order_obj.pnd_status = pnd_status_val
-                                update_fields.append('pnd_status')
-
-                            if update_fields:
-                                order_obj.save(update_fields=update_fields)
-                                logger.info(f"Synced PnD data for order {item.pnd_order_id}: {update_fields}")
-                    except Exception as e:
-                        logger.warning(f"PnD sync failed for order {item.pnd_order_id}: {e}")
-            except ImportError:
-                logger.error("PickAndDropService not available for sync")
-            except Exception as e:
-                logger.error(f"PnD batch sync error: {e}")
-
-        # Re-query to get updated data after NCM/PnD sync
-        needs_requery = bool(ncm_orders_to_sync) or bool(pnd_orders_to_sync)
-        if needs_requery:
-            if period == 'all':
-                orders = orders_base
-            elif start and end:
-                orders = orders_base.filter(
-                    Q(dispatch_date__range=(start, end)) |
-                    Q(dispatch_date__isnull=True, created_at__range=(start, end))
-                )
-            else:
-                orders = orders_base
-
-        # Prefetch related items and products for all orders (optimization)
-        orders = orders.prefetch_related('items__product')
-
-
-        # Helper function to convert Decimal to float
+        # Helper function
         def to_float(value):
             if isinstance(value, Decimal):
                 return float(value)
             return float(value) if value else 0
 
-        # Stats - calculate based on all dispatched orders in range
-        total_revenue = orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-        orders_delivered = orders.filter(
-            Q(order_status__iexact='delivered') | Q(status__iexact='delivered')
-        ).count()
-        orders_in_transit = orders.filter(
-            Q(order_status__iexact='in transit') | Q(order_status__iexact='in_transit') |
-            Q(ncm_status__icontains='transit') | Q(pnd_status__icontains='transit')
-        ).count()
-        
-        cod_collected = orders.filter(payment_method='cod', payment_status='paid').aggregate(total=Sum('cod_collected'))['total'] or Decimal('0')
-        pending_payments = orders.filter(payment_status__in=['pending', 'partial']).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-        logistics_delivery_charges = orders.filter(delivery_charge__isnull=False).aggregate(total=Sum('delivery_charge'))['total'] or Decimal('0')
-        
-        # Calculate total expenses using average_cost (handles variable cost price products)
-        # Single-pass iteration: compute expenses, branch_data, and daily_data together
-        # to avoid iterating orders 3 times (N+1 query optimization)
+        # --- SINGLE combined aggregation query for stats ---
+        stats_agg = orders.aggregate(
+            total_revenue=Sum('total_amount'),
+            cod_collected=Sum(Case(
+                When(payment_method='cod', payment_status='paid', then='cod_collected'),
+                default=Value(Decimal('0'))
+            )),
+            pending_payments=Sum(Case(
+                When(payment_status__in=['pending', 'partial'], then='total_amount'),
+                default=Value(Decimal('0'))
+            )),
+            logistics_delivery_charges=Sum(Case(
+                When(delivery_charge__isnull=False, then='delivery_charge'),
+                default=Value(Decimal('0'))
+            )),
+            delivered_count=Count('id', filter=Q(order_status__iexact='delivered') | Q(status__iexact='delivered')),
+            transit_count=Count('id', filter=(
+                Q(order_status__iexact='in transit') | Q(order_status__iexact='in_transit') |
+                Q(ncm_status__icontains='transit') | Q(pnd_status__icontains='transit')
+            )),
+            total_count=Count('id'),
+            paid_amt=Sum(Case(When(payment_status='paid', then='total_amount'), default=Value(Decimal('0')))),
+            unpaid_amt=Sum(Case(When(payment_status='pending', then='total_amount'), default=Value(Decimal('0')))),
+            partial_amt=Sum(Case(When(payment_status='partial', then='total_amount'), default=Value(Decimal('0')))),
+        )
+
+        total_revenue = stats_agg['total_revenue'] or Decimal('0')
+        orders_delivered = stats_agg['delivered_count'] or 0
+        orders_in_transit = stats_agg['transit_count'] or 0
+        cod_collected = stats_agg['cod_collected'] or Decimal('0')
+        pending_payments = stats_agg['pending_payments'] or Decimal('0')
+        logistics_delivery_charges = stats_agg['logistics_delivery_charges'] or Decimal('0')
+        orders_count = stats_agg['total_count'] or 0
+
+        # --- Expenses, Branch, Daily: optimized single-pass with only needed fields ---
+        orders_with_items = orders.only(
+            'id', 'total_amount', 'delivery_charge', 'dispatch_date', 'created_at',
+            'ncm_destination_branch', 'pnd_destination_branch'
+        ).prefetch_related(
+            Prefetch('items', queryset=OrderItem.objects.select_related('product').only(
+                'id', 'order_id', 'product_id', 'quantity',
+                'product__cost_price', 'product__cost_price_type'
+            ).prefetch_related('product__product_purchases'))
+        )
         expenses = Decimal('0')
         branch_data = {}
         daily_data = {}
 
-        for order in orders:
-            # Calculate cost for this order using average_cost
+        for order in orders_with_items:
             order_cost = Decimal('0')
             for item in order.items.all():
                 if item.product and item.product.average_cost:
                     order_cost += (item.product.average_cost * item.quantity)
-
             expenses += order_cost
 
-            # Branch-wise summary
+            # Branch-wise
             branch = order.ncm_destination_branch or order.pnd_destination_branch or 'Not Assigned'
             if branch not in branch_data:
                 branch_data[branch] = {
                     'ncm_destination_branch': branch,
-                    'orders': 0,
-                    'revenue': Decimal('0'),
-                    'logistics_charges': Decimal('0'),
-                    'expenses': Decimal('0'),
+                    'orders': 0, 'revenue': Decimal('0'),
+                    'logistics_charges': Decimal('0'), 'expenses': Decimal('0'),
                 }
             branch_data[branch]['orders'] += 1
             branch_data[branch]['revenue'] += order.total_amount or Decimal('0')
             branch_data[branch]['logistics_charges'] += order.delivery_charge or Decimal('0')
             branch_data[branch]['expenses'] += order_cost
 
-            # Daily summary
-            order_date = (order.dispatch_date or order.created_at).date()
+            # Daily summary (skip if no date available)
+            order_dt = order.dispatch_date or order.created_at
+            if not order_dt:
+                continue
+            order_date = order_dt.date()
             if order_date not in daily_data:
                 daily_data[order_date] = {
-                    'date': order_date,
-                    'orders': 0,
-                    'revenue': Decimal('0'),
-                    'logistics_charges': Decimal('0'),
+                    'date': order_date, 'orders': 0,
+                    'revenue': Decimal('0'), 'logistics_charges': Decimal('0'),
                     'expenses': Decimal('0'),
                 }
             daily_data[order_date]['orders'] += 1
             daily_data[order_date]['revenue'] += order.total_amount or Decimal('0')
             daily_data[order_date]['logistics_charges'] += order.delivery_charge or Decimal('0')
             daily_data[order_date]['expenses'] += order_cost
-        
+
         net_profit = total_revenue - logistics_delivery_charges - expenses
 
         # Key metrics
-        orders_count = orders.count()
         avg_order_value = total_revenue / orders_count if orders_count else Decimal('0')
         profit_margin = (net_profit / total_revenue * 100) if total_revenue else Decimal('0')
         cod_collection_rate = (cod_collected / total_revenue * 100) if total_revenue else Decimal('0')
 
-        # Payment status breakdown (single query with conditional aggregation)
-        payment_agg = orders.aggregate(
-            paid_amt=Sum(Case(When(payment_status='paid', then='total_amount'), default=Value(Decimal('0')))),
-            unpaid_amt=Sum(Case(When(payment_status='pending', then='total_amount'), default=Value(Decimal('0')))),
-            partial_amt=Sum(Case(When(payment_status='partial', then='total_amount'), default=Value(Decimal('0')))),
-        )
-        paid_amt = payment_agg['paid_amt'] or Decimal('0')
-        unpaid_amt = payment_agg['unpaid_amt'] or Decimal('0')
-        partial_amt = payment_agg['partial_amt'] or Decimal('0')
+        # Payment status breakdown (already computed in stats_agg)
+        paid_amt = stats_agg['paid_amt'] or Decimal('0')
+        unpaid_amt = stats_agg['unpaid_amt'] or Decimal('0')
+        partial_amt = stats_agg['partial_amt'] or Decimal('0')
         total_amt = paid_amt + unpaid_amt + partial_amt
         payment_status = [
             {"status": "Paid", "amount": to_float(paid_amt), "percent": to_float((paid_amt/total_amt*100) if total_amt else 0)},
@@ -13135,41 +13116,33 @@ def financial_report_data(request):
             {"status": "Partial", "amount": to_float(partial_amt), "percent": to_float((partial_amt/total_amt*100) if total_amt else 0)},
         ]
 
-        # Branch-wise profit calculation and conversion (data already populated above)
-        branch_with_summary = []
+        # Branch summary
+        branch_summary = []
         for branch, data in sorted(branch_data.items(), key=lambda x: x[1]['revenue'], reverse=True):
             data['profit'] = data['revenue'] - data['logistics_charges'] - data['expenses']
-            branch_with_summary.append(data)
-        
-        logger.info(f"Branch-wise orders (by ncm_destination_branch): {branch_with_summary}")
-        
-        branch_summary = branch_with_summary
-        logger.info(f"Final branch_summary: {branch_summary}")
-        
-        # Convert Decimals in branch_summary
-        for branch in branch_summary:
-            branch['revenue'] = to_float(branch['revenue'])
-            branch['logistics_charges'] = to_float(branch['logistics_charges'])
-            branch['expenses'] = to_float(branch['expenses'])
-            branch['profit'] = to_float(branch['profit'])
+            branch_summary.append({
+                'ncm_destination_branch': data['ncm_destination_branch'],
+                'orders': data['orders'],
+                'revenue': to_float(data['revenue']),
+                'logistics_charges': to_float(data['logistics_charges']),
+                'expenses': to_float(data['expenses']),
+                'profit': to_float(data['profit']),
+            })
 
-        # Daily summary - profit calculation and conversion (data already populated above)
+        # Daily summary
         daily_summary = []
-        for date, data in sorted(daily_data.items(), reverse=True):
+        for date_key, data in sorted(daily_data.items(), reverse=True):
             data['net_profit'] = data['revenue'] - data['logistics_charges'] - data['expenses']
-            daily_summary.append(data)
+            daily_summary.append({
+                'date': str(data['date']),
+                'orders': data['orders'],
+                'revenue': to_float(data['revenue']),
+                'logistics_charges': to_float(data['logistics_charges']),
+                'expenses': to_float(data['expenses']),
+                'net_profit': to_float(data['net_profit']),
+            })
 
-        for day in daily_summary:
-            day['revenue'] = to_float(day['revenue'])
-            day['logistics_charges'] = to_float(day['logistics_charges'])
-            day['expenses'] = to_float(day['expenses'])
-            day['net_profit'] = to_float(day['net_profit'])
-            if day['date']:
-                day['date'] = str(day['date'])
-
-        # Logistics Delivery Revenue Table - delivered + paid orders (NCM + Pick and Drop)
-        # Use both dispatch_date and delivered_at for date filtering
-        # so orders delivered within the period show up even if dispatched earlier
+        # Logistics Delivery Revenue Table
         logistics_base = orders_base.filter(
             Q(order_status__iexact='delivered') | Q(status__iexact='delivered'),
             payment_status='paid'
@@ -13184,7 +13157,6 @@ def financial_report_data(request):
             )
         else:
             logistics_orders_in_period = logistics_base
-        logger.info(f"Logistics delivered & paid orders in period: {logistics_orders_in_period.count()}")
 
         logistics_revenue_list = list(
             logistics_orders_in_period.values(
@@ -13193,65 +13165,51 @@ def financial_report_data(request):
                 'total_amount', 'shipping_charge', 'delivery_charge', 'payment_status', 'payment_method', 'cod_collected', 'created_at'
             )
         )
-        
-        # Sort: put delivered orders first (non-null delivered_at), then pending (null delivered_at)
-        # Within each group, sort by date descending
+
         def sort_key(order):
             is_pending = order['delivered_at'] is None
             if is_pending:
-                # Pending orders sorted by created_at descending
                 return (1, -order['created_at'].timestamp() if order['created_at'] else 0)
             else:
-                # Delivered orders sorted by delivered_at descending
                 return (0, -order['delivered_at'].timestamp())
-        
+
         logistics_revenue = sorted(logistics_revenue_list, key=sort_key)
-        
-        # Convert Decimals and format dates in logistics_revenue
+
         for order in logistics_revenue:
             order['total_amount'] = to_float(order['total_amount'])
             order['shipping_charge'] = to_float(order['shipping_charge'])
             order['delivery_charge'] = to_float(order['delivery_charge'])
             order['cod_collected'] = to_float(order['cod_collected'])
-            # Handle delivered_at — fall back to created_at for undelivered orders
             if order['delivered_at'] is not None:
                 order['delivered_at'] = order['delivered_at'].isoformat()
             elif order['created_at'] is not None:
                 order['delivered_at'] = order['created_at'].isoformat()
             else:
                 order['delivered_at'] = None
-            # Always convert created_at to string for JSON serialization
             if order['created_at'] is not None:
                 order['created_at'] = order['created_at'].isoformat()
             else:
                 order['created_at'] = None
 
-        # Payment method pie chart
+        # Payment methods + daily revenue charts (DB aggregation)
         payment_methods = list(
             orders.values('payment_method').annotate(amount=Sum('total_amount')).order_by('-amount')
         )
-        
-        # Convert Decimals in payment_methods
         for method in payment_methods:
             method['amount'] = to_float(method['amount'])
             if not method['payment_method']:
                 method['payment_method'] = 'Unknown'
 
-        # Daily revenue line chart - use dispatch_date with fallback to created_at
-        from django.db.models.functions import Coalesce
         daily_revenue = list(
             orders.annotate(
                 date=TruncDate(Coalesce('dispatch_date', 'created_at'))
             ).values('date').annotate(amount=Sum('total_amount')).order_by('date')
         )
-        
-        # Convert Decimals in daily_revenue
         for day in daily_revenue:
             day['amount'] = to_float(day['amount'])
             if day['date']:
                 day['date'] = str(day['date'])
 
-        # Revenue vs Expenses bar chart
         revenue_vs_expenses = [
             {"label": "Revenue", "amount": to_float(total_revenue)},
             {"label": "Logistics Charges", "amount": to_float(logistics_delivery_charges)},
@@ -13284,7 +13242,7 @@ def financial_report_data(request):
             "daily_revenue": daily_revenue,
             "revenue_vs_expenses": revenue_vs_expenses,
         })
-    
+
     except Exception as e:
         logger.error(f"Error in financial_report_data: {str(e)}", exc_info=True)
         return JsonResponse({

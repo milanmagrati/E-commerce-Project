@@ -1306,59 +1306,59 @@
         return cookieValue;
     }
 
-    function fetchFinancialReportData(params = {}) {
+    // --- Performance: Cache, AbortController, Debounce ---
+    const _reportCache = {};
+    const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+    let _currentAbortController = null;
+
+    function _getCacheKey(params) {
+        const sorted = {};
+        Object.keys(params).sort().forEach(k => sorted[k] = params[k]);
+        return JSON.stringify(sorted);
+    }
+
+    function _getCached(params) {
+        const key = _getCacheKey(params);
+        const entry = _reportCache[key];
+        if (entry && (Date.now() - entry.time < CACHE_TTL)) {
+            return entry.data;
+        }
+        if (entry) delete _reportCache[key];
+        return null;
+    }
+
+    function _setCache(params, data) {
+        _reportCache[_getCacheKey(params)] = { data, time: Date.now() };
+    }
+
+    function fetchFinancialReportData(params = {}, options = {}) {
+        const { signal } = options;
         const url = new URL(window.location.origin + '/financial-report/data/');
         Object.keys(params).forEach(key => {
-            if (params[key]) {
-                url.searchParams.append(key, params[key]);
-            }
+            if (params[key]) url.searchParams.append(key, params[key]);
         });
 
         const csrftoken = getCookie('csrftoken');
-        const headers = {
-            'X-CSRFToken': csrftoken,
-            'Content-Type': 'application/json'
-        };
-
-        console.log('🔄 Fetching financial report data from:', url.toString());
-
         return fetch(url, {
             credentials: 'same-origin',
-            headers: headers
+            headers: { 'X-CSRFToken': csrftoken, 'Content-Type': 'application/json' },
+            signal: signal
         })
-            .then(res => {
-                console.log('📊 Response status:', res.status);
-                if (!res.ok) {
-                    console.error('❌ API Error:', res.status, res.statusText);
-                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-                }
-                return res.text().then(text => {
-                    if (!text) {
-                        throw new Error('Empty response from server');
-                    }
-                    try {
-                        return JSON.parse(text);
-                    } catch (e) {
-                        console.error('❌ JSON parse error:', e, 'Response:', text);
-                        throw new Error('Invalid JSON response from server');
-                    }
-                }).then(data => {
-                    if (data.success === false || data.error) {
-                        console.error('❌ API returned error:', data.error);
-                        throw new Error(data.message || data.error || 'Unknown server error');
-                    }
-                    if (!data || typeof data !== 'object') {
-                        throw new Error('Invalid response format from server');
-                    }
-                    console.log('✅ Data received successfully');
-                    return data;
-                });
-            })
-            .catch(error => {
-                console.error('❌ Fetch error:', error);
-                showErrorAlert('Error loading financial report: ' + error.message);
-                return Promise.reject(error);
-            });
+        .then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            return res.json();
+        })
+        .then(data => {
+            if (data.success === false || data.error) {
+                throw new Error(data.message || data.error || 'Unknown server error');
+            }
+            return data;
+        })
+        .catch(error => {
+            if (error.name === 'AbortError') return Promise.reject(error);
+            showErrorAlert('Error loading financial report: ' + error.message);
+            return Promise.reject(error);
+        });
     }
 
     // Export functions
@@ -1399,21 +1399,34 @@
 
     // Improved error display function
     function showErrorAlert(message) {
+        // Remove any existing error alerts to prevent stacking
+        const container = document.querySelector('.financial-report-container');
+        if (!container) {
+            alert('Error: ' + message);
+            return;
+        }
+        container.querySelectorAll('.alert-danger').forEach(el => el.remove());
+
         const errorDiv = document.createElement('div');
         errorDiv.className = 'alert alert-danger alert-dismissible fade show';
         errorDiv.role = 'alert';
-        errorDiv.innerHTML = `
-        <strong><i class="fas fa-exclamation-circle"></i> Error:</strong> ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
 
-        const container = document.querySelector('.financial-report-container');
-        if (container) {
-            container.insertBefore(errorDiv, container.firstChild);
-        } else {
-            // Fallback to alert if container not found
-            alert('Error: ' + message);
-        }
+        const strong = document.createElement('strong');
+        strong.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error: ';
+        const msgText = document.createTextNode(message);
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'btn-close';
+        closeBtn.setAttribute('data-bs-dismiss', 'alert');
+        closeBtn.setAttribute('aria-label', 'Close');
+
+        errorDiv.appendChild(strong);
+        errorDiv.appendChild(msgText);
+        errorDiv.appendChild(closeBtn);
+        container.insertBefore(errorDiv, container.firstChild);
+
+        // Auto-dismiss after 8 seconds
+        setTimeout(() => { if (errorDiv.parentNode) errorDiv.remove(); }, 8000);
     }
 
     function renderStats(stats) {
@@ -1958,8 +1971,38 @@
         }
     }
 
+    function renderReportData(data) {
+        try {
+            renderStats(data.stats || {});
+            renderKeyMetrics(data.key_metrics || {});
+            renderPaymentStatusTable(data.payment_status || []);
+            renderBranchSummaryTable(data.branch_summary || []);
+            renderDailySummaryTable(data.daily_summary || []);
+            renderNcmRevenueTable(data.logistics_revenue || []);
+            renderCharts(data);
+        } catch (renderError) {
+            console.error('Error rendering component:', renderError);
+            showErrorAlert('Error rendering report components: ' + renderError.message);
+        }
+    }
+
     function loadReport(params = {}) {
-        console.log('📈 Loading report with params:', params);
+        // Abort any in-flight request
+        if (_currentAbortController) {
+            _currentAbortController.abort();
+        }
+        _currentAbortController = new AbortController();
+        const signal = _currentAbortController.signal;
+
+        // Check cache first — render instantly if available
+        const cached = _getCached(params);
+        if (cached) {
+            // Remove any loading indicator
+            const loading = document.querySelector('.loading-indicator');
+            if (loading) loading.remove();
+            renderReportData(cached);
+            return;
+        }
 
         // Show loading state
         const container = document.querySelector('.financial-report-container');
@@ -1973,45 +2016,34 @@
             loadingDiv.style.display = 'block';
         }
 
-        fetchFinancialReportData(params)
+        fetchFinancialReportData(params, { signal })
             .then(data => {
-                // Validate response structure
                 if (!data || typeof data !== 'object') {
                     throw new Error('Invalid response structure from server');
                 }
 
-                console.log('✅ Full response data:', data);
-                console.log('📊 Logistics Revenue orders count:', data.logistics_revenue?.length || 0);
+                // Cache the response
+                _setCache(params, data);
 
                 // Remove loading indicator
                 const loading = document.querySelector('.loading-indicator');
                 if (loading) loading.remove();
 
-                console.log('✅ Rendering data...');
-
-                // Render each component with error handling
-                try {
-                    renderStats(data.stats || {});
-                    renderKeyMetrics(data.key_metrics || {});
-                    renderPaymentStatusTable(data.payment_status || []);
-                    renderBranchSummaryTable(data.branch_summary || []);
-                    renderDailySummaryTable(data.daily_summary || []);
-                    renderNcmRevenueTable(data.logistics_revenue || []);
-                    renderCharts(data);
-                } catch (renderError) {
-                    console.error('❌ Error rendering component:', renderError);
-                    showErrorAlert('Error rendering report components: ' + renderError.message);
-                }
-
-                console.log('✅ Report loaded successfully!');
+                renderReportData(data);
             })
             .catch(error => {
-                console.error('❌ Error loading report:', error);
-                // Remove loading indicator
+                if (error.name === 'AbortError') return; // silently ignore aborted requests
                 const loading = document.querySelector('.loading-indicator');
                 if (loading) loading.remove();
-                showErrorAlert('Failed to load financial report. Please check the console for details.');
+                showErrorAlert('Failed to load financial report. Please try again.');
             });
+    }
+
+    // Debounce helper - prevents rapid duplicate calls
+    let _loadDebounceTimer = null;
+    function loadReportDebounced(params = {}, delay = 200) {
+        if (_loadDebounceTimer) clearTimeout(_loadDebounceTimer);
+        _loadDebounceTimer = setTimeout(() => loadReport(params), delay);
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -2030,14 +2062,13 @@
                 this.classList.add('active');
 
                 const period = this.getAttribute('data-period');
-                console.log('📊 Filter button clicked:', period);
 
                 // Clear date inputs when quick filter is selected
                 startDateInput.value = '';
                 endDateInput.value = '';
 
-                // Load report with selected period
-                loadReport({ period: period });
+                // Load report with selected period (debounced to prevent double-clicks)
+                loadReportDebounced({ period: period });
             });
         });
 
@@ -2050,10 +2081,8 @@
                 // Remove active class from all quick filter buttons when using custom range
                 filterButtons.forEach(b => b.classList.remove('active'));
 
-                console.log('📊 Apply custom date range:', { startDate, endDate });
-
                 // Load report with custom date range
-                loadReport({
+                loadReportDebounced({
                     period: 'custom',
                     start_date: startDate,
                     end_date: endDate
@@ -2073,7 +2102,6 @@
         });
 
         // Initial load with default "Last 30 Days" period
-        console.log('📊 Initial load with default period');
         loadReport({ period: 'month' });
     });
 </script>
