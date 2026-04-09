@@ -1,0 +1,119 @@
+{% extends "store/base.html" %}
+{% load static %}
+
+{% block title %}Store — Shop the Best Deals{% endblock %}
+
+{% block content %}
+<!-- Hero Banner Slider -->
+<section class="hero-slider" id="heroSlider">
+    <div class="slider-track" id="sliderTrack">
+        <div class="slide" style="background: linear-gradient(135deg, #F85606 0%, #FF6B35 50%, #FFD700 100%);">
+            <div class="slide-content">
+                <h1>Mega Sale is LIVE!</h1>
+                <p>Up to 70% off on Electronics, Fashion & more</p>
+                <a href="{% url 'store:product_list' %}" class="btn btn-white">Shop Now</a>
+            </div>
+        </div>
+        <div class="slide" style="background: linear-gradient(135deg, #d94800 0%, #F85606 50%, #FF6B35 100%);">
+            <div class="slide-content">
+                <h1>New Arrivals Daily</h1>
+                <p>Discover the latest trends at unbeatable prices</p>
+                <a href="{% url 'store:product_list' %}?sort=newest" class="btn btn-white">Explore</a>
+            </div>
+        </div>
+        <div class="slide" style="background: linear-gradient(135deg, #FF6B35 0%, #F85606 50%, #d94800 100%);">
+            <div class="slide-content">
+                <h1>Free Delivery</h1>
+                <p>On all orders above Rs. 500</p>
+                <a href="{% url 'store:product_list' %}" class="btn btn-white">Start Shopping</a>
+            </div>
+        </div>
+    </div>
+    <button class="slider-btn slider-prev" id="sliderPrev">&#10094;</button>
+    <button class="slider-btn slider-next" id="sliderNext">&#10095;</button>
+    <div class="slider-dots" id="sliderDots"></div>
+</section>
+
+<!-- Category Grid -->
+<section class="section category-section">
+    <div class="container">
+        <h2 class="section-title">Categories</h2>
+        <div class="category-grid">
+            {% for cat in categories %}
+            <a href="{% url 'store:category_products' slug=cat.slug %}" class="category-card">
+                <div class="category-card-icon">
+                    {% if cat.name == "Electronics" %}
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#F85606"><path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>
+                    {% elif cat.name == "Fashion" %}
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#F85606"><path d="M21.6 18.2L13 11.75v-.91a3.496 3.496 0 0 0-.18-6.75A3.51 3.51 0 0 0 8.5 7.47h2a1.5 1.5 0 0 1 1.42-1H12a1.5 1.5 0 0 1 0 3c-.47 0-.89-.22-1.16-.56l-.81.56-.72.5V11.75l-8.6 6.45c-.58.43-.78 1.23-.39 1.84.43.66 1.29.83 1.93.39L7 17.15V22h2v-6l3-2.25L15 16v6h2v-4.85l4.76 3.57c.5.37 1.2.26 1.58-.24.43-.55.38-1.35-.2-1.78l.46-.48z"/></svg>
+                    {% elif cat.name == "Home & Garden" %}
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#F85606"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+                    {% elif cat.name == "Beauty" %}
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#F85606"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                    {% elif cat.name == "Sports" %}
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#F85606"><path d="M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1l-5.2 2.2v4.7h2v-3.4l1.8-.7-1.6 8.1-4.9-1-.4 2 7 1.4z"/></svg>
+                    {% elif cat.name == "Books" %}
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#F85606"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>
+                    {% else %}
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#F85606"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+                    {% endif %}
+                </div>
+                <span class="category-card-name">{{ cat.name }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- Flash Sale Section -->
+{% if flash_sale_products %}
+<section class="section flash-sale-section">
+    <div class="container">
+        <div class="flash-sale-header">
+            <h2 class="flash-sale-title">&#128293; Flash Sale</h2>
+            <div class="countdown" id="flashCountdown">
+                <span class="cd-block"><span id="cdHours">00</span><small>Hours</small></span>
+                <span class="cd-sep">:</span>
+                <span class="cd-block"><span id="cdMinutes">00</span><small>Min</small></span>
+                <span class="cd-sep">:</span>
+                <span class="cd-block"><span id="cdSeconds">00</span><small>Sec</small></span>
+            </div>
+        </div>
+        <div class="horizontal-scroll">
+            {% for product in flash_sale_products %}
+            {% include "store/partials/product_card.html" with product=product %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Just For You -->
+<section class="section just-for-you-section">
+    <div class="container">
+        <h2 class="section-title">Just For You</h2>
+        <div class="product-grid" id="justForYouGrid">
+            {% for product in all_products %}
+            {% include "store/partials/product_card.html" with product=product %}
+            {% endfor %}
+        </div>
+        <div class="load-more-wrap">
+            <button class="btn btn-outline" id="loadMoreBtn" data-offset="20">Load More</button>
+        </div>
+    </div>
+</section>
+
+<!-- New Arrivals -->
+{% if new_arrivals %}
+<section class="section new-arrivals-section">
+    <div class="container">
+        <h2 class="section-title">New Arrivals</h2>
+        <div class="horizontal-scroll">
+            {% for product in new_arrivals %}
+            {% include "store/partials/product_card.html" with product=product %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

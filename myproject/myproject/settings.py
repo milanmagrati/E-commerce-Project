@@ -51,6 +51,7 @@ EXTERNAL_APPS = [
     "chat",
     "hrm",
     "todo",
+    "store",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 
@@ -81,6 +82,7 @@ TEMPLATES = [
                 'dashboard.context_processors.company_setup',
                 'dashboard.context_processors.low_stock_notifications',
                 'chat.context_processors.unread_message_count',
+                'store.context_processors.store_context',
             ],
         },
     },

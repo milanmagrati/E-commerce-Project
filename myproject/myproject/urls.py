@@ -29,6 +29,7 @@ urlpatterns = [
     path('chat/', include('chat.urls')),
     path('hrm/', include('hrm.urls')),
     path('todo/', include('todo.urls')),
+    path('store/', include('store.urls')),
 
     # ZKTeco ADMS endpoints at root level (device pushes to /iclock/...)
     path('iclock/cdata', iclock_cdata, name='iclock_cdata_root'),

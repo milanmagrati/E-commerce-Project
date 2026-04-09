@@ -1,0 +1,310 @@
+{% extends "store/base.html" %}
+{% load static store_tags %}
+
+{% block title %}{{ product.name }} — Store{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+        <a href="{% url 'store:landing' %}">Home</a>
+        <span class="sep">/</span>
+        {% if product.category %}
+        <a href="{% url 'store:category_products' slug=product.category.slug %}">{{ product.category.name }}</a>
+        <span class="sep">/</span>
+        {% endif %}
+        <span>{{ product.name }}</span>
+    </nav>
+
+    <div class="product-detail">
+        <!-- Left: Image Gallery -->
+        <div class="pd-gallery">
+            <div class="pd-main-image" id="pdMainImage">
+                {% if product.image %}
+                <img src="{{ product.image.url }}" alt="{{ product.name }}" id="mainImg">
+                <span class="img-counter" id="imgCounter">1/{% if images %}{{ images|length|add:1 }}{% else %}1{% endif %}</span>
+                {% elif images %}
+                <img src="{{ images.0.image.url }}" alt="{{ images.0.alt_text }}" id="mainImg">
+                <span class="img-counter" id="imgCounter">1/{{ images|length }}</span>
+                {% else %}
+                <div class="product-card-placeholder" style="width:100%;height:400px;display:flex;align-items:center;justify-content:center;background:#f0f0f0;">
+                    <svg width="80" height="80" viewBox="0 0 24 24" fill="#ccc"><rect x="2" y="2" width="20" height="20" rx="2" fill="#f0f0f0"/><circle cx="8.5" cy="8.5" r="2" fill="#ccc"/><path d="M21 15l-5-5L5 21h16v-6z" fill="#ddd"/></svg>
+                </div>
+                {% endif %}
+            </div>
+            {% if images %}
+            <div class="pd-thumbnails">
+                {% if product.image %}
+                <div class="pd-thumb active" data-index="0" data-src="{{ product.image.url }}">
+                    <img src="{{ product.image.url }}" alt="{{ product.name }}">
+                </div>
+                {% endif %}
+                {% for img in images %}
+                <div class="pd-thumb {% if not product.image and forloop.first %}active{% endif %}" data-index="{{ forloop.counter }}" data-src="{{ img.image.url }}">
+                    <img src="{{ img.image.url }}" alt="{{ img.alt_text }}">
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Right: Product Info -->
+        <div class="pd-info">
+            <h1 class="pd-title">{{ product.name }}</h1>
+
+            <div class="pd-rating-bar">
+                <div class="stars">
+                    {% for i in "12345" %}
+                    {% if forloop.counter <= avg_rating %}
+                    <span class="star filled">&#9733;</span>
+                    {% else %}
+                    <span class="star empty">&#9733;</span>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                <span class="rating-num">{{ avg_rating }}</span>
+                <a href="#reviews-section" class="review-link">({{ review_count }} reviews)</a>
+            </div>
+
+            <div class="pd-price-block">
+                <span class="pd-price-current">Rs. {{ product.price }}</span>
+            </div>
+
+            {% if product.stock > 0 %}
+            <p class="pd-stock in-stock">In Stock ({{ product.stock }} left)</p>
+            {% else %}
+            <p class="pd-stock out-of-stock">Out of Stock</p>
+            {% endif %}
+
+            {% if product.stock > 0 %}
+            <div class="pd-quantity">
+                <label>Quantity:</label>
+                <div class="qty-stepper">
+                    <button type="button" class="qty-btn qty-minus" id="qtyMinus">-</button>
+                    <input type="number" id="qtyInput" value="1" min="1" max="{{ product.stock }}" class="qty-input">
+                    <button type="button" class="qty-btn qty-plus" id="qtyPlus">+</button>
+                </div>
+            </div>
+
+            <div class="pd-actions">
+                <form method="POST" action="{% url 'store:add_to_cart' product_id=product.id %}" class="add-to-cart-form" id="pdAddToCartForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="quantity" id="cartQtyInput" value="1">
+                    <button type="submit" class="btn btn-primary btn-lg btn-block ripple">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                        Add to Cart
+                    </button>
+                </form>
+                <button class="btn btn-outline-primary btn-lg wishlist-toggle-btn ripple{% if in_wishlist %} active{% endif %}" data-product-id="{{ product.id }}">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="{% if in_wishlist %}#F85606{% else %}none{% endif %}" stroke="#F85606" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                    {% if in_wishlist %}In Wishlist{% else %}Add to Wishlist{% endif %}
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="pd-tabs">
+        <div class="tab-headers">
+            <button class="tab-header active" data-tab="description">Description</button>
+            <button class="tab-header" data-tab="specs">Specifications</button>
+            <button class="tab-header" data-tab="reviews">Reviews ({{ review_count }})</button>
+        </div>
+        <div class="tab-content active" id="tab-description">
+            <div class="pd-description">
+                {{ product.description|linebreaks }}
+            </div>
+        </div>
+        <div class="tab-content" id="tab-specs">
+            <table class="specs-table">
+                {% if product.category %}<tr><td>Category</td><td>{{ product.category.name }}</td></tr>{% endif %}
+                {% if product.barcode %}<tr><td>Barcode</td><td>{{ product.barcode }}</td></tr>{% endif %}
+                <tr><td>SKU</td><td>STR-{{ product.id|stringformat:"05d" }}</td></tr>
+                <tr><td>Product Type</td><td>{{ product.get_product_type_display }}</td></tr>
+                {% if product.stock > 0 %}<tr><td>Availability</td><td>In Stock</td></tr>{% endif %}
+            </table>
+        </div>
+        <div class="tab-content" id="tab-reviews">
+            <div class="reviews-section" id="reviews-section">
+                <!-- Rating Summary -->
+                <div class="review-summary">
+                    <div class="review-avg">
+                        <span class="big-rating">{{ avg_rating }}</span>
+                        <div class="stars">
+                            {% for i in "12345" %}
+                            {% if forloop.counter <= avg_rating %}<span class="star filled">&#9733;</span>{% else %}<span class="star empty">&#9733;</span>{% endif %}
+                            {% endfor %}
+                        </div>
+                        <span>{{ review_count }} reviews</span>
+                    </div>
+                    <div class="review-bars">
+                        {% for rd in rating_dist %}
+                        <div class="bar-row">
+                            <span>{{ rd.star }} &#9733;</span>
+                            <div class="bar-track">
+                                <div class="bar-fill" style="width: {{ rd.percent }}%"></div>
+                            </div>
+                            <span class="bar-count">{{ rd.count }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Review List -->
+                <div class="review-list">
+                    {% for review in reviews %}
+                    <div class="review-card">
+                        <div class="review-avatar">{{ review.user.first_name|first|default:review.user.username|first }}</div>
+                        <div class="review-body">
+                            <div class="review-meta">
+                                <strong>{{ review.user.first_name|default:review.user.username }} {{ review.user.last_name|default:"" }}</strong>
+                                <div class="stars small">
+                                    {% for i in "12345" %}{% if forloop.counter <= review.rating %}<span class="star filled">&#9733;</span>{% else %}<span class="star empty">&#9733;</span>{% endif %}{% endfor %}
+                                </div>
+                                <span class="review-date">{{ review.created_at|date:"M d, Y" }}</span>
+                            </div>
+                            <p>{{ review.comment }}</p>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="no-reviews">No reviews yet. Be the first to review this product!</p>
+                    {% endfor %}
+                </div>
+
+                <!-- Review Form -->
+                {% if user.is_authenticated and not user_has_reviewed %}
+                <div class="review-form-wrap">
+                    <h3>Write a Review</h3>
+                    <form method="POST" action="{% url 'store:add_review' product_id=product.id %}">
+                        {% csrf_token %}
+                        <div class="star-rating-input" id="starRatingInput">
+                            <span class="star-input" data-value="1">&#9733;</span>
+                            <span class="star-input" data-value="2">&#9733;</span>
+                            <span class="star-input" data-value="3">&#9733;</span>
+                            <span class="star-input" data-value="4">&#9733;</span>
+                            <span class="star-input" data-value="5">&#9733;</span>
+                            <input type="hidden" name="rating" id="ratingValue" value="5" required>
+                        </div>
+                        <textarea name="comment" class="form-input" rows="4" placeholder="Share your thoughts on this product..."></textarea>
+                        <button type="submit" class="btn btn-primary ripple">Submit Review</button>
+                    </form>
+                </div>
+                {% elif not user.is_authenticated %}
+                <div class="login-prompt">
+                    <p><a href="{% url 'store:login' %}?next={{ request.path }}">Log in</a> to write a review.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Related Products -->
+    {% if related_products %}
+    <section class="section related-section">
+        <h2 class="section-title">Related Products</h2>
+        <div class="horizontal-scroll">
+            {% for product in related_products %}
+            {% include "store/partials/product_card.html" with product=product %}
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Quantity stepper
+    const qtyInput = document.getElementById('qtyInput');
+    const cartQtyInput = document.getElementById('cartQtyInput');
+    const maxStock = {{ product.stock }};
+    document.getElementById('qtyMinus')?.addEventListener('click', () => {
+        let v = parseInt(qtyInput.value) - 1;
+        if (v >= 1) { qtyInput.value = v; cartQtyInput.value = v; }
+    });
+    document.getElementById('qtyPlus')?.addEventListener('click', () => {
+        let v = parseInt(qtyInput.value) + 1;
+        if (v <= maxStock) { qtyInput.value = v; cartQtyInput.value = v; }
+    });
+    qtyInput?.addEventListener('change', () => {
+        let v = Math.max(1, Math.min(maxStock, parseInt(qtyInput.value) || 1));
+        qtyInput.value = v; cartQtyInput.value = v;
+    });
+
+    // Wishlist toggle
+    document.querySelector('.wishlist-toggle-btn')?.addEventListener('click', function() {
+        const pid = this.dataset.productId;
+        fetch(`/store/wishlist/toggle/${pid}/`, {
+            method: 'POST', headers: {'X-CSRFToken': CSRF_TOKEN, 'X-Requested-With': 'XMLHttpRequest'}
+        }).then(r => r.json()).then(data => {
+            if (data.login_required) { window.location = '/store/login/?next=' + window.location.pathname; return; }
+            if (data.success) {
+                this.classList.toggle('active', data.added);
+                this.querySelector('svg').setAttribute('fill', data.added ? '#F85606' : 'none');
+                this.innerHTML = this.querySelector('svg').outerHTML + (data.added ? ' In Wishlist' : ' Add to Wishlist');
+                showToast(data.message);
+            }
+        });
+    });
+
+    // Image gallery
+    const thumbs = document.querySelectorAll('.pd-thumb');
+    const mainImg = document.getElementById('mainImg');
+    const imgCounter = document.getElementById('imgCounter');
+    const totalImages = thumbs.length || 1;
+    thumbs.forEach(t => {
+        t.addEventListener('click', function() {
+            thumbs.forEach(x => x.classList.remove('active'));
+            this.classList.add('active');
+            mainImg.src = this.dataset.src;
+            imgCounter.textContent = (parseInt(this.dataset.index) + 1) + '/' + totalImages;
+        });
+    });
+
+    // Lightbox
+    document.getElementById('pdMainImage')?.addEventListener('click', function() {
+        if (!mainImg) return;
+        const lb = document.createElement('div');
+        lb.className = 'lightbox';
+        lb.innerHTML = '<div class="lightbox-overlay"></div><div class="lightbox-content"><img src="' + mainImg.src + '"><button class="lightbox-close">&times;</button></div>';
+        document.body.appendChild(lb);
+        lb.querySelector('.lightbox-close').addEventListener('click', () => lb.remove());
+        lb.querySelector('.lightbox-overlay').addEventListener('click', () => lb.remove());
+    });
+
+    // Tabs
+    document.querySelectorAll('.tab-header').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.tab-header').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+            document.getElementById('tab-' + this.dataset.tab).classList.add('active');
+        });
+    });
+
+    // Star rating input
+    const starInputs = document.querySelectorAll('.star-input');
+    starInputs.forEach(s => {
+        s.addEventListener('click', function() {
+            const val = this.dataset.value;
+            document.getElementById('ratingValue').value = val;
+            starInputs.forEach((x, i) => {
+                x.classList.toggle('active', i < val);
+            });
+        });
+        s.addEventListener('mouseenter', function() {
+            const val = this.dataset.value;
+            starInputs.forEach((x, i) => {
+                x.classList.toggle('hover', i < val);
+            });
+        });
+        s.addEventListener('mouseleave', function() {
+            starInputs.forEach(x => x.classList.remove('hover'));
+        });
+    });
+    starInputs.forEach(s => s.classList.add('active'));
+});
+</script>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% load static %}
+
+<!-- Row 1: Top bar -->
+<div class="topbar">
+    <div class="container topbar-inner">
+        <div class="topbar-left">
+            <span class="topbar-promo">Free Shipping on orders over Rs.500!</span>
+        </div>
+        <div class="topbar-right">
+            <a href="#">Sell on Store</a>
+            <a href="#">Help</a>
+            {% if user.is_authenticated %}
+            <a href="{% url 'store:profile' %}">{{ user.first_name|default:user.username }}</a>
+            <form method="POST" action="{% url 'store:logout' %}" style="display:inline">{% csrf_token %}<button type="submit" class="topbar-logout-btn">Logout</button></form>
+            {% else %}
+            <a href="{% url 'store:login' %}">Login</a>
+            <a href="{% url 'store:register' %}">Register</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Row 2: Main navbar -->
+<nav class="navbar" id="mainNavbar">
+    <div class="container navbar-inner">
+        <!-- Logo -->
+        <a href="{% url 'store:landing' %}" class="navbar-logo">
+            <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="20" cy="20" r="18" fill="#F85606"/>
+                <text x="20" y="27" text-anchor="middle" fill="white" font-size="22" font-weight="bold" font-family="Roboto">S</text>
+            </svg>
+            <span class="logo-text">Store</span>
+        </a>
+
+        <!-- Search bar -->
+        <div class="navbar-search">
+            <form action="{% url 'store:search' %}" method="GET" class="search-form" id="searchForm">
+                <select name="category" class="search-category">
+                    <option value="">All Categories</option>
+                    {% for cat in store_all_categories %}
+                    <option value="{{ cat.slug }}">{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+                <div class="search-input-wrap">
+                    <input type="text" name="q" id="searchInput" placeholder="Search in Store..." autocomplete="off" value="{{ request.GET.q|default:'' }}">
+                    <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
+                </div>
+                <button type="submit" class="search-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </button>
+            </form>
+        </div>
+
+        <!-- Nav icons -->
+        <div class="navbar-icons">
+            <a href="{% url 'store:wishlist' %}" class="nav-icon-link" title="Wishlist">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                {% if store_wishlist_count %}<span class="badge">{{ store_wishlist_count }}</span>{% endif %}
+            </a>
+            <a href="{% url 'store:cart' %}" class="nav-icon-link cart-icon-link" id="cartIconLink" title="Cart">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                <span class="badge cart-badge" id="cartBadge">{{ store_cart_count }}</span>
+            </a>
+            {% if user.is_authenticated %}
+            <div class="nav-account-dropdown">
+                <button class="nav-icon-link account-btn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </button>
+                <div class="account-dropdown-menu">
+                    <a href="{% url 'store:profile' %}">My Profile</a>
+                    <a href="{% url 'store:order_list' %}">My Orders</a>
+                    <a href="{% url 'store:wishlist' %}">My Wishlist</a>
+                    <form method="POST" action="{% url 'store:logout' %}">{% csrf_token %}<button type="submit" class="dropdown-logout-btn">Logout</button></form>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Mobile hamburger -->
+        <button class="hamburger" id="hamburgerBtn">
+            <span></span><span></span><span></span>
+        </button>
+    </div>
+
+    <!-- Mobile menu -->
+    <div class="mobile-menu" id="mobileMenu">
+        <form action="{% url 'store:search' %}" method="GET" class="mobile-search-form">
+            <input type="text" name="q" placeholder="Search...">
+            <button type="submit">Search</button>
+        </form>
+        <a href="{% url 'store:landing' %}">Home</a>
+        <a href="{% url 'store:product_list' %}">All Products</a>
+        <a href="{% url 'store:cart' %}">Cart ({{ store_cart_count }})</a>
+        <a href="{% url 'store:wishlist' %}">Wishlist</a>
+        {% if user.is_authenticated %}
+        <a href="{% url 'store:profile' %}">Profile</a>
+        <a href="{% url 'store:order_list' %}">Orders</a>
+        <form method="POST" action="{% url 'store:logout' %}">{% csrf_token %}<button type="submit" class="mobile-logout-btn">Logout</button></form>
+        {% else %}
+        <a href="{% url 'store:login' %}">Login</a>
+        <a href="{% url 'store:register' %}">Register</a>
+        {% endif %}
+        <div class="mobile-categories">
+            {% for cat in store_all_categories %}
+            <a href="{% url 'store:category_products' slug=cat.slug %}">{{ cat.name }}</a>
+            {% endfor %}
+        </div>
+    </div>
+</nav>
+
+<!-- Row 3: Category bar -->
+<div class="category-bar">
+    <div class="container">
+        <div class="category-bar-scroll">
+            {% for cat in store_all_categories %}
+            <a href="{% url 'store:category_products' slug=cat.slug %}" class="category-bar-item">{{ cat.name }}</a>
+            {% endfor %}
+        </div>
+    </div>
+</div>

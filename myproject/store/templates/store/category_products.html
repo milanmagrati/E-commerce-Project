@@ -1,0 +1,45 @@
+{% extends "store/base.html" %}
+
+{% block title %}{{ category.name }} — Store{% endblock %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'store:landing' %}">Home</a>
+        <span class="sep">/</span>
+        <span>{{ category.name }}</span>
+    </nav>
+    <div class="page-header">
+        <h1>{{ category.name }}</h1>
+        <div class="sort-bar">
+            <label>Sort by:</label>
+            <select id="sortSelect" onchange="window.location='?sort='+this.value">
+                <option value="" {% if sort == '' %}selected{% endif %}>Relevance</option>
+                <option value="price_low" {% if sort == 'price_low' %}selected{% endif %}>Price: Low to High</option>
+                <option value="price_high" {% if sort == 'price_high' %}selected{% endif %}>Price: High to Low</option>
+                <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Newest</option>
+            </select>
+        </div>
+    </div>
+    <div class="product-grid">
+        {% for product in products %}
+        {% include "store/partials/product_card.html" with product=product %}
+        {% empty %}
+        <p class="empty-message">No products in this category yet.</p>
+        {% endfor %}
+    </div>
+    {% if products.has_other_pages %}
+    <div class="pagination">
+        {% if products.has_previous %}
+        <a href="?page={{ products.previous_page_number }}&sort={{ sort }}" class="page-link">&laquo; Prev</a>
+        {% endif %}
+        {% for num in products.paginator.page_range %}
+        <a href="?page={{ num }}&sort={{ sort }}" class="page-link {% if products.number == num %}active{% endif %}">{{ num }}</a>
+        {% endfor %}
+        {% if products.has_next %}
+        <a href="?page={{ products.next_page_number }}&sort={{ sort }}" class="page-link">Next &raquo;</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

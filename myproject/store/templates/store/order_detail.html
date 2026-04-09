@@ -1,0 +1,46 @@
+{% extends "store/base.html" %}
+
+{% block title %}Order #{{ order.order_number }} — Store{% endblock %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'store:landing' %}">Home</a>
+        <span class="sep">/</span>
+        <a href="{% url 'store:order_list' %}">Orders</a>
+        <span class="sep">/</span>
+        <span>#{{ order.order_number }}</span>
+    </nav>
+
+    <div class="order-detail-page">
+        <div class="order-info-card">
+            <h1>Order #{{ order.order_number }}</h1>
+            <span class="order-status status-{{ order.status }}">{{ order.get_status_display }}</span>
+            <p class="order-date">Placed on {{ order.created_at|date:"M d, Y h:i A" }}</p>
+
+            <h3>Shipping Address</h3>
+            <p>{{ order.shipping_address }}</p>
+            {% if order.phone %}<p>Phone: {{ order.phone }}</p>{% endif %}
+            {% if order.email %}<p>Email: {{ order.email }}</p>{% endif %}
+        </div>
+
+        <div class="order-items-card">
+            <h3>Items</h3>
+            {% for item in order.items.all %}
+            <div class="order-item-row">
+                <div class="order-item-info">
+                    <strong>{{ item.product.name|default:"Deleted Product" }}</strong>
+                    <span>Qty: {{ item.quantity }}</span>
+                </div>
+                <span class="order-item-price">Rs. {{ item.line_total }}</span>
+            </div>
+            {% endfor %}
+            <hr>
+            <div class="summary-row total">
+                <span>Total</span>
+                <span>Rs. {{ order.total_price }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

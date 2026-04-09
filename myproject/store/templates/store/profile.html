@@ -1,0 +1,51 @@
+{% extends "store/base.html" %}
+
+{% block title %}My Profile — Store{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="page-title">My Profile</h1>
+
+    <div class="profile-layout">
+        <div class="profile-card">
+            <div class="profile-avatar">{{ user.first_name|first|default:user.username|first }}</div>
+            <h2>{{ user.first_name }} {{ user.last_name }}</h2>
+            <p>{{ user.email }}</p>
+            <p class="text-muted">Member since {{ user.date_joined|date:"M Y" }}</p>
+        </div>
+
+        <div class="profile-sections">
+            <div class="profile-section">
+                <h3>Recent Orders</h3>
+                {% if orders %}
+                {% for order in orders %}
+                <div class="mini-order-row">
+                    <a href="{% url 'store:order_detail' order_number=order.order_number %}">#{{ order.order_number }}</a>
+                    <span class="order-status status-{{ order.status }}">{{ order.get_status_display }}</span>
+                    <span>Rs. {{ order.total_price }}</span>
+                    <span class="text-muted">{{ order.created_at|date:"M d" }}</span>
+                </div>
+                {% endfor %}
+                <a href="{% url 'store:order_list' %}" class="view-all-link">View all orders &rarr;</a>
+                {% else %}
+                <p class="text-muted">No orders yet.</p>
+                {% endif %}
+            </div>
+
+            <div class="profile-section">
+                <h3>Wishlist</h3>
+                {% if wishlist_items %}
+                <div class="mini-wishlist">
+                    {% for item in wishlist_items %}
+                    <a href="{% url 'store:product_detail' slug=item.product.slug %}" class="mini-wishlist-item">{{ item.product.name }}</a>
+                    {% endfor %}
+                </div>
+                <a href="{% url 'store:wishlist' %}" class="view-all-link">View wishlist &rarr;</a>
+                {% else %}
+                <p class="text-muted">No items in wishlist.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

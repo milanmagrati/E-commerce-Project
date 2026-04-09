@@ -1,0 +1,24 @@
+{% extends "store/base.html" %}
+
+{% block title %}Wishlist — Store{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="page-title">My Wishlist</h1>
+
+    {% if wishlist_items %}
+    <div class="product-grid">
+        {% for item in wishlist_items %}
+        {% include "store/partials/product_card.html" with product=item.product %}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="#ccc"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="none" stroke="#ccc" stroke-width="2"/></svg>
+        <h2>Your wishlist is empty</h2>
+        <p>Save items you love and shop them later.</p>
+        <a href="{% url 'store:product_list' %}" class="btn btn-primary">Browse Products</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
