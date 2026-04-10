@@ -83,7 +83,7 @@ def _create_dashboard_order(user, full_name, phone, email,
                     order_number=dash_order_number,
                     created_by=user,
                     customer=customer,
-                    customer_name=full_name or f"{user.first_name} {user.last_name}".strip(),
+                    customer_name=full_name or f"{user.first_name} {user.last_name}".strip() or user.username,
                     customer_phone=phone or '',
                     customer_email=email or '',
                     shipping_address=address or '',
@@ -276,6 +276,17 @@ def product_detail(request, slug):
 
     avg_rating = _avg_rating(product)
 
+    # Bundle / variable product extras
+    available_stock = product.available_stock
+    variant_options = []
+    bundle_components = []
+    if product.product_type == 'variable':
+        variant_options = list(product.variant_options.all())
+    elif product.product_type == 'bundle':
+        bundle_components = list(
+            product.bundle_components.select_related('component_product').all()
+        )
+
     return render(request, 'store/product_detail.html', {
         'product': product,
         'images': images,
@@ -287,6 +298,9 @@ def product_detail(request, slug):
         'in_wishlist': in_wishlist,
         'avg_rating': avg_rating,
         'review_count': review_count,
+        'available_stock': available_stock,
+        'variant_options': variant_options,
+        'bundle_components': bundle_components,
     })
 
 
@@ -390,8 +404,11 @@ def add_to_cart(request, product_id):
     except (ValueError, TypeError):
         quantity = 1
 
+    avail = product.available_stock
+    selected_variant = request.POST.get('selected_variant', '')[:500]
+
     # Stock validation
-    if product.stock <= 0:
+    if avail <= 0:
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return JsonResponse({'success': False, 'message': 'This product is out of stock'})
         messages.error(request, 'This product is out of stock.')
@@ -401,10 +418,11 @@ def add_to_cart(request, product_id):
 
     item, created = CartItem.objects.get_or_create(
         cart=cart, product=product,
-        defaults={'quantity': min(quantity, product.stock)}
+        defaults={'quantity': min(quantity, avail), 'selected_variant': selected_variant}
     )
     if not created:
-        item.quantity = min(item.quantity + quantity, product.stock)
+        item.quantity = min(item.quantity + quantity, avail)
+        item.selected_variant = selected_variant
         item.save()
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -457,7 +475,7 @@ def update_cart(request):
     if quantity <= 0:
         item.delete()
     else:
-        item.quantity = min(quantity, item.product.stock)
+        item.quantity = min(quantity, item.product.available_stock)
         item.save()
 
     subtotal = cart.subtotal
@@ -526,8 +544,9 @@ def checkout_view(request):
             # Stock validation only for confirmed orders
             if order_type == 'confirmed':
                 for item in cart_items:
-                    if item.quantity > item.product.stock:
-                        messages.error(request, f'"{item.product.name}" only has {item.product.stock} in stock.')
+                    avail = item.product.available_stock
+                    if item.quantity > avail:
+                        messages.error(request, f'"{item.product.name}" only has {avail} in stock.')
                         return redirect('store:cart')
 
             address_parts = [
@@ -555,11 +574,18 @@ def checkout_view(request):
                     product=item.product,
                     quantity=item.quantity,
                     price=item.product.price,
+                    selected_variant=item.selected_variant,
                 )
                 # Only deduct stock for confirmed orders
                 if order_type == 'confirmed':
-                    item.product.stock = max(0, item.product.stock - item.quantity)
-                    item.product.save()
+                    if item.product.product_type == 'bundle':
+                        for comp in item.product.bundle_components.select_related('component_product').all():
+                            deduct = comp.quantity_required * item.quantity
+                            comp.component_product.stock = max(0, comp.component_product.stock - deduct)
+                            comp.component_product.save()
+                    else:
+                        item.product.stock = max(0, item.product.stock - item.quantity)
+                        item.product.save()
 
             # Create dashboard order for admin visibility
             _create_dashboard_order(
@@ -698,11 +724,13 @@ def quick_order(request, product_id):
     if not request.user.is_authenticated:
         return redirect(f'/store/login/?next=/store/products/{product.slug}/')
 
+    available_stock = product.available_stock
+
     if request.method == 'POST':
         form = CheckoutForm(request.POST)
         if form.is_valid():
             try:
-                quantity = max(1, min(int(request.POST.get('quantity', 1)), product.stock))
+                quantity = max(1, min(int(request.POST.get('quantity', 1)), available_stock))
             except (ValueError, TypeError):
                 quantity = 1
 
@@ -710,12 +738,14 @@ def quick_order(request, product_id):
             if order_type not in ('confirmed', 'inquiry'):
                 order_type = 'confirmed'
 
-            if order_type == 'confirmed' and product.stock <= 0:
+            selected_variant = request.POST.get('selected_variant', '')[:500]
+
+            if order_type == 'confirmed' and available_stock <= 0:
                 messages.error(request, 'This product is out of stock.')
                 return redirect('store:product_detail', slug=product.slug)
 
-            if order_type == 'confirmed' and quantity > product.stock:
-                messages.error(request, f'Only {product.stock} unit(s) available.')
+            if order_type == 'confirmed' and quantity > available_stock:
+                messages.error(request, f'Only {available_stock} unit(s) available.')
                 return redirect('store:product_detail', slug=product.slug)
 
             subtotal = product.price * quantity
@@ -746,6 +776,7 @@ def quick_order(request, product_id):
                 product=product,
                 quantity=quantity,
                 price=product.price,
+                selected_variant=selected_variant,
             )
 
             # Create dashboard order for admin visibility
@@ -765,8 +796,14 @@ def quick_order(request, product_id):
             )
 
             if order_type == 'confirmed':
-                product.stock = max(0, product.stock - quantity)
-                product.save()
+                if product.product_type == 'bundle':
+                    for comp in product.bundle_components.select_related('component_product').all():
+                        deduct = comp.quantity_required * quantity
+                        comp.component_product.stock = max(0, comp.component_product.stock - deduct)
+                        comp.component_product.save()
+                else:
+                    product.stock = max(0, product.stock - quantity)
+                    product.save()
                 messages.success(request, f'Order confirmed! Order #{order.order_number}')
             else:
                 messages.success(request, f'Inquiry submitted! Reference #{order.order_number}')
@@ -779,13 +816,15 @@ def quick_order(request, product_id):
         except (ValueError, TypeError):
             quantity = 1
         order_type = request.POST.get('order_type', 'confirmed')
+        selected_variant = request.POST.get('selected_variant', '')[:500]
     else:
         # GET — pre-fill form and show quick checkout
         try:
-            quantity = max(1, min(int(request.GET.get('qty', 1)), max(product.stock, 1)))
+            quantity = max(1, min(int(request.GET.get('qty', 1)), max(available_stock, 1)))
         except (ValueError, TypeError):
             quantity = 1
         order_type = request.GET.get('order_type', 'confirmed')
+        selected_variant = request.GET.get('variant', '')[:500]
         form = CheckoutForm(initial={
             'full_name': f'{request.user.first_name} {request.user.last_name}'.strip(),
             'email': request.user.email,
@@ -802,4 +841,6 @@ def quick_order(request, product_id):
         'subtotal': subtotal,
         'shipping': shipping,
         'total': subtotal + shipping,
+        'available_stock': available_stock,
+        'selected_variant': selected_variant,
     })

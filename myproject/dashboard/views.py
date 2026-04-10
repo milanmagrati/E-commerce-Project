@@ -4340,24 +4340,28 @@ def on_hold_orders_list(request):
     from django.db.models import Q, Sum
     from decimal import Decimal
 
-    # Primary query: match both FK and string field for coverage
+    # Primary query: match On Hold + Inquiry statuses (both FK and string field)
     on_hold_setup = Setup.objects.filter(
         setup_type='status',
         name__iexact='on hold'
     ).first()
+    inquiry_setup = Setup.objects.filter(
+        setup_type='status',
+        name__iexact='inquiry'
+    ).first()
 
+    fk_q = Q()
+    str_q = Q()
     if on_hold_setup:
-        orders = Order.objects.filter(
-            is_deleted=False
-        ).filter(
-            Q(status_setup_id=on_hold_setup.id) |
-            (Q(status_setup_id__isnull=True) & Q(order_status__iexact='on hold'))
-        )
-    else:
-        orders = Order.objects.filter(
-            is_deleted=False,
-            order_status__iexact='on hold'
-        )
+        fk_q |= Q(status_setup_id=on_hold_setup.id)
+    str_q |= (Q(status_setup_id__isnull=True) & Q(order_status__iexact='on hold'))
+    if inquiry_setup:
+        fk_q |= Q(status_setup_id=inquiry_setup.id)
+    str_q |= (Q(status_setup_id__isnull=True) & Q(order_status__iexact='inquiry'))
+
+    orders = Order.objects.filter(
+        is_deleted=False
+    ).filter(fk_q | str_q)
 
     orders = orders.select_related(
         'customer', 'created_by', 'status_setup',

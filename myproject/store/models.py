@@ -41,6 +41,7 @@ class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='store_cart_items')
     quantity = models.PositiveIntegerField(default=1)
+    selected_variant = models.CharField(max_length=500, blank=True, default='')
 
     class Meta:
         unique_together = ('cart', 'product')
@@ -95,6 +96,7 @@ class OrderItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, related_name='store_order_items')
     quantity = models.PositiveIntegerField(default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2)
+    selected_variant = models.CharField(max_length=500, blank=True, default='')
 
     def __str__(self):
         return f'{self.product.name if self.product else "Deleted"} x {self.quantity}'

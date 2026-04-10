@@ -210,6 +210,115 @@ button.checkout-action-btn:hover .cab-arrow { opacity: 1; transform: translateX(
 button.confirm-order-btn.selected,
 button.inquiry-only-btn.selected { outline: 3px solid #F85606; outline-offset: 2px; }
 
+/* ── Confirmation Modal ── */
+.ocm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.52);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.24s ease, visibility 0.24s ease;
+}
+.ocm-overlay.active { opacity: 1; visibility: visible; }
+
+.ocm-modal {
+    background: #fff;
+    border-radius: 18px;
+    padding: 36px 30px 28px;
+    width: 100%;
+    max-width: 420px;
+    margin: 16px;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.22);
+    transform: scale(0.86) translateY(24px);
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    text-align: center;
+}
+.ocm-overlay.active .ocm-modal { transform: scale(1) translateY(0); }
+
+.ocm-icon {
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    margin: 0 auto 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.ocm-icon.type-confirm { background: #fff3f3; border: 2.5px solid #D32F2F; }
+.ocm-icon.type-inquiry { background: #1A1A1A; }
+
+.ocm-title {
+    font-size: 21px;
+    font-weight: 800;
+    color: #111;
+    margin: 0 0 8px;
+    line-height: 1.25;
+}
+.ocm-desc {
+    font-size: 14px;
+    color: #666;
+    margin: 0 0 20px;
+    line-height: 1.65;
+}
+.ocm-summary {
+    background: #f7f7f7;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    text-align: left;
+}
+.ocm-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 3px 0;
+}
+.ocm-row-label { color: #888; }
+.ocm-row-value { font-weight: 600; color: #222; }
+.ocm-row.divider {
+    border-top: 1px solid #eee;
+    margin-top: 8px;
+    padding-top: 10px;
+}
+.ocm-row.divider .ocm-row-label { color: #333; font-weight: 600; }
+.ocm-row.divider .ocm-row-value { font-size: 15px; color: #111; font-weight: 700; }
+
+.ocm-footer { display: flex; gap: 10px; }
+.ocm-btn-cancel {
+    flex: 1;
+    padding: 13px 10px;
+    border: 1.5px solid #ddd;
+    border-radius: 9px;
+    background: #fff;
+    color: #555;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.ocm-btn-cancel:hover { background: #f5f5f5; border-color: #bbb; }
+
+.ocm-btn-proceed {
+    flex: 2;
+    padding: 13px 10px;
+    border: none;
+    border-radius: 9px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+}
+.ocm-btn-proceed:hover { opacity: 0.88; transform: translateY(-1px); }
+.ocm-btn-proceed.type-confirm { background: #D32F2F; }
+.ocm-btn-proceed.type-inquiry { background: #1A1A1A; }
+
 /* ── Responsive ── */
 @media (max-width: 700px) {
     .quick-checkout-wrap { grid-template-columns: 1fr; }
@@ -234,6 +343,7 @@ button.inquiry-only-btn.selected { outline: 3px solid #F85606; outline-offset: 2
         {% csrf_token %}
         <input type="hidden" name="quantity" id="qcHiddenQty" value="{{ quantity }}">
         <input type="hidden" name="order_type" id="qcHiddenOrderType" value="{{ order_type }}">
+        <input type="hidden" name="selected_variant" id="qcHiddenVariant" value="{{ selected_variant|default:'' }}">
 
         <div class="quick-checkout-wrap">
             <!-- LEFT: Address form -->
@@ -265,6 +375,9 @@ button.inquiry-only-btn.selected { outline: 3px solid #F85606; outline-offset: 2
                     <div class="qc-product-meta">
                         <p class="qc-product-name">{{ product.name }}</p>
                         <p class="qc-product-detail">Rs. {{ product.price }} &times; <span id="qcQtyDisplay">{{ quantity }}</span></p>
+                        {% if selected_variant %}
+                        <p style="font-size:12px;color:#F85606;margin:2px 0 0;font-weight:600;">{{ selected_variant }}</p>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -273,7 +386,7 @@ button.inquiry-only-btn.selected { outline: 3px solid #F85606; outline-offset: 2
                     <span style="font-size:13px;font-weight:600;">Quantity</span>
                     <div class="qc-qty-stepper">
                         <button type="button" class="qc-qty-btn" id="qcMinus">−</button>
-                        <input type="number" class="qc-qty-input" id="qcQtyInput" value="{{ quantity }}" min="1" max="{{ product.stock }}">
+                        <input type="number" class="qc-qty-input" id="qcQtyInput" value="{{ quantity }}" min="1" max="{{ available_stock }}">
                         <button type="button" class="qc-qty-btn" id="qcPlus">+</button>
                     </div>
                 </div>
@@ -317,23 +430,39 @@ button.inquiry-only-btn.selected { outline: 3px solid #F85606; outline-offset: 2
         </div>
     </form>
 </div>
+
+<!-- ── Confirmation Modal ── -->
+<div class="ocm-overlay" id="ocmOverlay" role="dialog" aria-modal="true" aria-labelledby="ocmTitle">
+    <div class="ocm-modal">
+        <div class="ocm-icon" id="ocmIcon"></div>
+        <h2 class="ocm-title" id="ocmTitle"></h2>
+        <p class="ocm-desc" id="ocmDesc"></p>
+        <div class="ocm-summary" id="ocmSummary"></div>
+        <div class="ocm-footer">
+            <button class="ocm-btn-cancel" id="ocmCancelBtn">Cancel</button>
+            <button class="ocm-btn-proceed" id="ocmProceedBtn"></button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 (function () {
-    const price = parseFloat('{{ product.price }}');
-    const maxStock = parseInt('{{ product.stock }}');
-    const qtyInput  = document.getElementById('qcQtyInput');
-    const hiddenQty = document.getElementById('qcHiddenQty');
+    const price     = parseFloat('{{ product.price }}');
+    const maxStock  = parseInt('{{ available_stock }}');
+    const productName = '{{ product.name|escapejs }}';
+    const qtyInput   = document.getElementById('qcQtyInput');
+    const hiddenQty  = document.getElementById('qcHiddenQty');
     const hiddenType = document.getElementById('qcHiddenOrderType');
     const qtyDisplay = document.getElementById('qcQtyDisplay');
     const subtotalEl = document.getElementById('qcSubtotal');
     const shippingEl = document.getElementById('qcShipping');
     const totalEl    = document.getElementById('qcTotal');
 
+    // ── Qty stepper & price recalc ──
     function recalc(qty) {
-        const sub = price * qty;
+        const sub  = price * qty;
         const ship = sub >= 500 ? 0 : 100;
         subtotalEl.textContent = 'Rs. ' + sub.toFixed(2);
         shippingEl.textContent = ship === 0 ? 'FREE' : 'Rs. ' + ship;
@@ -343,31 +472,79 @@ button.inquiry-only-btn.selected { outline: 3px solid #F85606; outline-offset: 2
     }
 
     document.getElementById('qcMinus').addEventListener('click', function () {
-        let v = parseInt(qtyInput.value) - 1;
+        let v = (parseInt(qtyInput.value) || 1) - 1;
         if (v < 1) v = 1;
-        qtyInput.value = v;
-        recalc(v);
+        qtyInput.value = v; recalc(v);
     });
     document.getElementById('qcPlus').addEventListener('click', function () {
-        let v = parseInt(qtyInput.value) + 1;
+        let v = (parseInt(qtyInput.value) || 1) + 1;
         if (v > maxStock) v = maxStock;
-        qtyInput.value = v;
-        recalc(v);
+        qtyInput.value = v; recalc(v);
     });
     qtyInput.addEventListener('change', function () {
         let v = Math.max(1, Math.min(maxStock, parseInt(this.value) || 1));
-        this.value = v;
-        recalc(v);
+        this.value = v; recalc(v);
     });
 
-    // Button clicks — set order_type and submit the form
-    document.getElementById('qcConfirmBtn').addEventListener('click', function () {
-        hiddenType.value = 'confirmed';
-        document.getElementById('quickOrderForm').submit();
-    });
-    document.getElementById('qcInquiryBtn').addEventListener('click', function () {
-        hiddenType.value = 'inquiry';
-        document.getElementById('quickOrderForm').submit();
+    // ── Confirmation Modal ──
+    const overlay    = document.getElementById('ocmOverlay');
+    const iconEl     = document.getElementById('ocmIcon');
+    const titleEl    = document.getElementById('ocmTitle');
+    const descEl     = document.getElementById('ocmDesc');
+    const summaryEl  = document.getElementById('ocmSummary');
+    const cancelBtn  = document.getElementById('ocmCancelBtn');
+    const proceedBtn = document.getElementById('ocmProceedBtn');
+    const form       = document.getElementById('quickOrderForm');
+
+    const CONFIRM_ICON = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#D32F2F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    const INQUIRY_ICON = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+
+    function buildSummary() {
+        const qty  = parseInt(qtyInput.value);
+        const sub  = price * qty;
+        const ship = sub >= 500 ? 0 : 100;
+        const tot  = sub + ship;
+        return `
+            <div class="ocm-row"><span class="ocm-row-label">Product</span><span class="ocm-row-value">${productName}</span></div>
+            <div class="ocm-row"><span class="ocm-row-label">Quantity</span><span class="ocm-row-value">${qty}</span></div>
+            <div class="ocm-row"><span class="ocm-row-label">Shipping</span><span class="ocm-row-value">${ship === 0 ? 'FREE' : 'Rs. ' + ship}</span></div>
+            <div class="ocm-row divider"><span class="ocm-row-label">Total</span><span class="ocm-row-value">Rs. ${tot.toFixed(2)}</span></div>`;
+    }
+
+    function openModal(type) {
+        if (type === 'confirmed') {
+            iconEl.className     = 'ocm-icon type-confirm';
+            iconEl.innerHTML     = CONFIRM_ICON;
+            titleEl.textContent  = 'Confirm Your Order?';
+            descEl.textContent   = 'Your order will be placed and stock will be reserved for you.';
+            proceedBtn.className = 'ocm-btn-proceed type-confirm';
+            proceedBtn.textContent = 'Yes, Confirm Order';
+        } else {
+            iconEl.className     = 'ocm-icon type-inquiry';
+            iconEl.innerHTML     = INQUIRY_ICON;
+            titleEl.textContent  = 'Send Inquiry?';
+            descEl.textContent   = 'An inquiry will be sent without reserving stock. Our team will contact you shortly.';
+            proceedBtn.className = 'ocm-btn-proceed type-inquiry';
+            proceedBtn.textContent = 'Yes, Send Inquiry';
+        }
+        summaryEl.innerHTML  = buildSummary();
+        hiddenType.value     = type;
+        overlay.classList.add('active');
+        setTimeout(() => proceedBtn.focus(), 60);
+    }
+
+    function closeModal() { overlay.classList.remove('active'); }
+
+    document.getElementById('qcConfirmBtn').addEventListener('click', () => openModal('confirmed'));
+    document.getElementById('qcInquiryBtn').addEventListener('click', () => openModal('inquiry'));
+
+    cancelBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay.classList.contains('active')) closeModal(); });
+
+    proceedBtn.addEventListener('click', function () {
+        closeModal();
+        form.requestSubmit();
     });
 })();
 </script>

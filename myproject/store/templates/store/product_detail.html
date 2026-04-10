@@ -83,6 +83,37 @@ button.checkout-action-btn:hover .cab-arrow { opacity: 1; transform: translateX(
     0%,100% { box-shadow: 0 4px 16px rgba(211,47,47,0.18); }
     50%      { box-shadow: 0 4px 26px rgba(211,47,47,0.38); }
 }
+
+/* ── Variant option chips ── */
+.pd-variant-options { margin-bottom: 18px; }
+.pd-variant-group { margin-bottom: 12px; }
+.pd-variant-label { font-size: 13px; font-weight: 600; color: #444; display: block; margin-bottom: 8px; }
+.pd-variant-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.variant-chip {
+    padding: 6px 14px;
+    border: 1.5px solid #ccc;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.18s, background 0.18s, color 0.18s;
+}
+.variant-chip:hover { border-color: #F85606; color: #F85606; }
+.variant-chip.selected { border-color: #F85606; background: #F85606; color: #fff; font-weight: 600; }
+
+/* ── Bundle includes ── */
+.pd-bundle-includes {
+    background: #fffbf5;
+    border: 1.5px solid #F85606;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+.bundle-includes-title { font-size: 13px; font-weight: 700; color: #d94800; margin: 0 0 10px; }
+.bundle-includes-list { margin: 0; padding: 0; list-style: none; }
+.bundle-includes-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #333; padding: 3px 0; }
+.bundle-includes-list li::before { content: '•'; color: #F85606; flex-shrink: 0; }
+.bundle-comp-qty { font-weight: 700; color: #F85606; }
 </style>
 {% endblock %}
 
@@ -153,18 +184,43 @@ button.checkout-action-btn:hover .cab-arrow { opacity: 1; transform: translateX(
                 <span class="pd-price-current">Rs. {{ product.price }}</span>
             </div>
 
-            {% if product.stock > 0 %}
-            <p class="pd-stock in-stock">In Stock ({{ product.stock }} left)</p>
+            {% if available_stock > 0 %}
+            <p class="pd-stock in-stock">In Stock ({{ available_stock }} left)</p>
             {% else %}
             <p class="pd-stock out-of-stock">Out of Stock</p>
             {% endif %}
 
-            {% if product.stock > 0 %}
+            {% if available_stock > 0 %}
+            {% if product.product_type == 'variable' and variant_options %}
+            <div class="pd-variant-options" id="pdVariantOptions">
+                {% for opt in variant_options %}
+                <div class="pd-variant-group">
+                    <label class="pd-variant-label">{{ opt.option_name }}</label>
+                    <div class="pd-variant-chips">
+                        {% for val in opt.get_values_list %}
+                        <button type="button" class="variant-chip" data-option="{{ opt.option_name }}" data-value="{{ val }}">{{ val }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if product.product_type == 'bundle' and bundle_components %}
+            <div class="pd-bundle-includes">
+                <p class="bundle-includes-title">What's included in this bundle:</p>
+                <ul class="bundle-includes-list">
+                    {% for comp in bundle_components %}
+                    <li><span class="bundle-comp-qty">×{{ comp.quantity_required }}</span> {{ comp.component_product.name }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
             <div class="pd-quantity">
                 <label>Quantity:</label>
                 <div class="qty-stepper">
                     <button type="button" class="qty-btn qty-minus" id="qtyMinus">-</button>
-                    <input type="number" id="qtyInput" value="1" min="1" max="{{ product.stock }}" class="qty-input">
+                    <input type="number" id="qtyInput" value="1" min="1" max="{{ available_stock }}" class="qty-input">
                     <button type="button" class="qty-btn qty-plus" id="qtyPlus">+</button>
                 </div>
             </div>
@@ -173,6 +229,7 @@ button.checkout-action-btn:hover .cab-arrow { opacity: 1; transform: translateX(
                 <form method="POST" action="{% url 'store:add_to_cart' product_id=product.id %}" class="add-to-cart-form" id="pdAddToCartForm">
                     {% csrf_token %}
                     <input type="hidden" name="quantity" id="cartQtyInput" value="1">
+                    <input type="hidden" name="selected_variant" id="cartVariantInput" value="">
                     <button type="submit" class="btn btn-primary btn-lg btn-block ripple">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
                         Add to Cart
@@ -324,7 +381,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Quantity stepper
     const qtyInput = document.getElementById('qtyInput');
     const cartQtyInput = document.getElementById('cartQtyInput');
-    const maxStock = {{ product.stock }};
+    const maxStock = {{ available_stock }};
     document.getElementById('qtyMinus')?.addEventListener('click', () => {
         let v = parseInt(qtyInput.value) - 1;
         if (v >= 1) { qtyInput.value = v; cartQtyInput.value = v; }
@@ -336,6 +393,26 @@ document.addEventListener('DOMContentLoaded', function() {
     qtyInput?.addEventListener('change', () => {
         let v = Math.max(1, Math.min(maxStock, parseInt(qtyInput.value) || 1));
         qtyInput.value = v; cartQtyInput.value = v;
+    });
+
+    // Variant chip selection
+    const cartVariantInput = document.getElementById('cartVariantInput');
+    const selectedOptions = {};
+    document.querySelectorAll('.variant-chip').forEach(chip => {
+        chip.addEventListener('click', function () {
+            const optName = this.dataset.option;
+            document.querySelectorAll(`.variant-chip[data-option="${optName}"]`).forEach(c => c.classList.remove('selected'));
+            this.classList.add('selected');
+            selectedOptions[optName] = this.dataset.value;
+            if (cartVariantInput) {
+                cartVariantInput.value = Object.entries(selectedOptions).map(([k, v]) => `${k}: ${v}`).join(', ');
+            }
+        });
+    });
+    // Auto-select first chip of each group
+    document.querySelectorAll('.pd-variant-group').forEach(group => {
+        const first = group.querySelector('.variant-chip');
+        if (first) first.click();
     });
 
     // Wishlist toggle
@@ -416,7 +493,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const qty = parseInt(document.getElementById('qtyInput')?.value || 1);
         const pid = document.getElementById('pdConfirmBtn')?.dataset.productId;
         if (!pid) return;
-        window.location.href = '/store/quick-order/' + pid + '/?qty=' + qty + '&order_type=' + orderType;
+        const variant = document.getElementById('cartVariantInput')?.value || '';
+        let url = '/store/quick-order/' + pid + '/?qty=' + qty + '&order_type=' + orderType;
+        if (variant) url += '&variant=' + encodeURIComponent(variant);
+        window.location.href = url;
     }
     document.getElementById('pdConfirmBtn')?.addEventListener('click', function () {
         goQuickOrder('confirmed');
