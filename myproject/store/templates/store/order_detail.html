@@ -15,8 +15,12 @@
     <div class="order-detail-page">
         <div class="order-info-card">
             <h1>Order #{{ order.order_number }}</h1>
-            <span class="order-status status-{{ order.status }}">{{ order.get_status_display }}</span>
+            <div class="order-badges">
+                <span class="order-status status-{{ order.status }}">{{ order.get_status_display }}</span>
+                <span class="order-type-badge type-{{ order.order_type }}">{{ order.get_order_type_display }}</span>
+            </div>
             <p class="order-date">Placed on {{ order.created_at|date:"M d, Y h:i A" }}</p>
+            {% if order.full_name %}<p><strong>Name:</strong> {{ order.full_name }}</p>{% endif %}
 
             <h3>Shipping Address</h3>
             <p>{{ order.shipping_address }}</p>

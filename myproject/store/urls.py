@@ -24,5 +24,6 @@ urlpatterns = [
     path('logout/', views.customer_logout, name='logout'),
     path('profile/', views.customer_profile, name='profile'),
     path('review/add/<int:product_id>/', views.add_review, name='add_review'),
+    path('quick-order/<int:product_id>/', views.quick_order, name='quick_order'),
     path('api/load-more/', views.load_more_products, name='load_more'),
 ]

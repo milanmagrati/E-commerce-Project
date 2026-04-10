@@ -2,6 +2,120 @@
 
 {% block title %}Checkout — Store{% endblock %}
 
+{% block extra_css %}
+<style>
+/* ── Checkout action button reset & base ── */
+.checkout-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 20px;
+}
+button.checkout-action-btn {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    padding: 18px 22px !important;
+    border-radius: 10px !important;
+    cursor: pointer !important;
+    font-family: 'Roboto', sans-serif !important;
+    text-align: left !important;
+    position: relative !important;
+    overflow: hidden !important;
+    outline: none !important;
+    transition: transform 0.22s ease, box-shadow 0.22s ease !important;
+}
+button.checkout-action-btn:hover {
+    transform: translateY(-3px) !important;
+}
+button.checkout-action-btn:active {
+    transform: scale(0.975) !important;
+}
+
+/* ── Confirm Order — cream bg + red border + red text ── */
+button.confirm-order-btn {
+    background-color: #FFF8E1 !important;
+    border: 2px solid #D32F2F !important;
+    box-shadow: 0 4px 16px rgba(211,47,47,0.20) !important;
+    animation: redGlow 2.6s ease-in-out infinite !important;
+}
+button.confirm-order-btn:hover {
+    background-color: #FFECB3 !important;
+    box-shadow: 0 8px 28px rgba(211,47,47,0.35) !important;
+    animation: none !important;
+}
+button.confirm-order-btn .cab-title  { color: #D32F2F !important; }
+button.confirm-order-btn .cab-subtitle { color: #B71C1C !important; }
+button.confirm-order-btn .cab-arrow { color: #D32F2F !important; }
+
+/* ── Inquiry Only — solid dark + white text ── */
+button.inquiry-only-btn {
+    background-color: #1A1A1A !important;
+    border: 2px solid #1A1A1A !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25) !important;
+}
+button.inquiry-only-btn:hover {
+    background-color: #333333 !important;
+    border-color: #333333 !important;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.40) !important;
+}
+button.inquiry-only-btn .cab-title    { color: #FFFFFF !important; }
+button.inquiry-only-btn .cab-subtitle { color: rgba(255,255,255,0.72) !important; }
+button.inquiry-only-btn .cab-arrow    { color: #FFFFFF !important; }
+
+/* ── Shimmer sweep across both buttons ── */
+button.checkout-action-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+    transition: left 0.55s ease;
+    pointer-events: none;
+}
+button.checkout-action-btn:hover::before { left: 110%; }
+
+/* ── Text layout ── */
+.cab-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.cab-title {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.2px;
+}
+.cab-subtitle {
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+}
+
+/* ── Arrow slides right on hover ── */
+.cab-arrow {
+    display: flex;
+    align-items: center;
+    opacity: 0.7;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+button.checkout-action-btn:hover .cab-arrow {
+    opacity: 1;
+    transform: translateX(5px);
+}
+
+/* ── Pulsing red glow on Confirm Order ── */
+@keyframes redGlow {
+    0%,100% { box-shadow: 0 4px 16px rgba(211,47,47,0.18); }
+    50%      { box-shadow: 0 4px 26px rgba(211,47,47,0.40); }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <h1 class="page-title">Checkout</h1>
@@ -44,7 +158,26 @@
                 <span>Total</span>
                 <span>Rs. {{ total }}</span>
             </div>
-            <button type="submit" class="btn btn-primary btn-block btn-lg ripple">Place Order</button>
+            <div class="checkout-actions">
+                <button type="submit" name="order_type" value="confirmed" class="checkout-action-btn confirm-order-btn">
+                    <span class="cab-text">
+                        <span class="cab-title">Confirm Order</span>
+                        <span class="cab-subtitle">सामान लिने भएमा मात्र</span>
+                    </span>
+                    <span class="cab-arrow">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </span>
+                </button>
+                <button type="submit" name="order_type" value="inquiry" class="checkout-action-btn inquiry-only-btn">
+                    <span class="cab-text">
+                        <span class="cab-title">Inquiry Only</span>
+                        <span class="cab-subtitle">बुझ्नको लागि</span>
+                    </span>
+                    <span class="cab-arrow">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </span>
+                </button>
+            </div>
         </div>
     </form>
 </div>

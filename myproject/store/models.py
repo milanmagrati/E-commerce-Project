@@ -61,9 +61,14 @@ class Order(models.Model):
         ('delivered', 'Delivered'),
         ('cancelled', 'Cancelled'),
     ]
+    ORDER_TYPE_CHOICES = [
+        ('confirmed', 'Confirm Order'),
+        ('inquiry', 'Inquiry Only'),
+    ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='store_orders')
     order_number = models.CharField(max_length=36, unique=True, editable=False)
     full_name = models.CharField(max_length=200, blank=True)
+    order_type = models.CharField(max_length=20, choices=ORDER_TYPE_CHOICES, default='confirmed')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     total_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     shipping_address = models.TextField()

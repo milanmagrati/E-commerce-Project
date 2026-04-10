@@ -9,8 +9,120 @@ from django.core.paginator import Paginator
 from django.db.models import Q, Avg, Count
 
 from dashboard.models import Category, Product, ProductImage
+from dashboard.models import Order as DashOrder, OrderItem as DashOrderItem
+from dashboard.models import Customer as DashCustomer, Setup
 from .models import ProductReview, Cart, CartItem, Order, OrderItem, Wishlist
 from .forms import LoginForm, RegisterForm, ReviewForm, CheckoutForm
+
+
+def _get_next_dash_order_number():
+    """Generate next T-format dashboard order number (T001, T002, …)."""
+    from django.db.models import Max, IntegerField
+    from django.db.models.functions import Substr, Cast
+    result = (
+        DashOrder.objects
+        .filter(order_number__regex=r'^T\d+$')
+        .annotate(num=Cast(Substr('order_number', 2), IntegerField()))
+        .aggregate(max_num=Max('num'))
+    )
+    max_num = result['max_num']
+    return f"T{(max_num + 1):03d}" if max_num is not None else "T001"
+
+
+def _create_dashboard_order(user, full_name, phone, email,
+                            address, city, order_type, items_data,
+                            total_amount, shipping_charge=0):
+    """Create a dashboard Order + OrderItems so admin can see store orders."""
+    from decimal import Decimal
+    from django.db import IntegrityError, transaction
+
+    # Find or create a Customer record by phone
+    customer = None
+    if phone:
+        customer = DashCustomer.objects.filter(phone=phone).first()
+        if not customer:
+            customer = DashCustomer.objects.create(
+                name=full_name or f"{user.first_name} {user.last_name}".strip() or user.username,
+                phone=phone,
+                email=email or '',
+                city=city or '',
+                address=address or '',
+            )
+
+    # Status Setup based on order_type
+    if order_type == 'inquiry':
+        status_setup = Setup.objects.filter(
+            setup_type='status', name__iexact='Inquiry', is_active=True
+        ).first()
+    else:
+        status_setup = Setup.objects.filter(
+            setup_type='status', name__iexact='Confirmed', is_active=True
+        ).first()
+    status_name = status_setup.name if status_setup else ('Inquiry' if order_type == 'inquiry' else 'Confirmed')
+
+    # Payment method: Cash on Delivery
+    payment_setup = Setup.objects.filter(
+        setup_type='payment', name__iexact='Cash on Delivery', is_active=True
+    ).first()
+    payment_method = payment_setup.name if payment_setup else 'Cash on Delivery'
+
+    # Payment status: Pending
+    payment_status_setup = Setup.objects.filter(
+        setup_type='payment_status', name__iexact='Pending', is_active=True
+    ).first()
+    payment_status = payment_status_setup.name if payment_status_setup else 'Pending'
+
+    # Generate T-format order number with race-condition retry
+    dash_order_number = _get_next_dash_order_number()
+    dash_order = None
+    retry = 0
+    while dash_order is None and retry < 5:
+        try:
+            with transaction.atomic():
+                dash_order = DashOrder.objects.create(
+                    order_number=dash_order_number,
+                    created_by=user,
+                    customer=customer,
+                    customer_name=full_name or f"{user.first_name} {user.last_name}".strip(),
+                    customer_phone=phone or '',
+                    customer_email=email or '',
+                    shipping_address=address or '',
+                    branch_city=city or '',
+                    order_from='Website',
+                    in_out='in',
+                    status=status_name,
+                    order_status=status_name,
+                    status_setup=status_setup,
+                    payment_method=payment_method,
+                    payment_setup=payment_setup,
+                    payment_status=payment_status,
+                    payment_status_setup=payment_status_setup,
+                    total_amount=Decimal(str(total_amount)),
+                    delivery_charge=Decimal(str(shipping_charge)),
+                )
+        except IntegrityError as e:
+            if 'order_number' in str(e).lower():
+                retry += 1
+                dash_order_number = _get_next_dash_order_number()
+            else:
+                raise
+
+    if dash_order is None:
+        return None
+
+    for item in items_data:
+        price = Decimal(str(item['price']))
+        qty = item['quantity']
+        DashOrderItem.objects.create(
+            order=dash_order,
+            product=item['product'],
+            product_name=item['product'].name,
+            quantity=qty,
+            price=price,
+            total=price * qty,
+        )
+
+    return dash_order
 
 
 def _get_cart(request):
@@ -407,11 +519,16 @@ def checkout_view(request):
     if request.method == 'POST':
         form = CheckoutForm(request.POST)
         if form.is_valid():
-            # Stock validation at checkout
-            for item in cart_items:
-                if item.quantity > item.product.stock:
-                    messages.error(request, f'"{item.product.name}" only has {item.product.stock} in stock.')
-                    return redirect('store:cart')
+            order_type = request.POST.get('order_type', 'confirmed')
+            if order_type not in ('confirmed', 'inquiry'):
+                order_type = 'confirmed'
+
+            # Stock validation only for confirmed orders
+            if order_type == 'confirmed':
+                for item in cart_items:
+                    if item.quantity > item.product.stock:
+                        messages.error(request, f'"{item.product.name}" only has {item.product.stock} in stock.')
+                        return redirect('store:cart')
 
             address_parts = [
                 form.cleaned_data['address_line1'],
@@ -424,6 +541,7 @@ def checkout_view(request):
             order = Order.objects.create(
                 user=request.user,
                 full_name=form.cleaned_data['full_name'],
+                order_type=order_type,
                 total_price=total,
                 shipping_address=address,
                 phone=form.cleaned_data['phone'],
@@ -438,11 +556,34 @@ def checkout_view(request):
                     quantity=item.quantity,
                     price=item.product.price,
                 )
-                item.product.stock = max(0, item.product.stock - item.quantity)
-                item.product.save()
+                # Only deduct stock for confirmed orders
+                if order_type == 'confirmed':
+                    item.product.stock = max(0, item.product.stock - item.quantity)
+                    item.product.save()
 
-            cart_items.delete()
-            messages.success(request, f'Order placed! Order number: {order.order_number}')
+            # Create dashboard order for admin visibility
+            _create_dashboard_order(
+                user=request.user,
+                full_name=form.cleaned_data['full_name'],
+                phone=form.cleaned_data['phone'],
+                email=form.cleaned_data['email'],
+                address=address,
+                city=form.cleaned_data['city'],
+                order_type=order_type,
+                items_data=[
+                    {'product': ci.product, 'quantity': ci.quantity, 'price': ci.product.price}
+                    for ci in cart_items
+                ],
+                total_amount=total,
+                shipping_charge=shipping,
+            )
+
+            # Clear cart for confirmed orders, keep for inquiry
+            if order_type == 'confirmed':
+                cart_items.delete()
+                messages.success(request, f'Order confirmed! Order number: {order.order_number}')
+            else:
+                messages.success(request, f'Inquiry submitted! Reference number: {order.order_number}')
             return redirect('store:order_detail', order_number=order.order_number)
     else:
         form = CheckoutForm(initial={
@@ -545,3 +686,120 @@ def add_review(request, product_id):
     else:
         messages.error(request, 'Invalid review. Please provide a rating between 1-5.')
     return redirect('store:product_detail', slug=product.slug)
+
+
+# ──────────────────── Quick Order (from product detail) ────────────────────
+
+def quick_order(request, product_id):
+    """Direct order from product detail — shows a mini checkout form."""
+    product = get_object_or_404(Product, pk=product_id, is_active=True, is_deleted=False)
+
+    # Require login — redirect back to product page after login
+    if not request.user.is_authenticated:
+        return redirect(f'/store/login/?next=/store/products/{product.slug}/')
+
+    if request.method == 'POST':
+        form = CheckoutForm(request.POST)
+        if form.is_valid():
+            try:
+                quantity = max(1, min(int(request.POST.get('quantity', 1)), product.stock))
+            except (ValueError, TypeError):
+                quantity = 1
+
+            order_type = request.POST.get('order_type', 'confirmed')
+            if order_type not in ('confirmed', 'inquiry'):
+                order_type = 'confirmed'
+
+            if order_type == 'confirmed' and product.stock <= 0:
+                messages.error(request, 'This product is out of stock.')
+                return redirect('store:product_detail', slug=product.slug)
+
+            if order_type == 'confirmed' and quantity > product.stock:
+                messages.error(request, f'Only {product.stock} unit(s) available.')
+                return redirect('store:product_detail', slug=product.slug)
+
+            subtotal = product.price * quantity
+            shipping = 0 if subtotal >= 500 else 100
+            total = subtotal + shipping
+
+            address_parts = [
+                form.cleaned_data['address_line1'],
+                form.cleaned_data.get('address_line2', ''),
+                form.cleaned_data['city'],
+                form.cleaned_data['province'],
+            ]
+            address = ', '.join(p for p in address_parts if p)
+
+            order = Order.objects.create(
+                user=request.user,
+                full_name=form.cleaned_data['full_name'],
+                order_type=order_type,
+                total_price=total,
+                shipping_address=address,
+                phone=form.cleaned_data['phone'],
+                email=form.cleaned_data['email'],
+                city=form.cleaned_data['city'],
+                province=form.cleaned_data['province'],
+            )
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=quantity,
+                price=product.price,
+            )
+
+            # Create dashboard order for admin visibility
+            _create_dashboard_order(
+                user=request.user,
+                full_name=form.cleaned_data['full_name'],
+                phone=form.cleaned_data['phone'],
+                email=form.cleaned_data['email'],
+                address=address,
+                city=form.cleaned_data['city'],
+                order_type=order_type,
+                items_data=[
+                    {'product': product, 'quantity': quantity, 'price': product.price}
+                ],
+                total_amount=total,
+                shipping_charge=shipping,
+            )
+
+            if order_type == 'confirmed':
+                product.stock = max(0, product.stock - quantity)
+                product.save()
+                messages.success(request, f'Order confirmed! Order #{order.order_number}')
+            else:
+                messages.success(request, f'Inquiry submitted! Reference #{order.order_number}')
+
+            return redirect('store:order_detail', order_number=order.order_number)
+
+        # Form invalid — re-render with errors
+        try:
+            quantity = max(1, int(request.POST.get('quantity', 1)))
+        except (ValueError, TypeError):
+            quantity = 1
+        order_type = request.POST.get('order_type', 'confirmed')
+    else:
+        # GET — pre-fill form and show quick checkout
+        try:
+            quantity = max(1, min(int(request.GET.get('qty', 1)), max(product.stock, 1)))
+        except (ValueError, TypeError):
+            quantity = 1
+        order_type = request.GET.get('order_type', 'confirmed')
+        form = CheckoutForm(initial={
+            'full_name': f'{request.user.first_name} {request.user.last_name}'.strip(),
+            'email': request.user.email,
+        })
+
+    subtotal = product.price * quantity
+    shipping = 0 if subtotal >= 500 else 100
+
+    return render(request, 'store/quick_checkout.html', {
+        'product': product,
+        'quantity': quantity,
+        'order_type': order_type,
+        'form': form,
+        'subtotal': subtotal,
+        'shipping': shipping,
+        'total': subtotal + shipping,
+    })

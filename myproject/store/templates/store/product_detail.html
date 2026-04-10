@@ -3,6 +3,89 @@
 
 {% block title %}{{ product.name }} — Store{% endblock %}
 
+{% block extra_css %}
+<style>
+/* ── Quick-order buttons on product detail ── */
+.pd-quick-order {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+}
+button.checkout-action-btn {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    padding: 16px 20px !important;
+    border-radius: 10px !important;
+    cursor: pointer !important;
+    font-family: 'Roboto', sans-serif !important;
+    text-align: left !important;
+    position: relative !important;
+    overflow: hidden !important;
+    outline: none !important;
+    transition: transform 0.22s ease, box-shadow 0.22s ease !important;
+}
+button.checkout-action-btn:hover  { transform: translateY(-2px) !important; }
+button.checkout-action-btn:active { transform: scale(0.975) !important; }
+
+button.confirm-order-btn {
+    background-color: #FFF8E1 !important;
+    border: 2px solid #D32F2F !important;
+    box-shadow: 0 4px 16px rgba(211,47,47,0.18) !important;
+    animation: pdRedGlow 2.6s ease-in-out infinite !important;
+}
+button.confirm-order-btn:hover {
+    background-color: #FFECB3 !important;
+    box-shadow: 0 8px 26px rgba(211,47,47,0.32) !important;
+    animation: none !important;
+}
+button.confirm-order-btn .cab-title    { color: #D32F2F !important; }
+button.confirm-order-btn .cab-subtitle { color: #B71C1C !important; }
+button.confirm-order-btn .cab-arrow    { color: #D32F2F !important; }
+
+button.inquiry-only-btn {
+    background-color: #1A1A1A !important;
+    border: 2px solid #1A1A1A !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.22) !important;
+}
+button.inquiry-only-btn:hover {
+    background-color: #333 !important;
+    border-color: #333 !important;
+    box-shadow: 0 8px 26px rgba(0,0,0,0.38) !important;
+}
+button.inquiry-only-btn .cab-title    { color: #fff !important; }
+button.inquiry-only-btn .cab-subtitle { color: rgba(255,255,255,0.72) !important; }
+button.inquiry-only-btn .cab-arrow    { color: #fff !important; }
+
+button.checkout-action-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+    transition: left 0.55s ease;
+    pointer-events: none;
+}
+button.checkout-action-btn:hover::before { left: 110%; }
+
+.cab-text  { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.cab-title    { font-size: 15px; font-weight: 700; line-height: 1.2; }
+.cab-subtitle { font-size: 12px; font-weight: 400; line-height: 1.4; }
+.cab-arrow {
+    display: flex; align-items: center; opacity: 0.7;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+button.checkout-action-btn:hover .cab-arrow { opacity: 1; transform: translateX(5px); }
+
+@keyframes pdRedGlow {
+    0%,100% { box-shadow: 0 4px 16px rgba(211,47,47,0.18); }
+    50%      { box-shadow: 0 4px 26px rgba(211,47,47,0.38); }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <!-- Breadcrumb -->
@@ -98,6 +181,28 @@
                 <button class="btn btn-outline-primary btn-lg wishlist-toggle-btn ripple{% if in_wishlist %} active{% endif %}" data-product-id="{{ product.id }}">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="{% if in_wishlist %}#F85606{% else %}none{% endif %}" stroke="#F85606" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
                     {% if in_wishlist %}In Wishlist{% else %}Add to Wishlist{% endif %}
+                </button>
+            </div>
+
+            <!-- Quick Order buttons -->
+            <div class="pd-quick-order">
+                <button type="button" class="checkout-action-btn confirm-order-btn" id="pdConfirmBtn" data-product-id="{{ product.id }}">
+                    <span class="cab-text">
+                        <span class="cab-title">Confirm Order</span>
+                        <span class="cab-subtitle">सामान लिने भएमा मात्र</span>
+                    </span>
+                    <span class="cab-arrow">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </span>
+                </button>
+                <button type="button" class="checkout-action-btn inquiry-only-btn" id="pdInquiryBtn" data-product-id="{{ product.id }}">
+                    <span class="cab-text">
+                        <span class="cab-title">Inquiry Only</span>
+                        <span class="cab-subtitle">बुझ्नको लागि</span>
+                    </span>
+                    <span class="cab-arrow">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </span>
                 </button>
             </div>
             {% endif %}
@@ -305,6 +410,20 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     starInputs.forEach(s => s.classList.add('active'));
+
+    // Quick-order buttons → navigate to quick_order view
+    function goQuickOrder(orderType) {
+        const qty = parseInt(document.getElementById('qtyInput')?.value || 1);
+        const pid = document.getElementById('pdConfirmBtn')?.dataset.productId;
+        if (!pid) return;
+        window.location.href = '/store/quick-order/' + pid + '/?qty=' + qty + '&order_type=' + orderType;
+    }
+    document.getElementById('pdConfirmBtn')?.addEventListener('click', function () {
+        goQuickOrder('confirmed');
+    });
+    document.getElementById('pdInquiryBtn')?.addEventListener('click', function () {
+        goQuickOrder('inquiry');
+    });
 });
 </script>
 {% endblock %}

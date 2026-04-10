@@ -1,0 +1,374 @@
+{% extends "store/base.html" %}
+{% load store_tags %}
+
+{% block title %}Quick Order — {{ product.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Quick checkout layout ── */
+.quick-checkout-wrap {
+    max-width: 860px;
+    margin: 32px auto;
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 24px;
+    align-items: start;
+}
+.qc-form-card, .qc-summary-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 28px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+.qc-form-card h2 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: #222;
+}
+.qc-summary-card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: #222;
+}
+
+/* ── Product summary strip ── */
+.qc-product-strip {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    padding: 14px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+.qc-product-img {
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: #f0f0f0;
+}
+.qc-product-img img { width: 100%; height: 100%; object-fit: cover; }
+.qc-product-meta { flex: 1; }
+.qc-product-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #222;
+    margin-bottom: 4px;
+}
+.qc-product-detail { font-size: 13px; color: #666; }
+
+/* ── Qty control inside summary ── */
+.qc-qty-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+.qc-qty-stepper {
+    display: flex;
+    align-items: center;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    overflow: hidden;
+}
+.qc-qty-btn {
+    width: 34px;
+    height: 34px;
+    background: #f5f5f5;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: #333;
+    transition: background 0.15s;
+}
+.qc-qty-btn:hover { background: #e0e0e0; }
+.qc-qty-input {
+    width: 46px;
+    height: 34px;
+    border: none;
+    border-left: 1px solid #ddd;
+    border-right: 1px solid #ddd;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+}
+.qc-qty-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+/* ── Price rows ── */
+.qc-price-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #555;
+    padding: 5px 0;
+}
+.qc-price-row.total {
+    font-size: 16px;
+    font-weight: 700;
+    color: #222;
+    border-top: 1px solid #eee;
+    margin-top: 8px;
+    padding-top: 12px;
+}
+
+/* ── Order type indicator ── */
+.qc-order-type-tag {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-bottom: 18px;
+}
+.qc-order-type-tag.confirmed { background: #e8f5e9; color: #2e7d32; }
+.qc-order-type-tag.inquiry   { background: #f3e5f5; color: #7b1fa2; }
+
+/* ── The two action buttons (same styles as checkout page) ── */
+.checkout-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 20px;
+}
+button.checkout-action-btn {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    padding: 16px 20px !important;
+    border-radius: 10px !important;
+    cursor: pointer !important;
+    font-family: 'Roboto', sans-serif !important;
+    text-align: left !important;
+    position: relative !important;
+    overflow: hidden !important;
+    outline: none !important;
+    transition: transform 0.22s ease, box-shadow 0.22s ease !important;
+}
+button.checkout-action-btn:hover  { transform: translateY(-2px) !important; }
+button.checkout-action-btn:active { transform: scale(0.975) !important; }
+
+button.confirm-order-btn {
+    background-color: #FFF8E1 !important;
+    border: 2px solid #D32F2F !important;
+    box-shadow: 0 4px 16px rgba(211,47,47,0.18) !important;
+    animation: qcRedGlow 2.6s ease-in-out infinite !important;
+}
+button.confirm-order-btn:hover {
+    background-color: #FFECB3 !important;
+    box-shadow: 0 8px 26px rgba(211,47,47,0.32) !important;
+    animation: none !important;
+}
+button.confirm-order-btn .cab-title    { color: #D32F2F !important; }
+button.confirm-order-btn .cab-subtitle { color: #B71C1C !important; }
+button.confirm-order-btn .cab-arrow    { color: #D32F2F !important; }
+
+button.inquiry-only-btn {
+    background-color: #1A1A1A !important;
+    border: 2px solid #1A1A1A !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.22) !important;
+}
+button.inquiry-only-btn:hover {
+    background-color: #333 !important;
+    border-color: #333 !important;
+    box-shadow: 0 8px 26px rgba(0,0,0,0.38) !important;
+}
+button.inquiry-only-btn .cab-title    { color: #fff !important; }
+button.inquiry-only-btn .cab-subtitle { color: rgba(255,255,255,0.72) !important; }
+button.inquiry-only-btn .cab-arrow    { color: #fff !important; }
+
+button.checkout-action-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+    transition: left 0.55s ease;
+    pointer-events: none;
+}
+button.checkout-action-btn:hover::before { left: 110%; }
+
+.cab-text { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.cab-title    { font-size: 15px; font-weight: 700; line-height: 1.2; }
+.cab-subtitle { font-size: 12px; font-weight: 400; line-height: 1.4; }
+.cab-arrow {
+    display: flex; align-items: center; opacity: 0.7;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+button.checkout-action-btn:hover .cab-arrow { opacity: 1; transform: translateX(5px); }
+
+@keyframes qcRedGlow {
+    0%,100% { box-shadow: 0 4px 16px rgba(211,47,47,0.18); }
+    50%      { box-shadow: 0 4px 26px rgba(211,47,47,0.38); }
+}
+
+/* ── Selected button highlight ── */
+button.confirm-order-btn.selected,
+button.inquiry-only-btn.selected { outline: 3px solid #F85606; outline-offset: 2px; }
+
+/* ── Responsive ── */
+@media (max-width: 700px) {
+    .quick-checkout-wrap { grid-template-columns: 1fr; }
+    .qc-summary-card { order: -1; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'store:landing' %}">Home</a>
+        <span class="sep">/</span>
+        <a href="{% url 'store:product_detail' slug=product.slug %}">{{ product.name }}</a>
+        <span class="sep">/</span>
+        <span>Quick Order</span>
+    </nav>
+
+    <h1 class="page-title">Quick Order</h1>
+
+    <form method="POST" action="{% url 'store:quick_order' product.id %}" id="quickOrderForm">
+        {% csrf_token %}
+        <input type="hidden" name="quantity" id="qcHiddenQty" value="{{ quantity }}">
+        <input type="hidden" name="order_type" id="qcHiddenOrderType" value="{{ order_type }}">
+
+        <div class="quick-checkout-wrap">
+            <!-- LEFT: Address form -->
+            <div class="qc-form-card">
+                <h2>Delivery Information</h2>
+                {% for field in form %}
+                <div class="form-group">
+                    <label>{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}
+                    <span class="field-error">{{ field.errors.0 }}</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- RIGHT: Order summary + action buttons -->
+            <div class="qc-summary-card">
+                <h3>Order Summary</h3>
+
+                <!-- Product strip -->
+                {% product_image_url product as qc_img_url %}
+                <div class="qc-product-strip">
+                    <div class="qc-product-img">
+                        {% if qc_img_url %}
+                        <img src="{{ qc_img_url }}" alt="{{ product.name }}">
+                        {% endif %}
+                    </div>
+                    <div class="qc-product-meta">
+                        <p class="qc-product-name">{{ product.name }}</p>
+                        <p class="qc-product-detail">Rs. {{ product.price }} &times; <span id="qcQtyDisplay">{{ quantity }}</span></p>
+                    </div>
+                </div>
+
+                <!-- Qty stepper -->
+                <div class="qc-qty-row">
+                    <span style="font-size:13px;font-weight:600;">Quantity</span>
+                    <div class="qc-qty-stepper">
+                        <button type="button" class="qc-qty-btn" id="qcMinus">−</button>
+                        <input type="number" class="qc-qty-input" id="qcQtyInput" value="{{ quantity }}" min="1" max="{{ product.stock }}">
+                        <button type="button" class="qc-qty-btn" id="qcPlus">+</button>
+                    </div>
+                </div>
+
+                <!-- Price breakdown -->
+                <div class="qc-price-row">
+                    <span>Subtotal</span>
+                    <span id="qcSubtotal">Rs. {{ subtotal }}</span>
+                </div>
+                <div class="qc-price-row">
+                    <span>Shipping</span>
+                    <span id="qcShipping">{% if shipping == 0 %}FREE{% else %}Rs. {{ shipping }}{% endif %}</span>
+                </div>
+                <div class="qc-price-row total">
+                    <span>Total</span>
+                    <span id="qcTotal">Rs. {{ total }}</span>
+                </div>
+
+                <!-- Action buttons -->
+                <div class="checkout-actions">
+                    <button type="button" class="checkout-action-btn confirm-order-btn" id="qcConfirmBtn">
+                        <span class="cab-text">
+                            <span class="cab-title">Confirm Order</span>
+                            <span class="cab-subtitle">सामान लिने भएमा मात्र</span>
+                        </span>
+                        <span class="cab-arrow">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </span>
+                    </button>
+                    <button type="button" class="checkout-action-btn inquiry-only-btn" id="qcInquiryBtn">
+                        <span class="cab-text">
+                            <span class="cab-title">Inquiry Only</span>
+                            <span class="cab-subtitle">बुझ्नको लागि</span>
+                        </span>
+                        <span class="cab-arrow">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const price = parseFloat('{{ product.price }}');
+    const maxStock = parseInt('{{ product.stock }}');
+    const qtyInput  = document.getElementById('qcQtyInput');
+    const hiddenQty = document.getElementById('qcHiddenQty');
+    const hiddenType = document.getElementById('qcHiddenOrderType');
+    const qtyDisplay = document.getElementById('qcQtyDisplay');
+    const subtotalEl = document.getElementById('qcSubtotal');
+    const shippingEl = document.getElementById('qcShipping');
+    const totalEl    = document.getElementById('qcTotal');
+
+    function recalc(qty) {
+        const sub = price * qty;
+        const ship = sub >= 500 ? 0 : 100;
+        subtotalEl.textContent = 'Rs. ' + sub.toFixed(2);
+        shippingEl.textContent = ship === 0 ? 'FREE' : 'Rs. ' + ship;
+        totalEl.textContent    = 'Rs. ' + (sub + ship).toFixed(2);
+        qtyDisplay.textContent = qty;
+        hiddenQty.value = qty;
+    }
+
+    document.getElementById('qcMinus').addEventListener('click', function () {
+        let v = parseInt(qtyInput.value) - 1;
+        if (v < 1) v = 1;
+        qtyInput.value = v;
+        recalc(v);
+    });
+    document.getElementById('qcPlus').addEventListener('click', function () {
+        let v = parseInt(qtyInput.value) + 1;
+        if (v > maxStock) v = maxStock;
+        qtyInput.value = v;
+        recalc(v);
+    });
+    qtyInput.addEventListener('change', function () {
+        let v = Math.max(1, Math.min(maxStock, parseInt(this.value) || 1));
+        this.value = v;
+        recalc(v);
+    });
+
+    // Button clicks — set order_type and submit the form
+    document.getElementById('qcConfirmBtn').addEventListener('click', function () {
+        hiddenType.value = 'confirmed';
+        document.getElementById('quickOrderForm').submit();
+    });
+    document.getElementById('qcInquiryBtn').addEventListener('click', function () {
+        hiddenType.value = 'inquiry';
+        document.getElementById('quickOrderForm').submit();
+    });
+})();
+</script>
+{% endblock %}

@@ -15,7 +15,10 @@
                     <strong>Order #{{ order.order_number }}</strong>
                     <span class="order-date">{{ order.created_at|date:"M d, Y" }}</span>
                 </div>
-                <span class="order-status status-{{ order.status }}">{{ order.get_status_display }}</span>
+                <div class="order-card-header-badges">
+                    <span class="order-status status-{{ order.status }}">{{ order.get_status_display }}</span>
+                    <span class="order-type-badge type-{{ order.order_type }}">{{ order.get_order_type_display }}</span>
+                </div>
             </div>
             <div class="order-card-body">
                 <p>{{ order.items.count }} item{{ order.items.count|pluralize }} &middot; Total: <strong>Rs. {{ order.total_price }}</strong></p>
