@@ -180,12 +180,39 @@ class NCMService:
             return {'success': True, 'data': staff_comments}
         return result
 
+    def get_order_comments(self, ncm_order_id: int):
+        """Fetch all comments for an NCM order (all authors)"""
+        url = f"{self.base_url}/order/comment"
+        params = {'id': ncm_order_id}
+        result = self._make_request('GET', url, params=params)
+        if result['success']:
+            raw = result['data']
+            if isinstance(raw, list):
+                items = raw
+            elif isinstance(raw, dict):
+                items = raw.get('data', raw.get('results', []))
+                if isinstance(items, dict):
+                    items = [items]
+            else:
+                items = []
+            comments = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                comments.append({
+                    'comment': item.get('comments', item.get('comment', '')),
+                    'added_by': item.get('addedBy', item.get('added_by', 'Unknown')),
+                    'added_time': item.get('added_time', item.get('created_at', '')),
+                })
+            return {'success': True, 'data': comments}
+        return result
+
     def create_order_comment(self, ncm_order_id: int, comment: str):
         """Add comment to NCM order"""
         url = f"{self.base_url}/comment"
         data = {'orderid': ncm_order_id, 'comments': comment}
         return self._make_request('POST', url, data=data)
-    
+
     def return_order(self, ncm_order_id: int, comment: str = None):
         """Mark order for return"""
         url = f"{self.base_url_v2}/vendor/order/return"

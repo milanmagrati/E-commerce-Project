@@ -16746,3 +16746,147 @@ def company_setup(request):
         return redirect('company_setup')
 
     return render(request, 'company_setup.html', {'company': company})
+
+
+# ===================== NCM RTVs (Return to Vendor) =====================
+
+@login_required
+@permission_required('can_view_orders')
+def ncm_rtvs_list(request):
+    """
+    GET  – list RTV records from local DB
+    POST – submit a new RTV via NCM API, then save locally
+    """
+    from services.ncm_service import NCMService
+    from dashboard.models import RTVOrder
+
+    # ---------- POST: create a new RTV ----------
+    if request.method == 'POST':
+        import json
+        try:
+            body = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
+
+        order_id = body.get('order_id')
+        comment = body.get('comment', '').strip()
+
+        if not order_id:
+            return JsonResponse({'success': False, 'message': 'order_id is required'}, status=400)
+
+        try:
+            order_id = int(order_id)
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'message': 'order_id must be an integer'}, status=400)
+
+        ncm_service = NCMService()
+        result = ncm_service.return_order(order_id, comment=comment or None)
+
+        if result['success']:
+            RTVOrder.objects.create(
+                order_id=order_id,
+                comment=comment,
+                vendor_return=True,
+                vendor=request.user,
+            )
+            return JsonResponse({'success': True, 'message': 'RTV submitted successfully'})
+        else:
+            return JsonResponse({
+                'success': False,
+                'message': result.get('error', 'NCM API error'),
+            }, status=500)
+
+    # ---------- GET: list from local DB ----------
+    from django.core.paginator import Paginator
+
+    qs = RTVOrder.objects.select_related('vendor').all()
+
+    search = request.GET.get('search', '').strip()
+    if search:
+        qs = qs.filter(
+            Q(order_id__icontains=search) |
+            Q(comment__icontains=search) |
+            Q(vendor__username__icontains=search)
+        )
+
+    paginator = Paginator(qs, 25)
+    page = request.GET.get('page', 1)
+    try:
+        page = int(page)
+    except (ValueError, TypeError):
+        page = 1
+    page_obj = paginator.get_page(page)
+
+    # Build list of dicts the template already expects
+    rtvs = []
+    for rtv in page_obj:
+        rtvs.append({
+            'id': rtv.id,
+            'order_id': rtv.order_id,
+            'comment': rtv.comment,
+            'vendor_return': rtv.vendor_return,
+            'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p'),
+            'vendor': rtv.vendor.get_full_name() or rtv.vendor.username,
+        })
+
+    context = {
+        'rtvs': rtvs,
+        'total_count': paginator.count,
+        'current_page': page_obj.number,
+        'total_pages': paginator.num_pages,
+        'has_next': page_obj.has_next(),
+        'has_prev': page_obj.has_previous(),
+        'error_message': None,
+        'page_range': paginator.page_range,
+        'search': search,
+    }
+    return render(request, 'ncm_rtvs.html', context)
+
+
+@login_required
+@permission_required('can_view_orders')
+def ncm_rtv_add_comment(request, ncm_order_id):
+    """Add a comment to an NCM RTV order"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'POST required'}, status=405)
+
+    from services.ncm_service import NCMService
+    import json
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
+
+    comment_text = body.get('comment', '').strip()
+    if not comment_text:
+        return JsonResponse({'success': False, 'message': 'Comment is required'}, status=400)
+
+    ncm_service = NCMService()
+    result = ncm_service.create_order_comment(ncm_order_id, comment_text)
+
+    if result['success']:
+        return JsonResponse({'success': True, 'message': 'Comment added successfully'})
+    else:
+        return JsonResponse({
+            'success': False,
+            'message': result.get('error', 'Failed to add comment')
+        }, status=500)
+
+
+@login_required
+@permission_required('can_view_orders')
+def ncm_rtv_get_comments(request, ncm_order_id):
+    """Fetch all comments for an NCM RTV order"""
+    from services.ncm_service import NCMService
+
+    ncm_service = NCMService()
+    result = ncm_service.get_order_comments(ncm_order_id)
+
+    comments = result.get('data', []) if result['success'] else []
+
+    return JsonResponse({
+        'success': True,
+        'comments': comments,
+        'ncm_order_id': ncm_order_id,
+    })

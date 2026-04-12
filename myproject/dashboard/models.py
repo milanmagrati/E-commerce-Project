@@ -1482,3 +1482,25 @@ class CompanySetup(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1  # enforce singleton
         super().save(*args, **kwargs)
+
+
+# ==================== NCM RTV (Return to Vendor) ====================
+class RTVOrder(models.Model):
+    """Tracks orders returned to vendor via NCM API"""
+    order_id = models.IntegerField(help_text="NCM order ID")
+    comment = models.TextField(blank=True, default='')
+    vendor_return = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    vendor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='rtv_orders',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'RTV Order'
+        verbose_name_plural = 'RTV Orders'
+
+    def __str__(self):
+        return f"RTV #{self.order_id} by {self.vendor}"
