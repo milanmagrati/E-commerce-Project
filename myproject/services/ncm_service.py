@@ -125,20 +125,6 @@ class NCMService:
         url = f"{self.base_url}/orders/statuses"
         data = {'orders': order_ids}
         return self._make_request('POST', url, data=data)
-    
-    def get_order_comments(self, ncm_order_id: int):
-        """Get comments for an NCM order from order details"""
-        result = self.get_order_details(ncm_order_id)
-        if result['success']:
-            data = result['data']
-            # NCM API may return comments in various formats
-            comments = []
-            if isinstance(data, dict):
-                comments = data.get('comments', data.get('comment', []))
-            if isinstance(comments, str):
-                comments = [{'comment': comments}] if comments else []
-            return {'success': True, 'data': comments}
-        return result
 
     def get_staff_comments(self, ncm_order_id: int):
         """Fetch NCM order comments via GET /order/comment?id=<ncm_order_id>.
@@ -212,6 +198,36 @@ class NCMService:
         url = f"{self.base_url}/comment"
         data = {'orderid': ncm_order_id, 'comments': comment}
         return self._make_request('POST', url, data=data)
+
+    def get_vendor_rtvs(self, max_pages: int = 10, page_size: int = 200):
+        """Fetch vendor orders with vendor_return=True from NCM.
+
+        Paginates through ``/vendor/orders`` and collects entries where
+        ``vendor_return`` is True.  Returns at most ``max_pages * page_size``
+        orders scanned.
+
+        Returns:
+            {'success': True, 'data': [<order dict>, ...]}
+        """
+        rtvs = []
+        for page in range(1, max_pages + 1):
+            result = self._make_request(
+                'GET',
+                f"{self.base_url_v2}/vendor/orders",
+                params={'page': page, 'page_size': page_size},
+            )
+            if not result['success']:
+                break
+            results = result['data'].get('results', [])
+            if not results:
+                break
+            for order in results:
+                if order.get('vendor_return') is True:
+                    rtvs.append(order)
+            # Stop if we've exhausted all pages
+            if not result['data'].get('next'):
+                break
+        return {'success': True, 'data': rtvs}
 
     def return_order(self, ncm_order_id: int, comment: str = None):
         """Mark order for return"""

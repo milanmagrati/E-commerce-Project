@@ -79,6 +79,7 @@ urlpatterns = [
 
     # NCM RTVs (Return to Vendor)
     path('orders/rtvs/', views.ncm_rtvs_list, name='ncm_rtvs_list'),
+    path('api/ncm-rtv/sync/', views.ncm_rtvs_sync, name='ncm_rtvs_sync'),
     path('api/ncm-rtv/<int:ncm_order_id>/comment/', views.ncm_rtv_add_comment, name='ncm_rtv_add_comment'),
     path('api/ncm-rtv/<int:ncm_order_id>/comments/', views.ncm_rtv_get_comments, name='ncm_rtv_get_comments'),
 

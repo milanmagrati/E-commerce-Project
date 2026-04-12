@@ -1557,3 +1557,18 @@ Created system user for webhook operations
 [ERROR] 2026-04-12 12:59:49 ncm_service._make_request:49 NCM API error: 405 Client Error: Method Not Allowed for url: https://portal.nepalcanmove.com/api/v2/vendor/order/return?page=1
 [ERROR] 2026-04-12 13:00:07 ncm_service._make_request:49 NCM API error: 405 Client Error: Method Not Allowed for url: https://portal.nepalcanmove.com/api/v2/vendor/order/return?page=1
 [ERROR] 2026-04-12 13:00:09 ncm_service._make_request:49 NCM API error: 405 Client Error: Method Not Allowed for url: https://portal.nepalcanmove.com/api/v2/vendor/order/return?page=1
+[ERROR] 2026-04-12 17:06:19 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/rtvs
+[ERROR] 2026-04-12 17:06:40 ncm_service._make_request:49 NCM API error: 405 Client Error: Method Not Allowed for url: https://portal.nepalcanmove.com/api/v2/vendor/order/return
+[ERROR] 2026-04-12 17:06:56 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/order/returns
+[ERROR] 2026-04-12 17:06:56 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/returns
+[ERROR] 2026-04-12 17:06:56 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/order/rtvs
+[ERROR] 2026-04-12 17:07:16 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/rtvs
+[ERROR] 2026-04-12 17:07:16 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/rtvs
+[ERROR] 2026-04-12 17:07:16 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/vendor/rtvs
+[ERROR] 2026-04-12 17:07:17 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/orders/rtvs
+[ERROR] 2026-04-12 17:07:17 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/returns
+[ERROR] 2026-04-12 17:07:47 ncm_service._make_request:49 NCM API error: 400 Client Error: Bad Request for url: https://portal.nepalcanmove.com/api/v2/vendor/order/return
+[ERROR] 2026-04-12 17:08:22 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/order
+[ERROR] 2026-04-12 17:12:13 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=12524060
+[ERROR] 2026-04-12 17:12:14 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=12524060
+[ERROR] 2026-04-12 17:12:31 ncm_service._make_request:49 NCM API error: 400 Client Error: Bad Request for url: https://portal.nepalcanmove.com/api/v2/vendor/order/return

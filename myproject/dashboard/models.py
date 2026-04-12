@@ -1487,7 +1487,7 @@ class CompanySetup(models.Model):
 # ==================== NCM RTV (Return to Vendor) ====================
 class RTVOrder(models.Model):
     """Tracks orders returned to vendor via NCM API"""
-    order_id = models.IntegerField(help_text="NCM order ID")
+    order_id = models.IntegerField(unique=True, help_text="NCM order ID")
     comment = models.TextField(blank=True, default='')
     vendor_return = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -16754,7 +16754,7 @@ def company_setup(request):
 @permission_required('can_view_orders')
 def ncm_rtvs_list(request):
     """
-    GET  – list RTV records from local DB
+    GET  – list RTV records fetched from NCM API (vendor_return=True orders)
     POST – submit a new RTV via NCM API, then save locally
     """
     from services.ncm_service import NCMService
@@ -16783,11 +16783,13 @@ def ncm_rtvs_list(request):
         result = ncm_service.return_order(order_id, comment=comment or None)
 
         if result['success']:
-            RTVOrder.objects.create(
+            RTVOrder.objects.update_or_create(
                 order_id=order_id,
-                comment=comment,
-                vendor_return=True,
-                vendor=request.user,
+                defaults={
+                    'comment': comment,
+                    'vendor_return': True,
+                    'vendor': request.user,
+                },
             )
             return JsonResponse({'success': True, 'message': 'RTV submitted successfully'})
         else:
@@ -16796,51 +16798,128 @@ def ncm_rtvs_list(request):
                 'message': result.get('error', 'NCM API error'),
             }, status=500)
 
-    # ---------- GET: list from local DB ----------
-    from django.core.paginator import Paginator
-
-    qs = RTVOrder.objects.select_related('vendor').all()
-
+    # ---------- GET: serve from local DB (instant) ----------
     search = request.GET.get('search', '').strip()
+    qs = RTVOrder.objects.select_related('vendor').order_by('-created_at')
     if search:
         qs = qs.filter(
             Q(order_id__icontains=search) |
-            Q(comment__icontains=search) |
-            Q(vendor__username__icontains=search)
+            Q(comment__icontains=search)
         )
 
-    paginator = Paginator(qs, 25)
+    # Paginate at DB level
+    page_size = 25
     page = request.GET.get('page', 1)
     try:
         page = int(page)
     except (ValueError, TypeError):
         page = 1
-    page_obj = paginator.get_page(page)
+    total_count = qs.count()
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    end = start + page_size
 
-    # Build list of dicts the template already expects
-    rtvs = []
-    for rtv in page_obj:
-        rtvs.append({
-            'id': rtv.id,
+    page_rtvs = []
+    for rtv in qs[start:end]:
+        page_rtvs.append({
             'order_id': rtv.order_id,
-            'comment': rtv.comment,
-            'vendor_return': rtv.vendor_return,
+            'comment': rtv.comment or '—',
             'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p'),
-            'vendor': rtv.vendor.get_full_name() or rtv.vendor.username,
+            'status': '',
         })
 
     context = {
-        'rtvs': rtvs,
-        'total_count': paginator.count,
-        'current_page': page_obj.number,
-        'total_pages': paginator.num_pages,
-        'has_next': page_obj.has_next(),
-        'has_prev': page_obj.has_previous(),
+        'rtvs': page_rtvs,
+        'total_count': total_count,
+        'current_page': page,
+        'total_pages': total_pages,
+        'has_next': page < total_pages,
+        'has_prev': page > 1,
         'error_message': None,
-        'page_range': paginator.page_range,
+        'page_range': range(1, total_pages + 1),
         'search': search,
     }
     return render(request, 'ncm_rtvs.html', context)
+
+
+@login_required
+@permission_required('can_view_orders')
+def ncm_rtvs_sync(request):
+    """AJAX endpoint — sync RTVs from NCM API into local DB, return fresh data."""
+    from services.ncm_service import NCMService
+    from dashboard.models import RTVOrder
+    from django.utils.dateparse import parse_datetime
+
+    ncm_service = NCMService()
+    new_count = 0
+    try:
+        api_result = ncm_service.get_vendor_rtvs(max_pages=10, page_size=200)
+        if api_result['success']:
+            existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
+            for order in api_result['data']:
+                oid = order.get('orderid')
+                if oid and oid not in existing_ids:
+                    RTVOrder.objects.update_or_create(
+                        order_id=oid,
+                        defaults={'vendor_return': True, 'vendor': request.user},
+                    )
+                    new_count += 1
+                    # Set the real NCM creation date
+                    ncm_date = order.get('created_date', '')
+                    if ncm_date:
+                        try:
+                            dt = parse_datetime(ncm_date)
+                            if dt:
+                                RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
+                        except Exception:
+                            pass
+
+        # Fetch comments from NCM for orders that have no comment yet (batch)
+        no_comment_ids = list(
+            RTVOrder.objects.filter(comment='')
+            .values_list('order_id', flat=True)[:15]
+        )
+        for oid in no_comment_ids:
+            try:
+                cresult = ncm_service.get_order_comments(oid)
+                if cresult['success'] and cresult['data']:
+                    # Find the "RTV marked" comment (return reason)
+                    rtv_comment = ''
+                    for c in cresult['data']:
+                        text = c.get('comment', '')
+                        if text.startswith('RTV marked'):
+                            rtv_comment = text.replace('RTV marked - ', '').strip()
+                            break
+                    if not rtv_comment:
+                        # Fallback: use the first NCM Staff comment
+                        for c in cresult['data']:
+                            if c.get('added_by', '') == 'NCM Staff':
+                                rtv_comment = c.get('comment', '')
+                                break
+                    if rtv_comment:
+                        RTVOrder.objects.filter(order_id=oid).update(comment=rtv_comment)
+            except Exception:
+                pass
+
+    except Exception:
+        return JsonResponse({'success': False, 'message': 'NCM sync failed'}, status=500)
+
+    # Return fresh list from local DB
+    rtvs = []
+    for rtv in RTVOrder.objects.select_related('vendor').order_by('-created_at'):
+        rtvs.append({
+            'order_id': rtv.order_id,
+            'comment': rtv.comment or '—',
+            'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p'),
+        })
+
+    return JsonResponse({
+        'success': True,
+        'new_count': new_count,
+        'total_count': len(rtvs),
+        'rtvs': rtvs,
+    })
 
 
 @login_required
