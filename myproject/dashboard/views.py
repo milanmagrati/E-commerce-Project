@@ -16969,3 +16969,228 @@ def ncm_rtv_get_comments(request, ncm_order_id):
         'comments': comments,
         'ncm_order_id': ncm_order_id,
     })
+
+
+@login_required
+@permission_required('can_view_orders')
+def ncm_rtv_order_detail(request, ncm_order_id):
+    """Fetch comprehensive order details for an NCM RTV order.
+
+    Combines:
+    - NCM API order details (customer, address, status, amounts, etc.)
+    - NCM API order status history
+    - NCM API order comments
+    - Local Order data (if linked via ncm_order_id) with items, payment info, etc.
+    """
+    from services.ncm_service import NCMService
+    from dashboard.models import RTVOrder, Order, OrderItem
+
+    ncm_service = NCMService()
+    response_data = {
+        'success': True,
+        'ncm_order_id': ncm_order_id,
+        'ncm_data': None,
+        'local_order': None,
+        'comments': [],
+        'status_history': [],
+    }
+
+    # 1. Fetch NCM order details
+    try:
+        details_result = ncm_service.get_order_details(ncm_order_id)
+        if details_result['success']:
+            raw = details_result['data']
+            # Handle both list and dict responses
+            if isinstance(raw, list) and len(raw) > 0:
+                ncm_data = raw[0]
+            elif isinstance(raw, dict):
+                # Could be wrapped in 'data' or 'results'
+                ncm_data = raw.get('data', raw.get('results', raw))
+                if isinstance(ncm_data, list) and len(ncm_data) > 0:
+                    ncm_data = ncm_data[0]
+            else:
+                ncm_data = {}
+
+            # Extract any items/products data from NCM if available
+            ncm_items = []
+            raw_items = ncm_data.get('items', ncm_data.get('products', ncm_data.get('order_items', [])))
+            if isinstance(raw_items, list):
+                for ri in raw_items:
+                    if isinstance(ri, dict):
+                        ncm_items.append({
+                            'product_name': ri.get('name', ri.get('product_name', ri.get('item_name', 'Unknown Product'))),
+                            'product_sku': ri.get('sku', ri.get('product_sku', '')),
+                            'variation_name': ri.get('variation', ri.get('variation_name', '')),
+                            'price': str(ri.get('price', ri.get('unit_price', '0'))),
+                            'quantity': ri.get('quantity', ri.get('qty', 1)),
+                            'total': str(ri.get('total', ri.get('amount', ri.get('price', '0')))),
+                            'image_url': ri.get('image', ri.get('image_url', '')),
+                        })
+
+            response_data['ncm_data'] = {
+                'order_id': ncm_data.get('orderid', ncm_data.get('id', ncm_order_id)),
+                'customer_name': ncm_data.get('name', ncm_data.get('customer_name', '')),
+                'customer_phone': ncm_data.get('phone', ncm_data.get('customer_phone', '')),
+                'customer_phone2': ncm_data.get('phone2', ''),
+                'customer_email': ncm_data.get('email', ''),
+                'address': ncm_data.get('address', ncm_data.get('shipping_address', '')),
+                'landmark': ncm_data.get('landmark', ''),
+                'cod_charge': str(ncm_data.get('cod_charge', ncm_data.get('cod_amount', '0'))),
+                'delivery_charge': str(ncm_data.get('delivery_charge', '0')),
+                'status': ncm_data.get('status', ncm_data.get('order_status', '')),
+                'vendor_return': ncm_data.get('vendor_return', False),
+                'from_branch': ncm_data.get('fbranch', ncm_data.get('from_branch', '')),
+                'to_branch': ncm_data.get('branch', ncm_data.get('to_branch', ncm_data.get('destination_branch', ''))),
+                'delivery_type': ncm_data.get('type', ncm_data.get('delivery_type', 'Door2Door')),
+                'weight': str(ncm_data.get('weight', '0')),
+                'created_date': ncm_data.get('created_date', ncm_data.get('created_at', '')),
+                'remarks': ncm_data.get('remarks', ncm_data.get('notes', '')),
+                'barcode': ncm_data.get('barcode', ''),
+                'tracking_number': ncm_data.get('tracking_number', ncm_data.get('tracking', '')),
+                'items': ncm_items,
+            }
+    except Exception as e:
+        logger.warning(f"Failed to fetch NCM details for order {ncm_order_id}: {e}")
+
+    # 2. Fetch NCM order status history
+    try:
+        status_result = ncm_service.get_order_status(ncm_order_id)
+        if status_result['success']:
+            raw_status = status_result['data']
+            if isinstance(raw_status, list):
+                statuses = raw_status
+            elif isinstance(raw_status, dict):
+                statuses = raw_status.get('data', raw_status.get('results', []))
+                if isinstance(statuses, dict):
+                    statuses = [statuses]
+            else:
+                statuses = []
+
+            for s in statuses:
+                if isinstance(s, dict):
+                    response_data['status_history'].append({
+                        'status': s.get('status', s.get('Status', '')),
+                        'timestamp': s.get('date', s.get('timestamp', s.get('created_at', ''))),
+                        'remarks': s.get('remarks', s.get('comment', '')),
+                    })
+    except Exception as e:
+        logger.warning(f"Failed to fetch NCM status history for order {ncm_order_id}: {e}")
+
+    # 3. Fetch NCM comments
+    try:
+        comments_result = ncm_service.get_order_comments(ncm_order_id)
+        if comments_result['success']:
+            response_data['comments'] = comments_result.get('data', [])
+    except Exception as e:
+        logger.warning(f"Failed to fetch NCM comments for order {ncm_order_id}: {e}")
+
+    # 4. Try to find matching local Order by ncm_order_id (multiple strategies)
+    local_order = None
+    try:
+        # Strategy 1: By ncm_order_id, not deleted
+        local_order = Order.objects.select_related(
+            'customer', 'created_by', 'status_setup',
+            'payment_setup', 'payment_status_setup'
+        ).get(ncm_order_id=ncm_order_id, is_deleted=False)
+    except Order.DoesNotExist:
+        pass
+    except Order.MultipleObjectsReturned:
+        local_order = Order.objects.select_related(
+            'customer', 'created_by', 'status_setup',
+            'payment_setup', 'payment_status_setup'
+        ).filter(ncm_order_id=ncm_order_id, is_deleted=False).first()
+
+    if not local_order:
+        try:
+            # Strategy 2: By ncm_order_id, including deleted orders
+            local_order = Order.objects.select_related(
+                'customer', 'created_by', 'status_setup',
+                'payment_setup', 'payment_status_setup'
+            ).filter(ncm_order_id=ncm_order_id).first()
+        except Exception:
+            pass
+
+    if not local_order:
+        # Strategy 3: Try matching by order_number = barcode from NCM
+        ncm_barcode = ''
+        if response_data.get('ncm_data'):
+            ncm_barcode = response_data['ncm_data'].get('barcode', '')
+        if ncm_barcode:
+            try:
+                local_order = Order.objects.select_related(
+                    'customer', 'created_by', 'status_setup',
+                    'payment_setup', 'payment_status_setup'
+                ).filter(order_number=ncm_barcode).first()
+            except Exception:
+                pass
+
+    if local_order:
+        try:
+            # Get order items
+            items_data = []
+            for item in local_order.items.select_related('product', 'product_variation').all():
+                item_info = {
+                    'product_name': item.product_name,
+                    'product_sku': item.product_sku or '',
+                    'variation_name': item.variation_name if hasattr(item, 'variation_name') and item.variation_name else '',
+                    'price': str(item.price),
+                    'quantity': item.quantity,
+                    'total': str(item.total),
+                    'image_url': '',
+                }
+                if item.product and item.product.image:
+                    try:
+                        item_info['image_url'] = item.product.image.url
+                    except Exception:
+                        pass
+                if not item_info['variation_name'] and item.product_variation:
+                    item_info['variation_name'] = getattr(item.product_variation, 'variation_name', '') or getattr(item.product_variation, 'sku', '')
+                items_data.append(item_info)
+
+            # Calculate totals
+            from decimal import Decimal
+            subtotal = sum(Decimal(str(i['total'])) for i in items_data) if items_data else Decimal('0')
+
+            response_data['local_order'] = {
+                'id': local_order.id,
+                'order_number': local_order.order_number,
+                'customer_name': local_order.customer_name,
+                'customer_phone': local_order.customer_phone,
+                'customer_email': local_order.customer_email or '',
+                'shipping_address': local_order.shipping_address,
+                'landmark': local_order.landmark or '',
+                'order_status': local_order.order_status,
+                'status_display': local_order.status_setup.name if local_order.status_setup else (local_order.order_status or '').replace('_', ' ').title(),
+                'payment_status': local_order.payment_status,
+                'payment_status_display': local_order.payment_status_setup.name if local_order.payment_status_setup else (local_order.payment_status or '').replace('_', ' ').title(),
+                'payment_method': local_order.payment_method,
+                'payment_method_display': local_order.payment_setup.name if local_order.payment_setup else (local_order.payment_method or '').replace('_', ' ').title(),
+                'order_from': local_order.order_from or '',
+                'created_by': local_order.created_by.get_full_name() if local_order.created_by else 'Unknown',
+                'total_amount': str(local_order.total_amount),
+                'subtotal': str(subtotal),
+                'discount_amount': str(local_order.discount_amount or 0),
+                'shipping_charge': str(local_order.shipping_charge or 0),
+                'tax_percent': str(local_order.tax_percent or 0),
+                'delivery_charge': str(local_order.delivery_charge or 0),
+                'created_at': local_order.created_at.strftime('%b %d, %Y %I:%M %p') if local_order.created_at else '',
+                'items': items_data,
+                'items_count': len(items_data),
+                'has_customer': bool(local_order.customer_id),
+                'customer_id': local_order.customer_id,
+            }
+        except Exception as e:
+            logger.warning(f"Error processing local order for NCM ID {ncm_order_id}: {e}")
+
+    # 5. Get RTV record
+    try:
+        rtv = RTVOrder.objects.get(order_id=ncm_order_id)
+        response_data['rtv_info'] = {
+            'comment': rtv.comment or '',
+            'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p') if rtv.created_at else '',
+            'vendor_name': rtv.vendor.get_full_name() if rtv.vendor else 'Unknown',
+        }
+    except RTVOrder.DoesNotExist:
+        response_data['rtv_info'] = None
+
+    return JsonResponse(response_data)

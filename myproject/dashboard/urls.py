@@ -82,6 +82,7 @@ urlpatterns = [
     path('api/ncm-rtv/sync/', views.ncm_rtvs_sync, name='ncm_rtvs_sync'),
     path('api/ncm-rtv/<int:ncm_order_id>/comment/', views.ncm_rtv_add_comment, name='ncm_rtv_add_comment'),
     path('api/ncm-rtv/<int:ncm_order_id>/comments/', views.ncm_rtv_get_comments, name='ncm_rtv_get_comments'),
+    path('api/ncm-rtv/<int:ncm_order_id>/detail/', views.ncm_rtv_order_detail, name='ncm_rtv_order_detail'),
 
     # On Hold Orders
     path('orders/on-hold/', views.on_hold_orders_list, name='on_hold_orders_list'),
