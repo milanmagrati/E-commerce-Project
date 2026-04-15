@@ -316,6 +316,13 @@
     transform: translateY(-1px);
 }
 
+/* Comment column cell */
+.rtv-table td.comment-col {
+    min-width: 160px;
+    max-width: 300px;
+    width: 220px;
+}
+
 /* Comment tags */
 .comment-tag {
     display: inline-flex;
@@ -325,9 +332,12 @@
     border-radius: 9px;
     font-size: 0.82rem;
     font-weight: 600;
-    max-width: 380px;
+    max-width: 100%;
+    min-width: 0;
     word-break: break-word;
     white-space: normal;
+    overflow-wrap: break-word;
+    line-height: 1.4;
 }
 .comment-tag.exchange      { background: #fef3c7; color: #92400e; }
 .comment-tag.late-delivery { background: #fee2e2; color: #991b1b; }
@@ -866,6 +876,7 @@
 }
 .followup-new-highlight { animation: followupHighlight 1.5s ease; }
 @keyframes followupHighlight { from { background: #fef9c3; } to { background: #fff; } }
+.followup-panel-row { display: none; }
 .followup-panel-row td { padding: 0 !important; background: #fefce8; }
 .followup-last-comment {
     font-size: 0.75rem;
@@ -1055,7 +1066,7 @@
                             {{ rtv.order_id }}
                         </span>
                     </td>
-                    <td>
+                    <td class="comment-col">
                         {% with comment=rtv.comment|default:"—" %}
                             {% if 'Exchange' in comment or 'Double Order' in comment %}
                                 <span class="comment-tag exchange"><i class="fas fa-exchange-alt"></i> {{ comment }}</span>
@@ -1553,6 +1564,9 @@
         let visibleIdx = 0;
 
         tableRows.forEach(function(row) {
+            // Skip non-data rows (e.g., follow-up panel rows)
+            if (!row.hasAttribute('data-order-id')) return;
+
             const orderId = (row.getAttribute('data-order-id') || '').toLowerCase();
             const comment = (row.getAttribute('data-comment') || '').toLowerCase();
             const rowText = orderId + ' ' + comment;
@@ -1575,7 +1589,8 @@
             if (matchSearch && matchFilter) {
                 row.style.display = '';
                 visibleIdx++;
-                row.querySelector('.sn-col').textContent = visibleIdx;
+                var snCell = row.querySelector('.sn-col');
+                if (snCell) snCell.textContent = visibleIdx;
             } else {
                 row.style.display = 'none';
             }
@@ -1724,12 +1739,15 @@
     };
 
     // Handle Enter key in comment input
-    document.getElementById('commentInput').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendComment();
-        }
-    });
+    var commentInput = document.getElementById('commentInput');
+    if (commentInput) {
+        commentInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendComment();
+            }
+        });
+    }
 
     // ==================== ORDER DETAILS ====================
     window.viewOrderDetails = function(orderId) {

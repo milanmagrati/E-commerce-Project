@@ -17113,6 +17113,7 @@ def ncm_rtv_add_comment(request, ncm_order_id):
         return JsonResponse({'success': False, 'message': 'POST required'}, status=405)
 
     from services.ncm_service import NCMService
+    from dashboard.models import RTVOrder
     import json
 
     try:
@@ -17124,7 +17125,15 @@ def ncm_rtv_add_comment(request, ncm_order_id):
     if not comment_text:
         return JsonResponse({'success': False, 'message': 'Comment is required'}, status=400)
 
-    ncm_service = NCMService()
+    # Look up RTV to find the correct API config
+    api_config_id = None
+    try:
+        rtv = RTVOrder.objects.get(order_id=ncm_order_id)
+        api_config_id = rtv.api_config_id
+    except RTVOrder.DoesNotExist:
+        pass
+
+    ncm_service = NCMService(api_config_id=api_config_id)
     result = ncm_service.create_order_comment(ncm_order_id, comment_text)
 
     if result['success']:
@@ -17141,8 +17150,17 @@ def ncm_rtv_add_comment(request, ncm_order_id):
 def ncm_rtv_get_comments(request, ncm_order_id):
     """Fetch all comments for an NCM RTV order"""
     from services.ncm_service import NCMService
+    from dashboard.models import RTVOrder
 
-    ncm_service = NCMService()
+    # Look up RTV to find the correct API config
+    api_config_id = None
+    try:
+        rtv = RTVOrder.objects.get(order_id=ncm_order_id)
+        api_config_id = rtv.api_config_id
+    except RTVOrder.DoesNotExist:
+        pass
+
+    ncm_service = NCMService(api_config_id=api_config_id)
     result = ncm_service.get_order_comments(ncm_order_id)
 
     comments = result.get('data', []) if result['success'] else []
@@ -17168,7 +17186,15 @@ def ncm_rtv_order_detail(request, ncm_order_id):
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, Order, OrderItem
 
-    ncm_service = NCMService()
+    # Look up RTV to find the correct API config
+    api_config_id = None
+    try:
+        rtv_rec = RTVOrder.objects.get(order_id=ncm_order_id)
+        api_config_id = rtv_rec.api_config_id
+    except RTVOrder.DoesNotExist:
+        pass
+
+    ncm_service = NCMService(api_config_id=api_config_id)
     response_data = {
         'success': True,
         'ncm_order_id': ncm_order_id,
@@ -17220,7 +17246,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 'landmark': ncm_data.get('landmark', ''),
                 'cod_charge': str(ncm_data.get('cod_charge', ncm_data.get('cod_amount', '0'))),
                 'delivery_charge': str(ncm_data.get('delivery_charge', '0')),
-                'status': ncm_data.get('status', ncm_data.get('order_status', '')),
+                'status': ncm_data.get('status', ncm_data.get('order_status', ncm_data.get('last_delivery_status', ''))),
                 'vendor_return': ncm_data.get('vendor_return', False),
                 'from_branch': ncm_data.get('fbranch', ncm_data.get('from_branch', '')),
                 'to_branch': ncm_data.get('branch', ncm_data.get('to_branch', ncm_data.get('destination_branch', ''))),
@@ -17228,8 +17254,8 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 'weight': str(ncm_data.get('weight', '0')),
                 'created_date': ncm_data.get('created_date', ncm_data.get('created_at', '')),
                 'remarks': ncm_data.get('remarks', ncm_data.get('notes', '')),
-                'barcode': ncm_data.get('barcode', ''),
-                'tracking_number': ncm_data.get('tracking_number', ncm_data.get('tracking', '')),
+                'barcode': ncm_data.get('barcode', ncm_data.get('trackid', '')),
+                'tracking_number': ncm_data.get('tracking_number', ncm_data.get('tracking', ncm_data.get('trackid', ''))),
                 'items': ncm_items,
             }
     except Exception as e:
@@ -17253,7 +17279,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 if isinstance(s, dict):
                     response_data['status_history'].append({
                         'status': s.get('status', s.get('Status', '')),
-                        'timestamp': s.get('date', s.get('timestamp', s.get('created_at', ''))),
+                        'timestamp': s.get('date', s.get('timestamp', s.get('added_time', s.get('created_at', '')))),
                         'remarks': s.get('remarks', s.get('comment', '')),
                     })
     except Exception as e:
