@@ -3517,6 +3517,28 @@ def order_detail(request, order_id):
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
     }
+
+    # Exchange eligibility check
+    from dashboard.models import RTVOrder
+    delivered_statuses = ['delivered', 'confirmed']
+    if order.ncm_order_id:
+        is_rtv = RTVOrder.objects.filter(order_id=order.ncm_order_id, vendor_return=True).exists()
+    else:
+        is_rtv = False
+    exchange_is_delivered = (
+        (order.ncm_status or '').lower() in delivered_statuses
+        or (order.order_status or '').lower() in delivered_statuses
+        or (order.status or '').lower() in delivered_statuses
+        or (order.status_setup.name.lower().replace(' ', '_') if order.status_setup else '') in delivered_statuses
+    )
+    context['exchange_is_delivered'] = exchange_is_delivered
+    context['is_rtv'] = is_rtv
+    context['can_exchange'] = (
+        bool(order.ncm_order_id)
+        and exchange_is_delivered
+        and not is_rtv
+        and order.exchange_status != 'created'
+    )
     
     # Calculate percentage for progress bar
     if is_partial_payment and calculated_total and calculated_total > 0:
@@ -16920,6 +16942,20 @@ def ncm_rtvs_list(request):
     page_objs = list(qs[start:end])
     rtv_ids_page = [rtv.id for rtv in page_objs]
 
+    # Auto-assign unassigned RTVs on this page to the default NCM config
+    unassigned_on_page = [rtv for rtv in page_objs if rtv.api_config_id is None]
+    if unassigned_on_page:
+        default_cfg = LogisticsAPIConfig.objects.filter(
+            logistics_provider='ncm', is_active=True
+        ).order_by('-id').first()
+        if default_cfg:
+            unassigned_ids = [rtv.id for rtv in unassigned_on_page]
+            RTVOrder.objects.filter(id__in=unassigned_ids).update(api_config=default_cfg)
+            # Refresh api_config on the in-memory objects
+            for rtv in unassigned_on_page:
+                rtv.api_config = default_cfg
+                rtv.api_config_id = default_cfg.id
+
     # Build follow-up metadata directly from RTVFollowUp (no local Order needed)
     nepal_tz = pytz.timezone('Asia/Kathmandu')
     followup_meta = {}
@@ -17091,6 +17127,17 @@ def ncm_rtvs_sync(request):
 
     except Exception:
         return JsonResponse({'success': False, 'message': 'NCM sync failed'}, status=500)
+
+    # Tag any remaining unassigned RTVs to the default NCM config
+    remaining_unassigned = RTVOrder.objects.filter(api_config__isnull=True).count()
+    if remaining_unassigned > 0:
+        default_cfg = LogisticsAPIConfig.objects.filter(
+            logistics_provider='ncm', is_active=True
+        ).order_by('-id').first()
+        if default_cfg:
+            tagged_count += RTVOrder.objects.filter(
+                api_config__isnull=True
+            ).update(api_config=default_cfg)
 
     qs = RTVOrder.objects.all()
     if chosen_config:
@@ -17403,3 +17450,96 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         response_data['rtv_info'] = None
 
     return JsonResponse(response_data)
+
+
+# ==================== NCM EXCHANGE ORDER ====================
+@login_required
+@require_POST
+def create_exchange_order_view(request, order_id):
+    """Create an NCM exchange order for a delivered order."""
+    from dashboard.models import RTVOrder
+    from services.ncm_service import NCMService
+
+    order = get_object_or_404(
+        Order.objects.select_related('api_config', 'status_setup'),
+        id=order_id
+    )
+
+    # Validate: must have NCM order ID
+    if not order.ncm_order_id:
+        return JsonResponse({'success': False, 'error': 'This order has no NCM order ID linked.'}, status=400)
+
+    # Validate: must not already be exchanged
+    if order.exchange_status == 'created':
+        return JsonResponse({
+            'success': False,
+            'error': f'Exchange already created. Customer Order: {order.ncm_exchange_cust_order}, Vendor Order: {order.ncm_exchange_ven_order}'
+        }, status=400)
+
+    # Validate: order must be delivered
+    delivered_statuses = ['delivered', 'confirmed']
+    ncm_status_lower = (order.ncm_status or '').lower()
+    order_status_lower = (order.order_status or '').lower()
+    status_lower = (order.status or '').lower()
+    setup_name_lower = (order.status_setup.name.lower().replace(' ', '_') if order.status_setup else '')
+    is_delivered = (
+        ncm_status_lower in delivered_statuses
+        or order_status_lower in delivered_statuses
+        or status_lower in delivered_statuses
+        or setup_name_lower in delivered_statuses
+    )
+    if not is_delivered:
+        display_status = order.ncm_status or order.order_status or order.status or 'unknown'
+        return JsonResponse({'success': False, 'error': f'Order must be delivered first. Current status: {display_status}'}, status=400)
+
+    # Validate: must not be returned to vendor
+    is_rtv = RTVOrder.objects.filter(order_id=order.ncm_order_id, vendor_return=True).exists()
+    if is_rtv:
+        return JsonResponse({'success': False, 'error': 'Cannot exchange - this order has been returned to vendor.'}, status=400)
+
+    # Call NCM API
+    try:
+        api_config_id = order.api_config_id if order.api_config_id else None
+        ncm_service = NCMService(api_config_id=api_config_id)
+        result = ncm_service.create_exchange_order(order.ncm_order_id)
+
+        if result['success']:
+            data = result['data']
+            order.ncm_exchange_cust_order = data.get('cust_order')
+            order.ncm_exchange_ven_order = data.get('ven_order')
+            order.exchange_status = 'created'
+            order.save(update_fields=['ncm_exchange_cust_order', 'ncm_exchange_ven_order', 'exchange_status'])
+
+            # Log activity
+            OrderActivityLog.objects.create(
+                order=order,
+                action_type='status_changed',
+                user=request.user,
+                field_name='exchange_status',
+                old_value='',
+                new_value='created',
+                description=f'NCM Exchange order created. Customer Order: {data.get("cust_order")}, Vendor Order: {data.get("ven_order")}'
+            )
+
+            return JsonResponse({
+                'success': True,
+                'message': data.get('message', 'Exchange orders created'),
+                'cust_order': data.get('cust_order'),
+                'ven_order': data.get('ven_order'),
+            })
+        else:
+            order.exchange_status = 'failed'
+            order.save(update_fields=['exchange_status'])
+            raw_error = result.get('error', 'Unknown API error')
+            if isinstance(raw_error, dict):
+                error_msg = raw_error.get('message') or raw_error.get('detail') or str(raw_error)
+            else:
+                error_msg = str(raw_error)
+            logger.error(f"NCM exchange API failed for order {order.id}: {error_msg}")
+            return JsonResponse({'success': False, 'error': error_msg}, status=400)
+
+    except Exception as e:
+        logger.error(f"NCM exchange error for order {order.id}: {str(e)}")
+        order.exchange_status = 'failed'
+        order.save(update_fields=['exchange_status'])
+        return JsonResponse({'success': False, 'error': f'Server error: {str(e)}'}, status=500)

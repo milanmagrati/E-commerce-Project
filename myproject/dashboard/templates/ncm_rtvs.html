@@ -1099,7 +1099,10 @@
                             {{ rtv.api_config_name }}
                         </span>
                         {% else %}
-                        <span style="color:#cbd5e1; font-size:0.8rem;">—</span>
+                        <span class="api-config-tag" style="opacity:0.5;">
+                            <i class="fas fa-plug" style="font-size:0.65rem;"></i>
+                            Unassigned
+                        </span>
                         {% endif %}
                     </td>
                     {% endif %}

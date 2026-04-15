@@ -77,6 +77,9 @@ urlpatterns = [
     # Return Orders
     path('orders/returns/', views.return_orders_list, name='return_orders_list'),
 
+    # NCM Exchange Order
+    path('orders/<int:order_id>/exchange/', views.create_exchange_order_view, name='create_exchange_order'),
+
     # NCM RTVs (Return to Vendor)
     path('orders/rtvs/', views.ncm_rtvs_list, name='ncm_rtvs_list'),
     path('api/ncm-rtv/sync/', views.ncm_rtvs_sync, name='ncm_rtvs_sync'),

@@ -421,6 +421,17 @@ class Order(models.Model):
         help_text='Selected logistics API configuration'
     )
 
+    # NCM Exchange Order Fields
+    EXCHANGE_STATUS_CHOICES = [
+        ('', 'Not Exchanged'),
+        ('pending', 'Pending'),
+        ('created', 'Created'),
+        ('failed', 'Failed'),
+    ]
+    ncm_exchange_cust_order = models.IntegerField(blank=True, null=True, help_text="NCM exchange customer order ID")
+    ncm_exchange_ven_order = models.IntegerField(blank=True, null=True, help_text="NCM exchange vendor order ID")
+    exchange_status = models.CharField(max_length=20, choices=EXCHANGE_STATUS_CHOICES, blank=True, default='')
+
     def calculate_totals(self):
         """Calculate order totals based on items, discount, shipping, and tax"""
         from decimal import Decimal

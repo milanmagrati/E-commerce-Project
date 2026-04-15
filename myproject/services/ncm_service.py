@@ -48,10 +48,10 @@ class NCMService:
         except requests.exceptions.RequestException as e:
             logger.error(f"NCM API error: {str(e)}")
             error_msg = str(e)
-            if hasattr(e, 'response') and hasattr(e.response, 'json'):
+            if hasattr(e, 'response') and e.response is not None:
                 try:
                     error_msg = e.response.json()
-                except:
+                except (ValueError, AttributeError):
                     error_msg = e.response.text if hasattr(e.response, 'text') else str(e)
             return {'success': False, 'error': error_msg}
     
@@ -236,6 +236,21 @@ class NCMService:
         if comment:
             data['comment'] = comment
         return self._make_request('POST', url, data=data)
+
+    def create_exchange_order(self, ncm_order_id: int):
+        """Create an exchange order in NCM system.
+        
+        Returns cust_order and ven_order IDs on success.
+        """
+        url = f"{self.base_url_v2}/vendor/order/exchange-create"
+        data = {'pk': ncm_order_id}
+        logger.info(f"Creating NCM exchange order for NCM ID: {ncm_order_id}")
+        result = self._make_request('POST', url, data=data)
+        if result['success']:
+            logger.info(f"✓ NCM Exchange order created: cust_order={result['data'].get('cust_order')}, ven_order={result['data'].get('ven_order')}")
+        else:
+            logger.error(f"✗ NCM Exchange order creation failed for NCM ID {ncm_order_id}: {result.get('error')}")
+        return result
     
     def set_webhook_url(self, webhook_url: str):
         """Register webhook URL"""

@@ -16,6 +16,28 @@
                 </p>
             </div>
             <div class="d-flex gap-2">
+                {% if order.logistics == 'ncm' %}
+                    {% if order.exchange_status == 'created' %}
+                    <button type="button" class="btn btn-exchange-done" id="makeExchangeBtn" disabled
+                            title="Exchange already created (Customer: {{ order.ncm_exchange_cust_order }}, Vendor: {{ order.ncm_exchange_ven_order }})">
+                        <i class="fas fa-check-circle"></i> Exchanged
+                        <span class="exchange-ids-badge">C:{{ order.ncm_exchange_cust_order }} V:{{ order.ncm_exchange_ven_order }}</span>
+                    </button>
+                    {% else %}
+                    <button type="button" class="btn btn-exchange-animate {% if not can_exchange %}btn-exchange-blocked{% endif %}" id="makeExchangeBtn"
+                            data-order-id="{{ order.id }}"
+                            data-order-number="{{ order.order_number|escapejs }}"
+                            data-has-ncm="{% if order.ncm_order_id %}true{% else %}false{% endif %}"
+                            data-is-delivered="{% if exchange_is_delivered %}true{% else %}false{% endif %}"
+                            data-is-rtv="{% if is_rtv %}true{% else %}false{% endif %}"
+                            data-exchange-status="{{ order.exchange_status }}"
+                            data-ncm-status="{{ order.ncm_status|default:'' }}"
+                            data-order-status="{{ order.order_status|default:'' }}"
+                            onclick="handleExchangeClick(this)">
+                        <i class="fas fa-exchange-alt"></i> Make Exchange
+                    </button>
+                    {% endif %}
+                {% endif %}
                 <a href="{% if request.user.role == 'administrator' or request.user.can_edit_orders %}{% url 'order_edit' order.id %}{% else %}#{% endif %}"
                    class="btn btn-warning"
                    {% if not request.user.can_edit_orders and request.user.role != 'administrator' %}
@@ -1389,6 +1411,186 @@
 </div>
 
 <style>
+/* ==================== EXCHANGE BUTTON STYLES ==================== */
+.btn-exchange-animate {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    animation: exchangePulseEntry 0.6s ease-out;
+    box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+}
+.btn-exchange-animate::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    transition: left 0.5s;
+}
+.btn-exchange-animate:hover::before {
+    left: 100%;
+}
+.btn-exchange-animate:hover {
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: 0 6px 20px rgba(245, 87, 108, 0.5);
+    color: white;
+}
+.btn-exchange-animate:active {
+    transform: translateY(0) scale(0.98);
+}
+.btn-exchange-animate:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none !important;
+}
+.btn-exchange-animate i {
+    margin-right: 6px;
+    transition: transform 0.3s;
+}
+.btn-exchange-animate:hover i {
+    animation: exchangeIconSpin 0.6s ease;
+}
+
+@keyframes exchangePulseEntry {
+    0% { opacity: 0; transform: scale(0.8) translateY(-10px); }
+    50% { opacity: 1; transform: scale(1.05) translateY(0); }
+    100% { transform: scale(1); }
+}
+@keyframes exchangeIconSpin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(180deg); }
+}
+
+/* Exchange completed button */
+.btn-exchange-done {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: default;
+    animation: exchangePulseEntry 0.6s ease-out;
+    box-shadow: 0 4px 12px rgba(67, 233, 123, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.btn-exchange-done i { color: white; }
+.exchange-ids-badge {
+    background: rgba(255,255,255,0.25);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+/* Exchange processing spinner */
+.btn-exchange-animate .exchange-spinner {
+    display: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 6px;
+}
+.btn-exchange-animate.processing .exchange-spinner { display: inline-block; }
+.btn-exchange-animate.processing i.fa-exchange-alt { display: none; }
+
+/* Exchange blocked (conditions not met) */
+.btn-exchange-blocked {
+    background: linear-gradient(135deg, #a0aec0 0%, #718096 100%) !important;
+    box-shadow: 0 4px 12px rgba(113, 128, 150, 0.3) !important;
+    cursor: pointer !important;
+}
+.btn-exchange-blocked:hover {
+    transform: translateY(-1px) scale(1.01) !important;
+    box-shadow: 0 5px 16px rgba(113, 128, 150, 0.4) !important;
+}
+.btn-exchange-blocked:hover::before { left: -100% !important; }
+.btn-exchange-blocked:hover i { animation: none !important; }
+
+/* Exchange alert toast */
+.exchange-alert-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    min-width: 340px;
+    max-width: 480px;
+    border-radius: 12px;
+    padding: 16px 20px;
+    color: white;
+    font-size: 0.9rem;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    animation: exchangeToastIn 0.4s ease-out;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.exchange-alert-toast.toast-error {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+}
+.exchange-alert-toast.toast-warning {
+    background: linear-gradient(135deg, #f9ca24 0%, #f0932b 100%);
+}
+.exchange-alert-toast.toast-success {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+.exchange-alert-toast.toast-info {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.exchange-alert-toast .toast-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.exchange-alert-toast .toast-body {
+    flex: 1;
+}
+.exchange-alert-toast .toast-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 2px;
+}
+.exchange-alert-toast .toast-msg {
+    opacity: 0.9;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+.exchange-alert-toast .toast-close {
+    background: none;
+    border: none;
+    color: white;
+    opacity: 0.7;
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+}
+.exchange-alert-toast .toast-close:hover { opacity: 1; }
+@keyframes exchangeToastIn {
+    0% { opacity: 0; transform: translateX(40px); }
+    100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes exchangeToastOut {
+    0% { opacity: 1; transform: translateX(0); }
+    100% { opacity: 0; transform: translateX(40px); }
+}
+
 /* ==================== LOGISTICS MODAL STYLES ==================== */
 .logistics-selector-btn {
     display: flex;
@@ -3177,6 +3379,116 @@ function moveOrderToTrash(orderId, orderNumber) {
         document.body.appendChild(form);
         form.submit();
     }
+}
+
+// ==================== NCM EXCHANGE ORDER ====================
+function showExchangeToast(type, title, message, duration) {
+    // Remove existing toasts
+    document.querySelectorAll('.exchange-alert-toast').forEach(t => t.remove());
+
+    const icons = { error: 'fas fa-times-circle', warning: 'fas fa-exclamation-triangle', success: 'fas fa-check-circle', info: 'fas fa-info-circle' };
+    const toast = document.createElement('div');
+    toast.className = `exchange-alert-toast toast-${type}`;
+    toast.innerHTML = `
+        <i class="toast-icon ${icons[type] || icons.info}"></i>
+        <div class="toast-body">
+            <div class="toast-title">${title}</div>
+            <div class="toast-msg">${message}</div>
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.style.animation = 'exchangeToastOut 0.3s ease-in forwards';
+            setTimeout(() => toast.remove(), 300);
+        }
+    }, duration || 5000);
+}
+
+function handleExchangeClick(btn) {
+    const hasNcm = btn.dataset.hasNcm === 'true';
+    const isDelivered = btn.dataset.isDelivered === 'true';
+    const isRtv = btn.dataset.isRtv === 'true';
+    const exchangeStatus = btn.dataset.exchangeStatus;
+    const orderId = btn.dataset.orderId;
+    const orderNumber = btn.dataset.orderNumber;
+    const ncmStatus = btn.dataset.ncmStatus;
+    const orderStatus = btn.dataset.orderStatus;
+
+    // Client-side validations with descriptive messages
+    if (!hasNcm) {
+        showExchangeToast('warning', 'No NCM Order Linked',
+            'This order has not been sent to NCM yet. Create the NCM shipment first before making an exchange.');
+        return;
+    }
+    if (isRtv) {
+        showExchangeToast('error', 'Return to Vendor',
+            'This order has been returned to vendor. Exchange is not possible for RTV orders.');
+        return;
+    }
+    if (!isDelivered) {
+        const status = ncmStatus || orderStatus || 'Unknown';
+        showExchangeToast('warning', 'Order Not Delivered',
+            `Exchange is only available for delivered orders. Current status: <strong>${status}</strong>. Wait until delivery is confirmed.`);
+        return;
+    }
+    if (exchangeStatus === 'created') {
+        showExchangeToast('info', 'Already Exchanged',
+            'An exchange has already been created for this order.');
+        return;
+    }
+
+    // All validations passed — confirm and proceed
+    if (!confirm(`Create NCM Exchange Order for ${orderNumber}?\n\nThis will create exchange customer & vendor orders in NCM.`)) {
+        return;
+    }
+    createExchangeOrder(btn, orderId);
+}
+
+function createExchangeOrder(btn, orderId) {
+    const origHTML = btn.innerHTML;
+    btn.innerHTML = '<span class="exchange-spinner"></span> Processing...';
+    btn.classList.add('processing');
+    btn.disabled = true;
+
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    fetch(`/orders/${orderId}/exchange/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+        if (ok && data.success) {
+            btn.classList.remove('processing', 'btn-exchange-animate', 'btn-exchange-blocked');
+            btn.className = 'btn btn-exchange-done';
+            btn.innerHTML = `<i class="fas fa-check-circle"></i> Exchanged <span class="exchange-ids-badge">C:${data.cust_order} V:${data.ven_order}</span>`;
+            btn.disabled = true;
+            btn.onclick = null;
+            btn.style.animation = 'exchangePulseEntry 0.6s ease-out';
+            btn.dataset.exchangeStatus = 'created';
+
+            showExchangeToast('success', 'Exchange Created!',
+                `Customer Order: <strong>${data.cust_order}</strong> &nbsp;|&nbsp; Vendor Order: <strong>${data.ven_order}</strong>`, 8000);
+        } else {
+            btn.innerHTML = origHTML;
+            btn.classList.remove('processing');
+            btn.disabled = false;
+            btn.dataset.exchangeStatus = 'failed';
+            showExchangeToast('error', 'Exchange Failed', data.error || 'Failed to create exchange order. Please try again.');
+        }
+    })
+    .catch(error => {
+        btn.innerHTML = origHTML;
+        btn.classList.remove('processing');
+        btn.disabled = false;
+        showExchangeToast('error', 'Network Error', 'Could not reach the server. Check your connection and try again.');
+        console.error('Exchange order error:', error);
+    });
 }
 
 // Load NCM branches on page load
