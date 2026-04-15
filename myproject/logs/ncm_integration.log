@@ -1572,3 +1572,15 @@ Created system user for webhook operations
 [ERROR] 2026-04-12 17:12:13 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=12524060
 [ERROR] 2026-04-12 17:12:14 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order/status?id=12524060
 [ERROR] 2026-04-12 17:12:31 ncm_service._make_request:49 NCM API error: 400 Client Error: Bad Request for url: https://portal.nepalcanmove.com/api/v2/vendor/order/return
+[ERROR] 2026-04-15 14:09:59 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20447978
+[ERROR] 2026-04-15 14:10:04 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20525514
+[ERROR] 2026-04-15 14:54:54 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20343974
+[ERROR] 2026-04-15 14:54:54 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20343187
+[ERROR] 2026-04-15 14:54:55 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20446385
+[ERROR] 2026-04-15 14:54:56 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20343974
+[ERROR] 2026-04-15 14:56:30 ncm_service._make_request:49 NCM API error: 502 Server Error: Bad Gateway for url: https://portal.nepalcanmove.com/api/v2/vendor/orders?page=9&page_size=200
+[ERROR] 2026-04-15 14:57:03 ncm_service._make_request:49 NCM API error: 502 Server Error: Bad Gateway for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20398855
+[ERROR] 2026-04-15 14:57:03 ncm_service._make_request:49 NCM API error: 502 Server Error: Bad Gateway for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20343974
+[ERROR] 2026-04-15 16:15:39 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20525514
+[ERROR] 2026-04-15 16:15:40 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20447978
+[ERROR] 2026-04-15 16:15:41 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20398855

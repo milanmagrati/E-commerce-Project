@@ -16752,13 +16752,81 @@ def company_setup(request):
 
 @login_required
 @permission_required('can_view_orders')
+def add_rtv_followup(request, rtv_id):
+    """Add a follow-up note to an RTVOrder."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
+    from dashboard.models import RTVFollowUp, RTVOrder
+    import pytz
+    try:
+        rtv = RTVOrder.objects.get(pk=rtv_id)
+    except RTVOrder.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'RTV not found'}, status=404)
+
+    comment = request.POST.get('comment', '').strip()
+    followup_type = request.POST.get('followup_type', 'custom_note')
+
+    if not comment:
+        return JsonResponse({'success': False, 'error': 'Comment is required'})
+
+    fu = RTVFollowUp.objects.create(
+        rtv_order=rtv,
+        user=request.user,
+        followup_type=followup_type,
+        comment=comment,
+    )
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    return JsonResponse({
+        'success': True,
+        'followup': {
+            'id': fu.id,
+            'followup_type': fu.get_followup_type_display(),
+            'followup_type_key': fu.followup_type,
+            'comment': fu.comment,
+            'user': (fu.user.get_full_name() or fu.user.username) if fu.user else 'Unknown',
+            'created_at': fu.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+        }
+    })
+
+
+@login_required
+@permission_required('can_view_orders')
+def get_rtv_followups(request, rtv_id):
+    """Return all follow-up notes for an RTVOrder as JSON."""
+    from dashboard.models import RTVFollowUp
+    import pytz
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    followups = RTVFollowUp.objects.filter(rtv_order_id=rtv_id).select_related('user')
+    data = []
+    for fu in followups:
+        data.append({
+            'id': fu.id,
+            'followup_type': fu.get_followup_type_display(),
+            'followup_type_key': fu.followup_type,
+            'comment': fu.comment,
+            'user': (fu.user.get_full_name() or fu.user.username) if fu.user else 'Unknown',
+            'created_at': fu.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+        })
+    return JsonResponse({'success': True, 'followups': data})
+
+
+@login_required
+@permission_required('can_view_orders')
 def ncm_rtvs_list(request):
     """
-    GET  – list RTV records fetched from NCM API (vendor_return=True orders)
+    GET  – list RTV records fetched from local DB, filterable by api_config_id
     POST – submit a new RTV via NCM API, then save locally
     """
     from services.ncm_service import NCMService
-    from dashboard.models import RTVOrder
+    from dashboard.models import RTVOrder, LogisticsAPIConfig, RTVFollowUp
+    import pytz
+
+    # All NCM API configs (for the selector UI)
+    ncm_api_configs = list(
+        LogisticsAPIConfig.objects.filter(logistics_provider='ncm')
+        .values('id', 'api_name', 'is_active')
+        .order_by('api_name')
+    )
 
     # ---------- POST: create a new RTV ----------
     if request.method == 'POST':
@@ -16770,6 +16838,7 @@ def ncm_rtvs_list(request):
 
         order_id = body.get('order_id')
         comment = body.get('comment', '').strip()
+        post_api_config_id = body.get('api_config_id')
 
         if not order_id:
             return JsonResponse({'success': False, 'message': 'order_id is required'}, status=400)
@@ -16779,7 +16848,17 @@ def ncm_rtvs_list(request):
         except (ValueError, TypeError):
             return JsonResponse({'success': False, 'message': 'order_id must be an integer'}, status=400)
 
-        ncm_service = NCMService()
+        # Resolve optional api_config
+        chosen_config = None
+        if post_api_config_id:
+            try:
+                chosen_config = LogisticsAPIConfig.objects.get(
+                    id=int(post_api_config_id), logistics_provider='ncm', is_active=True
+                )
+            except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
+                pass
+
+        ncm_service = NCMService(api_config_id=chosen_config.id if chosen_config else None)
         result = ncm_service.return_order(order_id, comment=comment or None)
 
         if result['success']:
@@ -16789,6 +16868,7 @@ def ncm_rtvs_list(request):
                     'comment': comment,
                     'vendor_return': True,
                     'vendor': request.user,
+                    'api_config': chosen_config,
                 },
             )
             return JsonResponse({'success': True, 'message': 'RTV submitted successfully'})
@@ -16800,7 +16880,24 @@ def ncm_rtvs_list(request):
 
     # ---------- GET: serve from local DB (instant) ----------
     search = request.GET.get('search', '').strip()
-    qs = RTVOrder.objects.select_related('vendor').order_by('-created_at')
+    api_config_id = request.GET.get('api_config_id', '').strip()
+
+    # Resolve selected config object for display
+    selected_config = None
+    if api_config_id:
+        try:
+            selected_config = LogisticsAPIConfig.objects.get(
+                id=int(api_config_id), logistics_provider='ncm'
+            )
+        except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
+            api_config_id = ''
+
+    qs = RTVOrder.objects.select_related('vendor', 'api_config').order_by('-created_at')
+
+    if api_config_id:
+        qs = qs.filter(api_config_id=int(api_config_id))
+    # else: show all (no filter)
+
     if search:
         qs = qs.filter(
             Q(order_id__icontains=search) |
@@ -16820,13 +16917,40 @@ def ncm_rtvs_list(request):
     start = (page - 1) * page_size
     end = start + page_size
 
+    page_objs = list(qs[start:end])
+    rtv_ids_page = [rtv.id for rtv in page_objs]
+
+    # Build follow-up metadata directly from RTVFollowUp (no local Order needed)
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    followup_meta = {}
+    if rtv_ids_page:
+        latest_followups = RTVFollowUp.objects.filter(
+            rtv_order_id__in=rtv_ids_page
+        ).select_related('user').order_by('rtv_order_id', '-created_at')
+
+        seen = set()
+        for fu in latest_followups:
+            if fu.rtv_order_id not in seen:
+                seen.add(fu.rtv_order_id)
+                followup_meta[fu.rtv_order_id] = {
+                    'has_followups': True,
+                    'last_user': (fu.user.get_full_name() or fu.user.username) if fu.user else None,
+                    'last_date': fu.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if fu.created_at else None,
+                    'last_type': fu.get_followup_type_display(),
+                    'last_type_key': fu.followup_type,
+                    'last_comment': fu.comment,
+                }
+
     page_rtvs = []
-    for rtv in qs[start:end]:
+    for rtv in page_objs:
         page_rtvs.append({
+            'rtv_id': rtv.id,
             'order_id': rtv.order_id,
             'comment': rtv.comment or '—',
             'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p'),
             'status': '',
+            'api_config_name': rtv.api_config.api_name if rtv.api_config else None,
+            'followup': followup_meta.get(rtv.id),
         })
 
     context = {
@@ -16839,6 +16963,9 @@ def ncm_rtvs_list(request):
         'error_message': None,
         'page_range': range(1, total_pages + 1),
         'search': search,
+        'ncm_api_configs': ncm_api_configs,
+        'selected_api_config_id': api_config_id,
+        'selected_config': selected_config,
     }
     return render(request, 'ncm_rtvs.html', context)
 
@@ -16846,79 +16973,135 @@ def ncm_rtvs_list(request):
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtvs_sync(request):
-    """AJAX endpoint — sync RTVs from NCM API into local DB, return fresh data."""
+    """AJAX endpoint — sync RTVs from NCM API into local DB.
+
+    Supports two modes via ?mode= param:
+      - mode=orders (default): Fast — fetch order lists, create/tag records. No comment API calls.
+      - mode=comments: Slow — fetch missing comments from NCM for orders in DB.
+    """
     from services.ncm_service import NCMService
-    from dashboard.models import RTVOrder
+    from dashboard.models import RTVOrder, LogisticsAPIConfig
     from django.utils.dateparse import parse_datetime
+    import time
 
-    ncm_service = NCMService()
-    new_count = 0
-    try:
-        api_result = ncm_service.get_vendor_rtvs(max_pages=10, page_size=200)
-        if api_result['success']:
-            existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
-            for order in api_result['data']:
-                oid = order.get('orderid')
-                if oid and oid not in existing_ids:
-                    RTVOrder.objects.update_or_create(
-                        order_id=oid,
-                        defaults={'vendor_return': True, 'vendor': request.user},
-                    )
-                    new_count += 1
-                    # Set the real NCM creation date
-                    ncm_date = order.get('created_date', '')
-                    if ncm_date:
-                        try:
-                            dt = parse_datetime(ncm_date)
-                            if dt:
-                                RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
-                        except Exception:
-                            pass
+    api_config_id = request.GET.get('api_config_id', '').strip()
+    mode = request.GET.get('mode', 'orders').strip()
+    chosen_config = None
+    if api_config_id:
+        try:
+            chosen_config = LogisticsAPIConfig.objects.get(
+                id=int(api_config_id), logistics_provider='ncm', is_active=True
+            )
+        except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
+            return JsonResponse({'success': False, 'message': 'Invalid or inactive API config'}, status=400)
 
-        # Fetch comments from NCM for orders that have no comment yet (batch)
-        no_comment_ids = list(
-            RTVOrder.objects.filter(comment='')
-            .values_list('order_id', flat=True)[:15]
+    # ── MODE: COMMENTS ─────────────────────────────────────────
+    if mode == 'comments':
+        configs = [chosen_config] if chosen_config else list(
+            LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
         )
-        for oid in no_comment_ids:
+        comments_updated = 0
+        for cfg in configs:
             try:
-                cresult = ncm_service.get_order_comments(oid)
-                if cresult['success'] and cresult['data']:
-                    # Find the "RTV marked" comment (return reason)
-                    rtv_comment = ''
-                    for c in cresult['data']:
-                        text = c.get('comment', '')
-                        if text.startswith('RTV marked'):
-                            rtv_comment = text.replace('RTV marked - ', '').strip()
-                            break
-                    if not rtv_comment:
-                        # Fallback: use the first NCM Staff comment
-                        for c in cresult['data']:
-                            if c.get('added_by', '') == 'NCM Staff':
-                                rtv_comment = c.get('comment', '')
-                                break
-                    if rtv_comment:
-                        RTVOrder.objects.filter(order_id=oid).update(comment=rtv_comment)
+                ncm_service = NCMService(api_config_id=cfg.id)
+                no_comment_ids = list(
+                    RTVOrder.objects.filter(comment='', api_config=cfg)
+                    .values_list('order_id', flat=True)[:10]
+                )
+                for i, oid in enumerate(no_comment_ids):
+                    if i > 0:
+                        time.sleep(0.6)  # Rate-limit to avoid 429
+                    try:
+                        cresult = ncm_service.get_order_comments(oid)
+                        if cresult['success'] and cresult['data']:
+                            rtv_comment = ''
+                            for c in cresult['data']:
+                                text = c.get('comment', '')
+                                if text.startswith('RTV marked'):
+                                    rtv_comment = text.replace('RTV marked - ', '').strip()
+                                    break
+                            if not rtv_comment:
+                                for c in cresult['data']:
+                                    if c.get('added_by', '') == 'NCM Staff':
+                                        rtv_comment = c.get('comment', '')
+                                        break
+                            if rtv_comment:
+                                RTVOrder.objects.filter(order_id=oid).update(comment=rtv_comment)
+                                comments_updated += 1
+                    except Exception:
+                        pass
             except Exception:
-                pass
+                continue
+
+        return JsonResponse({
+            'success': True,
+            'comments_updated': comments_updated,
+        })
+
+    # ── MODE: ORDERS (default, fast) ───────────────────────────
+    configs_to_sync = [chosen_config] if chosen_config else list(
+        LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
+    )
+    new_count = 0
+    tagged_count = 0
+    existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
+
+    try:
+        for cfg in configs_to_sync:
+            try:
+                ncm_service = NCMService(api_config_id=cfg.id)
+                api_result = ncm_service.get_vendor_rtvs(max_pages=5, page_size=200)
+                if not api_result['success']:
+                    continue
+
+                found_oids = []
+                for order in api_result['data']:
+                    oid = order.get('orderid')
+                    if not oid:
+                        continue
+                    found_oids.append(oid)
+                    if oid not in existing_ids:
+                        RTVOrder.objects.update_or_create(
+                            order_id=oid,
+                            defaults={
+                                'vendor_return': True,
+                                'vendor': request.user,
+                                'api_config': cfg,
+                            },
+                        )
+                        new_count += 1
+                        existing_ids.add(oid)
+                        ncm_date = order.get('created_date', '')
+                        if ncm_date:
+                            try:
+                                dt = parse_datetime(ncm_date)
+                                if dt:
+                                    RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
+                            except Exception:
+                                pass
+
+                if found_oids:
+                    tagged_count += RTVOrder.objects.filter(
+                        order_id__in=found_oids,
+                        api_config__isnull=True,
+                    ).update(api_config=cfg)
+
+            except Exception:
+                continue
 
     except Exception:
         return JsonResponse({'success': False, 'message': 'NCM sync failed'}, status=500)
 
-    # Return fresh list from local DB
-    rtvs = []
-    for rtv in RTVOrder.objects.select_related('vendor').order_by('-created_at'):
-        rtvs.append({
-            'order_id': rtv.order_id,
-            'comment': rtv.comment or '—',
-            'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p'),
-        })
+    qs = RTVOrder.objects.all()
+    if chosen_config:
+        qs = qs.filter(api_config=chosen_config)
+    total = qs.count()
 
     return JsonResponse({
         'success': True,
         'new_count': new_count,
-        'total_count': len(rtvs),
-        'rtvs': rtvs,
+        'tagged_count': tagged_count,
+        'total_count': total,
     })
 
 

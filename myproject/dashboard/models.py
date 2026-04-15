@@ -1496,6 +1496,13 @@ class RTVOrder(models.Model):
         on_delete=models.CASCADE,
         related_name='rtv_orders',
     )
+    api_config = models.ForeignKey(
+        'LogisticsAPIConfig',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rtv_orders',
+        help_text="Which API config (portal) this RTV belongs to",
+    )
 
     class Meta:
         ordering = ['-created_at']
@@ -1504,3 +1511,41 @@ class RTVOrder(models.Model):
 
     def __str__(self):
         return f"RTV #{self.order_id} by {self.vendor}"
+
+
+class RTVFollowUp(models.Model):
+    """Follow-up / note system for RTV (Return to Vendor) orders"""
+    FOLLOWUP_TYPE_CHOICES = [
+        ('called_no_answer', 'Called - No Answer'),
+        ('called_answered', 'Called - Answered'),
+        ('whatsapp_sent', 'WhatsApp Sent'),
+        ('email_sent', 'Email Sent'),
+        ('custom_note', 'Custom Note'),
+    ]
+
+    rtv_order = models.ForeignKey(
+        RTVOrder,
+        on_delete=models.CASCADE,
+        related_name='followups',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='rtv_followups',
+    )
+    followup_type = models.CharField(
+        max_length=30,
+        choices=FOLLOWUP_TYPE_CHOICES,
+        default='custom_note',
+    )
+    comment = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'RTV Follow-Up'
+        verbose_name_plural = 'RTV Follow-Ups'
+
+    def __str__(self):
+        return f"RTV Follow-up on #{self.rtv_order.order_id} by {self.user}"

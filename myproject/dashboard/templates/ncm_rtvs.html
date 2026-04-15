@@ -367,6 +367,8 @@
     transition: all 0.18s;
     font-size: 0.82rem;
     flex-shrink: 0;
+    text-decoration: none;
+    line-height: 1;
 }
 .rtv-action-btn.comment-btn { background: #eff6ff; color: #3b82f6; }
 .rtv-action-btn.comment-btn:hover {
@@ -379,6 +381,82 @@
     background: #16a34a; color: #fff;
     box-shadow: 0 3px 10px rgba(22,163,74,0.28);
     transform: translateY(-2px);
+}
+.rtv-action-btn.detail-btn { background: #fff7ed; color: #ea580c; }
+.rtv-action-btn.detail-btn:hover {
+    background: #ea580c; color: #fff;
+    box-shadow: 0 3px 10px rgba(234,88,12,0.28);
+    transform: translateY(-2px);
+}
+
+/* --- API selector ------------------------------------------------ */
+.rtv-api-selector {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.65rem 1.5rem;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    flex-wrap: wrap;
+}
+.rtv-api-selector .api-sel-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #94a3b8;
+    white-space: nowrap;
+    margin-right: 0.15rem;
+}
+.api-sel-btn {
+    height: 34px;
+    padding: 0 0.9rem;
+    border-radius: 9px;
+    border: 2px solid #e2e8f0;
+    background: #fff;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    outline: none;
+    transition: all 0.18s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.api-sel-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+    background: #f5f3ff;
+}
+.api-sel-btn.active {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 3px 10px rgba(102,126,234,0.28);
+}
+.api-sel-btn .api-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+.api-config-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.18rem 0.55rem;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: #ede9fe;
+    color: #5b21b6;
+    white-space: nowrap;
 }
 
 /* --- Empty state ------------------------------------------------ */
@@ -712,6 +790,95 @@
     to   { opacity: 1; transform: translateY(0); }
 }
 
+/* --- Follow-Up System ------------------------------------------- */
+.followup-panel { background: #fefce8; border-top: 2px solid #fbbf24; border-bottom: 2px solid #fbbf24; }
+.followup-panel-header {
+    padding: 0.75rem 1.4rem;
+    background: #fef3c7;
+    border-bottom: 1px solid #fde68a;
+}
+.followup-panel-body { padding: 1rem 1.4rem; }
+.followup-form {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+}
+.followup-history {
+    max-height: 320px;
+    overflow-y: auto;
+}
+.followup-entry {
+    padding: 0.65rem 0.85rem;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid #f1f5f9;
+    margin-bottom: 0.5rem;
+    transition: background 0.15s;
+}
+.followup-entry:hover { background: #f8fafc; }
+.followup-entry .followup-meta {
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+.followup-entry .followup-type-badge {
+    font-size: 0.72rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+}
+.followup-type-called_no_answer { background: #fee2e2; color: #dc2626; }
+.followup-type-called_answered { background: #d1fae5; color: #059669; }
+.followup-type-whatsapp_sent { background: #dcfce7; color: #16a34a; }
+.followup-type-email_sent { background: #dbeafe; color: #2563eb; }
+.followup-type-custom_note { background: #f3f4f6; color: #4b5563; }
+.followup-entry .followup-comment {
+    margin-top: 0.3rem;
+    font-size: 0.85rem;
+    color: #334155;
+}
+.followup-last-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    padding: 0.3rem 0.55rem;
+    border-radius: 7px;
+    max-width: 180px;
+}
+.followup-toggle-btn {
+    position: relative;
+    cursor: pointer;
+}
+.followup-red-dot {
+    position: absolute;
+    top: -3px; right: -3px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: #ef4444;
+    border: 2px solid #fff;
+    pointer-events: none;
+}
+.followup-empty {
+    text-align: center;
+    padding: 1.5rem;
+    color: #94a3b8;
+    font-size: 0.85rem;
+}
+.followup-new-highlight { animation: followupHighlight 1.5s ease; }
+@keyframes followupHighlight { from { background: #fef9c3; } to { background: #fff; } }
+.followup-panel-row td { padding: 0 !important; background: #fefce8; }
+.followup-last-comment {
+    font-size: 0.75rem;
+    color: #374151;
+    margin-top: 0.25rem;
+    max-width: 180px;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.35;
+}
+.rtv-action-btn.followup-btn { background: #fefce8; color: #ca8a04; }
+.rtv-action-btn.followup-btn:hover { background: #ca8a04; color: #fff; box-shadow: 0 3px 10px rgba(202,138,4,0.3); transform: translateY(-2px); }
+
 /* --- Responsive ------------------------------------------------- */
 @media (max-width: 768px) {
     .rtv-header { padding: 1.5rem 1.25rem; }
@@ -800,11 +967,37 @@
 </div>
 {% endif %}
 
+<!-- ===================== API SELECTOR ===================== -->
+{% if ncm_api_configs %}
+<div class="rtv-api-selector">
+    <span class="api-sel-label"><i class="fas fa-plug me-1"></i>API Portal:</span>
+    <button onclick="selectApiPortal(null)"
+       class="api-sel-btn {% if not selected_api_config_id %}active{% endif %}">
+        <span class="api-dot"></span> All Portals
+    </button>
+    {% for cfg in ncm_api_configs %}
+    <button onclick="selectApiPortal('{{ cfg.id }}')"
+       class="api-sel-btn {% if selected_api_config_id == cfg.id|stringformat:'s' %}active{% endif %}"
+       data-config-id="{{ cfg.id }}">
+        <span class="api-dot"></span>
+        {{ cfg.api_name }}
+        {% if not cfg.is_active %}<span style="opacity:0.55;">(Inactive)</span>{% endif %}
+    </button>
+    {% endfor %}
+    {% if selected_config %}
+    <span style="margin-left:auto; font-size:0.78rem; color:#94a3b8;">
+        Showing RTVs from <strong style="color:#667eea;">{{ selected_config.api_name }}</strong>
+    </span>
+    {% endif %}
+</div>
+{% endif %}
+
 <!-- ===================== TOOLBAR ===================== -->
 <div class="rtv-toolbar">
     <div class="rtv-search-box">
         <i class="fas fa-search search-icon"></i>
-        <input type="text" id="rtvSearch" placeholder="Search order ID or comment..." autocomplete="off">
+        <input type="text" id="rtvSearch" placeholder="Search order ID or comment..." autocomplete="off"
+               value="{{ search }}">
         <button class="clear-search" id="clearSearch" tabindex="-1"><i class="fas fa-times"></i></button>
     </div>
 
@@ -845,6 +1038,8 @@
                     <th>S/N</th>
                     <th>Order ID</th>
                     <th>Comment</th>
+                    {% if not selected_api_config_id %}<th>API Portal</th>{% endif %}
+                    <th>Last Follow-Up</th>
                     <th>Added Time</th>
                     <th>Actions</th>
                 </tr>
@@ -885,6 +1080,35 @@
                             {% endif %}
                         {% endwith %}
                     </td>
+                    {% if not selected_api_config_id %}
+                    <td>
+                        {% if rtv.api_config_name %}
+                        <span class="api-config-tag">
+                            <i class="fas fa-plug" style="font-size:0.65rem;"></i>
+                            {{ rtv.api_config_name }}
+                        </span>
+                        {% else %}
+                        <span style="color:#cbd5e1; font-size:0.8rem;">—</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    <td>
+                        {% if rtv.followup %}
+                        <div class="followup-badge-cell">
+                            <span class="badge bg-light text-dark border followup-last-badge" title="{{ rtv.followup.last_comment|default:'' }}">
+                                <i class="fas fa-comment-dots text-primary"></i>
+                                {{ rtv.followup.last_type }}<br>
+                                <small class="text-muted">{{ rtv.followup.last_date }}</small><br>
+                                <small class="text-muted">by {{ rtv.followup.last_user }}</small>
+                            </span>
+                            {% if rtv.followup.last_comment %}
+                            <div class="followup-last-comment">{{ rtv.followup.last_comment|truncatewords:8 }}</div>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <span class="text-muted small">No follow-ups</span>
+                        {% endif %}
+                    </td>
                     <td>
                         {% if rtv.created_at and rtv.created_at != "—" %}
                         <div class="rtv-time">
@@ -896,16 +1120,68 @@
                     </td>
                     <td>
                         <div class="rtv-actions">
+                            <button class="rtv-action-btn followup-btn position-relative"
+                                    title="Follow-Up Notes"
+                                    onclick="toggleFollowUp({{ rtv.rtv_id }})"
+                                    id="followupBtn-{{ rtv.rtv_id }}">
+                                <i class="fas fa-sticky-note"></i>
+                                {% if rtv.followup %}
+                                <span class="followup-red-dot" id="redDot-{{ rtv.rtv_id }}"></span>
+                                {% endif %}
+                            </button>
                             <button class="rtv-action-btn comment-btn"
                                     title="View / Add Comments"
                                     onclick="openCommentModal('{{ rtv.order_id|escapejs }}')">
                                 <i class="fas fa-comments"></i>
                             </button>
                             <button class="rtv-action-btn view-btn"
-                                    title="View Order Details"
+                                    title="View NCM Order Details"
                                     onclick="viewOrderDetails('{{ rtv.order_id|escapejs }}')">
                                 <i class="fas fa-external-link-alt"></i>
                             </button>
+                        </div>
+                    </td>
+                </tr>
+                <!-- Follow-Up Expandable Panel Row -->
+                <tr class="followup-panel-row" id="followupPanel-{{ rtv.rtv_id }}" style="display: none;">
+                    <td colspan="20" class="p-0">
+                        <div class="followup-panel">
+                            <div class="followup-panel-header">
+                                <h6 class="mb-0" style="font-size:0.85rem;"><i class="fas fa-comments text-warning"></i> Follow-Up Notes — #{{ rtv.order_id }}</h6>
+                            </div>
+                            <div class="followup-panel-body">
+                                <div class="followup-form mb-3">
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-md-3">
+                                            <label class="form-label small fw-bold">Type</label>
+                                            <select class="form-select form-select-sm" id="followupType-{{ rtv.rtv_id }}">
+                                                <option value="called_no_answer">📞 Called - No Answer</option>
+                                                <option value="called_answered">📞 Called - Answered</option>
+                                                <option value="whatsapp_sent">💬 WhatsApp Sent</option>
+                                                <option value="email_sent">📧 Email Sent</option>
+                                                <option value="custom_note" selected>📝 Custom Note</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-7">
+                                            <label class="form-label small fw-bold">Comment</label>
+                                            <input type="text" class="form-control form-control-sm"
+                                                   id="followupComment-{{ rtv.rtv_id }}"
+                                                   placeholder="Add a follow-up note...">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <button type="button" class="btn btn-sm btn-primary w-100"
+                                                    onclick="submitFollowUp({{ rtv.rtv_id }})">
+                                                <i class="fas fa-plus"></i> Add
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="followup-history" id="followupHistory-{{ rtv.rtv_id }}">
+                                    <div class="text-center text-muted py-3" id="followupLoading-{{ rtv.rtv_id }}">
+                                        <i class="fas fa-spinner fa-spin"></i> Loading follow-ups...
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </td>
                 </tr>
@@ -922,7 +1198,7 @@
         </span>
         <div class="rtv-pagination">
             {% if has_prev %}
-            <a href="?page={{ current_page|add:'-1' }}{% if search %}&search={{ search|urlencode }}{% endif %}" class="page-btn" title="Previous">
+            <a href="?page={{ current_page|add:'-1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}" class="page-btn" title="Previous">
                 <i class="fas fa-chevron-left"></i>
             </a>
             {% endif %}
@@ -930,13 +1206,13 @@
                 {% if p == current_page %}
                     <span class="page-btn active">{{ p }}</span>
                 {% elif p == 1 or p == total_pages or p >= current_page|add:'-2' and p <= current_page|add:'2' %}
-                    <a href="?page={{ p }}{% if search %}&search={{ search|urlencode }}{% endif %}" class="page-btn">{{ p }}</a>
+                    <a href="?page={{ p }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}" class="page-btn">{{ p }}</a>
                 {% elif p == current_page|add:'-3' or p == current_page|add:'3' %}
                     <span class="page-btn dots">…</span>
                 {% endif %}
             {% endfor %}
             {% if has_next %}
-            <a href="?page={{ current_page|add:'1' }}{% if search %}&search={{ search|urlencode }}{% endif %}" class="page-btn" title="Next">
+            <a href="?page={{ current_page|add:'1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}" class="page-btn" title="Next">
                 <i class="fas fa-chevron-right"></i>
             </a>
             {% endif %}
@@ -1016,6 +1292,23 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                {% if ncm_api_configs %}
+                <div class="mb-3">
+                    <label class="form-label fw-bold mb-1" style="font-size:0.85rem;">
+                        <i class="fas fa-plug" style="color:#667eea;"></i> API Portal <span class="text-danger">*</span>
+                    </label>
+                    <select class="rtv-form-input" id="createRtvApiConfig">
+                        {% for cfg in ncm_api_configs %}
+                        <option value="{{ cfg.id }}"
+                            {% if selected_api_config_id == cfg.id|stringformat:'s' %}selected{% endif %}
+                            {% if not cfg.is_active %}disabled{% endif %}>
+                            {{ cfg.api_name }}{% if not cfg.is_active %} (Inactive){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <small style="color:#94a3b8; font-size:0.75rem;">Choose which NCM portal to submit this RTV through</small>
+                </div>
+                {% endif %}
                 <div class="mb-3">
                     <label class="form-label fw-bold mb-1" style="font-size:0.85rem;">
                         NCM Order ID <span class="text-danger">*</span>
@@ -1063,11 +1356,189 @@
         </div>
     </div>
 </div>
+
 {% endblock %}
 {% block extra_js %}
 <script>
 (function() {
     'use strict';
+
+    // ==================== FOLLOW-UP SYSTEM ====================
+    const followUpLoadedOrders = {};
+
+    function getCSRFToken() {
+        const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+        if (cookie) return cookie.split('=')[1];
+        const el = document.querySelector('[name=csrfmiddlewaretoken]');
+        return el ? el.value : '';
+    }
+
+    window.toggleFollowUp = function(orderId) {
+        const panel = document.getElementById('followupPanel-' + orderId);
+        if (!panel) return;
+        const isVisible = panel.style.display !== 'none';
+        document.querySelectorAll('.followup-panel-row').forEach(row => {
+            row.style.display = 'none';
+        });
+        if (isVisible) {
+            panel.style.display = 'none';
+        } else {
+            panel.style.display = 'table-row';
+            if (!followUpLoadedOrders[orderId]) {
+                loadFollowUps(orderId);
+            }
+        }
+    };
+
+    function loadFollowUps(orderId) {
+        const historyDiv = document.getElementById('followupHistory-' + orderId);
+        const loadingDiv = document.getElementById('followupLoading-' + orderId);
+        if (loadingDiv) loadingDiv.style.display = 'block';
+
+        fetch(`/api/rtv/${orderId}/followups/`)
+            .then(resp => resp.json())
+            .then(data => {
+                if (loadingDiv) loadingDiv.style.display = 'none';
+                if (data.success) {
+                    followUpLoadedOrders[orderId] = true;
+                    renderFollowUps(orderId, data.followups);
+                } else {
+                    historyDiv.innerHTML = '<div class="text-danger small">Failed to load follow-ups.</div>';
+                }
+            })
+            .catch(() => {
+                if (loadingDiv) loadingDiv.style.display = 'none';
+                historyDiv.innerHTML = '<div class="text-danger small">Error loading follow-ups.</div>';
+            });
+    }
+
+    function renderFollowUps(orderId, followups) {
+        const historyDiv = document.getElementById('followupHistory-' + orderId);
+        if (!followups.length) {
+            historyDiv.innerHTML = '<div class="followup-empty"><i class="fas fa-comment-slash"></i> No follow-ups yet. Add one above.</div>';
+            return;
+        }
+        let html = '';
+        followups.forEach(f => {
+            html += `
+            <div class="followup-entry">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="followup-type-badge followup-type-${f.followup_type_key}">${f.followup_type}</span>
+                        <span class="followup-meta ms-2"><i class="fas fa-user-circle"></i> ${f.user}</span>
+                    </div>
+                    <span class="followup-meta"><i class="fas fa-clock"></i> ${f.created_at}</span>
+                </div>
+                <div class="followup-comment">${escapeHtml(f.comment)}</div>
+            </div>`;
+        });
+        historyDiv.innerHTML = html;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    window.submitFollowUp = function(orderId) {
+        const typeEl = document.getElementById('followupType-' + orderId);
+        const commentEl = document.getElementById('followupComment-' + orderId);
+        const comment = commentEl.value.trim();
+        const followupType = typeEl.value;
+
+        if (!comment) {
+            commentEl.classList.add('is-invalid');
+            setTimeout(() => commentEl.classList.remove('is-invalid'), 2000);
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('comment', comment);
+        formData.append('followup_type', followupType);
+
+        fetch(`/api/rtv/${orderId}/followup/add/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCSRFToken() },
+            body: formData
+        })
+        .then(resp => resp.json())
+        .then(data => {
+            if (data.success) {
+                commentEl.value = '';
+                const historyDiv = document.getElementById('followupHistory-' + orderId);
+                const emptyMsg = historyDiv.querySelector('.followup-empty');
+                if (emptyMsg) emptyMsg.remove();
+
+                const f = data.followup;
+                const newEntry = document.createElement('div');
+                newEntry.className = 'followup-entry followup-new-highlight';
+                newEntry.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="followup-type-badge followup-type-${f.followup_type_key}">${f.followup_type}</span>
+                            <span class="followup-meta ms-2"><i class="fas fa-user-circle"></i> ${f.user}</span>
+                        </div>
+                        <span class="followup-meta"><i class="fas fa-clock"></i> ${f.created_at}</span>
+                    </div>
+                    <div class="followup-comment">${escapeHtml(f.comment)}</div>`;
+
+                const loadingDiv = document.getElementById('followupLoading-' + orderId);
+                if (loadingDiv) loadingDiv.style.display = 'none';
+                historyDiv.insertBefore(newEntry, historyDiv.firstChild);
+
+                // Show red dot
+                let dot = document.getElementById('redDot-' + orderId);
+                if (!dot) {
+                    const btn = document.getElementById('followupBtn-' + orderId);
+                    if (btn) {
+                        dot = document.createElement('span');
+                        dot.className = 'followup-red-dot';
+                        dot.id = 'redDot-' + orderId;
+                        btn.appendChild(dot);
+                    }
+                }
+
+                // Update the Last Follow-Up badge in the table row
+                updateLastFollowUpBadge(orderId, f);
+
+                followUpLoadedOrders[orderId] = true;
+                showToast('Follow-up added!', 'success');
+            } else {
+                showToast(data.error || 'Failed to add follow-up.', 'error');
+            }
+        })
+        .catch(() => {
+            showToast('Network error. Please try again.', 'error');
+        });
+    };
+
+    function updateLastFollowUpBadge(orderId, f) {
+        const btn = document.getElementById('followupBtn-' + orderId);
+        if (!btn) return;
+        const row = btn.closest('tr');
+        if (!row) return;
+        const cells = row.querySelectorAll('td');
+        for (let i = 0; i < cells.length; i++) {
+            const cell = cells[i];
+            if (cell.querySelector('.followup-badge-cell') || cell.textContent.trim() === 'No follow-ups') {
+                const comment = f.comment || '';
+                const words = comment.split(/\s+/);
+                const truncated = words.slice(0, 8).join(' ') + (words.length > 8 ? ' …' : '');
+                cell.innerHTML = `
+                    <div class="followup-badge-cell">
+                        <span class="badge bg-light text-dark border followup-last-badge" title="${escapeHtml(comment)}">
+                            <i class="fas fa-comment-dots text-primary"></i>
+                            ${escapeHtml(f.followup_type)}<br>
+                            <small class="text-muted">${escapeHtml(f.created_at)}</small><br>
+                            <small class="text-muted">by ${escapeHtml(f.user)}</small>
+                        </span>
+                        ${comment ? `<div class="followup-last-comment">${escapeHtml(truncated)}</div>` : ''}
+                    </div>`;
+                break;
+            }
+        }
+    }
 
     let currentOrderId = null;
 
@@ -1116,14 +1587,38 @@
 
     if (searchInput) {
         searchInput.addEventListener('input', applyFilters);
+        // Enter key triggers server-side search so results span all pages
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var q = searchInput.value.trim();
+                var url = new URL(window.location.href);
+                if (q) {
+                    url.searchParams.set('search', q);
+                } else {
+                    url.searchParams.delete('search');
+                }
+                url.searchParams.delete('page');
+                window.location.href = url.toString();
+            }
+        });
     }
 
     var clearBtn = document.getElementById('clearSearch');
     if (clearBtn) {
         clearBtn.addEventListener('click', function() {
-            if (searchInput) { searchInput.value = ''; }
-            applyFilters();
-            if (searchInput) searchInput.focus();
+            // If a server-side search is active, navigate to remove it;
+            // otherwise just clear client-side
+            var url = new URL(window.location.href);
+            if (url.searchParams.get('search')) {
+                url.searchParams.delete('search');
+                url.searchParams.delete('page');
+                window.location.href = url.toString();
+            } else {
+                if (searchInput) { searchInput.value = ''; }
+                applyFilters();
+                if (searchInput) searchInput.focus();
+            }
         });
     }
 
@@ -1135,6 +1630,10 @@
             applyFilters();
         });
     });
+
+    // Run on page load so S/N numbers and count are always correct
+    applyFilters();
+
 
     // ==================== COMMENT MODAL ====================
     window.openCommentModal = function(orderId) {
@@ -1614,6 +2113,8 @@
     window.submitNewRtv = function() {
         var orderId = document.getElementById('createRtvOrderId').value.trim();
         var comment = document.getElementById('createRtvComment').value.trim();
+        var apiConfigEl = document.getElementById('createRtvApiConfig');
+        var apiConfigId = apiConfigEl ? apiConfigEl.value : '';
         if (!orderId) {
             showToast('Order ID is required', 'error');
             return;
@@ -1629,7 +2130,7 @@
                 'X-CSRFToken': getCsrfToken(),
                 'X-Requested-With': 'XMLHttpRequest'
             },
-            body: JSON.stringify({ order_id: orderId, comment: comment })
+            body: JSON.stringify({ order_id: orderId, comment: comment, api_config_id: apiConfigId || null })
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
@@ -1680,21 +2181,76 @@
         }, 3000);
     }
 
+    // ==================== API PORTAL SELECTOR ====================
+    window.selectApiPortal = function(configId) {
+        // Navigate instantly — background sync handles tagging after page loads
+        var url = new URL(window.location.href);
+        url.searchParams.delete('page');
+        if (configId) {
+            url.searchParams.set('api_config_id', configId);
+        } else {
+            url.searchParams.delete('api_config_id');
+        }
+        window.location.href = url.toString();
+    };
+
     // ==================== BACKGROUND NCM SYNC ====================
     (function bgSync() {
-        fetch('{% url "ncm_rtvs_sync" %}', {
+        // Cooldown: skip if synced within the last 90 seconds
+        var lastSync = parseInt(sessionStorage.getItem('rtv_last_sync') || '0', 10);
+        if (Date.now() - lastSync < 90000) {
+            // Even if order sync is skipped, still run comment sync (separate cooldown)
+            commentSync();
+            return;
+        }
+        var syncUrl = '{% url "ncm_rtvs_sync" %}';
+        var currentApiId = '{{ selected_api_config_id|escapejs }}';
+        if (currentApiId) syncUrl += '?api_config_id=' + encodeURIComponent(currentApiId);
+        // Phase 1: Fast order sync (mode=orders is default)
+        fetch(syncUrl, {
             method: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (data.success && data.new_count > 0) {
-                showToast(data.new_count + ' new RTV(s) synced from NCM', 'success');
+            sessionStorage.setItem('rtv_last_sync', String(Date.now()));
+            if (data.success && (data.new_count > 0 || data.tagged_count > 0)) {
+                var msg = '';
+                if (data.new_count > 0) msg += data.new_count + ' new RTV(s) synced';
+                if (data.tagged_count > 0) msg += (msg ? ', ' : '') + data.tagged_count + ' RTV(s) tagged to portal';
+                showToast(msg, 'success');
                 setTimeout(function() { location.reload(); }, 1200);
+            } else {
+                // No new orders — proceed to comment sync in background
+                commentSync();
             }
         })
-        .catch(function() { /* silent fail — page already has cached data */ });
+        .catch(function() { /* silent fail */ });
     })();
+
+    // Phase 2: Lazy comment sync — runs after order sync, separate cooldown
+    function commentSync() {
+        var lastCommentSync = parseInt(sessionStorage.getItem('rtv_last_comment_sync') || '0', 10);
+        if (Date.now() - lastCommentSync < 180000) { // 3-minute cooldown for comments
+            return;
+        }
+        var syncUrl = '{% url "ncm_rtvs_sync" %}?mode=comments';
+        var currentApiId = '{{ selected_api_config_id|escapejs }}';
+        if (currentApiId) syncUrl += '&api_config_id=' + encodeURIComponent(currentApiId);
+        fetch(syncUrl, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            sessionStorage.setItem('rtv_last_comment_sync', String(Date.now()));
+            if (data.success && data.comments_updated > 0) {
+                showToast(data.comments_updated + ' comment(s) updated', 'success');
+                setTimeout(function() { location.reload(); }, 1500);
+            }
+        })
+        .catch(function() { /* silent fail */ });
+    }
 
 })();
 </script>
