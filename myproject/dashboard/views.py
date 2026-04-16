@@ -6532,11 +6532,13 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         
         vendor_ref_id = vendor_ref_id.strip()
         
+        # For partial payments, send remaining amount as COD (not full total)
+        cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
         payload = {
             "name": str(order.customer_name or "").strip(),
             "phone": phone,
             "phone2": "", # Optional
-            "cod_charge": float(order.total_amount or 0),
+            "cod_charge": float(cod_amount or 0),
             "address": str(order.shipping_address or "").strip(),
             "fbranch": from_branch,
             "branch": str(order.branch_city or "KATHMANDU").upper(),
@@ -11184,12 +11186,13 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         base_url = base_url.rstrip('/')
         api_url = f"{base_url}/order/create"
         
-        # Build payload
+        # Build payload - for partial payments, send remaining amount as COD
+        cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
         payload = {
             "name": str(order.customer_name)[:50],
             "phone": str(order.customer_phone),
             "phone2": "",
-            "cod_charge": float(order.total_amount or 0),
+            "cod_charge": float(cod_amount or 0),
             "address": str(order.shipping_address)[:200],
             "fbranch": from_branch,
             "branch": destination_branch,
