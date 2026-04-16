@@ -2748,10 +2748,22 @@
                                 <span>Tax (<span id="taxPercentDisplay">0</span>%):</span>
                                 <strong id="taxAmount">+ रू 0.00</strong>
                             </div>
+                            <div class="total-row partial-payment-row" id="paidRow" style="display: none; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 4px; margin-top: 4px;">
+                                <span><i class="fas fa-check-circle"></i> Paid:</span>
+                                <strong id="paidAmountDisplay" style="color: #a7f3d0;">रू 0.00</strong>
+                            </div>
+                            <div class="total-row partial-payment-row" id="remainingRow" style="display: none;">
+                                <span><i class="fas fa-exclamation-circle"></i> Remaining:</span>
+                                <strong id="remainingAmountDisplay" style="color: #fcd34d;">रू 0.00</strong>
+                            </div>
                         </div>
                         <div class="col-md-6 text-end">
-                            <small class="d-block mb-2">TOTAL AMOUNT</small>
+                            <small class="d-block mb-2" id="totalLabel">TOTAL AMOUNT</small>
                             <div class="total-amount" id="totalAmount">रू 0.00</div>
+                            <div id="balanceDueSection" style="display: none; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 6px;">
+                                <small class="d-block" style="font-size: 0.7rem; opacity: 0.8;">BALANCE DUE</small>
+                                <div id="balanceDueAmount" style="font-size: 1.75rem; font-weight: 800; color: #fcd34d;">रू 0.00</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -4962,6 +4974,10 @@
                         `;
                     }
                 }
+
+                // Update total-box partial payment rows
+                const currentTotal = parseFloat(document.getElementById('totalInput').value) || 0;
+                updatePartialPaymentDisplay(currentTotal);
             }
 
             if (formData.branchCity) {
@@ -5023,6 +5039,12 @@
         setValueSafe('taxPercent', '0');
         setValueSafe('inOutSelect', 'in');
         
+        // Clear partial payment state BEFORE restoring defaults
+        isPartialPaymentSelected = false;
+        document.getElementById('isPartialPayment').value = 'false';
+        document.getElementById('partialAmountPaidHidden').value = '0';
+        document.getElementById('remainingAmountHidden').value = '0';
+        
         // Restore default selections from Setup model
         userChangedSetups = { paymentSetup: false, statusSetup: false, paymentStatusSetup: false };
         initializeDefaultValues();
@@ -5035,11 +5057,6 @@
         updateCart();
         
         clearValleyStatusInfo();
-        
-        isPartialPaymentSelected = false;
-        document.getElementById('isPartialPayment').value = 'false';
-        document.getElementById('partialAmountPaidHidden').value = '0';
-        document.getElementById('remainingAmountHidden').value = '0';
         
         const paymentLabel = document.querySelector('select[name="payment_setup"]').closest('.col-md-2');
         const infoBox = paymentLabel.querySelector('.payment-info-box');
@@ -6123,10 +6140,12 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
             document.getElementById('subtotal').textContent = 'रू 0.00';
             document.getElementById('discountAmount').textContent = '- रू 0.00';
             document.getElementById('shippingAmount').textContent = '+ रू 0.00';
+            document.getElementById('taxPercentDisplay').textContent = '0';
             document.getElementById('taxAmount').textContent = '+ रू 0.00';
             document.getElementById('totalAmount').textContent = 'रू 0.00';
             document.getElementById('orderItems').value = '[]';
             document.getElementById('totalInput').value = '0.00';
+            updatePartialPaymentDisplay(0);
             return;
         }
 
@@ -6142,11 +6161,68 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
         document.getElementById('subtotal').textContent = `रू ${subtotal.toFixed(2)}`;
         document.getElementById('discountAmount').textContent = `- रू ${discount.toFixed(2)}`;
         document.getElementById('shippingAmount').textContent = `+ रू ${shipping.toFixed(2)}`;
+        document.getElementById('taxPercentDisplay').textContent = taxPercent % 1 === 0 ? taxPercent : taxPercent.toFixed(2);
         document.getElementById('taxAmount').textContent = `+ रू ${taxAmount.toFixed(2)}`;
         document.getElementById('totalAmount').textContent = `रू ${total.toFixed(2)}`;
 
         document.getElementById('orderItems').value = JSON.stringify(cart);
         document.getElementById('totalInput').value = total.toFixed(2);
+
+        updatePartialPaymentDisplay(total);
+    }
+
+    function updatePartialPaymentDisplay(total) {
+        const paidRow = document.getElementById('paidRow');
+        const remainingRow = document.getElementById('remainingRow');
+        const balanceDueSection = document.getElementById('balanceDueSection');
+        const totalAmountEl = document.getElementById('totalAmount');
+        const totalLabelEl = document.getElementById('totalLabel');
+        if (!paidRow || !remainingRow) return;
+
+        if (isPartialPaymentSelected) {
+            const paid = parseFloat(document.getElementById('partialAmountPaidHidden').value) || 0;
+            const remaining = Math.max(0, total - paid);
+
+            // Update remaining hidden input when total changes
+            document.getElementById('remainingAmountHidden').value = remaining.toFixed(2);
+
+            document.getElementById('paidAmountDisplay').textContent = `रू ${paid.toFixed(2)}`;
+            document.getElementById('remainingAmountDisplay').textContent = `रू ${remaining.toFixed(2)}`;
+            paidRow.style.display = '';
+            remainingRow.style.display = '';
+
+            // Show balance due as the prominent amount
+            if (totalAmountEl) {
+                totalAmountEl.style.fontSize = '1.1rem';
+                totalAmountEl.style.opacity = '0.85';
+            }
+            if (totalLabelEl) totalLabelEl.textContent = 'TOTAL AMOUNT';
+            if (balanceDueSection) {
+                balanceDueSection.style.display = '';
+                document.getElementById('balanceDueAmount').textContent = `रू ${remaining.toFixed(2)}`;
+            }
+
+            // Also update the payment-info-box if it exists
+            const paymentLabel = document.querySelector('select[name="payment_setup"]');
+            if (paymentLabel) {
+                const col = paymentLabel.closest('.col-md-2');
+                const infoBox = col ? col.querySelector('.payment-info-box') : null;
+                if (infoBox) {
+                    infoBox.innerHTML = `<small><strong>Paid:</strong> रू ${paid.toFixed(2)}<br><strong>Remaining:</strong> रू ${remaining.toFixed(2)}</small>`;
+                }
+            }
+        } else {
+            paidRow.style.display = 'none';
+            remainingRow.style.display = 'none';
+
+            // Restore original total display
+            if (totalAmountEl) {
+                totalAmountEl.style.fontSize = '';
+                totalAmountEl.style.opacity = '';
+            }
+            if (totalLabelEl) totalLabelEl.textContent = 'TOTAL AMOUNT';
+            if (balanceDueSection) balanceDueSection.style.display = 'none';
+        }
     }
 
     function openPartialPaymentModal() {
@@ -6277,6 +6353,8 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
                 const infoBox = paymentLabel.querySelector('.payment-info-box');
                 if (infoBox) infoBox.remove();
             }
+            // Hide partial payment rows in total-box
+            updatePartialPaymentDisplay(parseFloat(document.getElementById('totalInput').value) || 0);
             saveFormData();
         }
     }
@@ -6314,8 +6392,8 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
                 return;
             }
 
-            if (paid > total) {
-                showToastNotification(`Amount paid (रू ${paid.toFixed(2)}) cannot exceed total (रू ${total.toFixed(2)})`, 'warning');
+            if (paid >= total) {
+                showToastNotification(`Amount paid cannot be equal to or exceed total (रू ${total.toFixed(2)}). For full payment, select a different payment method.`, 'warning');
                 paidInput.focus();
                 return;
             }
@@ -6344,6 +6422,9 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
           <strong>Remaining:</strong> रू ${remaining.toFixed(2)}
         </small>
       `;
+
+            // Update the total-box partial payment rows
+            updatePartialPaymentDisplay(total);
 
             showToastNotification('Partial payment details saved successfully', 'success');
             saveFormData();

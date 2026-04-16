@@ -393,11 +393,17 @@
                             {% endwith %}
                         </td>
                         <td>
-                            <strong class="text-success">रू {{ order.total_amount|floatformat:2 }}</strong>
                             {% if order.is_partial_payment %}
+                            <strong style="color: #f59e0b;">रू {{ order.remaining_amount|default:0|floatformat:2 }}</strong>
                             <br><span class="badge bg-warning text-dark" style="font-size: 0.7rem;">
                                 <i class="fas fa-coins"></i> Partial
                             </span>
+                            <br><small class="text-muted" style="font-size: 0.72rem;">
+                                <span style="color: #10b981;"><i class="fas fa-check-circle"></i> Paid: रू {{ order.partial_amount_paid|default:0|floatformat:2 }}</span><br>
+                                <span style="color: #6b7280;"><i class="fas fa-receipt"></i> Total: रू {{ order.total_amount|floatformat:2 }}</span>
+                            </small>
+                            {% else %}
+                            <strong class="text-success">रू {{ order.total_amount|floatformat:2 }}</strong>
                             {% endif %}
                         </td>
                         <td>
