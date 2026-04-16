@@ -4962,13 +4962,21 @@ def generate_payslips(request, pk):
         if salary_record:
             components = salary_record.components.filter(is_active=True)
 
-            # First pass: compute a provisional gross (earned_basic + fixed earnings + %_of_basic earnings)
+            # First pass: compute a provisional gross (earned_basic + fixed/variable earnings + %_of_basic earnings)
             # used later for %_of_gross calculations
             pre_gross = _earned_basic
             for comp in components:
                 if comp.component_type == 'earning':
                     if comp.calculation_type == 'fixed':
                         pre_gross += comp.amount
+                    elif comp.calculation_type == 'variable':
+                        # Variable: pro-rate the monthly amount based on attendance
+                        # daily_rate = monthly_amount / total_days_in_month
+                        # earned = daily_rate * payable_days (present + paid_leave + half_days*0.5)
+                        if _total_days > 0:
+                            _var_earned = (comp.amount / Decimal(str(_total_days)) * _payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                            _var_earned = min(_var_earned, comp.amount)
+                            pre_gross += _var_earned
                     elif comp.calculation_type == 'percentage_of_basic':
                         pre_gross += (_earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
 
@@ -4977,6 +4985,11 @@ def generate_payslips(request, pk):
                 if comp.component_type == 'earning':
                     if comp.calculation_type == 'fixed':
                         earnings += comp.amount
+                    elif comp.calculation_type == 'variable':
+                        if _total_days > 0:
+                            _var_earned = (comp.amount / Decimal(str(_total_days)) * _payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                            _var_earned = min(_var_earned, comp.amount)
+                            earnings += _var_earned
                     elif comp.calculation_type == 'percentage_of_basic':
                         earnings += (_earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
                     elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
@@ -4984,6 +4997,11 @@ def generate_payslips(request, pk):
                 elif comp.component_type == 'deduction':
                     if comp.calculation_type == 'fixed':
                         deductions += comp.amount
+                    elif comp.calculation_type == 'variable':
+                        if _total_days > 0:
+                            _var_earned = (comp.amount / Decimal(str(_total_days)) * _payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                            _var_earned = min(_var_earned, comp.amount)
+                            deductions += _var_earned
                     elif comp.calculation_type == 'percentage_of_basic':
                         deductions += (_earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'))
                     elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
@@ -5841,6 +5859,10 @@ def payroll_calculation(request, pk):
         if comp.component_type == 'earning':
             if comp.calculation_type == 'fixed':
                 pre_gross += comp.amount
+            elif comp.calculation_type == 'variable':
+                if total_days > 0:
+                    _var_amt = (comp.amount / Decimal(str(total_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    pre_gross += min(_var_amt, comp.amount)
             elif comp.calculation_type == 'percentage_of_basic':
                 pre_gross += (earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
@@ -5853,6 +5875,12 @@ def payroll_calculation(request, pk):
     for comp in components:
         if comp.calculation_type == 'fixed':
             calc_amount = comp.amount
+        elif comp.calculation_type == 'variable':
+            if total_days > 0:
+                calc_amount = (comp.amount / Decimal(str(total_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                calc_amount = min(calc_amount, comp.amount)
+            else:
+                calc_amount = Decimal('0')
         elif comp.calculation_type == 'percentage_of_basic':
             calc_amount = (earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
@@ -5860,11 +5888,16 @@ def payroll_calculation(request, pk):
         else:
             calc_amount = comp.amount
 
+        # Build display name — show days breakdown for variable components
+        display_name = comp.name
+        if comp.calculation_type == 'variable':
+            display_name = f"{comp.name} ({payable_days}/{total_days} days)"
+
         if comp.component_type == 'earning':
-            earnings.append({'name': comp.name, 'amount': calc_amount})
+            earnings.append({'name': display_name, 'amount': calc_amount})
             total_earnings_components += calc_amount
         else:
-            deductions.append({'name': comp.name, 'amount': calc_amount})
+            deductions.append({'name': display_name, 'amount': calc_amount})
             total_deductions_amount += calc_amount
 
     total_earnings = earned_basic + total_earnings_components

@@ -704,6 +704,7 @@ class SalaryComponent(models.Model):
     ]
     CALCULATION_TYPE_CHOICES = [
         ('fixed', 'Fixed Amount'),
+        ('variable', 'Variable (Daily Pro-rata)'),
         ('percentage_of_basic', '% of Basic Salary'),
         ('percentage_of_gross', '% of Gross Salary'),
         ('percentage_of_ctc', '% of CTC'),

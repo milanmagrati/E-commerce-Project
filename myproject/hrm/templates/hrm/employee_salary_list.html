@@ -1054,7 +1054,7 @@
                             <label class="es-comp-item" data-type="{{ comp.component_type }}" data-calc="{{ comp.calculation_type }}" data-amount="{{ comp.amount }}">
                                 <input type="checkbox" name="components" value="{{ comp.id }}">
                                 <span class="es-comp-item-label">{{ comp.name }}{% if comp.is_taxable %}<span class="es-comp-taxable">TAX</span>{% endif %}</span>
-                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
+                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'variable' %}रू{{ comp.amount }} <small>(Variable)</small>{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
                                 <span class="es-comp-item-type earning">Earning</span>
                             </label>
                             {% endfor %}
@@ -1065,7 +1065,7 @@
                             <label class="es-comp-item" data-type="{{ comp.component_type }}" data-calc="{{ comp.calculation_type }}" data-amount="{{ comp.amount }}">
                                 <input type="checkbox" name="components" value="{{ comp.id }}">
                                 <span class="es-comp-item-label">{{ comp.name }}{% if comp.is_taxable %}<span class="es-comp-taxable">TAX</span>{% endif %}</span>
-                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
+                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'variable' %}रू{{ comp.amount }} <small>(Variable)</small>{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
                                 <span class="es-comp-item-type deduction">Deduction</span>
                             </label>
                             {% endfor %}
@@ -1173,7 +1173,7 @@
                             <label class="es-comp-item" data-type="{{ comp.component_type }}" data-calc="{{ comp.calculation_type }}" data-amount="{{ comp.amount }}">
                                 <input type="checkbox" name="components" value="{{ comp.id }}" class="edit-comp-check">
                                 <span class="es-comp-item-label">{{ comp.name }}{% if comp.is_taxable %}<span class="es-comp-taxable">TAX</span>{% endif %}</span>
-                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
+                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'variable' %}रू{{ comp.amount }} <small>(Variable)</small>{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
                                 <span class="es-comp-item-type earning">Earning</span>
                             </label>
                             {% endfor %}
@@ -1184,7 +1184,7 @@
                             <label class="es-comp-item" data-type="{{ comp.component_type }}" data-calc="{{ comp.calculation_type }}" data-amount="{{ comp.amount }}">
                                 <input type="checkbox" name="components" value="{{ comp.id }}" class="edit-comp-check">
                                 <span class="es-comp-item-label">{{ comp.name }}{% if comp.is_taxable %}<span class="es-comp-taxable">TAX</span>{% endif %}</span>
-                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
+                                <span class="es-comp-item-amount">{% if comp.calculation_type == 'fixed' %}रू{{ comp.amount }}{% elif comp.calculation_type == 'variable' %}रू{{ comp.amount }} <small>(Variable)</small>{% elif comp.calculation_type == 'percentage_of_basic' %}{{ comp.amount }}% of Basic{% elif comp.calculation_type == 'percentage_of_gross' %}{{ comp.amount }}% of Gross{% elif comp.calculation_type == 'percentage_of_ctc' %}{{ comp.amount }}% of CTC{% endif %}</span>
                                 <span class="es-comp-item-type deduction">Deduction</span>
                             </label>
                             {% endfor %}
@@ -1414,7 +1414,8 @@ function calcPreview(basicSalary, compSelector) {
         const item = cb.closest('[data-type]');
         if (!item) return;
         const amount = parseFloat(item.dataset.amount) || 0;
-        const calcAmount = (item.dataset.calc === 'fixed') ? amount : (basicSalary * amount / 100);
+        const calc = item.dataset.calc;
+        const calcAmount = (calc === 'fixed' || calc === 'variable') ? amount : (basicSalary * amount / 100);
         if (item.dataset.type === 'earning') totalEarnings += calcAmount;
         else totalDeductions += calcAmount;
     });

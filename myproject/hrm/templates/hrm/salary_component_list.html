@@ -509,6 +509,7 @@
                         <label>Calculation Type <span class="req">*</span></label>
                         <select name="calculation_type" class="form-select" id="addCalcType" required onchange="toggleAddAmount(this)">
                             <option value="fixed">Fixed Amount</option>
+                            <option value="variable">Variable (Daily Pro-rata)</option>
                             <option value="percentage_of_basic">% of Basic Salary</option>
                             <option value="percentage_of_gross">% of Gross Salary</option>
                             <option value="percentage_of_ctc">% of CTC</option>
@@ -558,6 +559,7 @@
                     <select name="calc" class="sc-filter-select" onchange="this.form.submit()">
                         <option value="">All Calculations</option>
                         <option value="fixed"                {% if calc_filter == 'fixed'                %}selected{% endif %}>Fixed Amount</option>
+                        <option value="variable"             {% if calc_filter == 'variable'             %}selected{% endif %}>Variable (Daily)</option>
                         <option value="percentage_of_basic"  {% if calc_filter == 'percentage_of_basic'  %}selected{% endif %}>% of Basic</option>
                         <option value="percentage_of_gross"  {% if calc_filter == 'percentage_of_gross'  %}selected{% endif %}>% of Gross</option>
                         <option value="percentage_of_ctc"    {% if calc_filter == 'percentage_of_ctc'    %}selected{% endif %}>% of CTC</option>
@@ -631,7 +633,7 @@
                             <!-- Amount -->
                             <td>
                                 <div class="sc-amount-value">
-                                    {% if comp.calculation_type == 'fixed' %}
+                                    {% if comp.calculation_type == 'fixed' or comp.calculation_type == 'variable' %}
                                         रू {{ comp.amount|floatformat:2 }}
                                     {% else %}
                                         {{ comp.amount|floatformat:2 }}%
@@ -639,6 +641,7 @@
                                 </div>
                                 <div class="sc-amount-label">
                                     {% if comp.calculation_type == 'fixed' %}Fixed amount
+                                    {% elif comp.calculation_type == 'variable' %}Variable (daily pro-rata)
                                     {% elif comp.calculation_type == 'percentage_of_basic' %}Of basic salary
                                     {% elif comp.calculation_type == 'percentage_of_gross' %}Of gross salary
                                     {% elif comp.calculation_type == 'percentage_of_ctc' %}Of CTC
@@ -749,6 +752,7 @@
                                 <label>Calculation Type <span class="req">*</span></label>
                                 <select name="calculation_type" id="editCalcType" class="form-select" onchange="toggleEditAmount(this)">
                                     <option value="fixed">Fixed Amount</option>
+                                    <option value="variable">Variable (Daily Pro-rata)</option>
                                     <option value="percentage_of_basic">% of Basic Salary</option>
                                     <option value="percentage_of_gross">% of Gross Salary</option>
                                     <option value="percentage_of_ctc">% of CTC</option>
@@ -815,6 +819,7 @@
 <script>
 const CALC_LABELS = {
     'fixed':                'Fixed Amount',
+    'variable':             'Monthly Amount (Pro-rated Daily)',
     'percentage_of_basic':  'Percentage (% of Basic)',
     'percentage_of_gross':  'Percentage (% of Gross)',
     'percentage_of_ctc':    'Percentage (% of CTC)',
