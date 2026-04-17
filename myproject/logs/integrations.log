@@ -1,0 +1,19 @@
+[INFO] 2026-04-17 16:21:47 views.post:103 WooCommerce order 1234 created (internal order: WOO-1234)
+[INFO] 2026-04-17 16:22:12 views.post:103 WooCommerce order 1234 updated (internal order: WOO-1234)
+[WARNING] 2026-04-17 16:22:26 views.post:36 WooCommerce order validation failed: {'order_id': [ErrorDetail(string='This field is required.', code='required')], 'status': [ErrorDetail(string='This field is required.', code='required')], 'total': [ErrorDetail(string='This field is required.', code='required')]}
+[INFO] 2026-04-17 16:34:17 views.post:103 WooCommerce order 55555 created (internal order: WOO-55555)
+[INFO] 2026-04-17 16:34:17 views.post:103 WooCommerce order 55555 updated (internal order: WOO-55555)
+[INFO] 2026-04-17 16:34:17 views.post:103 WooCommerce order 55556 created (internal order: WOO-55556)
+[WARNING] 2026-04-17 16:34:17 views.post:36 WooCommerce order validation failed: {'order_id': [ErrorDetail(string='order_id must be a positive integer.', code='invalid')]}
+[INFO] 2026-04-17 16:34:51 views.post:103 WooCommerce order 55555 updated (internal order: WOO-55555)
+[INFO] 2026-04-17 16:34:51 views.post:103 WooCommerce order 55555 updated (internal order: WOO-55555)
+[INFO] 2026-04-17 16:34:51 views.post:103 WooCommerce order 55556 updated (internal order: WOO-55556)
+[WARNING] 2026-04-17 16:34:51 views.post:36 WooCommerce order validation failed: {'order_id': [ErrorDetail(string='order_id must be a positive integer.', code='invalid')]}
+[INFO] 2026-04-17 16:35:39 views.post:103 WooCommerce order 55555 updated (internal order: WOO-55555)
+[INFO] 2026-04-17 16:37:39 views.post:103 WooCommerce order 77777 created (internal order: WOO-77777)
+[INFO] 2026-04-17 16:37:54 views.post:103 WooCommerce order 77777 updated (internal order: WOO-77777)
+[INFO] 2026-04-17 16:37:54 views.post:103 WooCommerce order 88888 created (internal order: WOO-88888)
+[WARNING] 2026-04-17 16:37:54 views.post:36 WooCommerce order validation failed: {'order_id': [ErrorDetail(string='order_id must be a positive integer.', code='invalid')]}
+[INFO] 2026-04-17 16:38:08 views.post:103 WooCommerce order 77777 updated (internal order: WOO-77777)
+[INFO] 2026-04-17 16:38:08 views.post:103 WooCommerce order 88888 updated (internal order: WOO-88888)
+[WARNING] 2026-04-17 16:38:08 views.post:36 WooCommerce order validation failed: {'order_id': [ErrorDetail(string='order_id must be a positive integer.', code='invalid')]}

@@ -52,8 +52,20 @@ EXTERNAL_APPS = [
     "hrm",
     "todo",
     "store",
+    "rest_framework",
+    "rest_framework.authtoken",
+    "integrations",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
 
 
 
@@ -263,6 +275,14 @@ LOGGING = {
             'backupCount': 5,
             'formatter': 'verbose',
         },
+        'integrations_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(BASE_DIR, 'logs', 'integrations.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'ncm': {
@@ -282,6 +302,11 @@ LOGGING = {
         },
         'hrm.adms': {
             'handlers': ['console', 'adms_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'integrations': {
+            'handlers': ['console', 'integrations_file'],
             'level': 'DEBUG',
             'propagate': False,
         },
