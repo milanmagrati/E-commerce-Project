@@ -546,7 +546,7 @@
 
                 <!-- ==================== ORDERS ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_orders %}
-                <li class="{% if 'order' in request.resolver_match.url_name and 'ncm' not in request.resolver_match.url_name or request.resolver_match.url_name == 'ncm_rtvs_list' %}active{% endif %}">
+                <li class="{% if 'order' in request.resolver_match.url_name and 'ncm' not in request.resolver_match.url_name or request.resolver_match.url_name == 'ncm_rtvs_list' or request.resolver_match.url_name == 'possible_redirection_list' %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#ordersMenu" aria-expanded="false">
                         <i class="fas fa-shopping-cart"></i> Orders
                         <i class="fas fa-chevron-down float-end mt-1"></i>
@@ -567,9 +567,17 @@
                             <a href="{% url 'on_hold_orders_list' %}">On Hold Orders</a>
                         </li>
                         {% endif %}
+
                         {% if user.is_superuser or user.role == 'administrator' or user.can_delete_orders %}
                         <li class="{% if request.resolver_match.url_name == 'orders_trash' %}active{% endif %}">
                             <a href="{% url 'orders_trash' %}">Trash</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_orders %}
+                        <li class="{% if request.resolver_match.url_name == 'possible_redirection_list' %}active{% endif %}">
+                            <a href="{% url 'possible_redirection_list' %}">
+                                <i class="fas fa-random me-1"></i> Possible Redirection
+                            </a>
                         </li>
                         {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_orders %}

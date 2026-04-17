@@ -17,7 +17,8 @@ from .models import (Product, Order, OrderItem, Category, Customer,
                      ProductVariation, ProductImage, ProductVariantOption,
                      OrderActivityLog, StockIn, City, StockInItem, Setup,
                      Supplier, Purchase, PurchaseItem, SupplierPayment,
-                     BundleComponent, ProductPurchase, LogisticsAPIConfig)
+                     BundleComponent, ProductPurchase, LogisticsAPIConfig,
+                     Branch)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -4353,6 +4354,512 @@ def return_orders_list(request):
     }
     
     return render(request, 'return_orders.html', context)
+
+
+@login_required
+@permission_required('can_view_orders')
+def possible_redirection_list(request):
+    """Display list of return orders that can potentially be redirected to another customer/branch."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from django.db.models import Q, Sum
+    from decimal import Decimal
+
+    orders = Order.objects.filter(
+        is_deleted=False,
+        order_status__iexact='return'
+    ).select_related(
+        'customer', 'branch', 'created_by', 'status_setup',
+        'payment_setup', 'payment_status_setup'
+    ).prefetch_related('items').order_by('-created_at')
+
+    # GET FILTER PARAMETERS
+    search_query = request.GET.get('search', '')
+    branch_filter = request.GET.get('branch', '')
+    logistics_filter = request.GET.get('logistics_status', '')
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+    redirection_filter = request.GET.get('redirection', '')
+
+    # Apply filters
+    if search_query:
+        orders = orders.filter(
+            Q(order_number__icontains=search_query) |
+            Q(customer_name__icontains=search_query) |
+            Q(customer_phone__icontains=search_query) |
+            Q(barcode__icontains=search_query)
+        )
+
+    if branch_filter:
+        orders = orders.filter(
+            Q(branch_id=branch_filter) |
+            Q(branch_city__iexact=branch_filter)
+        )
+
+    if logistics_filter == 'sent':
+        orders = orders.exclude(ncm_order_id__isnull=True)
+    elif logistics_filter == 'not_sent':
+        orders = orders.filter(ncm_order_id__isnull=True)
+
+    if start_date and end_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+        except ValueError:
+            pass
+
+    # Calculate statistics
+    all_return_orders = orders
+    total_redirectable = all_return_orders.count()
+    already_redirected = all_return_orders.exclude(ncm_order_id__isnull=True).count()
+    pending_redirection = all_return_orders.filter(ncm_order_id__isnull=True).count()
+    total_value = all_return_orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+
+    # Redirection status filter (applied after stats)
+    if redirection_filter == 'redirected':
+        orders = orders.exclude(ncm_order_id__isnull=True)
+    elif redirection_filter == 'pending':
+        orders = orders.filter(ncm_order_id__isnull=True)
+
+    # Pagination
+    per_page = request.GET.get('per_page', '50')
+    if per_page not in ('50', '100', '200'):
+        per_page = '50'
+    paginator = Paginator(orders, int(per_page))
+    page_number = request.GET.get('page')
+    orders_page = paginator.get_page(page_number)
+
+    for order in orders_page.object_list:
+        try:
+            fix_order_decimals(order)
+        except Exception:
+            pass
+
+    branches = Branch.objects.filter(is_active=True).order_by('name')
+    cities = City.objects.all().order_by('name')
+    ncm_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
+    pnd_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True)
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
+
+    context = {
+        'orders': orders_page,
+        'total_redirectable': total_redirectable,
+        'already_redirected': already_redirected,
+        'pending_redirection': pending_redirection,
+        'total_value': total_value,
+        'search_query': search_query,
+        'branch_filter': branch_filter,
+        'logistics_filter': logistics_filter,
+        'redirection_filter': redirection_filter,
+        'start_date': start_date,
+        'end_date': end_date,
+        'per_page': per_page,
+        'branches': branches,
+        'cities': cities,
+        'ncm_api_configs': ncm_api_configs,
+        'pnd_api_configs': pnd_api_configs,
+        'status_setups': status_setups,
+        'payment_status_setups': payment_status_setups,
+        'payment_setups': payment_setups,
+        'page_obj': orders_page,
+    }
+
+    return render(request, 'possible_redirection.html', context)
+
+
+@login_required
+@permission_required('can_view_orders')
+def redirect_order_get(request, order_id):
+    """AJAX: Get order data for redirect modal."""
+    from django.http import JsonResponse
+    try:
+        order = Order.objects.select_related(
+            'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
+        ).prefetch_related('items__product').get(id=order_id, is_deleted=False)
+        items = []
+        for item in order.items.all():
+            items.append({
+                'product_name': item.product_name or (str(item.product) if item.product else ''),
+                'variation_name': item.variation_name or '',
+                'quantity': item.quantity,
+                'price': str(item.price),
+                'total': str(item.total),
+                'product_id': item.product_id,
+                'variation_id': item.product_variation_id,
+                'sku': item.product_sku or '',
+            })
+        data = {
+            'id': order.id,
+            'order_number': order.order_number,
+            'barcode': order.barcode or '',
+            'customer_name': order.customer_name or '',
+            'customer_phone': order.customer_phone or '',
+            'customer_email': order.customer_email or '',
+            'shipping_address': order.shipping_address or '',
+            'landmark': order.landmark or '',
+            'branch_city': order.branch_city or '',
+            'branch_id': order.branch_id,
+            'in_out': order.in_out or 'out',
+            'notes': order.notes or '',
+            'order_from': order.order_from or '',
+            'total_amount': str(order.total_amount or 0),
+            'discount_amount': str(order.discount_amount or 0),
+            'shipping_charge': str(order.shipping_charge or 0),
+            'delivery_charge': str(order.delivery_charge or 0),
+            'tax_percent': str(order.tax_percent or 0),
+            'is_partial_payment': order.is_partial_payment,
+            'partial_amount_paid': str(order.partial_amount_paid or 0),
+            'remaining_amount': str(order.remaining_amount or 0),
+            'package_weight': str(order.package_weight or 1.0),
+            'order_status': order.order_status or '',
+            'status_setup_id': order.status_setup_id,
+            'payment_status': order.payment_status or '',
+            'payment_status_setup_id': order.payment_status_setup_id,
+            'payment_setup_id': order.payment_setup_id,
+            'payment_method': order.payment_method or '',
+            'ncm_order_id': order.ncm_order_id,
+            'ncm_status': order.ncm_status or '',
+            'ncm_from_branch': order.ncm_from_branch or 'TINKUNE',
+            'ncm_delivery_type': order.ncm_delivery_type or 'Door2Door',
+            'pnd_order_id': order.pnd_order_id,
+            'pnd_status': order.pnd_status or '',
+            'pnd_tracking_url': order.pnd_tracking_url or '',
+            'logistics': order.logistics or '',
+            'items': items,
+        }
+        return JsonResponse({'status': 'success', 'order': data})
+    except Order.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Order not found'}, status=404)
+
+
+@login_required
+@permission_required('can_view_orders')
+def redirect_order_save(request, order_id):
+    """AJAX: Save edited order fields and optionally send to logistics."""
+    from django.http import JsonResponse
+    from django.db import transaction
+    import json
+
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
+
+    try:
+        order = get_object_or_404(Order, id=order_id, is_deleted=False)
+
+        with transaction.atomic():
+            # Update customer/shipping fields
+            order.customer_name = request.POST.get('customer_name', order.customer_name).strip()
+            order.customer_phone = request.POST.get('customer_phone', order.customer_phone).strip()
+            order.customer_email = request.POST.get('customer_email', order.customer_email).strip()
+            order.shipping_address = request.POST.get('shipping_address', order.shipping_address).strip()
+            order.landmark = request.POST.get('landmark', order.landmark).strip()
+            order.notes = request.POST.get('notes', order.notes).strip()
+            order.in_out = request.POST.get('in_out', order.in_out)
+
+            new_branch_city = request.POST.get('branch_city', '').strip()
+            if new_branch_city:
+                order.branch_city = new_branch_city
+                city_obj, _ = City.objects.get_or_create(name=new_branch_city)
+
+            # Update financial fields
+            from decimal import Decimal, InvalidOperation
+            discount_str = request.POST.get('discount_amount', '').strip()
+            if discount_str:
+                try:
+                    order.discount_amount = Decimal(discount_str)
+                except (InvalidOperation, ValueError):
+                    pass
+
+            shipping_str = request.POST.get('shipping_charge', '').strip()
+            if shipping_str:
+                try:
+                    order.shipping_charge = Decimal(shipping_str)
+                except (InvalidOperation, ValueError):
+                    pass
+
+            total_str = request.POST.get('total_amount', '').strip()
+            if total_str:
+                try:
+                    order.total_amount = Decimal(total_str)
+                except (InvalidOperation, ValueError):
+                    pass
+
+            # Partial payment
+            is_partial = request.POST.get('is_partial_payment')
+            if is_partial is not None:
+                order.is_partial_payment = is_partial == 'true'
+                if order.is_partial_payment:
+                    partial_str = request.POST.get('partial_amount_paid', '').strip()
+                    if partial_str:
+                        try:
+                            order.partial_amount_paid = Decimal(partial_str)
+                            order.remaining_amount = order.total_amount - order.partial_amount_paid
+                        except (InvalidOperation, ValueError):
+                            pass
+                else:
+                    order.partial_amount_paid = None
+                    order.remaining_amount = None
+
+            # Update status if provided
+            status_setup_id = request.POST.get('status_setup')
+            if status_setup_id:
+                try:
+                    status_obj = Setup.objects.get(id=status_setup_id, setup_type='status')
+                    order.status_setup = status_obj
+                    order.order_status = status_obj.name.lower()
+                except Setup.DoesNotExist:
+                    pass
+
+            payment_status_id = request.POST.get('payment_status_setup')
+            if payment_status_id:
+                try:
+                    ps_obj = Setup.objects.get(id=payment_status_id, setup_type='payment_status')
+                    order.payment_status_setup = ps_obj
+                    order.payment_status = ps_obj.name.lower()
+                except Setup.DoesNotExist:
+                    pass
+
+            # Payment method
+            payment_setup_id = request.POST.get('payment_setup')
+            if payment_setup_id:
+                try:
+                    pay_obj = Setup.objects.get(id=payment_setup_id, setup_type='payment')
+                    order.payment_setup = pay_obj
+                    order.payment_method = pay_obj.name.lower()
+                except Setup.DoesNotExist:
+                    pass
+
+            # Clear old NCM/PND IDs so the order can be resent
+            # Skip clearing when using ncm_redirect — redirect needs the existing NCM ID
+            send_to = request.POST.get('send_to_logistics', '')
+            clear_logistics = request.POST.get('clear_logistics') == 'true'
+            if clear_logistics and send_to != 'ncm_redirect':
+                order.ncm_order_id = None
+                order.ncm_status = ''
+                order.ncm_created_at = None
+                order.pnd_order_id = None
+                order.pnd_status = ''
+                order.pnd_created_at = None
+                order.pnd_tracking_url = ''
+
+            # Update package weight if provided
+            weight_str = request.POST.get('package_weight', '').strip()
+            if weight_str:
+                try:
+                    order.package_weight = Decimal(weight_str)
+                except (InvalidOperation, ValueError):
+                    pass
+
+            order.save()
+
+            # Update customer record if exists
+            if order.customer:
+                cust = order.customer
+                cust.name = order.customer_name
+                cust.phone = order.customer_phone
+                cust.email = order.customer_email
+                if new_branch_city:
+                    cust.city = new_branch_city
+                cust.address = order.shipping_address
+                cust.save()
+
+        # Now handle logistics send if requested
+        # send_to already read above (before clear_logistics check)
+        logistics_result = None
+
+        if send_to == 'ncm':
+            api_config_id = request.POST.get('api_config_id')
+            from_branch = request.POST.get('from_branch', 'TINKUNE')
+            delivery_type = request.POST.get('delivery_type', 'Door2Door')
+            default_weight = float(request.POST.get('default_weight', 1.0))
+            result = send_single_order_to_ncm(
+                request, order,
+                from_branch=from_branch,
+                delivery_type=delivery_type,
+                default_weight=default_weight,
+                api_config_id=api_config_id
+            )
+            logistics_result = result
+
+        elif send_to == 'pnd':
+            api_config_id = request.POST.get('api_config_id')
+            default_weight = float(request.POST.get('default_weight', 1.0))
+            result = send_single_order_to_pnd(
+                request, order,
+                default_weight=default_weight,
+                api_config_id=api_config_id
+            )
+            logistics_result = result
+
+        elif send_to == 'ncm_redirect':
+            # Use NCM v2 redirect API for orders that already have an NCM ID
+            api_config_id = request.POST.get('api_config_id')
+            destination = request.POST.get('ncm_destination', '').strip() or None
+            cod_charge_str = request.POST.get('cod_charge', '').strip()
+            cod_charge = float(cod_charge_str) if cod_charge_str else None
+            result = redirect_order_to_ncm(
+                request, order,
+                api_config_id=api_config_id,
+                destination=destination,
+                cod_charge=cod_charge,
+            )
+            logistics_result = result
+
+        response_data = {'status': 'success', 'message': 'Order updated successfully.'}
+        if logistics_result:
+            response_data['logistics'] = logistics_result
+
+        return JsonResponse(response_data)
+
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, cod_charge=None):
+    """
+    Redirect an existing NCM order to a different address/customer using NCM v2 redirect API.
+    Endpoint: POST /api/v2/vendor/order/redirect
+    Params: pk (NCM order ID), name, phone, address, vendorOrderid, destination (branch ID), cod_charge
+    """
+    import requests
+    from django.conf import settings
+    from decimal import Decimal
+
+    try:
+        if not order.ncm_order_id:
+            return {'status': 'error', 'message': 'Order has no NCM ID. Cannot redirect — use "Create New Order" instead.'}
+
+        # Get API credentials
+        base_url_v2 = ''
+        base_url_v1 = ''
+        api_key = ''
+        matched_api_config = None
+
+        if api_config_id:
+            try:
+                matched_api_config = LogisticsAPIConfig.objects.get(
+                    id=api_config_id, is_active=True, logistics_provider='ncm')
+                base_url_v2 = matched_api_config.get_base_url_v2()
+                base_url_v1 = matched_api_config.get_primary_base_url()
+                api_key = matched_api_config.api_key
+            except LogisticsAPIConfig.DoesNotExist:
+                return {'status': 'error', 'message': 'Selected NCM API configuration not found or inactive'}
+
+        if not api_key:
+            api_key = getattr(settings, 'NCM_API_KEY', '') or ''
+            if not matched_api_config and api_key:
+                matched_api_config = LogisticsAPIConfig.objects.filter(
+                    logistics_provider='ncm', is_active=True, api_key=api_key
+                ).order_by('-id').first()
+                if matched_api_config:
+                    base_url_v2 = matched_api_config.get_base_url_v2()
+                    base_url_v1 = matched_api_config.get_primary_base_url()
+
+        if not api_key:
+            return {'status': 'error', 'message': 'NCM API key not configured. Add an API config in Settings > API Integration.'}
+
+        # Build redirect API URL
+        # Prefer v2 base URL; fall back to deriving from v1
+        if base_url_v2:
+            redirect_url = f"{base_url_v2.rstrip('/')}/order/redirect"
+        elif base_url_v1:
+            # Try to derive v2 URL from v1 (e.g. .../api/v1/vendor -> .../api/v2/vendor)
+            redirect_url = base_url_v1.rstrip('/').replace('/v1/', '/v2/') + '/order/redirect'
+        else:
+            # Last resort: try settings
+            ncm_base = getattr(settings, 'NCM_API_BASE_URL', '') or ''
+            if ncm_base:
+                redirect_url = ncm_base.rstrip('/').replace('/v1/', '/v2/') + '/order/redirect'
+            else:
+                return {'status': 'error', 'message': 'NCM API v2 base URL not configured. Add a second URL in API config for v2.'}
+
+        # Build payload per NCM redirect API documentation
+        payload = {
+            'pk': order.ncm_order_id,
+            'name': str(order.customer_name or '').strip(),
+            'phone': str(order.customer_phone or '').strip(),
+            'address': str(order.shipping_address or '').strip(),
+        }
+
+        # Optional: vendor order reference
+        if order.order_number:
+            payload['vendorOrderid'] = str(order.order_number)
+
+        # Optional: destination branch ID (only if changing destination)
+        if destination:
+            try:
+                payload['destination'] = int(destination)
+            except (ValueError, TypeError):
+                pass
+
+        # Optional: COD charge
+        if cod_charge is not None:
+            try:
+                payload['cod_charge'] = float(cod_charge)
+            except (ValueError, TypeError):
+                pass
+
+        # Send request to NCM redirect API
+        response = requests.post(
+            redirect_url,
+            json=payload,
+            headers={
+                'Authorization': f'Token {api_key}',
+                'Content-Type': 'application/json'
+            },
+            timeout=15
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            # Update order fields from NCM response
+            update_fields = ['ncm_status']
+            order.ncm_status = 'redirected'
+
+            if 'delivery_charge' in data:
+                try:
+                    order.delivery_charge = Decimal(str(data['delivery_charge']))
+                    update_fields.append('delivery_charge')
+                except Exception:
+                    pass
+
+            if 'cod_charge' in data:
+                try:
+                    # Store the confirmed COD charge; don't overwrite total_amount
+                    order.cod_collected = Decimal(str(data['cod_charge']))
+                    update_fields.append('cod_collected')
+                except Exception:
+                    pass
+
+            order.save(update_fields=update_fields)
+
+            return {
+                'status': 'success',
+                'message': data.get('message', 'Order redirected successfully'),
+                'ncm_order_id': data.get('order'),
+                'delivery_charge': data.get('delivery_charge'),
+                'cod_charge': data.get('cod_charge'),
+                'changelogs': data.get('changelogs', ''),
+            }
+        else:
+            error_msg = f'NCM API returned status {response.status_code}'
+            try:
+                error_data = response.json()
+                error_msg = error_data.get('message', error_data.get('error', error_msg))
+            except Exception:
+                error_msg = response.text[:300] if response.text else error_msg
+            return {'status': 'error', 'message': error_msg}
+
+    except requests.exceptions.Timeout:
+        return {'status': 'error', 'message': 'NCM redirect API request timed out. Please try again.'}
+    except requests.exceptions.ConnectionError:
+        return {'status': 'error', 'message': 'Could not connect to NCM API. Check your internet connection.'}
+    except Exception as e:
+        return {'status': 'error', 'message': f'Redirect failed: {str(e)}'}
 
 
 @login_required

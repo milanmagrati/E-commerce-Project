@@ -1,0 +1,1278 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Possible Redirection - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2><i class="fas fa-random text-primary"></i> Possible Redirection</h2>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'orders_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> All Orders
+                </a>
+                <a href="{% url 'return_orders_list' %}" class="btn btn-outline-danger">
+                    <i class="fas fa-undo-alt"></i> Return Orders
+                </a>
+            </div>
+        </div>
+        <p class="text-muted mt-1 mb-0">
+            Orders with "Return" status that can be redirected to a nearby branch for a different customer instead of returning to vendor/warehouse.
+        </p>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card border-left-primary shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1 text-uppercase stat-label">Total Redirectable</h6>
+                        <h3 class="mb-0 stat-value">{{ total_redirectable }}</h3>
+                    </div>
+                    <div class="stat-icon text-primary"><i class="fas fa-random fa-2x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card border-left-warning shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1 text-uppercase stat-label">Pending Redirection</h6>
+                        <h3 class="text-warning mb-0 stat-value">{{ pending_redirection }}</h3>
+                    </div>
+                    <div class="stat-icon text-warning"><i class="fas fa-hourglass-half fa-2x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card border-left-success shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1 text-uppercase stat-label">Already Redirected</h6>
+                        <h3 class="text-success mb-0 stat-value">{{ already_redirected }}</h3>
+                    </div>
+                    <div class="stat-icon text-success"><i class="fas fa-check-circle fa-2x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card border-left-info shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1 text-uppercase stat-label">Total Value</h6>
+                        <h3 class="text-info mb-0 stat-value">Rs.{{ total_value|floatformat:2 }}</h3>
+                    </div>
+                    <div class="stat-icon text-info"><i class="fas fa-money-bill-wave fa-2x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-4 filter-card">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end" id="filterForm">
+            <input type="hidden" name="per_page" value="{{ per_page }}" id="perPageHidden">
+            <div class="col-lg-3 col-md-4">
+                <label class="form-label small text-muted mb-1">Search</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" name="search" placeholder="Order #, customer, barcode..." value="{{ search_query }}">
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label class="form-label small text-muted mb-1">Branch</label>
+                <select name="branch" class="form-select form-select-sm">
+                    <option value="">All Branches</option>
+                    {% for branch in branches %}
+                        <option value="{{ branch.id }}" {% if branch_filter == branch.id|stringformat:"d" %}selected{% endif %}>{{ branch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label class="form-label small text-muted mb-1">Redirection Status</label>
+                <select name="redirection" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="pending" {% if redirection_filter == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="redirected" {% if redirection_filter == 'redirected' %}selected{% endif %}>Redirected</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label class="form-label small text-muted mb-1">Start Date</label>
+                <input type="date" class="form-control form-control-sm" name="start_date" value="{{ start_date }}">
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label class="form-label small text-muted mb-1">End Date</label>
+                <input type="date" class="form-control form-control-sm" name="end_date" value="{{ end_date }}">
+            </div>
+            <div class="col-lg-1 col-md-2">
+                <div class="d-flex gap-1">
+                    <button type="submit" class="btn btn-primary btn-sm flex-grow-1" title="Filter"><i class="fas fa-filter"></i></button>
+                    <a href="{% url 'possible_redirection_list' %}" class="btn btn-secondary btn-sm" title="Reset"><i class="fas fa-redo"></i></a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk Actions Bar -->
+<div id="bulkActionsBar" class="card shadow-sm mb-3 bulk-bar" style="display: none;">
+    <div class="card-body py-2">
+        <form method="post" action="{% url 'orders_bulk_action' %}" id="bulkActionForm" onsubmit="return confirmBulkAction()">
+            {% csrf_token %}
+            <div class="row align-items-center">
+                <div class="col-md-4">
+                    <span id="selectedCount" class="fw-bold text-primary">0 orders selected</span>
+                </div>
+                <div class="col-md-4">
+                    <select name="bulk_action" class="form-select form-select-sm" required>
+                        <option value="">Select Action</option>
+                        <option value="export_excel">Export to Excel</option>
+                        <option value="bulk_edit">Edit Selected</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="fas fa-check"></i> Apply</button>
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="clearSelection()"><i class="fas fa-times"></i> Clear</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Orders Table -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-gradient-primary d-flex justify-content-between align-items-center py-2">
+        <span class="text-white fw-bold"><i class="fas fa-random me-2"></i>Redirectable Orders</span>
+        <div class="d-flex align-items-center gap-2">
+            <label class="text-white-50 small mb-0">Per page:</label>
+            <select class="form-select form-select-sm bg-transparent text-white border-light" style="width: auto; min-width: 70px;" onchange="changePerPage(this.value)">
+                <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                <option value="200" {% if per_page == '200' %}selected{% endif %}>200</option>
+            </select>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 redirect-table">
+            <thead class="table-light">
+                <tr>
+                    <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" class="form-check-input" onchange="selectAllOrders()"></th>
+                    <th>Order #</th>
+                    <th>Customer</th>
+                    <th>Product / Items</th>
+                    <th>Branch / Location</th>
+                    <th>NCM Info</th>
+                    <th>Amount</th>
+                    <th>Date</th>
+                    <th class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if orders.object_list %}
+                    {% for order in orders.object_list %}
+                    <tr class="order-row" data-order-id="{{ order.id }}" id="order-row-{{ order.id }}">
+                        <td><input type="checkbox" class="form-check-input order-checkbox" value="{{ order.id }}" onchange="updateBulkBar()"></td>
+                        <td>
+                            <a href="{% url 'order_detail' order.id %}" class="fw-bold text-primary text-decoration-none">{{ order.order_number }}</a>
+                            {% if order.barcode %}<div class="small text-muted">{{ order.barcode }}</div>{% endif %}
+                        </td>
+                        <td>
+                            <strong class="d-block">{{ order.customer_name }}</strong>
+                            <span class="text-muted small">{{ order.customer_phone }}</span>
+                        </td>
+                        <td>
+                            {% for item in order.items.all %}
+                                <span class="badge bg-light text-dark border me-1 mb-1" style="font-size: 0.75rem;">
+                                    {{ item.product_name|default:item.product|truncatechars:30 }}
+                                    {% if item.quantity > 1 %}<span class="text-primary">x{{ item.quantity }}</span>{% endif %}
+                                </span>
+                            {% empty %}
+                                <span class="text-muted small">No items</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% if order.branch %}<span class="badge bg-secondary">{{ order.branch.name }}</span>{% endif %}
+                            {% if order.branch_city %}<div class="small text-muted">{{ order.branch_city }}</div>{% endif %}
+                            {% if order.shipping_address %}
+                                <div class="small text-muted text-truncate" style="max-width: 150px;" title="{{ order.shipping_address }}">
+                                    <i class="fas fa-map-marker-alt text-danger"></i> {{ order.shipping_address }}
+                                </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if order.ncm_order_id %}
+                                <span class="badge bg-success"><i class="fas fa-truck me-1"></i>{{ order.ncm_order_id }}</span>
+                                {% if order.ncm_status %}<div class="small text-muted mt-1">{{ order.ncm_status }}</div>{% endif %}
+                            {% elif order.pnd_order_id %}
+                                <span class="badge bg-warning text-dark"><i class="fas fa-truck-moving me-1"></i>{{ order.pnd_order_id }}</span>
+                                {% if order.pnd_status %}<div class="small text-muted mt-1">{{ order.pnd_status }}</div>{% endif %}
+                            {% else %}
+                                <span class="badge bg-light text-secondary border">Not Sent</span>
+                            {% endif %}
+                        </td>
+                        <td><span class="fw-bold">Rs.{{ order.total_amount|floatformat:2 }}</span></td>
+                        <td>
+                            <span class="small text-muted">{{ order.created_at|date:"M d, Y" }}</span>
+                            <div class="small text-muted">{{ order.created_at|time:"h:i A" }}</div>
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <a href="{% url 'order_detail' order.id %}" class="btn btn-outline-primary" title="View Details"><i class="fas fa-eye"></i></a>
+                                <button type="button" class="btn btn-outline-success redirect-btn" title="Edit & Redirect" onclick="openRedirectModal({{ order.id }})">
+                                    <i class="fas fa-random"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="9" class="text-center py-5">
+                            <div class="empty-state">
+                                <div class="empty-icon mb-3"><i class="fas fa-random fa-3x text-muted"></i></div>
+                                <h5 class="text-muted">No Redirectable Orders Found</h5>
+                                <p class="text-muted mb-3">There are currently no return orders available for redirection.</p>
+                                <a href="{% url 'orders_list' %}" class="btn btn-primary btn-sm"><i class="fas fa-arrow-left me-1"></i> Back to All Orders</a>
+                            </div>
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if orders.has_other_pages %}
+<nav aria-label="Page navigation">
+    <ul class="pagination justify-content-center">
+        {% if orders.has_previous %}
+            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ orders.previous_page_number }}&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
+        {% endif %}
+        {% for num in orders.paginator.page_range %}
+            {% if num == orders.number %}
+                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+            {% elif num > orders.number|add:'-3' and num < orders.number|add:'3' %}
+                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
+            {% endif %}
+        {% endfor %}
+        {% if orders.has_next %}
+            <li class="page-item"><a class="page-link" href="?page={{ orders.next_page_number }}&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ orders.paginator.num_pages }}&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<!-- Info Card -->
+<div class="card shadow-sm mb-4 border-start border-primary border-3">
+    <div class="card-body py-3">
+        <h6 class="fw-bold mb-2"><i class="fas fa-info-circle text-primary me-2"></i>How Redirection Works</h6>
+        <ol class="mb-0 small text-muted">
+            <li>Orders with <span class="badge bg-danger">Return</span> status appear here automatically.</li>
+            <li>Click the <span class="badge bg-success"><i class="fas fa-random"></i></span> button to open the redirect modal &mdash; edit customer, branch, address.</li>
+            <li>Choose a logistics provider (NCM or Pick & Drop), select API account, and send directly from the modal.</li>
+        </ol>
+    </div>
+</div>
+
+<!-- ===================== REDIRECT MODAL ===================== -->
+<div class="modal fade" id="redirectModal" tabindex="-1" aria-labelledby="redirectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header redirect-modal-header">
+                <div>
+                    <h5 class="modal-title mb-0" id="redirectModalLabel">
+                        <i class="fas fa-random me-2"></i>Edit & Redirect Order
+                    </h5>
+                    <div class="d-flex align-items-center gap-2 mt-1">
+                        <small class="text-white-50" id="redirectModalOrderNum"></small>
+                        <span id="redirectCurrentStatus" class="badge bg-light bg-opacity-25 text-white" style="font-size:0.7rem;"></span>
+                        <span id="redirectCurrentLogisticsBadge"></span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <!-- Loading State -->
+                <div id="redirectModalLoading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3 text-muted">Loading order details...</p>
+                </div>
+
+                <!-- Content -->
+                <div id="redirectModalContent" style="display: none;">
+                    <form id="redirectForm">
+                        {% csrf_token %}
+                        <input type="hidden" id="rf_order_id" name="order_id">
+
+                        <!-- SECTION 1: Customer & Shipping -->
+                        <div class="redirect-section">
+                            <div class="section-header d-flex align-items-center justify-content-between">
+                                <span><i class="fas fa-user-edit text-primary me-2"></i>Customer & Shipping Details</span>
+                                <span class="badge bg-primary bg-opacity-10 text-primary" id="rf_order_from_badge" style="font-size:0.72rem;"></span>
+                            </div>
+                            <div class="section-body">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Customer Name <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="rf_customer_name" name="customer_name" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Phone <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="rf_customer_phone" name="customer_phone" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Email</label>
+                                        <input type="email" class="form-control" id="rf_customer_email" name="customer_email">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Branch / City <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="rf_branch_city" name="branch_city" list="cityList" required>
+                                        <datalist id="cityList">
+                                            {% for city in cities %}
+                                                <option value="{{ city.name }}">
+                                            {% endfor %}
+                                        </datalist>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Shipping Address <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="rf_shipping_address" name="shipping_address" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Landmark</label>
+                                        <input type="text" class="form-control" id="rf_landmark" name="landmark">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">In / Out Valley</label>
+                                        <select class="form-select" id="rf_in_out" name="in_out">
+                                            <option value="in">Inside Valley</option>
+                                            <option value="out">Outside Valley</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">Order Status</label>
+                                        <select class="form-select" id="rf_status_setup" name="status_setup">
+                                            <option value="">-- Keep Current --</option>
+                                            {% for s in status_setups %}
+                                                <option value="{{ s.id }}">{{ s.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">Payment Status</label>
+                                        <select class="form-select" id="rf_payment_status_setup" name="payment_status_setup">
+                                            <option value="">-- Keep Current --</option>
+                                            {% for ps in payment_status_setups %}
+                                                <option value="{{ ps.id }}">{{ ps.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">Payment Method</label>
+                                        <select class="form-select" id="rf_payment_setup" name="payment_setup">
+                                            <option value="">-- Keep Current --</option>
+                                            {% for p in payment_setups %}
+                                                <option value="{{ p.id }}">{{ p.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">Notes / Instructions</label>
+                                        <textarea class="form-control" id="rf_notes" name="notes" rows="2"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 2: Order Items (readonly) -->
+                        <div class="redirect-section">
+                            <div class="section-header">
+                                <i class="fas fa-box text-warning me-2"></i>Order Items
+                            </div>
+                            <div class="section-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-sm mb-0" id="redirectItemsTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Product</th>
+                                                <th>Variation</th>
+                                                <th>SKU</th>
+                                                <th class="text-center">Qty</th>
+                                                <th class="text-end">Price</th>
+                                                <th class="text-end">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 3: Financial Details -->
+                        <div class="redirect-section">
+                            <div class="section-header">
+                                <i class="fas fa-calculator text-info me-2"></i>Financial Details
+                            </div>
+                            <div class="section-body">
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">Discount (Rs.)</label>
+                                        <input type="number" class="form-control" id="rf_discount_amount" name="discount_amount" step="0.01" min="0" oninput="recalcTotal()">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">Shipping Charge (Rs.)</label>
+                                        <input type="number" class="form-control" id="rf_shipping_charge" name="shipping_charge" step="0.01" min="0" oninput="recalcTotal()">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">Total Amount (Rs.) <span class="text-danger">*</span></label>
+                                        <input type="number" class="form-control fw-bold" id="rf_total_amount" name="total_amount" step="0.01" min="0" required>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">Package Weight (kg)</label>
+                                        <input type="number" class="form-control" id="rf_package_weight" name="package_weight" step="0.1" min="0.1" value="1.0">
+                                    </div>
+                                </div>
+                                <!-- Partial Payment -->
+                                <div class="row g-3 mt-1">
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch mt-4">
+                                            <input class="form-check-input" type="checkbox" id="rf_is_partial" onchange="togglePartialPayment()">
+                                            <label class="form-check-label fw-semibold" for="rf_is_partial">Partial Payment</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 partial-fields" style="display:none;">
+                                        <label class="form-label fw-semibold">Amount Paid (Rs.)</label>
+                                        <input type="number" class="form-control" id="rf_partial_paid" name="partial_amount_paid" step="0.01" min="0" oninput="calcRemaining()">
+                                    </div>
+                                    <div class="col-md-3 partial-fields" style="display:none;">
+                                        <label class="form-label fw-semibold">Remaining (Rs.)</label>
+                                        <input type="number" class="form-control bg-light" id="rf_remaining" name="remaining_amount" readonly>
+                                    </div>
+                                    <div class="col-md-3 partial-fields" style="display:none;">
+                                        <label class="form-label fw-semibold text-success">COD Amount (Rs.)</label>
+                                        <input type="text" class="form-control bg-light fw-bold text-success" id="rf_cod_display" readonly>
+                                        <small class="text-muted">Amount to collect on delivery</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 4: Logistics & Redirect -->
+                        <div class="redirect-section">
+                            <div class="section-header">
+                                <i class="fas fa-truck text-success me-2"></i>Logistics & Redirection
+                            </div>
+                            <div class="section-body">
+                                <!-- Current logistics info -->
+                                <div id="currentLogisticsInfo" class="alert alert-info border-0 mb-3" style="display:none;">
+                                    <div class="d-flex align-items-start">
+                                        <i class="fas fa-info-circle me-2 mt-1"></i>
+                                        <div class="flex-grow-1">
+                                            <span id="currentLogisticsText"></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row g-3">
+                                    <div class="col-md-5">
+                                        <label class="form-label fw-semibold">Logistics Action</label>
+                                        <select class="form-select" id="rf_send_to" name="send_to_logistics" onchange="toggleLogisticsOptions()">
+                                            <option value="">-- Save Only (Don't Send) --</option>
+                                            <!-- Options populated dynamically by JS based on order's NCM status -->
+                                        </select>
+                                        <small class="text-muted" id="rf_send_to_help">Select an action to redirect this order</small>
+                                    </div>
+
+                                    <!-- NCM REDIRECT Options (v2 redirect API) -->
+                                    <div id="ncmRedirectOptions" style="display:none;" class="col-12">
+                                        <div class="card border-success border-2">
+                                            <div class="card-header bg-success bg-opacity-10 py-2 d-flex align-items-center justify-content-between">
+                                                <strong><i class="fas fa-directions me-1"></i> NCM Redirect Order</strong>
+                                                <span class="badge bg-success">Uses NCM Redirect API</span>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="alert alert-light border mb-3">
+                                                    <i class="fas fa-info-circle text-primary me-1"></i>
+                                                    This will redirect the existing NCM order <strong id="ncmRedirectPk" class="text-success"></strong> to the new customer details above.
+                                                    If destination branch changes, a <code>RDRT-DiFF-BRNCH</code> charge applies. Same branch gets a <code>REDIRECT</code> charge.
+                                                </div>
+                                                <div class="row g-3">
+                                                    <div class="col-md-4">
+                                                        <label class="form-label fw-semibold">API Account <span class="text-danger">*</span></label>
+                                                        <select class="form-select" id="rf_ncm_redirect_api" name="api_config_id_ncm_redirect">
+                                                            {% for config in ncm_api_configs %}
+                                                                <option value="{{ config.id }}">{{ config.api_name }}</option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label fw-semibold">Destination Branch ID <small class="text-muted">(optional)</small></label>
+                                                        <input type="number" class="form-control" id="rf_ncm_destination" name="ncm_destination" placeholder="Leave blank if same branch">
+                                                        <small class="text-muted">NCM branch ID — only if changing destination</small>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label fw-semibold">COD Amount (Rs.)</label>
+                                                        <input type="number" class="form-control" id="rf_ncm_cod_charge" name="cod_charge" step="0.01" min="0">
+                                                        <small class="text-muted">Amount to collect on delivery</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- NCM CREATE NEW Options (v1 create API) -->
+                                    <div id="ncmCreateOptions" style="display:none;" class="col-12">
+                                        <div class="card border-primary border-1">
+                                            <div class="card-header bg-primary bg-opacity-10 py-2 d-flex align-items-center justify-content-between">
+                                                <strong><i class="fas fa-plus-circle me-1"></i> NCM — Create New Order</strong>
+                                                <span class="badge bg-primary">New NCM Shipment</span>
+                                            </div>
+                                            <div class="card-body">
+                                                <div id="ncmCreateClearWarning" class="alert alert-warning mb-3" style="display:none;">
+                                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                                    This order already has an NCM ID. Creating a new order requires clearing existing logistics data.
+                                                    <div class="form-check form-switch mt-2">
+                                                        <input class="form-check-input" type="checkbox" id="rf_clear_logistics" name="clear_logistics" value="true">
+                                                        <label class="form-check-label small fw-semibold" for="rf_clear_logistics">
+                                                            <i class="fas fa-eraser me-1"></i>Clear existing logistics data
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="row g-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label fw-semibold">API Account <span class="text-danger">*</span></label>
+                                                        <select class="form-select" id="rf_ncm_api" name="api_config_id_ncm">
+                                                            {% for config in ncm_api_configs %}
+                                                                <option value="{{ config.id }}">{{ config.api_name }}</option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label fw-semibold">From Branch</label>
+                                                        <select class="form-select" id="rf_from_branch" name="from_branch">
+                                                            <option value="TINKUNE" selected>TINKUNE</option>
+                                                            <option value="LAZIMPAT">LAZIMPAT</option>
+                                                            <option value="KALIMATI">KALIMATI</option>
+                                                            <option value="KOTESHWOR">KOTESHWOR</option>
+                                                            <option value="BALAJU">BALAJU</option>
+                                                            <option value="CHABAHIL">CHABAHIL</option>
+                                                            <option value="BANESHWOR">BANESHWOR</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label fw-semibold">Delivery Type</label>
+                                                        <select class="form-select" id="rf_delivery_type" name="delivery_type">
+                                                            <option value="Door2Door" selected>Door to Door</option>
+                                                            <option value="Branch2Door">Branch to Door</option>
+                                                            <option value="Door2Branch">Door to Branch</option>
+                                                            <option value="Branch2Branch">Branch to Branch</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label fw-semibold">Weight (kg)</label>
+                                                        <input type="number" class="form-control" id="rf_ncm_weight" name="default_weight_ncm" value="1.0" step="0.1" min="0.1">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- PND Options -->
+                                    <div id="pndOptions" style="display:none;" class="col-12">
+                                        <div class="card border-warning border-1">
+                                            <div class="card-header bg-warning bg-opacity-10 py-2 d-flex align-items-center justify-content-between">
+                                                <strong><i class="fas fa-truck-moving me-1"></i> Pick and Drop Configuration</strong>
+                                                <span class="badge bg-warning text-dark">Send via PND</span>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row g-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label fw-semibold">API Account <span class="text-danger">*</span></label>
+                                                        <select class="form-select" id="rf_pnd_api" name="api_config_id_pnd">
+                                                            {% for config in pnd_api_configs %}
+                                                                <option value="{{ config.id }}">{{ config.api_name }}</option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label fw-semibold">Weight (kg)</label>
+                                                        <input type="number" class="form-control" id="rf_pnd_weight" name="default_weight_pnd" value="1.0" step="0.1" min="0.1">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="modal-footer redirect-modal-footer d-flex justify-content-between">
+                <div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times me-1"></i>Cancel</button>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary" id="btnSaveOnly" onclick="submitRedirect(false)">
+                        <i class="fas fa-save me-1"></i>Save Changes Only
+                    </button>
+                    <button type="button" class="btn btn-success btn-lg" id="btnSaveAndSend" onclick="submitRedirect(true)" style="display:none;">
+                        <i class="fas fa-paper-plane me-1"></i>Save & Redirect to Logistics
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="redirectLoadingOverlay" class="redirect-loading-overlay" style="display:none;">
+    <div class="redirect-loading-box">
+        <div class="spinner-border text-white mb-3" style="width: 3rem; height: 3rem;"></div>
+        <h5 class="text-white mb-1">Processing Redirect...</h5>
+        <p class="text-white-50 mb-0" id="redirectLoadingText">Saving order and sending to logistics</p>
+    </div>
+</div>
+
+<!-- Toast for notifications -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999;">
+    <div id="redirectToast" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body" id="redirectToastBody"></div>
+            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .border-left-primary { border-left: 4px solid #4e73df !important; }
+    .border-left-warning { border-left: 4px solid #f6c23e !important; }
+    .border-left-success { border-left: 4px solid #1cc88a !important; }
+    .border-left-info    { border-left: 4px solid #36b9cc !important; }
+
+    .stat-card { transition: transform 0.2s ease, box-shadow 0.2s ease; border: none; border-radius: 0.5rem; }
+    .stat-card:hover { transform: translateY(-3px); box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.12) !important; }
+    .stat-label { font-size: 0.7rem; letter-spacing: 0.05em; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; }
+    .stat-icon { opacity: 0.3; }
+
+    .filter-card { border: none; border-radius: 0.5rem; }
+
+    .bulk-bar { border: 2px solid #4e73df; border-radius: 0.5rem; animation: slideDown 0.3s ease; }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .bg-gradient-primary { background: linear-gradient(135deg, #4e73df 0%, #224abe 100%); border-radius: 0.5rem 0.5rem 0 0; }
+
+    .redirect-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6c757d; border-bottom: 2px solid #e3e6f0; padding: 0.75rem; }
+    .redirect-table td { vertical-align: middle; padding: 0.65rem 0.75rem; }
+    .redirect-table tbody tr { transition: background-color 0.15s ease; }
+    .redirect-table tbody tr:hover { background-color: #f8f9fc; }
+    .redirect-btn { border-color: #1cc88a; color: #1cc88a; }
+    .redirect-btn:hover { background-color: #1cc88a; color: #fff; }
+
+    .empty-state { padding: 2rem; }
+    .empty-icon { width: 80px; height: 80px; margin: 0 auto; background: #f8f9fc; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+
+    .pagination .page-link { border-radius: 0.35rem; margin: 0 2px; color: #4e73df; }
+    .pagination .page-item.active .page-link { background-color: #4e73df; border-color: #4e73df; }
+
+    /* Redirect Modal */
+    .redirect-modal-header { background: linear-gradient(135deg, #4e73df 0%, #224abe 100%); color: #fff; padding: 1rem 1.5rem; }
+    .redirect-modal-footer { background: #f8f9fc; border-top: 1px solid #e3e6f0; padding: 0.75rem 1.5rem; }
+
+    .redirect-section { border-bottom: 1px solid #e3e6f0; }
+    .redirect-section:last-child { border-bottom: none; }
+    .section-header { padding: 0.75rem 1.5rem; background: #f8f9fc; font-weight: 600; font-size: 0.9rem; color: #333; }
+    .section-body { padding: 1rem 1.5rem; }
+
+    #redirectModal .modal-content { border: none; border-radius: 0.75rem; overflow: hidden; }
+    #redirectModal .form-label { font-size: 0.82rem; margin-bottom: 0.25rem; }
+    #redirectModal .form-control, #redirectModal .form-select { font-size: 0.9rem; }
+
+    #redirectItemsTable th { font-size: 0.75rem; text-transform: uppercase; }
+    #redirectItemsTable td { font-size: 0.85rem; }
+
+    .redirect-loading-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.7); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .redirect-loading-box { text-align: center; }
+
+    @media (max-width: 768px) {
+        .stat-value { font-size: 1.2rem; }
+        .redirect-table { font-size: 0.85rem; }
+        h2 { font-size: 1.4rem; }
+        .section-body { padding: 0.75rem 1rem; }
+    }
+</style>
+
+<script>
+const CSRF_TOKEN = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+    || '{{ csrf_token }}';
+
+// ========== TABLE HELPERS ==========
+function selectAllOrders() {
+    const checked = document.getElementById('selectAllCheckbox').checked;
+    document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = checked);
+    updateBulkBar();
+}
+function updateBulkBar() {
+    const count = document.querySelectorAll('.order-checkbox:checked').length;
+    document.getElementById('selectedCount').textContent = count + ' order(s) selected';
+    document.getElementById('bulkActionsBar').style.display = count > 0 ? 'block' : 'none';
+}
+function clearSelection() {
+    document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = false);
+    document.getElementById('selectAllCheckbox').checked = false;
+    updateBulkBar();
+}
+function confirmBulkAction() {
+    const action = document.querySelector('select[name="bulk_action"]').value;
+    const count = document.querySelectorAll('.order-checkbox:checked').length;
+    if (!action) { alert('Please select an action'); return false; }
+    return confirm('Apply action to ' + count + ' order(s)?');
+}
+function changePerPage(val) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('per_page', val);
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+}
+
+// ========== UTILITY ==========
+function escHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+}
+
+function safeFloat(val) {
+    const n = parseFloat(val);
+    return isNaN(n) ? 0 : n;
+}
+
+function showToast(message, bgClass) {
+    const toast = document.getElementById('redirectToast');
+    toast.className = 'toast align-items-center border-0 ' + bgClass;
+    document.getElementById('redirectToastBody').textContent = message;
+    const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+    bsToast.show();
+}
+
+// ========== FINANCIAL HELPERS ==========
+function recalcTotal() {
+    // Auto-recalculate is optional; user can override total manually
+    // Just update COD display
+    calcRemaining();
+}
+
+function togglePartialPayment() {
+    const isPartial = document.getElementById('rf_is_partial').checked;
+    document.querySelectorAll('.partial-fields').forEach(el => {
+        el.style.display = isPartial ? '' : 'none';
+    });
+    if (!isPartial) {
+        document.getElementById('rf_partial_paid').value = '';
+        document.getElementById('rf_remaining').value = '';
+        document.getElementById('rf_cod_display').value = '';
+    } else {
+        calcRemaining();
+    }
+}
+
+function calcRemaining() {
+    const total = safeFloat(document.getElementById('rf_total_amount').value);
+    const paid = safeFloat(document.getElementById('rf_partial_paid').value);
+    const remaining = Math.max(0, total - paid);
+    document.getElementById('rf_remaining').value = remaining.toFixed(2);
+
+    const isPartial = document.getElementById('rf_is_partial').checked;
+    const codAmount = isPartial ? remaining : total;
+    document.getElementById('rf_cod_display').value = 'Rs.' + codAmount.toFixed(2);
+}
+
+// ========== REDIRECT MODAL ==========
+let _currentOrderData = null;
+
+function openRedirectModal(orderId) {
+    _currentOrderData = null;
+    const modalEl = document.getElementById('redirectModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    // Reset loading state
+    const loadingEl = document.getElementById('redirectModalLoading');
+    loadingEl.style.display = 'block';
+    loadingEl.innerHTML = `
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-3 text-muted">Loading order details...</p>
+    `;
+    document.getElementById('redirectModalContent').style.display = 'none';
+    modal.show();
+
+    fetch(`/api/orders/${orderId}/redirect-get/`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(resp => {
+        if (!resp.ok) throw new Error('Failed to load order (HTTP ' + resp.status + ')');
+        return resp.json();
+    })
+    .then(data => {
+        if (data.status !== 'success') {
+            loadingEl.innerHTML =
+                `<div class="text-center text-danger py-4"><i class="fas fa-exclamation-circle fa-2x mb-2 d-block"></i><p>${escHtml(data.message || 'Error loading order')}</p></div>`;
+            return;
+        }
+        loadingEl.style.display = 'none';
+        document.getElementById('redirectModalContent').style.display = 'block';
+        try {
+            populateRedirectModal(data.order);
+        } catch (e) {
+            document.getElementById('redirectModalContent').style.display = 'none';
+            loadingEl.style.display = 'block';
+            loadingEl.innerHTML =
+                `<div class="text-center text-danger py-4"><i class="fas fa-exclamation-circle fa-2x mb-2 d-block"></i><p>Error populating modal: ${escHtml(e.message)}</p></div>`;
+            console.error('populateRedirectModal error:', e);
+        }
+    })
+    .catch(err => {
+        loadingEl.innerHTML =
+            `<div class="text-center text-danger py-4"><i class="fas fa-exclamation-circle fa-2x mb-2 d-block"></i><p>Could not load order: ${escHtml(err.message)}</p></div>`;
+    });
+}
+
+function populateRedirectModal(order) {
+    _currentOrderData = order;
+
+    // Safe element getter — logs warning if element not found
+    function _el(id) {
+        const el = document.getElementById(id);
+        if (!el) console.warn('[RedirectModal] Element not found: #' + id);
+        return el;
+    }
+
+    const orderIdEl = _el('rf_order_id');
+    if (orderIdEl) orderIdEl.value = order.id;
+
+    const orderNumEl = _el('redirectModalOrderNum');
+    if (orderNumEl) orderNumEl.textContent = '#' + order.order_number;
+
+    // Header badges
+    const statusEl = _el('redirectCurrentStatus');
+    if (statusEl) {
+        statusEl.textContent = (order.order_status || 'N/A').toUpperCase();
+    }
+    const logBadge = _el('redirectCurrentLogisticsBadge');
+    if (logBadge) {
+        if (order.ncm_order_id) {
+            logBadge.innerHTML = `<span class="badge bg-success" style="font-size:0.7rem;">NCM: ${order.ncm_order_id}</span>`;
+        } else if (order.pnd_order_id) {
+            logBadge.innerHTML = `<span class="badge bg-warning text-dark" style="font-size:0.7rem;">PND: ${escHtml(order.pnd_order_id)}</span>`;
+        } else {
+            logBadge.innerHTML = `<span class="badge bg-secondary" style="font-size:0.7rem;">Not Sent</span>`;
+        }
+    }
+
+    // Order from badge
+    const fromBadge = _el('rf_order_from_badge');
+    if (fromBadge) {
+        fromBadge.textContent = order.order_from ? 'Source: ' + order.order_from : '';
+        fromBadge.style.display = order.order_from ? '' : 'none';
+    }
+
+    // Customer fields
+    const fields = {
+        'rf_customer_name': order.customer_name || '',
+        'rf_customer_phone': order.customer_phone || '',
+        'rf_customer_email': order.customer_email || '',
+        'rf_shipping_address': order.shipping_address || '',
+        'rf_landmark': order.landmark || '',
+        'rf_branch_city': order.branch_city || '',
+        'rf_in_out': order.in_out || 'out',
+        'rf_notes': order.notes || '',
+        'rf_status_setup': order.status_setup_id || '',
+        'rf_payment_status_setup': order.payment_status_setup_id || '',
+        'rf_payment_setup': order.payment_setup_id || '',
+        'rf_discount_amount': safeFloat(order.discount_amount).toFixed(2),
+        'rf_shipping_charge': safeFloat(order.shipping_charge).toFixed(2),
+        'rf_total_amount': safeFloat(order.total_amount).toFixed(2),
+        'rf_package_weight': safeFloat(order.package_weight) || 1.0,
+    };
+    for (const [id, val] of Object.entries(fields)) {
+        const el = _el(id);
+        if (el) el.value = val;
+    }
+
+    // Partial payment
+    const isPartial = order.is_partial_payment || false;
+    const partialEl = _el('rf_is_partial');
+    if (partialEl) partialEl.checked = isPartial;
+    const paidEl = _el('rf_partial_paid');
+    if (paidEl) {
+        paidEl.value = isPartial ? safeFloat(order.partial_amount_paid).toFixed(2) : '';
+    }
+    togglePartialPayment();
+    if (isPartial) calcRemaining();
+
+    // Sync weight to logistics weight fields
+    const weight = safeFloat(order.package_weight) || 1.0;
+    const ncmWeightEl = _el('rf_ncm_weight');
+    if (ncmWeightEl) ncmWeightEl.value = weight;
+    const pndWeightEl = _el('rf_pnd_weight');
+    if (pndWeightEl) pndWeightEl.value = weight;
+
+    // NCM defaults from order
+    if (order.ncm_from_branch) {
+        const fromBranchEl = _el('rf_from_branch');
+        if (fromBranchEl) {
+            for (let i = 0; i < fromBranchEl.options.length; i++) {
+                if (fromBranchEl.options[i].value === order.ncm_from_branch) {
+                    fromBranchEl.value = order.ncm_from_branch;
+                    break;
+                }
+            }
+        }
+    }
+    if (order.ncm_delivery_type) {
+        const dtEl = _el('rf_delivery_type');
+        if (dtEl) dtEl.value = order.ncm_delivery_type;
+    }
+
+    // Items table
+    const tbody = document.querySelector('#redirectItemsTable tbody');
+    if (tbody) {
+        tbody.innerHTML = '';
+        let itemsSubtotal = 0;
+        if (order.items && order.items.length) {
+            order.items.forEach(item => {
+                const itemTotal = safeFloat(item.total);
+                itemsSubtotal += itemTotal;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${escHtml(item.product_name)}</strong></td>
+                    <td>${escHtml(item.variation_name || '-')}</td>
+                    <td><span class="text-muted">${escHtml(item.sku || '-')}</span></td>
+                    <td class="text-center">${item.quantity}</td>
+                    <td class="text-end">Rs.${safeFloat(item.price).toFixed(2)}</td>
+                    <td class="text-end fw-bold">Rs.${itemTotal.toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i>No items</td></tr>';
+        }
+    }
+
+    // Current logistics info
+    const logInfo = _el('currentLogisticsInfo');
+    const logText = _el('currentLogisticsText');
+
+    if (logInfo && logText) {
+        if (order.ncm_order_id) {
+            logInfo.style.display = 'block';
+            logInfo.className = 'alert alert-success border-0 mb-3';
+            logText.innerHTML = `<strong>NCM Order Active</strong> — ID: <span class="badge bg-success">${order.ncm_order_id}</span>
+                ${order.ncm_status ? ' &middot; Status: <em>' + escHtml(order.ncm_status) + '</em>' : ''}
+                <br><small class="text-muted">Use <strong>"NCM — Redirect Order"</strong> to redirect this to a new customer/address via NCM's redirect API.</small>`;
+        } else if (order.pnd_order_id) {
+            logInfo.style.display = 'block';
+            logInfo.className = 'alert alert-warning border-0 mb-3';
+            // Sanitize tracking URL — only allow http/https to prevent javascript: XSS
+            let safeTrackUrl = '';
+            if (order.pnd_tracking_url) {
+                try { const u = new URL(order.pnd_tracking_url); if (u.protocol === 'http:' || u.protocol === 'https:') safeTrackUrl = u.href; } catch(e) {}
+            }
+            logText.innerHTML = `<strong>Pick &amp; Drop Active</strong> — ID: <span class="badge bg-warning text-dark">${escHtml(order.pnd_order_id)}</span>
+                ${order.pnd_status ? ' &middot; Status: <em>' + escHtml(order.pnd_status) + '</em>' : ''}
+                ${safeTrackUrl ? '<br><a href="' + escHtml(safeTrackUrl) + '" target="_blank" rel="noopener" class="small"><i class="fas fa-external-link-alt me-1"></i>Track Shipment</a>' : ''}`;
+        } else {
+            logInfo.style.display = 'block';
+            logInfo.className = 'alert alert-secondary border-0 mb-3';
+            logText.innerHTML = `<i class="fas fa-info-circle me-1"></i>This order has <strong>not been sent</strong> to any logistics provider yet. Select an option below to send.`;
+        }
+    }
+
+    // Build dynamic dropdown options based on order state
+    const sendToSelect = _el('rf_send_to');
+    if (sendToSelect) {
+        sendToSelect.innerHTML = '<option value="">-- Save Only (Don\'t Send) --</option>';
+        if (order.ncm_order_id) {
+            sendToSelect.innerHTML += `<option value="ncm_redirect" selected>NCM — Redirect Order (ID: ${order.ncm_order_id})</option>`;
+            sendToSelect.innerHTML += '<option value="ncm">NCM — Create New Order</option>';
+        } else {
+            sendToSelect.innerHTML += '<option value="ncm">NCM — Create New Order</option>';
+        }
+        sendToSelect.innerHTML += '<option value="pnd">Pick and Drop</option>';
+    }
+
+    // Pre-fill NCM redirect fields
+    if (order.ncm_order_id) {
+        const pkEl = _el('ncmRedirectPk');
+        if (pkEl) pkEl.textContent = '#' + order.ncm_order_id;
+        const codAmount = (order.is_partial_payment && safeFloat(order.remaining_amount) > 0)
+            ? safeFloat(order.remaining_amount)
+            : safeFloat(order.total_amount);
+        const codEl = _el('rf_ncm_cod_charge');
+        if (codEl) codEl.value = codAmount.toFixed(2);
+    }
+
+    // Show NCM clear warning if has ncm_order_id and user might want to create new
+    const clearWarn = _el('ncmCreateClearWarning');
+    if (clearWarn) {
+        clearWarn.style.display = order.ncm_order_id ? 'block' : 'none';
+    }
+    const clearEl = _el('rf_clear_logistics');
+    if (clearEl) clearEl.checked = false;
+
+    toggleLogisticsOptions();
+}
+
+function toggleLogisticsOptions() {
+    const sendToEl = document.getElementById('rf_send_to');
+    if (!sendToEl) return;
+    const val = sendToEl.value;
+
+    const pairs = {
+        'ncmRedirectOptions': val === 'ncm_redirect' ? 'block' : 'none',
+        'ncmCreateOptions': val === 'ncm' ? 'block' : 'none',
+        'pndOptions': val === 'pnd' ? 'block' : 'none',
+        'btnSaveAndSend': val ? 'inline-flex' : 'none',
+        'btnSaveOnly': 'inline-flex',
+    };
+    for (const [id, disp] of Object.entries(pairs)) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = disp;
+    }
+
+    // Safety: uncheck clear_logistics when switching to redirect (it needs existing NCM ID)
+    if (val === 'ncm_redirect') {
+        const clearEl = document.getElementById('rf_clear_logistics');
+        if (clearEl) clearEl.checked = false;
+    }
+
+    // Update button text based on action
+    const sendBtn = document.getElementById('btnSaveAndSend');
+    if (sendBtn) {
+        if (val === 'ncm_redirect') {
+            sendBtn.innerHTML = '<i class="fas fa-directions me-1"></i>Save & Redirect via NCM';
+            sendBtn.className = 'btn btn-success btn-lg';
+        } else if (val === 'ncm') {
+            sendBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Save & Create NCM Order';
+            sendBtn.className = 'btn btn-primary btn-lg';
+        } else if (val === 'pnd') {
+            sendBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Save & Send to PND';
+            sendBtn.className = 'btn btn-warning btn-lg';
+        }
+    }
+
+    // Update help text
+    const helpText = document.getElementById('rf_send_to_help');
+    if (helpText) {
+        if (val === 'ncm_redirect') helpText.textContent = 'Redirects existing NCM order to new customer/address via NCM Redirect API';
+        else if (val === 'ncm') helpText.textContent = 'Creates a brand new NCM shipment order';
+        else if (val === 'pnd') helpText.textContent = 'Sends order to Pick and Drop logistics';
+        else helpText.textContent = 'Select an action to redirect this order';
+    }
+
+    // Sync weight from package weight field
+    const pkgW = document.getElementById('rf_package_weight');
+    const weight = (pkgW ? pkgW.value : '') || '1.0';
+    if (val === 'ncm') { const el = document.getElementById('rf_ncm_weight'); if (el) el.value = weight; }
+    if (val === 'pnd') { const el = document.getElementById('rf_pnd_weight'); if (el) el.value = weight; }
+
+    // Update COD charge for redirect when total changes
+    if (val === 'ncm_redirect') {
+        const partialEl = document.getElementById('rf_is_partial');
+        const totalEl = document.getElementById('rf_total_amount');
+        const remainEl = document.getElementById('rf_remaining');
+        const codEl = document.getElementById('rf_ncm_cod_charge');
+        if (partialEl && totalEl && codEl) {
+            const isPartial = partialEl.checked;
+            const total = safeFloat(totalEl.value);
+            const remaining = remainEl ? safeFloat(remainEl.value) : 0;
+            codEl.value = (isPartial && remaining > 0 ? remaining : total).toFixed(2);
+        }
+    }
+}
+
+function submitRedirect(sendToLogistics) {
+    const form = document.getElementById('redirectForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const orderId = document.getElementById('rf_order_id').value;
+    if (!orderId) { showToast('No order selected', 'text-bg-danger'); return; }
+
+    const sendTo = sendToLogistics ? document.getElementById('rf_send_to').value : '';
+
+    // Validate: if user wants to send but didn't select provider
+    if (sendToLogistics && !sendTo) {
+        showToast('Please select a logistics action before redirecting.', 'text-bg-warning');
+        document.getElementById('rf_send_to').focus();
+        return;
+    }
+
+    const formData = new FormData(form);
+
+    // Set correct send_to_logistics value
+    formData.set('send_to_logistics', sendTo);
+
+    // Handle partial payment flag
+    const isPartial = document.getElementById('rf_is_partial').checked;
+    formData.set('is_partial_payment', isPartial ? 'true' : 'false');
+
+    // Map the correct api_config_id and weight based on provider
+    if (sendTo === 'ncm_redirect') {
+        formData.set('api_config_id', document.getElementById('rf_ncm_redirect_api').value);
+        formData.set('cod_charge', document.getElementById('rf_ncm_cod_charge').value);
+        formData.set('ncm_destination', document.getElementById('rf_ncm_destination').value || '');
+    } else if (sendTo === 'ncm') {
+        formData.set('api_config_id', document.getElementById('rf_ncm_api').value);
+        formData.set('default_weight', document.getElementById('rf_ncm_weight').value);
+        // For create new — check if clear_logistics is needed
+        if (_currentOrderData && _currentOrderData.ncm_order_id) {
+            const clearChecked = document.getElementById('rf_clear_logistics').checked;
+            if (!clearChecked) {
+                showToast('This order already has an NCM ID. Check "Clear existing logistics data" to create a new order.', 'text-bg-warning');
+                return;
+            }
+        }
+    } else if (sendTo === 'pnd') {
+        formData.set('api_config_id', document.getElementById('rf_pnd_api').value);
+        formData.set('default_weight', document.getElementById('rf_pnd_weight').value);
+    }
+
+    // Confirm with details
+    let confirmMsg = 'Save changes to this order?';
+    const custName = formData.get('customer_name');
+    const custPhone = formData.get('customer_phone');
+    const city = formData.get('branch_city');
+    const total = formData.get('total_amount');
+
+    if (sendTo === 'ncm_redirect') {
+        const ncmId = _currentOrderData ? _currentOrderData.ncm_order_id : '?';
+        const cod = formData.get('cod_charge');
+        confirmMsg = `REDIRECT NCM Order #${ncmId} to new customer?\n\nNew Customer: ${custName}\nPhone: ${custPhone}\nAddress: ${formData.get('shipping_address')}\nCity: ${city}\nCOD: Rs.${cod}\n\nNCM will apply redirect charges.`;
+    } else if (sendTo === 'ncm') {
+        confirmMsg = `Create a NEW NCM order for this shipment?\n\nCustomer: ${custName}\nCity: ${city}\nTotal: Rs.${total}`;
+    } else if (sendTo === 'pnd') {
+        confirmMsg = `Send this order to Pick & Drop?\n\nCustomer: ${custName}\nCity: ${city}\nTotal: Rs.${total}`;
+    }
+
+    if (!confirm(confirmMsg)) return;
+
+    // Disable buttons to prevent double-submit (after all validation/confirmation)
+    document.getElementById('btnSaveOnly').disabled = true;
+    document.getElementById('btnSaveAndSend').disabled = true;
+
+    // Show loading overlay
+    const overlay = document.getElementById('redirectLoadingOverlay');
+    const loadingText = document.getElementById('redirectLoadingText');
+    if (sendTo === 'ncm_redirect') {
+        loadingText.textContent = 'Redirecting NCM order to new customer...';
+    } else if (sendTo === 'ncm') {
+        loadingText.textContent = 'Creating new NCM order...';
+    } else if (sendTo === 'pnd') {
+        loadingText.textContent = 'Sending to Pick & Drop...';
+    } else {
+        loadingText.textContent = 'Saving order changes...';
+    }
+    overlay.style.display = 'flex';
+
+    fetch(`/api/orders/${orderId}/redirect-save/`, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData,
+    })
+    .then(resp => {
+        if (!resp.ok) {
+            return resp.json()
+                .then(d => { throw new Error(d.message || 'Server error ' + resp.status); })
+                .catch(e => { if (e instanceof SyntaxError) throw new Error('Server error ' + resp.status); throw e; });
+        }
+        return resp.json();
+    })
+    .then(data => {
+        overlay.style.display = 'none';
+
+        if (data.status === 'success') {
+            let msg = data.message;
+            let toastClass = 'text-bg-success';
+
+            if (data.logistics) {
+                if (data.logistics.status === 'success') {
+                    let logMsg = data.logistics.message || 'Sent successfully';
+                    if (data.logistics.delivery_charge) logMsg += ' | Delivery charge: Rs.' + data.logistics.delivery_charge;
+                    if (data.logistics.changelogs) logMsg += '\n' + data.logistics.changelogs;
+                    msg += ' | ' + logMsg;
+                } else if (data.logistics.status === 'skipped') {
+                    msg += ' | Logistics: ' + (data.logistics.message || 'Skipped');
+                    toastClass = 'text-bg-warning';
+                } else {
+                    msg += ' | Logistics FAILED: ' + (data.logistics.message || 'Unknown error');
+                    toastClass = 'text-bg-danger';
+                }
+            }
+
+            showToast(msg, toastClass);
+            const modalInstance = bootstrap.Modal.getInstance(document.getElementById('redirectModal'));
+            if (modalInstance) modalInstance.hide();
+
+            // Highlight the row then reload
+            const row = document.getElementById('order-row-' + orderId);
+            if (row) {
+                row.style.transition = 'background-color 0.5s ease';
+                row.style.backgroundColor = toastClass.includes('success') ? '#d4edda' : (toastClass.includes('warning') ? '#fff3cd' : '#f8d7da');
+            }
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast(data.message || 'An error occurred', 'text-bg-danger');
+        }
+    })
+    .catch(err => {
+        overlay.style.display = 'none';
+        showToast('Error: ' + err.message, 'text-bg-danger');
+    })
+    .finally(() => {
+        // Re-enable buttons
+        document.getElementById('btnSaveOnly').disabled = false;
+        document.getElementById('btnSaveAndSend').disabled = false;
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    updateBulkBar();
+
+    // Sync package weight changes to logistics weight fields
+    const pkgWeight = document.getElementById('rf_package_weight');
+    if (pkgWeight) {
+        pkgWeight.addEventListener('input', function() {
+            document.getElementById('rf_ncm_weight').value = this.value;
+            document.getElementById('rf_pnd_weight').value = this.value;
+        });
+    }
+});
+</script>
+{% endblock %}
