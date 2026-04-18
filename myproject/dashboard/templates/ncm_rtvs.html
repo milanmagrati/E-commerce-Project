@@ -1059,7 +1059,7 @@
                 {% for rtv in rtvs %}
                 <tr data-order-id="{{ rtv.order_id|escapejs }}"
                     data-comment="{{ rtv.comment|default:''|escapejs }}">
-                    <td class="sn-col">{{ forloop.counter }}</td>
+                    <td class="sn-col">{{ sn_offset|add:forloop.counter }}</td>
                     <td>
                         <span class="order-id-badge" onclick="viewOrderDetails('{{ rtv.order_id|escapejs }}')" title="View order details">
                             <i class="fas fa-hashtag" style="font-size:0.7rem;"></i>
@@ -1562,19 +1562,18 @@
     const tableRows = document.querySelectorAll('#rtvTable tbody tr');
     let activeFilter = 'all';
 
+    // S/N offset from server so numbering is continuous across pages
+    const snOffset = {{ sn_offset|default:0 }};
+
     function applyFilters() {
-        const searchTerm = (searchInput ? searchInput.value : '').toLowerCase().trim();
         let visibleIdx = 0;
 
         tableRows.forEach(function(row) {
             // Skip non-data rows (e.g., follow-up panel rows)
             if (!row.hasAttribute('data-order-id')) return;
 
-            const orderId = (row.getAttribute('data-order-id') || '').toLowerCase();
             const comment = (row.getAttribute('data-comment') || '').toLowerCase();
-            const rowText = orderId + ' ' + comment;
 
-            let matchSearch = !searchTerm || rowText.indexOf(searchTerm) >= 0;
             let matchFilter = true;
             if (activeFilter !== 'all') {
                 var f = activeFilter.toLowerCase();
@@ -1589,11 +1588,11 @@
                 }
             }
 
-            if (matchSearch && matchFilter) {
+            if (matchFilter) {
                 row.style.display = '';
                 visibleIdx++;
                 var snCell = row.querySelector('.sn-col');
-                if (snCell) snCell.textContent = visibleIdx;
+                if (snCell) snCell.textContent = snOffset + visibleIdx;
             } else {
                 row.style.display = 'none';
             }
@@ -1603,21 +1602,32 @@
         if (hdrCount) hdrCount.textContent = visibleIdx;
     }
 
+    // Server-side search with debounce so it works across all pages
+    var searchDebounceTimer = null;
+    function doServerSearch() {
+        var q = searchInput ? searchInput.value.trim() : '';
+        var url = new URL(window.location.href);
+        var currentSearch = url.searchParams.get('search') || '';
+        if (q === currentSearch) return; // no change
+        if (q) {
+            url.searchParams.set('search', q);
+        } else {
+            url.searchParams.delete('search');
+        }
+        url.searchParams.delete('page');
+        window.location.href = url.toString();
+    }
+
     if (searchInput) {
-        searchInput.addEventListener('input', applyFilters);
-        // Enter key triggers server-side search so results span all pages
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(doServerSearch, 500);
+        });
         searchInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                var q = searchInput.value.trim();
-                var url = new URL(window.location.href);
-                if (q) {
-                    url.searchParams.set('search', q);
-                } else {
-                    url.searchParams.delete('search');
-                }
-                url.searchParams.delete('page');
-                window.location.href = url.toString();
+                clearTimeout(searchDebounceTimer);
+                doServerSearch();
             }
         });
     }
@@ -1625,15 +1635,14 @@
     var clearBtn = document.getElementById('clearSearch');
     if (clearBtn) {
         clearBtn.addEventListener('click', function() {
-            // If a server-side search is active, navigate to remove it;
-            // otherwise just clear client-side
+            clearTimeout(searchDebounceTimer);
+            if (searchInput) { searchInput.value = ''; }
             var url = new URL(window.location.href);
             if (url.searchParams.get('search')) {
                 url.searchParams.delete('search');
                 url.searchParams.delete('page');
                 window.location.href = url.toString();
             } else {
-                if (searchInput) { searchInput.value = ''; }
                 applyFilters();
                 if (searchInput) searchInput.focus();
             }
@@ -1716,7 +1725,7 @@
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken(),
+                'X-CSRFToken': getCSRFToken(),
                 'X-Requested-With': 'XMLHttpRequest'
             },
             body: JSON.stringify({ comment: text })
@@ -2148,7 +2157,7 @@
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken(),
+                'X-CSRFToken': getCSRFToken(),
                 'X-Requested-With': 'XMLHttpRequest'
             },
             body: JSON.stringify({ order_id: orderId, comment: comment, api_config_id: apiConfigId || null })
@@ -2175,17 +2184,6 @@
     };
 
     // ==================== UTILITIES ====================
-    function getCsrfToken() {
-        var cookie = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
-        return cookie ? cookie.split('=')[1] : '';
-    }
-
-    function escapeHtml(str) {
-        var div = document.createElement('div');
-        div.appendChild(document.createTextNode(str || ''));
-        return div.innerHTML;
-    }
-
     function showToast(message, type) {
         var existing = document.querySelector('.rtv-toast');
         if (existing) existing.remove();

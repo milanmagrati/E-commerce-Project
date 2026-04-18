@@ -17509,6 +17509,7 @@ def ncm_rtvs_list(request):
         'error_message': None,
         'page_range': range(1, total_pages + 1),
         'search': search,
+        'sn_offset': (page - 1) * page_size,
         'ncm_api_configs': ncm_api_configs,
         'selected_api_config_id': api_config_id,
         'selected_config': selected_config,
@@ -17596,13 +17597,13 @@ def ncm_rtvs_sync(request):
         for cfg in configs_to_sync:
             try:
                 ncm_service = NCMService(api_config_id=cfg.id)
-                api_result = ncm_service.get_vendor_rtvs(max_pages=5, page_size=200)
+                api_result = ncm_service.get_vendor_rtvs(max_pages=50, page_size=200)
                 if not api_result['success']:
                     continue
 
                 found_oids = []
                 for order in api_result['data']:
-                    oid = order.get('orderid')
+                    oid = order.get('orderid') or order.get('id') or order.get('pk') or order.get('order_id')
                     if not oid:
                         continue
                     found_oids.append(oid)

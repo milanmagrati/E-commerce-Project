@@ -199,12 +199,12 @@ class NCMService:
         data = {'orderid': ncm_order_id, 'comments': comment}
         return self._make_request('POST', url, data=data)
 
-    def get_vendor_rtvs(self, max_pages: int = 10, page_size: int = 200):
+    def get_vendor_rtvs(self, max_pages: int = 50, page_size: int = 200):
         """Fetch vendor orders with vendor_return=True from NCM.
 
         Paginates through ``/vendor/orders`` and collects entries where
-        ``vendor_return`` is True.  Returns at most ``max_pages * page_size``
-        orders scanned.
+        ``vendor_return`` is truthy (handles both bool and string).
+        Returns at most ``max_pages * page_size`` orders scanned.
 
         Returns:
             {'success': True, 'data': [<order dict>, ...]}
@@ -218,14 +218,21 @@ class NCMService:
             )
             if not result['success']:
                 break
-            results = result['data'].get('results', [])
+            raw_data = result['data']
+            # Handle both paginated (dict with 'results') and flat list responses
+            if isinstance(raw_data, list):
+                results = raw_data
+            elif isinstance(raw_data, dict):
+                results = raw_data.get('results', [])
+            else:
+                break
             if not results:
                 break
             for order in results:
-                if order.get('vendor_return') is True:
+                if NCMService.parse_vendor_return(order.get('vendor_return')):
                     rtvs.append(order)
             # Stop if we've exhausted all pages
-            if not result['data'].get('next'):
+            if isinstance(raw_data, list) or not raw_data.get('next'):
                 break
         return {'success': True, 'data': rtvs}
 
