@@ -4024,11 +4024,11 @@ function renderComments(comments, container) {
 
     container.innerHTML = '';
     
-    // Sort comments by date (oldest first)
+    // Sort comments by date (newest first)
     const sortedComments = [...comments].sort((a, b) => {
         const timeA = new Date(a.created_at || a.date || a.timestamp || 0);
         const timeB = new Date(b.created_at || b.date || b.timestamp || 0);
-        return timeA - timeB;
+        return timeB - timeA;
     });
 
     sortedComments.forEach(comment => {
@@ -4073,7 +4073,7 @@ function submitNCMComment() {
     const optimisticElement = createCommentElement(optimisticComment);
     optimisticElement.style.opacity = '0.7';
     optimisticElement.style.animation = 'slideInUp 0.3s ease-out';
-    container.appendChild(optimisticElement);
+    container.prepend(optimisticElement);
 
     // Update comment count
     const currentCount = parseInt(countBadge.textContent) || 0;
