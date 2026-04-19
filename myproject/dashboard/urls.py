@@ -81,6 +81,8 @@ urlpatterns = [
     path('orders/possible-redirection/', views.possible_redirection_list, name='possible_redirection_list'),
     path('api/orders/<int:order_id>/redirect-get/', views.redirect_order_get, name='redirect_order_get'),
     path('api/orders/<int:order_id>/redirect-save/', views.redirect_order_save, name='redirect_order_save'),
+    path('api/rtv/<int:ncm_order_id>/redirect-get/', views.redirect_rtv_get, name='redirect_rtv_get'),
+    path('api/rtv/<int:ncm_order_id>/redirect-save/', views.redirect_rtv_save, name='redirect_rtv_save'),
 
     # NCM Exchange Order
     path('orders/<int:order_id>/exchange/', views.create_exchange_order_view, name='create_exchange_order'),

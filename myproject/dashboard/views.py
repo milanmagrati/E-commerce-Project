@@ -18,7 +18,7 @@ from .models import (Product, Order, OrderItem, Category, Customer,
                      OrderActivityLog, StockIn, City, StockInItem, Setup,
                      Supplier, Purchase, PurchaseItem, SupplierPayment,
                      BundleComponent, ProductPurchase, LogisticsAPIConfig,
-                     Branch)
+                     Branch, RTVOrder)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -4359,101 +4359,127 @@ def return_orders_list(request):
 @login_required
 @permission_required('can_view_orders')
 def possible_redirection_list(request):
-    """Display list of return orders that can potentially be redirected to another customer/branch."""
-    from datetime import timedelta
-    from django.utils import timezone
-    from django.db.models import Q, Sum
-    from decimal import Decimal
+    """Display NCM RTV orders that can potentially be redirected to another customer/branch.
 
-    orders = Order.objects.filter(
-        is_deleted=False,
-        order_status__iexact='return'
-    ).select_related(
-        'customer', 'branch', 'created_by', 'status_setup',
-        'payment_setup', 'payment_status_setup'
-    ).prefetch_related('items').order_by('-created_at')
+    RTVOrder-centric: shows all RTVOrder records from NCM and links them to
+    local Order records when available (via RTVOrder.order_id == Order.ncm_order_id).
+    """
+    from django.db.models import Q
+
+    # Base queryset: all RTV records
+    rtvs = RTVOrder.objects.select_related('api_config').order_by('-created_at')
 
     # GET FILTER PARAMETERS
     search_query = request.GET.get('search', '')
-    branch_filter = request.GET.get('branch', '')
-    logistics_filter = request.GET.get('logistics_status', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
     redirection_filter = request.GET.get('redirection', '')
+    api_config_filter = request.GET.get('api_config', '')
 
-    # Apply filters
+    # Apply filters on RTVOrder
     if search_query:
-        orders = orders.filter(
-            Q(order_number__icontains=search_query) |
-            Q(customer_name__icontains=search_query) |
-            Q(customer_phone__icontains=search_query) |
-            Q(barcode__icontains=search_query)
-        )
+        search_q = Q(order_id__icontains=search_query) | Q(comment__icontains=search_query)
+        rtvs = rtvs.filter(search_q)
 
-    if branch_filter:
-        orders = orders.filter(
-            Q(branch_id=branch_filter) |
-            Q(branch_city__iexact=branch_filter)
-        )
-
-    if logistics_filter == 'sent':
-        orders = orders.exclude(ncm_order_id__isnull=True)
-    elif logistics_filter == 'not_sent':
-        orders = orders.filter(ncm_order_id__isnull=True)
+    if api_config_filter:
+        rtvs = rtvs.filter(api_config_id=api_config_filter)
 
     if start_date and end_date:
         try:
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+            rtvs = rtvs.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
         except ValueError:
             pass
 
-    # Calculate statistics
-    all_return_orders = orders
-    total_redirectable = all_return_orders.count()
-    already_redirected = all_return_orders.exclude(ncm_order_id__isnull=True).count()
-    pending_redirection = all_return_orders.filter(ncm_order_id__isnull=True).count()
-    total_value = all_return_orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+    # Build a lookup of ncm_order_id -> local Order for linked orders
+    all_rtv_ncm_ids = list(rtvs.values_list('order_id', flat=True))
+    linked_orders = {}
+    if all_rtv_ncm_ids:
+        for order in Order.objects.filter(
+            is_deleted=False,
+            ncm_order_id__isnull=False,
+            ncm_order_id__in=all_rtv_ncm_ids,
+        ).select_related('customer', 'branch').only(
+            'id', 'order_number', 'customer_name', 'customer_phone',
+            'shipping_address', 'branch_city', 'total_amount',
+            'ncm_order_id', 'ncm_status', 'barcode',
+            'customer_id', 'branch_id',
+        ):
+            linked_orders[order.ncm_order_id] = order
+
+    # Stats (before redirection filter)
+    total_redirectable = rtvs.count()
+    linked_redirected = sum(
+        1 for ncm_id in all_rtv_ncm_ids
+        if ncm_id in linked_orders and (linked_orders[ncm_id].ncm_status or '').lower() == 'redirected'
+    )
+    already_redirected = linked_redirected
+    pending_redirection = total_redirectable - already_redirected
 
     # Redirection status filter (applied after stats)
     if redirection_filter == 'redirected':
-        orders = orders.exclude(ncm_order_id__isnull=True)
+        redirected_ncm_ids = [
+            ncm_id for ncm_id in all_rtv_ncm_ids
+            if ncm_id in linked_orders and (linked_orders[ncm_id].ncm_status or '').lower() == 'redirected'
+        ]
+        rtvs = rtvs.filter(order_id__in=redirected_ncm_ids)
     elif redirection_filter == 'pending':
-        orders = orders.filter(ncm_order_id__isnull=True)
+        redirected_ncm_ids = [
+            ncm_id for ncm_id in all_rtv_ncm_ids
+            if ncm_id in linked_orders and (linked_orders[ncm_id].ncm_status or '').lower() == 'redirected'
+        ]
+        rtvs = rtvs.exclude(order_id__in=redirected_ncm_ids)
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
     if per_page not in ('50', '100', '200'):
         per_page = '50'
-    paginator = Paginator(orders, int(per_page))
+    paginator = Paginator(rtvs, int(per_page))
     page_number = request.GET.get('page')
-    orders_page = paginator.get_page(page_number)
+    rtvs_page = paginator.get_page(page_number)
 
-    for order in orders_page.object_list:
-        try:
-            fix_order_decimals(order)
-        except Exception:
-            pass
+    # Build enriched entries for the template
+    rtv_entries = []
+    for rtv in rtvs_page.object_list:
+        local_order = linked_orders.get(rtv.order_id)
+        entry = {
+            'rtv': rtv,
+            'ncm_order_id': rtv.order_id,
+            'api_config_name': rtv.api_config.api_name if rtv.api_config else '—',
+            'comment': rtv.comment or '',
+            'rtv_date': rtv.created_at,
+            'local_order': local_order,
+            'has_local': local_order is not None,
+            'customer_name': local_order.customer_name if local_order else '',
+            'customer_phone': local_order.customer_phone if local_order else '',
+            'shipping_address': local_order.shipping_address if local_order else '',
+            'branch_city': local_order.branch_city if local_order else '',
+            'order_number': local_order.order_number if local_order else '',
+            'total_amount': local_order.total_amount if local_order else None,
+            'ncm_status': (local_order.ncm_status or '') if local_order else '',
+            'local_order_id': local_order.id if local_order else None,
+        }
+        rtv_entries.append(entry)
 
+    ncm_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
     branches = Branch.objects.filter(is_active=True).order_by('name')
     cities = City.objects.all().order_by('name')
-    ncm_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
     pnd_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True)
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
     payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
 
     context = {
-        'orders': orders_page,
+        'rtv_entries': rtv_entries,
+        'rtvs_page': rtvs_page,
         'total_redirectable': total_redirectable,
         'already_redirected': already_redirected,
         'pending_redirection': pending_redirection,
-        'total_value': total_value,
+        'linked_count': len(linked_orders),
         'search_query': search_query,
-        'branch_filter': branch_filter,
-        'logistics_filter': logistics_filter,
         'redirection_filter': redirection_filter,
+        'api_config_filter': api_config_filter,
         'start_date': start_date,
         'end_date': end_date,
         'per_page': per_page,
@@ -4464,7 +4490,6 @@ def possible_redirection_list(request):
         'status_setups': status_setups,
         'payment_status_setups': payment_status_setups,
         'payment_setups': payment_setups,
-        'page_obj': orders_page,
     }
 
     return render(request, 'possible_redirection.html', context)
@@ -4716,6 +4741,274 @@ def redirect_order_save(request, order_id):
 
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+@login_required
+@permission_required('can_view_orders')
+def redirect_rtv_get(request, ncm_order_id):
+    """AJAX: Get NCM order data for redirect modal (by NCM order ID, no local order required).
+
+    Fetches details from NCM API and returns them in the same format as
+    redirect_order_get so the modal JS can handle both cases uniformly.
+    """
+    from services.ncm_service import NCMService
+
+    # Look up RTVOrder for api_config
+    api_config_id = None
+    try:
+        rtv_rec = RTVOrder.objects.get(order_id=ncm_order_id)
+        api_config_id = rtv_rec.api_config_id
+    except RTVOrder.DoesNotExist:
+        pass
+
+    # Check if there's a linked local order — if so, use existing redirect_order_get logic
+    try:
+        local_order = Order.objects.select_related(
+            'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
+        ).prefetch_related('items__product').get(ncm_order_id=ncm_order_id, is_deleted=False)
+        # Reuse same data format as redirect_order_get
+        items = []
+        for item in local_order.items.all():
+            items.append({
+                'product_name': item.product_name or (str(item.product) if item.product else ''),
+                'variation_name': item.variation_name or '',
+                'quantity': item.quantity,
+                'price': str(item.price),
+                'total': str(item.total),
+                'product_id': item.product_id,
+                'variation_id': item.product_variation_id,
+                'sku': item.product_sku or '',
+            })
+        data = {
+            'id': local_order.id,
+            'ncm_order_id': local_order.ncm_order_id,
+            'order_number': local_order.order_number,
+            'barcode': local_order.barcode or '',
+            'customer_name': local_order.customer_name or '',
+            'customer_phone': local_order.customer_phone or '',
+            'customer_email': local_order.customer_email or '',
+            'shipping_address': local_order.shipping_address or '',
+            'landmark': local_order.landmark or '',
+            'branch_city': local_order.branch_city or '',
+            'branch_id': local_order.branch_id,
+            'in_out': local_order.in_out or 'out',
+            'notes': local_order.notes or '',
+            'order_from': local_order.order_from or '',
+            'total_amount': str(local_order.total_amount or 0),
+            'discount_amount': str(local_order.discount_amount or 0),
+            'shipping_charge': str(local_order.shipping_charge or 0),
+            'delivery_charge': str(local_order.delivery_charge or 0),
+            'is_partial_payment': local_order.is_partial_payment,
+            'partial_amount_paid': str(local_order.partial_amount_paid or 0),
+            'remaining_amount': str(local_order.remaining_amount or 0),
+            'package_weight': str(local_order.package_weight or 1.0),
+            'order_status': local_order.order_status or '',
+            'status_setup_id': local_order.status_setup_id,
+            'payment_status_setup_id': local_order.payment_status_setup_id,
+            'payment_setup_id': local_order.payment_setup_id,
+            'ncm_status': local_order.ncm_status or '',
+            'ncm_from_branch': local_order.ncm_from_branch or 'TINKUNE',
+            'ncm_delivery_type': local_order.ncm_delivery_type or 'Door2Door',
+            'logistics': local_order.logistics or '',
+            'items': items,
+            'source': 'local',
+        }
+        return JsonResponse({'status': 'success', 'order': data})
+    except Order.DoesNotExist:
+        pass
+
+    # No local order — fetch from NCM API
+    ncm_service = NCMService(api_config_id=api_config_id)
+    try:
+        details_result = ncm_service.get_order_details(ncm_order_id)
+        if not details_result['success']:
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Failed to fetch order from NCM: {details_result.get("error", "Unknown error")}'
+            }, status=502)
+
+        raw = details_result['data']
+        if isinstance(raw, list) and len(raw) > 0:
+            ncm_data = raw[0]
+        elif isinstance(raw, dict):
+            ncm_data = raw.get('data', raw.get('results', raw))
+            if isinstance(ncm_data, list) and len(ncm_data) > 0:
+                ncm_data = ncm_data[0]
+        else:
+            ncm_data = {}
+
+        data = {
+            'id': None,
+            'ncm_order_id': ncm_order_id,
+            'order_number': str(ncm_data.get('vendororderid', ncm_data.get('vendor_order_id', ''))),
+            'barcode': ncm_data.get('barcode', ncm_data.get('trackid', '')),
+            'customer_name': ncm_data.get('name', ncm_data.get('customer_name', '')),
+            'customer_phone': ncm_data.get('phone', ncm_data.get('customer_phone', '')),
+            'customer_email': ncm_data.get('email', ''),
+            'shipping_address': ncm_data.get('address', ncm_data.get('shipping_address', '')),
+            'landmark': ncm_data.get('landmark', ''),
+            'branch_city': ncm_data.get('branch', ncm_data.get('to_branch', '')),
+            'branch_id': None,
+            'in_out': 'out',
+            'notes': ncm_data.get('remarks', ncm_data.get('notes', '')),
+            'order_from': 'NCM',
+            'total_amount': str(ncm_data.get('cod_charge', ncm_data.get('cod_amount', 0))),
+            'discount_amount': '0',
+            'shipping_charge': str(ncm_data.get('delivery_charge', 0)),
+            'delivery_charge': str(ncm_data.get('delivery_charge', 0)),
+            'is_partial_payment': False,
+            'partial_amount_paid': '0',
+            'remaining_amount': '0',
+            'package_weight': str(ncm_data.get('weight', 1.0)),
+            'order_status': ncm_data.get('status', ncm_data.get('last_delivery_status', '')),
+            'status_setup_id': None,
+            'payment_status_setup_id': None,
+            'payment_setup_id': None,
+            'ncm_status': ncm_data.get('status', ''),
+            'ncm_from_branch': ncm_data.get('fbranch', ncm_data.get('from_branch', 'TINKUNE')),
+            'ncm_delivery_type': ncm_data.get('type', ncm_data.get('delivery_type', 'Door2Door')),
+            'logistics': 'ncm',
+            'items': [],
+            'source': 'ncm',
+        }
+        return JsonResponse({'status': 'success', 'order': data})
+
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Error fetching NCM order: {str(e)}'}, status=500)
+
+
+@login_required
+@permission_required('can_view_orders')
+def redirect_rtv_save(request, ncm_order_id):
+    """AJAX: Redirect an NCM RTV order directly via NCM API (no local order required).
+
+    Reads new customer details from POST and calls the NCM v2 redirect API.
+    If a linked local Order exists, also updates it.
+    """
+    import json
+    import requests
+    from django.conf import settings
+    from decimal import Decimal
+
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
+
+    try:
+        # Get API config from RTVOrder
+        api_config_id = request.POST.get('api_config_id')
+        if not api_config_id:
+            try:
+                rtv_rec = RTVOrder.objects.get(order_id=ncm_order_id)
+                api_config_id = rtv_rec.api_config_id
+            except RTVOrder.DoesNotExist:
+                pass
+
+        # Resolve API credentials
+        base_url_v2 = ''
+        api_key = ''
+        matched_api_config = None
+
+        if api_config_id:
+            try:
+                matched_api_config = LogisticsAPIConfig.objects.get(
+                    id=api_config_id, is_active=True, logistics_provider='ncm')
+                base_url_v2 = matched_api_config.get_base_url_v2()
+                api_key = matched_api_config.api_key
+            except LogisticsAPIConfig.DoesNotExist:
+                return JsonResponse({'status': 'error', 'message': 'NCM API config not found'}, status=400)
+
+        if not api_key:
+            api_key = getattr(settings, 'NCM_API_KEY', '') or ''
+            if not matched_api_config and api_key:
+                matched_api_config = LogisticsAPIConfig.objects.filter(
+                    logistics_provider='ncm', is_active=True, api_key=api_key
+                ).order_by('-id').first()
+                if matched_api_config:
+                    base_url_v2 = matched_api_config.get_base_url_v2()
+
+        if not api_key:
+            return JsonResponse({'status': 'error', 'message': 'NCM API key not configured'}, status=400)
+
+        if not base_url_v2:
+            base_url_v1 = matched_api_config.get_primary_base_url() if matched_api_config else ''
+            if base_url_v1:
+                base_url_v2 = base_url_v1.rstrip('/').replace('/v1/', '/v2/')
+            else:
+                return JsonResponse({'status': 'error', 'message': 'NCM API v2 URL not configured'}, status=400)
+
+        redirect_url = f"{base_url_v2.rstrip('/')}/order/redirect"
+
+        # Build payload from POST data
+        payload = {
+            'pk': ncm_order_id,
+            'name': request.POST.get('customer_name', '').strip(),
+            'phone': request.POST.get('customer_phone', '').strip(),
+            'address': request.POST.get('shipping_address', '').strip(),
+        }
+
+        vendor_order_id = request.POST.get('vendor_order_id', '').strip()
+        if vendor_order_id:
+            payload['vendorOrderid'] = vendor_order_id
+
+        destination = request.POST.get('ncm_destination', '').strip()
+        if destination:
+            try:
+                payload['destination'] = int(destination)
+            except (ValueError, TypeError):
+                pass
+
+        cod_charge_str = request.POST.get('cod_charge', '').strip()
+        if cod_charge_str:
+            try:
+                payload['cod_charge'] = float(cod_charge_str)
+            except (ValueError, TypeError):
+                pass
+
+        # Call NCM redirect API
+        response = requests.post(
+            redirect_url,
+            json=payload,
+            headers={
+                'Authorization': f'Token {api_key}',
+                'Content-Type': 'application/json'
+            },
+            timeout=15
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            # Update linked local order if it exists
+            try:
+                local_order = Order.objects.get(ncm_order_id=ncm_order_id, is_deleted=False)
+                local_order.ncm_status = 'redirected'
+                local_order.customer_name = payload['name'] or local_order.customer_name
+                local_order.customer_phone = payload['phone'] or local_order.customer_phone
+                local_order.shipping_address = payload['address'] or local_order.shipping_address
+                local_order.save(update_fields=['ncm_status', 'customer_name', 'customer_phone', 'shipping_address'])
+            except Order.DoesNotExist:
+                pass
+
+            return JsonResponse({
+                'status': 'success',
+                'message': data.get('message', 'Order redirected successfully'),
+                'ncm_order_id': ncm_order_id,
+            })
+        else:
+            error_msg = f'NCM API returned status {response.status_code}'
+            try:
+                error_data = response.json()
+                error_msg = error_data.get('message', error_data.get('error', error_msg))
+            except Exception:
+                error_msg = response.text[:300] if response.text else error_msg
+            return JsonResponse({'status': 'error', 'message': error_msg}, status=response.status_code)
+
+    except requests.exceptions.Timeout:
+        return JsonResponse({'status': 'error', 'message': 'NCM redirect API timed out'}, status=504)
+    except requests.exceptions.ConnectionError:
+        return JsonResponse({'status': 'error', 'message': 'Could not connect to NCM API'}, status=502)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Redirect failed: {str(e)}'}, status=500)
 
 
 def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, cod_charge=None):
@@ -17525,6 +17818,11 @@ def ncm_rtvs_sync(request):
     Supports two modes via ?mode= param:
       - mode=orders (default): Fast — fetch order lists, create/tag records. No comment API calls.
       - mode=comments: Slow — fetch missing comments from NCM for orders in DB.
+
+    Speed control via ?full= param (mode=orders only):
+      - full absent / full=0 (default): Quick incremental sync — max 5 pages, stops
+        early when a page yields no new RTVs. Targets < 3 seconds.
+      - full=1: Full resync — up to 50 pages, no early exit.
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig
@@ -17533,6 +17831,7 @@ def ncm_rtvs_sync(request):
 
     api_config_id = request.GET.get('api_config_id', '').strip()
     mode = request.GET.get('mode', 'orders').strip()
+    full_sync = request.GET.get('full', '0').strip() == '1'
     chosen_config = None
     if api_config_id:
         try:
@@ -17593,40 +17892,59 @@ def ncm_rtvs_sync(request):
     tagged_count = 0
     existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
 
+    # Quick sync: fewer pages + early exit when no new RTVs on a page
+    max_pages = 50 if full_sync else 5
+
     try:
         for cfg in configs_to_sync:
             try:
                 ncm_service = NCMService(api_config_id=cfg.id)
-                api_result = ncm_service.get_vendor_rtvs(max_pages=50, page_size=200)
+                api_result = ncm_service.get_vendor_rtvs(
+                    max_pages=max_pages,
+                    page_size=200,
+                    known_ids=None if full_sync else existing_ids,
+                )
                 if not api_result['success']:
                     continue
 
+                # Collect new RTVs for bulk create
+                new_rtvs = []
+                date_map = {}  # order_id -> created_at datetime
                 found_oids = []
+
                 for order in api_result['data']:
                     oid = order.get('orderid') or order.get('id') or order.get('pk') or order.get('order_id')
                     if not oid:
                         continue
                     found_oids.append(oid)
                     if oid not in existing_ids:
-                        RTVOrder.objects.update_or_create(
+                        new_rtvs.append(RTVOrder(
                             order_id=oid,
-                            defaults={
-                                'vendor_return': True,
-                                'vendor': request.user,
-                                'api_config': cfg,
-                            },
-                        )
-                        new_count += 1
+                            vendor_return=True,
+                            vendor=request.user,
+                            api_config=cfg,
+                        ))
                         existing_ids.add(oid)
                         ncm_date = order.get('created_date', '')
                         if ncm_date:
                             try:
                                 dt = parse_datetime(ncm_date)
                                 if dt:
-                                    RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
+                                    date_map[oid] = dt
                             except Exception:
                                 pass
 
+                # Bulk insert — skip duplicates
+                if new_rtvs:
+                    RTVOrder.objects.bulk_create(new_rtvs, ignore_conflicts=True)
+                    new_count += len(new_rtvs)
+
+                    # Batch-update created_at with actual NCM dates
+                    if date_map:
+                        for oid, dt in date_map.items():
+                            RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
+
+                # Tag unlinked RTVs to this config
                 if found_oids:
                     tagged_count += RTVOrder.objects.filter(
                         order_id__in=found_oids,

@@ -30,13 +30,13 @@ class NCMService:
             'Content-Type': 'application/json'
         }
     
-    def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None):
+    def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None, timeout: int = None):
         """Helper to make API requests"""
         try:
             if method.upper() == 'GET':
-                response = requests.get(url, headers=self.headers, params=params, timeout=30)
+                response = requests.get(url, headers=self.headers, params=params, timeout=timeout or 15)
             elif method.upper() == 'POST':
-                response = requests.post(url, headers=self.headers, json=data, timeout=30)
+                response = requests.post(url, headers=self.headers, json=data, timeout=timeout or 30)
             
             response.raise_for_status()
             return {'success': True, 'data': response.json(), 'status_code': response.status_code}
@@ -199,12 +199,19 @@ class NCMService:
         data = {'orderid': ncm_order_id, 'comments': comment}
         return self._make_request('POST', url, data=data)
 
-    def get_vendor_rtvs(self, max_pages: int = 50, page_size: int = 200):
+    def get_vendor_rtvs(self, max_pages: int = 50, page_size: int = 200,
+                         known_ids: set = None):
         """Fetch vendor orders with vendor_return=True from NCM.
 
         Paginates through ``/vendor/orders`` and collects entries where
         ``vendor_return`` is truthy (handles both bool and string).
-        Returns at most ``max_pages * page_size`` orders scanned.
+
+        Args:
+            max_pages: Maximum pages to fetch.
+            page_size: Orders per page.
+            known_ids: Set of already-known RTV order IDs.  When provided,
+                       pagination stops early if an entire page yields zero
+                       new RTVs (incremental sync optimisation).
 
         Returns:
             {'success': True, 'data': [<order dict>, ...]}
@@ -228,9 +235,18 @@ class NCMService:
                 break
             if not results:
                 break
+            new_on_page = 0
             for order in results:
                 if NCMService.parse_vendor_return(order.get('vendor_return')):
                     rtvs.append(order)
+                    if known_ids is not None:
+                        oid = order.get('orderid') or order.get('id') or order.get('pk') or order.get('order_id')
+                        if oid and oid not in known_ids:
+                            new_on_page += 1
+            # Early exit: if we have known_ids and this page had 0 new RTVs,
+            # newer orders have already been synced — no need to keep paging.
+            if known_ids is not None and new_on_page == 0 and page > 1:
+                break
             # Stop if we've exhausted all pages
             if isinstance(raw_data, list) or not raw_data.get('next'):
                 break

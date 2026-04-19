@@ -8,28 +8,32 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2><i class="fas fa-random text-primary"></i> Possible Redirection</h2>
             <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-success" id="syncRtvBtn" onclick="syncRtvFromNcm()">
+                    <i class="fas fa-sync-alt" id="syncRtvIcon"></i> Sync RTV from NCM
+                </button>
+                <a href="{% url 'ncm_rtvs_list' %}" class="btn btn-outline-warning">
+                    <i class="fas fa-undo-alt"></i> NCM RTVs
+                </a>
                 <a href="{% url 'orders_list' %}" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left"></i> All Orders
-                </a>
-                <a href="{% url 'return_orders_list' %}" class="btn btn-outline-danger">
-                    <i class="fas fa-undo-alt"></i> Return Orders
                 </a>
             </div>
         </div>
         <p class="text-muted mt-1 mb-0">
-            Orders with "Return" status that can be redirected to a nearby branch for a different customer instead of returning to vendor/warehouse.
+            NCM RTV (Return to Vendor) orders that can be redirected to a different customer/branch via NCM Redirect API instead of returning to warehouse.
+            {% if linked_count %}<span class="badge bg-info text-dark ms-1">{{ linked_count }} linked to local orders</span>{% endif %}
         </p>
     </div>
 </div>
 
 <!-- Statistics Cards -->
 <div class="row g-3 mb-4">
-    <div class="col-md-3 col-sm-6">
+    <div class="col-md-4 col-sm-6">
         <div class="card stat-card border-left-primary shadow-sm">
             <div class="card-body">
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1">
-                        <h6 class="text-muted mb-1 text-uppercase stat-label">Total Redirectable</h6>
+                        <h6 class="text-muted mb-1 text-uppercase stat-label">Total RTV Orders</h6>
                         <h3 class="mb-0 stat-value">{{ total_redirectable }}</h3>
                     </div>
                     <div class="stat-icon text-primary"><i class="fas fa-random fa-2x"></i></div>
@@ -37,7 +41,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3 col-sm-6">
+    <div class="col-md-4 col-sm-6">
         <div class="card stat-card border-left-warning shadow-sm">
             <div class="card-body">
                 <div class="d-flex align-items-center">
@@ -50,7 +54,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3 col-sm-6">
+    <div class="col-md-4 col-sm-6">
         <div class="card stat-card border-left-success shadow-sm">
             <div class="card-body">
                 <div class="d-flex align-items-center">
@@ -63,19 +67,6 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3 col-sm-6">
-        <div class="card stat-card border-left-info shadow-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <h6 class="text-muted mb-1 text-uppercase stat-label">Total Value</h6>
-                        <h3 class="text-info mb-0 stat-value">Rs.{{ total_value|floatformat:2 }}</h3>
-                    </div>
-                    <div class="stat-icon text-info"><i class="fas fa-money-bill-wave fa-2x"></i></div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- Filters -->
@@ -83,19 +74,19 @@
     <div class="card-body py-3">
         <form method="get" class="row g-2 align-items-end" id="filterForm">
             <input type="hidden" name="per_page" value="{{ per_page }}" id="perPageHidden">
-            <div class="col-lg-3 col-md-4">
+            <div class="col-lg-2 col-md-4">
                 <label class="form-label small text-muted mb-1">Search</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="fas fa-search"></i></span>
-                    <input type="text" class="form-control" name="search" placeholder="Order #, customer, barcode..." value="{{ search_query }}">
+                    <input type="text" class="form-control" name="search" placeholder="NCM Order ID, comment..." value="{{ search_query }}">
                 </div>
             </div>
             <div class="col-lg-2 col-md-3">
-                <label class="form-label small text-muted mb-1">Branch</label>
-                <select name="branch" class="form-select form-select-sm">
-                    <option value="">All Branches</option>
-                    {% for branch in branches %}
-                        <option value="{{ branch.id }}" {% if branch_filter == branch.id|stringformat:"d" %}selected{% endif %}>{{ branch.name }}</option>
+                <label class="form-label small text-muted mb-1">NCM API Portal</label>
+                <select name="api_config" class="form-select form-select-sm">
+                    <option value="">All Portals</option>
+                    {% for config in ncm_api_configs %}
+                        <option value="{{ config.id }}" {% if api_config_filter == config.id|stringformat:"d" %}selected{% endif %}>{{ config.api_name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -115,7 +106,7 @@
                 <label class="form-label small text-muted mb-1">End Date</label>
                 <input type="date" class="form-control form-control-sm" name="end_date" value="{{ end_date }}">
             </div>
-            <div class="col-lg-1 col-md-2">
+            <div class="col-lg-2 col-md-2">
                 <div class="d-flex gap-1">
                     <button type="submit" class="btn btn-primary btn-sm flex-grow-1" title="Filter"><i class="fas fa-filter"></i></button>
                     <a href="{% url 'possible_redirection_list' %}" class="btn btn-secondary btn-sm" title="Reset"><i class="fas fa-redo"></i></a>
@@ -125,37 +116,10 @@
     </div>
 </div>
 
-<!-- Bulk Actions Bar -->
-<div id="bulkActionsBar" class="card shadow-sm mb-3 bulk-bar" style="display: none;">
-    <div class="card-body py-2">
-        <form method="post" action="{% url 'orders_bulk_action' %}" id="bulkActionForm" onsubmit="return confirmBulkAction()">
-            {% csrf_token %}
-            <div class="row align-items-center">
-                <div class="col-md-4">
-                    <span id="selectedCount" class="fw-bold text-primary">0 orders selected</span>
-                </div>
-                <div class="col-md-4">
-                    <select name="bulk_action" class="form-select form-select-sm" required>
-                        <option value="">Select Action</option>
-                        <option value="export_excel">Export to Excel</option>
-                        <option value="bulk_edit">Edit Selected</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="fas fa-check"></i> Apply</button>
-                </div>
-                <div class="col-md-2">
-                    <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="clearSelection()"><i class="fas fa-times"></i> Clear</button>
-                </div>
-            </div>
-        </form>
-    </div>
-</div>
-
 <!-- Orders Table -->
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-gradient-primary d-flex justify-content-between align-items-center py-2">
-        <span class="text-white fw-bold"><i class="fas fa-random me-2"></i>Redirectable Orders</span>
+        <span class="text-white fw-bold"><i class="fas fa-random me-2"></i>NCM RTV Orders — Possible Redirection</span>
         <div class="d-flex align-items-center gap-2">
             <label class="text-white-50 small mb-0">Per page:</label>
             <select class="form-select form-select-sm bg-transparent text-white border-light" style="width: auto; min-width: 70px;" onchange="changePerPage(this.value)">
@@ -169,69 +133,65 @@
         <table class="table table-hover mb-0 redirect-table">
             <thead class="table-light">
                 <tr>
-                    <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" class="form-check-input" onchange="selectAllOrders()"></th>
-                    <th>Order #</th>
+                    <th>NCM Order ID</th>
                     <th>Customer</th>
-                    <th>Product / Items</th>
-                    <th>Branch / Location</th>
-                    <th>NCM Info</th>
-                    <th>Amount</th>
-                    <th>Date</th>
+                    <th>Portal</th>
+                    <th>Status</th>
+                    <th>Comment</th>
+                    <th>RTV Date</th>
                     <th class="text-center">Actions</th>
                 </tr>
             </thead>
             <tbody>
-                {% if orders.object_list %}
-                    {% for order in orders.object_list %}
-                    <tr class="order-row" data-order-id="{{ order.id }}" id="order-row-{{ order.id }}">
-                        <td><input type="checkbox" class="form-check-input order-checkbox" value="{{ order.id }}" onchange="updateBulkBar()"></td>
+                {% if rtv_entries %}
+                    {% for entry in rtv_entries %}
+                    <tr class="order-row" data-ncm-id="{{ entry.ncm_order_id }}">
                         <td>
-                            <a href="{% url 'order_detail' order.id %}" class="fw-bold text-primary text-decoration-none">{{ order.order_number }}</a>
-                            {% if order.barcode %}<div class="small text-muted">{{ order.barcode }}</div>{% endif %}
-                        </td>
-                        <td>
-                            <strong class="d-block">{{ order.customer_name }}</strong>
-                            <span class="text-muted small">{{ order.customer_phone }}</span>
-                        </td>
-                        <td>
-                            {% for item in order.items.all %}
-                                <span class="badge bg-light text-dark border me-1 mb-1" style="font-size: 0.75rem;">
-                                    {{ item.product_name|default:item.product|truncatechars:30 }}
-                                    {% if item.quantity > 1 %}<span class="text-primary">x{{ item.quantity }}</span>{% endif %}
-                                </span>
-                            {% empty %}
-                                <span class="text-muted small">No items</span>
-                            {% endfor %}
-                        </td>
-                        <td>
-                            {% if order.branch %}<span class="badge bg-secondary">{{ order.branch.name }}</span>{% endif %}
-                            {% if order.branch_city %}<div class="small text-muted">{{ order.branch_city }}</div>{% endif %}
-                            {% if order.shipping_address %}
-                                <div class="small text-muted text-truncate" style="max-width: 150px;" title="{{ order.shipping_address }}">
-                                    <i class="fas fa-map-marker-alt text-danger"></i> {{ order.shipping_address }}
+                            <span class="fw-bold text-primary">#{{ entry.ncm_order_id }}</span>
+                            {% if entry.has_local %}
+                                <div class="small">
+                                    <a href="{% url 'order_detail' entry.local_order_id %}" class="text-decoration-none text-info" title="Linked local order">
+                                        <i class="fas fa-link me-1"></i>{{ entry.order_number }}
+                                    </a>
                                 </div>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if order.ncm_order_id %}
-                                <span class="badge bg-success"><i class="fas fa-truck me-1"></i>{{ order.ncm_order_id }}</span>
-                                {% if order.ncm_status %}<div class="small text-muted mt-1">{{ order.ncm_status }}</div>{% endif %}
-                            {% elif order.pnd_order_id %}
-                                <span class="badge bg-warning text-dark"><i class="fas fa-truck-moving me-1"></i>{{ order.pnd_order_id }}</span>
-                                {% if order.pnd_status %}<div class="small text-muted mt-1">{{ order.pnd_status }}</div>{% endif %}
                             {% else %}
-                                <span class="badge bg-light text-secondary border">Not Sent</span>
+                                <div class="small text-muted"><i class="fas fa-unlink me-1"></i>No local order</div>
                             {% endif %}
                         </td>
-                        <td><span class="fw-bold">Rs.{{ order.total_amount|floatformat:2 }}</span></td>
                         <td>
-                            <span class="small text-muted">{{ order.created_at|date:"M d, Y" }}</span>
-                            <div class="small text-muted">{{ order.created_at|time:"h:i A" }}</div>
+                            {% if entry.has_local %}
+                                <strong class="d-block">{{ entry.customer_name }}</strong>
+                                <span class="text-muted small">{{ entry.customer_phone }}</span>
+                            {% else %}
+                                <span class="text-muted small">Fetch from NCM</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-info text-dark">{{ entry.api_config_name }}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-danger"><i class="fas fa-undo-alt me-1"></i>RTV</span>
+                            {% if entry.ncm_status == 'redirected' %}
+                                <div class="small text-success mt-1"><i class="fas fa-check-circle me-1"></i>Redirected</div>
+                            {% else %}
+                                <div class="small text-warning mt-1"><i class="fas fa-hourglass-half me-1"></i>Pending</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="small text-muted text-truncate d-inline-block" style="max-width: 200px;" title="{{ entry.comment }}">
+                                {{ entry.comment|default:"—"|truncatechars:50 }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="small text-muted">{{ entry.rtv_date|date:"M d, Y" }}</span>
+                            <div class="small text-muted">{{ entry.rtv_date|time:"h:i A" }}</div>
                         </td>
                         <td class="text-center">
                             <div class="btn-group btn-group-sm" role="group">
-                                <a href="{% url 'order_detail' order.id %}" class="btn btn-outline-primary" title="View Details"><i class="fas fa-eye"></i></a>
-                                <button type="button" class="btn btn-outline-success redirect-btn" title="Edit & Redirect" onclick="openRedirectModal({{ order.id }})">
+                                {% if entry.has_local %}
+                                    <a href="{% url 'order_detail' entry.local_order_id %}" class="btn btn-outline-primary" title="View Local Order"><i class="fas fa-eye"></i></a>
+                                {% endif %}
+                                <button type="button" class="btn btn-outline-success redirect-btn" title="Edit & Redirect" onclick="openRedirectModal({{ entry.ncm_order_id }})">
                                     <i class="fas fa-random"></i>
                                 </button>
                             </div>
@@ -240,12 +200,13 @@
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="9" class="text-center py-5">
+                        <td colspan="7" class="text-center py-5">
                             <div class="empty-state">
                                 <div class="empty-icon mb-3"><i class="fas fa-random fa-3x text-muted"></i></div>
-                                <h5 class="text-muted">No Redirectable Orders Found</h5>
-                                <p class="text-muted mb-3">There are currently no return orders available for redirection.</p>
-                                <a href="{% url 'orders_list' %}" class="btn btn-primary btn-sm"><i class="fas fa-arrow-left me-1"></i> Back to All Orders</a>
+                                <h5 class="text-muted">No NCM RTV Orders Found</h5>
+                                <p class="text-muted mb-3">No RTV orders synced from NCM yet. Click "Sync RTV from NCM" to fetch them.</p>
+                                <button type="button" class="btn btn-success btn-sm me-2" onclick="syncRtvFromNcm()"><i class="fas fa-sync-alt me-1"></i> Sync RTV from NCM</button>
+                                <a href="{% url 'ncm_rtvs_list' %}" class="btn btn-outline-warning btn-sm"><i class="fas fa-undo-alt me-1"></i> View NCM RTVs</a>
                             </div>
                         </td>
                     </tr>
@@ -256,23 +217,23 @@
 </div>
 
 <!-- Pagination -->
-{% if orders.has_other_pages %}
+{% if rtvs_page.has_other_pages %}
 <nav aria-label="Page navigation">
     <ul class="pagination justify-content-center">
-        {% if orders.has_previous %}
-            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
-            <li class="page-item"><a class="page-link" href="?page={{ orders.previous_page_number }}&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
+        {% if rtvs_page.has_previous %}
+            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.previous_page_number }}&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
         {% endif %}
-        {% for num in orders.paginator.page_range %}
-            {% if num == orders.number %}
+        {% for num in rtvs_page.paginator.page_range %}
+            {% if num == rtvs_page.number %}
                 <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-            {% elif num > orders.number|add:'-3' and num < orders.number|add:'3' %}
-                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
+            {% elif num > rtvs_page.number|add:'-3' and num < rtvs_page.number|add:'3' %}
+                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
             {% endif %}
         {% endfor %}
-        {% if orders.has_next %}
-            <li class="page-item"><a class="page-link" href="?page={{ orders.next_page_number }}&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
-            <li class="page-item"><a class="page-link" href="?page={{ orders.paginator.num_pages }}&search={{ search_query }}&branch={{ branch_filter }}&redirection={{ redirection_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
+        {% if rtvs_page.has_next %}
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.next_page_number }}&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.paginator.num_pages }}&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
         {% endif %}
     </ul>
 </nav>
@@ -283,9 +244,10 @@
     <div class="card-body py-3">
         <h6 class="fw-bold mb-2"><i class="fas fa-info-circle text-primary me-2"></i>How Redirection Works</h6>
         <ol class="mb-0 small text-muted">
-            <li>Orders with <span class="badge bg-danger">Return</span> status appear here automatically.</li>
-            <li>Click the <span class="badge bg-success"><i class="fas fa-random"></i></span> button to open the redirect modal &mdash; edit customer, branch, address.</li>
-            <li>Choose a logistics provider (NCM or Pick & Drop), select API account, and send directly from the modal.</li>
+            <li>Click <strong>"Sync RTV from NCM"</strong> to fetch the latest RTV (Return to Vendor) orders from NCM.</li>
+            <li>All NCM RTV orders appear here. Orders linked to local orders show customer details.</li>
+            <li>Click the <span class="badge bg-success"><i class="fas fa-random"></i></span> button to open the redirect modal &mdash; details are fetched from NCM if no local order exists.</li>
+            <li>Use <strong>"NCM — Redirect Order"</strong> to redirect via NCM's redirect API to a new customer/address.</li>
         </ol>
     </div>
 </div>
@@ -321,6 +283,7 @@
                     <form id="redirectForm">
                         {% csrf_token %}
                         <input type="hidden" id="rf_order_id" name="order_id">
+                        <input type="hidden" id="rf_ncm_order_id" name="ncm_order_id">
 
                         <!-- SECTION 1: Customer & Shipping -->
                         <div class="redirect-section">
@@ -729,28 +692,44 @@
 const CSRF_TOKEN = document.querySelector('[name=csrfmiddlewaretoken]')?.value
     || '{{ csrf_token }}';
 
+// ========== NCM RTV SYNC ==========
+function syncRtvFromNcm() {
+    const btn = document.getElementById('syncRtvBtn');
+    const icon = document.getElementById('syncRtvIcon');
+    if (!btn || btn.disabled) return;
+
+    btn.disabled = true;
+    icon.classList.add('fa-spin');
+    btn.innerHTML = '<i class="fas fa-sync-alt fa-spin" id="syncRtvIcon"></i> Syncing...';
+
+    const startTime = Date.now();
+
+    fetch('{% url "ncm_rtvs_sync" %}?mode=orders', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(resp => resp.json())
+    .then(data => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        if (data.success) {
+            const msg = `Sync complete in ${elapsed}s: ${data.new_count || 0} new RTV(s), ${data.total_count || 0} total`;
+            showToast(msg, 'text-bg-success');
+            if (data.new_count > 0) {
+                setTimeout(() => location.reload(), 1200);
+            }
+        } else {
+            showToast('Sync failed: ' + (data.message || 'Unknown error'), 'text-bg-danger');
+        }
+    })
+    .catch(err => {
+        showToast('Sync error: ' + err.message, 'text-bg-danger');
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sync-alt" id="syncRtvIcon"></i> Sync RTV from NCM';
+    });
+}
+
 // ========== TABLE HELPERS ==========
-function selectAllOrders() {
-    const checked = document.getElementById('selectAllCheckbox').checked;
-    document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = checked);
-    updateBulkBar();
-}
-function updateBulkBar() {
-    const count = document.querySelectorAll('.order-checkbox:checked').length;
-    document.getElementById('selectedCount').textContent = count + ' order(s) selected';
-    document.getElementById('bulkActionsBar').style.display = count > 0 ? 'block' : 'none';
-}
-function clearSelection() {
-    document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = false);
-    document.getElementById('selectAllCheckbox').checked = false;
-    updateBulkBar();
-}
-function confirmBulkAction() {
-    const action = document.querySelector('select[name="bulk_action"]').value;
-    const count = document.querySelectorAll('.order-checkbox:checked').length;
-    if (!action) { alert('Please select an action'); return false; }
-    return confirm('Apply action to ' + count + ' order(s)?');
-}
 function changePerPage(val) {
     const url = new URL(window.location.href);
     url.searchParams.set('per_page', val);
@@ -812,9 +791,11 @@ function calcRemaining() {
 
 // ========== REDIRECT MODAL ==========
 let _currentOrderData = null;
+let _currentNcmOrderId = null;
 
-function openRedirectModal(orderId) {
+function openRedirectModal(ncmOrderId) {
     _currentOrderData = null;
+    _currentNcmOrderId = ncmOrderId;
     const modalEl = document.getElementById('redirectModal');
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
 
@@ -825,12 +806,12 @@ function openRedirectModal(orderId) {
         <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
             <span class="visually-hidden">Loading...</span>
         </div>
-        <p class="mt-3 text-muted">Loading order details...</p>
+        <p class="mt-3 text-muted">Loading order details from NCM...</p>
     `;
     document.getElementById('redirectModalContent').style.display = 'none';
     modal.show();
 
-    fetch(`/api/orders/${orderId}/redirect-get/`, {
+    fetch(`/api/rtv/${ncmOrderId}/redirect-get/`, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .then(resp => {
@@ -872,10 +853,20 @@ function populateRedirectModal(order) {
     }
 
     const orderIdEl = _el('rf_order_id');
-    if (orderIdEl) orderIdEl.value = order.id;
+    if (orderIdEl) orderIdEl.value = order.id || '';
+
+    // Store NCM order ID
+    const ncmIdEl = _el('rf_ncm_order_id');
+    if (ncmIdEl) ncmIdEl.value = order.ncm_order_id || _currentNcmOrderId || '';
 
     const orderNumEl = _el('redirectModalOrderNum');
-    if (orderNumEl) orderNumEl.textContent = '#' + order.order_number;
+    if (orderNumEl) {
+        if (order.order_number) {
+            orderNumEl.textContent = '#' + order.order_number;
+        } else {
+            orderNumEl.textContent = 'NCM #' + (order.ncm_order_id || _currentNcmOrderId);
+        }
+    }
 
     // Header badges
     const statusEl = _el('redirectCurrentStatus');
@@ -1123,9 +1114,26 @@ function submitRedirect(sendToLogistics) {
     }
 
     const orderId = document.getElementById('rf_order_id').value;
-    if (!orderId) { showToast('No order selected', 'text-bg-danger'); return; }
+    const ncmOrderId = document.getElementById('rf_ncm_order_id').value || _currentNcmOrderId;
+    const hasLocalOrder = orderId && orderId !== '' && orderId !== 'null' && orderId !== 'None';
+
+    if (!hasLocalOrder && !ncmOrderId) { showToast('No order selected', 'text-bg-danger'); return; }
 
     const sendTo = sendToLogistics ? document.getElementById('rf_send_to').value : '';
+
+    // For NCM-only orders (no local order), only ncm_redirect is supported
+    if (!hasLocalOrder && sendToLogistics && sendTo !== 'ncm_redirect') {
+        showToast('This order only exists in NCM. Use "NCM — Redirect Order" option.', 'text-bg-warning');
+        document.getElementById('rf_send_to').value = 'ncm_redirect';
+        onSendToChange('ncm_redirect');
+        return;
+    }
+
+    // For NCM-only orders, "Save Only" (no logistics) is not meaningful — prompt user
+    if (!hasLocalOrder && !sendToLogistics) {
+        showToast('No local order to save. Use "Save & Send" with "NCM — Redirect Order" to redirect this order.', 'text-bg-warning');
+        return;
+    }
 
     // Validate: if user wants to send but didn't select provider
     if (sendToLogistics && !sendTo) {
@@ -1172,7 +1180,7 @@ function submitRedirect(sendToLogistics) {
     const total = formData.get('total_amount');
 
     if (sendTo === 'ncm_redirect') {
-        const ncmId = _currentOrderData ? _currentOrderData.ncm_order_id : '?';
+        const ncmId = ncmOrderId || (_currentOrderData ? _currentOrderData.ncm_order_id : '?');
         const cod = formData.get('cod_charge');
         confirmMsg = `REDIRECT NCM Order #${ncmId} to new customer?\n\nNew Customer: ${custName}\nPhone: ${custPhone}\nAddress: ${formData.get('shipping_address')}\nCity: ${city}\nCOD: Rs.${cod}\n\nNCM will apply redirect charges.`;
     } else if (sendTo === 'ncm') {
@@ -1201,7 +1209,15 @@ function submitRedirect(sendToLogistics) {
     }
     overlay.style.display = 'flex';
 
-    fetch(`/api/orders/${orderId}/redirect-save/`, {
+    // Route to correct endpoint based on whether we have a local order
+    let saveUrl;
+    if (hasLocalOrder) {
+        saveUrl = `/api/orders/${orderId}/redirect-save/`;
+    } else {
+        saveUrl = `/api/rtv/${ncmOrderId}/redirect-save/`;
+    }
+
+    fetch(saveUrl, {
         method: 'POST',
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
         body: formData,
@@ -1241,10 +1257,13 @@ function submitRedirect(sendToLogistics) {
             if (modalInstance) modalInstance.hide();
 
             // Highlight the row then reload
-            const row = document.getElementById('order-row-' + orderId);
-            if (row) {
-                row.style.transition = 'background-color 0.5s ease';
-                row.style.backgroundColor = toastClass.includes('success') ? '#d4edda' : (toastClass.includes('warning') ? '#fff3cd' : '#f8d7da');
+            const ncmId = ncmOrderId || (_currentOrderData ? _currentOrderData.ncm_order_id : null);
+            if (ncmId) {
+                const row = document.querySelector(`tr[data-ncm-id="${ncmId}"]`);
+                if (row) {
+                    row.style.transition = 'background-color 0.5s ease';
+                    row.style.backgroundColor = toastClass.includes('success') ? '#d4edda' : (toastClass.includes('warning') ? '#fff3cd' : '#f8d7da');
+                }
             }
             setTimeout(() => location.reload(), 1500);
         } else {
@@ -1263,8 +1282,6 @@ function submitRedirect(sendToLogistics) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    updateBulkBar();
-
     // Sync package weight changes to logistics weight fields
     const pkgWeight = document.getElementById('rf_package_weight');
     if (pkgWeight) {
