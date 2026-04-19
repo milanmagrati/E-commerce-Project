@@ -1587,3 +1587,80 @@ Created system user for webhook operations
 [ERROR] 2026-04-19 00:29:41 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/orders/returns?page=1&page_size=5
 [ERROR] 2026-04-19 00:29:41 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/returns?page=1&page_size=5
 [ERROR] 2026-04-19 00:29:42 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/order/returns?page=1&page_size=5
+[ERROR] 2026-04-19 22:07:22 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 22:07:24 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 22:07:26 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 22:18:11 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/returns?page=1&page_size=5
+[ERROR] 2026-04-19 22:18:12 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/rtvs?page=1&page_size=5
+[ERROR] 2026-04-19 22:18:12 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/order/returns?page=1&page_size=5
+[ERROR] 2026-04-19 22:18:12 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/orders/returns?page=1&page_size=5
+[ERROR] 2026-04-19 22:18:13 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v2/vendor/orders/rtv?page=1&page_size=5
+[ERROR] 2026-04-19 22:18:32 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/orders?page=1&page_size=5
+[ERROR] 2026-04-19 22:18:33 ncm_service._make_request:49 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/vendor/orders?page=1&page_size=5
+[ERROR] 2026-04-19 23:06:04 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 23:06:22 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20564807
+[ERROR] 2026-04-19 23:06:22 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20564807
+[ERROR] 2026-04-19 23:06:22 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20564807
+[ERROR] 2026-04-19 23:06:23 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20564807
+[ERROR] 2026-04-19 23:06:23 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20525514
+[ERROR] 2026-04-19 23:06:23 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20525514
+[ERROR] 2026-04-19 23:06:23 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20525514
+[ERROR] 2026-04-19 23:06:24 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20447978
+[ERROR] 2026-04-19 23:06:24 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20447978
+[ERROR] 2026-04-19 23:06:24 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20447978
+[ERROR] 2026-04-19 23:06:25 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20446385
+[ERROR] 2026-04-19 23:06:25 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20446385
+[ERROR] 2026-04-19 23:06:25 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20446385
+[ERROR] 2026-04-19 23:06:27 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20343187
+[ERROR] 2026-04-19 23:06:27 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20343187
+[ERROR] 2026-04-19 23:06:27 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20343187
+[ERROR] 2026-04-19 23:06:29 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20329202
+[ERROR] 2026-04-19 23:06:30 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20329189
+[ERROR] 2026-04-19 23:06:31 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20329170
+[ERROR] 2026-04-19 23:06:31 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20329170
+[ERROR] 2026-04-19 23:06:31 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20329170
+[ERROR] 2026-04-19 23:06:32 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20291499
+[ERROR] 2026-04-19 23:06:32 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20291499
+[ERROR] 2026-04-19 23:06:32 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20291499
+[ERROR] 2026-04-19 23:06:33 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 23:06:33 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 23:06:33 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 23:06:33 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 23:06:33 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 23:06:33 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008816
+[ERROR] 2026-04-19 23:06:34 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008773
+[ERROR] 2026-04-19 23:06:34 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=20008773
+[ERROR] 2026-04-19 23:06:35 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19961854
+[ERROR] 2026-04-19 23:06:35 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19961854
+[ERROR] 2026-04-19 23:06:35 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19961854
+[ERROR] 2026-04-19 23:06:36 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19923801
+[ERROR] 2026-04-19 23:06:37 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19861018
+[ERROR] 2026-04-19 23:06:37 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19861018
+[ERROR] 2026-04-19 23:06:40 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19851088
+[ERROR] 2026-04-19 23:06:41 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19851079
+[ERROR] 2026-04-19 23:06:41 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19851079
+[ERROR] 2026-04-19 23:06:41 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19851079
+[ERROR] 2026-04-19 23:06:42 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19851073
+[ERROR] 2026-04-19 23:06:43 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19851071
+[ERROR] 2026-04-19 23:06:43 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19851071
+[ERROR] 2026-04-19 23:06:43 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=19851071
+[ERROR] 2026-04-20 00:26:44 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v2/vendor/orders
+[ERROR] 2026-04-20 00:26:53 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order
+[ERROR] 2026-04-20 00:26:59 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v2/vendor/orders
+[ERROR] 2026-04-20 00:27:00 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order
+[ERROR] 2026-04-20 00:27:08 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/status
+[ERROR] 2026-04-20 00:27:14 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:27:15 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/status
+[ERROR] 2026-04-20 00:27:19 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:27:21 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order
+[ERROR] 2026-04-20 00:27:23 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:27:30 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:27:31 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:27:32 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order
+[ERROR] 2026-04-20 00:27:36 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:27:36 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/status
+[ERROR] 2026-04-20 00:27:47 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/status
+[ERROR] 2026-04-20 00:27:47 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:27:52 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:27:52 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-20 00:35:37 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/status?id=20563247

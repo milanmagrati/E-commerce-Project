@@ -1502,6 +1502,20 @@ class RTVOrder(models.Model):
     comment = models.TextField(blank=True, default='')
     vendor_return = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    rtv_marked_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When NCM staff marked this order as vendor_return (from RTV comment added_time)",
+    )
+    # NCM order fields (populated from v2 vendor/orders API)
+    receiver_name = models.CharField(max_length=255, blank=True, default='')
+    receiver_phone = models.CharField(max_length=50, blank=True, default='')
+    receiver_address = models.CharField(max_length=500, blank=True, default='')
+    from_branch = models.CharField(max_length=100, blank=True, default='')
+    to_branch = models.CharField(max_length=100, blank=True, default='')
+    cod_charge = models.CharField(max_length=20, blank=True, default='')
+    delivery_charge = models.CharField(max_length=20, blank=True, default='')
+    tracking_id = models.CharField(max_length=100, blank=True, default='')
+    last_status = models.CharField(max_length=100, blank=True, default='')
     vendor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -1516,7 +1530,7 @@ class RTVOrder(models.Model):
     )
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-rtv_marked_at', '-created_at']
         verbose_name = 'RTV Order'
         verbose_name_plural = 'RTV Orders'
 

@@ -17644,6 +17644,7 @@ def ncm_rtvs_list(request):
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig, RTVFollowUp
+    from django.db import models
     import pytz
 
     # All NCM API configs (for the selector UI)
@@ -17717,7 +17718,9 @@ def ncm_rtvs_list(request):
         except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
             api_config_id = ''
 
-    qs = RTVOrder.objects.select_related('vendor', 'api_config').order_by('-created_at')
+    qs = RTVOrder.objects.select_related('vendor', 'api_config').order_by(
+        models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
+    )
 
     if api_config_id:
         qs = qs.filter(api_config_id=int(api_config_id))
@@ -17782,11 +17785,14 @@ def ncm_rtvs_list(request):
 
     page_rtvs = []
     for rtv in page_objs:
+        # Use rtv_marked_at (actual NCM RTV date) if available, else fall back to created_at
+        display_time = rtv.rtv_marked_at or rtv.created_at
+        display_time_str = display_time.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if display_time else '—'
         page_rtvs.append({
             'rtv_id': rtv.id,
             'order_id': rtv.order_id,
             'comment': rtv.comment or '—',
-            'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p'),
+            'created_at': display_time_str,
             'status': '',
             'api_config_name': rtv.api_config.api_name if rtv.api_config else None,
             'followup': followup_meta.get(rtv.id),
@@ -17816,17 +17822,18 @@ def ncm_rtvs_sync(request):
     """AJAX endpoint — sync RTVs from NCM API into local DB.
 
     Supports two modes via ?mode= param:
-      - mode=orders (default): Fast — fetch order lists, create/tag records. No comment API calls.
-      - mode=comments: Slow — fetch missing comments from NCM for orders in DB.
+      - mode=orders (default): Parallel fetch of ALL pages using threads — fast.
+      - mode=comments: Fetch missing comments from NCM for orders in DB.
 
     Speed control via ?full= param (mode=orders only):
-      - full absent / full=0 (default): Quick incremental sync — max 5 pages, stops
-        early when a page yields no new RTVs. Targets < 3 seconds.
-      - full=1: Full resync — up to 50 pages, no early exit.
+      - full=0 (default): Quick incremental parallel scan — first 30 pages only,
+        catches new RTVs created today. ~1-2s.
+      - full=1: Full parallel scan — ALL pages with 300 workers. ~15s.
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig
     from django.utils.dateparse import parse_datetime
+    from django.db import models
     import time
 
     api_config_id = request.GET.get('api_config_id', '').strip()
@@ -17850,29 +17857,62 @@ def ncm_rtvs_sync(request):
         for cfg in configs:
             try:
                 ncm_service = NCMService(api_config_id=cfg.id)
-                no_comment_ids = list(
-                    RTVOrder.objects.filter(comment='', api_config=cfg)
-                    .values_list('order_id', flat=True)[:10]
+                # Priority 1: orders with a comment but no rtv_marked_at
+                #   (these had their date fetch 429'd — most likely do have an RTV marked comment)
+                # Priority 2: orders with no comment at all
+                # Take up to 4 total per sync call to stay within rate limits
+                priority_ids = list(
+                    RTVOrder.objects.filter(
+                        rtv_marked_at__isnull=True, api_config=cfg
+                    ).exclude(comment='').values_list('order_id', flat=True)[:2]
                 )
+                fallback_ids = list(
+                    RTVOrder.objects.filter(
+                        comment='', api_config=cfg
+                    ).values_list('order_id', flat=True)[:4 - len(priority_ids)]
+                )
+                no_comment_ids = priority_ids + fallback_ids
                 for i, oid in enumerate(no_comment_ids):
                     if i > 0:
-                        time.sleep(0.6)  # Rate-limit to avoid 429
+                        time.sleep(1.5)  # Generous delay to avoid 429
                     try:
                         cresult = ncm_service.get_order_comments(oid)
                         if cresult['success'] and cresult['data']:
                             rtv_comment = ''
+                            rtv_marked_at = None
                             for c in cresult['data']:
                                 text = c.get('comment', '')
                                 if text.startswith('RTV marked'):
                                     rtv_comment = text.replace('RTV marked - ', '').strip()
+                                    # Parse the added_time as the actual RTV date
+                                    added_time_str = c.get('added_time', '')
+                                    if added_time_str:
+                                        try:
+                                            from django.utils.dateparse import parse_datetime
+                                            rtv_marked_at = parse_datetime(added_time_str)
+                                        except Exception:
+                                            pass
                                     break
                             if not rtv_comment:
                                 for c in cresult['data']:
                                     if c.get('added_by', '') == 'NCM Staff':
                                         rtv_comment = c.get('comment', '')
+                                        # Use this comment's added_time as rtv date fallback
+                                        if not rtv_marked_at:
+                                            fallback_time_str = c.get('added_time', '')
+                                            if fallback_time_str:
+                                                try:
+                                                    rtv_marked_at = parse_datetime(fallback_time_str)
+                                                except Exception:
+                                                    pass
                                         break
+                            update_fields = {}
                             if rtv_comment:
-                                RTVOrder.objects.filter(order_id=oid).update(comment=rtv_comment)
+                                update_fields['comment'] = rtv_comment
+                            if rtv_marked_at:
+                                update_fields['rtv_marked_at'] = rtv_marked_at
+                            if update_fields:
+                                RTVOrder.objects.filter(order_id=oid).update(**update_fields)
                                 comments_updated += 1
                     except Exception:
                         pass
@@ -17884,7 +17924,7 @@ def ncm_rtvs_sync(request):
             'comments_updated': comments_updated,
         })
 
-    # ── MODE: ORDERS (default, fast) ───────────────────────────
+    # ── MODE: ORDERS ───────────────────────────────────────────
     configs_to_sync = [chosen_config] if chosen_config else list(
         LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
     )
@@ -17892,24 +17932,28 @@ def ncm_rtvs_sync(request):
     tagged_count = 0
     existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
 
-    # Quick sync: fewer pages + early exit when no new RTVs on a page
-    max_pages = 50 if full_sync else 5
-
     try:
         for cfg in configs_to_sync:
             try:
                 ncm_service = NCMService(api_config_id=cfg.id)
-                api_result = ncm_service.get_vendor_rtvs(
-                    max_pages=max_pages,
-                    page_size=200,
-                    known_ids=None if full_sync else existing_ids,
-                )
+
+                if full_sync:
+                    # Full parallel scan — all pages, ~15s
+                    api_result = ncm_service.get_vendor_rtvs_parallel(max_workers=300)
+                else:
+                    # Quick parallel scan — first 30 pages, ~1-2s
+                    # Catches new orders created as RTVs today (high order IDs on page 1-30)
+                    api_result = ncm_service.get_vendor_rtvs(
+                        max_pages=30,
+                        page_size=100,
+                        known_ids=existing_ids,
+                    )
+
                 if not api_result['success']:
                     continue
 
-                # Collect new RTVs for bulk create
                 new_rtvs = []
-                date_map = {}  # order_id -> created_at datetime
+                date_map = {}
                 found_oids = []
 
                 for order in api_result['data']:
@@ -17923,6 +17967,15 @@ def ncm_rtvs_sync(request):
                             vendor_return=True,
                             vendor=request.user,
                             api_config=cfg,
+                            receiver_name=order.get('receiver', ''),
+                            receiver_phone=order.get('receiver_phone', ''),
+                            receiver_address=order.get('receiver_address', ''),
+                            from_branch=order.get('frombranch', order.get('from_branch', '')),
+                            to_branch=order.get('branch', order.get('to_branch', '')),
+                            cod_charge=order.get('cod_charge', ''),
+                            delivery_charge=order.get('delivery_charge', ''),
+                            tracking_id=order.get('trackid', order.get('tracking_id', '')),
+                            last_status=order.get('last_delivery_status', ''),
                         ))
                         existing_ids.add(oid)
                         ncm_date = order.get('created_date', '')
@@ -17934,17 +17987,43 @@ def ncm_rtvs_sync(request):
                             except Exception:
                                 pass
 
-                # Bulk insert — skip duplicates
                 if new_rtvs:
                     RTVOrder.objects.bulk_create(new_rtvs, ignore_conflicts=True)
                     new_count += len(new_rtvs)
-
-                    # Batch-update created_at with actual NCM dates
                     if date_map:
                         for oid, dt in date_map.items():
                             RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
 
-                # Tag unlinked RTVs to this config
+                # Update existing RTVs that are missing NCM fields
+                ncm_field_map = {}
+                for order in api_result['data']:
+                    oid = order.get('orderid') or order.get('id') or order.get('pk') or order.get('order_id')
+                    if oid:
+                        ncm_field_map[oid] = order
+
+                empty_rtvs = RTVOrder.objects.filter(
+                    order_id__in=list(ncm_field_map.keys()),
+                    receiver_name='',
+                )
+                for rtv in empty_rtvs:
+                    o = ncm_field_map.get(rtv.order_id, {})
+                    rtv.receiver_name = o.get('receiver', '')
+                    rtv.receiver_phone = o.get('receiver_phone', '')
+                    rtv.receiver_address = o.get('receiver_address', '')
+                    rtv.from_branch = o.get('frombranch', o.get('from_branch', ''))
+                    rtv.to_branch = o.get('branch', o.get('to_branch', ''))
+                    rtv.cod_charge = o.get('cod_charge', '')
+                    rtv.delivery_charge = o.get('delivery_charge', '')
+                    rtv.tracking_id = o.get('trackid', o.get('tracking_id', ''))
+                    rtv.last_status = o.get('last_delivery_status', '')
+                RTVOrder.objects.bulk_update(
+                    list(empty_rtvs),
+                    ['receiver_name', 'receiver_phone', 'receiver_address',
+                     'from_branch', 'to_branch', 'cod_charge', 'delivery_charge',
+                     'tracking_id', 'last_status'],
+                    batch_size=500,
+                ) if empty_rtvs else None
+
                 if found_oids:
                     tagged_count += RTVOrder.objects.filter(
                         order_id__in=found_oids,
@@ -18080,10 +18159,41 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         'status_history': [],
     }
 
-    # 1. Fetch NCM order details
-    try:
-        details_result = ncm_service.get_order_details(ncm_order_id)
-        if details_result['success']:
+    # Fire all 3 NCM API calls in parallel to avoid sequential latency
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _fetch_details():
+        try:
+            return ncm_service.get_order_details(ncm_order_id)
+        except Exception as e:
+            logger.warning(f"Failed to fetch NCM details for order {ncm_order_id}: {e}")
+            return {'success': False}
+
+    def _fetch_status():
+        try:
+            return ncm_service.get_order_status(ncm_order_id)
+        except Exception as e:
+            logger.warning(f"Failed to fetch NCM status history for order {ncm_order_id}: {e}")
+            return {'success': False}
+
+    def _fetch_comments():
+        try:
+            return ncm_service.get_order_comments(ncm_order_id)
+        except Exception as e:
+            logger.warning(f"Failed to fetch NCM comments for order {ncm_order_id}: {e}")
+            return {'success': False}
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        fut_details = executor.submit(_fetch_details)
+        fut_status = executor.submit(_fetch_status)
+        fut_comments = executor.submit(_fetch_comments)
+
+    details_result = fut_details.result()
+    status_result = fut_status.result()
+    comments_result = fut_comments.result()
+
+    # 1. Process NCM order details
+    if details_result.get('success'):
             raw = details_result['data']
             # Handle both list and dict responses
             if isinstance(raw, list) and len(raw) > 0:
@@ -18134,13 +18244,9 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 'tracking_number': ncm_data.get('tracking_number', ncm_data.get('tracking', ncm_data.get('trackid', ''))),
                 'items': ncm_items,
             }
-    except Exception as e:
-        logger.warning(f"Failed to fetch NCM details for order {ncm_order_id}: {e}")
 
-    # 2. Fetch NCM order status history
-    try:
-        status_result = ncm_service.get_order_status(ncm_order_id)
-        if status_result['success']:
+    # 2. Process NCM order status history
+    if status_result.get('success'):
             raw_status = status_result['data']
             if isinstance(raw_status, list):
                 statuses = raw_status
@@ -18158,16 +18264,10 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                         'timestamp': s.get('date', s.get('timestamp', s.get('added_time', s.get('created_at', '')))),
                         'remarks': s.get('remarks', s.get('comment', '')),
                     })
-    except Exception as e:
-        logger.warning(f"Failed to fetch NCM status history for order {ncm_order_id}: {e}")
-
-    # 3. Fetch NCM comments
-    try:
-        comments_result = ncm_service.get_order_comments(ncm_order_id)
-        if comments_result['success']:
-            response_data['comments'] = comments_result.get('data', [])
-    except Exception as e:
-        logger.warning(f"Failed to fetch NCM comments for order {ncm_order_id}: {e}")
+    
+    # 3. Process NCM comments
+    if comments_result.get('success'):
+        response_data['comments'] = comments_result.get('data', [])
 
     # 4. Try to find matching local Order by ncm_order_id (multiple strategies)
     local_order = None
@@ -18267,7 +18367,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         except Exception as e:
             logger.warning(f"Error processing local order for NCM ID {ncm_order_id}: {e}")
 
-    # 5. Get RTV record
+    # 5. Get RTV record and enrich ncm_data with stored fields
     try:
         rtv = RTVOrder.objects.get(order_id=ncm_order_id)
         response_data['rtv_info'] = {
@@ -18275,6 +18375,33 @@ def ncm_rtv_order_detail(request, ncm_order_id):
             'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p') if rtv.created_at else '',
             'vendor_name': rtv.vendor.get_full_name() if rtv.vendor else 'Unknown',
         }
+        # Enrich ncm_data with stored RTV fields (v2 vendor/orders data)
+        # These fields are NOT available from the v1 /order API
+        if response_data['ncm_data'] is None:
+            response_data['ncm_data'] = {}
+        ncm = response_data['ncm_data']
+        if not ncm.get('customer_name') and rtv.receiver_name:
+            ncm['customer_name'] = rtv.receiver_name
+        if not ncm.get('customer_phone') and rtv.receiver_phone:
+            ncm['customer_phone'] = rtv.receiver_phone
+        if not ncm.get('address') and rtv.receiver_address:
+            ncm['address'] = rtv.receiver_address
+        if not ncm.get('from_branch') and rtv.from_branch:
+            ncm['from_branch'] = rtv.from_branch
+        if not ncm.get('to_branch') and rtv.to_branch:
+            ncm['to_branch'] = rtv.to_branch
+        if (not ncm.get('cod_charge') or ncm.get('cod_charge') == '0') and rtv.cod_charge:
+            ncm['cod_charge'] = rtv.cod_charge
+        if (not ncm.get('delivery_charge') or ncm.get('delivery_charge') == '0') and rtv.delivery_charge:
+            ncm['delivery_charge'] = rtv.delivery_charge
+        if not ncm.get('barcode') and rtv.tracking_id:
+            ncm['barcode'] = rtv.tracking_id
+        if not ncm.get('tracking_number') and rtv.tracking_id:
+            ncm['tracking_number'] = rtv.tracking_id
+        if not ncm.get('status') and rtv.last_status:
+            ncm['status'] = rtv.last_status
+        if not ncm.get('order_id'):
+            ncm['order_id'] = ncm_order_id
     except RTVOrder.DoesNotExist:
         response_data['rtv_info'] = None
 
