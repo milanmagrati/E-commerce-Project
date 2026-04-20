@@ -18076,29 +18076,33 @@ def ncm_rtvs_sync(request):
                     if oid:
                         ncm_field_map[oid] = order
 
-                # Update RTVs missing receiver_name
-                empty_rtvs = RTVOrder.objects.filter(
+                # Update RTVs missing receiver_name or product_description
+                partial_rtvs = RTVOrder.objects.filter(
                     order_id__in=list(ncm_field_map.keys()),
-                    receiver_name='',
+                ).filter(
+                    models.Q(receiver_name='') | models.Q(product_description='')
                 )
-                for rtv in empty_rtvs:
+                for rtv in partial_rtvs:
                     o = ncm_field_map.get(rtv.order_id, {})
-                    rtv.receiver_name = o.get('receiver', '')
-                    rtv.receiver_phone = o.get('receiver_phone', '')
-                    rtv.receiver_address = o.get('receiver_address', '')
-                    rtv.from_branch = o.get('frombranch', o.get('from_branch', ''))
-                    rtv.to_branch = o.get('branch', o.get('to_branch', ''))
-                    rtv.cod_charge = o.get('cod_charge', '')
-                    rtv.delivery_charge = o.get('delivery_charge', '')
-                    rtv.tracking_id = o.get('trackid', o.get('tracking_id', ''))
-                    rtv.last_status = o.get('last_delivery_status', '')
+                    if not rtv.receiver_name:
+                        rtv.receiver_name = o.get('receiver', '')
+                        rtv.receiver_phone = o.get('receiver_phone', '')
+                        rtv.receiver_address = o.get('receiver_address', '')
+                        rtv.from_branch = o.get('frombranch', o.get('from_branch', ''))
+                        rtv.to_branch = o.get('branch', o.get('to_branch', ''))
+                        rtv.cod_charge = o.get('cod_charge', '')
+                        rtv.delivery_charge = o.get('delivery_charge', '')
+                        rtv.tracking_id = o.get('trackid', o.get('tracking_id', ''))
+                        rtv.last_status = o.get('last_delivery_status', '')
+                    if not rtv.product_description:
+                        rtv.product_description = o.get('description', '')
                 RTVOrder.objects.bulk_update(
-                    list(empty_rtvs),
+                    list(partial_rtvs),
                     ['receiver_name', 'receiver_phone', 'receiver_address',
                      'from_branch', 'to_branch', 'cod_charge', 'delivery_charge',
-                     'tracking_id', 'last_status'],
+                     'tracking_id', 'last_status', 'product_description'],
                     batch_size=500,
-                ) if empty_rtvs else None
+                ) if partial_rtvs else None
 
                 # Also update last_status for ALL existing RTVs found in this sync
                 # (catches status changes like Dispatched -> Arrived)
@@ -18412,6 +18416,33 @@ def ncm_rtv_order_detail(request, ncm_order_id):
             except Exception:
                 pass
 
+    if not local_order:
+        # Strategy 4: Match by NCM vendororderid = our order_number
+        # NCM stores the vendor's own order reference as vendororderid
+        ncm_vendor_order_id = ''
+        if response_data.get('ncm_data'):
+            ncm_vendor_order_id = response_data['ncm_data'].get('vendor_order_id', '')
+        if ncm_vendor_order_id:
+            try:
+                local_order = Order.objects.select_related(
+                    'customer', 'created_by', 'status_setup',
+                    'payment_setup', 'payment_status_setup'
+                ).filter(order_number=ncm_vendor_order_id).first()
+            except Exception:
+                pass
+
+    if not local_order:
+        # Strategy 5: Match by NCM vendororderid = our Order.id (numeric)
+        if ncm_vendor_order_id:
+            try:
+                vendor_id_int = int(ncm_vendor_order_id)
+                local_order = Order.objects.select_related(
+                    'customer', 'created_by', 'status_setup',
+                    'payment_setup', 'payment_status_setup'
+                ).filter(id=vendor_id_int).first()
+            except (ValueError, TypeError, Exception):
+                pass
+
     if local_order:
         try:
             # Get order items
@@ -18477,6 +18508,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
             'comment': rtv.comment or '',
             'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p') if rtv.created_at else '',
             'vendor_name': rtv.vendor.get_full_name() if rtv.vendor else 'Unknown',
+            'product_description': rtv.product_description or '',
         }
         # Enrich ncm_data with stored RTV fields (v2 vendor/orders data)
         # These fields are NOT available from the v1 /order API
@@ -18503,6 +18535,8 @@ def ncm_rtv_order_detail(request, ncm_order_id):
             ncm['tracking_number'] = rtv.tracking_id
         if not ncm.get('status') and rtv.last_status:
             ncm['status'] = rtv.last_status
+        if not ncm.get('description') and rtv.product_description:
+            ncm['description'] = rtv.product_description
         if not ncm.get('order_id'):
             ncm['order_id'] = ncm_order_id
     except RTVOrder.DoesNotExist:
