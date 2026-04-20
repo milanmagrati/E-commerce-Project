@@ -17938,16 +17938,13 @@ def ncm_rtvs_sync(request):
                 ncm_service = NCMService(api_config_id=cfg.id)
 
                 if full_sync:
-                    # Full parallel scan — all pages, ~15s
-                    api_result = ncm_service.get_vendor_rtvs_parallel(max_workers=300)
+                    # Full sync: status-based fetch + recent pages scan
+                    # Catches all active RTVs + recently marked ones in ~7 parallel API calls
+                    api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
                 else:
-                    # Quick parallel scan — first 30 pages, ~1-2s
-                    # Catches new orders created as RTVs today (high order IDs on page 1-30)
-                    api_result = ncm_service.get_vendor_rtvs(
-                        max_pages=30,
-                        page_size=100,
-                        known_ids=existing_ids,
-                    )
+                    # Quick incremental sync: status-based fetch only (~4-7 API calls, <2s)
+                    # Catches ALL active RTVs regardless of creation date
+                    api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
 
                 if not api_result['success']:
                     continue
@@ -17976,6 +17973,7 @@ def ncm_rtvs_sync(request):
                             delivery_charge=order.get('delivery_charge', ''),
                             tracking_id=order.get('trackid', order.get('tracking_id', '')),
                             last_status=order.get('last_delivery_status', ''),
+                            product_description=order.get('description', ''),
                         ))
                         existing_ids.add(oid)
                         ncm_date = order.get('created_date', '')
@@ -17994,13 +17992,14 @@ def ncm_rtvs_sync(request):
                         for oid, dt in date_map.items():
                             RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
 
-                # Update existing RTVs that are missing NCM fields
+                # Update existing RTVs that are missing NCM fields OR have stale status
                 ncm_field_map = {}
                 for order in api_result['data']:
                     oid = order.get('orderid') or order.get('id') or order.get('pk') or order.get('order_id')
                     if oid:
                         ncm_field_map[oid] = order
 
+                # Update RTVs missing receiver_name
                 empty_rtvs = RTVOrder.objects.filter(
                     order_id__in=list(ncm_field_map.keys()),
                     receiver_name='',
@@ -18024,17 +18023,36 @@ def ncm_rtvs_sync(request):
                     batch_size=500,
                 ) if empty_rtvs else None
 
+                # Also update last_status for ALL existing RTVs found in this sync
+                # (catches status changes like Dispatched -> Arrived)
+                status_update_rtvs = list(RTVOrder.objects.filter(
+                    order_id__in=list(ncm_field_map.keys()),
+                ).exclude(receiver_name=''))
+                updated_status_count = 0
+                for rtv in status_update_rtvs:
+                    o = ncm_field_map.get(rtv.order_id, {})
+                    new_status = o.get('last_delivery_status', '')
+                    if new_status and new_status != rtv.last_status:
+                        rtv.last_status = new_status
+                        updated_status_count += 1
+                if updated_status_count > 0:
+                    RTVOrder.objects.bulk_update(
+                        status_update_rtvs, ['last_status'], batch_size=500,
+                    )
+
                 if found_oids:
                     tagged_count += RTVOrder.objects.filter(
                         order_id__in=found_oids,
                         api_config__isnull=True,
                     ).update(api_config=cfg)
 
-            except Exception:
+            except Exception as e:
+                logger.error(f"NCM RTV sync error for config {cfg.id}: {e}")
                 continue
 
-    except Exception:
-        return JsonResponse({'success': False, 'message': 'NCM sync failed'}, status=500)
+    except Exception as e:
+        logger.error(f"NCM RTV sync fatal error: {e}")
+        return JsonResponse({'success': False, 'message': f'NCM sync failed: {str(e)}'}, status=500)
 
     # Tag any remaining unassigned RTVs to the default NCM config
     remaining_unassigned = RTVOrder.objects.filter(api_config__isnull=True).count()
@@ -18242,6 +18260,11 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 'remarks': ncm_data.get('remarks', ncm_data.get('notes', '')),
                 'barcode': ncm_data.get('barcode', ncm_data.get('trackid', '')),
                 'tracking_number': ncm_data.get('tracking_number', ncm_data.get('tracking', ncm_data.get('trackid', ''))),
+                'description': ncm_data.get('description', ''),
+                'package_type': ncm_data.get('packagetype', ncm_data.get('package_type', '')),
+                'package_handling': ncm_data.get('packagehandling', ncm_data.get('package_handling', '')),
+                'vendor_order_id': str(ncm_data.get('vendororderid', ncm_data.get('vendor_order_id', ''))),
+                'instruction': ncm_data.get('instruction', ncm_data.get('instructions', '')),
                 'items': ncm_items,
             }
 

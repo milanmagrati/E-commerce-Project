@@ -1516,6 +1516,7 @@ class RTVOrder(models.Model):
     delivery_charge = models.CharField(max_length=20, blank=True, default='')
     tracking_id = models.CharField(max_length=100, blank=True, default='')
     last_status = models.CharField(max_length=100, blank=True, default='')
+    product_description = models.TextField(blank=True, default='')
     vendor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,

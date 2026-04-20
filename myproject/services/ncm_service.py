@@ -199,6 +199,100 @@ class NCMService:
         data = {'orderid': ncm_order_id, 'comments': comment}
         return self._make_request('POST', url, data=data)
 
+    def get_vendor_rtvs_by_status(self, page_size: int = 500, include_recent: bool = True):
+        """Fetch active RTVs using the status filter — fast path.
+
+        Instead of scanning all 336+ pages of /vendor/orders, this queries
+        only the RTV-relevant statuses (Arrived, Dispatched, Sent to Vendor,
+        Returned to Warehouse) which typically total ~200 orders, fetchable
+        in 4 API calls.
+
+        When include_recent=True (default), also scans the first 3 pages of
+        ALL orders (most recent 1500) to catch newly-marked RTVs that may
+        still be in "Delivered" status.
+
+        Returns:
+            {'success': True, 'data': [<order dict>, ...]}
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        rtv_statuses = ['Arrived', 'Dispatched', 'Sent to Vendor', 'Returned to Warehouse']
+        rtvs = []
+
+        def _fetch_status(status):
+            """Fetch all pages for a given status."""
+            status_rtvs = []
+            page = 1
+            while True:
+                result = self._make_request(
+                    'GET',
+                    f"{self.base_url_v2}/vendor/orders",
+                    params={'page': page, 'page_size': page_size, 'status': status},
+                )
+                if not result['success']:
+                    break
+                raw = result['data']
+                results = raw.get('results', []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+                if not results:
+                    break
+                for order in results:
+                    if NCMService.parse_vendor_return(order.get('vendor_return')):
+                        status_rtvs.append(order)
+                # Check for next page
+                if isinstance(raw, dict) and raw.get('next'):
+                    page += 1
+                else:
+                    break
+            return status_rtvs
+
+        def _fetch_recent_pages():
+            """Fetch first 3 pages of all orders to catch newly-marked RTVs."""
+            recent_rtvs = []
+            for page in range(1, 4):
+                result = self._make_request(
+                    'GET',
+                    f"{self.base_url_v2}/vendor/orders",
+                    params={'page': page, 'page_size': page_size},
+                )
+                if not result['success']:
+                    break
+                raw = result['data']
+                results = raw.get('results', []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+                if not results:
+                    break
+                for order in results:
+                    if NCMService.parse_vendor_return(order.get('vendor_return')):
+                        recent_rtvs.append(order)
+            return recent_rtvs
+
+        tasks = list(rtv_statuses)
+        if include_recent:
+            tasks.append('__recent__')
+
+        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+            futures = {}
+            for task in tasks:
+                if task == '__recent__':
+                    futures[executor.submit(_fetch_recent_pages)] = task
+                else:
+                    futures[executor.submit(_fetch_status, task)] = task
+            for future in as_completed(futures):
+                try:
+                    rtvs.extend(future.result())
+                except Exception:
+                    pass
+
+        # Deduplicate by orderid
+        seen = set()
+        unique_rtvs = []
+        for o in rtvs:
+            oid = o.get('orderid') or o.get('id')
+            if oid and oid not in seen:
+                seen.add(oid)
+                unique_rtvs.append(o)
+
+        return {'success': True, 'data': unique_rtvs}
+
     def get_vendor_rtvs(self, max_pages: int = 50, page_size: int = 200,
                          known_ids: set = None, scan_all: bool = False):
         """Fetch vendor orders with vendor_return=True from NCM.
