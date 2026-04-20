@@ -147,7 +147,9 @@
                     {% for entry in rtv_entries %}
                     <tr class="order-row" data-ncm-id="{{ entry.ncm_order_id }}">
                         <td>
-                            <span class="fw-bold text-primary">#{{ entry.ncm_order_id }}</span>
+                            <button type="button" class="btn btn-link fw-bold text-primary p-0 border-0 text-decoration-none od-id-link" onclick="openDetailModal({{ entry.ncm_order_id }})">
+                                <i class="fas fa-search-plus me-1 small opacity-50"></i>#{{ entry.ncm_order_id }}
+                            </button>
                             {% if entry.has_local %}
                                 <div class="small">
                                     <a href="{% url 'order_detail' entry.local_order_id %}" class="text-decoration-none text-info" title="Linked local order">
@@ -159,11 +161,12 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if entry.has_local %}
+                            {% if entry.customer_name %}
                                 <strong class="d-block">{{ entry.customer_name }}</strong>
-                                <span class="text-muted small">{{ entry.customer_phone }}</span>
+                                {% if entry.customer_phone %}<span class="text-muted small">{{ entry.customer_phone }}</span>{% endif %}
+                                {% if not entry.has_local %}<div class="small text-info"><i class="fas fa-cloud-download-alt me-1"></i>NCM</div>{% endif %}
                             {% else %}
-                                <span class="text-muted small">Fetch from NCM</span>
+                                <span class="text-muted small fst-italic">—</span>
                             {% endif %}
                         </td>
                         <td>
@@ -221,19 +224,19 @@
 <nav aria-label="Page navigation">
     <ul class="pagination justify-content-center">
         {% if rtvs_page.has_previous %}
-            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.previous_page_number }}&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.previous_page_number }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
         {% endif %}
         {% for num in rtvs_page.paginator.page_range %}
             {% if num == rtvs_page.number %}
                 <li class="page-item active"><span class="page-link">{{ num }}</span></li>
             {% elif num > rtvs_page.number|add:'-3' and num < rtvs_page.number|add:'3' %}
-                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
             {% endif %}
         {% endfor %}
         {% if rtvs_page.has_next %}
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.next_page_number }}&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.paginator.num_pages }}&search={{ search_query }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.next_page_number }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.paginator.num_pages }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
         {% endif %}
     </ul>
 </nav>
@@ -250,6 +253,161 @@
             <li>Use <strong>"NCM — Redirect Order"</strong> to redirect via NCM's redirect API to a new customer/address.</li>
         </ol>
     </div>
+</div>
+
+<!-- Hidden URL template for order detail links -->
+<span id="odOrderDetailUrlTpl" data-url="{% url 'order_detail' 99999 %}" style="display:none;"></span>
+
+<!-- ===================== ORDER DETAIL MODAL ===================== -->
+<div class="modal fade" id="orderDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <div class="modal-header od-header">
+        <div class="flex-grow-1">
+          <h5 class="modal-title mb-0"><i class="fas fa-box-open me-2"></i>Order Details</h5>
+          <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+            <span id="od_ncm_badge" class="badge bg-success" style="font-size:.75rem;"></span>
+            <span id="od_status_badge" class="badge bg-secondary" style="font-size:.72rem;"></span>
+            <span id="od_redirect_badge"></span>
+            <span id="od_source_badge"></span>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body p-0">
+        <div id="odLoading" class="text-center py-5">
+          <div class="spinner-border text-primary" style="width:3rem;height:3rem;"><span class="visually-hidden">Loading...</span></div>
+          <p class="mt-3 text-muted">Fetching order details…</p>
+        </div>
+        <div id="odContent" style="display:none;">
+
+          <!-- Overview -->
+          <div class="od-section">
+            <div class="od-section-header"><i class="fas fa-info-circle text-primary me-2"></i>Order Overview</div>
+            <div class="od-section-body">
+              <div class="row g-3">
+                <div class="col-6 col-md-3"><div class="od-field-label">NCM Order ID</div><div class="od-field-value fw-bold text-success" id="od_ncm_order_id">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Vendor Order ID</div><div class="od-field-value" id="od_order_number">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Tracking / Barcode</div><div class="od-field-value font-monospace small" id="od_barcode">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">RTV Tracking ID</div><div class="od-field-value font-monospace small" id="od_tracking_id">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Vendor ID</div><div class="od-field-value" id="od_vendor_id">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">NCM Portal</div><div class="od-field-value" id="od_api_config_name">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Last NCM Status</div><div class="od-field-value" id="od_last_status">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Order Status</div><div class="od-field-value" id="od_order_status">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">From Branch</div><div class="od-field-value" id="od_from_branch">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">To Branch</div><div class="od-field-value" id="od_to_branch">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">RTV Marked At</div><div class="od-field-value small" id="od_rtv_marked_at">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Synced At</div><div class="od-field-value small" id="od_rtv_created_at">—</div></div>
+                <div class="col-12" id="od_comment_row" style="display:none;">
+                  <div class="od-field-label">RTV Comment</div>
+                  <div class="od-field-value text-warning fw-semibold" id="od_comment"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Customer -->
+          <div class="od-section">
+            <div class="od-section-header"><i class="fas fa-user text-info me-2"></i>Customer Details</div>
+            <div class="od-section-body">
+              <div class="row g-3">
+                <div class="col-6 col-md-4"><div class="od-field-label">Customer Name</div><div class="od-field-value fw-semibold" id="od_customer_name">—</div></div>
+                <div class="col-6 col-md-4"><div class="od-field-label">Phone</div><div class="od-field-value" id="od_customer_phone">—</div></div>
+                <div class="col-6 col-md-4"><div class="od-field-label">Email</div><div class="od-field-value" id="od_customer_email">—</div></div>
+                <div class="col-6 col-md-4"><div class="od-field-label">City / Branch</div><div class="od-field-value" id="od_branch_city">—</div></div>
+                <div class="col-md-4"><div class="od-field-label">Shipping Address</div><div class="od-field-value" id="od_shipping_address">—</div></div>
+                <div class="col-6 col-md-4"><div class="od-field-label">Landmark</div><div class="od-field-value" id="od_landmark">—</div></div>
+                <div class="col-6 col-md-4"><div class="od-field-label">In / Out Valley</div><div class="od-field-value" id="od_in_out">—</div></div>
+                <div class="col-6 col-md-4"><div class="od-field-label">Delivery Type</div><div class="od-field-value" id="od_delivery_type">—</div></div>
+                <div class="col-md-4"><div class="od-field-label">Notes</div><div class="od-field-value text-muted" id="od_notes">—</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Products -->
+          <div class="od-section">
+            <div class="od-section-header d-flex align-items-center justify-content-between">
+              <span><i class="fas fa-boxes text-warning me-2"></i>Products / Items</span>
+              <span id="od_items_count" class="badge bg-warning text-dark"></span>
+            </div>
+            <div class="od-section-body p-0">
+              <div id="od_items_table_wrap">
+                <div class="table-responsive">
+                  <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th class="ps-3" style="width:40px;">#</th>
+                        <th>Product</th>
+                        <th>Variation</th>
+                        <th>SKU</th>
+                        <th class="text-center" style="width:60px;">Qty</th>
+                        <th class="text-end" style="width:110px;">Unit Price</th>
+                        <th class="text-end pe-3" style="width:110px;">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody id="odItemsBody"></tbody>
+                    <tfoot id="odItemsFoot" style="display:none;">
+                      <tr class="table-light fw-bold">
+                        <td colspan="5" class="text-end ps-3">Items Subtotal:</td>
+                        <td class="text-end pe-3" colspan="2" id="od_items_subtotal">—</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+              <div id="od_product_desc_wrap" style="display:none;" class="p-3">
+                <div class="od-field-label mb-1">Product Description (from NCM)</div>
+                <div class="border rounded p-2 bg-light text-muted small" id="od_product_description" style="white-space:pre-wrap;max-height:150px;overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Financials -->
+          <div class="od-section">
+            <div class="od-section-header"><i class="fas fa-calculator text-success me-2"></i>Financial Details</div>
+            <div class="od-section-body">
+              <div class="row g-3">
+                <div class="col-6 col-md-3"><div class="od-field-label">Total / COD Amount</div><div class="od-field-value fw-bold text-success" style="font-size:1.2rem;" id="od_total_amount">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">NCM COD Charge</div><div class="od-field-value" id="od_cod_charge_ncm">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Discount</div><div class="od-field-value text-danger" id="od_discount_amount">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Shipping Charge</div><div class="od-field-value" id="od_shipping_charge">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">NCM Delivery Charge</div><div class="od-field-value" id="od_delivery_charge_ncm">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Package Weight</div><div class="od-field-value" id="od_package_weight">—</div></div>
+                <div class="col-12" id="od_partial_row" style="display:none;">
+                  <div class="alert alert-info py-2 px-3 mb-0 d-flex gap-4">
+                    <span><div class="od-field-label">Amount Paid</div><strong id="od_partial_paid">—</strong></span>
+                    <span><div class="od-field-label">Remaining (COD)</div><strong class="text-danger" id="od_remaining">—</strong></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Linked Local Order -->
+          <div class="od-section" id="od_local_order_section" style="display:none;">
+            <div class="od-section-header"><i class="fas fa-link text-primary me-2"></i>Linked Local Order</div>
+            <div class="od-section-body">
+              <div class="row g-3">
+                <div class="col-6 col-md-3"><div class="od-field-label">Order Number</div><div class="od-field-value fw-bold" id="od_local_order_number">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">NCM Status</div><div class="od-field-value" id="od_local_ncm_status">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Order Status</div><div class="od-field-value" id="od_local_order_status">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Barcode</div><div class="od-field-value font-monospace small" id="od_local_barcode">—</div></div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /odContent -->
+      </div><!-- /modal-body -->
+
+      <div class="modal-footer od-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"><i class="fas fa-times me-1"></i>Close</button>
+        <a id="od_local_order_link" class="btn btn-outline-primary btn-sm" style="display:none;" target="_blank" rel="noopener"><i class="fas fa-external-link-alt me-1"></i>View Local Order</a>
+        <button type="button" class="btn btn-success btn-sm" id="od_redirect_btn"><i class="fas fa-random me-1"></i>Open Redirect</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ===================== REDIRECT MODAL ===================== -->
@@ -686,6 +844,20 @@
         h2 { font-size: 1.4rem; }
         .section-body { padding: 0.75rem 1rem; }
     }
+
+    /* ---- Order Detail Modal ---- */
+    .od-header { background: linear-gradient(135deg, #1a3a5c 0%, #224abe 100%); color: #fff; padding: 1rem 1.5rem; }
+    .od-footer { background: #f8f9fc; border-top: 1px solid #e3e6f0; padding: 0.75rem 1.5rem; }
+    .od-section { border-bottom: 1px solid #e3e6f0; }
+    .od-section:last-child { border-bottom: none; }
+    .od-section-header { padding: 0.65rem 1.5rem; background: #f8f9fc; font-weight: 600; font-size: 0.875rem; color: #333; border-bottom: 1px solid #e9ecef; }
+    .od-section-body { padding: 1rem 1.5rem; }
+    .od-field-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6c757d; font-weight: 600; margin-bottom: 0.2rem; }
+    .od-field-value { font-size: 0.9rem; color: #212529; }
+    #orderDetailModal .modal-content { border: none; border-radius: 0.75rem; overflow: hidden; }
+    #odItemsTable th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .od-id-link { font-size: 1rem; }
+    .od-id-link:hover { text-decoration: underline !important; }
 </style>
 
 <script>
@@ -695,16 +867,14 @@ const CSRF_TOKEN = document.querySelector('[name=csrfmiddlewaretoken]')?.value
 // ========== NCM RTV SYNC ==========
 function syncRtvFromNcm() {
     const btn = document.getElementById('syncRtvBtn');
-    const icon = document.getElementById('syncRtvIcon');
     if (!btn || btn.disabled) return;
 
     btn.disabled = true;
-    icon.classList.add('fa-spin');
-    btn.innerHTML = '<i class="fas fa-sync-alt fa-spin" id="syncRtvIcon"></i> Syncing...';
+    btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Fetching RTVs…';
 
     const startTime = Date.now();
 
-    fetch('{% url "ncm_rtvs_sync" %}?mode=orders', {
+    fetch('{% url "ncm_rtvs_sync" %}?full=1', {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .then(resp => resp.json())
@@ -787,6 +957,178 @@ function calcRemaining() {
     const isPartial = document.getElementById('rf_is_partial').checked;
     const codAmount = isPartial ? remaining : total;
     document.getElementById('rf_cod_display').value = 'Rs.' + codAmount.toFixed(2);
+}
+
+// ========== ORDER DETAIL MODAL ==========
+let _currentDetailNcmId = null;
+
+function openDetailModal(ncmOrderId) {
+    _currentDetailNcmId = ncmOrderId;
+    const loadingEl = document.getElementById('odLoading');
+    loadingEl.innerHTML = `
+        <div class="spinner-border text-primary" style="width:3rem;height:3rem;"><span class="visually-hidden">Loading...</span></div>
+        <p class="mt-3 text-muted">Fetching order details…</p>`;
+    loadingEl.style.display = 'block';
+    document.getElementById('odContent').style.display = 'none';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('orderDetailModal')).show();
+
+    fetch(`/api/rtv/${ncmOrderId}/redirect-get/`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+        if (data.status !== 'success') throw new Error(data.message || 'Error loading order');
+        populateDetailModal(data.order, data.rtv || {});
+    })
+    .catch(err => {
+        loadingEl.innerHTML = `<div class="text-center text-danger py-5"><i class="fas fa-exclamation-circle fa-2x mb-2 d-block"></i><p>${escHtml(err.message)}</p></div>`;
+    });
+}
+
+function populateDetailModal(order, rtv) {
+    rtv = rtv || {};
+
+    function setText(id, val) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = (val !== null && val !== undefined && String(val).trim() !== '') ? val : '—';
+    }
+    function setHtml(id, html) {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+    }
+    function show(id, visible) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = visible ? '' : 'none';
+    }
+
+    // Header badges
+    setHtml('od_ncm_badge', `<i class="fas fa-random me-1"></i>NCM #${escHtml(String(order.ncm_order_id || rtv.order_id || '?'))}`);
+    const st = (rtv.last_status || order.order_status || '').toUpperCase();
+    setHtml('od_status_badge', st ? escHtml(st) : '');
+    show('od_status_badge', !!st);
+    const isRedir = rtv.is_redirected || (order.ncm_status || '').toLowerCase() === 'redirected';
+    setHtml('od_redirect_badge', isRedir
+        ? '<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Redirected</span>'
+        : '<span class="badge bg-warning text-dark"><i class="fas fa-hourglass-half me-1"></i>Pending</span>');
+    setHtml('od_source_badge', `<span class="badge bg-light text-dark border">${escHtml(order.source === 'local' ? 'Local + NCM' : 'NCM Only')}</span>`);
+
+    // Overview
+    setText('od_ncm_order_id', '#' + (order.ncm_order_id || rtv.order_id || '?'));
+    setText('od_order_number', order.order_number);
+    setText('od_barcode', order.barcode);
+    setText('od_tracking_id', rtv.tracking_id);
+    setText('od_vendor_id', rtv.vendor_id ? 'Vendor #' + rtv.vendor_id : null);
+    setText('od_api_config_name', rtv.api_config_name);
+    setText('od_last_status', rtv.last_status || order.order_status);
+    setText('od_order_status', order.order_status);
+    setText('od_from_branch', rtv.from_branch || order.ncm_from_branch);
+    setText('od_to_branch', rtv.to_branch || order.branch_city);
+    const fmtDate = iso => {
+        if (!iso) return null;
+        try { return new Date(iso).toLocaleString('en-NP', {timeZone:'Asia/Kathmandu', dateStyle:'medium', timeStyle:'short'}); }
+        catch(e) { return iso; }
+    };
+    setText('od_rtv_marked_at', fmtDate(rtv.rtv_marked_at));
+    setText('od_rtv_created_at', fmtDate(rtv.rtv_created_at));
+    const comment = (rtv.rtv_comment || '').replace('[REDIRECTED]', '').trim();
+    if (comment) { setText('od_comment', comment); show('od_comment_row', true); }
+    else { show('od_comment_row', false); }
+
+    // Customer
+    setText('od_customer_name', order.customer_name);
+    setText('od_customer_phone', order.customer_phone);
+    setText('od_customer_email', order.customer_email);
+    setText('od_branch_city', order.branch_city);
+    setText('od_shipping_address', order.shipping_address);
+    setText('od_landmark', order.landmark);
+    setText('od_in_out', order.in_out === 'in' ? 'Inside Valley' : order.in_out === 'out' ? 'Outside Valley' : null);
+    setText('od_delivery_type', order.ncm_delivery_type || rtv.delivery_type);
+    setText('od_notes', order.notes);
+
+    // Products
+    const items = order.items || [];
+    const tableWrap = document.getElementById('od_items_table_wrap');
+    const descWrap  = document.getElementById('od_product_desc_wrap');
+    const countBadge = document.getElementById('od_items_count');
+    const tbody = document.getElementById('odItemsBody');
+    const tfoot = document.getElementById('odItemsFoot');
+
+    if (items.length > 0) {
+        tableWrap.style.display = '';
+        descWrap.style.display  = 'none';
+        countBadge.textContent  = items.length + ' item' + (items.length !== 1 ? 's' : '');
+        tbody.innerHTML = '';
+        let subtotal = 0;
+        items.forEach((item, i) => {
+            const tot = safeFloat(item.total);
+            subtotal += tot;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 text-muted small">${i + 1}</td>
+                <td><strong>${escHtml(item.product_name)}</strong></td>
+                <td class="text-muted">${escHtml(item.variation_name || '—')}</td>
+                <td class="font-monospace text-muted small">${escHtml(item.sku || '—')}</td>
+                <td class="text-center"><span class="badge bg-primary">${item.quantity}</span></td>
+                <td class="text-end">Rs.${safeFloat(item.price).toFixed(2)}</td>
+                <td class="text-end pe-3 fw-bold">Rs.${tot.toFixed(2)}</td>`;
+            tbody.appendChild(tr);
+        });
+        tfoot.style.display = '';
+        document.getElementById('od_items_subtotal').textContent = 'Rs.' + subtotal.toFixed(2);
+    } else if (rtv.product_description) {
+        tableWrap.style.display = 'none';
+        descWrap.style.display  = '';
+        countBadge.textContent  = 'Description only';
+        document.getElementById('od_product_description').textContent = rtv.product_description;
+    } else {
+        tableWrap.style.display = '';
+        descWrap.style.display  = 'none';
+        countBadge.textContent  = '0 items';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3 ps-3"><i class="fas fa-inbox me-1"></i>No items available</td></tr>';
+        tfoot.style.display = 'none';
+    }
+
+    // Financials
+    const disc = safeFloat(order.discount_amount);
+    const ship = safeFloat(order.shipping_charge);
+    const w    = parseFloat(order.package_weight);
+    setText('od_total_amount',       'Rs.' + safeFloat(order.total_amount).toFixed(2));
+    setText('od_cod_charge_ncm',     rtv.cod_charge_ncm      ? 'Rs.' + rtv.cod_charge_ncm      : null);
+    setText('od_discount_amount',    disc > 0                ? '− Rs.' + disc.toFixed(2)          : null);
+    setText('od_shipping_charge',    ship > 0                ? 'Rs.' + ship.toFixed(2)           : null);
+    setText('od_delivery_charge_ncm',rtv.delivery_charge_ncm ? 'Rs.' + rtv.delivery_charge_ncm  : null);
+    setText('od_package_weight',     (!isNaN(w) && w > 0)    ? w + ' kg'                        : null);
+    if (order.is_partial_payment) {
+        show('od_partial_row', true);
+        setText('od_partial_paid', 'Rs.' + safeFloat(order.partial_amount_paid).toFixed(2));
+        setText('od_remaining',    'Rs.' + safeFloat(order.remaining_amount).toFixed(2));
+    } else { show('od_partial_row', false); }
+
+    // Linked local order
+    if (order.source === 'local' && order.id) {
+        show('od_local_order_section', true);
+        setText('od_local_order_number', order.order_number);
+        setText('od_local_ncm_status',   isRedir ? 'Redirected' : (order.ncm_status || 'Pending'));
+        setText('od_local_order_status', order.order_status);
+        setText('od_local_barcode',      order.barcode);
+        const localLink = document.getElementById('od_local_order_link');
+        localLink.style.display = '';
+        const urlTpl = document.getElementById('odOrderDetailUrlTpl');
+        if (urlTpl) localLink.href = urlTpl.dataset.url.replace('99999', order.id);
+    } else {
+        show('od_local_order_section', false);
+        document.getElementById('od_local_order_link').style.display = 'none';
+    }
+
+    // Wire redirect button
+    document.getElementById('od_redirect_btn').onclick = function() {
+        bootstrap.Modal.getInstance(document.getElementById('orderDetailModal')).hide();
+        setTimeout(() => openRedirectModal(_currentDetailNcmId), 400);
+    };
+
+    document.getElementById('odLoading').style.display = 'none';
+    document.getElementById('odContent').style.display = 'block';
 }
 
 // ========== REDIRECT MODAL ==========
@@ -1125,7 +1467,7 @@ function submitRedirect(sendToLogistics) {
     if (!hasLocalOrder && sendToLogistics && sendTo !== 'ncm_redirect') {
         showToast('This order only exists in NCM. Use "NCM — Redirect Order" option.', 'text-bg-warning');
         document.getElementById('rf_send_to').value = 'ncm_redirect';
-        onSendToChange('ncm_redirect');
+        toggleLogisticsOptions();
         return;
     }
 

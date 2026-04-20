@@ -4364,10 +4364,14 @@ def possible_redirection_list(request):
     RTVOrder-centric: shows all RTVOrder records from NCM and links them to
     local Order records when available (via RTVOrder.order_id == Order.ncm_order_id).
     """
-    from django.db.models import Q
+    from django.db.models import Q, CharField
+    from django.db.models.functions import Cast
+    from django.db import models as db_models
 
-    # Base queryset: all RTV records
-    rtvs = RTVOrder.objects.select_related('api_config').order_by('-created_at')
+    # Base queryset: all RTV records, ordered like ncm_rtvs page
+    rtvs = RTVOrder.objects.select_related('api_config').order_by(
+        db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
+    )
 
     # GET FILTER PARAMETERS
     search_query = request.GET.get('search', '')
@@ -4378,7 +4382,8 @@ def possible_redirection_list(request):
 
     # Apply filters on RTVOrder
     if search_query:
-        search_q = Q(order_id__icontains=search_query) | Q(comment__icontains=search_query)
+        rtvs = rtvs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
+        search_q = Q(_oid_str__icontains=search_query) | Q(comment__icontains=search_query)
         rtvs = rtvs.filter(search_q)
 
     if api_config_filter:
@@ -4388,7 +4393,26 @@ def possible_redirection_list(request):
         try:
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            rtvs = rtvs.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+            # Use Coalesce to prefer rtv_marked_at over created_at for date filtering
+            from django.db.models.functions import Coalesce
+            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
+            rtvs = rtvs.filter(_rtv_date__date__gte=start_date_obj, _rtv_date__date__lte=end_date_obj)
+        except ValueError:
+            pass
+    elif start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            from django.db.models.functions import Coalesce
+            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
+            rtvs = rtvs.filter(_rtv_date__date__gte=start_date_obj)
+        except ValueError:
+            pass
+    elif end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            from django.db.models.functions import Coalesce
+            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
+            rtvs = rtvs.filter(_rtv_date__date__lte=end_date_obj)
         except ValueError:
             pass
 
@@ -4409,27 +4433,29 @@ def possible_redirection_list(request):
             linked_orders[order.ncm_order_id] = order
 
     # Stats (before redirection filter)
-    total_redirectable = rtvs.count()
-    linked_redirected = sum(
-        1 for ncm_id in all_rtv_ncm_ids
+    total_redirectable = len(all_rtv_ncm_ids)  # same as rtvs.count() but avoids extra DB query
+
+    # Check redirection status from linked order OR RTVOrder comment tag
+    redirected_from_local = set(
+        ncm_id for ncm_id in all_rtv_ncm_ids
         if ncm_id in linked_orders and (linked_orders[ncm_id].ncm_status or '').lower() == 'redirected'
     )
-    already_redirected = linked_redirected
+    redirected_from_comment = set(
+        rtvs.filter(comment__contains='[REDIRECTED]').values_list('order_id', flat=True)
+    )
+    all_redirected_ids = redirected_from_local | redirected_from_comment
+
+    def _is_redirected(ncm_id, rtv_obj=None):
+        return ncm_id in all_redirected_ids
+
+    already_redirected = len(all_redirected_ids)
     pending_redirection = total_redirectable - already_redirected
 
     # Redirection status filter (applied after stats)
     if redirection_filter == 'redirected':
-        redirected_ncm_ids = [
-            ncm_id for ncm_id in all_rtv_ncm_ids
-            if ncm_id in linked_orders and (linked_orders[ncm_id].ncm_status or '').lower() == 'redirected'
-        ]
-        rtvs = rtvs.filter(order_id__in=redirected_ncm_ids)
+        rtvs = rtvs.filter(order_id__in=all_redirected_ids)
     elif redirection_filter == 'pending':
-        redirected_ncm_ids = [
-            ncm_id for ncm_id in all_rtv_ncm_ids
-            if ncm_id in linked_orders and (linked_orders[ncm_id].ncm_status or '').lower() == 'redirected'
-        ]
-        rtvs = rtvs.exclude(order_id__in=redirected_ncm_ids)
+        rtvs = rtvs.exclude(order_id__in=all_redirected_ids)
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
@@ -4448,16 +4474,19 @@ def possible_redirection_list(request):
             'ncm_order_id': rtv.order_id,
             'api_config_name': rtv.api_config.api_name if rtv.api_config else '—',
             'comment': rtv.comment or '',
-            'rtv_date': rtv.created_at,
+            'rtv_date': rtv.rtv_marked_at or rtv.created_at,
             'local_order': local_order,
             'has_local': local_order is not None,
-            'customer_name': local_order.customer_name if local_order else '',
-            'customer_phone': local_order.customer_phone if local_order else '',
-            'shipping_address': local_order.shipping_address if local_order else '',
+            'customer_name': local_order.customer_name if local_order else (rtv.receiver_name or ''),
+            'customer_phone': local_order.customer_phone if local_order else (rtv.receiver_phone or ''),
+            'shipping_address': local_order.shipping_address if local_order else (rtv.receiver_address or ''),
+            'receiver_name': rtv.receiver_name or '',
+            'receiver_phone': rtv.receiver_phone or '',
+            'receiver_address': rtv.receiver_address or '',
             'branch_city': local_order.branch_city if local_order else '',
             'order_number': local_order.order_number if local_order else '',
             'total_amount': local_order.total_amount if local_order else None,
-            'ncm_status': (local_order.ncm_status or '') if local_order else '',
+            'ncm_status': 'redirected' if _is_redirected(rtv.order_id, rtv) else ((local_order.ncm_status or '') if local_order else ''),
             'local_order_id': local_order.id if local_order else None,
         }
         rtv_entries.append(entry)
@@ -4753,13 +4782,35 @@ def redirect_rtv_get(request, ncm_order_id):
     """
     from services.ncm_service import NCMService
 
-    # Look up RTVOrder for api_config
+    # Look up RTVOrder for api_config and extra detail data
     api_config_id = None
+    rtv_rec = None
     try:
-        rtv_rec = RTVOrder.objects.get(order_id=ncm_order_id)
+        rtv_rec = RTVOrder.objects.select_related('api_config').get(order_id=ncm_order_id)
         api_config_id = rtv_rec.api_config_id
     except RTVOrder.DoesNotExist:
         pass
+
+    # Build RTV-specific info to return alongside the order data
+    rtv_extra = {}
+    if rtv_rec:
+        rtv_extra = {
+            'order_id': rtv_rec.order_id,
+            'vendor_id': rtv_rec.vendor_id,
+            'tracking_id': rtv_rec.tracking_id or '',
+            'last_status': rtv_rec.last_status or '',
+            'from_branch': rtv_rec.from_branch or '',
+            'to_branch': rtv_rec.to_branch or '',
+            'cod_charge_ncm': rtv_rec.cod_charge or '',
+            'delivery_charge_ncm': rtv_rec.delivery_charge or '',
+            'product_description': rtv_rec.product_description or '',
+            'rtv_comment': rtv_rec.comment or '',
+            'rtv_marked_at': rtv_rec.rtv_marked_at.isoformat() if rtv_rec.rtv_marked_at else None,
+            'rtv_created_at': rtv_rec.created_at.isoformat() if rtv_rec.created_at else None,
+            'api_config_name': rtv_rec.api_config.api_name if rtv_rec.api_config else '',
+            'api_config_id': rtv_rec.api_config_id,
+            'is_redirected': '[REDIRECTED]' in (rtv_rec.comment or ''),
+        }
 
     # Check if there's a linked local order — if so, use existing redirect_order_get logic
     try:
@@ -4813,68 +4864,71 @@ def redirect_rtv_get(request, ncm_order_id):
             'items': items,
             'source': 'local',
         }
-        return JsonResponse({'status': 'success', 'order': data})
+        return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
     except Order.DoesNotExist:
         pass
 
-    # No local order — fetch from NCM API
+    # No local order — fetch from NCM API; fall back to locally stored rtv_rec data
     ncm_service = NCMService(api_config_id=api_config_id)
+    ncm_data = {}
     try:
         details_result = ncm_service.get_order_details(ncm_order_id)
-        if not details_result['success']:
-            return JsonResponse({
-                'status': 'error',
-                'message': f'Failed to fetch order from NCM: {details_result.get("error", "Unknown error")}'
-            }, status=502)
+        if details_result.get('success'):
+            raw = details_result['data']
+            if isinstance(raw, list) and len(raw) > 0:
+                ncm_data = raw[0]
+            elif isinstance(raw, dict):
+                ncm_data = raw.get('data', raw.get('results', raw))
+                if isinstance(ncm_data, list) and len(ncm_data) > 0:
+                    ncm_data = ncm_data[0]
+            if not isinstance(ncm_data, dict):
+                ncm_data = {}
+    except Exception:
+        pass  # fallback to rtv_rec stored fields below
 
-        raw = details_result['data']
-        if isinstance(raw, list) and len(raw) > 0:
-            ncm_data = raw[0]
-        elif isinstance(raw, dict):
-            ncm_data = raw.get('data', raw.get('results', raw))
-            if isinstance(ncm_data, list) and len(ncm_data) > 0:
-                ncm_data = ncm_data[0]
-        else:
-            ncm_data = {}
+    # Fallback to locally stored RTVOrder fields when NCM API is unavailable or returns empty
+    _rvn        = rtv_rec.receiver_name    if rtv_rec else ''
+    _rvp        = rtv_rec.receiver_phone   if rtv_rec else ''
+    _rva        = rtv_rec.receiver_address if rtv_rec else ''
+    _to_branch  = rtv_rec.to_branch        if rtv_rec else ''
+    _from_branch= rtv_rec.from_branch      if rtv_rec else 'TINKUNE'
+    _tracking   = rtv_rec.tracking_id     if rtv_rec else ''
 
-        data = {
-            'id': None,
-            'ncm_order_id': ncm_order_id,
-            'order_number': str(ncm_data.get('vendororderid', ncm_data.get('vendor_order_id', ''))),
-            'barcode': ncm_data.get('barcode', ncm_data.get('trackid', '')),
-            'customer_name': ncm_data.get('name', ncm_data.get('customer_name', '')),
-            'customer_phone': ncm_data.get('phone', ncm_data.get('customer_phone', '')),
-            'customer_email': ncm_data.get('email', ''),
-            'shipping_address': ncm_data.get('address', ncm_data.get('shipping_address', '')),
-            'landmark': ncm_data.get('landmark', ''),
-            'branch_city': ncm_data.get('branch', ncm_data.get('to_branch', '')),
-            'branch_id': None,
-            'in_out': 'out',
-            'notes': ncm_data.get('remarks', ncm_data.get('notes', '')),
-            'order_from': 'NCM',
-            'total_amount': str(ncm_data.get('cod_charge', ncm_data.get('cod_amount', 0))),
-            'discount_amount': '0',
-            'shipping_charge': str(ncm_data.get('delivery_charge', 0)),
-            'delivery_charge': str(ncm_data.get('delivery_charge', 0)),
-            'is_partial_payment': False,
-            'partial_amount_paid': '0',
-            'remaining_amount': '0',
-            'package_weight': str(ncm_data.get('weight', 1.0)),
-            'order_status': ncm_data.get('status', ncm_data.get('last_delivery_status', '')),
-            'status_setup_id': None,
-            'payment_status_setup_id': None,
-            'payment_setup_id': None,
-            'ncm_status': ncm_data.get('status', ''),
-            'ncm_from_branch': ncm_data.get('fbranch', ncm_data.get('from_branch', 'TINKUNE')),
-            'ncm_delivery_type': ncm_data.get('type', ncm_data.get('delivery_type', 'Door2Door')),
-            'logistics': 'ncm',
-            'items': [],
-            'source': 'ncm',
-        }
-        return JsonResponse({'status': 'success', 'order': data})
-
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': f'Error fetching NCM order: {str(e)}'}, status=500)
+    data = {
+        'id': None,
+        'ncm_order_id': ncm_order_id,
+        'order_number': str(ncm_data.get('vendororderid', ncm_data.get('vendor_order_id', ''))),
+        'barcode': ncm_data.get('barcode', ncm_data.get('trackid', '')) or _tracking,
+        'customer_name': ncm_data.get('name', ncm_data.get('customer_name', '')) or _rvn,
+        'customer_phone': ncm_data.get('phone', ncm_data.get('customer_phone', '')) or _rvp,
+        'customer_email': ncm_data.get('email', ''),
+        'shipping_address': ncm_data.get('address', ncm_data.get('shipping_address', '')) or _rva,
+        'landmark': ncm_data.get('landmark', ''),
+        'branch_city': ncm_data.get('branch', ncm_data.get('to_branch', '')) or _to_branch,
+        'branch_id': None,
+        'in_out': 'out',
+        'notes': ncm_data.get('remarks', ncm_data.get('notes', '')),
+        'order_from': 'NCM',
+        'total_amount': str(ncm_data.get('cod_charge', ncm_data.get('cod_amount', 0))),
+        'discount_amount': '0',
+        'shipping_charge': str(ncm_data.get('delivery_charge', 0)),
+        'delivery_charge': str(ncm_data.get('delivery_charge', 0)),
+        'is_partial_payment': False,
+        'partial_amount_paid': '0',
+        'remaining_amount': '0',
+        'package_weight': str(ncm_data.get('weight', 1.0)),
+        'order_status': ncm_data.get('status', ncm_data.get('last_delivery_status', '')),
+        'status_setup_id': None,
+        'payment_status_setup_id': None,
+        'payment_setup_id': None,
+        'ncm_status': ncm_data.get('status', ''),
+        'ncm_from_branch': ncm_data.get('fbranch', ncm_data.get('from_branch', _from_branch)),
+        'ncm_delivery_type': ncm_data.get('type', ncm_data.get('delivery_type', 'Door2Door')),
+        'logistics': 'ncm',
+        'items': [],
+        'source': 'ncm',
+    }
+    return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
 
 
 @login_required
@@ -4977,6 +5031,17 @@ def redirect_rtv_save(request, ncm_order_id):
 
         if response.status_code == 200:
             data = response.json()
+
+            # Update linked local order if it exists
+            # Mark RTVOrder as redirected (via comment) so standalone RTVs show correct status
+            try:
+                rtv_obj = RTVOrder.objects.get(order_id=ncm_order_id)
+                existing_comment = (rtv_obj.comment or '').strip()
+                if 'redirected' not in existing_comment.lower():
+                    rtv_obj.comment = f'[REDIRECTED] {existing_comment}'.strip()
+                    rtv_obj.save(update_fields=['comment'])
+            except RTVOrder.DoesNotExist:
+                pass
 
             # Update linked local order if it exists
             try:
@@ -17727,8 +17792,12 @@ def ncm_rtvs_list(request):
     # else: show all (no filter)
 
     if search:
+        from django.db.models.functions import Cast
+        from django.db.models import CharField
+        # Cast order_id to string for partial matching (portable across SQLite/PostgreSQL)
+        qs = qs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
         qs = qs.filter(
-            Q(order_id__icontains=search) |
+            Q(_oid_str__icontains=search) |
             Q(comment__icontains=search)
         )
 
@@ -17748,19 +17817,19 @@ def ncm_rtvs_list(request):
     page_objs = list(qs[start:end])
     rtv_ids_page = [rtv.id for rtv in page_objs]
 
-    # Auto-assign unassigned RTVs on this page to the default NCM config
+    # Auto-assign unassigned RTVs on this page to the primary NCM config
     unassigned_on_page = [rtv for rtv in page_objs if rtv.api_config_id is None]
     if unassigned_on_page:
-        default_cfg = LogisticsAPIConfig.objects.filter(
+        primary_cfg = LogisticsAPIConfig.objects.filter(
             logistics_provider='ncm', is_active=True
         ).order_by('-id').first()
-        if default_cfg:
+        if primary_cfg:
             unassigned_ids = [rtv.id for rtv in unassigned_on_page]
-            RTVOrder.objects.filter(id__in=unassigned_ids).update(api_config=default_cfg)
+            RTVOrder.objects.filter(id__in=unassigned_ids).update(api_config=primary_cfg)
             # Refresh api_config on the in-memory objects
             for rtv in unassigned_on_page:
-                rtv.api_config = default_cfg
-                rtv.api_config_id = default_cfg.id
+                rtv.api_config = primary_cfg
+                rtv.api_config_id = primary_cfg.id
 
     # Build follow-up metadata directly from RTVFollowUp (no local Order needed)
     nepal_tz = pytz.timezone('Asia/Kathmandu')
@@ -17925,9 +17994,16 @@ def ncm_rtvs_sync(request):
         })
 
     # ── MODE: ORDERS ───────────────────────────────────────────
-    configs_to_sync = [chosen_config] if chosen_config else list(
-        LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
-    )
+    # When no specific portal is selected, use the primary NCM config only
+    # (avoids duplicate API calls when multiple configs share the same API key)
+    if chosen_config:
+        configs_to_sync = [chosen_config]
+    else:
+        # Use the main portal config (highest ID = most recent / primary)
+        primary = LogisticsAPIConfig.objects.filter(
+            logistics_provider='ncm', is_active=True
+        ).order_by('-id').first()
+        configs_to_sync = [primary] if primary else []
     new_count = 0
     tagged_count = 0
     existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
@@ -17947,6 +18023,7 @@ def ncm_rtvs_sync(request):
                     api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
 
                 if not api_result['success']:
+                    logger.warning(f"NCM RTV sync: API call failed for config {cfg.id} ({cfg.api_name})")
                     continue
 
                 new_rtvs = []
@@ -18061,9 +18138,12 @@ def ncm_rtvs_sync(request):
             logistics_provider='ncm', is_active=True
         ).order_by('-id').first()
         if default_cfg:
-            tagged_count += RTVOrder.objects.filter(
+            auto_tagged = RTVOrder.objects.filter(
                 api_config__isnull=True
             ).update(api_config=default_cfg)
+            tagged_count += auto_tagged
+            if auto_tagged:
+                logger.info(f"Auto-tagged {auto_tagged} unassigned RTVs to {default_cfg.api_name}")
 
     qs = RTVOrder.objects.all()
     if chosen_config:

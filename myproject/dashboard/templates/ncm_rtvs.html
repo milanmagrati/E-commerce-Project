@@ -916,17 +916,43 @@
     #orderDetailModal .modal-dialog { max-width: 95%; }
 }
 
-/* ---- Full Sync Button States ---- */
-.rtv-sync-btn {
+/* ---- Fetch RTVs Button ---- */
+.rtv-fetch-btn {
+    height: 38px;
+    padding: 0 1.1rem;
+    border-radius: 10px;
+    border: 2px solid #667eea;
+    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+    color: #4338ca;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
     position: relative;
     overflow: hidden;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+.rtv-fetch-btn:hover {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 4px 16px rgba(102,126,234,0.35);
+    transform: translateY(-1px);
+}
+.rtv-fetch-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(102,126,234,0.25);
+}
+
+/* ---- Sync Button States ---- */
 .rtv-sync-btn.syncing {
-    min-width: 160px;
+    min-width: 150px;
     height: 38px;
     border-radius: 10px;
-    padding: 0 1rem;
+    padding: 0 1.1rem;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-color: transparent;
     color: #fff;
@@ -934,13 +960,10 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
     font-weight: 600;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
     box-shadow: 0 4px 18px rgba(102,126,234,0.35);
-}
-.rtv-sync-btn.syncing .sync-label {
-    white-space: nowrap;
 }
 .rtv-sync-btn.syncing::before {
     content: '';
@@ -958,7 +981,7 @@
     100% { transform: translateX(50%); }
 }
 .sync-spinner {
-    width: 16px; height: 16px;
+    width: 15px; height: 15px;
     border: 2.5px solid rgba(255,255,255,0.3);
     border-top-color: #fff;
     border-radius: 50%;
@@ -969,17 +992,17 @@
     to { transform: rotate(360deg); }
 }
 .rtv-sync-btn.sync-done {
-    min-width: 160px;
+    min-width: 150px;
     height: 38px;
     border-radius: 10px;
-    padding: 0 1rem;
+    padding: 0 1.1rem;
     background: linear-gradient(135deg, #22c55e 0%, #059669 100%);
     border-color: transparent;
     color: #fff;
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
     font-weight: 600;
     box-shadow: 0 4px 18px rgba(34,197,94,0.35);
     animation: syncPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -990,17 +1013,17 @@
     100% { transform: scale(1); }
 }
 .rtv-sync-btn.sync-error {
-    min-width: 160px;
+    min-width: 150px;
     height: 38px;
     border-radius: 10px;
-    padding: 0 1rem;
+    padding: 0 1.1rem;
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     border-color: transparent;
     color: #fff;
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
     font-weight: 600;
     box-shadow: 0 4px 18px rgba(239,68,68,0.35);
 }
@@ -1119,8 +1142,8 @@
     </div>
 
     <div class="rtv-toolbar-right">
-        <button class="rtv-refresh-btn rtv-sync-btn" id="fullSyncBtn" onclick="triggerFullSync()" title="Full sync — fetch ALL RTVs from NCM">
-            <i class="fas fa-cloud-download-alt"></i>
+        <button class="rtv-fetch-btn rtv-sync-btn" id="fullSyncBtn" onclick="triggerFullSync()" title="Fetch all RTVs from NCM">
+            <i class="fas fa-cloud-download-alt"></i> <span>Fetch RTVs</span>
         </button>
         <button class="rtv-refresh-btn" onclick="location.reload()" title="Refresh page">
             <i class="fas fa-sync-alt"></i>
@@ -1657,8 +1680,11 @@
     // S/N offset from server so numbering is continuous across pages
     const snOffset = {{ sn_offset|default:0 }};
 
+    var totalCount = {{ total_count|default:0 }};
+
     function applyFilters() {
         let visibleIdx = 0;
+        var isFiltered = (activeFilter !== 'all');
 
         tableRows.forEach(function(row) {
             // Skip non-data rows (e.g., follow-up panel rows)
@@ -1667,7 +1693,7 @@
             const comment = (row.getAttribute('data-comment') || '').toLowerCase();
 
             let matchFilter = true;
-            if (activeFilter !== 'all') {
+            if (isFiltered) {
                 var f = activeFilter.toLowerCase();
                 if (f === 'exchange') {
                     matchFilter = comment.indexOf('exchange') >= 0 || comment.indexOf('double order') >= 0;
@@ -1691,7 +1717,11 @@
         });
 
         var hdrCount = document.getElementById('hdrFilteredCount');
-        if (hdrCount) hdrCount.textContent = visibleIdx;
+        if (hdrCount) {
+            // When no filter is active, show the server-side total count (all pages)
+            // When a filter is active, show the filtered count (current page only)
+            hdrCount.textContent = isFiltered ? visibleIdx : totalCount;
+        }
     }
 
     // Server-side search with debounce so it works across all pages
@@ -2361,6 +2391,8 @@
     };
 
     // ==================== FULL SYNC (manual trigger) ====================
+    var _defaultBtnHTML = '<i class="fas fa-cloud-download-alt"></i> <span>Fetch RTVs</span>';
+
     window.triggerFullSync = function() {
         var btn = document.getElementById('fullSyncBtn');
         if (!btn || btn.disabled) return;
@@ -2370,7 +2402,7 @@
         _manualSyncActive = true;
         btn.classList.add('syncing');
         btn.classList.remove('sync-done', 'sync-error');
-        btn.innerHTML = '<span class="sync-spinner"></span><span class="sync-label">Syncing RTVs…</span>';
+        btn.innerHTML = '<span class="sync-spinner"></span> <span>Fetching RTVs…</span>';
 
         var syncUrl = '{% url "ncm_rtvs_sync" %}?full=1';
         var currentApiId = '{{ selected_api_config_id|escapejs }}';
@@ -2390,35 +2422,33 @@
                 // -- Done state --
                 btn.classList.remove('syncing');
                 btn.classList.add('sync-done');
-                var msg = data.new_count > 0
-                    ? '<i class="fas fa-check-circle"></i><span class="sync-label">' + data.new_count + ' new RTV(s) found!</span>'
-                    : '<i class="fas fa-check-circle"></i><span class="sync-label">All up to date</span>';
-                btn.innerHTML = msg;
+                btn.innerHTML = data.new_count > 0
+                    ? '<i class="fas fa-check-circle"></i> <span>' + data.new_count + ' new RTV(s)!</span>'
+                    : '<i class="fas fa-check-circle"></i> <span>All up to date</span>';
 
                 if (data.new_count > 0) {
                     showToast(data.new_count + ' new RTV(s) synced! Refreshing…', 'success');
                     setTimeout(function() { location.reload(); }, 1200);
                 } else {
                     showToast('All RTVs are up to date. Total: ' + (data.total_count || 0), 'success');
-                    // Reset button after 3s
                     setTimeout(function() {
                         btn.disabled = false;
                         _manualSyncActive = false;
                         btn.classList.remove('sync-done');
-                        btn.innerHTML = '<i class="fas fa-cloud-download-alt"></i>';
+                        btn.innerHTML = _defaultBtnHTML;
                     }, 3000);
                 }
             } else {
                 // -- Error state --
                 btn.classList.remove('syncing');
                 btn.classList.add('sync-error');
-                btn.innerHTML = '<i class="fas fa-exclamation-circle"></i><span class="sync-label">Sync failed</span>';
+                btn.innerHTML = '<i class="fas fa-exclamation-circle"></i> <span>Sync failed</span>';
                 showToast('Sync failed: ' + (data.message || 'Unknown error'), 'error');
                 setTimeout(function() {
                     btn.disabled = false;
                     _manualSyncActive = false;
                     btn.classList.remove('sync-error');
-                    btn.innerHTML = '<i class="fas fa-cloud-download-alt"></i>';
+                    btn.innerHTML = _defaultBtnHTML;
                 }, 3000);
             }
         })
@@ -2427,13 +2457,13 @@
             btn.classList.remove('syncing');
             btn.classList.add('sync-error');
             var errMsg = err.name === 'AbortError' ? 'Timed out' : 'Network error';
-            btn.innerHTML = '<i class="fas fa-exclamation-circle"></i><span class="sync-label">' + errMsg + '</span>';
+            btn.innerHTML = '<i class="fas fa-exclamation-circle"></i> <span>' + errMsg + '</span>';
             showToast('Sync failed — ' + errMsg, 'error');
             setTimeout(function() {
                 btn.disabled = false;
                 _manualSyncActive = false;
                 btn.classList.remove('sync-error');
-                btn.innerHTML = '<i class="fas fa-cloud-download-alt"></i>';
+                btn.innerHTML = _defaultBtnHTML;
             }, 3000);
         });
     };
@@ -2472,7 +2502,16 @@
     runBackgroundSync();
 
     // Then poll every 30 seconds for real-time RTV updates
-    setInterval(runBackgroundSync, 30000);
+    // Pause when tab is hidden to save bandwidth
+    var _bgSyncInterval = setInterval(runBackgroundSync, 30000);
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            clearInterval(_bgSyncInterval);
+        } else {
+            _bgSyncInterval = setInterval(runBackgroundSync, 30000);
+            runBackgroundSync();
+        }
+    });
 
     // Phase 2: Lazy comment sync — runs after order sync, separate cooldown
     function commentSync() {
