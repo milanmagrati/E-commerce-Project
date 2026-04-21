@@ -17929,21 +17929,21 @@ def ncm_rtvs_sync(request):
                 # Priority 1: orders with a comment but no rtv_marked_at
                 #   (these had their date fetch 429'd — most likely do have an RTV marked comment)
                 # Priority 2: orders with no comment at all
-                # Take up to 4 total per sync call to stay within rate limits
+                # Take up to 6 total per sync call to stay within rate limits
                 priority_ids = list(
                     RTVOrder.objects.filter(
                         rtv_marked_at__isnull=True, api_config=cfg
-                    ).exclude(comment='').values_list('order_id', flat=True)[:2]
+                    ).exclude(comment='').values_list('order_id', flat=True)[:3]
                 )
                 fallback_ids = list(
                     RTVOrder.objects.filter(
                         comment='', api_config=cfg
-                    ).values_list('order_id', flat=True)[:4 - len(priority_ids)]
+                    ).values_list('order_id', flat=True)[:6 - len(priority_ids)]
                 )
                 no_comment_ids = priority_ids + fallback_ids
                 for i, oid in enumerate(no_comment_ids):
                     if i > 0:
-                        time.sleep(1.5)  # Generous delay to avoid 429
+                        time.sleep(1.0)  # 1-second delay between sequential requests
                     try:
                         cresult = ncm_service.get_order_comments(oid)
                         if cresult['success'] and cresult['data']:
@@ -18068,6 +18068,45 @@ def ncm_rtvs_sync(request):
                     if date_map:
                         for oid, dt in date_map.items():
                             RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
+
+                    # Immediately fetch comments for new RTVs (up to 8) to get rtv_marked_at
+                    # New RTVs are few per day so this is safe and ensures correct date from the start
+                    new_oids = [r.order_id for r in new_rtvs[:8]]
+                    for i, oid in enumerate(new_oids):
+                        if i > 0:
+                            time.sleep(1.0)
+                        try:
+                            cresult = ncm_service.get_order_comments(oid)
+                            if cresult.get('success') and cresult.get('data'):
+                                comments = cresult['data']
+                                rtv_comment = ''
+                                rtv_marked_at = None
+                                for c in comments:
+                                    text = c.get('comment', '')
+                                    if text.startswith('RTV marked'):
+                                        rtv_comment = text.replace('RTV marked - ', '').strip()
+                                        at = c.get('added_time', '')
+                                        if at:
+                                            rtv_marked_at = parse_datetime(at)
+                                        break
+                                if not rtv_comment:
+                                    for c in comments:
+                                        if c.get('added_by', '') == 'NCM Staff':
+                                            rtv_comment = c.get('comment', '')
+                                            if not rtv_marked_at:
+                                                at = c.get('added_time', '')
+                                                if at:
+                                                    rtv_marked_at = parse_datetime(at)
+                                            break
+                                upd = {}
+                                if rtv_comment:
+                                    upd['comment'] = rtv_comment
+                                if rtv_marked_at:
+                                    upd['rtv_marked_at'] = rtv_marked_at
+                                if upd:
+                                    RTVOrder.objects.filter(order_id=oid).update(**upd)
+                        except Exception:
+                            pass
 
                 # Update existing RTVs that are missing NCM fields OR have stale status
                 ncm_field_map = {}

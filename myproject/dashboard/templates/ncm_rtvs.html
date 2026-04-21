@@ -2581,14 +2581,18 @@
     // Run immediately on page load
     runBackgroundSync();
 
-    // Then poll every 30 seconds for real-time RTV updates
-    // Pause when tab is hidden to save bandwidth
+    // Poll every 30 seconds for real-time RTV updates
     var _bgSyncInterval = setInterval(runBackgroundSync, 30000);
+    // Comment sync runs on its own 60-second cadence, independently
+    var _commentSyncInterval = setInterval(commentSync, 65000);
+
     document.addEventListener('visibilitychange', function() {
         if (document.hidden) {
             clearInterval(_bgSyncInterval);
+            clearInterval(_commentSyncInterval);
         } else {
             _bgSyncInterval = setInterval(runBackgroundSync, 30000);
+            _commentSyncInterval = setInterval(commentSync, 65000);
             runBackgroundSync();
         }
     });
@@ -2597,21 +2601,21 @@
     function commentSync() {
         // Use localStorage (shared across tabs) to prevent multiple tabs from firing simultaneously
         var lastCommentSync = parseInt(localStorage.getItem('rtv_last_comment_sync') || '0', 10);
-        if (Date.now() - lastCommentSync < 600000) { // 10-minute cooldown, shared across tabs
+        if (Date.now() - lastCommentSync < 60000) { // 60-second cooldown, shared across tabs
             return;
         }
         var syncUrl = '{% url "ncm_rtvs_sync" %}?mode=comments';
         var currentApiId = '{{ selected_api_config_id|escapejs }}';
         if (currentApiId) syncUrl += '&api_config_id=' + encodeURIComponent(currentApiId);
+        localStorage.setItem('rtv_last_comment_sync', String(Date.now())); // mark before fetch to avoid double-trigger
         fetch(syncUrl, {
             method: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            localStorage.setItem('rtv_last_comment_sync', String(Date.now()));
             if (data.success && data.comments_updated > 0) {
-                showToast(data.comments_updated + ' comment(s) updated', 'success');
+                showToast(data.comments_updated + ' date(s) updated', 'success');
                 setTimeout(function() { location.reload(); }, 1500);
             }
         })
