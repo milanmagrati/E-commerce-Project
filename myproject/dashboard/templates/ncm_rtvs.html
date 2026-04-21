@@ -2581,18 +2581,18 @@
     // Run immediately on page load
     runBackgroundSync();
 
-    // Poll every 30 seconds for real-time RTV updates
-    var _bgSyncInterval = setInterval(runBackgroundSync, 30000);
-    // Comment sync runs on its own 60-second cadence, independently
-    var _commentSyncInterval = setInterval(commentSync, 65000);
+    // Poll every 30 minutes for real-time RTV updates
+    var _bgSyncInterval = setInterval(runBackgroundSync, 1800000);
+    // Comment sync runs on its own cadence, independently
+    var _commentSyncInterval = setInterval(commentSync, 1800000);
 
     document.addEventListener('visibilitychange', function() {
         if (document.hidden) {
             clearInterval(_bgSyncInterval);
             clearInterval(_commentSyncInterval);
         } else {
-            _bgSyncInterval = setInterval(runBackgroundSync, 30000);
-            _commentSyncInterval = setInterval(commentSync, 65000);
+            _bgSyncInterval = setInterval(runBackgroundSync, 1800000);
+            _commentSyncInterval = setInterval(commentSync, 1800000);
             runBackgroundSync();
         }
     });

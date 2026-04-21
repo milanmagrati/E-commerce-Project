@@ -2466,7 +2466,7 @@ function syncAllOrdersFAB() {
 
 // Auto-sync configuration
 let ordersListAutoSyncTimer = null;
-let ordersListAutoSyncInterval = {{ ORDER_AUTO_SYNC_INTERVAL|default:60 }} * 1000;
+let ordersListAutoSyncInterval = {{ ORDER_AUTO_SYNC_INTERVAL|default:14400 }} * 1000;
 let pendingOrderIds = [];
 
 /**

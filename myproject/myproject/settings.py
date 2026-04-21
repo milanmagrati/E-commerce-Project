@@ -216,7 +216,7 @@ TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default=None)
 
 # ===================== Real-time Configuration =====================
 # Auto-sync polling interval (seconds)
-ORDER_AUTO_SYNC_INTERVAL = config('ORDER_AUTO_SYNC_INTERVAL', default=60, cast=int)
+ORDER_AUTO_SYNC_INTERVAL = config('ORDER_AUTO_SYNC_INTERVAL', default=14400, cast=int)
 
 # Check for pending updates every X minutes
 WEBHOOK_PENDING_CHECK_INTERVAL = config('WEBHOOK_PENDING_CHECK_INTERVAL', default=30, cast=int)

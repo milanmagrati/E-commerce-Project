@@ -2766,6 +2766,7 @@ def orders_list(request):
         'payment_status_bulk_options': payment_status_bulk_options,
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
+        'ORDER_AUTO_SYNC_INTERVAL': getattr(settings, 'ORDER_AUTO_SYNC_INTERVAL', 14400),
     }
     
     return render(request, 'orders_list.html', context)
@@ -3517,6 +3518,7 @@ def order_detail(request, order_id):
         # API Integration configs for logistics
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
+        'AUTO_SYNC_INTERVAL': getattr(settings, 'ORDER_AUTO_SYNC_INTERVAL', 14400),
     }
 
     # Exchange eligibility check
