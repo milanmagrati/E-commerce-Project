@@ -18289,10 +18289,9 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         fut_details = executor.submit(_fetch_details)
         fut_status = executor.submit(_fetch_status)
         fut_comments = executor.submit(_fetch_comments)
-
-    details_result = fut_details.result()
-    status_result = fut_status.result()
-    comments_result = fut_comments.result()
+        details_result = fut_details.result()
+        status_result = fut_status.result()
+        comments_result = fut_comments.result()
 
     # 1. Process NCM order details
     if details_result.get('success'):
@@ -18347,7 +18346,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 'description': ncm_data.get('description', ''),
                 'package_type': ncm_data.get('packagetype', ncm_data.get('package_type', '')),
                 'package_handling': ncm_data.get('packagehandling', ncm_data.get('package_handling', '')),
-                'vendor_order_id': str(ncm_data.get('vendororderid', ncm_data.get('vendor_order_id', ''))),
+                'vendor_order_id': str(ncm_data.get('vendororderid', ncm_data.get('vendor_order_id', '')) or '').strip() or '',
                 'instruction': ncm_data.get('instruction', ncm_data.get('instructions', '')),
                 'items': ncm_items,
             }
@@ -18416,12 +18415,15 @@ def ncm_rtv_order_detail(request, ncm_order_id):
             except Exception:
                 pass
 
+    # Resolve vendor_order_id once for use in Strategies 4 & 5
+    ncm_vendor_order_id = ''
+    if response_data.get('ncm_data'):
+        _raw_vid = response_data['ncm_data'].get('vendor_order_id', '')
+        # Treat '0' and 'None' as empty — NCM sends '0' when no ref is set
+        ncm_vendor_order_id = '' if str(_raw_vid) in ('', '0', 'None') else str(_raw_vid).strip()
+
     if not local_order:
         # Strategy 4: Match by NCM vendororderid = our order_number
-        # NCM stores the vendor's own order reference as vendororderid
-        ncm_vendor_order_id = ''
-        if response_data.get('ncm_data'):
-            ncm_vendor_order_id = response_data['ncm_data'].get('vendor_order_id', '')
         if ncm_vendor_order_id:
             try:
                 local_order = Order.objects.select_related(
@@ -18440,7 +18442,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                     'customer', 'created_by', 'status_setup',
                     'payment_setup', 'payment_status_setup'
                 ).filter(id=vendor_id_int).first()
-            except (ValueError, TypeError, Exception):
+            except (ValueError, TypeError):
                 pass
 
     if local_order:
@@ -18492,6 +18494,8 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 'shipping_charge': str(local_order.shipping_charge or 0),
                 'tax_percent': str(local_order.tax_percent or 0),
                 'delivery_charge': str(local_order.delivery_charge or 0),
+                'amount_paid': str(local_order.partial_amount_paid or 0),
+                'remaining_amount': str(local_order.remaining_amount or 0),
                 'created_at': local_order.created_at.strftime('%b %d, %Y %I:%M %p') if local_order.created_at else '',
                 'items': items_data,
                 'items_count': len(items_data),
