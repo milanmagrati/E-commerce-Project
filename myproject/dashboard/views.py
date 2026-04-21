@@ -18503,10 +18503,13 @@ def ncm_rtv_order_detail(request, ncm_order_id):
 
     # 5. Get RTV record and enrich ncm_data with stored fields
     try:
+        from django.utils.timezone import localtime
         rtv = RTVOrder.objects.get(order_id=ncm_order_id)
+        _fmt = lambda dt: localtime(dt).strftime('%b %d, %Y %I:%M %p') if dt else ''
         response_data['rtv_info'] = {
             'comment': rtv.comment or '',
-            'created_at': rtv.created_at.strftime('%b %d, %Y %I:%M %p') if rtv.created_at else '',
+            'created_at': _fmt(rtv.created_at),
+            'rtv_marked_at': _fmt(rtv.rtv_marked_at),
             'vendor_name': rtv.vendor.get_full_name() if rtv.vendor else 'Unknown',
             'product_description': rtv.product_description or '',
         }

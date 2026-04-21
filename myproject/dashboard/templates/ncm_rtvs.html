@@ -2000,7 +2000,7 @@
                 html += '<div style="flex:1; min-width:0;">';
                 html += '<div style="font-weight:700; font-size:0.85rem; color:#92400e;">Return to Vendor (RTV)</div>';
                 html += '<div style="font-size:0.8rem; color:#a16207;">Reason: ' + escapeHtml(rtvInfo.comment || 'No reason specified') + '</div>';
-                html += '<div style="font-size:0.75rem; color:#b45309; margin-top:0.15rem;"><i class="fas fa-clock me-1"></i>' + escapeHtml(rtvInfo.created_at) + ' &bull; By ' + escapeHtml(rtvInfo.vendor_name) + '</div>';
+                html += '<div style="font-size:0.75rem; color:#b45309; margin-top:0.15rem;"><i class="fas fa-clock me-1"></i>' + escapeHtml(rtvInfo.rtv_marked_at || rtvInfo.created_at) + '</div>';
                 html += '</div></div>';
             }
 
