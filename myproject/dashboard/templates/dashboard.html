@@ -103,6 +103,56 @@
     </div>
 </div>
 
+<!-- Orders Overview Row -->
+<div class="row g-4 mb-4">
+    <div class="col-xl-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <h5 class="mb-0">Orders Overview</h5>
+                        <span class="badge bg-primary rounded-pill" id="ordersOverviewTotal">0 orders</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn active" data-days="1">Today</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="7">Last 7 Days</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="30">Last 30 Days</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="60">Last 60 Days</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="90">Last 90 Days</button>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="overviewCustomRangeToggle" data-bs-toggle="collapse" data-bs-target="#overviewCustomRangeForm">
+                            <i class="fas fa-calendar"></i> Custom Range
+                        </button>
+                    </div>
+                </div>
+                <div class="collapse mt-3" id="overviewCustomRangeForm">
+                    <div class="card card-body bg-light">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label for="overviewFromDate" class="form-label">From Date</label>
+                                <input type="date" class="form-control form-control-sm" id="overviewFromDate">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="overviewToDate" class="form-label">To Date</label>
+                                <input type="date" class="form-control form-control-sm" id="overviewToDate">
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button type="button" class="btn btn-sm btn-primary w-100" id="applyOverviewCustomRange">
+                                    <i class="fas fa-filter"></i> Apply Filter
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <canvas id="ordersOverviewChart" height="60"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Order Sources Row -->
 <div class="row g-4 mb-4">
     <div class="col-xl-12">
@@ -723,12 +773,11 @@
             // Collapse custom date range if open
             const customRangeCollapse = document.getElementById('customRangeForm');
             if (customRangeCollapse && customRangeCollapse.classList.contains('show')) {
-                const bsCollapse = new bootstrap.Collapse(customRangeCollapse, {toggle: true});
-                bsCollapse.hide();
+                bootstrap.Collapse.getOrCreateInstance(customRangeCollapse).hide();
             }
             
             // Update chart
-            updateOrderSourceChart(days);
+            updateOrderSourceChart(parseInt(days, 10));
         });
     });
     
@@ -760,6 +809,132 @@
         updateOrderSourceChart(null, fromDate, toDate);
     });
     
+    // Orders Overview Chart
+    let ordersOverviewChart = null;
+
+    function updateOrdersOverviewChart(days, customFrom, customTo) {
+        let url = '/api/order-overview-data/?';
+        if (customFrom && customTo) {
+            url += 'custom_from=' + customFrom + '&custom_to=' + customTo;
+        } else {
+            url += 'days=' + days;
+        }
+
+        fetch(url)
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                const labels = data.dates;
+                const counts = data.counts;
+                const total  = data.total;
+
+                // Update total badge
+                document.getElementById('ordersOverviewTotal').textContent =
+                    total + (total === 1 ? ' order' : ' orders');
+
+                const canvasCtx = document.getElementById('ordersOverviewChart').getContext('2d');
+
+                if (ordersOverviewChart) {
+                    ordersOverviewChart.destroy();
+                }
+
+                ordersOverviewChart = new Chart(canvasCtx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Orders',
+                            data: counts,
+                            borderColor: 'rgb(99, 102, 241)',
+                            backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                            tension: 0.4,
+                            fill: true,
+                            borderWidth: 2.5,
+                            pointBackgroundColor: 'rgb(99, 102, 241)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointRadius: 5,
+                            pointHoverRadius: 7
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        return ' ' + ctx.parsed.y + ' order' + (ctx.parsed.y !== 1 ? 's' : '');
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1,
+                                    precision: 0
+                                },
+                                title: { display: true, text: 'Number of Orders' }
+                            },
+                            x: {
+                                title: { display: true, text: 'Date' },
+                                ticks: {
+                                    maxRotation: 45,
+                                    minRotation: 0,
+                                    autoSkip: true,
+                                    maxTicksLimit: 20
+                                }
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(function(err) { console.error('Error fetching orders overview data:', err); });
+    }
+
+    // Set default custom range dates for overview
+    document.getElementById('overviewFromDate').value = thirtyDaysAgo.toISOString().split('T')[0];
+    document.getElementById('overviewToDate').value = today.toISOString().split('T')[0];
+
+    // Initialize Orders Overview chart with Today
+    updateOrdersOverviewChart(1);
+
+    // Preset filter buttons
+    document.querySelectorAll('.overview-filter-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const days = this.getAttribute('data-days');
+            document.querySelectorAll('.overview-filter-btn').forEach(function(b) {
+                b.classList.remove('active');
+            });
+            this.classList.add('active');
+            const col = document.getElementById('overviewCustomRangeForm');
+            if (col && col.classList.contains('show')) {
+                bootstrap.Collapse.getOrCreateInstance(col).hide();
+            }
+            updateOrdersOverviewChart(parseInt(days, 10));
+        });
+    });
+
+    // Apply custom range
+    document.getElementById('applyOverviewCustomRange').addEventListener('click', function() {
+        const from = document.getElementById('overviewFromDate').value;
+        const to   = document.getElementById('overviewToDate').value;
+        if (!from || !to) { alert('Please select both start and end dates'); return; }
+        if (new Date(from) > new Date(to)) { alert('Start date must be before end date'); return; }
+        document.querySelectorAll('.overview-filter-btn').forEach(function(b) {
+            b.classList.remove('active');
+        });
+        updateOrdersOverviewChart(null, from, to);
+    });
+
+    document.getElementById('overviewToDate').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') { document.getElementById('applyOverviewCustomRange').click(); }
+    });
+
     // Allow Enter key to apply custom range
     document.getElementById('customToDate').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {

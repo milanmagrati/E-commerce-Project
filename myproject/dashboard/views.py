@@ -1941,6 +1941,67 @@ def chart_data(request):
 
 
 @login_required
+def order_overview_data(request):
+    """API endpoint to get total order counts per day for the Orders Overview chart"""
+    from datetime import datetime
+
+    custom_from = request.GET.get('custom_from')
+    custom_to = request.GET.get('custom_to')
+
+    if custom_from and custom_to:
+        try:
+            start_date = datetime.strptime(custom_from, '%Y-%m-%d').date()
+            end_date = datetime.strptime(custom_to, '%Y-%m-%d').date()
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+        except (ValueError, TypeError):
+            start_date = (timezone.now() - timedelta(days=6)).date()
+            end_date = timezone.now().date()
+    else:
+        days = request.GET.get('days', 7)
+        try:
+            days = int(days)
+            if days not in [1, 7, 30, 60, 90]:
+                days = 7
+        except (ValueError, TypeError):
+            days = 7
+        if days == 1:
+            start_date = timezone.now().date()
+        else:
+            start_date = (timezone.now() - timedelta(days=days - 1)).date()
+        end_date = timezone.now().date()
+
+    # Build list of dates in range
+    dates_list = []
+    current = start_date
+    while current <= end_date:
+        dates_list.append(current)
+        current += timedelta(days=1)
+
+    # Aggregate order counts per day
+    counts_qs = (
+        Order.objects
+        .filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
+        .annotate(order_date=TruncDate('created_at'))
+        .values('order_date')
+        .annotate(count=Count('id'))
+        .order_by('order_date')
+    )
+    counts_map = {entry['order_date']: entry['count'] for entry in counts_qs}
+
+    # Use "Today" label when day range is 1, else "MMM DD"
+    if len(dates_list) == 1:
+        labels = ['Today']
+    else:
+        labels = [d.strftime('%b %d') for d in dates_list]
+
+    counts = [counts_map.get(d, 0) for d in dates_list]
+    total = sum(counts)
+
+    return JsonResponse({'dates': labels, 'counts': counts, 'total': total})
+
+
+@login_required
 def order_sources_data(request):
     """API endpoint to get order sources data with date range filtering"""
     # Check if custom date range is provided
