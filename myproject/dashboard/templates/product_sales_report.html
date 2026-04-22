@@ -377,6 +377,387 @@
     .staff-table { font-size: .82rem; }
     .selected-product-info { flex-direction: column; align-items: flex-start; }
 }
+
+/* ===== Staff Orders Modal ===== */
+.staff-rank-row:hover { background: #f0f4ff !important; }
+.staff-rank-row:hover td { color: #4f46e5; }
+
+/* ===== Staff Orders Modal ===== */
+#staffOrdersModal .modal-dialog {
+    max-width: min(1280px, 96vw);
+    margin: 20px auto;
+}
+#staffOrdersModal .modal-content {
+    border: none;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,.22);
+    min-height: 85vh;
+    display: flex;
+    flex-direction: column;
+}
+#staffOrdersModal .modal-body {
+    padding: 0;
+    background: #f5f7fa;
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Header — matches order list page purple gradient */
+.som-header {
+    background: linear-gradient(135deg, #6a0dad, #8b00ff);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.som-header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.som-header-left .som-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.som-header-left .som-badge {
+    background: rgba(255,255,255,.2);
+    color: #fff;
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: .78rem;
+    font-weight: 700;
+    border: 1px solid rgba(255,255,255,.3);
+}
+.som-header-right { display: flex; align-items: center; gap: 10px; }
+.som-header-right .som-show-label {
+    color: rgba(255,255,255,.85);
+    font-size: .82rem;
+    font-weight: 600;
+}
+.som-header-right .som-count-val {
+    background: rgba(255,255,255,.18);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.3);
+    border-radius: 8px;
+    padding: 4px 14px;
+    font-size: .85rem;
+    font-weight: 700;
+}
+.som-close-btn {
+    background: rgba(255,255,255,.15);
+    border: 1px solid rgba(255,255,255,.3);
+    color: #fff;
+    border-radius: 8px;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background .15s;
+    flex-shrink: 0;
+}
+.som-close-btn:hover { background: rgba(255,255,255,.3); }
+
+/* Summary stats strip */
+.som-stats {
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 12px 24px;
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.som-stat { display: flex; flex-direction: column; }
+.som-stat-val { font-weight: 800; font-size: 1.15rem; color: #1f2937; line-height: 1.2; }
+.som-stat-lbl { font-size: .7rem; color: #9ca3af; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.som-stat-divider { width: 1px; background: #e5e7eb; height: 32px; }
+
+/* Orders table container */
+.som-table-wrap { padding: 0; }
+.som-orders-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #fff;
+}
+.som-orders-table thead th {
+    background: #f9fafb;
+    padding: 11px 14px;
+    font-size: .72rem;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    border-bottom: 2px solid #e5e7eb;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+.som-orders-table tbody tr {
+    cursor: pointer;
+    transition: background .12s;
+}
+.som-orders-table tbody tr:hover { background: #f5f3ff; }
+.som-orders-table tbody tr.som-row-active { background: #eef2ff; }
+.som-orders-table tbody td {
+    padding: 13px 14px;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: middle;
+    font-size: .85rem;
+    color: #374151;
+}
+.som-orders-table tbody tr:last-child td { border-bottom: none; }
+
+/* ORDER # cell */
+.som-order-num {
+    font-weight: 800;
+    color: #4f46e5;
+    font-size: .9rem;
+    text-decoration: none;
+}
+.som-order-num:hover { text-decoration: underline; color: #4338ca; }
+
+/* CUSTOMER cell */
+.som-cust-name { font-weight: 700; color: #1f2937; font-size: .86rem; }
+.som-cust-phone { font-size: .78rem; color: #6b7280; margin-top: 2px; }
+
+/* DATE cell */
+.som-date-main { font-size: .84rem; color: #374151; font-weight: 600; }
+.som-date-time { font-size: .75rem; color: #9ca3af; margin-top: 2px; }
+
+/* PRODUCT cell */
+.som-prod-icon { display: inline-flex; align-items: center; gap: 6px; }
+.som-prod-icon i { color: #6b7280; font-size: .8rem; }
+.som-prod-name { font-size: .83rem; color: #374151; font-weight: 600; }
+.som-qty-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e0e7ff;
+    color: #4f46e5;
+    border-radius: 12px;
+    padding: 1px 8px;
+    font-size: .72rem;
+    font-weight: 800;
+    margin-left: 4px;
+}
+
+/* AMOUNT cell */
+.som-amount-main { font-weight: 800; font-size: .9rem; }
+.som-amount-green { color: #047857; }
+.som-partial-badge {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: .7rem;
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+.som-amount-paid { font-size: .75rem; color: #059669; }
+.som-amount-total { font-size: .75rem; color: #6b7280; }
+
+/* BRANCH cell */
+.som-branch { font-size: .83rem; color: #374151; font-weight: 600; }
+
+/* STATUS cell */
+.som-status-badge {
+    font-weight: 700;
+    font-size: .82rem;
+}
+
+/* ACTIONS cell */
+.som-actions { display: flex; gap: 6px; align-items: center; }
+.som-action-btn {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    border: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .78rem;
+    cursor: pointer;
+    transition: opacity .15s, transform .1s;
+    text-decoration: none;
+}
+.som-action-btn:hover { opacity: .85; transform: scale(1.08); }
+.som-btn-eye  { background: #06b6d4; color: #fff; }
+.som-btn-link { background: #8b5cf6; color: #fff; }
+
+/* Detail panel */
+.som-detail-panel {
+    background: #fff;
+    border-top: 2px solid #e5e7eb;
+    animation: somSlide .22s ease;
+}
+@keyframes somSlide {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.som-detail-topbar {
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.som-back-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #fff;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 5px 14px;
+    font-size: .8rem; font-weight: 600; color: #374151;
+    cursor: pointer; transition: all .15s;
+}
+.som-back-btn:hover { border-color: #6366f1; color: #4f46e5; background: #eef2ff; }
+.som-detail-body { padding: 20px 24px; }
+.som-detail-section { margin-bottom: 18px; }
+.som-detail-section-title {
+    font-size: .7rem; font-weight: 700; color: #6b7280;
+    text-transform: uppercase; letter-spacing: .6px;
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+}
+.som-detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 20px; }
+.som-detail-item label { font-size: .7rem; color: #9ca3af; font-weight: 600; display: block; margin-bottom: 2px; }
+.som-detail-item span { font-size: .86rem; color: #1f2937; font-weight: 600; }
+.som-items-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+.som-items-table thead th { background: #f9fafb; padding: 8px 12px; color: #6b7280; font-weight: 700; font-size: .7rem; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+.som-items-table tbody td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; color: #374151; vertical-align: middle; }
+.som-items-table tbody tr:last-child td { border-bottom: none; }
+.som-totals { background: #f9fafb; border-radius: 10px; padding: 12px 16px; }
+.som-totals .tl { display: flex; justify-content: space-between; font-size: .84rem; color: #374151; padding: 3px 0; }
+.som-totals .tl.grand { font-weight: 800; font-size: .96rem; color: #1f2937; border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 8px; }
+.som-view-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff; border: none; border-radius: 10px;
+    padding: 9px 22px; font-weight: 700; font-size: .84rem;
+    text-decoration: none; transition: transform .15s, box-shadow .15s;
+}
+.som-view-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(99,102,241,.4); color: #fff; }
+
+/* Status pill inline */
+.status-pill {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: .72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .4px;
+}
+
+/* Loading */
+.orders-loading { text-align: center; padding: 60px 20px; }
+.orders-loading .spinner {
+    width: 38px; height: 38px;
+    border: 3px solid #e5e7eb; border-top-color: #6366f1;
+    border-radius: 50%; animation: spin .7s linear infinite;
+    margin: 0 auto 14px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Pagination bar */
+.som-pagination {
+    display: flex; justify-content: center; align-items: center;
+    gap: 6px; padding: 14px 20px;
+    background: #fff; border-top: 1px solid #e5e7eb;
+    flex-wrap: wrap;
+}
+.som-pg-btn {
+    min-width: 32px; height: 32px;
+    border-radius: 8px; border: 1.5px solid #e5e7eb;
+    background: #fff; color: #6b7280;
+    font-size: .8rem; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all .15s; padding: 0 8px;
+}
+.som-pg-btn:hover:not(.disabled):not(.active) { border-color: #6366f1; color: #6366f1; }
+.som-pg-btn.active { background: #6366f1; border-color: #6366f1; color: #fff; }
+.som-pg-btn.disabled { opacity: .4; pointer-events: none; }
+.som-pg-info { font-size: .78rem; color: #9ca3af; padding: 0 8px; }
+
+/* Modal toolbar */
+.som-toolbar {
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.som-toolbar-left  { display:flex; align-items:center; gap:8px; flex:1; flex-wrap:wrap; min-width:0; }
+.som-toolbar-right { display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:wrap; }
+.som-search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 180px;
+    flex: 1;
+    max-width: 340px;
+}
+.som-search-wrap > .som-si { position:absolute; left:9px; color:#9ca3af; font-size:.77rem; pointer-events:none; }
+.som-search-input {
+    width: 100%;
+    padding: 7px 28px 7px 28px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: .83rem;
+    color: #374151;
+    outline: none;
+    transition: border-color .2s;
+    background: #fafafa;
+}
+.som-search-input:focus { border-color: #6366f1; background:#fff; }
+.som-search-clear {
+    position: absolute; right: 7px;
+    background: none; border: none;
+    color: #9ca3af; cursor: pointer; font-size: .75rem; padding: 0; line-height:1;
+}
+.som-search-clear:hover { color: #374151; }
+.som-filter-select {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 7px 8px;
+    font-size: .82rem;
+    color: #374151;
+    background: #fafafa;
+    cursor: pointer;
+    outline: none;
+    transition: border-color .2s;
+}
+.som-filter-select:focus { border-color: #6366f1; background:#fff; }
+.som-per-page-lbl { font-size: .78rem; color: #6b7280; font-weight:600; white-space:nowrap; }
+.som-result-badge {
+    background: #eef2ff;
+    color: #4f46e5;
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: .75rem;
+    font-weight: 700;
+    white-space: nowrap;
+    border: 1px solid #c7d2fe;
+}
+
+@media (max-width: 768px) {
+    #staffOrdersModal .modal-dialog { margin: 6px; max-width: 100%; }
+    .som-orders-table thead th:nth-child(4),
+    .som-orders-table tbody td:nth-child(4) { display: none; }
+    .som-detail-grid { grid-template-columns: 1fr 1fr; }
+    .som-stats { gap: 16px; }
+}
+@media (max-width: 500px) {
+    .som-orders-table thead th:nth-child(6),
+    .som-orders-table tbody td:nth-child(6) { display: none; }
+    .som-detail-grid { grid-template-columns: 1fr; }
+}
 </style>
 {% endblock %}
 
@@ -679,7 +1060,12 @@
                             </thead>
                             <tbody>
                                 {% for s in staff_ranking %}
-                                <tr class="{% if s.rank == 1 %}top-seller-row{% endif %}">
+                                <tr class="{% if s.rank == 1 %}top-seller-row{% endif %} staff-rank-row"
+                                    data-staff-id="{{ s.staff_id }}"
+                                    data-staff-name="{{ s.name }}"
+                                    data-units="{{ s.units_sold }}"
+                                    style="cursor:pointer;"
+                                    title="Click to view orders by {{ s.name }}">
                                     <td>
                                         <span class="rank-badge {% if s.rank == 1 %}rank-gold{% elif s.rank == 2 %}rank-silver{% elif s.rank == 3 %}rank-bronze{% else %}rank-default{% endif %}">
                                             {% if s.rank == 1 %}<i class="fas fa-crown" style="font-size:.7rem;"></i>{% else %}{{ s.rank }}{% endif %}
@@ -688,6 +1074,7 @@
                                     <td>
                                         <strong>{{ s.name }}</strong>
                                         {% if s.rank == 1 %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">TOP SELLER</span>{% endif %}
+                                        <span class="ms-1" style="font-size:.7rem; color:#6366f1; opacity:.7;"><i class="fas fa-external-link-alt"></i></span>
                                     </td>
                                     <td><strong>{{ s.units_sold }}</strong></td>
                                     <td>{{ s.revenue|currency }}</td>
@@ -762,6 +1149,143 @@
 
     </div>
 </div>
+
+<!-- ===== Staff Orders Modal ===== -->
+<div class="modal fade" id="staffOrdersModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+
+            <!-- Header — order-list style purple gradient -->
+            <div class="som-header">
+                <div class="som-header-left">
+                    <div class="som-title">
+                        <i class="fas fa-list-ul"></i>
+                        <span>Order List</span>
+                        <span class="som-badge" id="modalStaffName"></span>
+                    </div>
+                    <span id="modalProductBadge" class="som-badge" style="background:rgba(255,255,255,.12);"></span>
+                </div>
+                <div class="som-header-right">
+                    <span class="som-show-label">Show:</span>
+                    <span class="som-count-val" id="somCountVal">—</span>
+                    <button class="som-close-btn" data-bs-dismiss="modal" aria-label="Close"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+
+            <!-- Stats bar -->
+            <div class="som-stats" id="somStats" style="display:none;">
+                <div class="som-stat">
+                    <span class="som-stat-val" id="somStatOrders">—</span>
+                    <span class="som-stat-lbl">Total Orders</span>
+                </div>
+                <div class="som-stat-divider"></div>
+                <div class="som-stat">
+                    <span class="som-stat-val" id="somStatUnits">—</span>
+                    <span class="som-stat-lbl">Units Sold</span>
+                </div>
+                <div class="som-stat-divider"></div>
+                <div class="som-stat">
+                    <span class="som-stat-val" id="somStatRevenue">—</span>
+                    <span class="som-stat-lbl">Product Revenue</span>
+                </div>
+            </div>
+
+            <!-- Modal body: list view OR detail view -->
+            <div class="modal-body">
+
+                <!-- LIST PANEL -->
+                <div id="somListPanel">
+
+                    <!-- Toolbar: search + status filter + per-page -->
+                    <div class="som-toolbar" id="somToolbar" style="display:none;">
+                        <div class="som-toolbar-left">
+                            <div class="som-search-wrap">
+                                <i class="fas fa-search som-si"></i>
+                                <input type="text" id="somSearch" class="som-search-input" placeholder="Search order # or customer…" autocomplete="off">
+                                <button id="somSearchClear" class="som-search-clear" style="display:none;" title="Clear search"><i class="fas fa-times"></i></button>
+                            </div>
+                            <select id="somStatusFilter" class="som-filter-select" title="Filter by status">
+                                <option value="">All Statuses</option>
+                                <option value="inquiry">Inquiry</option>
+                                <option value="processing">Processing</option>
+                                <option value="confirmed">Confirmed</option>
+                                <option value="packed">Packed</option>
+                                <option value="shipped">Shipped</option>
+                                <option value="delivered">Delivered</option>
+                                <option value="cancelled">Cancelled</option>
+                                <option value="returned">Returned</option>
+                                <option value="pending">Pending</option>
+                            </select>
+                        </div>
+                        <div class="som-toolbar-right">
+                            <span class="som-result-badge" id="somResultBadge" style="display:none;"></span>
+                            <span class="som-per-page-lbl">Show</span>
+                            <select id="somPageSize" class="som-filter-select" style="width:68px;">
+                                <option value="10">10</option>
+                                <option value="15" selected>15</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                            </select>
+                            <span class="som-per-page-lbl">per page</span>
+                        </div>
+                    </div>
+
+                    <!-- Loading -->
+                    <div class="orders-loading" id="somLoading">
+                        <div class="spinner"></div>
+                        <div style="color:#6b7280;font-size:.88rem;">Loading orders…</div>
+                    </div>
+
+                    <!-- Table -->
+                    <div id="somTableWrap" style="display:none;">
+                        <div class="som-table-wrap">
+                            <div style="overflow-x:auto;">
+                                <table class="som-orders-table" id="somOrdersTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Order #</th>
+                                            <th>Customer</th>
+                                            <th>Date</th>
+                                            <th>Product</th>
+                                            <th>Amount</th>
+                                            <th>Branch</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="somTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="som-pagination" id="somPagination"></div>
+                    </div>
+
+                    <!-- Empty -->
+                    <div id="somEmpty" style="display:none; text-align:center; padding:60px 20px; background:#fff;">
+                        <i class="fas fa-box-open" style="font-size:2.4rem; color:#d1d5db; margin-bottom:12px; display:block;"></i>
+                        <h6 style="color:#6b7280; font-weight:700;">No Orders Found</h6>
+                        <p style="color:#9ca3af; font-size:.85rem;">No orders for this staff member in the selected date range.</p>
+                    </div>
+                </div>
+
+                <!-- DETAIL PANEL -->
+                <div id="somDetailPanel" style="display:none;" class="som-detail-panel">
+                    <div class="som-detail-topbar">
+                        <button class="som-back-btn" id="somBackBtn">
+                            <i class="fas fa-arrow-left"></i> Back to Orders
+                        </button>
+                        <span id="somDetailOrderNum" style="font-weight:800; color:#4f46e5; font-size:.9rem;"></span>
+                    </div>
+                    <div class="som-detail-body" id="somDetailBody">
+                        <!-- filled dynamically -->
+                    </div>
+                </div>
+
+            </div><!-- /modal-body -->
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -1169,5 +1693,435 @@ document.addEventListener('DOMContentLoaded', function() {
 
     {% endif %}
 });
+</script>
+
+<!-- ===== Staff Orders Modal JS ===== -->
+<script>
+(function () {
+    'use strict';
+
+    var API = '{% url "api_product_staff_orders" %}';
+    var currentStaffId   = null;
+    var currentStaffName = '';
+    var totalUnits       = 0;
+    var totalRevenue     = 0;
+    var currentProductName = '';
+    var currentPage      = 1;
+    var currentSearch    = '';
+    var currentStatus    = '';
+    var currentPageSize  = 15;
+    var searchDebounce   = null;
+
+    /* ---- navigate to order detail, saving modal state for return ---- */
+    function saveAndNavigate(orderId) {
+        try {
+            sessionStorage.setItem('som_return_state', JSON.stringify({
+                staff_id:     currentStaffId,
+                staff_name:   currentStaffName,
+                units:        String(totalUnits),
+                product_name: currentProductName,
+                page:         currentPage
+            }));
+        } catch(e) {}
+        /* Use relative URL to prevent open-redirect */
+        var returnTo = window.location.pathname + window.location.search;
+        window.location.href = '/orders/' + orderId + '/?return_to=' + encodeURIComponent(returnTo);
+    }
+
+    /* ---- helpers ---- */
+    function fmt(n) {
+        return 'रू\u00A0' + parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function esc(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function statusPill(label, color) {
+        return '<span class="status-pill" style="background:' + color + '22;color:' + color + ';border:1px solid ' + color + '44;">' + esc(label) + '</span>';
+    }
+    function getParams() {
+        var p = {};
+        var form = document.getElementById('filterForm');
+        if (form) { new FormData(form).forEach(function(v,k){ p[k]=v; }); }
+        return p;
+    }
+
+    /* ---- open modal on staff row click ---- */
+    document.querySelectorAll('.staff-rank-row').forEach(function(row) {
+        row.addEventListener('click', function() {
+            currentStaffId   = this.dataset.staffId;
+            currentStaffName = this.dataset.staffName;
+            totalUnits       = this.dataset.units || '—';
+            totalRevenue     = 0;
+            currentProductName = (document.getElementById('productSearch') || {}).value || '';
+
+            // Set header labels
+            document.getElementById('modalStaffName').textContent    = currentStaffName;
+            document.getElementById('modalProductBadge').textContent = currentProductName ? ('Product: ' + currentProductName) : '';
+            document.getElementById('somCountVal').textContent        = '—';
+
+            // Reset stats
+            document.getElementById('somStats').style.display     = 'none';
+            document.getElementById('somStatOrders').textContent  = '—';
+            document.getElementById('somStatUnits').textContent   = totalUnits;
+            document.getElementById('somStatRevenue').textContent = '—';
+
+            // Reset toolbar
+            currentSearch   = '';
+            currentStatus   = '';
+            currentPageSize = 15;
+            document.getElementById('somSearch').value        = '';
+            document.getElementById('somStatusFilter').value  = '';
+            document.getElementById('somPageSize').value      = '15';
+            document.getElementById('somSearchClear').style.display = 'none';
+            document.getElementById('somResultBadge').style.display = 'none';
+            document.getElementById('somToolbar').style.display     = 'none';
+
+            // Reset panels
+            showList();
+            document.getElementById('somLoading').style.display    = '';
+            document.getElementById('somTableWrap').style.display  = 'none';
+            document.getElementById('somEmpty').style.display      = 'none';
+            document.getElementById('somPagination').innerHTML     = '';
+            document.getElementById('somTableBody').innerHTML      = '';
+
+            var modal = new bootstrap.Modal(document.getElementById('staffOrdersModal'));
+            modal.show();
+            loadOrders(1);
+        });
+    });
+
+    /* ---- back button ---- */
+    document.getElementById('somBackBtn').addEventListener('click', showList);
+
+    /* ---- toolbar bindings ---- */
+    document.getElementById('somSearch').addEventListener('input', function() {
+        var val = this.value;
+        document.getElementById('somSearchClear').style.display = val ? '' : 'none';
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(function() {
+            currentSearch = val.trim();
+            loadOrders(1);
+        }, 400);
+    });
+    document.getElementById('somSearchClear').addEventListener('click', function() {
+        document.getElementById('somSearch').value = '';
+        this.style.display = 'none';
+        currentSearch = '';
+        loadOrders(1);
+    });
+    document.getElementById('somStatusFilter').addEventListener('change', function() {
+        currentStatus = this.value;
+        loadOrders(1);
+    });
+    document.getElementById('somPageSize').addEventListener('change', function() {
+        currentPageSize = parseInt(this.value) || 15;
+        loadOrders(1);
+    });
+
+    function showList() {
+        document.getElementById('somListPanel').style.display   = '';
+        document.getElementById('somDetailPanel').style.display = 'none';
+    }
+    function showDetail() {
+        document.getElementById('somListPanel').style.display   = 'none';
+        document.getElementById('somDetailPanel').style.display = '';
+    }
+
+    /* ---- load orders list ---- */
+    function loadOrders(page) {
+        currentPage = page;
+        document.getElementById('somLoading').style.display   = '';
+        document.getElementById('somTableWrap').style.display = 'none';
+        document.getElementById('somEmpty').style.display     = 'none';
+
+        var p = getParams();
+        var url = API
+            + '?staff_id='     + encodeURIComponent(currentStaffId)
+            + '&product_id='   + encodeURIComponent(p.product_id   || '')
+            + '&variation_id=' + encodeURIComponent(p.variation_id || '')
+            + '&from_date='    + encodeURIComponent(p.from_date    || '')
+            + '&to_date='      + encodeURIComponent(p.to_date      || '')
+            + '&search='       + encodeURIComponent(currentSearch)
+            + '&status='       + encodeURIComponent(currentStatus)
+            + '&page_size='    + currentPageSize
+            + '&page='         + page;
+
+        fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                document.getElementById('somLoading').style.display = 'none';
+
+                /* Always show toolbar so user can search/filter even on empty results */
+                document.getElementById('somToolbar').style.display = '';
+
+                if (data.error || !data.orders || data.orders.length === 0) {
+                    document.getElementById('somEmpty').style.display = '';
+                    /* Update badge to show 0 on empty */
+                    var badge0 = document.getElementById('somResultBadge');
+                    badge0.textContent   = '0 / ' + (data.total_orders || 0) + ' orders';
+                    badge0.style.display = '';
+                    return;
+                }
+
+                /* aggregate totals */
+                var aggRev = 0, aggQty = 0;
+                data.orders.forEach(function(o) { aggRev += o.product_revenue; aggQty += o.product_qty; });
+                totalRevenue = aggRev;
+
+                /* stats bar + toolbar */
+                document.getElementById('somStats').style.display     = '';
+                document.getElementById('somStatOrders').textContent  = data.total_orders;
+                document.getElementById('somStatUnits').textContent   = data.total_product_qty;
+                document.getElementById('somStatRevenue').textContent = fmt(data.total_product_revenue);
+                document.getElementById('somCountVal').textContent    = data.total_orders + ' order' + (data.total_orders !== 1 ? 's' : '');
+
+                /* result badge */
+                var badge = document.getElementById('somResultBadge');
+                var showing = data.orders.length;
+                var total   = data.total_orders;
+                badge.textContent    = showing + ' / ' + total + ' order' + (total !== 1 ? 's' : '');
+                badge.style.display  = '';
+
+                /* build table rows */
+                var html = '';
+                data.orders.forEach(function(o) {
+                    var amountCell = '';
+                    if (o.is_partial) {
+                        amountCell =
+                            '<div class="som-partial-badge">Partial</div>'
+                          + '<div class="som-amount-main som-amount-green">' + fmt(o.total_amount) + '</div>'
+                          + (o.partial_paid !== null ? '<div class="som-amount-paid"><i class="fas fa-check-circle me-1"></i>Paid: ' + fmt(o.partial_paid) + '</div>' : '')
+                          + '<div class="som-amount-total">Total: ' + fmt(o.total_amount) + '</div>';
+                    } else {
+                        amountCell = '<div class="som-amount-main som-amount-green">' + fmt(o.total_amount) + '</div>';
+                    }
+
+                    var statusCell = '<span class="som-status-badge" style="color:' + esc(o.status_color) + ';">'
+                        + esc(o.order_status) + '</span>';
+
+                    html +=
+                        '<tr data-order-id="' + o.id + '" class="som-order-row">'
+                      + '<td><span class="som-order-num">' + esc(o.order_number) + '</span></td>'
+                      + '<td>'
+                      +   '<div class="som-cust-name">' + esc(o.customer_name) + '</div>'
+                      +   '<div class="som-cust-phone"><i class="fas fa-phone-alt me-1" style="color:#9ca3af;font-size:.7rem;"></i>' + esc(o.customer_phone) + '</div>'
+                      + '</td>'
+                      + '<td>'
+                      +   '<div class="som-date-main">' + esc(o.created_at) + '</div>'
+                      +   '<div class="som-date-time">' + esc(o.created_time) + '</div>'
+                      + '</td>'
+                      + '<td>'
+                      +   '<div class="som-prod-icon">'
+                      +     '<i class="fas fa-box"></i>'
+                      +     '<span class="som-prod-name">' + esc(currentProductName || 'Product') + '</span>'
+                      +     '<span class="som-qty-badge">x' + o.product_qty + '</span>'
+                      +   '</div>'
+                      + '</td>'
+                      + '<td>' + amountCell + '</td>'
+                      + '<td>'
+                      +   (o.branch_city ? '<span class="som-branch"><i class="fas fa-map-marker-alt me-1" style="color:#6366f1;"></i>' + esc(o.branch_city) + '</span>' : '<span style="color:#d1d5db;">—</span>')
+                      + '</td>'
+                      + '<td>' + statusCell + '</td>'
+                      + '<td>'
+                      +   '<div class="som-actions">'
+                      +     '<button class="som-action-btn som-btn-eye som-eye-btn" data-order-id="' + o.id + '" title="View Detail"><i class="fas fa-eye"></i></button>'
+                      +     '<button class="som-action-btn som-btn-link som-open-order" data-oid="' + o.id + '" title="Open Full Order"><i class="fas fa-external-link-alt"></i></button>'
+                      +   '</div>'
+                      + '</td>'
+                      + '</tr>';
+                });
+
+                document.getElementById('somTableBody').innerHTML = html;
+
+                /* row click → detail (whole row except actions) */
+                document.querySelectorAll('.som-order-row').forEach(function(tr) {
+                    tr.addEventListener('click', function(e) {
+                        if (e.target.closest('.som-actions')) return;
+                        document.querySelectorAll('.som-order-row').forEach(function(r){ r.classList.remove('som-row-active'); });
+                        tr.classList.add('som-row-active');
+                        loadOrderDetail(this.dataset.orderId);
+                    });
+                });
+
+                /* eye button click */
+                document.querySelectorAll('.som-eye-btn').forEach(function(btn) {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        var tr = btn.closest('tr');
+                        document.querySelectorAll('.som-order-row').forEach(function(r){ r.classList.remove('som-row-active'); });
+                        if(tr) tr.classList.add('som-row-active');
+                        loadOrderDetail(btn.dataset.orderId);
+                    });
+                });
+
+                /* open full order — same tab with return_to */
+                document.querySelectorAll('.som-open-order').forEach(function(btn) {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        saveAndNavigate(btn.dataset.oid);
+                    });
+                });
+
+                buildPagination(data.current_page, data.total_pages, data.has_prev, data.has_next);
+                document.getElementById('somTableWrap').style.display = '';
+            })
+            .catch(function() {
+                document.getElementById('somLoading').style.display = 'none';
+                document.getElementById('somEmpty').style.display   = '';
+                document.getElementById('somToolbar').style.display = '';
+            });
+    }
+
+    /* ---- load order detail ---- */
+    function loadOrderDetail(orderId) {
+        var p = getParams();
+        var url = API
+            + '?staff_id='   + encodeURIComponent(currentStaffId)
+            + '&product_id=' + encodeURIComponent(p.product_id || '')
+            + '&order_id='   + encodeURIComponent(orderId);
+
+        document.getElementById('somDetailOrderNum').textContent = '';
+        document.getElementById('somDetailBody').innerHTML =
+            '<div class="orders-loading"><div class="spinner"></div><div style="color:#6b7280;font-size:.88rem;">Loading…</div></div>';
+        showDetail();
+
+        fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function(r) { return r.json(); })
+            .then(function(o) {
+                if (o.error) {
+                    document.getElementById('somDetailBody').innerHTML =
+                        '<div style="text-align:center;padding:40px;color:#ef4444;"><i class="fas fa-exclamation-circle" style="font-size:2rem;margin-bottom:10px;display:block;"></i>Could not load order details.</div>';
+                    return;
+                }
+                document.getElementById('somDetailOrderNum').textContent = '#' + o.order_number;
+                renderDetail(o, orderId);
+            })
+            .catch(function() {
+                document.getElementById('somDetailBody').innerHTML =
+                    '<div style="text-align:center;padding:40px;color:#ef4444;"><i class="fas fa-wifi" style="font-size:2rem;margin-bottom:10px;display:block;"></i>Network error.</div>';
+            });
+    }
+
+    function renderDetail(o, orderId) {
+        /* items rows */
+        var iRows = '';
+        (o.items || []).forEach(function(item) {
+            iRows +=
+                '<tr>'
+              + '<td><strong>' + esc(item.product_name) + '</strong>'
+              + (item.variation_name ? '<br><span style="font-size:.74rem;color:#6b7280;">' + esc(item.variation_name) + '</span>' : '')
+              + (item.sku ? '<br><span style="font-size:.72rem;color:#9ca3af;">SKU: ' + esc(item.sku) + '</span>' : '')
+              + '</td>'
+              + '<td style="text-align:center;">' + item.quantity + '</td>'
+              + '<td style="text-align:right;">' + fmt(item.price) + '</td>'
+              + '<td style="text-align:right;font-weight:800;">' + fmt(item.total) + '</td>'
+              + '</tr>';
+        });
+
+        var html =
+            /* status badges + view btn */
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">'
+          + statusPill(o.order_status, o.status_color)
+          + statusPill(o.payment_status, o.pay_color)
+          + '<button class="som-view-btn ms-auto som-open-order-detail" data-oid="' + (orderId || '') + '"><i class="fas fa-external-link-alt me-1"></i>View Full Order</button>'
+          + '</div>'
+
+            /* customer + order info grid */
+          + '<div class="row g-3 mb-3">'
+          + '<div class="col-md-6">'
+          +   '<div class="som-detail-section">'
+          +     '<div class="som-detail-section-title"><i class="fas fa-user" style="color:#6366f1;"></i>Customer Info</div>'
+          +     '<div class="som-detail-grid">'
+          +       '<div class="som-detail-item"><label>Name</label><span>' + esc(o.customer_name) + '</span></div>'
+          +       '<div class="som-detail-item"><label>Phone</label><span>' + esc(o.customer_phone) + '</span></div>'
+          +       (o.customer_email ? '<div class="som-detail-item"><label>Email</label><span>' + esc(o.customer_email) + '</span></div>' : '')
+          +       '<div class="som-detail-item"><label>Order Date</label><span>' + esc(o.created_at) + '</span></div>'
+          +     '</div>'
+          +   '</div>'
+          + '</div>'
+          + '<div class="col-md-6">'
+          +   '<div class="som-detail-section">'
+          +     '<div class="som-detail-section-title"><i class="fas fa-info-circle" style="color:#059669;"></i>Order Info</div>'
+          +     '<div class="som-detail-grid">'
+          +       '<div class="som-detail-item"><label>Payment</label><span>' + esc(o.payment_method || '—') + '</span></div>'
+          +       (o.logistics ? '<div class="som-detail-item"><label>Logistics</label><span>' + esc(o.logistics) + '</span></div>' : '')
+          +       (o.tracking_number ? '<div class="som-detail-item"><label>Tracking #</label><span>' + esc(o.tracking_number) + '</span></div>' : '')
+          +       '<div class="som-detail-item" style="grid-column:1/-1;"><label>Shipping Address</label><span>' + esc(o.shipping_address) + '</span></div>'
+          +     '</div>'
+          +   '</div>'
+          + '</div>'
+          + '</div>'
+
+            /* items table */
+          + '<div class="som-detail-section">'
+          +   '<div class="som-detail-section-title"><i class="fas fa-boxes" style="color:#f59e0b;"></i>Items (' + o.items_count + ')</div>'
+          +   '<div style="border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">'
+          +     '<table class="som-items-table">'
+          +       '<thead><tr><th>Product</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Price</th><th style="text-align:right;">Total</th></tr></thead>'
+          +       '<tbody>' + iRows + '</tbody>'
+          +     '</table>'
+          +   '</div>'
+          + '</div>'
+
+            /* totals */
+          + '<div class="som-totals">'
+          + (parseFloat(o.discount_amount) > 0 ? '<div class="tl"><span>Discount</span><span style="color:#ef4444;">− ' + fmt(o.discount_amount) + '</span></div>' : '')
+          + (parseFloat(o.shipping_charge) > 0 ? '<div class="tl"><span>Shipping Charge</span><span>' + fmt(o.shipping_charge) + '</span></div>' : '')
+          + '<div class="tl grand"><span>Grand Total</span><span>' + fmt(o.total_amount) + '</span></div>'
+          + '</div>'
+
+          + (o.notes ? '<div class="som-detail-section mt-3"><div class="som-detail-section-title"><i class="fas fa-sticky-note" style="color:#6b7280;"></i>Notes</div><div style="background:#f9fafb;border-radius:8px;padding:10px 14px;font-size:.84rem;color:#374151;">' + esc(o.notes) + '</div></div>' : '');
+
+        document.getElementById('somDetailBody').innerHTML = html;
+
+        /* bind 'View Full Order' button inside detail panel */
+        var vfob = document.querySelector('#somDetailBody .som-open-order-detail');
+        if (vfob) {
+            vfob.addEventListener('click', function() {
+                saveAndNavigate(vfob.dataset.oid);
+            });
+        }
+    }
+
+    /* ---- pagination ---- */
+    function buildPagination(cur, tot, hasPrev, hasNext) {
+        var el = document.getElementById('somPagination');
+        if (tot <= 1) { el.innerHTML = ''; return; }
+        var h = '';
+        h += '<button class="som-pg-btn' + (!hasPrev ? ' disabled' : '') + '" data-pg="' + (cur-1) + '"><i class="fas fa-chevron-left"></i></button>';
+        for (var i = 1; i <= tot; i++) {
+            if (tot > 7 && i > 2 && i < tot-1 && Math.abs(i-cur) > 1) {
+                if (i === 3 || i === tot-2) h += '<span class="som-pg-info">…</span>';
+                continue;
+            }
+            h += '<button class="som-pg-btn' + (i === cur ? ' active' : '') + '" data-pg="' + i + '">' + i + '</button>';
+        }
+        h += '<button class="som-pg-btn' + (!hasNext ? ' disabled' : '') + '" data-pg="' + (cur+1) + '"><i class="fas fa-chevron-right"></i></button>';
+        h += '<span class="som-pg-info">Page ' + cur + ' of ' + tot + '</span>';
+        el.innerHTML = h;
+        el.querySelectorAll('.som-pg-btn[data-pg]').forEach(function(b) {
+            b.addEventListener('click', function() {
+                var pg = parseInt(this.dataset.pg);
+                if (!isNaN(pg) && pg > 0) loadOrders(pg);
+            });
+        });
+    }
+
+    /* ---- auto-reopen modal when returning from order detail ---- */
+    (function() {
+        var raw = sessionStorage.getItem('som_return_state');
+        if (!raw) return;
+        try {
+            var state = JSON.parse(raw);
+            sessionStorage.removeItem('som_return_state');
+            if (!state.staff_id) return;
+            currentProductName = state.product_name || '';
+            var row = document.querySelector('.staff-rank-row[data-staff-id="' + state.staff_id + '"]');
+            if (row) { row.click(); }
+        } catch(e) {}
+    })();
+
+})();
 </script>
 {% endblock %}

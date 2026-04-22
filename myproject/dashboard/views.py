@@ -14755,6 +14755,241 @@ def staff_performance_analytics(request):
     return render(request, 'staff_performance.html', context)
 
 
+# ==================== PRODUCT STAFF ORDERS API ====================
+@login_required
+def api_product_staff_orders(request):
+    """
+    AJAX endpoint for Staff Sales Ranking modal:
+    - Without order_id: returns paginated orders for a staff+product combination
+    - With order_id:    returns full detail for that specific order
+    """
+    from django.db.models.functions import Coalesce
+
+    staff_id      = request.GET.get('staff_id', '')
+    product_id    = request.GET.get('product_id', '')
+    variation_id  = request.GET.get('variation_id', '')
+    from_date_str = request.GET.get('from_date', '')
+    to_date_str   = request.GET.get('to_date', '')
+    page_num      = request.GET.get('page', '1')
+    try:
+        page_num = max(1, int(page_num))
+    except (ValueError, TypeError):
+        page_num = 1
+    order_id      = request.GET.get('order_id', '')
+    search        = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '').strip().lower()
+    try:
+        page_size = max(1, min(int(request.GET.get('page_size', 15)), 100))
+    except (ValueError, TypeError):
+        page_size = 15
+
+    if not staff_id or not product_id:
+        return JsonResponse({'error': 'staff_id and product_id are required'}, status=400)
+
+    now = timezone.now()
+    try:
+        from_date = timezone.make_aware(datetime.strptime(from_date_str, '%Y-%m-%d')) if from_date_str else now - timedelta(days=30)
+    except ValueError:
+        from_date = now - timedelta(days=30)
+    try:
+        to_date = timezone.make_aware(datetime.strptime(to_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)) if to_date_str else now
+    except ValueError:
+        to_date = now
+
+    # ---- SINGLE ORDER DETAIL ----
+    if order_id:
+        try:
+            order = Order.objects.select_related(
+                'customer', 'created_by', 'status_setup', 'payment_setup', 'payment_status_setup'
+            ).prefetch_related('items__product', 'items__product_variation').get(
+                id=order_id, is_deleted=False, created_by_id=staff_id
+            )
+        except Order.DoesNotExist:
+            return JsonResponse({'error': 'Order not found'}, status=404)
+
+        items_data = []
+        for item in order.items.all():
+            items_data.append({
+                'product_name': item.product_name,
+                'variation_name': item.variation_name or '',
+                'sku': item.product_sku or '',
+                'quantity': item.quantity,
+                'price': float(item.price),
+                'total': float(item.total),
+            })
+
+        status_color_map = {
+            'processing': '#3b82f6',
+            'confirmed': '#6366f1',
+            'packed': '#6b7280',
+            'shipped': '#06b6d4',
+            'delivered': '#10b981',
+            'cancelled': '#ef4444',
+            'returned': '#374151',
+            'pending': '#f59e0b',
+        }
+        order_status = (order.order_status or order.status or 'processing').lower()
+        status_color = status_color_map.get(order_status, '#6b7280')
+
+        payment_status = (order.payment_status or 'pending').lower()
+        pay_color_map = {
+            'paid': '#10b981',
+            'pending': '#f59e0b',
+            'partial': '#f97316',
+            'unpaid': '#ef4444',
+            'refunded': '#8b5cf6',
+        }
+        pay_color = pay_color_map.get(payment_status, '#6b7280')
+
+        return JsonResponse({
+            'id': order.id,
+            'order_number': order.order_number,
+            'customer_name': order.customer_name,
+            'customer_phone': order.customer_phone,
+            'customer_email': order.customer_email,
+            'shipping_address': order.shipping_address,
+            'order_status': order_status.replace('_', ' ').title(),
+            'order_status_raw': order_status,
+            'status_color': status_color,
+            'payment_method': order.payment_method or '',
+            'payment_status': payment_status.replace('_', ' ').title(),
+            'pay_color': pay_color,
+            'total_amount': float(order.total_amount),
+            'discount_amount': float(order.discount_amount),
+            'shipping_charge': float(order.shipping_charge),
+            'notes': order.notes or '',
+            'created_at': order.created_at.strftime('%b %d, %Y %I:%M %p'),
+            'logistics': order.logistics or '',
+            'tracking_number': order.tracking_number or '',
+            'items': items_data,
+            'items_count': len(items_data),
+            'detail_url': f'/orders/{order.id}/',
+        })
+
+    # ---- ORDERS LIST ----
+    items_qs = OrderItem.objects.filter(
+        product_id=product_id,
+        order__created_by_id=staff_id,
+        order__is_deleted=False,
+        order__created_at__gte=from_date,
+        order__created_at__lte=to_date,
+    ).select_related('order', 'order__customer', 'order__created_by')
+
+    if variation_id:
+        items_qs = items_qs.filter(product_variation_id=variation_id)
+
+    if search:
+        from django.db.models import Q as _Q
+        items_qs = items_qs.filter(
+            _Q(order__order_number__icontains=search) |
+            _Q(order__customer_name__icontains=search) |
+            _Q(order__customer_phone__icontains=search)
+        )
+
+    if status_filter:
+        items_qs = items_qs.filter(order__order_status__iexact=status_filter)
+
+    # Get distinct orders (one row per order) with aggregated qty & revenue for this product
+    orders_data = (
+        items_qs
+        .values(
+            'order__id',
+            'order__order_number',
+            'order__customer_name',
+            'order__customer_phone',
+            'order__order_status',
+            'order__payment_status',
+            'order__payment_method',
+            'order__total_amount',
+            'order__discount_amount',
+            'order__shipping_charge',
+            'order__is_partial_payment',
+            'order__partial_amount_paid',
+            'order__created_at',
+            'order__logistics',
+            'order__branch_city',
+        )
+        .annotate(
+            product_qty=Sum('quantity'),
+            product_revenue=Sum('total'),
+        )
+        .order_by('-order__created_at')
+    )
+
+    # Compute totals across ALL matching orders BEFORE pagination
+    from django.db.models import Sum as _AggSum
+    _totals = orders_data.aggregate(
+        grand_revenue=_AggSum('product_revenue'),
+        grand_qty=_AggSum('product_qty'),
+    )
+    total_product_revenue = float(_totals['grand_revenue'] or 0)
+    total_product_qty     = int(_totals['grand_qty'] or 0)
+
+    paginator = Paginator(list(orders_data), page_size)
+    page = paginator.get_page(page_num)
+
+    status_color_map = {
+        'processing': '#3b82f6',
+        'confirmed': '#6366f1',
+        'packed': '#6b7280',
+        'shipped': '#06b6d4',
+        'delivered': '#10b981',
+        'cancelled': '#ef4444',
+        'returned': '#374151',
+        'pending': '#f59e0b',
+        'inquiry': '#374151',
+    }
+    pay_color_map = {
+        'paid': '#10b981',
+        'pending': '#f59e0b',
+        'partial': '#f97316',
+        'unpaid': '#ef4444',
+        'refunded': '#8b5cf6',
+    }
+
+    orders_list = []
+    for row in page.object_list:
+        raw_status = (row['order__order_status'] or 'processing').lower()
+        raw_pay    = (row['order__payment_status'] or 'pending').lower()
+        is_partial = bool(row['order__is_partial_payment'])
+        partial_paid = float(row['order__partial_amount_paid'] or 0) if is_partial else None
+        total_amt = float(row['order__total_amount'])
+        orders_list.append({
+            'id': row['order__id'],
+            'order_number': row['order__order_number'],
+            'customer_name': row['order__customer_name'],
+            'customer_phone': row['order__customer_phone'],
+            'order_status': raw_status.replace('_', ' ').title(),
+            'order_status_raw': raw_status,
+            'status_color': status_color_map.get(raw_status, '#6b7280'),
+            'payment_status': raw_pay.replace('_', ' ').title(),
+            'payment_method': row['order__payment_method'] or '',
+            'pay_color': pay_color_map.get(raw_pay, '#6b7280'),
+            'total_amount': total_amt,
+            'discount_amount': float(row['order__discount_amount'] or 0),
+            'shipping_charge': float(row['order__shipping_charge'] or 0),
+            'is_partial': is_partial,
+            'partial_paid': partial_paid,
+            'product_qty': int(row['product_qty'] or 0),
+            'product_revenue': float(row['product_revenue'] or 0),
+            'created_at': row['order__created_at'].strftime('%b %d, %Y'),
+            'created_time': row['order__created_at'].strftime('%I:%M %p'),
+            'logistics': row['order__logistics'] or '',
+            'branch_city': row['order__branch_city'] or '',
+        })
+
+    return JsonResponse({
+        'orders': orders_list,
+        'total_orders': paginator.count,
+        'total_pages': paginator.num_pages,
+        'current_page': page.number,
+        'has_next': page.has_next(),
+        'has_prev': page.has_previous(),
+        'total_product_revenue': total_product_revenue,
+        'total_product_qty': total_product_qty,
+    })
+
+
 # ==================== PRODUCT SALES REPORT ====================
 @login_required
 @permission_required('can_view_product_sales_reports')
@@ -14925,6 +15160,7 @@ def product_sales_report(request):
             name = f"{first} {last}".strip() or row['order__created_by__username'] or 'Unknown'
             staff_ranking.append({
                 'rank': rank,
+                'staff_id': row['order__created_by__id'],
                 'name': name,
                 'units_sold': row['units_sold'],
                 'revenue': row['revenue'],

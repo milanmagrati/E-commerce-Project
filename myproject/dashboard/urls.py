@@ -219,6 +219,7 @@ urlpatterns = [
     path('reports/sales/', views.sales_report, name='sales_report'),
     path('reports/daily-sales/', views.daily_sales_report, name='daily_sales_report'),
     path('reports/product-sales/', views.product_sales_report, name='product_sales_report'),
+    path('reports/product-sales/staff-orders/', views.api_product_staff_orders, name='api_product_staff_orders'),
     path('reports/purchase/', views.purchase_report, name='purchase_report'),
 
       # ✅ NCM ORDERS MANAGEMENT
