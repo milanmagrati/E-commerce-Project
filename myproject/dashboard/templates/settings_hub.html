@@ -1,0 +1,1109 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Settings — {{ COMPANY_NAME|default:'Admin' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ===================== SETTINGS HUB LAYOUT ===================== */
+  .sh-container {
+    display: flex;
+    gap: 0;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.07);
+    overflow: visible;
+    min-height: calc(100vh - 180px);
+  }
+
+  /* ---- Left nav panel ---- */
+  .sh-nav {
+    width: 240px;
+    flex-shrink: 0;
+    background: #f8f9fb;
+    border-right: 1px solid #e9ecef;
+    border-radius: 16px 0 0 16px;
+    display: flex;
+    flex-direction: column;
+    align-self: flex-start;
+    position: sticky;
+    top: 80px;
+  }
+
+  .sh-nav-header {
+    padding: 1.5rem 1.25rem 1rem;
+    border-bottom: 1px solid #e9ecef;
+  }
+  .sh-nav-header h6 {
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #adb5bd;
+    margin: 0;
+  }
+
+  .sh-nav-list {
+    list-style: none;
+    padding: .75rem 0;
+    margin: 0;
+    flex: 1;
+  }
+
+  .sh-nav-item {
+    padding: 0 .75rem;
+    margin-bottom: .2rem;
+  }
+
+  .sh-nav-link {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .65rem .85rem;
+    border-radius: 10px;
+    color: #495057;
+    font-size: .88rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all .18s ease;
+    border: none;
+    background: transparent;
+    width: 100%;
+    cursor: pointer;
+  }
+  .sh-nav-link:hover {
+    background: #e9ecef;
+    color: #212529;
+    text-decoration: none;
+  }
+  .sh-nav-link.active {
+    background: linear-gradient(135deg, rgba(94,114,228,.14) 0%, rgba(130,94,228,.14) 100%);
+    color: #5e72e4;
+    font-weight: 600;
+    box-shadow: inset 3px 0 0 #5e72e4;
+    transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+  }
+  .sh-nav-link .sh-nav-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .85rem;
+    flex-shrink: 0;
+    background: rgba(0,0,0,.05);
+    transition: all .18s;
+  }
+  .sh-nav-link.active .sh-nav-icon {
+    background: rgba(94,114,228,.15);
+    color: #5e72e4;
+  }
+  .sh-nav-link span { flex: 1; }
+
+  /* ---- Right content panel ---- */
+  .sh-content {
+    flex: 1;
+    overflow-y: visible;
+    padding: 2rem 2.5rem 50vh;
+    min-width: 0;
+  }
+
+  /* ---- Section anchor blocks ---- */
+  .sh-section {
+    scroll-margin-top: 90px;
+    padding-top: .5rem;
+  }
+
+  /* ---- Content section heading ---- */
+  .sh-section-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #32325d;
+    margin-bottom: .3rem;
+  }
+  .sh-section-sub {
+    color: #8898aa;
+    font-size: .88rem;
+    margin-bottom: 2rem;
+  }
+  .sh-divider {
+    height: 1px;
+    background: #f0f2f5;
+    margin-bottom: 2rem;
+  }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 768px) {
+    .sh-container { flex-direction: column; }
+    .sh-nav { width: 100%; border-right: none; border-bottom: 1px solid #e9ecef; }
+    .sh-nav-list { display: flex; flex-wrap: wrap; padding: .5rem; }
+    .sh-nav-item { padding: .2rem; }
+    .sh-nav-link.active { box-shadow: none; border-bottom: 2px solid #5e72e4; border-radius: 8px; }
+    .sh-content { padding: 1.5rem 1rem; }
+  }
+
+  /* ===================== COMPANY SETUP STYLES ===================== */
+  .cs-card {
+    background: #fff;
+    border: 1px solid #e9ecef;
+    border-radius: 14px;
+    padding: 1.75rem;
+    margin-bottom: 1.5rem;
+    transition: box-shadow .2s;
+  }
+  .cs-card:hover { box-shadow: 0 4px 16px rgba(94,114,228,.1); }
+  .cs-card-title {
+    font-size: .95rem;
+    font-weight: 700;
+    color: #32325d;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: .65rem;
+    border-bottom: 2px solid #f0f0f0;
+  }
+  .cs-card-title .icon-wrap {
+    width: 32px; height: 32px;
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .9rem; flex-shrink: 0;
+  }
+  .cs-label {
+    font-size: .8rem; font-weight: 600; color: #525f7f;
+    text-transform: uppercase; letter-spacing: .04em; margin-bottom: .4rem;
+  }
+  .cs-input {
+    border: 2px solid #e9ecef; border-radius: 10px;
+    padding: .6rem 1rem; font-size: .92rem;
+    transition: border-color .2s, box-shadow .2s; width: 100%;
+  }
+  .cs-input:focus {
+    outline: none; border-color: var(--primary-color, #5e72e4);
+    box-shadow: 0 0 0 3px rgba(94,114,228,.1);
+  }
+  .cs-upload-zone {
+    border: 2px dashed #c8d3ff; border-radius: 12px; padding: 1.5rem 1rem;
+    text-align: center; background: #f8f9ff; cursor: pointer; transition: all .2s; position: relative;
+  }
+  .cs-upload-zone:hover, .cs-upload-zone.drag-over {
+    border-color: var(--primary-color, #5e72e4); background: #eef0ff;
+  }
+  .cs-upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .cs-upload-zone .upload-icon { font-size: 2rem; color: var(--primary-color, #5e72e4); margin-bottom: .4rem; }
+  .cs-upload-zone p { margin: 0; color: #8898aa; font-size: .83rem; }
+  .cs-upload-zone .hint { font-size: .73rem; color: #b0bec5; margin-top: .25rem; }
+  .cs-preview-img {
+    max-width: 110px; max-height: 70px; border-radius: 9px;
+    border: 2px solid #e9ecef; object-fit: contain; background: #f8f9ff; margin-bottom: .4rem;
+  }
+  .cs-preview-favicon {
+    width: 44px; height: 44px; border-radius: 8px;
+    border: 2px solid #e9ecef; object-fit: contain; background: #f8f9ff; margin-bottom: .4rem;
+  }
+  .cs-remove-btn {
+    font-size: .73rem; color: #dc3545; background: none; border: none;
+    cursor: pointer; padding: 0; text-decoration: underline; position: relative; z-index: 2;
+  }
+  .cs-remove-btn:hover { color: #b02a37; }
+  .cs-color-row { display: flex; align-items: center; gap: .6rem; }
+  .cs-color-swatch {
+    width: 38px; height: 38px; border-radius: 8px; overflow: hidden;
+    border: 2px solid #e9ecef; flex-shrink: 0;
+  }
+  .cs-color-swatch input[type=color] { width: 100%; height: 100%; border: none; cursor: pointer; padding: 0; }
+  .cs-hex-input {
+    border: 2px solid #e9ecef; border-radius: 8px; padding: .5rem .75rem;
+    font-size: .88rem; font-family: monospace; width: 110px;
+  }
+  .cs-hex-input:focus { outline: none; border-color: var(--primary-color, #5e72e4); }
+  .cs-live-preview {
+    width: 100%; height: 180px; border-radius: 12px; overflow: hidden;
+    display: flex; border: 1px solid #e9ecef;
+  }
+  .preview-sidebar { width: 34%; display: flex; flex-direction: column; padding: .6rem .4rem; gap: .3rem; }
+  .preview-logo-area { padding: .3rem; min-height: 28px; display: flex; align-items: center; justify-content: center; }
+  .preview-logo-placeholder { font-size: .6rem; font-weight: 700; color: rgba(255,255,255,.85); text-align: center; }
+  .preview-nav-item { height: 8px; border-radius: 4px; background: rgba(255,255,255,.2); margin: 0 .3rem; }
+  .preview-nav-item.active { background: rgba(255,255,255,.6); }
+  .preview-main { flex: 1; padding: .6rem; background: #fff; overflow: hidden; }
+  .preview-topbar { height: 22px; border-radius: 6px; margin-bottom: .5rem; }
+  .preview-stat-row { display: flex; gap: .3rem; margin-bottom: .4rem; }
+  .preview-stat { flex: 1; height: 36px; border-radius: 6px; background: #f0f4ff; }
+  .preview-table { height: 60px; border-radius: 6px; background: #f8f9ff; }
+  .preview-company-name { font-size: .58rem; font-weight: 700; color: rgba(255,255,255,.85); text-align: center; padding: 0 .2rem; word-break: break-word; line-height: 1.2; margin-bottom: .2rem; }
+  .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: .75rem; }
+  .theme-card {
+    border: 3px solid #e9ecef; border-radius: 12px; overflow: hidden;
+    cursor: pointer; transition: all .2s; position: relative;
+  }
+  .theme-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.1); }
+  .theme-card input[type=radio] { position: absolute; opacity: 0; pointer-events: none; }
+  .theme-card.selected { border-color: var(--primary-color, #5e72e4); box-shadow: 0 0 0 3px rgba(94,114,228,.2); }
+  .theme-card .theme-preview { height: 50px; display: flex; }
+  .theme-preview-sidebar { width: 35%; }
+  .theme-preview-content { flex: 1; background: #f5f6fa; display: flex; flex-direction: column; gap: 3px; padding: 5px; }
+  .theme-preview-bar { height: 7px; border-radius: 3px; background: #e0e0e0; }
+  .theme-preview-bar:first-child { width: 70%; }
+  .theme-preview-bar:last-child  { width: 50%; }
+  .theme-card .theme-name { padding: .35rem .5rem; font-size: .75rem; font-weight: 600; color: #32325d; text-align: center; background: #fff; }
+  .theme-card .check-badge {
+    position: absolute; top: 5px; right: 5px; width: 18px; height: 18px;
+    background: var(--primary-color, #5e72e4); border-radius: 50%;
+    display: none; align-items: center; justify-content: center; color: #fff; font-size: .6rem;
+  }
+  .theme-card.selected .check-badge { display: flex; }
+  .t-default   { background: linear-gradient(180deg, #5e72e4, #825ee4); }
+  .t-dark      { background: linear-gradient(180deg, #1a1a2e, #16213e); }
+  .t-purple    { background: linear-gradient(180deg, #7b2ff7, #b721ff); }
+  .t-green     { background: linear-gradient(180deg, #22c55e, #16a34a); }
+  .t-orange    { background: linear-gradient(180deg, #f97316, #ea580c); }
+  .t-red       { background: linear-gradient(180deg, #ef4444, #dc2626); }
+  .t-teal      { background: linear-gradient(180deg, #14b8a6, #0d9488); }
+  .t-indigo    { background: linear-gradient(180deg, #4f46e5, #3730a3); }
+  .cs-save-btn {
+    background: linear-gradient(135deg, var(--primary-color, #5e72e4) 0%, var(--secondary-color, #825ee4) 100%);
+    border: none; border-radius: 10px; color: #fff;
+    padding: .65rem 2rem; font-size: .95rem; font-weight: 700;
+    letter-spacing: .02em; transition: all .2s; cursor: pointer;
+  }
+  .cs-save-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+
+  /* ===================== ZEKTO STYLES ===================== */
+  .stat-card { border-radius: 12px; border: 1px solid #e9ecef; padding: 1.15rem; }
+  .stat-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.05rem; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; color: #111827; }
+  .stat-label { font-size: .8rem; color: #6b7280; font-weight: 500; }
+  .zekto-card { border-radius: 14px; border: 1px solid #e9ecef; overflow: hidden; width: 100%; }
+  .zekto-card .card-header { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: .9rem 1.4rem; }
+  .zekto-card .card-header h5 { color: #fff; font-weight: 700; font-size: 1rem; margin: 0; }
+  .device-tabs { border-bottom: 2px solid #e5e7eb; }
+  .device-tabs .nav-link { color: #6b7280; font-weight: 600; font-size: .86rem; border: none; border-bottom: 2px solid transparent; padding: .7rem 1.1rem; margin-bottom: -2px; transition: all .2s; }
+  .device-tabs .nav-link:hover { color: #4f46e5; }
+  .device-tabs .nav-link.active { color: #4f46e5; border-bottom-color: #4f46e5; background: transparent; }
+  .dev-table { margin: 0; }
+  .dev-table thead th { background: #f9fafb; color: #6b7280; font-size: .74rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid #e5e7eb; padding: .75rem; white-space: nowrap; }
+  .dev-table tbody td { padding: .75rem; vertical-align: middle; border-bottom: 1px solid #f3f4f6; font-size: .85rem; }
+  .dev-table tbody tr:last-child td { border-bottom: none; }
+  .dev-table tbody tr:hover td { background: #f9fafb; }
+  .status-online { display: inline-flex; align-items: center; gap: 5px; background: #d1fae5; color: #065f46; font-size: .74rem; font-weight: 600; padding: .2rem .6rem; border-radius: 20px; }
+  .status-online::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: pulse 1.5s infinite; }
+  .status-offline { display: inline-flex; align-items: center; gap: 5px; background: #fee2e2; color: #991b1b; font-size: .74rem; font-weight: 600; padding: .2rem .6rem; border-radius: 20px; }
+  .status-offline::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.4;} }
+  .count-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; font-size: .8rem; font-weight: 600; padding: .18rem .45rem; border-radius: 6px; }
+  .dev-empty { padding: 2.5rem 1rem; text-align: center; color: #9ca3af; }
+  .dev-empty i { font-size: 2.2rem; margin-bottom: .75rem; opacity: .4; }
+  .zekto-info-note { background: #eff6ff; border: 1px solid #dbeafe; border-radius: 10px; padding: .8rem 1rem; font-size: .86rem; color: #1e40af; margin-bottom: .75rem; }
+  .zekto-info-note code { background: #dbeafe; padding: .12rem .35rem; border-radius: 4px; font-size: .8rem; }
+  .btn-action { border: none; background: transparent; padding: .28rem .45rem; font-size: .88rem; cursor: pointer; border-radius: 6px; transition: all .15s; }
+  .btn-action:hover { background: #f3f4f6; }
+  .btn-action.edit-btn { color: #4f46e5; }
+  .btn-action.sync-btn { color: #059669; }
+  .btn-action.delete-btn { color: #ef4444; }
+  .modal-field label { font-size: .8rem; font-weight: 600; color: #374151; margin-bottom: .2rem; }
+  .modal-field input { font-size: .86rem; border: 1px solid #d1d5db; border-radius: 8px; padding: .45rem .7rem; transition: border-color .2s; }
+  .modal-field input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+  .modal-field input[readonly] { background: #f9fafb; color: #6b7280; }
+  .zekto-toast { position: fixed; bottom: 20px; right: 20px; z-index: 9999; min-width: 260px; padding: .8rem 1.1rem; border-radius: 10px; font-size: .88rem; font-weight: 500; box-shadow: 0 8px 28px rgba(0,0,0,.13); display: none; animation: slideUp .3s ease; }
+  .zekto-toast.success { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+  .zekto-toast.error   { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  @keyframes slideUp { from{transform:translateY(20px);opacity:0;} to{transform:translateY(0);opacity:1;} }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page heading -->
+<div class="d-flex align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1" style="color:#32325d;">
+      <i class="fas fa-sliders-h me-2 text-primary"></i>Settings
+    </h4>
+    <p class="text-muted mb-0" style="font-size:.88rem;">Manage system configuration and device settings</p>
+  </div>
+</div>
+
+<!-- Two-panel container -->
+<div class="sh-container">
+
+  <!-- ==================== LEFT NAV PANEL ==================== -->
+  <div class="sh-nav" id="shNav">
+    <div class="sh-nav-header">
+      <h6>Configuration</h6>
+    </div>
+    <ul class="sh-nav-list">
+      <li class="sh-nav-item">
+        <a href="#" onclick="shScrollTo('sh-company');return false;" class="sh-nav-link active" data-target="sh-company">
+          <span class="sh-nav-icon"><i class="fas fa-building"></i></span>
+          <span>Company Setup</span>
+        </a>
+      </li>
+      <li class="sh-nav-item">
+        <a href="#" onclick="shScrollTo('sh-zekto');return false;" class="sh-nav-link" data-target="sh-zekto">
+          <span class="sh-nav-icon"><i class="fas fa-fingerprint"></i></span>
+          <span>Zekto Settings</span>
+        </a>
+      </li>
+    </ul>
+  </div><!-- /sh-nav -->
+
+  <!-- ==================== RIGHT CONTENT PANEL ==================== -->
+  <div class="sh-content">
+
+    <!-- ============================================================
+         COMPANY SETUP SECTION
+    ============================================================ -->
+    <div class="sh-section" id="sh-company">
+    <div class="sh-section-title"><i class="fas fa-building me-2 text-primary"></i>Company Setup</div>
+    <div class="sh-section-sub">Manage your company branding, logo, and theme preferences.</div>
+    <div class="sh-divider"></div>
+
+    <form method="post" enctype="multipart/form-data" id="companySetupForm" action="{% url 'settings_hub' %}">
+      {% csrf_token %}
+      <div class="row g-4">
+
+        <!-- LEFT COLUMN -->
+        <div class="col-lg-7">
+
+          <!-- Brand Identity -->
+          <div class="cs-card">
+            <div class="cs-card-title">
+              <span class="icon-wrap" style="background:#eef0ff;color:#5e72e4;"><i class="fas fa-id-badge"></i></span>
+              Brand Identity
+            </div>
+            <div class="mb-3">
+              <div class="cs-label">Company Name</div>
+              <input type="text" name="company_name" value="{{ company.company_name }}"
+                     class="cs-input" id="companyNameInput"
+                     placeholder="e.g. Trendy Shopping" maxlength="200" required>
+            </div>
+            <div class="mb-0">
+              <div class="cs-label">Tagline <span class="text-muted fw-normal text-lowercase">(optional)</span></div>
+              <input type="text" name="tagline" value="{{ company.tagline }}"
+                     class="cs-input" placeholder="e.g. Fashion that defines you" maxlength="300">
+            </div>
+          </div>
+
+          <!-- Logo & Favicon -->
+          <div class="cs-card">
+            <div class="cs-card-title">
+              <span class="icon-wrap" style="background:#fff3e0;color:#fb8c00;"><i class="fas fa-image"></i></span>
+              Logo & Favicon
+            </div>
+            <div class="row g-3">
+              <div class="col-sm-8">
+                <div class="cs-label">Company Logo</div>
+                <div class="cs-upload-zone" id="logoZone">
+                  <input type="file" name="logo" id="logoInput" accept="image/*">
+                  <div id="logoPreviewWrap">
+                    {% if company.logo %}
+                      <img src="{{ company.logo.url }}" class="cs-preview-img" id="logoPreviewImg" alt="Logo">
+                      <br>
+                      <button type="button" class="cs-remove-btn" onclick="removeFile('logo')">
+                        <i class="fas fa-times me-1"></i>Remove Logo
+                      </button>
+                    {% else %}
+                      <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                      <p>Click or drag & drop your logo</p>
+                      <p class="hint">PNG, JPG, SVG · max 2 MB</p>
+                    {% endif %}
+                  </div>
+                </div>
+                <input type="hidden" name="remove_logo" id="removeLogo" value="0">
+              </div>
+              <div class="col-sm-4">
+                <div class="cs-label">Favicon</div>
+                <div class="cs-upload-zone" id="faviconZone" style="padding:1rem .5rem;">
+                  <input type="file" name="favicon" id="faviconInput" accept="image/*,.ico">
+                  <div id="faviconPreviewWrap">
+                    {% if company.favicon %}
+                      <img src="{{ company.favicon.url }}" class="cs-preview-favicon" id="faviconPreviewImg" alt="Favicon">
+                      <br>
+                      <button type="button" class="cs-remove-btn" onclick="removeFile('favicon')">
+                        <i class="fas fa-times me-1"></i>Remove
+                      </button>
+                    {% else %}
+                      <div class="upload-icon" style="font-size:1.4rem;"><i class="fas fa-star"></i></div>
+                      <p style="font-size:.76rem;">Favicon<br>.ico / 32×32</p>
+                    {% endif %}
+                  </div>
+                </div>
+                <input type="hidden" name="remove_favicon" id="removeFavicon" value="0">
+              </div>
+            </div>
+          </div>
+
+          <!-- Accent Colors -->
+          <div class="cs-card">
+            <div class="cs-card-title">
+              <span class="icon-wrap" style="background:#fce4ec;color:#e91e63;"><i class="fas fa-fill-drip"></i></span>
+              Accent Colors
+            </div>
+            <div class="row g-3">
+              <div class="col-6">
+                <div class="cs-label">Primary Color</div>
+                <div class="cs-color-row">
+                  <div class="cs-color-swatch">
+                    <input type="color" id="primaryColorPicker" value="{{ company.primary_color }}"
+                           oninput="syncColor('primary', this.value)">
+                  </div>
+                  <input type="text" name="primary_color" id="primaryHex"
+                         class="cs-hex-input" value="{{ company.primary_color }}"
+                         maxlength="7" placeholder="#5e72e4"
+                         oninput="syncHex('primary', this.value)">
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="cs-label">Secondary Color</div>
+                <div class="cs-color-row">
+                  <div class="cs-color-swatch">
+                    <input type="color" id="secondaryColorPicker" value="{{ company.secondary_color }}"
+                           oninput="syncColor('secondary', this.value)">
+                  </div>
+                  <input type="text" name="secondary_color" id="secondaryHex"
+                         class="cs-hex-input" value="{{ company.secondary_color }}"
+                         maxlength="7" placeholder="#825ee4"
+                         oninput="syncHex('secondary', this.value)">
+                </div>
+              </div>
+            </div>
+            <p class="text-muted mt-3 mb-0" style="font-size:.78rem;">
+              <i class="fas fa-info-circle me-1 text-primary"></i>
+              These colors apply to gradients, buttons, and accents across the admin panel.
+            </p>
+          </div>
+
+        </div><!-- /LEFT COLUMN -->
+
+        <!-- RIGHT COLUMN -->
+        <div class="col-lg-5">
+          <div class="cs-card">
+            <div class="cs-card-title">
+              <span class="icon-wrap" style="background:#e8f5e9;color:#43a047;"><i class="fas fa-desktop"></i></span>
+              Live Preview
+            </div>
+            <div class="cs-live-preview" id="livePreview">
+              <div class="preview-sidebar" id="previewSidebar"
+                   style="background:linear-gradient(180deg,{{ company.primary_color }},{{ company.secondary_color }});">
+                <div class="preview-logo-area" id="previewLogoArea">
+                  {% if company.logo %}
+                    <img src="{{ company.logo.url }}" id="previewLogoImg" alt="" style="max-height:20px;max-width:50px;object-fit:contain;border-radius:3px;">
+                  {% else %}
+                    <div class="preview-logo-placeholder" id="previewLogoText">{{ company.company_name|truncatechars:8 }}</div>
+                  {% endif %}
+                </div>
+                <div class="preview-company-name" id="previewCompanyName">{{ company.company_name|truncatechars:12 }}</div>
+                <div class="preview-nav-item active"></div>
+                <div class="preview-nav-item"></div>
+                <div class="preview-nav-item"></div>
+                <div class="preview-nav-item"></div>
+              </div>
+              <div class="preview-main">
+                <div class="preview-topbar" id="previewTopbar"
+                     style="background:linear-gradient(90deg,{{ company.primary_color }},{{ company.secondary_color }});"></div>
+                <div class="preview-stat-row">
+                  <div class="preview-stat"></div>
+                  <div class="preview-stat"></div>
+                  <div class="preview-stat"></div>
+                </div>
+                <div class="preview-table"></div>
+              </div>
+            </div>
+
+            <!-- Theme Grid -->
+            <div class="mt-3">
+              <div class="cs-label mb-2">Choose a Theme Preset</div>
+              <div class="theme-grid">
+                {% with current_theme=company.theme %}
+                {% for val, label in company.THEME_CHOICES %}
+                <label class="theme-card {% if current_theme == val %}selected{% endif %}" data-theme="{{ val }}">
+                  <input type="radio" name="theme" value="{{ val }}" {% if current_theme == val %}checked{% endif %}>
+                  <div class="theme-preview">
+                    <div class="theme-preview-sidebar t-{{ val }}"></div>
+                    <div class="theme-preview-content">
+                      <div class="theme-preview-bar"></div>
+                      <div class="theme-preview-bar"></div>
+                    </div>
+                  </div>
+                  <div class="theme-name">{{ label }}</div>
+                  <div class="check-badge"><i class="fas fa-check"></i></div>
+                </label>
+                {% endfor %}
+                {% endwith %}
+              </div>
+            </div>
+          </div>
+        </div><!-- /RIGHT COLUMN -->
+      </div><!-- /row -->
+
+      <!-- Save bar -->
+      <div class="cs-card d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div>
+          <div class="fw-bold text-dark" style="font-size:.92rem;">Save Company Settings</div>
+          <div class="text-muted" style="font-size:.78rem;">Changes will apply globally across the admin panel.</div>
+        </div>
+        <button type="submit" class="cs-save-btn">
+          <i class="fas fa-save me-2"></i>Save Changes
+        </button>
+      </div>
+    </form>
+    </div><!-- /sh-section #sh-company -->
+
+    <!-- Section separator -->
+    <div style="height:2px;background:linear-gradient(90deg,#e9ecef,transparent);margin:2rem 0 2.5rem;"></div>
+
+    <!-- ============================================================
+         ZEKTO SETTINGS SECTION
+    ============================================================ -->
+    <div class="sh-section" id="sh-zekto">
+    <div class="sh-section-title"><i class="fas fa-fingerprint me-2 text-primary"></i>Zekto Settings</div>
+    <div class="sh-section-sub">ZKTeco ADMS device management dashboard</div>
+    <div class="sh-divider"></div>
+
+    <!-- Stat cards -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <div class="card stat-card">
+          <div class="d-flex align-items-center gap-3">
+            <div class="stat-icon" style="background:#eff6ff;color:#3b82f6;"><i class="fas fa-server"></i></div>
+            <div><div class="stat-value">{{ device_count }}</div><div class="stat-label">Total Devices</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stat-card">
+          <div class="d-flex align-items-center gap-3">
+            <div class="stat-icon" style="background:#d1fae5;color:#059669;"><i class="fas fa-wifi"></i></div>
+            <div><div class="stat-value" id="onlineCount">—</div><div class="stat-label">Online Now</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stat-card">
+          <div class="d-flex align-items-center gap-3">
+            <div class="stat-icon" style="background:#fee2e2;color:#ef4444;"><i class="fas fa-exclamation-triangle"></i></div>
+            <div><div class="stat-value" id="offlineCount">—</div><div class="stat-label">Offline</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stat-card">
+          <div class="d-flex align-items-center gap-3">
+            <div class="stat-icon" style="background:#fef3c7;color:#d97706;"><i class="fas fa-exchange-alt"></i></div>
+            <div><div class="stat-value" id="totalTransactions">0</div><div class="stat-label">Total Transactions</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Device card -->
+    <div class="card zekto-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5><i class="fas fa-server me-2"></i>Company Device</h5>
+        <button onclick="openAddModal()" style="background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.4);font-size:.8rem;font-weight:600;border-radius:8px;padding:.32rem .8rem;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,.3)'" onmouseout="this.style.background='rgba(255,255,255,.18)'">
+          <i class="fas fa-plus me-1"></i>Add Device
+        </button>
+      </div>
+      <ul class="nav device-tabs px-3 pt-2" id="deviceTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#viewDevicePane" type="button" role="tab">
+            <i class="fas fa-eye me-1"></i>View Device
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#syncDevicePane" type="button" role="tab">
+            <i class="fas fa-sync-alt me-1"></i>Synchronize Device
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#setupPane" type="button" role="tab">
+            <i class="fas fa-cog me-1"></i>Device Setup
+          </button>
+        </li>
+      </ul>
+      <div class="tab-content">
+        <!-- VIEW DEVICE TAB -->
+        <div class="tab-pane fade show active" id="viewDevicePane" role="tabpanel">
+          <div class="table-responsive">
+            <table class="table dev-table" id="deviceTable">
+              <thead>
+                <tr>
+                  <th>SN</th><th>Name</th><th>Branch</th><th>IP Address</th>
+                  <th>Serial Number</th><th>Status</th><th>Last Activity</th>
+                  <th>Face</th><th>FP</th><th>Trans</th><th>User</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for dev in devices %}
+                <tr data-device-id="{{ dev.id }}">
+                  <td style="color:#9ca3af;font-size:.83rem;">{{ forloop.counter }}</td>
+                  <td style="font-weight:600;color:#374151;">{{ dev.name|default:"—" }}</td>
+                  <td style="color:#4b5563;">{{ dev.branch|default:"—" }}</td>
+                  <td style="font-family:monospace;color:#4b5563;">{{ dev.ip_address }}</td>
+                  <td style="font-weight:600;color:#374151;">{{ dev.serial_number }}</td>
+                  <td>
+                    {% if dev.is_online %}<span class="status-online">Online</span>
+                    {% else %}<span class="status-offline">Offline</span>{% endif %}
+                  </td>
+                  <td style="color:#4b5563;font-size:.83rem;">
+                    {% if dev.last_seen %}{{ dev.last_seen|date:"Y/m/d g:i A" }}{% else %}<span style="color:#d1d5db;">Never</span>{% endif %}
+                  </td>
+                  <td><span class="count-badge" style="background:#eff6ff;color:#3b82f6;">{{ dev.face_count }}</span></td>
+                  <td><span class="count-badge" style="background:#fef3c7;color:#d97706;">{{ dev.fingerprint_count }}</span></td>
+                  <td><span class="count-badge" style="background:#d1fae5;color:#065f46;" data-trans="{{ dev.transaction_count }}">{{ dev.transaction_count }}</span></td>
+                  <td><span class="count-badge" style="background:#ede9fe;color:#6d28d9;">{{ dev.user_count }}</span></td>
+                  <td>
+                    <button class="btn-action edit-btn" title="Edit" onclick="openEditModal({{ dev.id }})"><i class="fas fa-edit"></i></button>
+                    <button class="btn-action sync-btn" title="Sync" onclick="syncDevice({{ dev.id }})"><i class="fas fa-sync-alt"></i></button>
+                    <button class="btn-action delete-btn" title="Delete" onclick="deleteDevice({{ dev.id }}, '{{ dev.serial_number }}')"><i class="fas fa-trash-alt"></i></button>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="12"><div class="dev-empty"><i class="fas fa-server d-block"></i><p class="mb-1">No devices connected yet</p><p class="mb-0" style="font-size:.8rem;">Configure your ZKTeco device to push to this server's IP on port 8000</p></div></td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SYNCHRONIZE TAB -->
+        <div class="tab-pane fade" id="syncDevicePane" role="tabpanel">
+          <div class="p-4">
+            <p class="text-muted mb-3" style="font-size:.88rem;"><i class="fas fa-info-circle me-1"></i>Synchronize device counts from attendance records in the database.</p>
+            <div class="table-responsive">
+              <table class="table dev-table">
+                <thead><tr><th>SN</th><th>Device Name</th><th>Serial Number</th><th>Transactions</th><th>Users</th><th>Action</th></tr></thead>
+                <tbody>
+                  {% for dev in devices %}
+                  <tr>
+                    <td style="color:#9ca3af;">{{ forloop.counter }}</td>
+                    <td style="font-weight:600;">{{ dev.name|default:dev.serial_number }}</td>
+                    <td style="font-family:monospace;">{{ dev.serial_number }}</td>
+                    <td id="syncTrans_{{ dev.id }}">{{ dev.transaction_count }}</td>
+                    <td id="syncUsers_{{ dev.id }}">{{ dev.user_count }}</td>
+                    <td><button class="btn btn-sm btn-outline-success" onclick="syncDevice({{ dev.id }})"><i class="fas fa-sync-alt me-1"></i>Sync</button></td>
+                  </tr>
+                  {% empty %}
+                  <tr><td colspan="6" class="text-center text-muted py-4">No devices found.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% if devices %}
+            <div class="text-end mt-3">
+              <button class="btn btn-primary btn-sm" onclick="syncAllDevices()"><i class="fas fa-sync-alt me-1"></i>Sync All Devices</button>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- DEVICE SETUP TAB -->
+        <div class="tab-pane fade" id="setupPane" role="tabpanel">
+          <div class="p-4">
+            <div class="zekto-info-note"><i class="fas fa-info-circle me-1"></i><strong>Setup:</strong> Point your ZKTeco device ADMS Server IP to this server's IP on port <code>8000</code>. The device will push attendance data directly — no API URL or token needed.</div>
+            <div class="zekto-info-note"><i class="fas fa-clock me-1"></i><strong>Logic:</strong> First entry = clock-in, last entry = clock-out per employee per day.</div>
+            <div class="zekto-info-note"><i class="fas fa-network-wired me-1"></i><strong>Endpoints:</strong><br><code>GET/POST /iclock/cdata</code> — Handshake &amp; attendance data push<br><code>GET /iclock/getrequest</code> — Device heartbeat<br><code>POST /iclock/devicecmd</code> — Device command response</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Device Modal -->
+    <div class="modal fade" id="deviceUpdateModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:14px;border:none;overflow:hidden;">
+          <div class="modal-header" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;padding:1rem 1.5rem;">
+            <h5 class="modal-title text-white fw-bold"><i class="fas fa-edit me-2"></i>Device Update</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4">
+            <input type="hidden" id="editDeviceId">
+            <div class="modal-field mb-3"><label>Name <span class="text-danger">*</span></label><input type="text" class="form-control" id="editDeviceName" placeholder="e.g. Main Entrance"></div>
+            <div class="modal-field mb-3"><label>Branch</label><input type="text" class="form-control" id="editDeviceBranch" placeholder="e.g. Head Office"></div>
+            <div class="modal-field mb-3"><label>Model</label><input type="text" class="form-control" id="editDeviceModel" placeholder="e.g. K20 Pro/ID"></div>
+            <hr class="my-3" style="border-color:#e5e7eb;">
+            <div class="row g-3">
+              <div class="col-6 modal-field"><label>IP Address</label><input type="text" class="form-control" id="editDeviceIP" readonly></div>
+              <div class="col-6 modal-field"><label>Serial Number</label><input type="text" class="form-control" id="editDeviceSN" readonly></div>
+            </div>
+            <div class="row g-3 mt-1">
+              <div class="col-6 modal-field"><label>Last Activity</label><input type="text" class="form-control" id="editDeviceLastSeen" readonly></div>
+              <div class="col-6 modal-field"><label>Transactions</label><input type="text" class="form-control" id="editDeviceTransCount" readonly></div>
+            </div>
+            <div class="row g-3 mt-1">
+              <div class="col-4 modal-field"><label>Face Count</label><input type="text" class="form-control" id="editDeviceFaceCount" readonly></div>
+              <div class="col-4 modal-field"><label>Fingerprint</label><input type="text" class="form-control" id="editDeviceFPCount" readonly></div>
+              <div class="col-4 modal-field"><label>User Count</label><input type="text" class="form-control" id="editDeviceUserCount" readonly></div>
+            </div>
+          </div>
+          <div class="modal-footer" style="border-top:1px solid #e5e7eb;padding:1rem 1.5rem;">
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal"><i class="fas fa-arrow-left me-1"></i>Back</button>
+            <button type="button" class="btn btn-primary" onclick="saveDevice()"><i class="fas fa-save me-1"></i>Update</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Delete Modal -->
+    <div class="modal fade" id="deviceDeleteModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content" style="border-radius:14px;border:none;">
+          <div class="modal-body text-center p-4">
+            <div style="width:52px;height:52px;border-radius:50%;background:#fee2e2;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;"><i class="fas fa-trash-alt" style="font-size:1.2rem;color:#ef4444;"></i></div>
+            <h6 class="fw-bold mb-2">Delete Device?</h6>
+            <p class="text-muted mb-0" style="font-size:.86rem;" id="deleteDeviceText">Are you sure you want to delete this device?</p>
+          </div>
+          <div class="modal-footer justify-content-center" style="border-top:1px solid #f3f4f6;padding:.65rem;">
+            <input type="hidden" id="deleteDeviceId">
+            <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="confirmDelete()"><i class="fas fa-trash-alt me-1"></i>Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Device Modal -->
+    <div class="modal fade" id="deviceAddModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:14px;border:none;overflow:hidden;">
+          <div class="modal-header" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;padding:1rem 1.5rem;">
+            <h5 class="modal-title text-white fw-bold"><i class="fas fa-plus me-2"></i>Add Device</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4">
+            <div class="modal-field mb-3"><label>Serial Number <span class="text-danger">*</span></label><input type="text" class="form-control" id="addDeviceSerial" placeholder="e.g. CQTW224560219"></div>
+            <div class="modal-field mb-3"><label>Device Name</label><input type="text" class="form-control" id="addDeviceName" placeholder="e.g. Main Entrance"></div>
+            <div class="row g-3">
+              <div class="col-6 modal-field"><label>IP Address</label><input type="text" class="form-control" id="addDeviceIP" placeholder="e.g. 192.168.1.100"></div>
+              <div class="col-6 modal-field"><label>Branch</label><input type="text" class="form-control" id="addDeviceBranch" placeholder="e.g. Head Office"></div>
+            </div>
+            <div class="modal-field mt-3"><label>Model</label><input type="text" class="form-control" id="addDeviceModel" placeholder="e.g. K20 Pro/ID"></div>
+          </div>
+          <div class="modal-footer" style="border-top:1px solid #e5e7eb;padding:1rem 1.5rem;">
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal"><i class="fas fa-times me-1"></i>Cancel</button>
+            <button type="button" class="btn btn-primary" id="addDeviceBtn" onclick="addDevice()"><i class="fas fa-plus me-1"></i>Add Device</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="zekto-toast" id="zektoToast"></div>
+    </div><!-- /sh-section #sh-zekto -->
+
+  </div><!-- /sh-content -->
+</div><!-- /sh-container -->
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+/* ===================== SCROLLSPY ===================== */
+var _shSections = [];
+var _shNavLinks = [];
+
+function shSetActive(id) {
+  _shNavLinks.forEach(function(link) {
+    if (link.dataset.target === id) {
+      link.classList.add('active');
+    } else {
+      link.classList.remove('active');
+    }
+  });
+}
+
+function shScrollTo(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  // Immediately highlight the clicked nav item
+  shSetActive(id);
+  var offset = 90;
+  var top = el.getBoundingClientRect().top + window.pageYOffset - offset;
+  window.scrollTo({ top: top, behavior: 'smooth' });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  _shSections = Array.from(document.querySelectorAll('.sh-section'));
+  _shNavLinks = Array.from(document.querySelectorAll('.sh-nav-link[data-target]'));
+
+  window.addEventListener('scroll', function() {
+    if (!_shSections.length) return;
+    var scrollPos = window.pageYOffset + 150;
+    var current = _shSections[0].id;
+    _shSections.forEach(function(sec) {
+      if (sec.offsetTop <= scrollPos) current = sec.id;
+    });
+    shSetActive(current);
+  });
+});
+
+/* ===================== COMPANY SETUP JS ===================== */
+const THEMES = {
+  default: { p: '#5e72e4', s: '#825ee4' },
+  dark:    { p: '#1a1a2e', s: '#16213e' },
+  purple:  { p: '#7b2ff7', s: '#b721ff' },
+  green:   { p: '#22c55e', s: '#16a34a' },
+  orange:  { p: '#f97316', s: '#ea580c' },
+  red:     { p: '#ef4444', s: '#dc2626' },
+  teal:    { p: '#14b8a6', s: '#0d9488' },
+  indigo:  { p: '#4f46e5', s: '#3730a3' },
+};
+
+function applyPreviewColors(p, s) {
+  document.getElementById('previewSidebar').style.background = 'linear-gradient(180deg,' + p + ',' + s + ')';
+  document.getElementById('previewTopbar').style.background  = 'linear-gradient(90deg,' + p + ',' + s + ')';
+}
+
+function syncColor(which, val) {
+  document.getElementById(which === 'primary' ? 'primaryHex' : 'secondaryHex').value = val;
+  applyPreviewColors(
+    document.getElementById('primaryHex').value   || '#5e72e4',
+    document.getElementById('secondaryHex').value || '#825ee4'
+  );
+}
+
+function syncHex(which, val) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(val)) return;
+  document.getElementById(which === 'primary' ? 'primaryColorPicker' : 'secondaryColorPicker').value = val;
+  applyPreviewColors(
+    document.getElementById('primaryHex').value   || '#5e72e4',
+    document.getElementById('secondaryHex').value || '#825ee4'
+  );
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.theme-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      document.querySelectorAll('.theme-card').forEach(function(c) { c.classList.remove('selected'); });
+      this.classList.add('selected');
+      this.querySelector('input[type=radio]').checked = true;
+      var t = THEMES[this.dataset.theme];
+      if (t) {
+        document.getElementById('primaryHex').value  = t.p;
+        document.getElementById('secondaryHex').value = t.s;
+        document.getElementById('primaryColorPicker').value  = t.p;
+        document.getElementById('secondaryColorPicker').value = t.s;
+        applyPreviewColors(t.p, t.s);
+      }
+    });
+  });
+
+  var nameInput = document.getElementById('companyNameInput');
+  if (nameInput) {
+    nameInput.addEventListener('input', function() {
+      var name = this.value.trim() || 'Your Company';
+      var short = name.length > 12 ? name.slice(0, 12) + '…' : name;
+      var el = document.getElementById('previewCompanyName');
+      if (el) el.textContent = short;
+      var logoText = document.getElementById('previewLogoText');
+      if (logoText) logoText.textContent = name.length > 8 ? name.slice(0, 8) + '…' : name;
+    });
+  }
+
+  handleFilePreview('logoInput', 'logoPreview', true);
+  handleFilePreview('faviconInput', 'faviconPreview', false);
+
+  ['logoZone', 'faviconZone'].forEach(function(id) {
+    var zone = document.getElementById(id);
+    if (!zone) return;
+    var fileInput = zone.querySelector('input[type=file]');
+    zone.addEventListener('dragover',  function(e) { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', function()  { zone.classList.remove('drag-over'); });
+    zone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length && fileInput) {
+        try {
+          var dt = new DataTransfer();
+          Array.from(e.dataTransfer.files).forEach(function(f) { dt.items.add(f); });
+          fileInput.files = dt.files;
+          fileInput.dispatchEvent(new Event('change'));
+        } catch(err) {}
+      }
+    });
+  });
+
+  /* ===================== ZEKTO STATS ===================== */
+  var rows = document.querySelectorAll('#deviceTable tbody tr[data-device-id]');
+  var online = 0, offline = 0, totalTrans = 0;
+  rows.forEach(function(row) {
+    if (row.querySelector('.status-online')) online++;
+    else if (row.querySelector('.status-offline')) offline++;
+    var transEl = row.querySelector('[data-trans]');
+    if (transEl) totalTrans += parseInt(transEl.dataset.trans) || 0;
+  });
+  var oc = document.getElementById('onlineCount');
+  var fc = document.getElementById('offlineCount');
+  var tt = document.getElementById('totalTransactions');
+  if (oc) oc.textContent = online;
+  if (fc) fc.textContent = offline;
+  if (tt) tt.textContent = totalTrans;
+});
+
+function handleFilePreview(inputId, previewId, isLogo) {
+  var input = document.getElementById(inputId);
+  if (!input) return;
+  input.addEventListener('change', function() {
+    var file = this.files[0];
+    if (!file) return;
+    var removeField = document.getElementById(isLogo ? 'removeLogo' : 'removeFavicon');
+    if (removeField) removeField.value = '0';
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var wrap = document.getElementById(previewId + 'Wrap');
+      var cls  = isLogo ? 'cs-preview-img' : 'cs-preview-favicon';
+      var rmFn = isLogo ? "removeFile('logo')" : "removeFile('favicon')";
+      wrap.innerHTML = '<img src="' + e.target.result + '" class="' + cls + '" alt=""><br><button type="button" class="cs-remove-btn" onclick="' + rmFn + '"><i class="fas fa-times me-1"></i>Remove</button>';
+      if (isLogo) {
+        var logoArea = document.getElementById('previewLogoArea');
+        if (logoArea) logoArea.innerHTML = '<img src="' + e.target.result + '" style="max-height:20px;max-width:50px;object-fit:contain;border-radius:3px;" alt="">';
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function removeFile(which) {
+  if (which === 'logo') {
+    document.getElementById('removeLogo').value = '1';
+    document.getElementById('logoPreviewWrap').innerHTML = '<div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div><p>Click or drag & drop your logo</p><p class="hint">PNG, JPG, SVG · max 2 MB</p>';
+    var logoArea = document.getElementById('previewLogoArea');
+    var name = document.getElementById('companyNameInput').value.trim() || 'Company';
+    var short = name.length > 8 ? name.slice(0, 8) + '…' : name;
+    if (logoArea) logoArea.innerHTML = '<div class="preview-logo-placeholder" id="previewLogoText">' + short + '</div>';
+  } else {
+    document.getElementById('removeFavicon').value = '1';
+    document.getElementById('faviconPreviewWrap').innerHTML = '<div class="upload-icon" style="font-size:1.4rem;"><i class="fas fa-star"></i></div><p style="font-size:.76rem;">Favicon<br>.ico / 32×32</p>';
+  }
+  document.getElementById(which === 'logo' ? 'logoInput' : 'faviconInput').value = '';
+}
+
+/* ===================== ZEKTO JS ===================== */
+function getCsrf() {
+  return document.querySelector('[name=csrfmiddlewaretoken]').value;
+}
+
+function showToast(msg, type) {
+  var t = document.getElementById('zektoToast');
+  if (!t) return;
+  t.className = 'zekto-toast ' + (type || 'success');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(function() { t.style.display = 'none'; }, 3500);
+}
+
+function openEditModal(deviceId) {
+  fetch("{% url 'hrm:zekto_device_detail' pk=0 %}".replace('0', deviceId))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.success) { showToast(data.error, 'error'); return; }
+      var d = data.device;
+      document.getElementById('editDeviceId').value = d.id;
+      document.getElementById('editDeviceName').value = d.name;
+      document.getElementById('editDeviceBranch').value = d.branch;
+      document.getElementById('editDeviceModel').value = d.model_name;
+      document.getElementById('editDeviceIP').value = d.ip_address || '—';
+      document.getElementById('editDeviceSN').value = d.serial_number;
+      document.getElementById('editDeviceLastSeen').value = d.last_seen;
+      document.getElementById('editDeviceTransCount').value = d.transaction_count;
+      document.getElementById('editDeviceFaceCount').value = d.face_count;
+      document.getElementById('editDeviceFPCount').value = d.fingerprint_count;
+      document.getElementById('editDeviceUserCount').value = d.user_count;
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceUpdateModal')).show();
+    })
+    .catch(function() { showToast('Failed to load device details.', 'error'); });
+}
+
+function saveDevice() {
+  var deviceId = document.getElementById('editDeviceId').value;
+  var name = document.getElementById('editDeviceName').value.trim();
+  if (!name) { showToast('Device name is required.', 'error'); return; }
+  fetch("{% url 'hrm:zekto_device_update' pk=0 %}".replace('0', deviceId), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({ name: name, branch: document.getElementById('editDeviceBranch').value.trim(), model_name: document.getElementById('editDeviceModel').value.trim() })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) { showToast(data.message, 'success'); bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceUpdateModal')).hide(); setTimeout(function() { location.reload(); }, 800); }
+    else { showToast(data.error, 'error'); }
+  })
+  .catch(function() { showToast('Failed to update device.', 'error'); });
+}
+
+function syncDevice(deviceId) {
+  fetch("{% url 'hrm:zekto_device_sync' pk=0 %}".replace('0', deviceId), { method: 'POST', headers: {'X-CSRFToken': getCsrf()} })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      showToast(data.message, 'success');
+      if (data.data) {
+        var te = document.getElementById('syncTrans_' + deviceId);
+        var ue = document.getElementById('syncUsers_' + deviceId);
+        if (te) te.textContent = data.data.transaction_count;
+        if (ue) ue.textContent = data.data.user_count;
+      }
+      setTimeout(function() { location.reload(); }, 1000);
+    } else { showToast(data.error, 'error'); }
+  })
+  .catch(function() { showToast('Sync failed.', 'error'); });
+}
+
+function syncAllDevices() {
+  var deviceIds = [];
+  document.querySelectorAll('#deviceTable tbody tr[data-device-id]').forEach(function(row) { deviceIds.push(row.dataset.deviceId); });
+  if (!deviceIds.length) { showToast('No devices to sync.', 'error'); return; }
+  var done = 0, total = deviceIds.length;
+  showToast('Syncing all devices...', 'success');
+  deviceIds.forEach(function(id) {
+    fetch("{% url 'hrm:zekto_device_sync' pk=0 %}".replace('0', id), { method: 'POST', headers: {'X-CSRFToken': getCsrf()} })
+    .then(function(r) { return r.json(); })
+    .then(function() { done++; if (done === total) { showToast('All devices synced!', 'success'); setTimeout(function() { location.reload(); }, 800); } })
+    .catch(function() { done++; if (done === total) { showToast('Sync done with some errors.', 'error'); setTimeout(function() { location.reload(); }, 800); } });
+  });
+}
+
+function openAddModal() {
+  ['addDeviceSerial','addDeviceName','addDeviceIP','addDeviceBranch','addDeviceModel'].forEach(function(id) { document.getElementById(id).value = ''; });
+  var btn = document.getElementById('addDeviceBtn');
+  btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus me-1"></i>Add Device';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceAddModal')).show();
+}
+
+function addDevice() {
+  var serial = document.getElementById('addDeviceSerial').value.trim();
+  if (!serial) { showToast('Serial number is required.', 'error'); return; }
+  var btn = document.getElementById('addDeviceBtn');
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+  fetch("{% url 'hrm:zekto_device_add' %}", {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({ serial_number: serial, name: document.getElementById('addDeviceName').value.trim(), ip_address: document.getElementById('addDeviceIP').value.trim(), branch: document.getElementById('addDeviceBranch').value.trim(), model_name: document.getElementById('addDeviceModel').value.trim() })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus me-1"></i>Add Device';
+    if (data.success) { showToast(data.message, 'success'); bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceAddModal')).hide(); setTimeout(function() { location.reload(); }, 800); }
+    else { showToast(data.error, 'error'); }
+  })
+  .catch(function() { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus me-1"></i>Add Device'; showToast('Failed to add device.', 'error'); });
+}
+
+function deleteDevice(deviceId, serialNumber) {
+  document.getElementById('deleteDeviceId').value = deviceId;
+  document.getElementById('deleteDeviceText').textContent = 'Are you sure you want to delete device ' + serialNumber + '?';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceDeleteModal')).show();
+}
+
+function confirmDelete() {
+  var deviceId = document.getElementById('deleteDeviceId').value;
+  fetch("{% url 'hrm:zekto_device_delete' pk=0 %}".replace('0', deviceId), { method: 'POST', headers: {'X-CSRFToken': getCsrf()} })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) { showToast(data.message, 'success'); bootstrap.Modal.getOrCreateInstance(document.getElementById('deviceDeleteModal')).hide(); setTimeout(function() { location.reload(); }, 800); }
+    else { showToast(data.error, 'error'); }
+  })
+  .catch(function() { showToast('Delete failed.', 'error'); });
+}
+</script>
+{% endblock %}

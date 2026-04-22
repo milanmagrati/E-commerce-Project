@@ -17862,6 +17862,112 @@ def api_integration_get(request, config_id):
     })
 
 
+# ==================== SETTINGS HUB ====================
+
+@login_required
+def settings_hub(request):
+    """Unified settings page with two-panel layout (Company Setup + Zekto Settings)."""
+    import re as _re
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, 'You do not have permission to access Settings.', extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    active_section = request.GET.get('section', 'company_setup')
+
+    from .models import CompanySetup
+    company = CompanySetup.get_settings()
+
+    from hrm.models import ZKDevice
+    devices_qs = ZKDevice.objects.all()
+    now = timezone.now()
+    device_list = []
+    for d in devices_qs:
+        is_online = d.last_seen and (now - d.last_seen) < timedelta(minutes=5)
+        device_list.append({
+            'id': d.id,
+            'serial_number': d.serial_number,
+            'name': d.name or '',
+            'model_name': d.model_name or '',
+            'branch': d.branch or '',
+            'ip_address': d.ip_address or '—',
+            'last_seen': d.last_seen,
+            'face_count': d.face_count,
+            'fingerprint_count': d.fingerprint_count,
+            'transaction_count': d.transaction_count,
+            'user_count': d.user_count,
+            'is_online': is_online,
+        })
+
+    # Handle company setup form POST
+    if request.method == 'POST' and active_section == 'company_setup':
+        valid_themes = [c[0] for c in CompanySetup.THEME_CHOICES]
+        hex_re = _re.compile(r'^#[0-9a-fA-F]{6}$')
+
+        company.company_name = request.POST.get('company_name', company.company_name).strip() or company.company_name
+        company.tagline = request.POST.get('tagline', '').strip()
+
+        theme = request.POST.get('theme', company.theme)
+        if theme in valid_themes:
+            company.theme = theme
+
+        primary = request.POST.get('primary_color', company.primary_color)
+        if hex_re.match(primary):
+            company.primary_color = primary
+
+        secondary = request.POST.get('secondary_color', company.secondary_color)
+        if hex_re.match(secondary):
+            company.secondary_color = secondary
+
+        logo_just_uploaded = False
+        if 'logo' in request.FILES:
+            logo_file = request.FILES['logo']
+            allowed_logo_types = ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp']
+            if logo_file.content_type not in allowed_logo_types:
+                messages.error(request, 'Logo must be an image file (PNG, JPG, GIF, SVG, WebP).')
+                return redirect('settings_hub')
+            if logo_file.size > 2 * 1024 * 1024:
+                messages.error(request, 'Logo file size must be under 2 MB.')
+                return redirect('settings_hub')
+            if company.logo:
+                company.logo.delete(save=False)
+            company.logo = logo_file
+            logo_just_uploaded = True
+
+        favicon_just_uploaded = False
+        if 'favicon' in request.FILES:
+            favicon_file = request.FILES['favicon']
+            allowed_fav_types = ['image/x-icon', 'image/vnd.microsoft.icon', 'image/png', 'image/jpeg']
+            if favicon_file.content_type not in allowed_fav_types and not favicon_file.name.endswith('.ico'):
+                messages.error(request, 'Favicon must be an ICO or PNG image.')
+                return redirect('settings_hub')
+            if favicon_file.size > 512 * 1024:
+                messages.error(request, 'Favicon file size must be under 512 KB.')
+                return redirect('settings_hub')
+            if company.favicon:
+                company.favicon.delete(save=False)
+            company.favicon = favicon_file
+            favicon_just_uploaded = True
+
+        if not logo_just_uploaded and request.POST.get('remove_logo') == '1' and company.logo:
+            company.logo.delete(save=False)
+            company.logo = None
+        if not favicon_just_uploaded and request.POST.get('remove_favicon') == '1' and company.favicon:
+            company.favicon.delete(save=False)
+            company.favicon = None
+
+        company.save()
+        messages.success(request, 'Company settings saved successfully!')
+        return redirect('settings_hub')
+
+    context = {
+        'active_section': active_section,
+        'company': company,
+        'devices': device_list,
+        'device_count': len(device_list),
+    }
+    return render(request, 'settings_hub.html', context)
+
+
 # ==================== COMPANY SETUP ====================
 
 @login_required

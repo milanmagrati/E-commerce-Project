@@ -181,6 +181,8 @@ urlpatterns = [
     
     # Company Setup (branding & themes)
     path('settings/company/', views.company_setup, name='company_setup'),
+    # Settings Hub (two-panel layout)
+    path('settings/', views.settings_hub, name='settings_hub'),
     
     
        # ==================== 🆕 RETURN MANAGEMENT ====================
