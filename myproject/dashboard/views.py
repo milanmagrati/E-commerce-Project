@@ -4554,6 +4554,75 @@ def possible_redirection_list(request):
         }
         rtv_entries.append(entry)
 
+    # ── Matching new orders per RTV (same NCM branch + product keyword match) ──
+    if rtv_entries:
+        # Collect raw (non-uppercased) branch values for the DB query so the
+        # case-sensitive __in lookup matches whatever case is stored in the DB.
+        _page_branches_raw = {
+            entry['rtv'].to_branch
+            for entry in rtv_entries
+            if entry['rtv'].to_branch
+        }
+        if _page_branches_raw:
+            from django.db.models import Prefetch as _Pf
+            # Build a case-insensitive OR filter for each branch so we match
+            # regardless of whether the DB stores 'TINKUNE', 'Tinkune', etc.
+            _branch_q = Q()
+            for _br in _page_branches_raw:
+                _branch_q |= Q(ncm_destination_branch__iexact=_br)
+
+            _DONE_STATUSES = ['delivered', 'cancelled', 'returned', 'refunded']
+            _candidates = list(
+                Order.objects.filter(
+                    is_deleted=False,
+                ).filter(
+                    _branch_q,
+                ).exclude(
+                    # The model has both `status` (renamed) and `order_status`
+                    # (legacy) fields; exclude finished orders on both.
+                    order_status__in=_DONE_STATUSES,
+                ).exclude(
+                    status__in=_DONE_STATUSES,
+                ).prefetch_related(
+                    _Pf('items', queryset=OrderItem.objects.only(
+                        'order_id', 'product_name', 'quantity', 'price', 'total',
+                    ))
+                ).only(
+                    'id', 'order_number', 'customer_name', 'customer_phone',
+                    'customer_email', 'shipping_address', 'landmark', 'branch_city',
+                    'ncm_destination_branch', 'order_status', 'total_amount',
+                )
+            )
+            # Build an uppercase-keyed map for case-insensitive in-memory lookup.
+            _branch_map = {}
+            for _o in _candidates:
+                _k = (_o.ncm_destination_branch or '').upper()
+                _branch_map.setdefault(_k, []).append(_o)
+
+            for entry in rtv_entries:
+                _bk = (entry['rtv'].to_branch or '').upper()
+                _desc = (entry['rtv'].product_description or '').lower()
+                _matched = []
+                for _o in _branch_map.get(_bk, []):
+                    for _item in _o.items.all():
+                        if _item.product_name:
+                            _pn = _item.product_name.lower().strip()
+                            # Match if the full product name appears in the RTV
+                            # description, OR any word longer than 3 chars does.
+                            if _pn and (
+                                _pn in _desc
+                                or any(t in _desc for t in _pn.split() if len(t) > 3)
+                            ):
+                                _matched.append(_o)
+                                break
+                entry['matching_orders'] = _matched
+                entry['matching_count'] = len(_matched)
+        else:
+            # All RTVs on this page have no to_branch — nothing to match.
+            for entry in rtv_entries:
+                entry['matching_orders'] = []
+                entry['matching_count'] = 0
+
     ncm_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
     branches = Branch.objects.filter(is_active=True).order_by('name')
     cities = City.objects.all().order_by('name')

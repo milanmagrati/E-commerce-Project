@@ -159,6 +159,13 @@
                             {% else %}
                                 <div class="small text-muted"><i class="fas fa-unlink me-1"></i>No local order</div>
                             {% endif %}
+                            {% if entry.matching_count %}
+                                <div class="mt-1">
+                                    <button type="button" class="btn btn-outline-info py-0 px-1 matches-toggle-btn" onclick="toggleMatches({{ entry.ncm_order_id }})" title="{{ entry.matching_count }} matching new order(s) — click to expand">
+                                        <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} match{{ entry.matching_count|pluralize:"es" }}
+                                    </button>
+                                </div>
+                            {% endif %}
                         </td>
                         <td>
                             {% if entry.customer_name %}
@@ -200,6 +207,70 @@
                             </div>
                         </td>
                     </tr>
+                    {% if entry.matching_orders %}
+                    <tr id="matches-row-{{ entry.ncm_order_id }}" class="matches-detail-row" style="display:none;">
+                        <td colspan="7" class="p-0">
+                            <div class="p-2 border-start border-4 border-info" style="background:#f0f8ff;">
+                                <div class="fw-bold small text-info mb-2">
+                                    <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} Matching New Order{{ entry.matching_count|pluralize }} — same branch &amp; product
+                                    <span class="text-muted fw-normal ms-1">(Branch: {{ entry.rtv.to_branch }})</span>
+                                    <button type="button" class="btn-close btn-sm float-end" onclick="toggleMatches({{ entry.ncm_order_id }})" style="font-size:0.6rem;"></button>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered mb-0 bg-white" style="font-size:0.82rem;">
+                                        <thead class="table-info">
+                                            <tr>
+                                                <th>Order #</th>
+                                                <th>Customer</th>
+                                                <th>Phone</th>
+                                                <th>Branch</th>
+                                                <th>Products</th>
+                                                <th>Status</th>
+                                                <th class="text-end">Total</th>
+                                                <th class="text-center">Use Customer</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for match in entry.matching_orders %}
+                                            <tr>
+                                                <td>
+                                                    <a href="{% url 'order_detail' match.id %}" target="_blank" class="text-decoration-none fw-bold text-primary">#{{ match.order_number }}</a>
+                                                </td>
+                                                <td><strong>{{ match.customer_name }}</strong></td>
+                                                <td class="text-muted">{{ match.customer_phone }}</td>
+                                                <td><span class="badge bg-secondary">{{ match.ncm_destination_branch }}</span></td>
+                                                <td>
+                                                    {% for item in match.items.all %}
+                                                        <div class="text-truncate" style="max-width:150px;" title="{{ item.product_name }}">{{ item.product_name }} &times;{{ item.quantity }}</div>
+                                                    {% endfor %}
+                                                </td>
+                                                <td><span class="badge bg-warning text-dark">{{ match.order_status }}</span></td>
+                                                <td class="text-end fw-bold">Rs.{{ match.total_amount }}</td>
+                                                <td class="text-center">
+                                                    <button type="button" class="btn btn-success btn-sm py-0"
+                                                        onclick="openRedirectWithNewCustomer(
+                                                            {{ entry.ncm_order_id }},
+                                                            '{{ match.customer_name|escapejs }}',
+                                                            '{{ match.customer_phone|escapejs }}',
+                                                            '{{ match.customer_email|escapejs }}',
+                                                            '{{ match.shipping_address|escapejs }}',
+                                                            '{{ match.landmark|escapejs }}',
+                                                            '{{ match.branch_city|escapejs }}',
+                                                            '{{ match.order_number|escapejs }}'
+                                                        )"
+                                                        title="Pre-fill redirect form with this customer's details">
+                                                        <i class="fas fa-user-check me-1"></i>Use
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% endfor %}
                 {% else %}
                     <tr>
@@ -858,6 +929,11 @@
     #odItemsTable th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
     .od-id-link { font-size: 1rem; }
     .od-id-link:hover { text-decoration: underline !important; }
+
+    /* Matching orders row */
+    .matches-detail-row > td { padding: 0 !important; }
+    .matches-toggle-btn { font-size: 0.72rem !important; line-height: 1.5; border-radius: 0.25rem; }
+    .matches-toggle-btn:hover { background-color: #0dcaf0; color: #fff; }
 </style>
 
 <script>
@@ -1134,6 +1210,7 @@ function populateDetailModal(order, rtv) {
 // ========== REDIRECT MODAL ==========
 let _currentOrderData = null;
 let _currentNcmOrderId = null;
+let _overrideCustomer = null;
 
 function openRedirectModal(ncmOrderId) {
     _currentOrderData = null;
@@ -1376,6 +1453,28 @@ function populateRedirectModal(order) {
     }
     const clearEl = _el('rf_clear_logistics');
     if (clearEl) clearEl.checked = false;
+
+    // Apply customer override from a matching new order (if user clicked "Use Customer")
+    if (_overrideCustomer) {
+        const ov = _overrideCustomer;
+        _overrideCustomer = null;
+        const overrideFields = {
+            'rf_customer_name': ov.name,
+            'rf_customer_phone': ov.phone,
+            'rf_customer_email': ov.email,
+            'rf_shipping_address': ov.address,
+            'rf_landmark': ov.landmark,
+            'rf_branch_city': ov.city,
+        };
+        for (const [id, val] of Object.entries(overrideFields)) {
+            const el = _el(id);
+            if (el && val !== undefined) el.value = val;
+        }
+        setTimeout(() => showToast(
+            'Customer pre-filled from order #' + ov.orderNum + ' — verify details before redirecting.',
+            'text-bg-info'
+        ), 400);
+    }
 
     toggleLogisticsOptions();
 }
@@ -1621,6 +1720,21 @@ function submitRedirect(sendToLogistics) {
         document.getElementById('btnSaveOnly').disabled = false;
         document.getElementById('btnSaveAndSend').disabled = false;
     });
+}
+
+// ========== MATCHING ORDERS ==========
+function toggleMatches(ncmId) {
+    const row = document.getElementById('matches-row-' + ncmId);
+    if (!row) return;
+    row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+}
+
+function openRedirectWithNewCustomer(ncmId, name, phone, email, address, landmark, city, orderNum) {
+    _overrideCustomer = { name, phone, email, address, landmark, city, orderNum };
+    // Collapse the matches row before opening modal
+    const matchRow = document.getElementById('matches-row-' + ncmId);
+    if (matchRow) matchRow.style.display = 'none';
+    openRedirectModal(ncmId);
 }
 
 document.addEventListener('DOMContentLoaded', function() {
