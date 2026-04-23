@@ -4673,7 +4673,9 @@ def possible_redirection_list(request):
 
         if not _item_kws and not _desc:
             # No product info — all confirmed orders at this branch match.
+            # Mark as branch-only so the template can warn the user.
             _matched = list(_branch_candidates)
+            entry['is_branch_only_match'] = True
         else:
             _combined = set(_item_kws)
             if _desc:
@@ -4687,6 +4689,7 @@ def possible_redirection_list(request):
                         if _pn and any(kw in _pn or _pn in kw for kw in _combined):
                             _matched.append(_o)
                             break
+            entry['is_branch_only_match'] = False
         entry['matching_orders'] = _matched
         entry['matching_count'] = len(_matched)
 
@@ -5082,6 +5085,18 @@ def redirect_rtv_get(request, ncm_order_id):
                     ncm_data = ncm_data[0]
             if not isinstance(ncm_data, dict):
                 ncm_data = {}
+            # Backfill product_description from NCM API into RTVOrder if still empty
+            if ncm_data and rtv_rec and not rtv_rec.product_description:
+                _api_desc = (
+                    ncm_data.get('description') or
+                    ncm_data.get('productdescription') or
+                    ncm_data.get('product_description') or ''
+                ).strip()
+                if _api_desc:
+                    RTVOrder.objects.filter(order_id=ncm_order_id).update(
+                        product_description=_api_desc
+                    )
+                    rtv_extra['product_description'] = _api_desc
     except Exception:
         pass  # fallback to rtv_rec stored fields below
 
@@ -18682,7 +18697,11 @@ def ncm_rtvs_sync(request):
                         rtv.tracking_id = o.get('trackid', o.get('tracking_id', ''))
                         rtv.last_status = o.get('last_delivery_status', '')
                     if not rtv.product_description:
-                        rtv.product_description = o.get('description', '')
+                        # Try multiple field names — /vendor/orders may or may not include description
+                        rtv.product_description = (
+                            o.get('description') or o.get('productdescription') or
+                            o.get('product_description') or o.get('item_description') or ''
+                        )
                 RTVOrder.objects.bulk_update(
                     list(partial_rtvs),
                     ['receiver_name', 'receiver_phone', 'receiver_address',
@@ -18690,6 +18709,33 @@ def ncm_rtvs_sync(request):
                      'tracking_id', 'last_status', 'product_description'],
                     batch_size=500,
                 ) if partial_rtvs else None
+
+                # Backfill product_description for RTVOrders that still have empty description.
+                # The /vendor/orders list does NOT include description — fetch from /order?id=...
+                # Limit to 5 per sync call: each call has 4s timeout so max +20s overhead.
+                still_empty_desc = list(
+                    RTVOrder.objects.filter(api_config=cfg, product_description='')
+                    .values_list('order_id', flat=True)[:5]
+                )
+                for _desc_oid in still_empty_desc:
+                    try:
+                        _detail = ncm_service.get_order_details(_desc_oid, timeout=4)
+                        if _detail.get('success'):
+                            _ddata = _detail.get('data', {})
+                            if isinstance(_ddata, list) and _ddata:
+                                _ddata = _ddata[0]
+                            if isinstance(_ddata, dict):
+                                _desc_val = (
+                                    _ddata.get('description') or
+                                    _ddata.get('productdescription') or
+                                    _ddata.get('product_description') or ''
+                                ).strip()
+                                if _desc_val:
+                                    RTVOrder.objects.filter(order_id=_desc_oid).update(
+                                        product_description=_desc_val
+                                    )
+                    except Exception:
+                        pass
 
                 # Also update last_status for ALL existing RTVs found in this sync
                 # (catches status changes like Dispatched -> Arrived)

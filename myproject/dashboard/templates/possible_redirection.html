@@ -214,6 +214,15 @@
                                 <div class="fw-bold small text-info mb-2">
                                     <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} Matching New Order{{ entry.matching_count|pluralize }} — same branch
                                     <span class="text-muted fw-normal ms-1">(Branch: {{ entry.rtv.to_branch }})</span>
+                                    {% if entry.is_branch_only_match %}
+                                    <span class="badge bg-warning text-dark ms-2" title="No product description available — matches are branch-only, not verified by product">
+                                        <i class="fas fa-exclamation-triangle me-1"></i>Branch match only — no product info
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-success ms-2">
+                                        <i class="fas fa-check me-1"></i>Product matched
+                                    </span>
+                                    {% endif %}
                                     <button type="button" class="btn-close btn-sm float-end" onclick="toggleMatches({{ entry.ncm_order_id }})" style="font-size:0.6rem;"></button>
                                 </div>
                                 {% if entry.local_order_product_names %}
@@ -1284,6 +1293,7 @@ function openRedirectModal(ncmOrderId) {
         }
     })
     .catch(err => {
+        _overrideCustomer = null;  // discard stale override so it doesn't bleed into the next open
         loadingEl.innerHTML =
             `<div class="text-center text-danger py-4"><i class="fas fa-exclamation-circle fa-2x mb-2 d-block"></i><p>Could not load order: ${escHtml(err.message)}</p></div>`;
     });
