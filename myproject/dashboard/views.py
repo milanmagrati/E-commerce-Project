@@ -4964,6 +4964,20 @@ def redirect_order_save(request, order_id):
             )
             logistics_result = result
 
+            # If redirect succeeded, apply Redirected status to the matched order
+            # (the confirmed local order whose customer details were used in the redirect form)
+            if logistics_result and logistics_result.get('status') == 'success':
+                _matched_oid = request.POST.get('matched_order_id', '').strip()
+                if _matched_oid:
+                    try:
+                        _matched_order = Order.objects.get(id=int(_matched_oid), is_deleted=False)
+                        _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
+                        _matched_order.status_setup = _redir_st
+                        _matched_order.order_status = _redir_st.name.lower()
+                        _matched_order.save(update_fields=['status_setup', 'order_status'])
+                    except (Order.DoesNotExist, Setup.DoesNotExist, ValueError, TypeError):
+                        pass
+
         response_data = {'status': 'success', 'message': 'Order updated successfully.'}
         if logistics_result:
             response_data['logistics'] = logistics_result
@@ -5262,9 +5276,31 @@ def redirect_rtv_save(request, ncm_order_id):
                 local_order.customer_name = payload['name'] or local_order.customer_name
                 local_order.customer_phone = payload['phone'] or local_order.customer_phone
                 local_order.shipping_address = payload['address'] or local_order.shipping_address
-                local_order.save(update_fields=['ncm_status', 'customer_name', 'customer_phone', 'shipping_address'])
+                _lo_update_fields = ['ncm_status', 'customer_name', 'customer_phone', 'shipping_address']
+                # Apply 'Redirected' order status from Setup Management
+                try:
+                    _redir_status = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
+                    local_order.status_setup = _redir_status
+                    local_order.order_status = _redir_status.name.lower()
+                    _lo_update_fields += ['status_setup', 'order_status']
+                except Setup.DoesNotExist:
+                    pass
+                local_order.save(update_fields=_lo_update_fields)
             except Order.DoesNotExist:
                 pass
+
+            # Apply Redirected status to the matched order (confirmed local order whose
+            # customer details were used — identified via rf_matched_order_id in the form)
+            _matched_oid = request.POST.get('matched_order_id', '').strip()
+            if _matched_oid:
+                try:
+                    _matched_order = Order.objects.get(id=int(_matched_oid), is_deleted=False)
+                    _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
+                    _matched_order.status_setup = _redir_st
+                    _matched_order.order_status = _redir_st.name.lower()
+                    _matched_order.save(update_fields=['status_setup', 'order_status'])
+                except (Order.DoesNotExist, Setup.DoesNotExist, ValueError, TypeError):
+                    pass
 
             return JsonResponse({
                 'status': 'success',
@@ -5409,6 +5445,15 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
                     update_fields.append('cod_collected')
                 except Exception:
                     pass
+
+            # Apply 'Redirected' order status from Setup Management
+            try:
+                _redir_status = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
+                order.status_setup = _redir_status
+                order.order_status = _redir_status.name.lower()
+                update_fields += ['status_setup', 'order_status']
+            except Setup.DoesNotExist:
+                pass
 
             order.save(update_fields=update_fields)
 

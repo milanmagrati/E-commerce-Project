@@ -293,7 +293,8 @@
                                                             '{{ match.shipping_address|escapejs }}',
                                                             '{{ match.landmark|escapejs }}',
                                                             '{{ match.branch_city|escapejs }}',
-                                                            '{{ match.order_number|escapejs }}'
+                                                            '{{ match.order_number|escapejs }}',
+                                                            {{ match.id }}
                                                         )"
                                                         title="Pre-fill redirect form with this customer's details">
                                                         <i class="fas fa-user-check me-1"></i>Use
@@ -550,6 +551,7 @@
                         {% csrf_token %}
                         <input type="hidden" id="rf_order_id" name="order_id">
                         <input type="hidden" id="rf_ncm_order_id" name="ncm_order_id">
+                        <input type="hidden" id="rf_matched_order_id" name="matched_order_id">
 
                         <!-- SECTION 1: Customer & Shipping -->
                         <div class="redirect-section">
@@ -1316,6 +1318,10 @@ function populateRedirectModal(order) {
     const ncmIdEl = _el('rf_ncm_order_id');
     if (ncmIdEl) ncmIdEl.value = order.ncm_order_id || _currentNcmOrderId || '';
 
+    // Always clear matched order ID first — only set it if user came via "Use Customer"
+    const matchedElReset = _el('rf_matched_order_id');
+    if (matchedElReset) matchedElReset.value = '';
+
     const orderNumEl = _el('redirectModalOrderNum');
     if (orderNumEl) {
         if (order.order_number) {
@@ -1508,6 +1514,9 @@ function populateRedirectModal(order) {
             const el = _el(id);
             if (el && val !== undefined) el.value = val;
         }
+        // Store the matched order's ID so the backend can mark it as Redirected
+        const matchedEl = _el('rf_matched_order_id');
+        if (matchedEl) matchedEl.value = ov.matchedOrderId || '';
         setTimeout(() => showToast(
             'Customer pre-filled from order #' + ov.orderNum + ' — verify details before redirecting.',
             'text-bg-info'
@@ -1767,8 +1776,8 @@ function toggleMatches(ncmId) {
     row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
 }
 
-function openRedirectWithNewCustomer(ncmId, name, phone, email, address, landmark, city, orderNum) {
-    _overrideCustomer = { name, phone, email, address, landmark, city, orderNum };
+function openRedirectWithNewCustomer(ncmId, name, phone, email, address, landmark, city, orderNum, matchedOrderId) {
+    _overrideCustomer = { name, phone, email, address, landmark, city, orderNum, matchedOrderId: matchedOrderId || null };
     // Collapse the matches row before opening modal
     const matchRow = document.getElementById('matches-row-' + ncmId);
     if (matchRow) matchRow.style.display = 'none';
