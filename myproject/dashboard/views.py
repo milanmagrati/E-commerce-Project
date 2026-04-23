@@ -5152,9 +5152,7 @@ def redirect_rtv_save(request, ncm_order_id):
             else:
                 return JsonResponse({'status': 'error', 'message': 'NCM API v2 URL not configured'}, status=400)
 
-        redirect_url = f"{base_url_v2.rstrip('/')}/order/redirect"
-
-        # Build payload from POST data
+        redirect_url = f"{base_url_v2.rstrip('/')}/vendor/order/redirect"
         payload = {
             'pk': ncm_order_id,
             'name': request.POST.get('customer_name', '').strip(),
@@ -5227,8 +5225,13 @@ def redirect_rtv_save(request, ncm_order_id):
                 error_data = response.json()
                 error_msg = error_data.get('message', error_data.get('error', error_msg))
             except Exception:
-                error_msg = response.text[:300] if response.text else error_msg
-            return JsonResponse({'status': 'error', 'message': error_msg}, status=response.status_code)
+                raw = (response.text or '').strip()
+                # Don't surface raw HTML from the API as an error message
+                if raw and not raw.startswith('<'):
+                    error_msg = raw[:300]
+                else:
+                    error_msg = f'NCM redirect API returned an unexpected response (HTTP {response.status_code}). Check the API URL or credentials.'
+            return JsonResponse({'status': 'error', 'message': error_msg}, status=400)
 
     except requests.exceptions.Timeout:
         return JsonResponse({'status': 'error', 'message': 'NCM redirect API timed out'}, status=504)
@@ -5284,15 +5287,15 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
         # Build redirect API URL
         # Prefer v2 base URL; fall back to deriving from v1
         if base_url_v2:
-            redirect_url = f"{base_url_v2.rstrip('/')}/order/redirect"
+            redirect_url = f"{base_url_v2.rstrip('/')}/vendor/order/redirect"
         elif base_url_v1:
             # Try to derive v2 URL from v1 (e.g. .../api/v1/vendor -> .../api/v2/vendor)
-            redirect_url = base_url_v1.rstrip('/').replace('/v1/', '/v2/') + '/order/redirect'
+            redirect_url = base_url_v1.rstrip('/').replace('/v1/', '/v2/') + '/vendor/order/redirect'
         else:
             # Last resort: try settings
             ncm_base = getattr(settings, 'NCM_API_BASE_URL', '') or ''
             if ncm_base:
-                redirect_url = ncm_base.rstrip('/').replace('/v1/', '/v2/') + '/order/redirect'
+                redirect_url = ncm_base.rstrip('/').replace('/v1/', '/v2/') + '/vendor/order/redirect'
             else:
                 return {'status': 'error', 'message': 'NCM API v2 base URL not configured. Add a second URL in API config for v2.'}
 
