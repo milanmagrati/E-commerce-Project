@@ -4422,10 +4422,11 @@ def return_orders_list(request):
 @login_required
 @permission_required('can_view_orders')
 def possible_redirection_list(request):
-    """Display NCM RTV orders that can potentially be redirected to another customer/branch.
+    """Display only NCM RTV orders that have at least one matching confirmed local order
+    (same NCM destination branch + product keyword match in product_description).
 
-    RTVOrder-centric: shows all RTVOrder records from NCM and links them to
-    local Order records when available (via RTVOrder.order_id == Order.ncm_order_id).
+    Matching is computed before stats/pagination so the entire page — counts,
+    table, sub-rows — reflects only actionable redirection candidates.
     """
     from django.db.models import Q, CharField
     from django.db.models.functions import Cast
@@ -4478,6 +4479,81 @@ def possible_redirection_list(request):
             rtvs = rtvs.filter(_rtv_date__date__lte=end_date_obj)
         except ValueError:
             pass
+
+    # ── Single-pass: fetch confirmed orders once, reuse for pre-filter + display ──
+    # Collect (order_id, to_branch, product_description) for all RTVs that
+    # have to_branch set — product_description may be empty (branch-only match).
+    from django.db.models import Prefetch as _Pf
+    _all_rtv_tuples = list(
+        rtvs.filter(to_branch__isnull=False)
+            .exclude(to_branch='')
+            .values_list('order_id', 'to_branch', 'product_description')
+    )
+    # _confirmed_branch_map: uppercase branch_city → [Order objects] — built once,
+    # reused for both the pre-filter and the per-entry matching_orders display.
+    # NOTE: branch is stored in branch_city (not ncm_destination_branch which is
+    # often empty), and to_branch on RTVOrder is the delivery branch name.
+    _confirmed_branch_map = {}
+    if _all_rtv_tuples:
+        _all_branches = {row[1] for row in _all_rtv_tuples}
+        _cbq = Q()
+        for _br in _all_branches:
+            _cbq |= Q(branch_city__iexact=_br)
+        # One DB query — full fields so results can be rendered in the template.
+        _confirmed_orders = list(
+            Order.objects.filter(is_deleted=False)
+                .filter(_cbq)
+                .filter(
+                    Q(order_status__iexact='confirmed') | Q(status__iexact='confirmed')
+                )
+                .prefetch_related(
+                    _Pf('items', queryset=OrderItem.objects.only(
+                        'order_id', 'product_name', 'quantity', 'price', 'total',
+                    ))
+                )
+                .only(
+                    'id', 'order_number', 'customer_name', 'customer_phone',
+                    'customer_email', 'shipping_address', 'landmark', 'branch_city',
+                    'ncm_destination_branch', 'order_status', 'total_amount',
+                )
+        )
+        for _o in _confirmed_orders:
+            _k = (_o.branch_city or '').upper()
+            _confirmed_branch_map.setdefault(_k, []).append(_o)
+        # Determine which RTVs have at least one matching confirmed order.
+        # Matching rules:
+        #   - Branch must match (rtv.to_branch == order.branch_city, case-insensitive)
+        #   - If the RTV has product_description, at least one order item name must
+        #     appear in it (substring or any word >3 chars); otherwise branch match alone
+        #     is sufficient (product_description is empty for most NCM RTVs).
+        _has_match_ids = set()
+        for _oid, _tbranch, _pdesc in _all_rtv_tuples:
+            _bk = (_tbranch or '').upper()
+            _desc = (_pdesc or '').lower().strip()
+            _branch_orders = _confirmed_branch_map.get(_bk, [])
+            if not _branch_orders:
+                continue
+            if not _desc:
+                # No product description — branch match alone qualifies this RTV.
+                _has_match_ids.add(_oid)
+            else:
+                # Product description present — require at least one item keyword match.
+                for _o in _branch_orders:
+                    for _item in _o.items.all():
+                        if _item.product_name:
+                            _pn = _item.product_name.lower().strip()
+                            if _pn and (
+                                _pn in _desc
+                                or any(t in _desc for t in _pn.split() if len(t) > 3)
+                            ):
+                                _has_match_ids.add(_oid)
+                                break
+                    if _oid in _has_match_ids:
+                        break
+        rtvs = rtvs.filter(order_id__in=_has_match_ids) if _has_match_ids else rtvs.none()
+    else:
+        # No RTVs have to_branch set — nothing can match.
+        rtvs = rtvs.none()
 
     # Build a lookup of ncm_order_id -> local Order for linked orders
     all_rtv_ncm_ids = list(rtvs.values_list('order_id', flat=True))
@@ -4554,74 +4630,28 @@ def possible_redirection_list(request):
         }
         rtv_entries.append(entry)
 
-    # ── Matching new orders per RTV (same NCM branch + product keyword match) ──
-    if rtv_entries:
-        # Collect raw (non-uppercased) branch values for the DB query so the
-        # case-sensitive __in lookup matches whatever case is stored in the DB.
-        _page_branches_raw = {
-            entry['rtv'].to_branch
-            for entry in rtv_entries
-            if entry['rtv'].to_branch
-        }
-        if _page_branches_raw:
-            from django.db.models import Prefetch as _Pf
-            # Build a case-insensitive OR filter for each branch so we match
-            # regardless of whether the DB stores 'TINKUNE', 'Tinkune', etc.
-            _branch_q = Q()
-            for _br in _page_branches_raw:
-                _branch_q |= Q(ncm_destination_branch__iexact=_br)
-
-            _DONE_STATUSES = ['delivered', 'cancelled', 'returned', 'refunded']
-            _candidates = list(
-                Order.objects.filter(
-                    is_deleted=False,
-                ).filter(
-                    _branch_q,
-                ).exclude(
-                    # The model has both `status` (renamed) and `order_status`
-                    # (legacy) fields; exclude finished orders on both.
-                    order_status__in=_DONE_STATUSES,
-                ).exclude(
-                    status__in=_DONE_STATUSES,
-                ).prefetch_related(
-                    _Pf('items', queryset=OrderItem.objects.only(
-                        'order_id', 'product_name', 'quantity', 'price', 'total',
-                    ))
-                ).only(
-                    'id', 'order_number', 'customer_name', 'customer_phone',
-                    'customer_email', 'shipping_address', 'landmark', 'branch_city',
-                    'ncm_destination_branch', 'order_status', 'total_amount',
-                )
-            )
-            # Build an uppercase-keyed map for case-insensitive in-memory lookup.
-            _branch_map = {}
-            for _o in _candidates:
-                _k = (_o.ncm_destination_branch or '').upper()
-                _branch_map.setdefault(_k, []).append(_o)
-
-            for entry in rtv_entries:
-                _bk = (entry['rtv'].to_branch or '').upper()
-                _desc = (entry['rtv'].product_description or '').lower()
-                _matched = []
-                for _o in _branch_map.get(_bk, []):
-                    for _item in _o.items.all():
-                        if _item.product_name:
-                            _pn = _item.product_name.lower().strip()
-                            # Match if the full product name appears in the RTV
-                            # description, OR any word longer than 3 chars does.
-                            if _pn and (
-                                _pn in _desc
-                                or any(t in _desc for t in _pn.split() if len(t) > 3)
-                            ):
-                                _matched.append(_o)
-                                break
-                entry['matching_orders'] = _matched
-                entry['matching_count'] = len(_matched)
+    # ── Per-entry matching_orders: reuse _confirmed_branch_map (no extra DB query) ──
+    for entry in rtv_entries:
+        _bk = (entry['rtv'].to_branch or '').upper()
+        _desc = (entry['rtv'].product_description or '').lower().strip()
+        _branch_candidates = _confirmed_branch_map.get(_bk, [])
+        if not _desc:
+            # No product description — all confirmed orders at this branch match.
+            _matched = list(_branch_candidates)
         else:
-            # All RTVs on this page have no to_branch — nothing to match.
-            for entry in rtv_entries:
-                entry['matching_orders'] = []
-                entry['matching_count'] = 0
+            _matched = []
+            for _o in _branch_candidates:
+                for _item in _o.items.all():
+                    if _item.product_name:
+                        _pn = _item.product_name.lower().strip()
+                        if _pn and (
+                            _pn in _desc
+                            or any(t in _desc for t in _pn.split() if len(t) > 3)
+                        ):
+                            _matched.append(_o)
+                            break
+        entry['matching_orders'] = _matched
+        entry['matching_count'] = len(_matched)
 
     ncm_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
     branches = Branch.objects.filter(is_active=True).order_by('name')
