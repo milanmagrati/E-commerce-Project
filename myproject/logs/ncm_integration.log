@@ -4730,3 +4730,4 @@ Created system user for webhook operations
 [ERROR] 2026-04-21 15:24:23 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=13280521
 [ERROR] 2026-04-21 15:24:23 ncm_service._make_request:49 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order/comment?id=13280534
 [ERROR] 2026-04-21 15:50:19 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order/comment
+[ERROR] 2026-04-23 22:41:21 ncm_service._make_request:45 NCM API timeout: https://portal.nepalcanmove.com/api/v1/order

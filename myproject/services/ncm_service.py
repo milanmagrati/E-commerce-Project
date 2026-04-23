@@ -34,7 +34,7 @@ class NCMService:
         """Helper to make API requests"""
         try:
             if method.upper() == 'GET':
-                response = requests.get(url, headers=self.headers, params=params, timeout=timeout or 15)
+                response = requests.get(url, headers=self.headers, params=params, timeout=timeout or 8)
             elif method.upper() == 'POST':
                 response = requests.post(url, headers=self.headers, json=data, timeout=timeout or 30)
             
@@ -108,11 +108,11 @@ class NCMService:
         
         return result
     
-    def get_order_details(self, ncm_order_id: int):
+    def get_order_details(self, ncm_order_id: int, timeout: int = None):
         """Get order details from NCM"""
         url = f"{self.base_url}/order"
         params = {'id': ncm_order_id}
-        return self._make_request('GET', url, params=params)
+        return self._make_request('GET', url, params=params, timeout=timeout)
     
     def get_order_status(self, ncm_order_id: int):
         """Get order status history"""

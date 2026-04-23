@@ -212,10 +212,26 @@
                         <td colspan="7" class="p-0">
                             <div class="p-2 border-start border-4 border-info" style="background:#f0f8ff;">
                                 <div class="fw-bold small text-info mb-2">
-                                    <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} Matching New Order{{ entry.matching_count|pluralize }} — same branch &amp; product
+                                    <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} Matching New Order{{ entry.matching_count|pluralize }} — same branch
                                     <span class="text-muted fw-normal ms-1">(Branch: {{ entry.rtv.to_branch }})</span>
                                     <button type="button" class="btn-close btn-sm float-end" onclick="toggleMatches({{ entry.ncm_order_id }})" style="font-size:0.6rem;"></button>
                                 </div>
+                                {% if entry.local_order_product_names %}
+                                <div class="mb-2 px-1 d-flex align-items-start gap-2 flex-wrap">
+                                    <span class="text-muted small fw-semibold text-nowrap"><i class="fas fa-box me-1 text-warning"></i>RTV Order Products:</span>
+                                    <span class="small text-dark">
+                                        {% for pname in entry.local_order_product_names %}
+                                            <span class="badge bg-warning text-dark me-1">{{ pname }}</span>
+                                        {% endfor %}
+                                    </span>
+                                    <small class="text-muted fst-italic">(matched from linked local order)</small>
+                                </div>
+                                {% elif entry.rtv.product_description %}
+                                <div class="mb-2 px-1">
+                                    <span class="text-muted small fw-semibold"><i class="fas fa-box me-1 text-warning"></i>RTV Product Description:</span>
+                                    <span class="small ms-1 text-dark">{{ entry.rtv.product_description }}</span>
+                                </div>
+                                {% endif %}
                                 <div class="table-responsive">
                                     <table class="table table-sm table-bordered mb-0 bg-white" style="font-size:0.82rem;">
                                         <thead class="table-info">
@@ -224,7 +240,8 @@
                                                 <th>Customer</th>
                                                 <th>Phone</th>
                                                 <th>Branch</th>
-                                                <th>Products</th>
+                                                <th>Order Products</th>
+                                                {% if entry.local_order_product_names or entry.rtv.product_description %}<th>RTV Product Ref</th>{% endif %}
                                                 <th>Status</th>
                                                 <th class="text-end">Total</th>
                                                 <th class="text-center">Use Customer</th>
@@ -244,6 +261,17 @@
                                                         <div class="text-truncate" style="max-width:150px;" title="{{ item.product_name }}">{{ item.product_name }} &times;{{ item.quantity }}</div>
                                                     {% endfor %}
                                                 </td>
+                                                {% if entry.local_order_product_names or entry.rtv.product_description %}
+                                                <td class="small" style="max-width:160px;">
+                                                    {% if entry.local_order_product_names %}
+                                                        {% for pname in entry.local_order_product_names %}
+                                                            <div class="text-truncate text-dark" title="{{ pname }}">{{ pname }}</div>
+                                                        {% endfor %}
+                                                    {% else %}
+                                                        <span class="text-muted" title="{{ entry.rtv.product_description }}">{{ entry.rtv.product_description|truncatechars:60 }}</span>
+                                                    {% endif %}
+                                                </td>
+                                                {% endif %}
                                                 <td><span class="badge bg-warning text-dark">{{ match.order_status }}</span></td>
                                                 <td class="text-end fw-bold">Rs.{{ match.total_amount }}</td>
                                                 <td class="text-center">

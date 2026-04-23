@@ -4489,6 +4489,32 @@ def possible_redirection_list(request):
             .exclude(to_branch='')
             .values_list('order_id', 'to_branch', 'product_description')
     )
+    # Pre-fetch local order item keywords for product-aware matching.
+    # For each RTV that has a linked local Order (ncm_order_id match), extract
+    # the product names from that local order's items and use them as the
+    # matching reference instead of relying on the often-empty product_description.
+    _all_ncm_ids_for_prefetch = {row[0] for row in _all_rtv_tuples}
+    _rtv_local_keywords = {}    # ncm_order_id → frozenset of lowercase keyword strings
+    _rtv_local_item_names = {}  # ncm_order_id → list of product name strings (for display)
+    if _all_ncm_ids_for_prefetch:
+        for _lo in Order.objects.filter(
+            is_deleted=False,
+            ncm_order_id__in=_all_ncm_ids_for_prefetch,
+        ).prefetch_related(
+            _Pf('items', queryset=OrderItem.objects.only('order_id', 'product_name'))
+        ).only('id', 'ncm_order_id'):
+            _kws = set()
+            _names = []
+            for _it in _lo.items.all():
+                if _it.product_name:
+                    _pn_lower = _it.product_name.lower().strip()
+                    _names.append(_it.product_name.strip())
+                    _kws.add(_pn_lower)
+                    _kws.update(w for w in _pn_lower.split() if len(w) > 3)
+            if _kws:
+                _rtv_local_keywords[_lo.ncm_order_id] = frozenset(_kws)
+                _rtv_local_item_names[_lo.ncm_order_id] = _names
+
     # _confirmed_branch_map: uppercase branch_city → [Order objects] — built once,
     # reused for both the pre-filter and the per-entry matching_orders display.
     # NOTE: branch is stored in branch_city (not ncm_destination_branch which is
@@ -4529,23 +4555,27 @@ def possible_redirection_list(request):
         _has_match_ids = set()
         for _oid, _tbranch, _pdesc in _all_rtv_tuples:
             _bk = (_tbranch or '').upper()
-            _desc = (_pdesc or '').lower().strip()
             _branch_orders = _confirmed_branch_map.get(_bk, [])
             if not _branch_orders:
                 continue
-            if not _desc:
-                # No product description — branch match alone qualifies this RTV.
+            # Build keyword set: local order item keywords take priority; fall back
+            # to product_description text if no linked local order has items.
+            _item_kws = _rtv_local_keywords.get(_oid, frozenset())
+            _desc = (_pdesc or '').lower().strip()
+            if not _item_kws and not _desc:
+                # No product info at all — branch match alone qualifies this RTV.
                 _has_match_ids.add(_oid)
             else:
-                # Product description present — require at least one item keyword match.
+                # Combine local-item keywords + product_description keywords.
+                _combined = set(_item_kws)
+                if _desc:
+                    _combined.add(_desc)
+                    _combined.update(w for w in _desc.split() if len(w) > 3)
                 for _o in _branch_orders:
                     for _item in _o.items.all():
                         if _item.product_name:
                             _pn = _item.product_name.lower().strip()
-                            if _pn and (
-                                _pn in _desc
-                                or any(t in _desc for t in _pn.split() if len(t) > 3)
-                            ):
+                            if _pn and any(kw in _pn or _pn in kw for kw in _combined):
                                 _has_match_ids.add(_oid)
                                 break
                     if _oid in _has_match_ids:
@@ -4633,21 +4663,28 @@ def possible_redirection_list(request):
     # ── Per-entry matching_orders: reuse _confirmed_branch_map (no extra DB query) ──
     for entry in rtv_entries:
         _bk = (entry['rtv'].to_branch or '').upper()
-        _desc = (entry['rtv'].product_description or '').lower().strip()
         _branch_candidates = _confirmed_branch_map.get(_bk, [])
-        if not _desc:
-            # No product description — all confirmed orders at this branch match.
+        _ncm_id = entry['ncm_order_id']
+        # Product keywords: local order item keywords take priority over product_description
+        _item_kws = _rtv_local_keywords.get(_ncm_id, frozenset())
+        _desc = (entry['rtv'].product_description or '').lower().strip()
+        # Store local order product names for display in the template
+        entry['local_order_product_names'] = _rtv_local_item_names.get(_ncm_id, [])
+
+        if not _item_kws and not _desc:
+            # No product info — all confirmed orders at this branch match.
             _matched = list(_branch_candidates)
         else:
+            _combined = set(_item_kws)
+            if _desc:
+                _combined.add(_desc)
+                _combined.update(w for w in _desc.split() if len(w) > 3)
             _matched = []
             for _o in _branch_candidates:
                 for _item in _o.items.all():
                     if _item.product_name:
                         _pn = _item.product_name.lower().strip()
-                        if _pn and (
-                            _pn in _desc
-                            or any(t in _desc for t in _pn.split() if len(t) > 3)
-                        ):
+                        if _pn and any(kw in _pn or _pn in kw for kw in _combined):
                             _matched.append(_o)
                             break
         entry['matching_orders'] = _matched
@@ -5374,7 +5411,11 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
                 error_data = response.json()
                 error_msg = error_data.get('message', error_data.get('error', error_msg))
             except Exception:
-                error_msg = response.text[:300] if response.text else error_msg
+                raw = (response.text or '').strip()
+                if raw and not raw.startswith('<'):
+                    error_msg = raw[:300]
+                else:
+                    error_msg = f'NCM redirect API returned an unexpected response (HTTP {response.status_code}). Check the API URL or credentials.'
             return {'status': 'error', 'message': error_msg}
 
     except requests.exceptions.Timeout:
@@ -11689,7 +11730,7 @@ def ncm_sync_all_statuses(request):
                 # ✅ Fetch and update delivery charge from NCM
                 if not order.delivery_charge or order.delivery_charge == 0:
                     try:
-                        details_result = ncm_service.get_order_details(order.ncm_order_id)
+                        details_result = ncm_service.get_order_details(order.ncm_order_id, timeout=5)
                         if details_result.get('success'):
                             details_data = details_result.get('data', {})
                             # Try multiple possible field names for delivery charge
@@ -13984,7 +14025,7 @@ def financial_report_data(request):
                     ncm_service = NCMService()
                     for item in ncm_orders_to_sync:
                         try:
-                            result = ncm_service.get_order_details(item.ncm_order_id)
+                            result = ncm_service.get_order_details(item.ncm_order_id, timeout=5)
                             if result.get('success') and result.get('data'):
                                 ncm_data = result['data']
                                 update_fields = []
