@@ -97,6 +97,8 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     selected_variant = models.CharField(max_length=500, blank=True, default='')
+    reserved_qty = models.IntegerField(default=0, help_text="Units filled from real stock")
+    backordered_qty = models.IntegerField(default=0, help_text="Units waiting on new stock")
 
     def __str__(self):
         return f'{self.product.name if self.product else "Deleted"} x {self.quantity}'

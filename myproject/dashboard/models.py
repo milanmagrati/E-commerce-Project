@@ -83,6 +83,9 @@ class Product(models.Model):
     
     # Inventory
     stock = models.IntegerField(default=0)
+    reserved_qty = models.IntegerField(default=0, help_text="Units locked by unshipped orders")
+    backordered_qty = models.IntegerField(default=0, help_text="Units ordered beyond available stock")
+    backorders_allowed = models.BooleanField(default=False, help_text="Allow orders beyond available stock")
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS, default='in_stock')
     low_stock_threshold = models.IntegerField(default=0, help_text="Alert when stock falls to or below this value")
     
@@ -135,19 +138,19 @@ class Product(models.Model):
 
     @property
     def available_stock(self):
-        """Return available stock.
-        For bundles: min(component.stock // qty_required) across all components.
-        For simple/variable products: own stock field value.
+        """Return available stock (unreserved).
+        For bundles: min(component.available_stock // qty_required) across all components.
+        For simple/variable products: stock minus reserved_qty.
         """
         if self.is_bundle:
             components = self.bundle_components.select_related('component_product').all()
             if not components.exists():
                 return 0
             return min(
-                comp.component_product.stock // comp.quantity_required
+                (comp.component_product.stock - comp.component_product.reserved_qty) // comp.quantity_required
                 for comp in components
             )
-        return self.stock
+        return self.stock - self.reserved_qty
 
     class Meta:
         ordering = ['-created_at']

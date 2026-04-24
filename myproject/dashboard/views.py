@@ -7876,6 +7876,14 @@ def dispatch_management(request):
                                         variation.status = 'inactive'  # low-stock flag for variations
                                     variation.save()
 
+                                    # Clear reservation counters on parent product
+                                    if product:
+                                        try:
+                                            from inventory.services import clear_reservation_on_dispatch
+                                            clear_reservation_on_dispatch(product, quantity)
+                                        except Exception:
+                                            pass
+
                                     # Record deduction detail
                                     product_name = product.name if product else 'Unknown'
                                     stock_deductions.append({
@@ -7935,6 +7943,13 @@ def dispatch_management(request):
                                                     comp_product.stock_status = 'in_stock'
                                                 comp_product.save(update_fields=['stock', 'stock_status'])
 
+                                                # Clear reservation counters on component
+                                                try:
+                                                    from inventory.services import clear_reservation_on_dispatch
+                                                    clear_reservation_on_dispatch(comp_product, required)
+                                                except Exception:
+                                                    pass
+
                                                 # Record deduction detail for each component
                                                 stock_deductions.append({
                                                     'order_id': order_id,
@@ -7971,6 +7986,13 @@ def dispatch_management(request):
                                             else:
                                                 product.stock_status = 'in_stock'
                                             product.save(update_fields=['stock', 'stock_status'])
+
+                                            # Clear reservation counters
+                                            try:
+                                                from inventory.services import clear_reservation_on_dispatch
+                                                clear_reservation_on_dispatch(product, quantity)
+                                            except Exception:
+                                                pass
 
                                             # Record deduction detail
                                             stock_deductions.append({
@@ -9043,10 +9065,9 @@ def stock_in_create(request):
                             variation.status = 'active'
                         variation.save()
                     else:
-                        product.stock += quantity
-                        if product.stock > 0:
-                            product.stock_status = 'in_stock'
-                        product.save()
+                        # For simple products, update stock_status flag only
+                        # restock_product() handles stock increment + backorder fulfillment
+                        pass
 
                     # Create ProductPurchase record to keep average_cost dynamic
                     if unit_cost_float > 0 and not variation:
@@ -9060,6 +9081,24 @@ def stock_in_create(request):
                             product.refresh_from_db()
                             product.cost_price = product.average_cost
                             product.save(update_fields=['cost_price'])
+
+                    # Add stock and fill pending backorders atomically
+                    if not variation:
+                        try:
+                            from inventory.services import restock_product
+                            restock_product(product, quantity)
+                            # Update stock_status after restock
+                            product.refresh_from_db()
+                            if product.stock > 0:
+                                product.stock_status = 'in_stock'
+                                product.save(update_fields=['stock_status'])
+                        except Exception as e:
+                            # Fallback: add stock directly if service fails
+                            product.stock += quantity
+                            if product.stock > 0:
+                                product.stock_status = 'in_stock'
+                            product.save()
+                            logger.error(f"restock_product failed for {product.name}: {e}")
 
                     total_qty += quantity
                     total_cost += item_total

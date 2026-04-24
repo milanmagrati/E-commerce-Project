@@ -13,6 +13,9 @@ def deduct_stock(product, quantity):
     the required quantity from each component product's stock.
     For simple/variable products: deducts directly from the product's stock.
 
+    Also decrements reserved_qty where applicable so that available_stock
+    (stock - reserved_qty) stays accurate.
+
     Args:
         product: A Product instance to deduct stock for.
         quantity: Number of units ordered (multiplied by component qty for bundles).
@@ -47,7 +50,8 @@ def deduct_stock(product, quantity):
         for comp in components:
             required = comp.quantity_required * quantity
             comp.component_product.stock -= required
-            comp.component_product.save(update_fields=['stock'])
+            comp.component_product.reserved_qty = max(0, comp.component_product.reserved_qty - required)
+            comp.component_product.save(update_fields=['stock', 'reserved_qty'])
             logger.info(
                 f"Deducted {required} from '{comp.component_product.name}' "
                 f"(bundle: {product.name}), remaining: {comp.component_product.stock}"
@@ -58,7 +62,8 @@ def deduct_stock(product, quantity):
                 f"Insufficient stock for '{product.name}' (need {quantity}, have {product.stock})"
             )
         product.stock -= quantity
-        product.save(update_fields=['stock'])
+        product.reserved_qty = max(0, product.reserved_qty - quantity)
+        product.save(update_fields=['stock', 'reserved_qty'])
         logger.info(
             f"Deducted {quantity} from '{product.name}', remaining: {product.stock}"
         )

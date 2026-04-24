@@ -407,8 +407,8 @@ def add_to_cart(request, product_id):
     avail = product.available_stock
     selected_variant = request.POST.get('selected_variant', '')[:500]
 
-    # Stock validation
-    if avail <= 0:
+    # Stock validation — skip for backorder-enabled products
+    if avail <= 0 and not product.backorders_allowed:
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return JsonResponse({'success': False, 'message': 'This product is out of stock'})
         messages.error(request, 'This product is out of stock.')
@@ -416,12 +416,21 @@ def add_to_cart(request, product_id):
 
     cart = _get_cart(request)
 
+    # For backorder-enabled products, don't cap quantity to available stock
+    if product.backorders_allowed:
+        effective_qty = quantity
+    else:
+        effective_qty = min(quantity, avail)
+
     item, created = CartItem.objects.get_or_create(
         cart=cart, product=product,
-        defaults={'quantity': min(quantity, avail), 'selected_variant': selected_variant}
+        defaults={'quantity': effective_qty, 'selected_variant': selected_variant}
     )
     if not created:
-        item.quantity = min(item.quantity + quantity, avail)
+        if product.backorders_allowed:
+            item.quantity = item.quantity + quantity
+        else:
+            item.quantity = min(item.quantity + quantity, avail)
         item.selected_variant = selected_variant
         item.save()
 
@@ -475,7 +484,10 @@ def update_cart(request):
     if quantity <= 0:
         item.delete()
     else:
-        item.quantity = min(quantity, item.product.available_stock)
+        if item.product.backorders_allowed:
+            item.quantity = quantity
+        else:
+            item.quantity = min(quantity, item.product.available_stock)
         item.save()
 
     subtotal = cart.subtotal
@@ -545,7 +557,7 @@ def checkout_view(request):
             if order_type == 'confirmed':
                 for item in cart_items:
                     avail = item.product.available_stock
-                    if item.quantity > avail:
+                    if item.quantity > avail and not item.product.backorders_allowed:
                         messages.error(request, f'"{item.product.name}" only has {avail} in stock.')
                         return redirect('store:cart')
 
@@ -576,17 +588,6 @@ def checkout_view(request):
                     price=item.product.price,
                     selected_variant=item.selected_variant,
                 )
-                # Only deduct stock for confirmed orders
-                if order_type == 'confirmed':
-                    if item.product.product_type == 'bundle':
-                        for comp in item.product.bundle_components.select_related('component_product').all():
-                            deduct = comp.quantity_required * item.quantity
-                            comp.component_product.stock = max(0, comp.component_product.stock - deduct)
-                            comp.component_product.save()
-                    else:
-                        item.product.stock = max(0, item.product.stock - item.quantity)
-                        item.product.save()
-
             # Create dashboard order for admin visibility
             _create_dashboard_order(
                 user=request.user,
@@ -604,8 +605,10 @@ def checkout_view(request):
                 shipping_charge=shipping,
             )
 
-            # Clear cart for confirmed orders, keep for inquiry
+            # Allocate stock via inventory service for confirmed orders
             if order_type == 'confirmed':
+                from inventory.services import allocate_order
+                allocate_order(order)
                 cart_items.delete()
                 messages.success(request, f'Order confirmed! Order number: {order.order_number}')
             else:
@@ -740,11 +743,11 @@ def quick_order(request, product_id):
 
             selected_variant = request.POST.get('selected_variant', '')[:500]
 
-            if order_type == 'confirmed' and available_stock <= 0:
+            if order_type == 'confirmed' and available_stock <= 0 and not product.backorders_allowed:
                 messages.error(request, 'This product is out of stock.')
                 return redirect('store:product_detail', slug=product.slug)
 
-            if order_type == 'confirmed' and quantity > available_stock:
+            if order_type == 'confirmed' and quantity > available_stock and not product.backorders_allowed:
                 messages.error(request, f'Only {available_stock} unit(s) available.')
                 return redirect('store:product_detail', slug=product.slug)
 
@@ -796,14 +799,8 @@ def quick_order(request, product_id):
             )
 
             if order_type == 'confirmed':
-                if product.product_type == 'bundle':
-                    for comp in product.bundle_components.select_related('component_product').all():
-                        deduct = comp.quantity_required * quantity
-                        comp.component_product.stock = max(0, comp.component_product.stock - deduct)
-                        comp.component_product.save()
-                else:
-                    product.stock = max(0, product.stock - quantity)
-                    product.save()
+                from inventory.services import allocate_order
+                allocate_order(order)
                 messages.success(request, f'Order confirmed! Order #{order.order_number}')
             else:
                 messages.success(request, f'Inquiry submitted! Reference #{order.order_number}')

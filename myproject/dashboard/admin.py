@@ -33,11 +33,12 @@ class ProductPurchaseInline(admin.TabularInline):
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ['name', 'product_type', 'category', 'price', 'stock', 'display_available_stock',
+                    'reserved_qty', 'backordered_qty', 'backorders_allowed',
                     'display_average_cost', 'stock_status', 'is_active', 'created_at']
-    list_filter = ['is_active', 'stock_status', 'product_type', 'category']
+    list_filter = ['is_active', 'stock_status', 'product_type', 'category', 'backorders_allowed']
     search_fields = ['name', 'description']
     prepopulated_fields = {'slug': ('name',)}
-    readonly_fields = ['display_average_cost', 'display_available_stock']
+    readonly_fields = ['display_average_cost', 'display_available_stock', 'reserved_qty', 'backordered_qty']
     inlines = [BundleComponentInline, ProductPurchaseInline]
 
     def display_average_cost(self, obj):

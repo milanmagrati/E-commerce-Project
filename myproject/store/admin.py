@@ -25,6 +25,7 @@ class CartAdmin(admin.ModelAdmin):
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
+    readonly_fields = ('reserved_qty', 'backordered_qty')
 
 
 @admin.register(Order)
@@ -39,3 +40,11 @@ class OrderAdmin(admin.ModelAdmin):
 class WishlistAdmin(admin.ModelAdmin):
     list_display = ('user', 'product', 'created_at')
     search_fields = ('user__username', 'product__name')
+
+
+@admin.register(OrderItem)
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ('order', 'product', 'quantity', 'price', 'reserved_qty', 'backordered_qty')
+    list_filter = ('order__status',)
+    search_fields = ('order__order_number', 'product__name')
+    readonly_fields = ('reserved_qty', 'backordered_qty')
