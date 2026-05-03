@@ -115,9 +115,9 @@
                     </div>
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <div class="btn-group" role="group">
-                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn active" data-days="1">Today</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="1">Today</button>
                             <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="7">Last 7 Days</button>
-                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="30">Last 30 Days</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn active" data-days="30">Last 30 Days</button>
                             <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="60">Last 60 Days</button>
                             <button type="button" class="btn btn-sm btn-outline-primary overview-filter-btn" data-days="90">Last 90 Days</button>
                         </div>
@@ -900,7 +900,7 @@
     document.getElementById('overviewToDate').value = today.toISOString().split('T')[0];
 
     // Initialize Orders Overview chart with Today
-    updateOrdersOverviewChart(1);
+    updateOrdersOverviewChart(30);
 
     // Preset filter buttons
     document.querySelectorAll('.overview-filter-btn').forEach(function(btn) {
