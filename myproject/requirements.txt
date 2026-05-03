@@ -12,6 +12,7 @@ requests==2.32.5
 sqlparse==0.5.5
 urllib3==2.6.3
 djangorestframework==3.17.1
+mysqlclient==2.2.8
 
 # Optional: SMS Service Providers (install as needed)
 # For Twilio SMS:

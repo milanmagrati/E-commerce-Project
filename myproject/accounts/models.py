@@ -27,7 +27,6 @@ class Role(models.Model):
 class CustomUser(AbstractUser):
     """User Model with Granular Custom Permissions"""
 
-    phone = models.CharField(max_length=20, blank=True, null=True)
     profile_picture = models.ImageField(
         upload_to='profile_pictures/', 
         blank=True, 
@@ -40,7 +39,7 @@ class CustomUser(AbstractUser):
     
     role = models.CharField(max_length=50, default='sales')
     email = models.EmailField(unique=True, blank=False)
-    phone = models.CharField(max_length=15, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
     is_active = models.BooleanField(default=True)
     
     # Soft delete
