@@ -174,7 +174,7 @@ SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session even after browser closes
 SESSION_SAVE_EVERY_REQUEST = True  # Reset expiry on every request (sliding window)
 
-default_auto_field = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
