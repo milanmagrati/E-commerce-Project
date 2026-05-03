@@ -2658,47 +2658,55 @@ def orders_list(request):
         orders = orders.filter(ncm_order_id__isnull=True)
     
     # DATE RANGE FILTER using ORM
+    # NOTE: MySQL timezone tables are not installed so CONVERT_TZ() returns NULL.
+    # All __date, __month, __day lookups fail silently. We use explicit
+    # timezone-aware datetime ranges (__gte / __lt) to avoid CONVERT_TZ entirely.
     nepali_tz = pytz.timezone('Asia/Kathmandu')
     now_nepal = timezone.now().astimezone(nepali_tz)
     today_nepal = now_nepal.date()
-    
+
+    def _day_start(d):
+        """Return timezone-aware datetime for the start of date d in Nepal time."""
+        return nepali_tz.localize(datetime.combine(d, datetime.min.time()))
+
     if date_filter == 'last_24_hours':
-        last_24_hours = now_nepal - timedelta(hours=24)
-        orders = orders.filter(created_at__gte=last_24_hours)
+        orders = orders.filter(created_at__gte=now_nepal - timedelta(hours=24))
     elif date_filter == 'today':
-        orders = orders.filter(created_at__date=today_nepal)
+        start = _day_start(today_nepal)
+        orders = orders.filter(created_at__gte=start, created_at__lt=start + timedelta(days=1))
     elif date_filter == 'yesterday':
         yesterday = today_nepal - timedelta(days=1)
-        orders = orders.filter(created_at__date=yesterday)
+        start = _day_start(yesterday)
+        orders = orders.filter(created_at__gte=start, created_at__lt=start + timedelta(days=1))
     elif date_filter == 'last_2_days':
-        start = today_nepal - timedelta(days=1)
-        orders = orders.filter(created_at__date__gte=start)
+        start = _day_start(today_nepal - timedelta(days=1))
+        orders = orders.filter(created_at__gte=start)
     elif date_filter == 'last_7_days':
-        start = today_nepal - timedelta(days=7)
-        orders = orders.filter(created_at__date__gte=start)
+        start = _day_start(today_nepal - timedelta(days=7))
+        orders = orders.filter(created_at__gte=start)
     elif date_filter == 'last_30_days':
-        start = today_nepal - timedelta(days=30)
-        orders = orders.filter(created_at__date__gte=start)
+        start = _day_start(today_nepal - timedelta(days=30))
+        orders = orders.filter(created_at__gte=start)
     elif date_filter == 'this_month':
-        orders = orders.filter(
-            created_at__year=today_nepal.year,
-            created_at__month=today_nepal.month
-        )
+        start = _day_start(today_nepal.replace(day=1))
+        orders = orders.filter(created_at__gte=start)
     elif date_filter == 'last_month':
         first_day_this_month = today_nepal.replace(day=1)
         last_day_last_month = first_day_this_month - timedelta(days=1)
         first_day_last_month = last_day_last_month.replace(day=1)
-        orders = orders.filter(
-            created_at__date__gte=first_day_last_month,
-            created_at__date__lte=last_day_last_month
-        )
+        start = _day_start(first_day_last_month)
+        end = _day_start(first_day_this_month)
+        orders = orders.filter(created_at__gte=start, created_at__lt=end)
     elif date_filter == 'this_year':
-        orders = orders.filter(created_at__year=today_nepal.year)
+        start = _day_start(today_nepal.replace(month=1, day=1))
+        orders = orders.filter(created_at__gte=start)
     elif date_filter == 'custom' and start_date and end_date:
         try:
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+            start = _day_start(start_date_obj)
+            end = _day_start(end_date_obj) + timedelta(days=1)
+            orders = orders.filter(created_at__gte=start, created_at__lt=end)
         except ValueError:
             pass
     elif date_filter == 'all':
