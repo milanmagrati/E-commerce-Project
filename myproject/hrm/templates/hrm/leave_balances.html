@@ -628,7 +628,7 @@
 {% if page_obj %}
 <div class="lb-cards-grid">
     {% for emp in page_obj %}
-    <div class="lb-card">
+    <div class="lb-card" data-emp-pk="{{ emp.pk }}">
         <div class="lb-card-header">
             {% if emp.profile_image %}
             <img src="{{ emp.profile_image.url }}" alt="{{ emp.full_name }}" class="lb-avatar">
@@ -654,7 +654,7 @@
             </thead>
             <tbody>
                 {% for bal in emp.year_balances %}
-                <tr>
+                <tr data-lt-pk="{{ bal.leave_type.pk }}">
                     <td>{{ bal.leave_type.name }}</td>
                     <td style="text-align:right;">{{ bal.allocated_days|floatformat:0 }}</td>
                     <td class="td-used" style="text-align:right;">{{ bal.used_days|floatformat:0 }}</td>
@@ -671,7 +671,7 @@
             </tbody>
         </table>
         {% else %}
-        <div style="padding:1rem;text-align:center;color:#9ca3af;font-size:.82rem;">
+        <div class="lb-no-balances" style="padding:1rem;text-align:center;color:#9ca3af;font-size:.82rem;">
             <i class="fas fa-inbox me-1"></i> No balances for {{ year_filter }}. <button type="button"
                 class="btn-resync" style="padding:.25rem .65rem;font-size:.75rem;" onclick="doResync()">Sync</button>
         </div>
@@ -883,7 +883,7 @@
         }
     }
 
-    // Add balance form
+    // Add balance form — instant DOM update
     document.getElementById('balanceForm').addEventListener('submit', async function (e) {
         e.preventDefault();
         const fd = new FormData(this);
@@ -895,7 +895,7 @@
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('addBalanceModal')).hide();
                 showToast(data.message);
-                setTimeout(() => location.reload(), 900);
+                injectBalanceRow(data.balance);
             } else {
                 showToast(data.error, true);
             }
@@ -903,6 +903,65 @@
             showToast('Network error.', true);
         }
     });
+
+    function injectBalanceRow(b) {
+        const avail = b.remaining_days;
+        const availClass = avail === 0 ? 'danger' : avail <= 3 ? 'warn' : '';
+
+        const newRow = `
+            <tr data-lt-pk="${b.leave_type_pk}">
+                <td>${b.leave_type_name}</td>
+                <td style="text-align:right;">${Math.round(b.allocated_days)}</td>
+                <td class="td-used" style="text-align:right;">${Math.round(b.used_days)}</td>
+                <td style="text-align:right;" class="td-avail ${availClass}">${Math.round(avail)}</td>
+                <td style="text-align:center;">
+                    <button class="btn-row-history" title="Delete balance" onclick="deleteBalance(${b.pk}, this)"><i class="fas fa-clock"></i></button>
+                </td>
+            </tr>`;
+
+        // Find the employee's card on the current page
+        const card = document.querySelector(`.lb-card[data-emp-pk="${b.emp_pk}"]`);
+        if (!card) {
+            // Employee not on this page — record is still saved; nothing to update in DOM
+            return;
+        }
+
+        let tbody = card.querySelector('tbody');
+
+        if (!tbody) {
+            // Card currently shows the "no balances" placeholder — replace with a full table
+            const placeholder = card.querySelector('.lb-no-balances');
+            if (placeholder) placeholder.remove();
+
+            const table = document.createElement('table');
+            table.className = 'lb-balance-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Leave Type</th>
+                        <th style="text-align:right;">Total</th>
+                        <th class="col-used" style="text-align:right;">Used</th>
+                        <th class="col-avail" style="text-align:right;">Available</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>`;
+            card.appendChild(table);
+            tbody = table.querySelector('tbody');
+        }
+
+        // Check if a row for this leave type already exists — update it
+        const existingRow = tbody.querySelector(`tr[data-lt-pk="${b.leave_type_pk}"]`);
+        if (existingRow) {
+            existingRow.outerHTML = newRow;
+        } else {
+            tbody.insertAdjacentHTML('beforeend', newRow);
+        }
+
+        // Highlight the card briefly
+        card.style.boxShadow = '0 0 0 2px #22c55e';
+        setTimeout(() => { card.style.boxShadow = ''; }, 1500);
+    }
 
     // Delete a single balance row
     function deleteBalance(pk, btn) {

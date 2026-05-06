@@ -7570,9 +7570,9 @@ def leave_application_update(request, pk):
         if 'attachment' in request.FILES:
             la.attachment = request.FILES['attachment']
         la.save()
-        
+
         return JsonResponse({
-            'success': True, 
+            'success': True,
             'message': 'Leave application updated successfully.',
             'application': {
                 'id': la.pk,
@@ -7745,7 +7745,23 @@ def leave_balance_create(request):
             lb.carry_forward_days = carry_forward_days
             lb.save()
 
-        return JsonResponse({'success': True, 'message': 'Leave balance saved successfully.', 'id': lb.pk})
+        remaining = max(float(lb.allocated_days) + float(lb.carry_forward_days) - float(lb.used_days), 0)
+        return JsonResponse({
+            'success': True,
+            'message': 'Leave balance saved successfully.',
+            'created': created,
+            'balance': {
+                'pk': lb.pk,
+                'emp_pk': employee.pk,
+                'emp_name': employee.full_name,
+                'emp_employee_id': employee.employee_id,
+                'leave_type_pk': leave_type.pk,
+                'leave_type_name': leave_type.name,
+                'allocated_days': float(lb.allocated_days),
+                'used_days': float(lb.used_days),
+                'remaining_days': remaining,
+            }
+        })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 

@@ -706,7 +706,8 @@
             <span class="badge bg-success ms-1" style="font-size:.65rem;">ON</span>
             {% endif %}
         </button>
-        {% if search or status_filter or leave_type_filter or date_from or date_to %} <a href="{% url 'hrm:leave_application_list' %}" class="btn-filter-toggle"
+        {% if search or status_filter or leave_type_filter or date_from or date_to %} <a
+            href="{% url 'hrm:leave_application_list' %}" class="btn-filter-toggle"
             style="color:#ef4444;border-color:#fecaca;">
             <i class="fas fa-times"></i> Clear
         </a>
@@ -1125,9 +1126,9 @@
     }
 
     // ── Form Submit (Create / Update) ────────────────────────────────────────
-    document.getElementById('leaveForm').addEventListener('submit', function (e) {
+    document.getElementById('leaveForm').addEventListener('submit', async function (e) {
         e.preventDefault();
-        const pk = document.getElementById('leaveId').value;
+        const pk = document.getElementById('leaveId').value.trim();
         const url = pk ? URLS.update(pk) : URLS.create;
         const formData = new FormData(this);
 
@@ -1135,95 +1136,22 @@
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
 
-        fetch(url, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: formData })
-            .then(r => r.json())
-            .then(data => {
+        try {
+            const r = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: formData });
+            const data = await r.json();
+
+            if (data.success) {
+                location.reload();
+            } else {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
-                if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('leaveModal')).hide();
-                    showToast(data.message);
-
-                    // Instantly insert new row or reload for update
-                    if (data.application) {
-                        const a = data.application;
-                        const tbody = document.querySelector('.lm-table tbody');
-                        
-                        const avatarHtml = a.employee_avatar
-                            ? `<img src="${a.employee_avatar}" alt="${a.employee_name}" class="emp-avatar">`
-                            : `<div class="emp-avatar-placeholder">${a.employee_initial}</div>`;
-                            
-                        const rowHtml = `
-                            <td style="color:#9ca3af;font-weight:500;">—</td>
-                            <td>
-                                <div class="emp-cell">
-                                    ${avatarHtml}
-                                    <div>
-                                        <div class="emp-name">${a.employee_name}</div>
-                                        <div class="emp-email">${a.employee_email}</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td>
-                                <div class="lt-cell">
-                                    <span class="lt-dot" style="background:${a.leave_type_color};"></span>
-                                    <span class="lt-name">${a.leave_type}</span>
-                                </div>
-                            </td>
-                            <td>${a.start_date}</td>
-                            <td>${a.end_date}</td>
-                            <td><strong>${a.days}</strong></td>
-                            <td><span class="status-badge status-${a.status}">${a.status_display}</span></td>
-                            <td>${a.created_at}</td>
-                            <td>
-                                <div class="action-btns">
-                                    <button class="btn-view-sm" title="View" onclick="viewApplication(${a.id})"><i class="fas fa-eye"></i></button>
-                                    <button class="btn-edit-sm" title="Edit" onclick="editApplication(${a.id})"><i class="fas fa-pen"></i></button>
-                                    <button class="btn-del-sm" title="Delete" onclick="deleteApplication(${a.id})"><i class="fas fa-trash"></i></button>
-                                </div>
-                            </td>
-                        `;
-
-                        if (!pk) {
-                            // CREATE: prepend row
-                            const emptyRow = tbody.querySelector('td[colspan]');
-                            if (emptyRow) emptyRow.closest('tr').remove();
-                            
-                            const newRow = document.createElement('tr');
-                            newRow.setAttribute('data-id', a.id);
-                            newRow.style.animation = 'fadeIn .4s ease';
-                            newRow.innerHTML = rowHtml;
-                            tbody.insertBefore(newRow, tbody.firstChild);
-
-                            // Update total count
-                            const totalEl = document.querySelector('.lm-page-info, .lm-total');
-                            if (totalEl) {
-                                const match = totalEl.textContent.match(/of\s+(\d+)/);
-                                if (match) {
-                                    const newTotal = parseInt(match[1]) + 1;
-                                    totalEl.textContent = totalEl.textContent.replace(/of\s+\d+/, `of ${newTotal}`);
-                                }
-                            }
-                        } else {
-                            // UPDATE: replace existing row
-                            const existingRow = document.querySelector(`tr[data-id="${pk}"]`);
-                            if (existingRow) {
-                                existingRow.innerHTML = rowHtml;
-                                existingRow.style.animation = 'none';
-                                existingRow.offsetHeight; // trigger reflow
-                                existingRow.style.animation = 'fadeIn .4s ease';
-                            }
-                        }
-                    }
-                } else {
-                    showToast(data.error || 'Failed to save.', true);
-                }
-            })
-            .catch(() => {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
-                showToast('Network error. Please try again.', true);
-            });
+                showToast(data.error || 'Failed to save.', true);
+            }
+        } catch (netErr) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+            showToast('Network error. Please try again.', true);
+        }
     });
 
     // ── View ─────────────────────────────────────────────────────────────────
