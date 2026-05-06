@@ -32,11 +32,17 @@ class NCMService:
     
     def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None, timeout: int = None):
         """Helper to make API requests"""
+        if timeout is None:
+            try:
+                from dashboard.models import APISettings
+                timeout = APISettings.get_settings().ncm_api_timeout
+            except Exception:
+                timeout = 30
         try:
             if method.upper() == 'GET':
-                response = requests.get(url, headers=self.headers, params=params, timeout=timeout or 8)
+                response = requests.get(url, headers=self.headers, params=params, timeout=timeout)
             elif method.upper() == 'POST':
-                response = requests.post(url, headers=self.headers, json=data, timeout=timeout or 30)
+                response = requests.post(url, headers=self.headers, json=data, timeout=timeout)
             
             response.raise_for_status()
             return {'success': True, 'data': response.json(), 'status_code': response.status_code}

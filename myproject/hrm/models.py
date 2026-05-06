@@ -842,6 +842,7 @@ class LeaveType(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, default='')
     max_days_per_year = models.PositiveIntegerField(default=0, help_text='0 = unlimited')
+    color = models.CharField(max_length=7, default='#22c55e', help_text='Hex color code for the leave type')
     is_paid = models.BooleanField(default=True, help_text='Whether this leave type is paid or unpaid')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -875,6 +876,7 @@ class LeaveRequest(models.Model):
     days = models.PositiveIntegerField(default=1)
     reason = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    attachment = models.FileField(upload_to='leave_attachments/', blank=True, null=True)
     approved_by = models.ForeignKey(
         Employee, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='approved_leave_requests'
@@ -898,6 +900,57 @@ class LeaveRequest(models.Model):
             delta = (self.end_date - self.start_date).days + 1
             self.days = max(delta, 1)
         super().save(*args, **kwargs)
+
+
+class LeaveBalance(models.Model):
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name='leave_balances'
+    )
+    leave_type = models.ForeignKey(
+        LeaveType, on_delete=models.CASCADE, related_name='balances'
+    )
+    year = models.PositiveIntegerField(default=2024)
+    allocated_days = models.DecimalField(max_digits=6, decimal_places=1, default=0)
+    used_days = models.DecimalField(max_digits=6, decimal_places=1, default=0)
+    carry_forward_days = models.DecimalField(max_digits=6, decimal_places=1, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-year', 'employee__full_name']
+        unique_together = ('employee', 'leave_type', 'year')
+        verbose_name = 'Leave Balance'
+        verbose_name_plural = 'Leave Balances'
+
+    def __str__(self):
+        return f"{self.employee.full_name} - {self.leave_type.name} ({self.year})"
+
+    @property
+    def remaining_days(self):
+        return max(self.allocated_days + self.carry_forward_days - self.used_days, 0)
+
+
+class LeavePolicy(models.Model):
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default='')
+    leave_types = models.ManyToManyField(LeaveType, blank=True, related_name='policies')
+    carry_forward = models.BooleanField(default=False, help_text='Allow carry forward of unused leaves')
+    max_carry_forward_days = models.PositiveIntegerField(default=0)
+    min_days_per_application = models.PositiveIntegerField(default=1, help_text='Minimum days allowed per leave application')
+    max_days_per_application = models.PositiveIntegerField(default=14, help_text='Maximum days allowed per leave application')
+    requires_approval = models.BooleanField(default=True, help_text='Whether leave applications under this policy require approval')
+    encashment_allowed = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Leave Policy'
+        verbose_name_plural = 'Leave Policies'
+
+    def __str__(self):
+        return self.name
 
 
 class AdvancePayment(models.Model):

@@ -1,0 +1,925 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Leave Balances - HRM{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== LEAVE BALANCES ===== */
+    .lb-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .75rem;
+        margin-bottom: 1rem;
+    }
+
+    .lb-title {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #1a1a2e;
+        margin: 0;
+    }
+
+    .lb-top-actions {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+    }
+
+    .btn-sync-history {
+        background: #fff;
+        border: 1.5px solid #e2e8f0;
+        color: #374151;
+        padding: .42rem 1rem;
+        border-radius: 8px;
+        font-size: .83rem;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        transition: all .2s;
+    }
+
+    .btn-sync-history:hover {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+    }
+
+    .btn-resync {
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #fff;
+        border: none;
+        padding: .42rem 1rem;
+        border-radius: 8px;
+        font-size: .83rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        transition: all .2s;
+    }
+
+    .btn-resync:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(34, 197, 94, .3);
+    }
+
+    .btn-resync:disabled {
+        opacity: .7;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    /* Search bar */
+    .lb-search-bar {
+        background: #fff;
+        border-radius: 10px;
+        padding: .65rem 1rem;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, .06);
+        display: flex;
+        align-items: center;
+        gap: .65rem;
+        flex-wrap: wrap;
+        margin-bottom: .5rem;
+    }
+
+    .lb-search-wrap {
+        display: flex;
+        align-items: center;
+        background: #f8fafc;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 8px;
+        padding: .32rem .75rem;
+        flex: 1;
+        min-width: 220px;
+    }
+
+    .lb-search-wrap input {
+        border: none;
+        background: transparent;
+        outline: none;
+        font-size: .875rem;
+        color: #374151;
+        flex: 1;
+    }
+
+    .btn-search {
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #fff;
+        border: none;
+        padding: .38rem 1rem;
+        border-radius: 7px;
+        font-size: .83rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+    }
+
+    .btn-filter-toggle {
+        background: #fff;
+        border: 1.5px solid #e2e8f0;
+        color: #374151;
+        padding: .38rem .85rem;
+        border-radius: 7px;
+        font-size: .83rem;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        transition: all .2s;
+    }
+
+    .btn-filter-toggle:hover,
+    .btn-filter-toggle.active {
+        border-color: #22c55e;
+        color: #16a34a;
+    }
+
+    .lb-per-page-wrap {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        margin-left: auto;
+    }
+
+    .lb-per-page-wrap label {
+        font-size: .8rem;
+        color: #6b7280;
+        white-space: nowrap;
+    }
+
+    .lb-form-control {
+        border: 1.5px solid #e2e8f0;
+        border-radius: 7px;
+        padding: .32rem .65rem;
+        font-size: .83rem;
+        color: #374151;
+        background: #fff;
+    }
+
+    .lb-form-control:focus {
+        outline: none;
+        border-color: #22c55e;
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, .1);
+    }
+
+    /* Last synced */
+    .lb-last-synced {
+        font-size: .78rem;
+        color: #9ca3af;
+        margin-bottom: 1rem;
+    }
+
+    /* Filter panel */
+    .lb-filters {
+        background: #fff;
+        border-radius: 10px;
+        padding: .85rem 1rem;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, .06);
+        margin-bottom: 1rem;
+    }
+
+    /* Employee cards */
+    .lb-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+    }
+
+    @media (max-width: 1100px) {
+        .lb-cards-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 650px) {
+        .lb-cards-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .lb-card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, .07);
+        overflow: hidden;
+        transition: box-shadow .2s;
+    }
+
+    .lb-card:hover {
+        box-shadow: 0 4px 18px rgba(0, 0, 0, .11);
+    }
+
+    .lb-card-header {
+        display: flex;
+        align-items: center;
+        gap: .85rem;
+        padding: .9rem 1rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .lb-avatar {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+    }
+
+    .lb-avatar-initials {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1rem;
+        color: #fff;
+        flex-shrink: 0;
+    }
+
+    .lb-emp-name {
+        font-weight: 700;
+        font-size: .95rem;
+        color: #111827;
+        line-height: 1.2;
+    }
+
+    .lb-emp-id {
+        font-size: .75rem;
+        color: #9ca3af;
+    }
+
+    .lb-balance-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .lb-balance-table thead tr {
+        background: #f8fafc;
+    }
+
+    .lb-balance-table thead th {
+        padding: .5rem .85rem;
+        font-size: .7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #6b7280;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .lb-balance-table thead th.col-used {
+        color: #ef4444;
+    }
+
+    .lb-balance-table thead th.col-avail {
+        color: #22c55e;
+    }
+
+    .lb-balance-table tbody td {
+        padding: .48rem .85rem;
+        font-size: .83rem;
+        color: #374151;
+        border-bottom: 1px solid #f8fafc;
+        vertical-align: middle;
+    }
+
+    .lb-balance-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    .lb-balance-table tbody tr:hover td {
+        background: #f0fdf4;
+    }
+
+    .td-used {
+        font-weight: 700;
+        color: #ef4444;
+    }
+
+    .td-avail {
+        font-weight: 700;
+        color: #22c55e;
+    }
+
+    .td-avail.warn {
+        color: #f59e0b;
+    }
+
+    .td-avail.danger {
+        color: #ef4444;
+    }
+
+    .btn-row-history {
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        color: #9ca3af;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .7rem;
+        transition: all .15s;
+    }
+
+    .btn-row-history:hover {
+        border-color: #22c55e;
+        color: #22c55e;
+        background: #f0fdf4;
+    }
+
+    /* Empty state */
+    .lb-empty {
+        background: #fff;
+        border-radius: 12px;
+        padding: 3.5rem 1rem;
+        text-align: center;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, .07);
+    }
+
+    /* Pagination */
+    .lb-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .5rem;
+        margin-top: 1.25rem;
+    }
+
+    .lb-pagination-info {
+        font-size: .8rem;
+        color: #6b7280;
+    }
+
+    .lb-pagination-pages {
+        display: flex;
+        gap: .3rem;
+    }
+
+    .lb-page-btn {
+        padding: .32rem .65rem;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 7px;
+        background: #fff;
+        color: #374151;
+        font-size: .8rem;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all .15s;
+    }
+
+    .lb-page-btn:hover {
+        border-color: #22c55e;
+        color: #22c55e;
+    }
+
+    .lb-page-btn.active {
+        border-color: #22c55e;
+        background: #22c55e;
+        color: #fff;
+        font-weight: 700;
+    }
+
+    /* Modal */
+    .lb-modal .modal-content {
+        border-radius: 14px;
+        border: none;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, .15);
+    }
+
+    .lb-modal .modal-header {
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        border-radius: 14px 14px 0 0;
+        padding: 1.1rem 1.5rem;
+        border-bottom: none;
+    }
+
+    .lb-modal .modal-title {
+        color: #fff;
+        font-weight: 700;
+        font-size: 1rem;
+    }
+
+    .lb-modal .btn-close {
+        filter: brightness(0) invert(1);
+        opacity: .8;
+    }
+
+    .lb-modal .modal-body {
+        padding: 1.5rem;
+    }
+
+    .lb-modal .modal-footer {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid #f1f5f9;
+    }
+
+    .lb-form-label {
+        font-size: .83rem;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: .35rem;
+    }
+
+    .lb-form-label .req {
+        color: #ef4444;
+    }
+
+    .btn-cancel-modal {
+        background: #fff;
+        border: 1.5px solid #e2e8f0;
+        color: #374151;
+        padding: .5rem 1.4rem;
+        border-radius: 8px;
+        font-size: .875rem;
+        font-weight: 500;
+        cursor: pointer;
+    }
+
+    .btn-save-modal {
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #fff;
+        border: none;
+        padding: .5rem 1.5rem;
+        border-radius: 8px;
+        font-size: .875rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    /* Toast */
+    .lb-toast {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        z-index: 9999;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, .14);
+        padding: .85rem 1.25rem;
+        min-width: 260px;
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        transform: translateY(80px);
+        opacity: 0;
+        transition: all .3s;
+        border-left: 4px solid #22c55e;
+    }
+
+    .lb-toast.show {
+        transform: translateY(0);
+        opacity: 1;
+    }
+
+    .lb-toast.error {
+        border-left-color: #ef4444;
+    }
+
+    .lb-toast-msg {
+        font-size: .85rem;
+        font-weight: 500;
+        color: #111827;
+        flex: 1;
+    }
+
+    /* Sync history table */
+    .sync-history-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: .6rem .85rem;
+        border-radius: 8px;
+        background: #f8fafc;
+        margin-bottom: .4rem;
+        font-size: .83rem;
+    }
+
+    .sync-history-row:last-child {
+        margin-bottom: 0;
+    }
+
+    /* Avatar color palette */
+    .av-color-0 {
+        background: #6366f1;
+    }
+
+    .av-color-1 {
+        background: #ec4899;
+    }
+
+    .av-color-2 {
+        background: #f59e0b;
+    }
+
+    .av-color-3 {
+        background: #14b8a6;
+    }
+
+    .av-color-4 {
+        background: #8b5cf6;
+    }
+
+    .av-color-5 {
+        background: #ef4444;
+    }
+
+    .av-color-6 {
+        background: #3b82f6;
+    }
+
+    .av-color-7 {
+        background: #22c55e;
+    }
+
+    .av-color-8 {
+        background: #f97316;
+    }
+
+    .av-color-9 {
+        background: #06b6d4;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Top bar -->
+<div class="lb-topbar">
+    <h1 class="lb-title">Leave Balances</h1>
+    <div class="lb-top-actions">
+        <button class="btn-sync-history" onclick="openSyncHistory()">
+            <i class="fas fa-history"></i> Sync History
+        </button>
+        <button class="btn-resync" id="resyncBtn" onclick="doResync()">
+            <i class="fas fa-sync-alt"></i> Re-sync {{ current_year }}
+        </button>
+    </div>
+</div>
+
+<!-- Search + filter bar -->
+<form method="get" id="searchForm">
+    <div class="lb-search-bar">
+        <div class="lb-search-wrap">
+            <i class="fas fa-search me-2" style="color:#9ca3af;font-size:.82rem;"></i>
+            <input type="text" name="search" placeholder="Search..." value="{{ search }}">
+        </div>
+        <button type="submit" class="btn-search"><i class="fas fa-search"></i> Search</button>
+        <button type="button" class="btn-filter-toggle {% if year_filter %}active{% endif %}"
+            onclick="toggleFilters(this)" data-bs-toggle="collapse" data-bs-target="#lbFilters">
+            <i class="fas fa-filter"></i> Filters
+        </button>
+        <div class="lb-per-page-wrap">
+            <label>Per Page:</label>
+            <select name="per_page" class="lb-form-control" onchange="this.form.submit()">
+                <option value="9" {% if per_page == 9 %}selected{% endif %}>9</option>
+                <option value="18" {% if per_page == 18 %}selected{% endif %}>18</option>
+                <option value="27" {% if per_page == 27 %}selected{% endif %}>27</option>
+                <option value="54" {% if per_page == 54 %}selected{% endif %}>54</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Filters collapse -->
+    <div class="collapse {% if year_filter and year_filter != current_year|stringformat:'d' %}show{% endif %}"
+        id="lbFilters">
+        <div class="lb-filters">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="lb-form-label mb-1">Year</label>
+                    <select name="year" class="lb-form-control" style="width:100px;" onchange="this.form.submit()">
+                        {% for yr in years %}
+                        <option value="{{ yr }}" {% if year_filter == yr|stringformat:"d" %}selected{% endif %}>{{ yr }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    {% if search %}<a href="{% url 'hrm:leave_balance_list' %}"
+                        style="color:#ef4444;font-size:.83rem;text-decoration:none;"><i
+                            class="fas fa-times me-1"></i>Clear All</a>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- Last synced info -->
+{% if last_synced %}
+<div class="lb-last-synced">
+    <i class="fas fa-clock me-1"></i> Last synced: {{ last_synced|date:"Y-m-d H:i" }}
+</div>
+{% endif %}
+
+<!-- Cards grid -->
+{% if page_obj %}
+<div class="lb-cards-grid">
+    {% for emp in page_obj %}
+    <div class="lb-card">
+        <div class="lb-card-header">
+            {% if emp.profile_image %}
+            <img src="{{ emp.profile_image.url }}" alt="{{ emp.full_name }}" class="lb-avatar">
+            {% else %}
+            <div class="lb-avatar-initials av-color-{{ forloop.counter0|add:0 }}" data-idx="{{ forloop.counter0 }}">{{
+                emp.full_name|slice:":2"|upper }}</div>
+            {% endif %}
+            <div>
+                <div class="lb-emp-name">{{ emp.full_name }}</div>
+                <div class="lb-emp-id">{{ emp.employee_id }}</div>
+            </div>
+        </div>
+        {% if emp.year_balances %}
+        <table class="lb-balance-table">
+            <thead>
+                <tr>
+                    <th>Leave Type</th>
+                    <th style="text-align:right;">Total</th>
+                    <th class="col-used" style="text-align:right;">Used</th>
+                    <th class="col-avail" style="text-align:right;">Available</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bal in emp.year_balances %}
+                <tr>
+                    <td>{{ bal.leave_type.name }}</td>
+                    <td style="text-align:right;">{{ bal.allocated_days|floatformat:0 }}</td>
+                    <td class="td-used" style="text-align:right;">{{ bal.used_days|floatformat:0 }}</td>
+                    <td style="text-align:right;"
+                        class="td-avail {% if bal.remaining_days == 0 %}danger{% elif bal.remaining_days <= 3 %}warn{% endif %}">
+                        {{ bal.remaining_days|floatformat:0 }}
+                    </td>
+                    <td style="text-align:center;">
+                        <button class="btn-row-history" title="Delete balance"
+                            onclick="deleteBalance({{ bal.pk }}, this)"><i class="fas fa-clock"></i></button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="padding:1rem;text-align:center;color:#9ca3af;font-size:.82rem;">
+            <i class="fas fa-inbox me-1"></i> No balances for {{ year_filter }}. <button type="button"
+                class="btn-resync" style="padding:.25rem .65rem;font-size:.75rem;" onclick="doResync()">Sync</button>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="lb-pagination">
+    <span class="lb-pagination-info">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total }}
+        employees</span>
+    <div class="lb-pagination-pages">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}&search={{ search }}&year={{ year_filter }}&per_page={{ per_page }}"
+            class="lb-page-btn">‹</a>
+        {% endif %}
+        {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+        <span class="lb-page-btn active">{{ num }}</span>
+        {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %} <a
+            href="?page={{ num }}&search={{ search }}&year={{ year_filter }}&per_page={{ per_page }}"
+            class="lb-page-btn">{{ num }}</a>
+            {% endif %}
+            {% endfor %}
+            {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}&search={{ search }}&year={{ year_filter }}&per_page={{ per_page }}"
+                class="lb-page-btn">›</a>
+            {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="lb-empty">
+    <i class="fas fa-balance-scale fa-3x mb-3" style="color:#d1d5db;"></i>
+    <p style="color:#9ca3af;font-size:.95rem;">No employee balances found{% if search %} for "{{ search }}"{% endif %}.
+    </p>
+    <button class="btn-resync" onclick="doResync()"><i class="fas fa-sync-alt me-1"></i>Re-sync {{ current_year
+        }}</button>
+</div>
+{% endif %}
+
+
+<!-- Add Balance Modal -->
+<div class="modal fade lb-modal" id="addBalanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-plus me-2"></i>Add Leave Balance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="balanceForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="lb-form-label">Employee <span class="req">*</span></label>
+                            <select name="employee" id="empSelect" class="lb-form-control" style="width:100%;" required>
+                                <option value="">Select Employee</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.pk }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="lb-form-label">Leave Type <span class="req">*</span></label>
+                            <select name="leave_type" class="lb-form-control" style="width:100%;" required>
+                                <option value="">Select Type</option>
+                                {% for lt in leave_types %}
+                                <option value="{{ lt.pk }}">{{ lt.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="lb-form-label">Year</label>
+                            <input type="number" name="year" class="lb-form-control" value="{{ current_year }}"
+                                min="2020" max="2035">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="lb-form-label">Allocated Days</label>
+                            <input type="number" name="allocated_days" class="lb-form-control" value="0" min="0"
+                                step="0.5">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="lb-form-label">Carry Forward</label>
+                            <input type="number" name="carry_forward_days" class="lb-form-control" value="0" min="0"
+                                step="0.5">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel-modal" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn-save-modal"><i class="fas fa-save me-1"></i>Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Sync History Modal -->
+<div class="modal fade lb-modal" id="syncHistoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-history me-2"></i>Sync History — {{ year_filter }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="syncHistoryBody">
+                    <div class="text-center py-3"><i class="fas fa-spinner fa-spin text-success"></i> Loading...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel-modal" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="lbToast" class="lb-toast">
+    <span style="font-size:1.1rem;color:#22c55e;" id="lbToastIcon"><i class="fas fa-check-circle"></i></span>
+    <span class="lb-toast-msg" id="lbToastMsg"></span>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const CSRF = '{{ csrf_token }}';
+    const CURRENT_YEAR = {{ current_year }};
+    const YEAR_FILTER = '{{ year_filter }}';
+
+    // Fix avatar colors (cycle through 10 colors)
+    const AV_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#14b8a6', '#8b5cf6', '#ef4444', '#3b82f6', '#22c55e', '#f97316', '#06b6d4'];
+    document.querySelectorAll('.lb-avatar-initials[data-idx]').forEach(el => {
+        const idx = parseInt(el.getAttribute('data-idx'), 10);
+        el.style.background = AV_COLORS[idx % AV_COLORS.length];
+        el.removeAttribute('data-idx');
+    });
+
+    function showToast(msg, isError = false) {
+        const el = document.getElementById('lbToast');
+        const icon = document.getElementById('lbToastIcon');
+        document.getElementById('lbToastMsg').textContent = msg;
+        el.classList.toggle('error', isError);
+        el.style.borderLeftColor = isError ? '#ef4444' : '#22c55e';
+        icon.innerHTML = isError ? '<i class="fas fa-exclamation-circle"></i>' : '<i class="fas fa-check-circle"></i>';
+        icon.style.color = isError ? '#ef4444' : '#22c55e';
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 4000);
+    }
+
+    function toggleFilters(btn) {
+        btn.classList.toggle('active');
+    }
+
+    // Re-sync
+    async function doResync() {
+        const btn = document.getElementById('resyncBtn');
+        if (!confirm(`Re-sync will create missing leave balance records for all active employees × all active leave types for ${CURRENT_YEAR}. Continue?`)) return;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Syncing...';
+        try {
+            const fd = new FormData();
+            fd.append('year', CURRENT_YEAR);
+            const r = await fetch('{% url "hrm:leave_balance_resync" %}', {
+                method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd
+            });
+            const data = await r.json();
+            if (data.success) {
+                showToast(data.message);
+                setTimeout(() => location.reload(), 1200);
+            } else {
+                showToast(data.error, true);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Re-sync ' + CURRENT_YEAR;
+            }
+        } catch (e) {
+            showToast('Network error.', true);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Re-sync ' + CURRENT_YEAR;
+        }
+    }
+
+    // Sync history modal
+    async function openSyncHistory() {
+        const modal = new bootstrap.Modal(document.getElementById('syncHistoryModal'));
+        modal.show();
+        const body = document.getElementById('syncHistoryBody');
+        body.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin text-success"></i> Loading...</div>';
+        try {
+            const r = await fetch(`{% url "hrm:leave_balance_sync_history" %}?year=${YEAR_FILTER}`);
+            const data = await r.json();
+            if (data.success && data.history.length > 0) {
+                body.innerHTML = data.history.map(h =>
+                    `<div class="sync-history-row">
+                        <span><i class="fas fa-calendar-check me-2" style="color:#22c55e;"></i><strong>${h.date}</strong></span>
+                        <span style="color:#6b7280;font-size:.78rem;">${h.count} records &nbsp; <span style="color:#9ca3af;">${h.last_updated}</span></span>
+                    </div>`
+                ).join('');
+            } else {
+                body.innerHTML = '<p class="text-center text-muted py-3"><i class="fas fa-inbox me-2"></i>No sync history found for ' + YEAR_FILTER + '.</p>';
+            }
+        } catch {
+            body.innerHTML = '<p class="text-center text-danger py-3">Failed to load history.</p>';
+        }
+    }
+
+    // Add balance form
+    document.getElementById('balanceForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const fd = new FormData(this);
+        try {
+            const r = await fetch('{% url "hrm:leave_balance_create" %}', {
+                method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd
+            });
+            const data = await r.json();
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('addBalanceModal')).hide();
+                showToast(data.message);
+                setTimeout(() => location.reload(), 900);
+            } else {
+                showToast(data.error, true);
+            }
+        } catch {
+            showToast('Network error.', true);
+        }
+    });
+
+    // Delete a single balance row
+    function deleteBalance(pk, btn) {
+        if (!confirm('Remove this leave balance record?')) return;
+        fetch(`/hrm/leave/balances/${pk}/delete/`, {
+            method: 'POST', headers: { 'X-CSRFToken': CSRF }
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                showToast(data.message);
+                // Remove the row from DOM
+                btn.closest('tr').style.transition = 'opacity .3s';
+                btn.closest('tr').style.opacity = '0';
+                setTimeout(() => btn.closest('tr').remove(), 300);
+            } else {
+                showToast(data.error, true);
+            }
+        }).catch(() => showToast('Network error.', true));
+    }
+</script>
+{% endblock %}

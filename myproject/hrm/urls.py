@@ -195,4 +195,32 @@ urlpatterns = [
     path('attendance/report/summary/', views.employee_summary_report_ajax, name='employee_summary_report_ajax'),
     path('attendance/leave-report/', views.leave_report, name='leave_report'),
     path('attendance/leave-request/<int:pk>/update-status/', views.leave_update_status, name='leave_update_status'),
+
+    # Leave Management
+    path('leave/applications/', views.leave_application_list, name='leave_application_list'),
+    path('leave/applications/create/', views.leave_application_create, name='leave_application_create'),
+    path('leave/applications/<int:pk>/detail/', views.leave_application_detail, name='leave_application_detail'),
+    path('leave/applications/<int:pk>/update/', views.leave_application_update, name='leave_application_update'),
+    path('leave/applications/<int:pk>/delete/', views.leave_application_delete, name='leave_application_delete'),
+    path('leave/applications/<int:pk>/status/', views.leave_application_update_status, name='leave_application_update_status'),
+
+    path('leave/balances/', views.leave_balance_list, name='leave_balance_list'),
+    path('leave/balances/create/', views.leave_balance_create, name='leave_balance_create'),
+    path('leave/balances/<int:pk>/delete/', views.leave_balance_delete, name='leave_balance_delete'),
+    path('leave/balances/resync/', views.leave_balance_resync, name='leave_balance_resync'),
+    path('leave/balances/sync-history/', views.leave_balance_sync_history, name='leave_balance_sync_history'),
+
+    path('leave/types/', views.leave_type_management, name='leave_type_management'),
+    path('leave/types/create/', views.leave_type_create, name='leave_type_create'),
+    path('leave/types/<int:pk>/detail/', views.leave_type_detail, name='leave_type_detail'),
+    path('leave/types/<int:pk>/update/', views.leave_type_update, name='leave_type_update'),
+    path('leave/types/<int:pk>/delete/', views.leave_type_delete, name='leave_type_delete'),
+    path('leave/types/<int:pk>/toggle-status/', views.leave_type_toggle_status, name='leave_type_toggle_status'),
+
+    path('leave/policies/', views.leave_policy_list, name='leave_policy_list'),
+    path('leave/policies/create/', views.leave_policy_create, name='leave_policy_create'),
+    path('leave/policies/<int:pk>/detail/', views.leave_policy_detail, name='leave_policy_detail'),
+    path('leave/policies/<int:pk>/update/', views.leave_policy_update, name='leave_policy_update'),
+    path('leave/policies/<int:pk>/delete/', views.leave_policy_delete, name='leave_policy_delete'),
+    path('leave/policies/<int:pk>/toggle-status/', views.leave_policy_toggle_status, name='leave_policy_toggle_status'),
 ]

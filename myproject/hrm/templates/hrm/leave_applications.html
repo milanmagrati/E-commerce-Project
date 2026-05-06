@@ -1,0 +1,1309 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Leave Applications - HRM{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== LEAVE APPLICATIONS PAGE ===== */
+    .lm-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .75rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .lm-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1a1a2e;
+        margin: 0;
+    }
+
+    .lm-header-actions {
+        display: flex;
+        gap: .5rem;
+        flex-wrap: wrap;
+    }
+
+    /* Export btn */
+    .btn-export {
+        background: #fff;
+        border: 1.5px solid #e2e8f0;
+        color: #374151;
+        padding: .45rem 1.1rem;
+        border-radius: 8px;
+        font-size: .85rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all .2s;
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        text-decoration: none;
+    }
+
+    .btn-export:hover {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+        color: #111827;
+        text-decoration: none;
+    }
+
+    /* Add button */
+    .btn-add-leave {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        color: #fff;
+        border: none;
+        padding: .5rem 1.2rem;
+        border-radius: 8px;
+        font-size: .875rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all .2s;
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+    }
+
+    .btn-add-leave:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(34, 197, 94, .35);
+        color: #fff;
+    }
+
+    /* Search bar */
+    .lm-search-bar {
+        background: #fff;
+        border-radius: 10px;
+        padding: .75rem 1rem;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, .06);
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+
+    .lm-search-input-wrap {
+        display: flex;
+        align-items: center;
+        background: #f8fafc;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 8px;
+        padding: .35rem .75rem;
+        flex: 1;
+        min-width: 220px;
+    }
+
+    .lm-search-input-wrap input {
+        border: none;
+        background: transparent;
+        outline: none;
+        font-size: .875rem;
+        color: #374151;
+        flex: 1;
+    }
+
+    .lm-search-btn {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        color: #fff;
+        border: none;
+        padding: .4rem 1rem;
+        border-radius: 7px;
+        font-size: .85rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        transition: all .2s;
+    }
+
+    .lm-search-btn:hover {
+        opacity: .9;
+    }
+
+    .btn-filter-toggle {
+        background: #fff;
+        border: 1.5px solid #e2e8f0;
+        color: #374151;
+        padding: .4rem 1rem;
+        border-radius: 7px;
+        font-size: .85rem;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        transition: all .2s;
+    }
+
+    .btn-filter-toggle:hover {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+    }
+
+    /* Filter panel */
+    .lm-filters {
+        background: #f8fafc;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
+        padding: .9rem 1rem;
+        margin-bottom: 1rem;
+    }
+
+    /* Table card */
+    .lm-table-card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, .07);
+        overflow: hidden;
+    }
+
+    .lm-table-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: .85rem 1.25rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .lm-table-title {
+        font-size: .9rem;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .lm-per-page-wrap {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        font-size: .8rem;
+        color: #6b7280;
+    }
+
+    .lm-per-page-wrap select {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: .2rem .5rem;
+        font-size: .8rem;
+    }
+
+    /* Table */
+    .lm-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .lm-table thead tr {
+        background: #f8fafc;
+    }
+
+    .lm-table thead th {
+        padding: .75rem 1rem;
+        font-size: .78rem;
+        font-weight: 600;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        border-bottom: 1px solid #f1f5f9;
+        white-space: nowrap;
+    }
+
+    .lm-table thead th.sortable {
+        cursor: pointer;
+    }
+
+    .lm-table thead th.sortable:hover {
+        color: #22c55e;
+    }
+
+    .lm-table tbody tr {
+        border-bottom: 1px solid #f8fafc;
+        transition: background .15s;
+    }
+
+    .lm-table tbody tr:hover {
+        background: #f0fdf4;
+    }
+
+    .lm-table tbody td {
+        padding: .75rem 1rem;
+        font-size: .875rem;
+        color: #374151;
+        vertical-align: middle;
+    }
+
+    /* Employee cell */
+    .emp-cell {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+    }
+
+    .emp-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+        border: 2px solid #e2e8f0;
+    }
+
+    .emp-avatar-placeholder {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: .85rem;
+        flex-shrink: 0;
+    }
+
+    .emp-name {
+        font-weight: 600;
+        font-size: .875rem;
+        color: #111827;
+        line-height: 1.2;
+    }
+
+    .emp-email {
+        font-size: .75rem;
+        color: #9ca3af;
+    }
+
+    /* Leave type cell */
+    .lt-cell {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+    }
+
+    .lt-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .lt-name {
+        font-size: .875rem;
+        color: #374151;
+    }
+
+    /* Status badges */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: .25rem .7rem;
+        border-radius: 20px;
+        font-size: .75rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .status-approved {
+        background: #dcfce7;
+        color: #16a34a;
+    }
+
+    .status-pending {
+        background: #fef9c3;
+        color: #ca8a04;
+    }
+
+    .status-rejected {
+        background: #fee2e2;
+        color: #dc2626;
+    }
+
+    .status-cancelled {
+        background: #f3f4f6;
+        color: #6b7280;
+    }
+
+    /* Actions */
+    .action-btns {
+        display: flex;
+        gap: .4rem;
+        align-items: center;
+    }
+
+    .btn-view-sm {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        color: #3b82f6;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .75rem;
+        transition: all .15s;
+    }
+
+    .btn-view-sm:hover {
+        background: #3b82f6;
+        color: #fff;
+        border-color: #3b82f6;
+    }
+
+    .btn-edit-sm {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        border: 1px solid #bbf7d0;
+        background: #f0fdf4;
+        color: #22c55e;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .75rem;
+        transition: all .15s;
+    }
+
+    .btn-edit-sm:hover {
+        background: #22c55e;
+        color: #fff;
+        border-color: #22c55e;
+    }
+
+    .btn-del-sm {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        border: 1px solid #fecaca;
+        background: #fff5f5;
+        color: #ef4444;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .75rem;
+        transition: all .15s;
+    }
+
+    .btn-del-sm:hover {
+        background: #ef4444;
+        color: #fff;
+        border-color: #ef4444;
+    }
+
+    /* Pagination */
+    .lm-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: .85rem 1.25rem;
+        border-top: 1px solid #f1f5f9;
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+
+    .lm-page-info {
+        font-size: .8rem;
+        color: #6b7280;
+    }
+
+    .lm-page-btns {
+        display: flex;
+        gap: .3rem;
+    }
+
+    .lm-page-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #374151;
+        font-size: .8rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all .15s;
+        text-decoration: none;
+    }
+
+    .lm-page-btn:hover {
+        background: #22c55e;
+        color: #fff;
+        border-color: #22c55e;
+        text-decoration: none;
+    }
+
+    .lm-page-btn.active {
+        background: #22c55e;
+        color: #fff;
+        border-color: #22c55e;
+        font-weight: 700;
+    }
+
+    .lm-page-btn.disabled {
+        opacity: .4;
+        pointer-events: none;
+    }
+
+    /* ===== MODAL ===== */
+    .lm-modal .modal-content {
+        border-radius: 14px;
+        border: none;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, .15);
+    }
+
+    .lm-modal .modal-header {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        border-radius: 14px 14px 0 0;
+        padding: 1.1rem 1.5rem;
+        border-bottom: none;
+    }
+
+    .lm-modal .modal-title {
+        color: #fff;
+        font-weight: 700;
+        font-size: 1rem;
+    }
+
+    .lm-modal .btn-close {
+        filter: brightness(0) invert(1);
+        opacity: .8;
+    }
+
+    .lm-modal .modal-body {
+        padding: 1.5rem;
+    }
+
+    .lm-modal .modal-footer {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid #f1f5f9;
+    }
+
+    .lm-form-label {
+        font-size: .83rem;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: .35rem;
+    }
+
+    .lm-form-label .req {
+        color: #ef4444;
+    }
+
+    .lm-form-control {
+        border: 1.5px solid #e2e8f0;
+        border-radius: 8px;
+        padding: .5rem .85rem;
+        font-size: .875rem;
+        color: #374151;
+        width: 100%;
+        transition: border-color .2s, box-shadow .2s;
+        background: #fff;
+    }
+
+    .lm-form-control:focus {
+        outline: none;
+        border-color: #22c55e;
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, .12);
+    }
+
+    .lm-file-wrap {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 8px;
+        padding: .4rem .75rem;
+    }
+
+    .lm-file-input {
+        flex: 1;
+        font-size: .85rem;
+        color: #6b7280;
+        min-width: 0;
+        cursor: pointer;
+    }
+
+    .lm-file-input::file-selector-button {
+        display: none;
+    }
+
+    .btn-browse {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        color: #374151;
+        padding: .3rem .8rem;
+        border-radius: 6px;
+        font-size: .8rem;
+        cursor: pointer;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        transition: background .15s;
+    }
+
+    .btn-browse:hover {
+        background: #e2e8f0;
+    }
+
+    .btn-cancel-modal {
+        background: #fff;
+        border: 1.5px solid #e2e8f0;
+        color: #374151;
+        padding: .5rem 1.4rem;
+        border-radius: 8px;
+        font-size: .875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all .15s;
+    }
+
+    .btn-cancel-modal:hover {
+        background: #f8fafc;
+    }
+
+    .btn-save-modal {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        color: #fff;
+        border: none;
+        padding: .5rem 1.5rem;
+        border-radius: 8px;
+        font-size: .875rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all .2s;
+    }
+
+    .btn-save-modal:hover {
+        opacity: .9;
+        transform: translateY(-1px);
+    }
+
+    /* View modal */
+    .view-detail-row {
+        display: flex;
+        margin-bottom: .6rem;
+    }
+
+    .view-detail-label {
+        font-weight: 600;
+        color: #6b7280;
+        font-size: .8rem;
+        width: 130px;
+        flex-shrink: 0;
+    }
+
+    .view-detail-value {
+        font-size: .875rem;
+        color: #111827;
+        flex: 1;
+    }
+
+    /* Toasts */
+    .lm-toast {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        z-index: 9999;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, .14);
+        padding: .85rem 1.25rem;
+        min-width: 260px;
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        transform: translateY(80px);
+        opacity: 0;
+        transition: all .3s ease;
+        border-left: 4px solid #22c55e;
+    }
+
+    .lm-toast.show {
+        transform: translateY(0);
+        opacity: 1;
+    }
+
+    .lm-toast.error {
+        border-left-color: #ef4444;
+    }
+
+    .lm-toast-icon {
+        font-size: 1.1rem;
+    }
+
+    .lm-toast.error .lm-toast-icon {
+        color: #ef4444;
+    }
+
+    .lm-toast:not(.error) .lm-toast-icon {
+        color: #22c55e;
+    }
+
+    .lm-toast-msg {
+        font-size: .85rem;
+        font-weight: 500;
+        color: #111827;
+        flex: 1;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .lm-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .lm-table-card {
+            overflow-x: auto;
+        }
+
+        .lm-table {
+            min-width: 750px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="lm-header">
+    <h1 class="lm-title">
+        <i class="fas fa-calendar-alt me-2" style="color:#22c55e;"></i>Leave Applications
+    </h1>
+    <div class="lm-header-actions">
+        <a href="{% url 'hrm:leave_application_list' %}?export=csv&search={{ search }}&status={{ status_filter }}&leave_type={{ leave_type_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
+            class="btn-export">
+            <i class="fas fa-file-csv"></i> Export
+        </a>
+        <button class="btn-add-leave" onclick="openAddModal()">
+            <i class="fas fa-plus"></i> Add Leave Application
+        </button>
+    </div>
+</div>
+
+<!-- Search Bar -->
+<form method="get" id="searchForm">
+    <div class="lm-search-bar">
+        <div class="lm-search-input-wrap">
+            <i class="fas fa-search me-2" style="color:#9ca3af;font-size:.85rem;"></i>
+            <input type="text" name="search" placeholder="Search employee name or ID..." value="{{ search }}">
+        </div>
+        <button type="submit" class="lm-search-btn"><i class="fas fa-search"></i> Search</button>
+        <button type="button" class="btn-filter-toggle" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+            <i class="fas fa-filter"></i> Filters
+            {% if status_filter or leave_type_filter or date_from or date_to %}
+            <span class="badge bg-success ms-1" style="font-size:.65rem;">ON</span>
+            {% endif %}
+        </button>
+        {% if search or status_filter or leave_type_filter or date_from or date_to %} <a href="{% url 'hrm:leave_application_list' %}" class="btn-filter-toggle"
+            style="color:#ef4444;border-color:#fecaca;">
+            <i class="fas fa-times"></i> Clear
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Advanced Filters -->
+    <div class="collapse {% if status_filter or leave_type_filter or date_from or date_to %}show{% endif %}"
+        id="filterPanel">
+        <div class="lm-filters mb-3">
+            <div class="row g-2">
+                <div class="col-md-3 col-6">
+                    <label class="lm-form-label">Status</label>
+                    <select name="status" class="lm-form-control"
+                        onchange="document.getElementById('searchForm').submit()">
+                        <option value="">All Status</option>
+                        {% for val,label in status_choices %}
+                        <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option> {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3 col-6">
+                    <label class="lm-form-label">Leave Type</label>
+                    <select name="leave_type" class="lm-form-control"
+                        onchange="document.getElementById('searchForm').submit()">
+                        <option value="">All Types</option>
+                        {% for lt in leave_types %}
+                        <option value="{{ lt.pk }}" {% if leave_type_filter == lt.pk|stringformat:'d' %}selected{% endif %}>{{ lt.name }}</option> {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3 col-6">
+                    <label class="lm-form-label">From Date</label>
+                    <input type="date" name="date_from" class="lm-form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-3 col-6">
+                    <label class="lm-form-label">To Date</label>
+                    <input type="date" name="date_to" class="lm-form-control" value="{{ date_to }}">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keep per_page hidden -->
+    <input type="hidden" name="per_page" value="{{ per_page }}">
+</form>
+
+<!-- Table Card -->
+<div class="lm-table-card">
+    <div class="lm-table-head">
+        <span class="lm-table-title">
+            Total: <strong>{{ total }}</strong> application{{ total|pluralize }}
+        </span>
+        <div class="lm-per-page-wrap">
+            Per Page:
+            <select onchange="changePerPage(this.value)">
+                {% for opt in per_page_options %}
+                <option value="{{ opt }}" {% if per_page == opt %}selected{% endif %}>{{ opt }}</option> {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table class="lm-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Employee</th>
+                    <th>Leave Type</th>
+                    <th class="sortable">Start Date</th>
+                    <th class="sortable">End Date</th>
+                    <th>Days</th>
+                    <th>Status</th>
+                    <th class="sortable">Applied On</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for app in page_obj %}
+                <tr data-id="{{ app.pk }}">
+                    <td style="color:#9ca3af;font-weight:500;">{{ forloop.counter|add:page_obj.start_index|add:"-1" }}
+                    </td>
+                    <td>
+                        <div class="emp-cell">
+                            {% if app.employee.profile_image %}
+                            <img src="{{ app.employee.profile_image.url }}" alt="{{ app.employee.full_name }}"
+                                class="emp-avatar">
+                            {% else %}
+                            <div class="emp-avatar-placeholder">{{ app.employee.full_name|first|upper }}</div>
+                            {% endif %}
+                            <div>
+                                <div class="emp-name">{{ app.employee.full_name }}</div>
+                                <div class="emp-email">{{ app.employee.email }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        {% if app.leave_type %}
+                        <div class="lt-cell">
+                            <span class="lt-dot"
+                                style="background:{{ app.leave_type.color|default:'#22c55e' }};"></span>
+                            <span class="lt-name">{{ app.leave_type.name }}</span>
+                        </div>
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                    <td>{{ app.start_date|date:"Y-m-d" }}</td>
+                    <td>{{ app.end_date|date:"Y-m-d" }}</td>
+                    <td><strong>{{ app.days }}</strong></td>
+                    <td>
+                        <span class="status-badge status-{{ app.status }}">{{ app.get_status_display }}</span>
+                    </td>
+                    <td>{{ app.created_at|date:"Y-m-d" }}</td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn-view-sm" title="View" onclick="viewApplication({{ app.pk }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn-edit-sm" title="Edit" onclick="editApplication({{ app.pk }})">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button class="btn-del-sm" title="Delete" onclick="deleteApplication({{ app.pk }})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" class="text-center py-5" style="color:#9ca3af;">
+                        <i class="fas fa-calendar-times fa-2x mb-2 d-block"></i>
+                        No leave applications found.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="lm-pagination">
+        <span class="lm-page-info">
+            Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total }}
+        </span>
+        <div class="lm-page-btns">
+            {% if page_obj.has_previous %}
+            <a href="?page=1&search={{ search }}&status={{ status_filter }}&leave_type={{ leave_type_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}"
+                class="lm-page-btn" title="First">«</a>
+            <a href="?page={{ page_obj.previous_page_number }}&search={{ search }}&status={{ status_filter }}&leave_type={{ leave_type_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}"
+                class="lm-page-btn">‹</a>
+            {% else %}
+            <span class="lm-page-btn disabled">«</span>
+            <span class="lm-page-btn disabled">‹</span>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <span class="lm-page-btn active">{{ num }}</span>
+            {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %} <a
+                href="?page={{ num }}&search={{ search }}&status={{ status_filter }}&leave_type={{ leave_type_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}"
+                class="lm-page-btn">{{ num }}</a>
+                {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}&search={{ search }}&status={{ status_filter }}&leave_type={{ leave_type_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}"
+                    class="lm-page-btn">›</a>
+                <a href="?page={{ page_obj.paginator.num_pages }}&search={{ search }}&status={{ status_filter }}&leave_type={{ leave_type_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}"
+                    class="lm-page-btn" title="Last">»</a>
+                {% else %}
+                <span class="lm-page-btn disabled">›</span>
+                <span class="lm-page-btn disabled">»</span>
+                {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ===== ADD / EDIT MODAL ===== -->
+<div class="modal fade lm-modal" id="leaveModal" tabindex="-1" aria-labelledby="leaveModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="leaveModalLabel">
+                    <i class="fas fa-calendar-plus me-2"></i>Add New Leave Application
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="leaveForm" enctype="multipart/form-data" novalidate>
+                {% csrf_token %}
+                <input type="hidden" id="leaveId" name="leave_id" value="">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <!-- Employee -->
+                        <div class="col-md-6">
+                            <label class="lm-form-label">Employee <span class="req">*</span></label>
+                            <select id="leaveEmployee" name="employee" class="lm-form-control" required>
+                                <option value="">Select Employee</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.pk }}">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <!-- Leave Type -->
+                        <div class="col-md-6">
+                            <label class="lm-form-label">Leave Type <span class="req">*</span></label>
+                            <select id="leaveType" name="leave_type" class="lm-form-control" required>
+                                <option value="">Select Leave Type</option>
+                                {% for lt in leave_types %}
+                                <option value="{{ lt.pk }}">{{ lt.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <!-- Start Date -->
+                        <div class="col-md-6">
+                            <label class="lm-form-label">Start Date <span class="req">*</span></label>
+                            <input type="date" id="leaveStartDate" name="start_date" class="lm-form-control" required>
+                        </div>
+                        <!-- End Date -->
+                        <div class="col-md-6">
+                            <label class="lm-form-label">End Date <span class="req">*</span></label>
+                            <input type="date" id="leaveEndDate" name="end_date" class="lm-form-control" required>
+                        </div>
+                        <!-- Days preview -->
+                        <div class="col-md-6">
+                            <label class="lm-form-label">Days</label>
+                            <div id="daysPreview"
+                                style="padding:.5rem .85rem;background:#f0fdf4;border-radius:8px;font-size:.875rem;color:#16a34a;font-weight:600;border:1.5px solid #bbf7d0;">
+                                — days
+                            </div>
+                        </div>
+                        <!-- Status -->
+                        <div class="col-md-6">
+                            <label class="lm-form-label">Status</label>
+                            <select id="leaveStatus" name="status" class="lm-form-control">
+                                <option value="approved" selected>Approved</option>
+                                <option value="pending">Pending</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        <!-- Reason -->
+                        <div class="col-12">
+                            <label class="lm-form-label">Reason <span class="req">*</span></label>
+                            <textarea id="leaveReason" name="reason" class="lm-form-control" rows="3"
+                                placeholder="e.g. Family emergency, Medical appointment..." required></textarea>
+                        </div>
+                        <!-- Attachment -->
+                        <div class="col-12">
+                            <label class="lm-form-label">Attachment</label>
+                            <div class="lm-file-wrap">
+                                <input type="file" id="leaveAttachment" name="attachment" class="lm-file-input"
+                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onchange="updateFileName(this)">
+                                <span id="fileNameDisplay" style="flex:1;font-size:.83rem;color:#9ca3af;">
+                                    Select attachment file...
+                                </span>
+                                <button type="button" class="btn-browse"
+                                    onclick="document.getElementById('leaveAttachment').click()">
+                                    <i class="fas fa-image"></i> Browse
+                                </button>
+                            </div>
+                            <small class="text-muted" style="font-size:.75rem;">Supported: PDF, PNG, JPG, DOC (max
+                                5MB)</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel-modal" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn-save-modal" id="saveLeaveBtn">
+                        <i class="fas fa-save me-1"></i>Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ===== VIEW MODAL ===== -->
+<div class="modal fade lm-modal" id="viewModal" tabindex="-1" aria-labelledby="viewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewModalLabel">
+                    <i class="fas fa-eye me-2"></i>Leave Application Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewModalBody">
+                <div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x" style="color:#22c55e;"></i></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel-modal" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== DELETE CONFIRM MODAL ===== -->
+<div class="modal fade lm-modal" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#ef4444,#dc2626);">
+                <h5 class="modal-title" style="color:#fff;"><i class="fas fa-trash me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
+                    style="filter:brightness(0) invert(1);"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <i class="fas fa-exclamation-triangle fa-2x mb-3" style="color:#f59e0b;"></i>
+                <p style="font-size:.9rem;color:#374151;">Are you sure you want to delete this leave application? This
+                    action cannot be undone.</p>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn-cancel-modal" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn-save-modal" id="confirmDeleteBtn"
+                    style="background:linear-gradient(135deg,#ef4444,#dc2626);">
+                    <i class="fas fa-trash me-1"></i>Delete
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="lmToast" class="lm-toast">
+    <span class="lm-toast-icon"><i class="fas fa-check-circle"></i></span>
+    <span class="lm-toast-msg" id="lmToastMsg"></span>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const CSRF = '{{ csrf_token }}';
+    const URLS = {
+        create: '{% url "hrm:leave_application_create" %}',
+        detail: (pk) => `/hrm/leave/applications/${pk}/detail/`,
+        update: (pk) => `/hrm/leave/applications/${pk}/update/`,
+        delete: (pk) => `/hrm/leave/applications/${pk}/delete/`,
+        status: (pk) => `/hrm/leave/applications/${pk}/status/`,
+    };
+    let deletePk = null;
+
+    // ── Toast ────────────────────────────────────────────────────────────────
+    function showToast(msg, isError = false) {
+        const el = document.getElementById('lmToast');
+        const msgEl = document.getElementById('lmToastMsg');
+        msgEl.textContent = msg;
+        el.classList.toggle('error', isError);
+        el.querySelector('.fa').className = isError ? 'fas fa-times-circle' : 'fas fa-check-circle';
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 4000);
+    }
+
+    // ── Per Page ─────────────────────────────────────────────────────────────
+    function changePerPage(val) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('per_page', val);
+        url.searchParams.set('page', 1);
+        window.location.href = url.toString();
+    }
+
+    // ── Days Preview ─────────────────────────────────────────────────────────
+    function updateDaysPreview() {
+        const s = document.getElementById('leaveStartDate').value;
+        const e = document.getElementById('leaveEndDate').value;
+        const el = document.getElementById('daysPreview');
+        if (s && e) {
+            const diff = Math.round((new Date(e) - new Date(s)) / 86400000) + 1;
+            if (diff > 0) {
+                el.textContent = diff + (diff === 1 ? ' day' : ' days');
+                el.style.color = '#16a34a';
+            } else {
+                el.textContent = 'Invalid date range';
+                el.style.color = '#ef4444';
+            }
+        } else {
+            el.textContent = '— days';
+        }
+    }
+    document.getElementById('leaveStartDate').addEventListener('change', updateDaysPreview);
+    document.getElementById('leaveEndDate').addEventListener('change', updateDaysPreview);
+
+    // ── File name display ────────────────────────────────────────────────────
+    function updateFileName(input) {
+        const display = document.getElementById('fileNameDisplay');
+        display.textContent = input.files.length ? input.files[0].name : 'Select attachment file...';
+    }
+
+    // ── Open Add Modal ───────────────────────────────────────────────────────
+    function openAddModal() {
+        document.getElementById('leaveModalLabel').innerHTML = '<i class="fas fa-calendar-plus me-2"></i>Add New Leave Application';
+        document.getElementById('leaveId').value = '';
+        document.getElementById('leaveForm').reset();
+        document.getElementById('daysPreview').textContent = '— days';
+        document.getElementById('fileNameDisplay').textContent = 'Select attachment file...';
+        new bootstrap.Modal(document.getElementById('leaveModal')).show();
+    }
+
+    // ── Edit ─────────────────────────────────────────────────────────────────
+    function editApplication(pk) {
+        fetch(URLS.detail(pk))
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) { showToast(data.error, true); return; }
+                const a = data.application;
+                document.getElementById('leaveModalLabel').innerHTML = '<i class="fas fa-pen me-2"></i>Edit Leave Application';
+                document.getElementById('leaveId').value = pk;
+                document.getElementById('leaveEmployee').value = a.employee_id;
+                document.getElementById('leaveType').value = a.leave_type_id;
+                document.getElementById('leaveStartDate').value = a.start_date;
+                document.getElementById('leaveEndDate').value = a.end_date;
+                document.getElementById('leaveReason').value = a.reason;
+                const statusSel = document.getElementById('leaveStatus');
+                if (statusSel) statusSel.value = a.status;
+                updateDaysPreview();
+                new bootstrap.Modal(document.getElementById('leaveModal')).show();
+            })
+            .catch(() => showToast('Failed to load data.', true));
+    }
+
+    // ── Form Submit (Create / Update) ────────────────────────────────────────
+    document.getElementById('leaveForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const pk = document.getElementById('leaveId').value;
+        const url = pk ? URLS.update(pk) : URLS.create;
+        const formData = new FormData(this);
+
+        const btn = document.getElementById('saveLeaveBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+
+        fetch(url, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: formData })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('leaveModal')).hide();
+                    showToast(data.message);
+
+                    // Instantly insert new row or reload for update
+                    if (data.application) {
+                        const a = data.application;
+                        const tbody = document.querySelector('.lm-table tbody');
+                        
+                        const avatarHtml = a.employee_avatar
+                            ? `<img src="${a.employee_avatar}" alt="${a.employee_name}" class="emp-avatar">`
+                            : `<div class="emp-avatar-placeholder">${a.employee_initial}</div>`;
+                            
+                        const rowHtml = `
+                            <td style="color:#9ca3af;font-weight:500;">—</td>
+                            <td>
+                                <div class="emp-cell">
+                                    ${avatarHtml}
+                                    <div>
+                                        <div class="emp-name">${a.employee_name}</div>
+                                        <div class="emp-email">${a.employee_email}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="lt-cell">
+                                    <span class="lt-dot" style="background:${a.leave_type_color};"></span>
+                                    <span class="lt-name">${a.leave_type}</span>
+                                </div>
+                            </td>
+                            <td>${a.start_date}</td>
+                            <td>${a.end_date}</td>
+                            <td><strong>${a.days}</strong></td>
+                            <td><span class="status-badge status-${a.status}">${a.status_display}</span></td>
+                            <td>${a.created_at}</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="btn-view-sm" title="View" onclick="viewApplication(${a.id})"><i class="fas fa-eye"></i></button>
+                                    <button class="btn-edit-sm" title="Edit" onclick="editApplication(${a.id})"><i class="fas fa-pen"></i></button>
+                                    <button class="btn-del-sm" title="Delete" onclick="deleteApplication(${a.id})"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        `;
+
+                        if (!pk) {
+                            // CREATE: prepend row
+                            const emptyRow = tbody.querySelector('td[colspan]');
+                            if (emptyRow) emptyRow.closest('tr').remove();
+                            
+                            const newRow = document.createElement('tr');
+                            newRow.setAttribute('data-id', a.id);
+                            newRow.style.animation = 'fadeIn .4s ease';
+                            newRow.innerHTML = rowHtml;
+                            tbody.insertBefore(newRow, tbody.firstChild);
+
+                            // Update total count
+                            const totalEl = document.querySelector('.lm-page-info, .lm-total');
+                            if (totalEl) {
+                                const match = totalEl.textContent.match(/of\s+(\d+)/);
+                                if (match) {
+                                    const newTotal = parseInt(match[1]) + 1;
+                                    totalEl.textContent = totalEl.textContent.replace(/of\s+\d+/, `of ${newTotal}`);
+                                }
+                            }
+                        } else {
+                            // UPDATE: replace existing row
+                            const existingRow = document.querySelector(`tr[data-id="${pk}"]`);
+                            if (existingRow) {
+                                existingRow.innerHTML = rowHtml;
+                                existingRow.style.animation = 'none';
+                                existingRow.offsetHeight; // trigger reflow
+                                existingRow.style.animation = 'fadeIn .4s ease';
+                            }
+                        }
+                    }
+                } else {
+                    showToast(data.error || 'Failed to save.', true);
+                }
+            })
+            .catch(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+                showToast('Network error. Please try again.', true);
+            });
+    });
+
+    // ── View ─────────────────────────────────────────────────────────────────
+    function viewApplication(pk) {
+        const body = document.getElementById('viewModalBody');
+        body.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x" style="color:#22c55e;"></i></div>';
+        new bootstrap.Modal(document.getElementById('viewModal')).show();
+
+        fetch(URLS.detail(pk))
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) { body.innerHTML = '<p class="text-danger text-center">Failed to load.</p>'; return; }
+                const a = data.application;
+                const statusClass = {
+                    'approved': 'status-approved', 'pending': 'status-pending',
+                    'rejected': 'status-rejected', 'cancelled': 'status-cancelled'
+                }[a.status] || '';
+                body.innerHTML = `
+                    <div class="view-detail-row"><span class="view-detail-label">Employee</span><span class="view-detail-value"><strong>${a.employee_name}</strong> (${a.employee_code})</span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Email</span><span class="view-detail-value">${a.employee_email}</span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Leave Type</span><span class="view-detail-value">${a.leave_type_name || '—'}</span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Period</span><span class="view-detail-value">${a.start_date} → ${a.end_date} <strong>(${a.days} day${a.days !== 1 ? 's' : ''})</strong></span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Status</span><span class="view-detail-value"><span class="status-badge ${statusClass}">${a.status_display}</span></span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Reason</span><span class="view-detail-value">${a.reason}</span></div>
+                    ${a.rejection_reason ? `<div class="view-detail-row"><span class="view-detail-label">Rejection</span><span class="view-detail-value text-danger">${a.rejection_reason}</span></div>` : ''}
+                    <div class="view-detail-row"><span class="view-detail-label">Approved By</span><span class="view-detail-value">${a.approved_by || '—'}</span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Applied On</span><span class="view-detail-value">${a.applied_on}</span></div>
+                    ${a.attachment_url ? `<div class="view-detail-row"><span class="view-detail-label">Attachment</span><span class="view-detail-value"><a href="${a.attachment_url}" target="_blank"><i class="fas fa-paperclip me-1"></i>View Attachment</a></span></div>` : ''}
+                    <hr style="margin:.75rem 0;">
+                    <div class="d-flex gap-2 flex-wrap mt-2">
+                        ${a.status !== 'approved' ? `<button class="btn-save-modal btn-sm" style="font-size:.8rem;padding:.35rem .8rem;" onclick="updateStatus(${a.id},'approve')"><i class="fas fa-check me-1"></i>Approve</button>` : ''}
+                        ${a.status !== 'rejected' ? `<button class="btn-save-modal btn-sm" style="font-size:.8rem;padding:.35rem .8rem;background:linear-gradient(135deg,#ef4444,#dc2626);" onclick="promptReject(${a.id})"><i class="fas fa-times me-1"></i>Reject</button>` : ''}
+                        ${a.status !== 'cancelled' ? `<button class="btn-cancel-modal btn-sm" style="font-size:.8rem;padding:.35rem .8rem;" onclick="updateStatus(${a.id},'cancel')"><i class="fas fa-ban me-1"></i>Cancel</button>` : ''}
+                    </div>
+                `;
+            })
+            .catch(() => { body.innerHTML = '<p class="text-danger text-center">Network error.</p>'; });
+    }
+
+    function updateStatus(pk, action, rejectionReason = '') {
+        const fd = new FormData();
+        fd.append('action', action);
+        if (rejectionReason) fd.append('rejection_reason', rejectionReason);
+        fetch(URLS.status(pk), { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('viewModal'))?.hide();
+                    showToast(data.message);
+                    setTimeout(() => location.reload(), 900);
+                } else { showToast(data.error, true); }
+            })
+            .catch(() => showToast('Network error.', true));
+    }
+
+    function promptReject(pk) {
+        const reason = prompt('Enter rejection reason:');
+        if (reason === null) return;
+        if (!reason.trim()) { showToast('Rejection reason is required.', true); return; }
+        updateStatus(pk, 'reject', reason.trim());
+    }
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+    function deleteApplication(pk) {
+        deletePk = pk;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function () {
+        if (!deletePk) return;
+        fetch(URLS.delete(deletePk), { method: 'POST', headers: { 'X-CSRFToken': CSRF } })
+            .then(r => r.json())
+            .then(data => {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                if (data.success) {
+                    showToast(data.message);
+                    setTimeout(() => location.reload(), 900);
+                } else { showToast(data.error, true); }
+            })
+            .catch(() => showToast('Network error.', true));
+    });
+</script>
+{% endblock %}

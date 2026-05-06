@@ -1498,6 +1498,41 @@ class CompanySetup(models.Model):
         super().save(*args, **kwargs)
 
 
+# ==================== API Sync Settings ====================
+class APISettings(models.Model):
+    """Singleton model to store configurable API calling intervals and times."""
+
+    order_sync_interval = models.PositiveIntegerField(
+        default=14400,
+        help_text="How often (in seconds) to auto-sync orders from NCM. Default: 14400 (4 hours).",
+    )
+    webhook_check_interval = models.PositiveIntegerField(
+        default=30,
+        help_text="How often (in seconds) to check for pending webhook updates. Default: 30.",
+    )
+    ncm_api_timeout = models.PositiveIntegerField(
+        default=30,
+        help_text="Timeout (in seconds) for each NCM API request. Default: 30.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'API Settings'
+        verbose_name_plural = 'API Settings'
+
+    def __str__(self):
+        return f"API Settings (sync every {self.order_sync_interval}s)"
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+
+
 # ==================== NCM RTV (Return to Vendor) ====================
 class RTVOrder(models.Model):
     """Tracks orders returned to vendor via NCM API"""

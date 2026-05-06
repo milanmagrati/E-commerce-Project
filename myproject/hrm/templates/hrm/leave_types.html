@@ -1,0 +1,321 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Leave Types - HRM{% endblock %}
+
+{% block extra_css %}
+<style>
+.lt-page-title{font-size:1.5rem;font-weight:700;color:#1a1a2e;margin:0 0 1.25rem}
+.lt-layout{display:grid;grid-template-columns:380px 1fr;gap:1.5rem;align-items:start}
+@media(max-width:992px){.lt-layout{grid-template-columns:1fr}}
+/* Form Card */
+.lt-form-card{background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:1.5rem}
+.lt-form-title{font-size:1.05rem;font-weight:700;color:#1a1a2e;margin:0 0 .25rem}
+.lt-form-subtitle{font-size:.8rem;color:#9ca3af;margin:0 0 1.25rem}
+.lt-form-label{font-size:.83rem;font-weight:600;color:#374151;margin-bottom:.35rem;display:block}
+.lt-form-label .req{color:#ef4444}
+.lt-form-control{border:1.5px solid #e2e8f0;border-radius:8px;padding:.55rem .85rem;font-size:.875rem;color:#374151;width:100%;transition:border-color .2s;background:#fff;box-sizing:border-box}
+.lt-form-control:focus{outline:none;border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+.lt-row{display:flex;gap:1rem;align-items:flex-end}
+.lt-row .lt-field{flex:1}
+.lt-color-wrap{display:flex;align-items:center;gap:.5rem}
+.lt-color-input{width:36px;height:36px;border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;padding:0;background:none}
+.lt-color-input::-webkit-color-swatch-wrapper{padding:2px}
+.lt-color-input::-webkit-color-swatch{border:none;border-radius:4px}
+.lt-color-hex{font-size:.8rem;color:#6b7280;font-family:monospace;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem}
+/* Toggle Switch */
+.lt-toggle-wrap{display:flex;align-items:center;justify-content:space-between;padding:.5rem 0}
+.lt-toggle-label{font-size:.875rem;font-weight:500;color:#374151}
+.lt-toggle-sub{font-size:.72rem;color:#9ca3af;display:block}
+.lt-switch{position:relative;width:44px;height:24px;cursor:pointer}
+.lt-switch input{opacity:0;width:0;height:0}
+.lt-switch .slider{position:absolute;inset:0;background:#d1d5db;border-radius:24px;transition:.3s}
+.lt-switch .slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+.lt-switch input:checked+.slider{background:#22c55e}
+.lt-switch input:checked+.slider:before{transform:translateX(20px)}
+.lt-submit-btn{width:100%;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;padding:.65rem;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .2s;margin-top:.5rem}
+.lt-submit-btn:hover{opacity:.9;transform:translateY(-1px)}
+/* Right Panel */
+.lt-right{display:flex;flex-direction:column;gap:1rem}
+.lt-search-row{display:flex;gap:.75rem;align-items:center}
+.lt-search-wrap{flex:1;display:flex;align-items:center;background:#fff;border:1.5px solid #e2e8f0;border-radius:8px;padding:.35rem .75rem;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.lt-search-wrap input{border:none;background:transparent;outline:none;font-size:.875rem;color:#374151;flex:1}
+.lt-search-btn{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;padding:.5rem 1.2rem;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer}
+.lt-filter-select{border:1.5px solid #e2e8f0;border-radius:8px;padding:.5rem .85rem;font-size:.85rem;color:#374151;background:#fff;min-width:140px}
+/* Table Card */
+.lt-table-card{background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden}
+.lt-table-header{padding:1rem 1.25rem;border-bottom:1px solid #f1f5f9}
+.lt-table-title{font-size:1.05rem;font-weight:700;color:#1a1a2e;margin:0}
+.lt-table-subtitle{font-size:.8rem;color:#9ca3af;margin:.15rem 0 0}
+.lt-table{width:100%;border-collapse:collapse}
+.lt-table thead tr{background:#f8fafc}
+.lt-table thead th{padding:.7rem 1rem;font-size:.78rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #f1f5f9;white-space:nowrap}
+.lt-table tbody tr{border-bottom:1px solid #f8fafc;transition:background .15s}
+.lt-table tbody tr:hover{background:#f0fdf4}
+.lt-table tbody td{padding:.75rem 1rem;font-size:.875rem;color:#374151;vertical-align:middle}
+.lt-type-cell{display:flex;align-items:center;gap:.75rem}
+.lt-type-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.9rem;flex-shrink:0}
+.lt-type-name{font-weight:600;color:#111827;font-size:.9rem}
+.lt-type-desc{font-size:.78rem;color:#9ca3af;margin-top:.1rem;max-width:320px}
+.lt-type-desc a{color:#22c55e;text-decoration:none;font-size:.72rem}
+.lt-badge{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:20px;font-size:.72rem;font-weight:600}
+.lt-badge-paid{background:#dcfce7;color:#16a34a}
+.lt-badge-unpaid{background:#fee2e2;color:#dc2626}
+.lt-badge-active{background:#dcfce7;color:#16a34a}
+.lt-badge-inactive{background:#f3f4f6;color:#6b7280}
+.lt-actions{display:flex;gap:.35rem}
+.lt-act-btn{width:28px;height:28px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.7rem;transition:all .15s}
+.lt-act-edit{color:#f59e0b;border-color:#fde68a;background:#fffbeb}
+.lt-act-edit:hover{background:#f59e0b;color:#fff}
+.lt-act-copy{color:#8b5cf6;border-color:#ddd6fe;background:#f5f3ff}
+.lt-act-copy:hover{background:#8b5cf6;color:#fff}
+.lt-act-del{color:#ef4444;border-color:#fecaca;background:#fef2f2}
+.lt-act-del:hover{background:#ef4444;color:#fff}
+/* Toast */
+.lt-toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;background:#fff;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.14);padding:.85rem 1.25rem;min-width:260px;display:flex;align-items:center;gap:.75rem;transform:translateY(80px);opacity:0;transition:all .3s;border-left:4px solid #22c55e}
+.lt-toast.show{transform:translateY(0);opacity:1}
+.lt-toast.error{border-left-color:#ef4444}
+.lt-toast-msg{font-size:.85rem;font-weight:500;color:#111827;flex:1}
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="lt-page-title">Leave Types</h1>
+
+<div class="lt-layout">
+    <!-- Left: Add/Edit Form -->
+    <div class="lt-form-card" id="formCard">
+        <h2 class="lt-form-title" id="formTitle">Add New Leave Type</h2>
+        <p class="lt-form-subtitle" id="formSubtitle">Fill in the details to create a new leave type</p>
+        <form id="ltForm">
+            {% csrf_token %}
+            <input type="hidden" id="ltId" value="">
+            <div class="mb-3">
+                <label class="lt-form-label">Leave Type Name <span class="req">*</span></label>
+                <input type="text" id="ltName" name="name" class="lt-form-control" placeholder="e.g. Casual Leave, Sick Leave" required>
+            </div>
+            <div class="mb-3">
+                <label class="lt-form-label">Description</label>
+                <textarea id="ltDesc" name="description" class="lt-form-control" rows="2" placeholder="Brief description of the leave policies"></textarea>
+            </div>
+            <div class="lt-row mb-3">
+                <div class="lt-field">
+                    <label class="lt-form-label">Max Days / Year <span class="req">*</span></label>
+                    <input type="number" id="ltMaxDays" name="max_days_per_year" class="lt-form-control" value="0" min="0">
+                </div>
+                <div class="lt-field">
+                    <label class="lt-form-label">Color <span class="req">*</span></label>
+                    <div class="lt-color-wrap">
+                        <input type="color" id="ltColor" name="color" class="lt-color-input" value="#3B82F6">
+                        <span class="lt-color-hex" id="ltColorHex">#3B82F6</span>
+                    </div>
+                </div>
+            </div>
+            <div class="lt-toggle-wrap mb-3">
+                <div>
+                    <span class="lt-toggle-label">Paid Leave</span>
+                    <span class="lt-toggle-sub">Employees will receive salary for these days</span>
+                </div>
+                <label class="lt-switch">
+                    <input type="checkbox" id="ltIsPaid" name="is_paid" value="true" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="mb-3">
+                <label class="lt-form-label">Status <span class="req">*</span></label>
+                <select id="ltIsActive" name="is_active" class="lt-form-control">
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                </select>
+            </div>
+            <button type="submit" class="lt-submit-btn" id="ltSubmitBtn">Add Leave Type</button>
+            <button type="button" class="lt-submit-btn" id="ltCancelBtn" style="display:none;background:#6b7280;margin-top:.5rem;" onclick="resetForm()">Cancel Edit</button>
+        </form>
+    </div>
+
+    <!-- Right: Search + Table -->
+    <div class="lt-right">
+        <form method="get" id="searchForm">
+            <div class="lt-search-row">
+                <div class="lt-search-wrap">
+                    <i class="fas fa-search me-2" style="color:#9ca3af;font-size:.85rem;"></i>
+                    <input type="text" name="search" placeholder="Search leave types..." value="{{ search }}">
+                </div>
+                <button type="submit" class="lt-search-btn">Search</button>
+            </div>
+            <div style="margin-top:.5rem;">
+                <select name="status" class="lt-filter-select" onchange="this.form.submit()">
+                    <option value="">All Statuses</option>
+                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+                </select>
+            </div>
+        </form>
+
+        <div class="lt-table-card">
+            <div class="lt-table-header">
+                <h3 class="lt-table-title">Leave Types</h3>
+                <p class="lt-table-subtitle">Manage leave policies and maximum allocated days.</p>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="lt-table">
+                    <thead>
+                        <tr>
+                            <th>Leave Type</th>
+                            <th>Days/Year</th>
+                            <th>Payment Type</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lt in page_obj %}
+                        <tr id="lt-row-{{ lt.pk }}">
+                            <td>
+                                <div class="lt-type-cell">
+                                    <div class="lt-type-icon" style="background:{{ lt.color|default:'#22c55e' }};">
+                                        <i class="fas fa-calendar-day"></i>
+                                    </div>
+                                    <div>
+                                        <div class="lt-type-name">{{ lt.name }}</div>
+                                        {% if lt.description %}
+                                        <div class="lt-type-desc" id="lt-desc-{{ lt.pk }}">
+                                            <span class="lt-desc-short-{{ lt.pk }}">{{ lt.description|truncatechars:60 }}</span>
+                                            <span class="lt-desc-full-{{ lt.pk }}" style="display:none;">{{ lt.description }}</span>
+                                            {% if lt.description|length > 60 %}
+                                            <a href="#" onclick="toggleDesc({{ lt.pk }});return false;" id="lt-desc-toggle-{{ lt.pk }}">▼ Show more</a>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td><strong>{{ lt.max_days_per_year }}</strong> Days</td>
+                            <td>
+                                {% if lt.is_paid %}
+                                <span class="lt-badge lt-badge-paid">Paid</span>
+                                {% else %}
+                                <span class="lt-badge lt-badge-unpaid">Unpaid</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="lt-badge {% if lt.is_active %}lt-badge-active{% else %}lt-badge-inactive{% endif %}" id="lt-status-{{ lt.pk }}">
+                                    {{ lt.is_active|yesno:"Active,Inactive" }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="lt-actions">
+                                    <button class="lt-act-btn lt-act-edit" title="Edit" onclick="editLeaveType({{ lt.pk }})"><i class="fas fa-pen"></i></button>
+                                    <button class="lt-act-btn lt-act-copy" title="Duplicate" onclick="duplicateLeaveType({{ lt.pk }})"><i class="fas fa-copy"></i></button>
+                                    <button class="lt-act-btn lt-act-del" title="Delete" onclick="deleteLeaveType({{ lt.pk }})"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4" style="color:#9ca3af;">
+                                <i class="fas fa-tags fa-2x mb-2 d-block"></i>No leave types found.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="ltToast" class="lt-toast">
+    <span style="font-size:1.1rem;color:#22c55e;"><i class="fas fa-check-circle"></i></span>
+    <span class="lt-toast-msg" id="ltToastMsg"></span>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF='{{ csrf_token }}';
+function showToast(msg,isError=false){const el=document.getElementById('ltToast');document.getElementById('ltToastMsg').textContent=msg;el.classList.toggle('error',isError);el.style.borderLeftColor=isError?'#ef4444':'#22c55e';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),4000)}
+
+document.getElementById('ltColor').addEventListener('input',function(){document.getElementById('ltColorHex').textContent=this.value.toUpperCase()});
+
+function resetForm(){
+    document.getElementById('ltForm').reset();
+    document.getElementById('ltId').value='';
+    document.getElementById('formTitle').textContent='Add New Leave Type';
+    document.getElementById('formSubtitle').textContent='Fill in the details to create a new leave type';
+    document.getElementById('ltSubmitBtn').textContent='Add Leave Type';
+    document.getElementById('ltCancelBtn').style.display='none';
+    document.getElementById('ltColor').value='#3B82F6';
+    document.getElementById('ltColorHex').textContent='#3B82F6';
+    document.getElementById('ltIsPaid').checked=true;
+    document.getElementById('ltIsActive').value='true';
+}
+
+function editLeaveType(pk){
+    fetch(`/hrm/leave/types/${pk}/detail/`)
+    .then(r=>r.json()).then(data=>{
+        if(!data.success){showToast(data.error,true);return}
+        const lt=data.leave_type;
+        document.getElementById('formTitle').textContent='Edit Leave Type';
+        document.getElementById('formSubtitle').textContent='Update the details of this leave type';
+        document.getElementById('ltSubmitBtn').textContent='Update Leave Type';
+        document.getElementById('ltCancelBtn').style.display='block';
+        document.getElementById('ltId').value=pk;
+        document.getElementById('ltName').value=lt.name;
+        document.getElementById('ltDesc').value=lt.description;
+        document.getElementById('ltMaxDays').value=lt.max_days_per_year;
+        document.getElementById('ltColor').value=lt.color||'#3B82F6';
+        document.getElementById('ltColorHex').textContent=(lt.color||'#3B82F6').toUpperCase();
+        document.getElementById('ltIsPaid').checked=lt.is_paid;
+        document.getElementById('ltIsActive').value=lt.is_active?'true':'false';
+        document.getElementById('formCard').scrollIntoView({behavior:'smooth',block:'start'});
+    }).catch(()=>showToast('Failed to load.',true));
+}
+
+function duplicateLeaveType(pk){
+    fetch(`/hrm/leave/types/${pk}/detail/`)
+    .then(r=>r.json()).then(data=>{
+        if(!data.success){showToast(data.error,true);return}
+        const lt=data.leave_type;
+        resetForm();
+        document.getElementById('ltName').value=lt.name+' (Copy)';
+        document.getElementById('ltDesc').value=lt.description;
+        document.getElementById('ltMaxDays').value=lt.max_days_per_year;
+        document.getElementById('ltColor').value=lt.color||'#3B82F6';
+        document.getElementById('ltColorHex').textContent=(lt.color||'#3B82F6').toUpperCase();
+        document.getElementById('ltIsPaid').checked=lt.is_paid;
+        document.getElementById('formCard').scrollIntoView({behavior:'smooth',block:'start'});
+    }).catch(()=>showToast('Failed to load.',true));
+}
+
+document.getElementById('ltForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    const pk=document.getElementById('ltId').value;
+    const url=pk?`/hrm/leave/types/${pk}/update/`:'{% url "hrm:leave_type_create" %}';
+    const fd=new FormData(this);
+    // Handle is_paid toggle
+    if(!document.getElementById('ltIsPaid').checked){fd.set('is_paid','false')}else{fd.set('is_paid','true')}
+    fetch(url,{method:'POST',headers:{'X-CSRFToken':CSRF},body:fd})
+    .then(r=>r.json()).then(data=>{
+        if(data.success){showToast(data.message);resetForm();setTimeout(()=>location.reload(),900)}
+        else{showToast(data.error,true)}
+    }).catch(()=>showToast('Network error.',true));
+});
+
+function deleteLeaveType(pk){
+    if(!confirm('Delete this leave type? This cannot be undone.'))return;
+    fetch(`/hrm/leave/types/${pk}/delete/`,{method:'POST',headers:{'X-CSRFToken':CSRF}})
+    .then(r=>r.json()).then(data=>{
+        if(data.success){showToast(data.message);setTimeout(()=>location.reload(),900)}
+        else{showToast(data.error,true)}
+    }).catch(()=>showToast('Network error.',true));
+}
+
+function toggleDesc(pk){
+    const s=document.querySelector(`.lt-desc-short-${pk}`);
+    const f=document.querySelector(`.lt-desc-full-${pk}`);
+    const t=document.getElementById(`lt-desc-toggle-${pk}`);
+    if(f.style.display==='none'){s.style.display='none';f.style.display='inline';t.textContent='▲ Show less'}
+    else{s.style.display='inline';f.style.display='none';t.textContent='▼ Show more'}
+}
+</script>
+{% endblock %}

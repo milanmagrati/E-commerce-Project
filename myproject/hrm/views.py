@@ -7344,3 +7344,817 @@ def advance_payment_update_status(request, pk):
         'message': f'Advance payment marked as {adv.get_status_display()}.',
     })
 
+
+# ==================== LEAVE MANAGEMENT ====================
+
+LEAVE_TYPE_COLORS = [
+    '#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
+]
+
+
+@login_required
+def leave_application_list(request):
+    from .models import LeaveRequest, LeaveType, Employee, Department
+    from django.core.paginator import Paginator
+    from django.db.models import Q
+    import csv
+
+    search = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '')
+    leave_type_filter = request.GET.get('leave_type', '')
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    per_page = request.GET.get('per_page', '10')
+    export = request.GET.get('export', '')
+
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 25, 50, 100]:
+            per_page = 10
+    except (ValueError, TypeError):
+        per_page = 10
+
+    qs = LeaveRequest.objects.select_related(
+        'employee', 'leave_type', 'approved_by'
+    ).order_by('-created_at')
+
+    if search:
+        qs = qs.filter(
+            Q(employee__full_name__icontains=search) |
+            Q(employee__employee_id__icontains=search) |
+            Q(employee__email__icontains=search)
+        )
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if leave_type_filter:
+        qs = qs.filter(leave_type_id=leave_type_filter)
+    if date_from:
+        try:
+            from datetime import datetime
+            qs = qs.filter(start_date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            from datetime import datetime
+            qs = qs.filter(end_date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+
+    if export == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="leave_applications.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['#', 'Employee ID', 'Employee', 'Email', 'Leave Type',
+                         'Start Date', 'End Date', 'Days', 'Status', 'Applied On'])
+        for i, la in enumerate(qs.iterator(), 1):
+            writer.writerow([
+                i, la.employee.employee_id, la.employee.full_name,
+                la.employee.email,
+                la.leave_type.name if la.leave_type else '',
+                la.start_date.strftime('%Y-%m-%d'),
+                la.end_date.strftime('%Y-%m-%d'),
+                la.days,
+                la.get_status_display(),
+                la.created_at.strftime('%Y-%m-%d'),
+            ])
+        return response
+
+    total = qs.count()
+    paginator = Paginator(qs, per_page)
+    page_num = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_num)
+
+    leave_types = LeaveType.objects.filter(is_active=True).order_by('name')
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+
+    # Assign colors to leave types
+    lt_colors = {}
+    for idx, lt in enumerate(LeaveType.objects.all()):
+        lt_colors[lt.pk] = LEAVE_TYPE_COLORS[idx % len(LEAVE_TYPE_COLORS)]
+
+    context = {
+        'page_title': 'Leave Applications',
+        'page_obj': page_obj,
+        'total': total,
+        'leave_types': leave_types,
+        'employees': employees,
+        'lt_colors': lt_colors,
+        'search': search,
+        'status_filter': status_filter,
+        'leave_type_filter': leave_type_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+        'per_page': per_page,
+        'per_page_options': [10, 25, 50, 100],
+        'status_choices': LeaveRequest.STATUS_CHOICES,
+    }
+    return render(request, 'hrm/leave_applications.html', context)
+
+
+@login_required
+def leave_application_create(request):
+    from .models import LeaveRequest, LeaveType, Employee
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        employee_id = request.POST.get('employee')
+        leave_type_id = request.POST.get('leave_type')
+        start_date = request.POST.get('start_date')
+        end_date = request.POST.get('end_date')
+        reason = request.POST.get('reason', '').strip()
+        status = request.POST.get('status', 'approved').strip()
+
+        if not all([employee_id, leave_type_id, start_date, end_date, reason]):
+            return JsonResponse({'success': False, 'error': 'All required fields must be filled.'}, status=400)
+
+        from datetime import datetime as dt
+        employee = get_object_or_404(Employee, pk=employee_id)
+        leave_type = get_object_or_404(LeaveType, pk=leave_type_id)
+
+        la = LeaveRequest(
+            employee=employee,
+            leave_type=leave_type,
+            start_date=dt.strptime(start_date, '%Y-%m-%d').date(),
+            end_date=dt.strptime(end_date, '%Y-%m-%d').date(),
+            reason=reason,
+            status=status if status in ('pending', 'approved', 'rejected', 'cancelled') else 'approved',
+        )
+        if 'attachment' in request.FILES:
+            la.attachment = request.FILES['attachment']
+        la.save()
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Leave application created successfully.',
+            'id': la.pk,
+            'application': {
+                'id': la.pk,
+                'employee_name': la.employee.full_name,
+                'employee_email': la.employee.email or '',
+                'employee_initial': (la.employee.full_name or 'U')[0].upper(),
+                'employee_avatar': la.employee.profile_image.url if la.employee.profile_image else '',
+                'leave_type': la.leave_type.name if la.leave_type else '',
+                'leave_type_color': la.leave_type.color if la.leave_type else '#22c55e',
+                'start_date': la.start_date.strftime('%Y-%m-%d'),
+                'end_date': la.end_date.strftime('%Y-%m-%d'),
+                'days': la.days,
+                'status': la.status,
+                'status_display': la.get_status_display(),
+                'created_at': la.created_at.strftime('%Y-%m-%d'),
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def leave_application_detail(request, pk):
+    from .models import LeaveRequest
+    try:
+        la = LeaveRequest.objects.select_related('employee', 'leave_type', 'approved_by').get(pk=pk)
+    except LeaveRequest.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    data = {
+        'success': True,
+        'application': {
+            'id': la.pk,
+            'employee_id': la.employee.pk,
+            'employee_name': la.employee.full_name,
+            'employee_code': la.employee.employee_id,
+            'employee_email': la.employee.email,
+            'leave_type_id': la.leave_type.pk if la.leave_type else None,
+            'leave_type_name': la.leave_type.name if la.leave_type else '',
+            'start_date': la.start_date.strftime('%Y-%m-%d'),
+            'end_date': la.end_date.strftime('%Y-%m-%d'),
+            'days': la.days,
+            'reason': la.reason,
+            'status': la.status,
+            'status_display': la.get_status_display(),
+            'rejection_reason': la.rejection_reason,
+            'approved_by': la.approved_by.full_name if la.approved_by else '',
+            'approved_at': la.approved_at.strftime('%Y-%m-%d %H:%M') if la.approved_at else '',
+            'applied_on': la.created_at.strftime('%Y-%m-%d'),
+            'attachment_url': la.attachment.url if la.attachment else '',
+        }
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def leave_application_update(request, pk):
+    from .models import LeaveRequest, LeaveType, Employee
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        la = LeaveRequest.objects.get(pk=pk)
+    except LeaveRequest.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    try:
+        employee_id = request.POST.get('employee')
+        leave_type_id = request.POST.get('leave_type')
+        start_date = request.POST.get('start_date')
+        end_date = request.POST.get('end_date')
+        reason = request.POST.get('reason', '').strip()
+
+        if not all([employee_id, leave_type_id, start_date, end_date, reason]):
+            return JsonResponse({'success': False, 'error': 'All required fields must be filled.'}, status=400)
+
+        from datetime import datetime as dt
+        la.employee = get_object_or_404(Employee, pk=employee_id)
+        la.leave_type = get_object_or_404(LeaveType, pk=leave_type_id)
+        la.start_date = dt.strptime(start_date, '%Y-%m-%d').date()
+        la.end_date = dt.strptime(end_date, '%Y-%m-%d').date()
+        la.reason = reason
+        if 'attachment' in request.FILES:
+            la.attachment = request.FILES['attachment']
+        la.save()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': 'Leave application updated successfully.',
+            'application': {
+                'id': la.pk,
+                'employee_name': la.employee.full_name,
+                'employee_email': la.employee.email or '',
+                'employee_initial': (la.employee.full_name or 'U')[0].upper(),
+                'employee_avatar': la.employee.profile_image.url if la.employee.profile_image else '',
+                'leave_type': la.leave_type.name if la.leave_type else '',
+                'leave_type_color': la.leave_type.color if la.leave_type else '#22c55e',
+                'start_date': la.start_date.strftime('%Y-%m-%d'),
+                'end_date': la.end_date.strftime('%Y-%m-%d'),
+                'days': la.days,
+                'status': la.status,
+                'status_display': la.get_status_display(),
+                'created_at': la.created_at.strftime('%Y-%m-%d'),
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def leave_application_delete(request, pk):
+    from .models import LeaveRequest
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        la = LeaveRequest.objects.get(pk=pk)
+    except LeaveRequest.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    la.delete()
+    return JsonResponse({'success': True, 'message': 'Leave application deleted successfully.'})
+
+
+@login_required
+def leave_application_update_status(request, pk):
+    from .models import LeaveRequest
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        la = LeaveRequest.objects.select_related('employee').get(pk=pk)
+    except LeaveRequest.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    action = request.POST.get('action', '').strip()
+    rejection_reason = request.POST.get('rejection_reason', '').strip()
+    if action not in ['approve', 'reject', 'cancel', 'pending']:
+        return JsonResponse({'success': False, 'error': 'Invalid action.'}, status=400)
+    if action == 'reject' and not rejection_reason:
+        return JsonResponse({'success': False, 'error': 'Rejection reason is required.'}, status=400)
+    approver = None
+    try:
+        approver = request.user.employee_profile
+    except Exception:
+        pass
+    if action == 'approve':
+        la.status = 'approved'
+        la.approved_by = approver
+        la.approved_at = timezone.now()
+        la.rejection_reason = ''
+    elif action == 'reject':
+        la.status = 'rejected'
+        la.approved_by = approver
+        la.approved_at = timezone.now()
+        la.rejection_reason = rejection_reason
+    elif action == 'cancel':
+        la.status = 'cancelled'
+        la.rejection_reason = ''
+    elif action == 'pending':
+        la.status = 'pending'
+        la.rejection_reason = ''
+    la.save()
+    return JsonResponse({
+        'success': True,
+        'status': la.status,
+        'status_display': la.get_status_display(),
+        'message': f'Leave application {la.get_status_display().lower()} successfully.',
+    })
+
+
+@login_required
+def leave_balance_list(request):
+    from .models import LeaveBalance, LeaveType, Employee
+    from django.core.paginator import Paginator
+    from django.db.models import Q
+
+    search = request.GET.get('search', '').strip()
+    year_filter = request.GET.get('year', str(timezone.now().year))
+    per_page = request.GET.get('per_page', '9')
+
+    try:
+        per_page = int(per_page)
+        if per_page not in [9, 18, 27, 54]:
+            per_page = 9
+    except (ValueError, TypeError):
+        per_page = 9
+
+    try:
+        year_int = int(year_filter)
+    except (ValueError, TypeError):
+        year_int = timezone.now().year
+
+    # Get all active employees who have balances for the given year
+    emp_qs = Employee.objects.filter(employee_status='active').order_by('full_name')
+    if search:
+        emp_qs = emp_qs.filter(
+            Q(full_name__icontains=search) | Q(employee_id__icontains=search)
+        )
+
+    # Prefetch leave balances for the year
+    from django.db.models import Prefetch
+    balances_prefetch = Prefetch(
+        'leave_balances',
+        queryset=LeaveBalance.objects.filter(year=year_int).select_related('leave_type').order_by('leave_type__name'),
+        to_attr='year_balances'
+    )
+    emp_qs = emp_qs.prefetch_related(balances_prefetch)
+
+    total = emp_qs.count()
+    paginator = Paginator(emp_qs, per_page)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    leave_types = LeaveType.objects.filter(is_active=True).order_by('name')
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+    current_year = timezone.now().year
+    years = list(range(current_year - 3, current_year + 2))
+
+    # Last sync time: use the most recent updated_at from LeaveBalance for the year
+    last_synced = LeaveBalance.objects.filter(year=year_int).order_by('-updated_at').values_list('updated_at', flat=True).first()
+
+    context = {
+        'page_title': 'Leave Balances',
+        'page_obj': page_obj,
+        'total': total,
+        'leave_types': leave_types,
+        'employees': employees,
+        'years': years,
+        'search': search,
+        'year_filter': str(year_int),
+        'per_page': per_page,
+        'current_year': current_year,
+        'last_synced': last_synced,
+    }
+    return render(request, 'hrm/leave_balances.html', context)
+
+
+@login_required
+def leave_balance_create(request):
+    from .models import LeaveBalance, LeaveType, Employee
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        employee_id = request.POST.get('employee')
+        leave_type_id = request.POST.get('leave_type')
+        year = request.POST.get('year', timezone.now().year)
+        allocated_days = request.POST.get('allocated_days', 0)
+        carry_forward_days = request.POST.get('carry_forward_days', 0)
+
+        if not all([employee_id, leave_type_id]):
+            return JsonResponse({'success': False, 'error': 'Employee and leave type are required.'}, status=400)
+
+        employee = get_object_or_404(Employee, pk=employee_id)
+        leave_type = get_object_or_404(LeaveType, pk=leave_type_id)
+
+        lb, created = LeaveBalance.objects.get_or_create(
+            employee=employee, leave_type=leave_type, year=int(year),
+            defaults={'allocated_days': allocated_days, 'carry_forward_days': carry_forward_days}
+        )
+        if not created:
+            lb.allocated_days = allocated_days
+            lb.carry_forward_days = carry_forward_days
+            lb.save()
+
+        return JsonResponse({'success': True, 'message': 'Leave balance saved successfully.', 'id': lb.pk})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def leave_balance_delete(request, pk):
+    from .models import LeaveBalance
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        lb = LeaveBalance.objects.get(pk=pk)
+    except LeaveBalance.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    lb.delete()
+    return JsonResponse({'success': True, 'message': 'Leave balance deleted.'})
+
+
+@login_required
+def leave_balance_resync(request):
+    """Auto-create/initialize leave balances for all active employees x all active leave types for the given year."""
+    from .models import LeaveBalance, LeaveType, Employee
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        year = int(request.POST.get('year', timezone.now().year))
+        employees = Employee.objects.filter(employee_status='active')
+        leave_types = LeaveType.objects.filter(is_active=True)
+        created_count = 0
+        for emp in employees:
+            for lt in leave_types:
+                allocated = lt.max_days_per_year if lt.max_days_per_year and lt.max_days_per_year > 0 else 0
+                lb, created = LeaveBalance.objects.get_or_create(
+                    employee=emp, leave_type=lt, year=year,
+                    defaults={'allocated_days': allocated, 'used_days': 0, 'carry_forward_days': 0}
+                )
+                if created:
+                    created_count += 1
+        return JsonResponse({'success': True, 'message': f'Re-sync complete. {created_count} new balance records created for {year}.', 'created': created_count})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def leave_balance_sync_history(request):
+    """Return recent sync history (leave balance update activity by day)."""
+    from .models import LeaveBalance
+    from django.db.models.functions import TruncDate
+    from django.db.models import Count, Max
+    year = request.GET.get('year', str(timezone.now().year))
+    try:
+        year = int(year)
+    except (ValueError, TypeError):
+        year = timezone.now().year
+    history = (
+        LeaveBalance.objects
+        .filter(year=year)
+        .annotate(date=TruncDate('updated_at'))
+        .values('date')
+        .annotate(count=Count('id'), last_updated=Max('updated_at'))
+        .order_by('-date')[:20]
+    )
+    data = [
+        {'date': str(h['date']), 'count': h['count'],
+         'last_updated': h['last_updated'].strftime('%Y-%m-%d %H:%M') if h['last_updated'] else ''}
+        for h in history
+    ]
+    return JsonResponse({'success': True, 'history': data, 'year': year})
+
+
+@login_required
+def leave_type_management(request):
+    from .models import LeaveType
+    from django.core.paginator import Paginator
+
+    search = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    per_page = request.GET.get('per_page', '10')
+
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 25, 50, 100]:
+            per_page = 10
+    except (ValueError, TypeError):
+        per_page = 10
+
+    qs = LeaveType.objects.all().order_by('name')
+    if search:
+        qs = qs.filter(name__icontains=search)
+    if status_filter == 'active':
+        qs = qs.filter(is_active=True)
+    elif status_filter == 'inactive':
+        qs = qs.filter(is_active=False)
+
+    total = qs.count()
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    context = {
+        'page_title': 'Leave Types',
+        'page_obj': page_obj,
+        'total': total,
+        'search': search,
+        'status_filter': status_filter,
+        'per_page': per_page,
+    }
+    return render(request, 'hrm/leave_types.html', context)
+
+
+@login_required
+def leave_type_create(request):
+    from .models import LeaveType
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        max_days = request.POST.get('max_days_per_year', 0)
+        is_paid = request.POST.get('is_paid') == 'true'
+        is_active = request.POST.get('is_active', 'true') == 'true'
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Name is required.'}, status=400)
+        if LeaveType.objects.filter(name__iexact=name).exists():
+            return JsonResponse({'success': False, 'error': 'Leave type with this name already exists.'}, status=400)
+
+        color = request.POST.get('color', '#22c55e').strip()
+        lt = LeaveType.objects.create(
+            name=name, description=description,
+            max_days_per_year=int(max_days), color=color, is_paid=is_paid, is_active=is_active
+        )
+        return JsonResponse({'success': True, 'message': f'Leave type "{lt.name}" created.', 'id': lt.pk})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def leave_type_detail(request, pk):
+    from .models import LeaveType
+    try:
+        lt = LeaveType.objects.get(pk=pk)
+    except LeaveType.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    return JsonResponse({
+        'success': True,
+        'leave_type': {
+            'id': lt.pk,
+            'name': lt.name,
+            'description': lt.description,
+            'max_days_per_year': lt.max_days_per_year,
+            'color': lt.color,
+            'is_paid': lt.is_paid,
+            'is_active': lt.is_active,
+        }
+    })
+
+
+@login_required
+def leave_type_update(request, pk):
+    from .models import LeaveType
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        lt = LeaveType.objects.get(pk=pk)
+    except LeaveType.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    try:
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Name is required.'}, status=400)
+        if LeaveType.objects.filter(name__iexact=name).exclude(pk=pk).exists():
+            return JsonResponse({'success': False, 'error': 'Name already used.'}, status=400)
+        lt.name = name
+        lt.description = request.POST.get('description', lt.description)
+        max_days = request.POST.get('max_days_per_year')
+        if max_days is not None:
+            lt.max_days_per_year = int(max_days)
+        color = request.POST.get('color')
+        if color:
+            lt.color = color
+        is_paid = request.POST.get('is_paid')
+        if is_paid is not None:
+            lt.is_paid = is_paid in ('true', 'on', '1')
+        is_active = request.POST.get('is_active')
+        if is_active is not None:
+            lt.is_active = is_active == 'true'
+        lt.save()
+        return JsonResponse({'success': True, 'message': f'Leave type "{lt.name}" updated.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def leave_type_delete(request, pk):
+    from .models import LeaveType
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        lt = LeaveType.objects.get(pk=pk)
+    except LeaveType.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    if lt.requests.exists():
+        return JsonResponse({'success': False, 'error': 'Cannot delete: leave type is used in leave applications.'}, status=400)
+    name = lt.name
+    lt.delete()
+    return JsonResponse({'success': True, 'message': f'Leave type "{name}" deleted.'})
+
+
+@login_required
+def leave_type_toggle_status(request, pk):
+    from .models import LeaveType
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        lt = LeaveType.objects.get(pk=pk)
+    except LeaveType.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    lt.is_active = not lt.is_active
+    lt.save()
+    return JsonResponse({'success': True, 'is_active': lt.is_active, 'message': f'Status updated to {"Active" if lt.is_active else "Inactive"}.'})
+
+
+@login_required
+def leave_policy_list(request):
+    from .models import LeavePolicy, LeaveType
+    from django.core.paginator import Paginator
+    import json
+
+    search = request.GET.get('search', '').strip()
+    per_page = request.GET.get('per_page', '10')
+
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 25, 50, 100]:
+            per_page = 10
+    except (ValueError, TypeError):
+        per_page = 10
+
+    qs = LeavePolicy.objects.prefetch_related('leave_types').order_by('-created_at')
+    if search:
+        qs = qs.filter(name__icontains=search)
+
+    total = qs.count()
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+    leave_types = LeaveType.objects.filter(is_active=True).order_by('name')
+
+    # Assign colors to leave types
+    lt_colors = {}
+    for idx, lt in enumerate(LeaveType.objects.all()):
+        lt_colors[lt.pk] = LEAVE_TYPE_COLORS[idx % len(LEAVE_TYPE_COLORS)]
+
+    context = {
+        'page_title': 'Leave Policies',
+        'page_obj': page_obj,
+        'total': total,
+        'leave_types': leave_types,
+        'lt_colors': lt_colors,
+        'lt_colors_json': json.dumps({str(k): v for k, v in lt_colors.items()}),
+        'search': search,
+        'per_page': per_page,
+        'per_page_options': [10, 25, 50, 100],
+    }
+    return render(request, 'hrm/leave_policies.html', context)
+
+
+@login_required
+def leave_policy_create(request):
+    from .models import LeavePolicy, LeaveType
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        carry_forward_days = request.POST.get('max_carry_forward_days', 0)
+        min_days = request.POST.get('min_days_per_application', 1)
+        max_days = request.POST.get('max_days_per_application', 14)
+        requires_approval = request.POST.get('requires_approval') in ('true', 'on', '1')
+        is_active = request.POST.get('is_active', 'true') == 'true'
+        leave_type_id = request.POST.get('leave_type', '')
+        lt_ids = request.POST.getlist('leave_types')
+
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Name is required.'}, status=400)
+
+        try:
+            carry_forward_int = int(carry_forward_days)
+        except (ValueError, TypeError):
+            carry_forward_int = 0
+
+        policy = LeavePolicy.objects.create(
+            name=name, description=description,
+            carry_forward=carry_forward_int > 0,
+            max_carry_forward_days=carry_forward_int,
+            min_days_per_application=int(min_days) if min_days else 1,
+            max_days_per_application=int(max_days) if max_days else 14,
+            requires_approval=requires_approval,
+            encashment_allowed=False,
+            is_active=is_active,
+        )
+        # Handle single leave_type or multiple leave_types
+        if leave_type_id:
+            policy.leave_types.set(LeaveType.objects.filter(pk=leave_type_id))
+        elif lt_ids:
+            policy.leave_types.set(LeaveType.objects.filter(pk__in=lt_ids))
+        return JsonResponse({'success': True, 'message': f'Policy "{policy.name}" created.', 'id': policy.pk})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def leave_policy_detail(request, pk):
+    from .models import LeavePolicy
+    try:
+        policy = LeavePolicy.objects.prefetch_related('leave_types').get(pk=pk)
+    except LeavePolicy.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    return JsonResponse({
+        'success': True,
+        'policy': {
+            'id': policy.pk,
+            'name': policy.name,
+            'description': policy.description,
+            'carry_forward': policy.carry_forward,
+            'max_carry_forward_days': policy.max_carry_forward_days,
+            'min_days_per_application': policy.min_days_per_application,
+            'max_days_per_application': policy.max_days_per_application,
+            'requires_approval': policy.requires_approval,
+            'encashment_allowed': policy.encashment_allowed,
+            'is_active': policy.is_active,
+            'leave_type_ids': list(policy.leave_types.values_list('id', flat=True)),
+        }
+    })
+
+
+@login_required
+def leave_policy_update(request, pk):
+    from .models import LeavePolicy, LeaveType
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        policy = LeavePolicy.objects.get(pk=pk)
+    except LeavePolicy.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    try:
+        name = request.POST.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Name is required.'}, status=400)
+        policy.name = name
+        policy.description = request.POST.get('description', policy.description)
+        carry_forward_days = request.POST.get('max_carry_forward_days')
+        if carry_forward_days is not None:
+            try:
+                carry_forward_int = int(carry_forward_days)
+            except (ValueError, TypeError):
+                carry_forward_int = 0
+            policy.max_carry_forward_days = carry_forward_int
+            policy.carry_forward = carry_forward_int > 0
+        min_days = request.POST.get('min_days_per_application')
+        if min_days is not None:
+            policy.min_days_per_application = int(min_days) if min_days else 1
+        max_days = request.POST.get('max_days_per_application')
+        if max_days is not None:
+            policy.max_days_per_application = int(max_days) if max_days else 14
+        req_approval = request.POST.get('requires_approval')
+        policy.requires_approval = req_approval in ('true', 'on', '1')
+        ia = request.POST.get('is_active')
+        if ia is not None:
+            policy.is_active = ia == 'true'
+        leave_type_id = request.POST.get('leave_type', '')
+        lt_ids = request.POST.getlist('leave_types')
+        if leave_type_id:
+            policy.leave_types.set(LeaveType.objects.filter(pk=leave_type_id))
+        elif lt_ids is not None:
+            policy.leave_types.set(LeaveType.objects.filter(pk__in=lt_ids))
+        policy.save()
+        return JsonResponse({'success': True, 'message': f'Policy "{policy.name}" updated.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def leave_policy_delete(request, pk):
+    from .models import LeavePolicy
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        policy = LeavePolicy.objects.get(pk=pk)
+    except LeavePolicy.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    name = policy.name
+    policy.delete()
+    return JsonResponse({'success': True, 'message': f'Policy "{name}" deleted.'})
+
+
+@login_required
+def leave_policy_toggle_status(request, pk):
+    from .models import LeavePolicy
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        policy = LeavePolicy.objects.get(pk=pk)
+    except LeavePolicy.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found.'}, status=404)
+    policy.is_active = not policy.is_active
+    policy.save()
+    return JsonResponse({'success': True, 'is_active': policy.is_active,
+                         'message': f'Status updated to {"Active" if policy.is_active else "Inactive"}.'})
+
+
+# Import LeaveBalance and LeavePolicy for use in views above
+from .models import LeaveBalance, LeavePolicy
+

@@ -35,7 +35,7 @@ from django.core.files.storage import default_storage
 from django.core.files.base import File
 from django.conf import settings
 from django.utils.text import slugify
-from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem, StaffTarget, OrderFollowUp, CompanySetup
+from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem, StaffTarget, OrderFollowUp, CompanySetup, APISettings
 
 # IMPORT DECORATORS
 from accounts.decorators import permission_required, admin_only
@@ -2835,7 +2835,7 @@ def orders_list(request):
         'payment_status_bulk_options': payment_status_bulk_options,
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
-        'ORDER_AUTO_SYNC_INTERVAL': getattr(settings, 'ORDER_AUTO_SYNC_INTERVAL', 14400),
+        'ORDER_AUTO_SYNC_INTERVAL': APISettings.get_settings().order_sync_interval,
     }
     
     return render(request, 'orders_list.html', context)
@@ -3587,7 +3587,7 @@ def order_detail(request, order_id):
         # API Integration configs for logistics
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
-        'AUTO_SYNC_INTERVAL': getattr(settings, 'ORDER_AUTO_SYNC_INTERVAL', 14400),
+        'AUTO_SYNC_INTERVAL': APISettings.get_settings().order_sync_interval,
     }
 
     # Exchange eligibility check
@@ -18124,8 +18124,9 @@ def settings_hub(request):
 
     active_section = request.GET.get('section', 'company_setup')
 
-    from .models import CompanySetup
+    from .models import CompanySetup, APISettings
     company = CompanySetup.get_settings()
+    api_settings = APISettings.get_settings()
 
     from hrm.models import ZKDevice
     devices_qs = ZKDevice.objects.all()
@@ -18209,9 +18210,27 @@ def settings_hub(request):
         messages.success(request, 'Company settings saved successfully!')
         return redirect('settings_hub')
 
+    # Handle API settings form POST
+    if request.method == 'POST' and active_section == 'api_settings':
+        def _safe_int(key, default, min_val=1, max_val=86400):
+            try:
+                val = int(request.POST.get(key, default))
+                return max(min_val, min(max_val, val))
+            except (ValueError, TypeError):
+                return default
+
+        api_settings.order_sync_interval = _safe_int('order_sync_interval', api_settings.order_sync_interval, 60, 86400)
+        api_settings.webhook_check_interval = _safe_int('webhook_check_interval', api_settings.webhook_check_interval, 10, 3600)
+        api_settings.ncm_api_timeout = _safe_int('ncm_api_timeout', api_settings.ncm_api_timeout, 5, 120)
+        api_settings.save()
+        messages.success(request, 'API settings saved successfully!')
+        from django.urls import reverse
+        return redirect(reverse('settings_hub') + '?section=api_settings')
+
     context = {
         'active_section': active_section,
         'company': company,
+        'api_settings': api_settings,
         'devices': device_list,
         'device_count': len(device_list),
     }

@@ -1,0 +1,376 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Leave Policies - HRM{% endblock %}
+
+{% block extra_css %}
+<style>
+.lp-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.5rem}
+.lp-title{font-size:1.5rem;font-weight:700;color:#1a1a2e;margin:0}
+.btn-add{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;padding:.5rem 1.2rem;border-radius:8px;font-size:.875rem;font-weight:600;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:.4rem}
+.btn-add:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(34,197,94,.35);color:#fff}
+.lp-search-bar{background:#fff;border-radius:10px;padding:.75rem 1rem;box-shadow:0 1px 4px rgba(0,0,0,.06);display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem}
+.lp-search-input-wrap{display:flex;align-items:center;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:.35rem .75rem;flex:1;min-width:200px}
+.lp-search-input-wrap input{border:none;background:transparent;outline:none;font-size:.875rem;color:#374151;flex:1}
+.lp-search-btn{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;padding:.4rem 1rem;border-radius:7px;font-size:.85rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem}
+.btn-filter-toggle{background:#fff;border:1.5px solid #e2e8f0;color:#374151;padding:.4rem 1rem;border-radius:7px;font-size:.85rem;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem}
+.lp-table-card{background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden}
+.lp-table-head{display:flex;align-items:center;justify-content:flex-end;padding:.6rem 1.25rem;border-bottom:1px solid #f1f5f9}
+.lp-per-page-wrap{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:#6b7280}
+.lp-per-page-wrap select{border:1px solid #e2e8f0;border-radius:6px;padding:.2rem .5rem;font-size:.8rem}
+.lp-table{width:100%;border-collapse:collapse}
+.lp-table thead tr{background:#f8fafc}
+.lp-table thead th{padding:.75rem 1rem;font-size:.78rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #f1f5f9;white-space:nowrap}
+.lp-table tbody tr{border-bottom:1px solid #f8fafc;transition:background .15s}
+.lp-table tbody tr:hover{background:#f0fdf4}
+.lp-table tbody td{padding:.75rem 1rem;font-size:.875rem;color:#374151;vertical-align:middle}
+.lt-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0}
+.lt-cell{display:flex;align-items:center;gap:.4rem}
+.approval-required{color:#ea580c;font-weight:600;font-size:.8rem}
+.approval-not{color:#9ca3af;font-weight:500;font-size:.8rem}
+.status-badge{display:inline-flex;align-items:center;padding:.25rem .7rem;border-radius:20px;font-size:.75rem;font-weight:600}
+.status-active{background:#dcfce7;color:#16a34a}
+.status-inactive{background:#f3f4f6;color:#6b7280}
+.action-btns{display:flex;gap:.35rem}
+.act-btn{width:28px;height:28px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.7rem;transition:all .15s}
+.act-view{color:#3b82f6;border-color:#bfdbfe;background:#eff6ff}
+.act-view:hover{background:#3b82f6;color:#fff}
+.act-edit{color:#f59e0b;border-color:#fde68a;background:#fffbeb}
+.act-edit:hover{background:#f59e0b;color:#fff}
+.act-copy{color:#8b5cf6;border-color:#ddd6fe;background:#f5f3ff}
+.act-copy:hover{background:#8b5cf6;color:#fff}
+.act-del{color:#ef4444;border-color:#fecaca;background:#fef2f2}
+.act-del:hover{background:#ef4444;color:#fff}
+.lp-pagination{display:flex;align-items:center;justify-content:space-between;padding:.85rem 1.25rem;border-top:1px solid #f1f5f9;flex-wrap:wrap;gap:.5rem}
+.lp-page-info{font-size:.8rem;color:#22c55e}
+.lp-page-btns{display:flex;gap:.3rem;align-items:center}
+.lp-page-btn{min-width:32px;height:32px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;text-decoration:none;padding:0 .5rem}
+.lp-page-btn:hover{background:#22c55e;color:#fff;border-color:#22c55e;text-decoration:none}
+.lp-page-btn.active{background:#22c55e;color:#fff;border-color:#22c55e;font-weight:700}
+.lp-page-btn.disabled{opacity:.4;pointer-events:none}
+/* Modal */
+.lp-modal .modal-content{border-radius:14px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)}
+.lp-modal .modal-header{background:#fff;border-bottom:1px solid #f1f5f9;padding:1.25rem 1.5rem;border-radius:14px 14px 0 0}
+.lp-modal .modal-title{color:#1a1a2e;font-weight:700;font-size:1.1rem}
+.lp-modal .btn-close{opacity:.5}
+.lp-modal .modal-body{padding:1.5rem}
+.lp-modal .modal-footer{padding:1rem 1.5rem;border-top:1px solid #f1f5f9}
+.lp-form-label{font-size:.83rem;font-weight:600;color:#374151;margin-bottom:.35rem}
+.lp-form-label .req{color:#ef4444}
+.lp-form-control{border:1.5px solid #e2e8f0;border-radius:8px;padding:.55rem .85rem;font-size:.875rem;color:#374151;width:100%;transition:border-color .2s;background:#fff}
+.lp-form-control:focus{outline:none;border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+.lp-approval-wrap{display:flex;align-items:center;gap:.6rem;padding:.5rem 0}
+.lp-approval-dot{width:14px;height:14px;border-radius:50%;background:#22c55e;flex-shrink:0;transition:background .2s}
+.lp-approval-dot.off{background:#d1d5db}
+.lp-approval-label{font-size:.875rem;font-weight:500;color:#374151;cursor:pointer;user-select:none}
+.btn-cancel-modal{background:#fff;border:1.5px solid #e2e8f0;color:#374151;padding:.5rem 1.4rem;border-radius:8px;font-size:.875rem;font-weight:500;cursor:pointer}
+.btn-save-modal{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;padding:.5rem 1.5rem;border-radius:8px;font-size:.875rem;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-save-modal:hover{opacity:.9}
+/* Toast */
+.lp-toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;background:#fff;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.14);padding:.85rem 1.25rem;min-width:260px;display:flex;align-items:center;gap:.75rem;transform:translateY(80px);opacity:0;transition:all .3s;border-left:4px solid #22c55e}
+.lp-toast.show{transform:translateY(0);opacity:1}
+.lp-toast.error{border-left-color:#ef4444}
+.lp-toast-msg{font-size:.85rem;font-weight:500;color:#111827;flex:1}
+/* View Modal */
+.vd-row{display:flex;margin-bottom:.6rem}
+.vd-label{font-weight:600;color:#6b7280;font-size:.8rem;width:140px;flex-shrink:0}
+.vd-value{font-size:.875rem;color:#111827;flex:1}
+@media(max-width:768px){.lp-header{flex-direction:column;align-items:flex-start}.lp-table{min-width:800px}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lp-header">
+    <h1 class="lp-title">Leave Policies</h1>
+    <button class="btn-add" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Leave Policy</button>
+</div>
+
+<form method="get" id="searchForm">
+    <div class="lp-search-bar">
+        <div class="lp-search-input-wrap">
+            <i class="fas fa-search me-2" style="color:#9ca3af;font-size:.85rem;"></i>
+            <input type="text" name="search" placeholder="Search..." value="{{ search }}">
+        </div>
+        <button type="submit" class="lp-search-btn"><i class="fas fa-search"></i> Search</button>
+        <button type="button" class="btn-filter-toggle"><i class="fas fa-filter"></i> Filters</button>
+        {% if search %}<a href="{% url 'hrm:leave_policy_list' %}" style="color:#ef4444;font-size:.85rem;text-decoration:none;"><i class="fas fa-times"></i> Clear</a>{% endif %}
+    </div>
+    <input type="hidden" name="per_page" value="{{ per_page }}">
+</form>
+
+<div class="lp-table-card">
+    <div class="lp-table-head">
+        <div class="lp-per-page-wrap">
+            Per Page:
+            <select onchange="changePerPage(this.value)">
+                {% for opt in per_page_options %}
+                <option value="{{ opt }}" {% if per_page == opt %}selected{% endif %}>{{ opt }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="lp-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Policy Name <i class="fas fa-sort" style="font-size:.65rem;color:#cbd5e1;margin-left:3px;"></i></th>
+                    <th>Leave Type</th>
+                    <th>Carry Forward</th>
+                    <th>Approval</th>
+                    <th>Status</th>
+                    <th>Created At <i class="fas fa-sort" style="font-size:.65rem;color:#cbd5e1;margin-left:3px;"></i></th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for policy in page_obj %}
+                <tr id="policy-row-{{ policy.pk }}">
+                    <td style="color:#9ca3af;font-weight:500;">{{ forloop.counter|add:page_obj.start_index|add:"-1" }}</td>
+                    <td><strong style="color:#111827;">{{ policy.name }}</strong></td>
+                    <td>
+                        {% with lt=policy.leave_types.first %}
+                        {% if lt %}
+                        <div class="lt-cell">
+                            <span class="lt-dot" style="background:{{ lt.color|default:'#22c55e' }};"></span>
+                            <span>{{ lt.name }}</span>
+                        </div>
+                        {% else %}
+                        <span style="color:#9ca3af;">—</span>
+                        {% endif %}
+                        {% endwith %}
+                    </td>
+                    <td>{{ policy.max_carry_forward_days }} days</td>
+                    <td>
+                        {% if policy.requires_approval %}
+                        <span class="approval-required">Required</span>
+                        {% else %}
+                        <span class="approval-not">Not Required</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="status-badge {% if policy.is_active %}status-active{% else %}status-inactive{% endif %}" id="policy-status-{{ policy.pk }}">
+                            {{ policy.is_active|yesno:"Active,Inactive" }}
+                        </span>
+                    </td>
+                    <td style="color:#6b7280;">{{ policy.created_at|date:"Y-m-d" }}</td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="act-btn act-view" title="View" onclick="viewPolicy({{ policy.pk }})"><i class="fas fa-eye"></i></button>
+                            <button class="act-btn act-edit" title="Edit" onclick="editPolicy({{ policy.pk }})"><i class="fas fa-pen"></i></button>
+                            <button class="act-btn act-copy" title="Duplicate" onclick="duplicatePolicy({{ policy.pk }})"><i class="fas fa-copy"></i></button>
+                            <button class="act-btn act-del" title="Delete" onclick="deletePolicy({{ policy.pk }})"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" class="text-center py-5" style="color:#9ca3af;">
+                        <i class="fas fa-file-contract fa-2x mb-2 d-block"></i>No leave policies found.
+                        <button class="btn-add" onclick="openAddModal()" style="margin-top:.5rem;">+ Add First Policy</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page_obj.paginator.num_pages > 0 %}
+    <div class="lp-pagination">
+        <span class="lp-page-info">
+            Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ total }} leave policies
+        </span>
+        <div class="lp-page-btns">
+            <a class="lp-page-btn {% if not page_obj.has_previous %}disabled{% endif %}"
+               href="{% if page_obj.has_previous %}?page={{ page_obj.previous_page_number }}&search={{ search }}&per_page={{ per_page }}{% endif %}">Previous</a>
+            {% for num in page_obj.paginator.page_range %}
+            <a class="lp-page-btn {% if page_obj.number == num %}active{% endif %}"
+               href="?page={{ num }}&search={{ search }}&per_page={{ per_page }}">{{ num }}</a>
+            {% endfor %}
+            <a class="lp-page-btn {% if not page_obj.has_next %}disabled{% endif %}"
+               href="{% if page_obj.has_next %}?page={{ page_obj.next_page_number }}&search={{ search }}&per_page={{ per_page }}{% endif %}">Next</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal fade lp-modal" id="policyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="policyModalTitle">Add New Leave Policy</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="policyForm">
+                {% csrf_token %}
+                <input type="hidden" id="policyId" name="policy_id" value="">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="lp-form-label">Policy Name <span class="req">*</span></label>
+                        <input type="text" id="policyName" name="name" class="lp-form-control" placeholder="e.g. Annual Leave Policy" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="lp-form-label">Description</label>
+                        <textarea id="policyDesc" name="description" class="lp-form-control" rows="2" placeholder="e.g. Standard annual leave policy for all employees..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="lp-form-label">Leave Type <span class="req">*</span></label>
+                        <select id="policyLeaveType" name="leave_type" class="lp-form-control" required>
+                            <option value="">Select Leave Type</option>
+                            {% for lt in leave_types %}
+                            <option value="{{ lt.pk }}">{{ lt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="lp-form-label">Carry Forward Limit (Days) <span class="req">*</span></label>
+                        <input type="number" id="policyCFDays" name="max_carry_forward_days" class="lp-form-control" placeholder="e.g. 10" value="0" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="lp-form-label">Min Days Per Application <span class="req">*</span></label>
+                        <input type="number" id="policyMinDays" name="min_days_per_application" class="lp-form-control" placeholder="e.g. 1" value="1" min="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="lp-form-label">Max Days Per Application <span class="req">*</span></label>
+                        <input type="number" id="policyMaxDays" name="max_days_per_application" class="lp-form-control" placeholder="e.g. 14" value="14" min="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <div class="lp-approval-wrap">
+                            <span class="lp-approval-dot" id="approvalDot"></span>
+                            <label class="lp-approval-label" onclick="toggleApproval()">Requires Approval</label>
+                            <input type="hidden" id="policyApproval" name="requires_approval" value="true">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="lp-form-label">Status <span class="req">*</span></label>
+                        <select id="policyActive" name="is_active" class="lp-form-control">
+                            <option value="true">Active</option>
+                            <option value="false">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel-modal" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn-save-modal">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- View Modal -->
+<div class="modal fade lp-modal" id="viewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Policy Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewModalBody"></div>
+        </div>
+    </div>
+</div>
+
+<div id="lpToast" class="lp-toast">
+    <span style="font-size:1.1rem;color:#22c55e;"><i class="fas fa-check-circle"></i></span>
+    <span class="lp-toast-msg" id="lpToastMsg"></span>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF='{{ csrf_token }}';
+function showToast(msg,isError=false){const el=document.getElementById('lpToast');document.getElementById('lpToastMsg').textContent=msg;el.classList.toggle('error',isError);el.style.borderLeftColor=isError?'#ef4444':'#22c55e';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),4000)}
+function changePerPage(v){const u=new URL(window.location);u.searchParams.set('per_page',v);u.searchParams.set('page','1');window.location=u}
+function toggleApproval(){const h=document.getElementById('policyApproval');const d=document.getElementById('approvalDot');if(h.value==='true'){h.value='false';d.classList.add('off')}else{h.value='true';d.classList.remove('off')}}
+function openAddModal(){
+    document.getElementById('policyModalTitle').textContent='Add New Leave Policy';
+    document.getElementById('policyId').value='';
+    document.getElementById('policyForm').reset();
+    document.getElementById('policyApproval').value='true';
+    document.getElementById('approvalDot').classList.remove('off');
+    document.getElementById('policyCFDays').value='0';
+    document.getElementById('policyMinDays').value='1';
+    document.getElementById('policyMaxDays').value='14';
+    new bootstrap.Modal(document.getElementById('policyModal')).show();
+}
+function editPolicy(pk){
+    fetch(`/hrm/leave/policies/${pk}/detail/`)
+    .then(r=>r.json()).then(data=>{
+        if(!data.success){showToast(data.error,true);return}
+        const p=data.policy;
+        document.getElementById('policyModalTitle').textContent='Edit Leave Policy';
+        document.getElementById('policyId').value=pk;
+        document.getElementById('policyName').value=p.name;
+        document.getElementById('policyDesc').value=p.description;
+        document.getElementById('policyCFDays').value=p.max_carry_forward_days;
+        document.getElementById('policyMinDays').value=p.min_days_per_application;
+        document.getElementById('policyMaxDays').value=p.max_days_per_application;
+        document.getElementById('policyApproval').value=p.requires_approval?'true':'false';
+        const dot=document.getElementById('approvalDot');
+        p.requires_approval?dot.classList.remove('off'):dot.classList.add('off');
+        document.getElementById('policyActive').value=p.is_active?'true':'false';
+        if(p.leave_type_ids.length>0){document.getElementById('policyLeaveType').value=p.leave_type_ids[0]}
+        new bootstrap.Modal(document.getElementById('policyModal')).show();
+    }).catch(()=>showToast('Failed to load.',true));
+}
+function viewPolicy(pk){
+    fetch(`/hrm/leave/policies/${pk}/detail/`)
+    .then(r=>r.json()).then(data=>{
+        if(!data.success){showToast(data.error,true);return}
+        const p=data.policy;
+        let html='';
+        html+=`<div class="vd-row"><span class="vd-label">Policy Name</span><span class="vd-value"><strong>${p.name}</strong></span></div>`;
+        html+=`<div class="vd-row"><span class="vd-label">Description</span><span class="vd-value">${p.description||'—'}</span></div>`;
+        html+=`<div class="vd-row"><span class="vd-label">Carry Forward</span><span class="vd-value">${p.max_carry_forward_days} days</span></div>`;
+        html+=`<div class="vd-row"><span class="vd-label">Min Days</span><span class="vd-value">${p.min_days_per_application}</span></div>`;
+        html+=`<div class="vd-row"><span class="vd-label">Max Days</span><span class="vd-value">${p.max_days_per_application}</span></div>`;
+        html+=`<div class="vd-row"><span class="vd-label">Approval</span><span class="vd-value">${p.requires_approval?'<span class="approval-required">Required</span>':'<span class="approval-not">Not Required</span>'}</span></div>`;
+        html+=`<div class="vd-row"><span class="vd-label">Status</span><span class="vd-value"><span class="status-badge ${p.is_active?'status-active':'status-inactive'}">${p.is_active?'Active':'Inactive'}</span></span></div>`;
+        document.getElementById('viewModalBody').innerHTML=html;
+        new bootstrap.Modal(document.getElementById('viewModal')).show();
+    }).catch(()=>showToast('Failed to load.',true));
+}
+function duplicatePolicy(pk){
+    fetch(`/hrm/leave/policies/${pk}/detail/`)
+    .then(r=>r.json()).then(data=>{
+        if(!data.success){showToast(data.error,true);return}
+        const p=data.policy;
+        document.getElementById('policyModalTitle').textContent='Add New Leave Policy';
+        document.getElementById('policyId').value='';
+        document.getElementById('policyName').value=p.name+' (Copy)';
+        document.getElementById('policyDesc').value=p.description;
+        document.getElementById('policyCFDays').value=p.max_carry_forward_days;
+        document.getElementById('policyMinDays').value=p.min_days_per_application;
+        document.getElementById('policyMaxDays').value=p.max_days_per_application;
+        document.getElementById('policyApproval').value=p.requires_approval?'true':'false';
+        const dot=document.getElementById('approvalDot');
+        p.requires_approval?dot.classList.remove('off'):dot.classList.add('off');
+        document.getElementById('policyActive').value=p.is_active?'true':'false';
+        if(p.leave_type_ids.length>0){document.getElementById('policyLeaveType').value=p.leave_type_ids[0]}
+        new bootstrap.Modal(document.getElementById('policyModal')).show();
+    }).catch(()=>showToast('Failed to load.',true));
+}
+document.getElementById('policyForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    const pk=document.getElementById('policyId').value;
+    const url=pk?`/hrm/leave/policies/${pk}/update/`:'{% url "hrm:leave_policy_create" %}';
+    const fd=new FormData(this);
+    fetch(url,{method:'POST',headers:{'X-CSRFToken':CSRF},body:fd})
+    .then(r=>r.json()).then(data=>{
+        if(data.success){
+            bootstrap.Modal.getInstance(document.getElementById('policyModal')).hide();
+            showToast(data.message);
+            setTimeout(()=>location.reload(),900);
+        }else{showToast(data.error,true)}
+    }).catch(()=>showToast('Network error.',true));
+});
+function deletePolicy(pk){
+    if(!confirm('Delete this leave policy?'))return;
+    fetch(`/hrm/leave/policies/${pk}/delete/`,{method:'POST',headers:{'X-CSRFToken':CSRF}})
+    .then(r=>r.json()).then(data=>{
+        if(data.success){showToast(data.message);setTimeout(()=>location.reload(),900)}
+        else{showToast(data.error,true)}
+    }).catch(()=>showToast('Network error.',true));
+}
+</script>
+{% endblock %}
