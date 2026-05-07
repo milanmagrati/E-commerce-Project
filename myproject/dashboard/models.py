@@ -1567,13 +1567,6 @@ class RTVOrder(models.Model):
         related_name='rtv_orders',
         help_text="Which API config (portal) this RTV belongs to",
     )
-    rtv_status_option = models.ForeignKey(
-        'RTVStatusOption',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='rtv_orders',
-        help_text="Manually set status for this RTV order",
-    )
 
     class Meta:
         ordering = ['-rtv_marked_at', '-created_at']
@@ -1582,23 +1575,6 @@ class RTVOrder(models.Model):
 
     def __str__(self):
         return f"RTV #{self.order_id} by {self.vendor}"
-
-
-class RTVStatusOption(models.Model):
-    """Custom status options for RTV orders, managed from the Setup menu."""
-    name = models.CharField(max_length=100)
-    color = models.CharField(max_length=7, default='#667eea', help_text='Hex color code, e.g. #667eea')
-    sort_order = models.PositiveIntegerField(default=0)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['sort_order', 'name']
-        verbose_name = 'RTV Status Option'
-        verbose_name_plural = 'RTV Status Options'
-
-    def __str__(self):
-        return self.name
 
 
 class RTVFollowUp(models.Model):

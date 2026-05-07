@@ -18,7 +18,7 @@ from .models import (Product, Order, OrderItem, Category, Customer,
                      OrderActivityLog, StockIn, City, StockInItem, Setup,
                      Supplier, Purchase, PurchaseItem, SupplierPayment,
                      BundleComponent, ProductPurchase, LogisticsAPIConfig,
-                     Branch, RTVOrder, RTVStatusOption)
+                     Branch, RTVOrder)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -18374,127 +18374,6 @@ def get_rtv_followups(request, rtv_id):
     return JsonResponse({'success': True, 'followups': data})
 
 
-# ==================== RTV STATUS OPTIONS ====================
-
-@login_required
-def rtv_status_list(request):
-    """Setup page for managing RTV status options."""
-    from dashboard.models import RTVStatusOption
-    statuses = RTVStatusOption.objects.all()
-    return render(request, 'rtv_status_list.html', {'statuses': statuses})
-
-
-@login_required
-@require_POST
-def rtv_status_create(request):
-    """AJAX: create a new RTV status option."""
-    from dashboard.models import RTVStatusOption
-    import json
-    try:
-        body = json.loads(request.body)
-    except (json.JSONDecodeError, Exception):
-        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
-
-    name = body.get('name', '').strip()
-    color = body.get('color', '#667eea').strip()
-    sort_order = body.get('sort_order', 0)
-
-    if not name:
-        return JsonResponse({'success': False, 'message': 'Name is required'}, status=400)
-    if not color.startswith('#') or len(color) not in (4, 7):
-        color = '#667eea'
-
-    try:
-        sort_order = int(sort_order)
-    except (ValueError, TypeError):
-        sort_order = 0
-
-    status = RTVStatusOption.objects.create(name=name, color=color, sort_order=sort_order)
-    return JsonResponse({'success': True, 'id': status.id, 'name': status.name, 'color': status.color, 'sort_order': status.sort_order})
-
-
-@login_required
-@require_POST
-def rtv_status_edit(request, status_id):
-    """AJAX: edit an existing RTV status option."""
-    from dashboard.models import RTVStatusOption
-    import json
-    status_obj = get_object_or_404(RTVStatusOption, id=status_id)
-    try:
-        body = json.loads(request.body)
-    except (json.JSONDecodeError, Exception):
-        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
-
-    name = body.get('name', '').strip()
-    color = body.get('color', status_obj.color).strip()
-    sort_order = body.get('sort_order', status_obj.sort_order)
-    is_active = body.get('is_active', status_obj.is_active)
-
-    if not name:
-        return JsonResponse({'success': False, 'message': 'Name is required'}, status=400)
-    if not color.startswith('#') or len(color) not in (4, 7):
-        color = status_obj.color
-
-    try:
-        sort_order = int(sort_order)
-    except (ValueError, TypeError):
-        sort_order = status_obj.sort_order
-
-    status_obj.name = name
-    status_obj.color = color
-    status_obj.sort_order = sort_order
-    status_obj.is_active = bool(is_active)
-    status_obj.save()
-    return JsonResponse({'success': True, 'id': status_obj.id, 'name': status_obj.name, 'color': status_obj.color, 'sort_order': status_obj.sort_order, 'is_active': status_obj.is_active})
-
-
-@login_required
-@require_POST
-def rtv_status_delete(request, status_id):
-    """AJAX: delete an RTV status option."""
-    from dashboard.models import RTVStatusOption
-    status_obj = get_object_or_404(RTVStatusOption, id=status_id)
-    status_obj.delete()
-    return JsonResponse({'success': True})
-
-
-@login_required
-def rtv_status_json(request):
-    """AJAX: return all active RTV status options as JSON."""
-    from dashboard.models import RTVStatusOption
-    statuses = list(RTVStatusOption.objects.filter(is_active=True).values('id', 'name', 'color', 'sort_order'))
-    return JsonResponse({'statuses': statuses})
-
-
-@login_required
-@require_POST
-def rtv_set_status(request, rtv_id):
-    """AJAX: set (or clear) the status of an RTVOrder."""
-    from dashboard.models import RTVStatusOption
-    import json
-    rtv = get_object_or_404(RTVOrder, id=rtv_id)
-    try:
-        body = json.loads(request.body)
-    except (json.JSONDecodeError, Exception):
-        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
-
-    status_option_id = body.get('status_option_id')
-    if status_option_id is None or status_option_id == '':
-        rtv.rtv_status_option = None
-        rtv.save(update_fields=['rtv_status_option'])
-        return JsonResponse({'success': True, 'status_name': None, 'status_color': None})
-
-    try:
-        status_option_id = int(status_option_id)
-    except (ValueError, TypeError):
-        return JsonResponse({'success': False, 'message': 'Invalid status_option_id'}, status=400)
-
-    status_obj = get_object_or_404(RTVStatusOption, id=status_option_id, is_active=True)
-    rtv.rtv_status_option = status_obj
-    rtv.save(update_fields=['rtv_status_option'])
-    return JsonResponse({'success': True, 'status_name': status_obj.name, 'status_color': status_obj.color})
-
-
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtvs_list(request):
@@ -18578,7 +18457,7 @@ def ncm_rtvs_list(request):
         except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
             api_config_id = ''
 
-    qs = RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status_option').order_by(
+    qs = RTVOrder.objects.select_related('vendor', 'api_config').order_by(
         models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
     )
 
@@ -18657,9 +18536,7 @@ def ncm_rtvs_list(request):
             'order_id': rtv.order_id,
             'comment': rtv.comment or '—',
             'created_at': display_time_str,
-            'status_name': rtv.rtv_status_option.name if rtv.rtv_status_option else None,
-            'status_color': rtv.rtv_status_option.color if rtv.rtv_status_option else None,
-            'status_option_id': rtv.rtv_status_option_id,
+            'status': '',
             'api_config_name': rtv.api_config.api_name if rtv.api_config else None,
             'followup': followup_meta.get(rtv.id),
         })

@@ -96,14 +96,6 @@ urlpatterns = [
     path('api/ncm-rtv/<int:ncm_order_id>/detail/', views.ncm_rtv_order_detail, name='ncm_rtv_order_detail'),
     path('api/rtv/<int:rtv_id>/followup/add/', views.add_rtv_followup, name='add_rtv_followup'),
     path('api/rtv/<int:rtv_id>/followups/', views.get_rtv_followups, name='get_rtv_followups'),
-    path('api/rtv/<int:rtv_id>/set-status/', views.rtv_set_status, name='rtv_set_status'),
-
-    # RTV Status Options (Setup)
-    path('setup/rtv-status/', views.rtv_status_list, name='rtv_status_list'),
-    path('api/rtv-status/json/', views.rtv_status_json, name='rtv_status_json'),
-    path('api/rtv-status/create/', views.rtv_status_create, name='rtv_status_create'),
-    path('api/rtv-status/<int:status_id>/edit/', views.rtv_status_edit, name='rtv_status_edit'),
-    path('api/rtv-status/<int:status_id>/delete/', views.rtv_status_delete, name='rtv_status_delete'),
 
     # On Hold Orders
     path('orders/on-hold/', views.on_hold_orders_list, name='on_hold_orders_list'),

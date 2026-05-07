@@ -1264,18 +1264,6 @@
         transform: translateY(-2px);
     }
 
-    .rtv-action-btn.setstatus-btn {
-        background: #f0fdf4;
-        color: #16a34a;
-    }
-
-    .rtv-action-btn.setstatus-btn:hover {
-        background: #16a34a;
-        color: #fff;
-        box-shadow: 0 3px 10px rgba(22, 163, 74, 0.28);
-        transform: translateY(-2px);
-    }
-
     /* --- Responsive ------------------------------------------------- */
     @media (max-width: 768px) {
         .rtv-header {
@@ -1638,7 +1626,6 @@
                         <th>Order ID</th>
                         <th>Comment</th>
                         {% if not selected_api_config_id %}<th>API Portal</th>{% endif %}
-                        <th>Status</th>
                         <th>Last Follow-Up</th>
                         <th>Added Time</th>
                         <th>Actions</th>
@@ -1699,18 +1686,6 @@
                             {% endif %}
                         </td>
                         {% endif %}
-                        <!-- Status column -->
-                        <td id="statusCell-{{ rtv.rtv_id }}">
-                            {% if rtv.status_name %}
-                            <span class="rtv-status-badge"
-                                style="background:{{ rtv.status_color }}22;color:{{ rtv.status_color }};border:1px solid {{ rtv.status_color }}55;display:inline-flex;align-items:center;gap:0.35rem;padding:0.3rem 0.75rem;border-radius:8px;font-size:0.8rem;font-weight:600;">
-                                <i class="fas fa-circle" style="font-size:0.45rem;"></i>
-                                {{ rtv.status_name }}
-                            </span>
-                            {% else %}
-                            <span class="text-muted small" style="opacity:0.5;">—</span>
-                            {% endif %}
-                        </td>
                         <td>
                             {% if rtv.followup %}
                             <div class="followup-badge-cell">
@@ -1740,10 +1715,6 @@
                         </td>
                         <td>
                             <div class="rtv-actions">
-                                <button class="rtv-action-btn setstatus-btn" title="Set Status"
-                                    onclick="openSetStatusModal({{ rtv.rtv_id }}, '{{ rtv.status_option_id|default:'' }}')">
-                                    <i class="fas fa-tag"></i>
-                                </button>
                                 <button class="rtv-action-btn followup-btn position-relative" title="Follow-Up Notes"
                                     onclick="toggleFollowUp({{ rtv.rtv_id }})" id="followupBtn-{{ rtv.rtv_id }}">
                                     <i class="fas fa-sticky-note"></i>
@@ -1983,32 +1954,6 @@
                 <div class="text-center py-5">
                     <div class="spinner-border text-primary"></div>
                     <p class="mt-2 text-muted small">Loading order details...</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- ===================== SET STATUS MODAL ===================== -->
-<div class="modal fade rtv-modal" id="setStatusModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" style="max-width:400px;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-tag me-2"></i>Set RTV Status</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" style="padding:1.4rem;">
-                <input type="hidden" id="setStatusRtvId" value="">
-                <p class="text-muted small mb-3">Select a status for this RTV order, or clear it.</p>
-                <div id="statusOptionsList" style="display:flex;flex-direction:column;gap:0.5rem;">
-                    <div class="text-center py-3"><i class="fas fa-spinner fa-spin text-muted"></i></div>
-                </div>
-                <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #f1f5f9;">
-                    <button class="rtv-submit-btn"
-                        style="background:linear-gradient(135deg,#ef4444,#dc2626);box-shadow:none;"
-                        onclick="clearRtvStatus()">
-                        <i class="fas fa-times-circle me-1"></i> Clear Status
-                    </button>
                 </div>
             </div>
         </div>
@@ -3152,106 +3097,6 @@
             .catch(function () { /* silent fail */ });
     }
 
-    // ==================== SET STATUS SYSTEM ====================
-    var _statusOptionsCache = null;
-    // Tracks current status option id per rtv after client-side changes
-    var _rtvStatusMap = {};
-
-    function loadStatusOptions(callback) {
-        if (_statusOptionsCache !== null) { callback(_statusOptionsCache); return; }
-        fetch('/api/rtv-status/json/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                _statusOptionsCache = data.statuses || [];
-                callback(_statusOptionsCache);
-            })
-            .catch(function () { callback([]); });
-    }
-
-    window.openSetStatusModal = function (rtvId, serverStatusId) {
-        document.getElementById('setStatusRtvId').value = rtvId;
-        var listEl = document.getElementById('statusOptionsList');
-        listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin text-muted"></i></div>';
-
-        var modal = new bootstrap.Modal(document.getElementById('setStatusModal'));
-        modal.show();
-
-        // Prefer the client-side tracked value so re-open after setting shows correct selection
-        var currentStatusId = (_rtvStatusMap.hasOwnProperty(rtvId))
-            ? _rtvStatusMap[rtvId]
-            : serverStatusId;
-
-        loadStatusOptions(function (statuses) {
-            if (!statuses.length) {
-                listEl.innerHTML = '<div class="text-center text-muted py-3" style="font-size:0.88rem;"><i class="fas fa-tags" style="font-size:1.8rem;opacity:0.3;display:block;margin-bottom:0.75rem;"></i>No statuses configured.<br><a href="/setup/rtv-status/" target="_blank" style="color:#667eea;">Go to Setup → RTV Status</a> to add some.</div>';
-                return;
-            }
-            var html = '';
-            statuses.forEach(function (s) {
-                var isSelected = String(s.id) === String(currentStatusId);
-                var borderColor = isSelected ? s.color : '#e2e8f0';
-                var bgColor = isSelected ? s.color + '18' : '#fff';
-                var mouseout = isSelected ? '' : "this.style.borderColor='#e2e8f0';this.style.background='#fff'";
-                html += '<button onclick="applyRtvStatus(' + s.id + ')" style="width:100%;text-align:left;padding:0.6rem 0.9rem;border-radius:10px;border:2px solid ' + borderColor + ';background:' + bgColor + ';cursor:pointer;display:flex;align-items:center;gap:0.65rem;font-size:0.88rem;font-weight:600;color:#334155;transition:all 0.18s;" onmouseover="this.style.borderColor=\'' + s.color + '\';this.style.background=\'' + s.color + '12\'" onmouseout="' + mouseout + '">';
-                html += '<span style="width:14px;height:14px;border-radius:4px;background:' + s.color + ';flex-shrink:0;display:inline-block;"></span>';
-                html += s.name;
-                if (isSelected) html += ' <i class="fas fa-check ms-auto" style="color:' + s.color + ';"></i>';
-                html += '</button>';
-            });
-            listEl.innerHTML = html;
-        });
-    };
-
-    window.applyRtvStatus = function (statusOptionId) {
-        var rtvId = document.getElementById('setStatusRtvId').value;
-        fetch('/api/rtv/' + rtvId + '/set-status/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
-            body: JSON.stringify({ status_option_id: statusOptionId }),
-        })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('setStatusModal')).hide();
-                    _rtvStatusMap[rtvId] = statusOptionId;
-                    updateStatusCell(rtvId, data.status_name, data.status_color);
-                    showToast('Status updated', 'success');
-                } else {
-                    showToast(data.message || 'Error updating status', 'error');
-                }
-            })
-            .catch(function () { showToast('Network error', 'error'); });
-    };
-
-    window.clearRtvStatus = function () {
-        var rtvId = document.getElementById('setStatusRtvId').value;
-        fetch('/api/rtv/' + rtvId + '/set-status/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
-            body: JSON.stringify({ status_option_id: '' }),
-        })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('setStatusModal')).hide();
-                    _rtvStatusMap[rtvId] = '';
-                    updateStatusCell(rtvId, null, null);
-                    showToast('Status cleared', 'success');
-                } else {
-                    showToast(data.message || 'Error clearing status', 'error');
-                }
-            })
-            .catch(function () { showToast('Network error', 'error'); });
-    };
-
-    function updateStatusCell(rtvId, statusName, statusColor) {
-        var cell = document.getElementById('statusCell-' + rtvId);
-        if (!cell) return;
-        if (statusName && statusColor) {
-            cell.innerHTML = '<span class="rtv-status-badge" style="background:' + statusColor + '22;color:' + statusColor + ';border:1px solid ' + statusColor + '55;display:inline-flex;align-items:center;gap:0.35rem;padding:0.3rem 0.75rem;border-radius:8px;font-size:0.8rem;font-weight:600;"><i class="fas fa-circle" style="font-size:0.45rem;"></i>' + statusName + '</span>';
-        } else {
-            cell.innerHTML = '<span class="text-muted small" style="opacity:0.5;">—</span>';
-        }
     }) ();
 </script>
 {% endblock %}
