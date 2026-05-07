@@ -17,9 +17,21 @@
     <style>
         /* Dynamic theme overrides from Company Setup */
         :root {
-            --primary-color: {{ COMPANY_PRIMARY|default:'#5e72e4' }};
+            --primary-color: {
+                    {
+                    COMPANY_PRIMARY|default: '#5e72e4'
+                }
+            }
 
-            --secondary-color: {{ COMPANY_SECONDARY|default:'#825ee4' }};
+            ;
+
+            --secondary-color: {
+                    {
+                    COMPANY_SECONDARY|default: '#825ee4'
+                }
+            }
+
+            ;
         }
     </style>
     <style>
@@ -703,7 +715,9 @@
                 {% endif %}
 
                 <!-- ==================== LOGISTICS (UNIFIED NCM + PICK & DROP) ==================== -->
-                {%if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_orders or user.can_view_ncm_bulk_logs or user.can_view_ncm_trash or user.can_sync_ncm_orders or user.can_view_ncm_branches%}
+                {%if user.is_superuser or user.role == 'administrator' or user.can_view_ncm_orders or
+                user.can_view_ncm_bulk_logs or user.can_view_ncm_trash or user.can_sync_ncm_orders or
+                user.can_view_ncm_branches%}
                 <li
                     class="logistics-menu {% if 'logistics' in request.resolver_match.url_name|default:'' or 'ncm' in request.resolver_match.url_name|default:'' or 'pnd' in request.resolver_match.url_name|default:'' %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#logisticsMenu"
@@ -1144,6 +1158,9 @@
                         <li class="{% if request.resolver_match.url_name == 'setup_management' %}active{% endif %}">
                             <a href="{% url 'setup_management' %}">Payment & Status Setup</a>
                         </li>
+                        <li class="{% if request.resolver_match.url_name == 'rtv_status_list' %}active{% endif %}">
+                            <a href="{% url 'rtv_status_list' %}"><i class="fas fa-tags me-1"></i> RTV Status</a>
+                        </li>
                         <li class="{% if request.resolver_match.url_name == 'api_integration_list' %}active{% endif %}">
                             <a href="{% url 'api_integration_list' %}"><i class="fas fa-plug me-1"></i> API
                                 Integration</a>
@@ -1506,7 +1523,8 @@
                             {% if user.can_view_customers %}<span class="badge bg-info">View Customers</span>{% endif %}
                             {% if user.can_view_dispatch %}<span class="badge bg-info">View Dispatch</span>{% endif %}
                             {% if user.can_view_inventory %}<span class="badge bg-info">View Inventory</span>{% endif %}
-                            {%if not user.can_view_products and not user.can_view_orders and not user.can_view_customers%}
+                            {% if not user.can_view_products and not user.can_view_orders and not
+                            user.can_view_customers %}
                             <span class="badge bg-secondary">Limited Access</span>
                             {% endif %}
                         </div>
@@ -1560,7 +1578,8 @@
                             {% if user.can_view_customers %}<span class="badge bg-info">View Customers</span>{% endif %}
                             {% if user.can_view_dispatch %}<span class="badge bg-info">View Dispatch</span>{% endif %}
                             {% if user.can_view_inventory %}<span class="badge bg-info">View Inventory</span>{% endif %}
-                            {%if not user.can_view_products and not user.can_view_orders and not user.can_view_customers%}
+                            {% if not user.can_view_products and not user.can_view_orders and not
+                            user.can_view_customers %}
                             <span class="badge bg-secondary">Limited Access</span>
                             {% endif %}
                         </div>
@@ -1761,7 +1780,7 @@
     <!-- Chat Instant Notification via SSE -->
     {% if user.is_authenticated %}
     <script>
-        var _prevUnreadCount = {{ unread_chat_count|default:"0" }};
+        var _prevUnreadCount = {{ unread_chat_count|default: "0" }};
 
         function playChatNotifSound() {
             try {

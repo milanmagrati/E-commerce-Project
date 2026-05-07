@@ -18,7 +18,7 @@ from .models import (Product, Order, OrderItem, Category, Customer,
                      OrderActivityLog, StockIn, City, StockInItem, Setup,
                      Supplier, Purchase, PurchaseItem, SupplierPayment,
                      BundleComponent, ProductPurchase, LogisticsAPIConfig,
-                     Branch, RTVOrder)
+                     Branch, RTVOrder, RTVStatusOption)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -54,14 +54,14 @@ def fix_order_decimals(order):
         order.tax_percent = Decimal("0")
     if order.total_amount is None:
         order.total_amount = Decimal("0")
-    
+
     # ✅ RECALCULATE TOTAL AMOUNT FROM ITEMS
     try:
         subtotal = sum(item.total for item in order.items.all()) or Decimal('0.00')
         after_discount = subtotal - (order.discount_amount or Decimal('0'))
         tax_amount = (after_discount * (order.tax_percent or Decimal('0'))) / 100
         calculated_total = after_discount + tax_amount + (order.shipping_charge or Decimal('0'))
-        
+
         # Update total_amount if it was capped or incorrect
         if order.total_amount != calculated_total:
             order.total_amount = calculated_total
@@ -72,7 +72,7 @@ def fix_order_decimals(order):
         logging.error(f"Error recalculating order {order.id} totals: {e}")
         if order.total_amount > Decimal('99999999.99'):
             order.total_amount = Decimal('0')
-    
+
     # ENHANCED PARTIAL PAYMENT DECIMAL FIXES
     if order.partial_amount_paid is None:
         order.partial_amount_paid = Decimal("0")
@@ -84,13 +84,13 @@ def fix_order_decimals(order):
                 order.remaining_amount = Decimal("0")
         else:
             order.remaining_amount = Decimal("0")
-    
+
     # ENSURE is_partial_payment IS SYNCED WITH PAYMENT_STATUS
     if order.payment_status == 'partial' and not order.is_partial_payment:
         order.is_partial_payment = True
     elif order.payment_status != 'partial' and order.is_partial_payment:
         order.is_partial_payment = False
-    
+
     return order
 
 
@@ -101,9 +101,9 @@ def sync_order_status_setup(order):
     order.payment_method matches order.payment_setup, etc.
     """
     from .models import Setup
-    
+
     needs_save = False
-    
+
     # ====== SYNC ORDER STATUS ======
     if order.order_status:
         if order.status_setup:
@@ -125,7 +125,7 @@ def sync_order_status_setup(order):
                 needs_save = True
             except Exception:
                 pass
-    
+
     # ====== SYNC PAYMENT STATUS ======
     if order.payment_status:
         if order.payment_status_setup:
@@ -147,7 +147,7 @@ def sync_order_status_setup(order):
                 needs_save = True
             except Exception:
                 pass
-    
+
     # ====== SYNC PAYMENT METHOD ======
     if order.payment_method:
         if order.payment_setup:
@@ -169,16 +169,16 @@ def sync_order_status_setup(order):
                 needs_save = True
             except Exception:
                 pass
-    
+
     # Save if changes made
     if needs_save:
         try:
             order.save()
         except Exception:
             pass
-    
+
     return order
-    
+
     return order
 
 
@@ -203,19 +203,19 @@ def _get_next_order_number():
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
-    
+
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
         user = authenticate(request, username=username, password=password)
-        
+
         if user is not None:
             login(request, user)
             request.session.set_expiry(43200)  # 12-hour session per user
             return redirect('dashboard')
         else:
             messages.error(request, 'Invalid username or password')
-    
+
     return render(request, 'login.html')
 
 
@@ -229,7 +229,7 @@ def dashboard_view(request):
     # System-wide product and order data (show counts to staff like warehouse)
     products = Product.objects.filter(is_deleted=False)
     orders = Order.objects.all()
-    
+
     # Statistics
     total_products = products.count()
     total_orders = orders.count()
@@ -237,10 +237,10 @@ def dashboard_view(request):
     processing_orders = orders.filter(order_status='processing').count()
     shipped_orders = orders.filter(order_status='shipped').count()
     delivered_orders = orders.filter(order_status='delivered').count()
-    
+
     total_revenue = orders.filter(payment_status='paid').aggregate(
         total=Sum('total_amount'))['total'] or 0
-    
+
     # Recent orders
     from decimal import Decimal, InvalidOperation
     import logging
@@ -262,7 +262,7 @@ def dashboard_view(request):
     except Exception as e:
         logging.error(f"Error fetching recent orders: {e}")
         recent_orders = []
-    
+
     # ── Low Stock Alert: supports simple, variable, and bundle products ──
     low_stock_items = []  # list of dicts for template
     seen_product_ids = set()  # avoid duplicates
@@ -377,33 +377,33 @@ def dashboard_view(request):
     low_stock_items.sort(key=lambda x: (severity_order.get(x['severity'], 3), x['stock']))
     low_stock_alert_count = len(low_stock_items)
     low_stock_items = low_stock_items[:8]
-    
+
     # Monthly sales data for chart (last 6 months)
     monthly_sales = []
     for i in range(5, -1, -1):
         date = timezone.now() - timedelta(days=30*i)
         month_name = date.strftime('%b %Y')
         month_start = date.replace(day=1)
-        
+
         if i > 0:
             next_month = (date.replace(day=28) + timedelta(days=4)).replace(day=1)
         else:
             next_month = timezone.now() + timedelta(days=1)
-        
+
         sales = orders.filter(
             created_at__gte=month_start,
             created_at__lt=next_month,
             payment_status='paid'
         ).aggregate(total=Sum('total_amount'))['total'] or 0
-        
+
         monthly_sales.append({
             'month': month_name,
             'sales': float(sales)
         })
-    
+
     # Order source data by dates (last 7 days - default)
     from django.db.models.functions import TruncDate
-    
+
     # Get all sources first
     all_sources = set()
     source_dates_data = orders.annotate(
@@ -411,20 +411,20 @@ def dashboard_view(request):
     ).values('order_date', 'order_from').annotate(
         count=Count('id')
     ).order_by('order_date', 'order_from')
-    
+
     for entry in source_dates_data:
         source_name = entry['order_from'] if entry['order_from'] else 'Direct'
         all_sources.add(source_name)
-    
+
     # Generate last 7 days of dates (default view)
     dates_list = []
     for i in range(6, -1, -1):
         date = (timezone.now() - timedelta(days=i)).date()
         dates_list.append(date)
-    
+
     # Build data structure: {date: {source: count}}
     order_sources_by_date = {date: {} for date in dates_list}
-    
+
     for source_name in all_sources:
         source_data = orders.filter(
             order_from=source_name if source_name != 'Direct' else ''
@@ -433,25 +433,25 @@ def dashboard_view(request):
         ).values('order_date').annotate(
             count=Count('id')
         ).order_by('order_date')
-        
+
         for entry in source_data:
             if entry['order_date'] in order_sources_by_date:
                 order_sources_by_date[entry['order_date']][source_name] = entry['count']
-    
+
     # Format for JSON: prepare chart data
     order_sources = {
         'dates': [date.strftime('%b %d') for date in dates_list],
         'sources': sorted(list(all_sources)),
         'data': {}
     }
-    
+
     for source in order_sources['sources']:
         counts = []
         for date in dates_list:
             count = order_sources_by_date.get(date, {}).get(source, 0)
             counts.append(count)
         order_sources['data'][source] = counts
-    
+
     context = {
         'total_products': total_products,
         'total_orders': total_orders,
@@ -490,19 +490,19 @@ def products_view(request):
             Q(description__icontains=search_query) |
             Q(slug__icontains=search_query)
         )
-    
+
     # Category filter
     category_filter = request.GET.get("category", "")
     if category_filter:
         products = products.filter(category__slug=category_filter)
-    
+
     # Status filter
     status_filter = request.GET.get("status", "")
     if status_filter == "active":
         products = products.filter(is_active=True)
     elif status_filter == "inactive":
         products = products.filter(is_active=False)
-    
+
     # Stock filter
     stock_filter = request.GET.get("stock", "")
     if stock_filter == "in_stock":
@@ -511,11 +511,11 @@ def products_view(request):
         products = products.filter(stock__lte=10, stock__gt=0)
     elif stock_filter == "out_of_stock":
         products = products.filter(stock=0)
-    
+
     # Date Range Filter
     date_filter = request.GET.get("date_range", "")
     today = timezone.now().date()
-    
+
     if date_filter == "today":
         products = products.filter(created_at__date=today)
     elif date_filter == "yesterday":
@@ -544,21 +544,21 @@ def products_view(request):
     elif date_filter == "custom":
         start_date = request.GET.get("start_date")
         end_date = request.GET.get("end_date")
-        
+
         if start_date:
             try:
                 start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
                 products = products.filter(created_at__date__gte=start_date_obj)
             except ValueError:
                 pass
-        
+
         if end_date:
             try:
                 end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
                 products = products.filter(created_at__date__lte=end_date_obj)
             except ValueError:
                 pass
-    
+
     # Sort filter
     sort_filter = request.GET.get("sort", "")
     if sort_filter == "trending":
@@ -642,11 +642,11 @@ def products_bulk_action(request):
     if request.method == 'POST':
         product_ids = request.POST.getlist('product_ids')
         action = request.POST.get('bulk_action')
-        
+
         if not product_ids:
             messages.error(request, 'No products selected!')
             return redirect('products')
-        
+
         try:
             # UPDATED: Remove user filter - show all products
             products = Product.objects.filter(
@@ -654,23 +654,23 @@ def products_bulk_action(request):
                 is_deleted=False
             )
             count = products.count()
-            
+
             if count == 0:
                 messages.error(request, 'No valid products found!')
                 return redirect('products')
-            
+
             if action == 'delete':
                 products.update(is_deleted=True, deleted_at=timezone.now())
                 messages.success(request, f'{count} product(s) moved to trash!')
-                
+
             elif action == 'activate':
                 products.update(is_active=True)
                 messages.success(request, f'{count} product(s) activated!')
-                
+
             elif action == 'deactivate':
                 products.update(is_active=False)
                 messages.success(request, f'{count} product(s) deactivated!')
-                
+
             elif action == 'increase_price':
                 percentage = request.POST.get('percentage')
                 if percentage:
@@ -684,7 +684,7 @@ def products_bulk_action(request):
                         messages.error(request, 'Invalid percentage value!')
                 else:
                     messages.error(request, 'Please provide a percentage!')
-                    
+
             elif action == 'decrease_price':
                 percentage = request.POST.get('percentage')
                 if percentage:
@@ -700,13 +700,13 @@ def products_bulk_action(request):
                         messages.error(request, 'Invalid percentage value!')
                 else:
                     messages.error(request, 'Please provide a percentage!')
-                    
+
             else:
                 messages.error(request, 'Invalid action selected!')
-                
+
         except Exception as e:
             messages.error(request, f'Error performing bulk action: {str(e)}')
-    
+
     return redirect('products')
 
 
@@ -1168,7 +1168,7 @@ def _get_bundle_context():
 def product_add(request):
     if request.method == 'POST':
         form = ProductForm(request.POST, request.FILES)
-        
+
         if form.is_valid():
             product = form.save(commit=False)
             product.user = request.user
@@ -1186,26 +1186,26 @@ def product_add(request):
                         pass
             except Exception:
                 pass
-            
+
             # Save variant options if variable product
             if product.product_type == 'variable':
                 variant_options = form.cleaned_data.get('variant_options')
                 size_options = form.cleaned_data.get('size_options')
-                
+
                 if variant_options:
                     ProductVariantOption.objects.create(
                         product=product,
                         option_name='Variant',
                         option_values=variant_options
                     )
-                
+
                 if size_options:
                     ProductVariantOption.objects.create(
                         product=product,
                         option_name='Size',
                         option_values=size_options
                     )
-                
+
                 # Handle variation formset
                 formset = ProductVariationFormSet(request.POST, request.FILES, instance=product)
                 if formset.is_valid():
@@ -1254,7 +1254,7 @@ def product_add(request):
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
                 ProductImage.objects.create(product=product, image=img)
-            
+
             messages.success(request, f'Product "{product.name}" created successfully!')
             # Clean up any temporary uploaded image saved in session
             temp_to_remove = request.session.pop('temp_product_image', None)
@@ -1303,7 +1303,7 @@ def product_add(request):
     else:
         form = ProductForm()
         formset = ProductVariationFormSet()
-    
+
     # Respect cleared=1 param from Clear & Start Fresh to delete any temp uploaded image
     if 'cleared' in request.GET:
         try:
@@ -1343,20 +1343,20 @@ def product_add(request):
 @permission_required('can_edit_products')
 def product_edit(request, product_id):
     product = get_object_or_404(Product, pk=product_id, is_deleted=False)
-    
+
     # Check permission to edit prices
     if not request.user.can_edit_prices and request.user.role != 'administrator':
         messages.error(request, 'You do not have permission to edit product prices.')
         return redirect('product_detail', product_id=product_id)
-    
+
     # Get existing variant options
     variant_option = product.variant_options.filter(option_name='Variant').first()
     size_option = product.variant_options.filter(option_name='Size').first()
-    
+
     if request.method == 'POST':
         form = ProductForm(request.POST, request.FILES, instance=product)
         formset = ProductVariationFormSet(request.POST, request.FILES, instance=product)
-        
+
         if form.is_valid():
             product = form.save()
 
@@ -1381,12 +1381,12 @@ def product_edit(request, product_id):
                         pass
             except Exception:
                 pass
-            
+
             # Update variant options
             if product.product_type == 'variable':
                 variant_options = form.cleaned_data.get('variant_options')
                 size_options = form.cleaned_data.get('size_options')
-                
+
                 # Update or create variant option
                 if variant_options:
                     if variant_option:
@@ -1398,7 +1398,7 @@ def product_edit(request, product_id):
                             option_name='Variant',
                             option_values=variant_options
                         )
-                
+
                 # Update or create size option
                 if size_options:
                     if size_option:
@@ -1410,7 +1410,7 @@ def product_edit(request, product_id):
                             option_name='Size',
                             option_values=size_options
                         )
-                
+
                 # FIXED: Always try to save formset if it's valid
                 if formset.is_valid():
                     formset.save()
@@ -1436,7 +1436,7 @@ def product_edit(request, product_id):
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
                 ProductImage.objects.create(product=product, image=img)
-            
+
             # Clean up any temporary uploaded image saved in session
             temp_to_remove = request.session.pop('temp_product_image', None)
             if temp_to_remove and default_storage.exists(temp_to_remove):
@@ -1460,27 +1460,27 @@ def product_edit(request, product_id):
         # FIXED: Get completely fresh product from database
         # Re-query to avoid any cached instances
         product = Product.objects.get(pk=product_id)
-        
+
         # Get existing variant options
         variant_option = product.variant_options.filter(option_name='Variant').first()
         size_option = product.variant_options.filter(option_name='Size').first()
-        
+
         form = ProductForm(instance=product, initial={
             'variant_options': variant_option.option_values if variant_option else '',
             'size_options': size_option.option_values if size_option else ''
         })
-        
+
         # FIXED: Get completely fresh variations from database
         # Use raw database query to bypass any Django ORM caching
         variations_qs = ProductVariation.objects.filter(product_id=product_id).order_by('created_at')
-        
+
         # Clear any cached relations
         if hasattr(product, '_prefetched_objects_cache'):
             product._prefetched_objects_cache.clear()
-        
+
         # Create formset with fresh queryset
         formset = ProductVariationFormSet(instance=product, queryset=variations_qs)
-    
+
     # If there's a temp image in session (from previous failed upload), pass it to the template
     temp_path = request.session.get('temp_product_image')
     temp_url = None
@@ -1529,7 +1529,7 @@ def product_detail(request, product_id):
         "product": product,
         "profit": profit,
     }
-    
+
     # Handle variation updates
     if request.method == 'POST':
         if 'delete_variation_id' in request.POST:
@@ -1539,11 +1539,11 @@ def product_detail(request, product_id):
             variation.delete()
             messages.success(request, f'Variation "{variation.sku}" deleted successfully!')
             return redirect('product_detail', product_id=product_id)
-        
+
         elif 'update_variations' in request.POST:
             # Update or create variations
             variations_data = {}
-            
+
             # Parse variations from POST data
             for key, value in request.POST.items():
                 if key.startswith('variations['):
@@ -1554,7 +1554,7 @@ def product_detail(request, product_id):
                         if index not in variations_data:
                             variations_data[index] = {}
                         variations_data[index][field] = value
-            
+
             # Process each variation
             for index, var_data in variations_data.items():
                 variation_id = var_data.get('id')
@@ -1563,7 +1563,7 @@ def product_detail(request, product_id):
                 stock = var_data.get('stock')
                 status = var_data.get('status', 'active')
                 is_active = f'variations[{index}][is_active]' in request.POST
-                
+
                 if variation_id:
                     # Update existing
                     variation = ProductVariation.objects.get(id=variation_id, product=product)
@@ -1582,35 +1582,35 @@ def product_detail(request, product_id):
                         status=status,
                         is_active=is_active
                     )
-                
+
                 # Handle image upload
                 image_key = f'variations[{index}][image]'
                 if image_key in request.FILES:
                     variation.image = request.FILES[image_key]
-                
+
                 variation.save()
-            
+
             messages.success(request, 'Variations updated successfully!')
             return redirect('product_detail', product_id=product_id)
-    
+
     # Get product data
     product_images = product.images.all()
     order_items = product.orderitem_set.all()[:10]
-    
+
     # FIXED: Explicitly fetch fresh variations from database
     # Clear any cached relations to ensure fresh data
     if hasattr(product, '_prefetched_objects_cache'):
         product._prefetched_objects_cache.clear()
-    
+
     variations = ProductVariation.objects.filter(product=product).order_by('created_at')
-    
+
     # Calculate profit margin
     effective_cost = product.average_cost if product.average_cost else (product.cost_price or 0)
     profit_margin = 0
     if effective_cost and effective_cost > 0 and product.price and product.price > 0:
         profit_margin = ((product.price - effective_cost) / product.price) * 100
     profit = (product.price or 0) - effective_cost
-    
+
     # Get user permissions
     user_permissions = {
         'can_view_cost_price': request.user.can_view_cost_price,
@@ -1619,7 +1619,7 @@ def product_detail(request, product_id):
         'max_discount_percent': float(request.user.max_discount_percent),
         'is_administrator': request.user.role == 'administrator',
     }
-    
+
     # Bundle components for bundle products
     bundle_components = []
     if product.is_bundle:
@@ -1635,7 +1635,7 @@ def product_detail(request, product_id):
         'user_permissions': user_permissions,  # ADDED: Pass user permissions
         'bundle_components': bundle_components,
     }
-    
+
     return render(request, 'product_detail.html', context)
 
 
@@ -1665,21 +1665,21 @@ def products_trash(request):
             Q(description__icontains=search_query) |
             Q(slug__icontains=search_query)
         )
-    
+
     # Category filter
     category_filter = request.GET.get("category", "")
     if category_filter:
         trashed_products = trashed_products.filter(category__slug=category_filter)
-    
+
     categories = Category.objects.all()
-    
+
     context = {
         "trashed_products": trashed_products,
         "categories": categories,
         "search_query": search_query,
         "category_filter": category_filter,
     }
-    
+
     return render(request, "products_trash.html", context)
 
 
@@ -1688,16 +1688,16 @@ def products_trash(request):
 def product_move_to_trash(request, product_id):
     """Move product to trash (soft delete)"""
     product = get_object_or_404(Product, id=product_id, is_deleted=False)
-    
+
     if request.method == 'POST':
         product_name = product.name
         product.is_deleted = True
         product.deleted_at = timezone.now()
         product.save()
-        
+
         messages.success(request, f'Product "{product_name}" moved to trash successfully!')
         return redirect('products')
-    
+
     return redirect('product_detail', product_id=product_id)
 
 
@@ -1706,16 +1706,16 @@ def product_move_to_trash(request, product_id):
 def product_restore(request, product_id):
     """Restore product from trash"""
     product = get_object_or_404(Product, id=product_id, user=request.user, is_deleted=True)
-    
+
     if request.method == 'POST':
         product_name = product.name
         product.is_deleted = False
         product.deleted_at = None
         product.save()
-        
+
         messages.success(request, f'Product "{product_name}" restored successfully!')
         return redirect('products_trash')
-    
+
     return redirect('products_trash')
 
 
@@ -1724,14 +1724,14 @@ def product_restore(request, product_id):
 def product_permanent_delete(request, product_id):
     """Permanently delete product"""
     product = get_object_or_404(Product, id=product_id, user=request.user, is_deleted=True)
-    
+
     if request.method == 'POST':
         product_name = product.name
         product.delete()
-        
+
         messages.success(request, f'Product "{product_name}" permanently deleted!')
         return redirect('products_trash')
-    
+
     return redirect('products_trash')
 
 
@@ -1742,37 +1742,37 @@ def products_trash_bulk_action(request):
     if request.method == "POST":
         product_ids = request.POST.getlist("product_ids")
         action = request.POST.get("bulk_action")
-        
+
         if not product_ids:
             messages.error(request, "No products selected!")
             return redirect('products_trash')
-        
+
         try:
             products = Product.objects.filter(
-                id__in=product_ids, 
-                user=request.user, 
+                id__in=product_ids,
+                user=request.user,
                 is_deleted=True
             )
             count = products.count()
-            
+
             if count == 0:
                 messages.error(request, "No valid products found!")
                 return redirect('products_trash')
-            
+
             if action == "restore":
                 products.update(is_deleted=False, deleted_at=None)
                 messages.success(request, f"✅ {count} product(s) restored successfully!")
-                
+
             elif action == "permanent_delete":
                 products.delete()
                 messages.success(request, f"✅ {count} product(s) permanently deleted!")
-                
+
             else:
                 messages.error(request, "Invalid action selected!")
-                
+
         except Exception as e:
             messages.error(request, f"Error performing bulk action: {str(e)}")
-            
+
     return redirect('products_trash')
 
 
@@ -1783,15 +1783,15 @@ def empty_trash(request):
     if request.method == 'POST':
         trashed_products = Product.objects.filter(user=request.user, is_deleted=True)
         count = trashed_products.count()
-        
+
         if count > 0:
             trashed_products.delete()
             messages.success(request, f'✅ Trash emptied! {count} product(s) permanently deleted.')
         else:
             messages.info(request, 'Trash is already empty.')
-        
+
         return redirect('products_trash')
-    
+
     return redirect('products_trash')
 
 
@@ -1802,10 +1802,10 @@ def delete_product_image(request, image_id):
     image = get_object_or_404(ProductImage, id=image_id, product__user=request.user)
     product_id = image.product.id
     product_name = image.product.name
-    
+
     # Delete the image
     image.delete()
-    
+
     messages.success(request, f'Image deleted from "{product_name}" gallery successfully!')
     return redirect('product_detail', product_id=product_id)
 
@@ -1815,14 +1815,14 @@ def delete_product_image(request, image_id):
 def set_featured_image(request, image_id):
     """Set an image as featured in the gallery"""
     image = get_object_or_404(ProductImage, id=image_id, product__user=request.user)
-    
+
     # Unset all other featured images for this product
     ProductImage.objects.filter(product=image.product).update(is_featured=False)
-    
+
     # Set this image as featured
     image.is_featured = True
     image.save()
-    
+
     messages.success(request, f'Featured image updated for "{image.product.name}"!')
     return redirect('product_detail', product_id=image.product.id)
 
@@ -1832,14 +1832,14 @@ def set_featured_image(request, image_id):
 def upload_product_images(request, product_id):
     """Upload multiple images to product gallery"""
     product = get_object_or_404(Product, id=product_id, user=request.user)
-    
+
     if request.method == 'POST':
         gallery_images = request.FILES.getlist('images')
-        
+
         if gallery_images:
             # Get current max order
             max_order = ProductImage.objects.filter(product=product).count()
-            
+
             for idx, image in enumerate(gallery_images):
                 ProductImage.objects.create(
                     product=product,
@@ -1847,13 +1847,13 @@ def upload_product_images(request, product_id):
                     order=max_order + idx,
                     alt_text=f"{product.name} - Gallery Image {max_order + idx + 1}"
                 )
-            
+
             messages.success(request, f'{len(gallery_images)} image(s) uploaded successfully to "{product.name}" gallery!')
         else:
             messages.warning(request, 'No images were selected.')
-        
+
         return redirect('product_detail', product_id=product.id)
-    
+
     return redirect('product_detail', product_id=product.id)
 
 
@@ -1863,23 +1863,23 @@ def reorder_product_images(request, product_id):
     """Reorder product gallery images via AJAX"""
     if request.method == 'POST':
         product = get_object_or_404(Product, id=product_id, user=request.user)
-        
+
         try:
             order_data = json.loads(request.body)
-            
+
             for item in order_data:
                 image_id = item.get('id')
                 new_order = item.get('order')
-                
+
                 ProductImage.objects.filter(
-                    id=image_id, 
+                    id=image_id,
                     product=product
                 ).update(order=new_order)
-            
+
             return JsonResponse({'success': True, 'message': 'Images reordered successfully!'})
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)})
-    
+
     return JsonResponse({'success': False, 'message': 'Invalid request method'})
 
 
@@ -1919,7 +1919,7 @@ def orders_view(request):
 def chart_data(request):
     # Get sales data for charts
     today = datetime.now().date()
-    
+
     # Last 7 days sales
     daily_sales = []
     for i in range(7):
@@ -1929,12 +1929,12 @@ def chart_data(request):
             payment_status='paid',
             created_at__date=date
         ).aggregate(total=Sum('total_amount'))['total'] or 0
-        
+
         daily_sales.insert(0, {
             'date': date.strftime('%d %b'),
             'sales': float(sales)
         })
-    
+
     return JsonResponse({
         'daily_sales': daily_sales
     })
@@ -2007,17 +2007,17 @@ def order_sources_data(request):
     # Check if custom date range is provided
     custom_from = request.GET.get('custom_from')
     custom_to = request.GET.get('custom_to')
-    
+
     if custom_from and custom_to:
         try:
             from datetime import datetime
             start_date = datetime.strptime(custom_from, '%Y-%m-%d').date()
             end_date = datetime.strptime(custom_to, '%Y-%m-%d').date()
-            
+
             # Validate date range
             if end_date < start_date:
                 start_date, end_date = end_date, start_date
-            
+
             # Generate dates list based on custom range
             dates_list = []
             current = start_date
@@ -2039,15 +2039,15 @@ def order_sources_data(request):
                 days = 14
         except (ValueError, TypeError):
             days = 14
-        
+
         # Generate dates list based on days parameter
         dates_list = []
         for i in range(days - 1, -1, -1):
             date = (timezone.now() - timedelta(days=i)).date()
             dates_list.append(date)
-    
+
     orders = Order.objects.all()
-    
+
     # Get all sources first
     all_sources = set()
     source_dates_data = orders.annotate(
@@ -2055,14 +2055,14 @@ def order_sources_data(request):
     ).values('order_date', 'order_from').annotate(
         count=Count('id')
     ).order_by('order_date', 'order_from')
-    
+
     for entry in source_dates_data:
         source_name = entry['order_from'] if entry['order_from'] else 'Direct'
         all_sources.add(source_name)
-    
+
     # Build data structure: {date: {source: count}}
     order_sources_by_date = {date: {} for date in dates_list}
-    
+
     for source_name in all_sources:
         source_data = orders.filter(
             order_from=source_name if source_name != 'Direct' else ''
@@ -2071,25 +2071,25 @@ def order_sources_data(request):
         ).values('order_date').annotate(
             count=Count('id')
         ).order_by('order_date')
-        
+
         for entry in source_data:
             if entry['order_date'] in order_sources_by_date:
                 order_sources_by_date[entry['order_date']][source_name] = entry['count']
-    
+
     # Format for JSON: prepare chart data
     order_sources = {
         'dates': [date.strftime('%b %d') for date in dates_list],
         'sources': sorted(list(all_sources)),
         'data': {}
     }
-    
+
     for source in order_sources['sources']:
         counts = []
         for date in dates_list:
             count = order_sources_by_date.get(date, {}).get(source, 0)
             counts.append(count)
         order_sources['data'][source] = counts
-    
+
     return JsonResponse(order_sources)
 
 
@@ -2097,16 +2097,16 @@ def order_sources_data(request):
 @permission_required('can_view_customers')
 def customers_view(request):
     customers = Customer.objects.all().order_by('-created_at')
-    
+
     # Search functionality
     search_query = request.GET.get('search', '')
     if search_query:
         customers = customers.filter(
-            Q(name__icontains=search_query) | 
+            Q(name__icontains=search_query) |
             Q(email__icontains=search_query) |
             Q(phone__icontains=search_query)
         )
-    
+
     # Add order count and total spent for each customer
     customers_data = []
     for customer in customers:
@@ -2115,14 +2115,14 @@ def customers_view(request):
         total_spent = orders.filter(payment_status='paid').aggregate(
             total=Sum('total_amount')
         )['total'] or Decimal('0.00')
-        
+
         customers_data.append({
             'customer': customer,
             'total_orders': total_orders,
             'total_spent': total_spent,
             'last_order': orders.first(),
         })
-    
+
     context = {
         'customers_data': customers_data,
         'search_query': search_query,
@@ -2137,25 +2137,25 @@ def customers_view(request):
 def customer_detail(request, customer_id):
     """View customer details"""
     customer = get_object_or_404(Customer, id=customer_id)
-    
+
     # CORRECT: Query orders by customer email and phone
     customer_orders = Order.objects.filter(
         Q(customer_email=customer.email) | Q(customer_phone=customer.phone)
     ).order_by('-created_at')
-    
+
     # Calculate statistics
     total_orders = customer_orders.count()
     total_spent = customer_orders.filter(payment_status='paid').aggregate(
         total=Sum('total_amount')
     )['total'] or Decimal('0.00')
-    
+
     pending_orders = customer_orders.filter(order_status='pending').count()
     delivered_orders = customer_orders.filter(order_status='delivered').count()
-    
+
     # Get last order date
     last_order = customer_orders.first()
     last_order_date = last_order.created_at if last_order else None
-    
+
     context = {
         'customer': customer,
         'customer_orders': customer_orders,
@@ -2165,7 +2165,7 @@ def customer_detail(request, customer_id):
         'delivered_orders': delivered_orders,
         'last_order_date': last_order_date,
     }
-    
+
     return render(request, 'customer_detail.html', context)
 
 @login_required
@@ -2175,71 +2175,71 @@ def customers_bulk_action(request):
     if request.method == 'POST':
         customer_ids = request.POST.getlist('customer_ids')
         action = request.POST.get('bulk_action')
-        
+
         if not customer_ids:
             messages.error(request, 'No customers selected!')
             return redirect('customers_list')
-        
+
         try:
             customers = Customer.objects.filter(id__in=customer_ids)
             count = customers.count()
-            
+
             if count == 0:
                 messages.error(request, 'No valid customers found!')
                 return redirect('customers_list')
-            
+
             if action == 'delete':
                 customers.delete()
                 messages.success(request, f'✅ {count} customer(s) deleted successfully!')
-                
+
             elif action == 'activate':
                 customers.update(is_active=True)
                 messages.success(request, f'✅ {count} customer(s) activated!')
-                
+
             elif action == 'deactivate':
                 customers.update(is_active=False)
                 messages.success(request, f'✅ {count} customer(s) deactivated!')
-                
+
             elif action == 'change_type_retail':
                 customers.update(customer_type='retail')
                 messages.success(request, f'✅ {count} customer(s) changed to Retail!')
-                
+
             elif action == 'change_type_wholesale':
                 customers.update(customer_type='wholesale')
                 messages.success(request, f'✅ {count} customer(s) changed to Wholesale!')
-                
+
             elif action == 'change_type_vip':
                 customers.update(customer_type='vip')
                 messages.success(request, f'✅ {count} customer(s) changed to VIP!')
-                
+
             elif action == 'export':
                 # Export to Excel
                 wb = Workbook()
                 ws = wb.active
                 ws.title = 'Customers'
-                
+
                 # Styling
                 from openpyxl.styles import Font, PatternFill, Alignment
                 header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
                 header_font = Font(bold=True, color='FFFFFF', size=11)
-                
+
                 # Headers
                 headers = ['Name', 'Email', 'Phone', 'Alternate Phone', 'City', 'Address', 'Type', 'Total Orders', 'Total Spent']
                 ws.append(headers)
-                
+
                 # Style header row
                 for col_num, header in enumerate(headers, 1):
                     cell = ws.cell(row=1, column=col_num)
                     cell.fill = header_fill
                     cell.font = header_font
                     cell.alignment = Alignment(horizontal='center', vertical='center')
-                
+
                 # Data rows
                 for customer in customers:
                     orders = customer.orders.all()
                     total_spent = orders.filter(payment_status='paid').aggregate(
                         total=Sum('total_amount'))['total'] or Decimal('0.00')
-                    
+
                     ws.append([
                         customer.name,
                         customer.email or '',
@@ -2251,7 +2251,7 @@ def customers_bulk_action(request):
                         orders.count(),
                         float(total_spent)
                     ])
-                
+
                 # Auto-adjust column widths
                 for column in ws.columns:
                     max_length = 0
@@ -2264,7 +2264,7 @@ def customers_bulk_action(request):
                             pass
                     adjusted_width = min(max_length + 2, 50)
                     ws.column_dimensions[column_letter].width = adjusted_width
-                
+
                 # Create response
                 response = HttpResponse(
                     content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -2272,13 +2272,13 @@ def customers_bulk_action(request):
                 response['Content-Disposition'] = f'attachment; filename=customers_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
                 wb.save(response)
                 return response
-                
+
             else:
                 messages.error(request, 'Invalid action selected!')
-                
+
         except Exception as e:
             messages.error(request, f'❌ Error performing bulk action: {str(e)}')
-    
+
     return redirect('customers_list')
 
 
@@ -2286,16 +2286,16 @@ def customers_bulk_action(request):
 @admin_only
 def category_list(request):
     categories = Category.objects.all().order_by('name')
-    
+
     if request.method == 'POST':
         name = request.POST.get('name')
         slug = request.POST.get('slug')
-        
+
         if name and slug:
             Category.objects.create(name=name, slug=slug)
             messages.success(request, f'Category "{name}" added successfully!')
             return redirect('category_list')
-    
+
     context = {
         'categories': categories,
     }
@@ -2324,13 +2324,13 @@ def add_category_ajax(request):
 @admin_only
 def category_delete(request, category_id):
     category = get_object_or_404(Category, id=category_id)
-    
+
     if request.method == 'POST':
         category_name = category.name
         category.delete()
         messages.success(request, f'Category "{category_name}" deleted successfully!')
         return redirect('category_list')
-    
+
     return redirect('category_list')
 
 
@@ -2338,23 +2338,23 @@ def category_delete(request, category_id):
 @admin_only
 def category_edit(request, category_id):
     category = get_object_or_404(Category, id=category_id)
-    
+
     if request.method == 'POST':
         name = request.POST.get('name')
         slug = request.POST.get('slug')
-        
+
         if name and slug:
             # Check if slug is already taken by another category
             if Category.objects.filter(slug=slug).exclude(id=category_id).exists():
                 messages.error(request, 'A category with this slug already exists!')
                 return redirect('category_edit', category_id=category_id)
-            
+
             category.name = name
             category.slug = slug
             category.save()
             messages.success(request, f'Category "{name}" updated successfully!')
             return redirect('category_list')
-    
+
     context = {
         'category': category,
     }
@@ -2365,31 +2365,31 @@ def category_edit(request, category_id):
 @permission_required('can_edit_products')
 def product_variations(request, product_id):
     product = get_object_or_404(Product, id=product_id, user=request.user)
-    
+
     if product.product_type != 'variable':
         messages.warning(request, 'This product is not a variable product.')
         return redirect('products')
-    
+
     variations = ProductVariation.objects.filter(product=product)
-    
+
     if request.method == 'POST':
         action = request.POST.get('action')
-        
+
         if action == 'add_variation':
             sku = request.POST.get('sku', '').strip()
             price = request.POST.get('price') or None
             stock = request.POST.get('stock', 0)
-            
+
             # Validate SKU
             if not sku:
                 messages.error(request, 'SKU is required!')
                 return redirect('product_variations', product_id=product.id)
-            
+
             # Check if SKU already exists
             if ProductVariation.objects.filter(sku=sku).exists():
                 messages.error(request, f'SKU "{sku}" already exists! Please use a unique SKU.')
                 return redirect('product_variations', product_id=product.id)
-            
+
             try:
                 variation = ProductVariation.objects.create(
                     product=product,
@@ -2397,26 +2397,26 @@ def product_variations(request, product_id):
                     price=price,
                     stock=stock
                 )
-                
+
                 if 'variation_image' in request.FILES:
                     variation.image = request.FILES['variation_image']
                     variation.save()
-                
+
                 messages.success(request, f'Variation "{sku}" added successfully!')
                 return redirect('product_variations', product_id=product.id)
-                
+
             except IntegrityError:
                 messages.error(request, f'SKU "{sku}" already exists! Please use a unique SKU.')
                 return redirect('product_variations', product_id=product.id)
             except Exception as e:
                 messages.error(request, f'Error creating variation: {str(e)}')
                 return redirect('product_variations', product_id=product.id)
-    
+
     context = {
         'product': product,
         'variations': variations,
     }
-    return render(request, 'product_variations.html', context) 
+    return render(request, 'product_variations.html', context)
 
 
 @login_required
@@ -2438,7 +2438,7 @@ def variation_delete(request, variation_id):
 def customers_list(request):
     """List all customers with search and filter"""
     customers = Customer.objects.all().order_by('-created_at')
-    
+
     # Search
     search_query = request.GET.get('search', '')
     if search_query:
@@ -2447,12 +2447,12 @@ def customers_list(request):
             Q(email__icontains=search_query) |
             Q(phone__icontains=search_query)
         )
-    
+
     # Filter by type
     customer_type = request.GET.get('type', '')
     if customer_type:
         customers = customers.filter(customer_type=customer_type)
-    
+
     # Add statistics
     customers_data = []
     for customer in customers:
@@ -2464,7 +2464,7 @@ def customers_list(request):
                 total=Sum('total_amount'))['total'] or Decimal('0.00'),
             'last_order': orders.first(),
         })
-    
+
     context = {
         'customers_data': customers_data,
         'search_query': search_query,
@@ -2490,7 +2490,7 @@ def customer_add(request):
             messages.error(request, 'Please correct the errors below.')
     else:
         form = CustomerForm()
-    
+
     context = {'form': form, 'action': 'Add'}
     return render(request, 'customer_form.html', context)
 
@@ -2500,7 +2500,7 @@ def customer_add(request):
 def customer_edit(request, customer_id):
     """Edit existing customer"""
     customer = get_object_or_404(Customer, id=customer_id)
-    
+
     if request.method == 'POST':
         form = CustomerForm(request.POST, instance=customer)
         if form.is_valid():
@@ -2509,7 +2509,7 @@ def customer_edit(request, customer_id):
             return redirect('customer_detail', customer_id=customer.id)
     else:
         form = CustomerForm(instance=customer)
-    
+
     context = {'form': form, 'customer': customer, 'action': 'Edit'}
     return render(request, 'customer_form.html', context)
 
@@ -2519,13 +2519,13 @@ def customer_detail(request, customer_id):
     """View customer details"""
     customer = get_object_or_404(Customer, id=customer_id)
     orders = customer.orders.all().order_by('-created_at')
-    
+
     # Statistics
     total_orders = orders.count()
     total_spent = orders.filter(payment_status='paid').aggregate(
         total=Sum('total_amount'))['total'] or Decimal('0.00')
     pending_orders = orders.filter(order_status='pending').count()
-    
+
     context = {
         'customer': customer,
         'orders': orders,
@@ -2541,13 +2541,13 @@ def customer_detail(request, customer_id):
 def customer_delete(request, customer_id):
     """Delete customer"""
     customer = get_object_or_404(Customer, id=customer_id)
-    
+
     if request.method == 'POST':
         customer_name = customer.name
         customer.delete()
         messages.success(request, f'Customer "{customer_name}" deleted successfully!')
         return redirect('customers_list')
-    
+
     return render(request, 'customer_delete.html', {'customer': customer})
 
 
@@ -2563,15 +2563,15 @@ def orders_list(request):
     from django.db.models import Q, Sum
     from decimal import Decimal
     import pytz
-    
+
     # ✅ FIXED: Use pure ORM queries with select_related for performance
     orders = Order.objects.filter(
         is_deleted=False
     ).select_related(
-        'customer', 'created_by', 'status_setup', 
+        'customer', 'created_by', 'status_setup',
         'payment_setup', 'payment_status_setup'
     ).prefetch_related('items').order_by('-created_at')
-    
+
     # GET FILTER PARAMETERS - DEFAULT TO 'last_2_days'
     date_filter = request.GET.get('date_range', 'last_2_days')
     search_query = request.GET.get('search', '')
@@ -2582,7 +2582,7 @@ def orders_list(request):
     end_date = request.GET.get('end_date', '')
     logistics_filter = request.GET.get('logistics_status', '')
     product_filter = request.GET.get('product', '')
-    
+
     # ✅ FIXED: Apply filters using ORM (much more efficient than Python list filtering)
     # Search filter
     if search_query:
@@ -2592,7 +2592,7 @@ def orders_list(request):
             Q(customer_phone__icontains=search_query) |
             Q(customer_email__icontains=search_query)
         )
-    
+
     # Status filter - Now properly handles Setup-based statuses
     if status_filter:
         try:
@@ -2600,7 +2600,7 @@ def orders_list(request):
                 setup_type='status',
                 name__iexact=status_filter.replace('_', ' ')
             ).first()
-            
+
             if status_setup:
                 orders = orders.filter(
                     Q(status_setup_id=status_setup.id) |
@@ -2619,7 +2619,7 @@ def orders_list(request):
                 Q(order_status__iexact=status_filter.replace('_', ' ')) |
                 Q(order_status__iexact=status_filter)
             )
-    
+
     # Payment status filter - Now properly handles Setup-based payment statuses
     if payment_filter:
         # Try to find the Setup with matching filter value
@@ -2629,7 +2629,7 @@ def orders_list(request):
                 setup_type='payment_status',
                 name__iexact=payment_filter.replace('_', ' ')
             ).first()
-            
+
             if payment_setup:
                 # STRICT FILTER: Primary by payment_status_setup_id, fallback only for null payment_status_setup
                 orders = orders.filter(
@@ -2642,7 +2642,7 @@ def orders_list(request):
         except Exception:
             # Fallback filtering
             orders = orders.filter(payment_status=payment_filter)
-    
+
     # Product name filter
     if product_filter:
         orders = orders.filter(items__product_name__iexact=product_filter).distinct()
@@ -2650,13 +2650,13 @@ def orders_list(request):
     # In/Out Valley filter
     if in_out_filter:
         orders = orders.filter(in_out=in_out_filter)
-    
+
     # Logistics filter
     if logistics_filter == 'sent':
         orders = orders.exclude(ncm_order_id__isnull=True)
     elif logistics_filter == 'not_sent':
         orders = orders.filter(ncm_order_id__isnull=True)
-    
+
     # DATE RANGE FILTER using ORM
     # NOTE: MySQL timezone tables are not installed so CONVERT_TZ() returns NULL.
     # All __date, __month, __day lookups fail silently. We use explicit
@@ -2711,20 +2711,20 @@ def orders_list(request):
             pass
     elif date_filter == 'all':
         pass  # No date filter
-    
+
     # ✅ FIXED: Calculate statistics using case-insensitive ORM queries
     total_orders = orders.count()
     total_revenue = orders.filter(payment_status__iexact='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
     pending_orders = orders.filter(order_status__iexact='pending').count()
     confirmed_orders = orders.filter(order_status__iexact='confirmed').count()
     dispatched_orders = orders.filter(order_status__iexact='dispatched').count()
-    
+
     # Delivered today: orders with delivered status and delivered_at today
     delivered_today = orders.filter(
         order_status__iexact='delivered',
         delivered_at__date=today_nepal
     ).count()
-    
+
     # Product name sorting
     product_sort = request.GET.get('product_sort', '')
     if product_sort in ('asc', 'desc'):
@@ -2743,12 +2743,12 @@ def orders_list(request):
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
     orders_page = paginator.get_page(page_number)
-    
+
     # ✅ FETCH DYNAMIC ORDER STATUSES AND PAYMENT STATUSES FROM SETUP MANAGEMENT
     # This ensures filters pull from Setup Management for consistency
     order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
     payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
-    
+
     # Convert Setup names to filter values (lowercase with underscores)
     # Format: [(filter_value, display_name), ...]
     # Example: [('pending', 'Pending'), ('confirmed', 'Confirmed')]
@@ -2760,7 +2760,7 @@ def orders_list(request):
         (setup.name.lower().replace(' ', '_'), setup.name)
         for setup in payment_setups
     ]
-    
+
     # ✅ FETCH DISTINCT PRODUCT NAMES FOR FILTER DROPDOWN
     from dashboard.models import OrderItem
     product_choices = list(
@@ -2781,7 +2781,7 @@ def orders_list(request):
         (f'payment_status_setup_{setup.id}', f'Mark as {setup.name}', '💳')
         for setup in payment_setups
     ]
-    
+
     # ✅ FIX DECIMAL CORRUPTION IN ORDERS BEFORE DISPLAY
     # This ensures amounts are always correct without needing to visit detail page
     order_products = {}
@@ -2805,7 +2805,7 @@ def orders_list(request):
             import logging
             logging.error(f"Error fixing decimals for order {order.id}: {e}")
             order_products[order.id] = "No products"
-    
+
     context = {
         'orders': orders_page,
         'order_products': order_products,
@@ -2837,7 +2837,7 @@ def orders_list(request):
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
         'ORDER_AUTO_SYNC_INTERVAL': APISettings.get_settings().order_sync_interval,
     }
-    
+
     return render(request, 'orders_list.html', context)
 @login_required
 @permission_required('can_create_orders')
@@ -2970,7 +2970,7 @@ def order_create(request):
                         'is_active': True
                     }
                 )
-                
+
                 # Update city valley status if needed
                 if not city_created and in_out.lower() == 'in' and city.valley_status != 'valley':
                     city.valley_status = 'valley'
@@ -3017,7 +3017,7 @@ def order_create(request):
                 shipping_charge_safe = safe_decimal(shipping_charge, max_digits=10, decimal_places=2)
                 tax_percent_safe = safe_decimal(tax_percent, max_digits=5, decimal_places=2)
                 total_amount_safe = safe_decimal(total_amount, max_digits=10, decimal_places=2)
-                
+
                 # SET PAYMENT STATUS BASED ON PARTIAL PAYMENT
                 if is_partial_payment:
                     payment_status = "partial"
@@ -3077,7 +3077,7 @@ def order_create(request):
                                 return redirect("order_create")
                         else:
                             raise
-                
+
                 # ✅ VERIFY ORDER WAS CREATED
                 if not order:
                     err = 'Failed to create order. Please try again.'
@@ -3085,7 +3085,7 @@ def order_create(request):
                         return _ajax_error(err)
                     messages.error(request, err)
                     return redirect("order_create")
-                
+
                 # ✅ SYNC ORDER STATUS WITH STATUS SETUP - ENSURES DATA CONSISTENCY
                 order = sync_order_status_setup(order)
 
@@ -3149,7 +3149,7 @@ def order_create(request):
                 success_msg = f"Order {order.order_number} created successfully!"
                 if is_partial_payment:
                     success_msg += f" | Partial payment: रू {partial_amount_paid} paid"
-                
+
                 # Return JSON for AJAX submissions (POS stays on the same page)
                 if _is_ajax:
                     from django.http import JsonResponse
@@ -3168,7 +3168,7 @@ def order_create(request):
 
     # GET REQUEST - SHOW FORM
     users = User.objects.filter(is_active=True).order_by("username")
-    
+
     # FIX: Handle decimal conversion errors in recent orders
     try:
         # Convert queryset to list and fix any invalid decimals
@@ -3186,13 +3186,13 @@ def order_create(request):
         # If all else fails, use an empty list
         logger.error(f"Error fetching recent orders: {e}")
         recent_orders = []
-    
+
     # GET CITIES FROM DATABASE
     cities = City.objects.filter(is_active=True).order_by('name')
-    
+
     # GET CATEGORIES FOR CUSTOM PRODUCT MODAL
     categories = Category.objects.all().order_by('name')
-    
+
     # NEW: GET PAYMENT AND STATUS SETUPS
     from .models import Setup
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
@@ -3232,7 +3232,7 @@ def order_detail(request, order_id):
         id=order_id
     )
     order = fix_order_decimals(order)
-    
+
     # ENSURE PARTIAL PAYMENT FIELDS ARE PROPERLY SET
     if order.payment_status == 'partial' and not order.is_partial_payment:
         order.is_partial_payment = True
@@ -3244,11 +3244,11 @@ def order_detail(request, order_id):
             else:
                 order.remaining_amount = order.total_amount
         order.save()
-    
+
     # Handle POST request for status updates
     if request.method == 'POST':
         action = request.POST.get('action')
-        
+
         if action == 'update_status':
             try:
                 # Store old values for activity log
@@ -3283,7 +3283,7 @@ def order_detail(request, order_id):
                             changes_made.append('Order Status')
                     except Setup.DoesNotExist:
                         messages.warning(request, 'Selected status not found.')
-                
+
                 # ====== UPDATE PAYMENT STATUS ======
                 if payment_status_setup_id:
                     try:
@@ -3292,11 +3292,11 @@ def order_detail(request, order_id):
                             order.payment_status_setup = payment_status_setup
                             # Also update the string field
                             new_payment_status = payment_status_setup.name.lower().replace(' ', '_')
-                            
+
                             # Handle partial payment logic
                             is_new_partial = 'partial' in new_payment_status.lower()
                             was_old_partial = 'partial' in (order.payment_status or '').lower()
-                            
+
                             if not was_old_partial and is_new_partial:
                                 order.is_partial_payment = True
                                 if order.partial_amount_paid is None:
@@ -3305,12 +3305,12 @@ def order_detail(request, order_id):
                                     order.remaining_amount = order.total_amount
                             elif was_old_partial and not is_new_partial:
                                 order.is_partial_payment = False
-                            
+
                             order.payment_status = new_payment_status
                             changes_made.append('Payment Status')
                     except Setup.DoesNotExist:
                         messages.warning(request, 'Selected payment status not found.')
-                
+
                 # ====== UPDATE PAYMENT METHOD ======
                 if payment_setup_id:
                     try:
@@ -3321,13 +3321,13 @@ def order_detail(request, order_id):
                             changes_made.append('Payment Method')
                     except Setup.DoesNotExist:
                         messages.warning(request, 'Selected payment method not found.')
-                
+
                 # ====== UPDATE TRACKING NUMBER ======
                 if new_tracking != old_tracking:
                     order.tracking_number = new_tracking
                     if new_tracking:
                         changes_made.append('Tracking Number')
-                
+
                 # ====== CREATE ADMIN NOTE ======
                 if new_admin_notes:
                     from .models import OrderAdminNote
@@ -3337,12 +3337,12 @@ def order_detail(request, order_id):
                         created_by=request.user
                     )
                     changes_made.append('Admin Notes')
-                
+
                 # ====== UPDATE LOGISTICS (only if explicitly selected) ======
                 if new_logistics_input and new_logistics_input != old_logistics:
                     order.logistics = new_logistics_input
                     changes_made.append('Logistics Provider')
-                
+
                 # ====== UPDATE API CONFIG (from logistics modal) ======
                 selected_api_config_id = request.POST.get('selected_api_config_id', '').strip()
                 old_api_config = order.api_config
@@ -3359,14 +3359,14 @@ def order_detail(request, order_id):
                     if order.api_config:
                         order.api_config = None
                         changes_made.append('API Config')
-                
+
                 # ====== SET DELIVERED TIMESTAMP ======
                 if order.order_status == 'delivered' and old_order_status != 'delivered':
                     order.delivered_at = timezone.now()
-                
+
                 # Save the order
                 order.save()
-                
+
                 # CRITICAL: Ensure FK relationships are synced and setup records exist
                 # Re-fetch the order to apply any FK sync changes
                 order = Order.objects.select_related(
@@ -3375,7 +3375,7 @@ def order_detail(request, order_id):
                     'payment_setup',
                     'payment_status_setup'
                 ).get(id=order.id)
-                
+
                 # Sync any missing FK relationships
                 if not order.status_setup and order.order_status:
                     try:
@@ -3388,7 +3388,7 @@ def order_detail(request, order_id):
                         order.save(update_fields=['status_setup'])
                     except:
                         pass
-                
+
                 if not order.payment_setup and order.payment_method:
                     try:
                         setup_name = order.payment_method.replace('_', ' ').title()
@@ -3400,7 +3400,7 @@ def order_detail(request, order_id):
                         order.save(update_fields=['payment_setup'])
                     except:
                         pass
-                
+
                 if not order.payment_status_setup and order.payment_status:
                     try:
                         setup_name = order.payment_status.replace('_', ' ').title()
@@ -3412,7 +3412,7 @@ def order_detail(request, order_id):
                         order.save(update_fields=['payment_status_setup'])
                     except:
                         pass
-                
+
                 # ====== CREATE ACTIVITY LOGS ======
                 if old_order_status != order.order_status:
                     OrderActivityLog.objects.create(
@@ -3424,7 +3424,7 @@ def order_detail(request, order_id):
                         new_value=order.order_status,
                         description=f'Order status changed from "{old_order_status}" to "{order.order_status}"'
                     )
-                
+
                 if old_payment_status != order.payment_status:
                     OrderActivityLog.objects.create(
                         order=order,
@@ -3435,7 +3435,7 @@ def order_detail(request, order_id):
                         new_value=order.payment_status,
                         description=f'Payment status changed from "{old_payment_status}" to "{order.payment_status}"'
                     )
-                
+
                 if old_payment_method != order.payment_method:
                     OrderActivityLog.objects.create(
                         order=order,
@@ -3446,7 +3446,7 @@ def order_detail(request, order_id):
                         new_value=order.payment_method,
                         description=f'Payment method changed from "{old_payment_method}" to "{order.payment_method}"'
                     )
-                
+
                 if new_logistics_input and old_logistics != new_logistics_input:
                     logistics_display = {
                         'ncm': 'NCM',
@@ -3458,7 +3458,7 @@ def order_detail(request, order_id):
                     }
                     old_display = logistics_display.get(old_logistics, old_logistics or 'None')
                     new_display = logistics_display.get(new_logistics_input, new_logistics_input or 'None')
-                    
+
                     OrderActivityLog.objects.create(
                         order=order,
                         action_type='updated',
@@ -3468,24 +3468,24 @@ def order_detail(request, order_id):
                         new_value=new_logistics_input,
                         description=f'Logistics provider changed from "{old_display}" to "{new_display}"'
                     )
-                
+
                 if changes_made:
                     messages.success(request, f"✅ Order updated! Changed: {', '.join(changes_made)}")
                 else:
                     messages.info(request, "ℹ️ No changes were made to the order.")
-                
+
                 # CRITICAL: Clear QuerySet cache and redirect to fetch fresh data
                 # This ensures edit_order will see the latest data from database
                 from django.core.cache import cache
                 cache.delete(f'order_{order.id}')  # Clear any order cache
-                
+
                 return redirect('order_detail', order_id=order.id)
-                
+
             except Exception as e:
                 logger.error(f"Error updating order {order_id}: {str(e)}")
                 messages.error(request, f"❌ Error updating order: {str(e)}")
                 return redirect('order_detail', order_id=order.id)
-    
+
     # GET request - display order details
     # CRITICAL: Always fetch fresh data to ensure sync with order_edit page
     # SYNCHRONIZE ORDER STATUS WITH SETUP USING HELPER FUNCTION
@@ -3515,45 +3515,45 @@ def order_detail(request, order_id):
             order.save(update_fields=['payment_setup'])
         except Exception as e:
             logger.warning(f"Could not force sync payment_setup for order {order_id}: {str(e)}")
-    
+
     # CRITICAL: Re-fetch from database to get fresh FK relationships after sync
     order = Order.objects.select_related(
         'api_config',
-        'status_setup', 
-        'payment_setup', 
+        'status_setup',
+        'payment_setup',
         'payment_status_setup',
         'customer',
         'created_by'
     ).get(id=order_id)
-    
+
     # Now get order items and activity logs from fresh order instance
     order_items = order.items.select_related('product', 'product_variation').all()
     activity_logs = order.activity_logs.select_related('user').order_by('-created_at')[:20]
-    
+
     # Get Setup options for dropdowns
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
     payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
-    
+
     # Calculate subtotal
     subtotal = sum(item.total for item in order_items) or Decimal('0.00')
-    
+
     # Calculate amounts
     after_discount = subtotal - (order.discount_amount or Decimal('0'))
     tax_amount = (after_discount * (order.tax_percent or Decimal('0'))) / 100
-    
+
     # ✅ RECALCULATE TOTAL CORRECTLY
     calculated_total = after_discount + tax_amount + (order.shipping_charge or Decimal('0'))
-    
+
     # If stored total is wrong (capped at 99999999.99), use calculated value
     if order.total_amount != calculated_total:
         order.total_amount = calculated_total
         order.save()
-    
+
     # CALCULATE PARTIAL PAYMENT INFO
     is_partial_payment = order.is_partial_payment or order.payment_status == 'partial'
     partial_amount_paid = order.partial_amount_paid or Decimal('0.00')
-    
+
     # Auto-calculate remaining amount if not set
     if is_partial_payment and order.remaining_amount is None:
         remaining_amount = (calculated_total or Decimal('0.00')) - partial_amount_paid
@@ -3561,7 +3561,7 @@ def order_detail(request, order_id):
             remaining_amount = Decimal('0.00')
     else:
         remaining_amount = order.remaining_amount or Decimal('0.00')
-    
+
     context = {
         'order': order,
         'order_items': order_items,
@@ -3570,12 +3570,12 @@ def order_detail(request, order_id):
         'after_discount': after_discount,
         'tax_amount': tax_amount,
         'calculated_total': calculated_total,  # ✅ Use recalculated total
-        
+
         # ENHANCED PARTIAL PAYMENT INFO
         'is_partial_payment': is_partial_payment,
         'partial_amount_paid': partial_amount_paid,
         'remaining_amount': remaining_amount,
-        
+
         # CALCULATE PARTIAL PAYMENT PERCENTAGE FOR PROGRESS BAR
         'partial_payment_percentage': 0,
 
@@ -3611,7 +3611,7 @@ def order_detail(request, order_id):
         and not is_rtv
         and order.exchange_status != 'created'
     )
-    
+
     # Calculate percentage for progress bar
     if is_partial_payment and calculated_total and calculated_total > 0:
         try:
@@ -3619,7 +3619,7 @@ def order_detail(request, order_id):
             context['partial_payment_percentage'] = min(100, max(0, float(percentage)))
         except:
             context['partial_payment_percentage'] = 0
-    
+
     return render(request, 'order_detail.html', context)
 
 @login_required
@@ -3631,18 +3631,18 @@ def order_edit(request, order_id):
     order = get_object_or_404(
         Order.objects.select_related(
             'api_config',
-            'status_setup', 
-            'payment_setup', 
+            'status_setup',
+            'payment_setup',
             'payment_status_setup',
             'customer',
             'created_by'
         ),
         id=order_id
     )
-    
+
     # Synchronize status with setup records before processing
     order = sync_order_status_setup(order)
-    
+
     if request.method == "POST":
         try:
             with transaction.atomic():
@@ -3655,19 +3655,19 @@ def order_edit(request, order_id):
                 old_in_out = order.in_out
                 old_order_status = order.order_status
                 old_payment_status = order.payment_status
-                
+
                 # Update basic fields
                 order.customer_name = request.POST.get("customer_name", "").strip()
                 order.customer_phone = request.POST.get("customer_phone", "").strip()
                 order.customer_email = request.POST.get("customer_email", "").strip()
-                
+
                 # Get city and in_out field
                 branch_city_name = request.POST.get("branch_city", "").strip()
                 in_out = request.POST.get("in_out", "in").strip()
-                
+
                 order.shipping_address = request.POST.get("shipping_address", "").strip()
                 order.landmark = request.POST.get("landmark", "").strip()
-                
+
                 created_by_id = request.POST.get("created_by")
                 try:
                     order.created_by = User.objects.get(id=created_by_id)
@@ -3750,7 +3750,7 @@ def order_edit(request, order_id):
                             )
                         except:
                             pass
-                
+
                 try:
                     order.discount_amount = Decimal(request.POST.get("discount") or "0")
                 except (InvalidOperation, ValueError):
@@ -3768,7 +3768,7 @@ def order_edit(request, order_id):
                 except (InvalidOperation, ValueError):
                     order.total_amount = Decimal("0")
                 order.notes = request.POST.get("notes", "")
-                
+
                 # ✅ CREATE ADMIN NOTE
                 new_admin_notes = request.POST.get("admin_notes", "").strip()
                 if new_admin_notes:
@@ -3789,11 +3789,11 @@ def order_edit(request, order_id):
                     remaining_amount = Decimal(request.POST.get("remaining_amount") or "0")
                 except (InvalidOperation, ValueError):
                     remaining_amount = Decimal("0")
-                
+
                 order.is_partial_payment = is_partial_payment
                 order.partial_amount_paid = partial_amount_paid if is_partial_payment else None
                 order.remaining_amount = remaining_amount if is_partial_payment else None
-                
+
                 # UPDATE PAYMENT STATUS BASED ON PARTIAL PAYMENT
                 if is_partial_payment:
                     if partial_amount_paid >= order.total_amount:
@@ -3812,7 +3812,7 @@ def order_edit(request, order_id):
                             'is_active': True
                         }
                     )
-                    
+
                     # Update city valley status if needed
                     if not city_created and in_out.lower() == 'in' and city.valley_status != 'valley':
                         city.valley_status = 'valley'
@@ -3820,9 +3820,9 @@ def order_edit(request, order_id):
                     elif not city_created and in_out.lower() == 'out' and city.valley_status != 'out_valley':
                         city.valley_status = 'out_valley'
                         city.save()
-                    
+
                     order.branch_city = branch_city_name
-                
+
                 order.in_out = in_out
 
                 # Update customer
@@ -3837,7 +3837,7 @@ def order_edit(request, order_id):
 
                 # Update order items
                 order.items.all().delete()
-                
+
                 order_items_json = request.POST.get("order_items") or "[]"
                 try:
                     cart = json.loads(order_items_json)
@@ -3899,19 +3899,19 @@ def order_edit(request, order_id):
                 # CREATE ACTIVITY LOG FOR CHANGES
                 description = f"Order #{order.order_number} was updated"
                 changes = []
-                
+
                 # Check status change
                 if old_order_status != order.order_status:
                     changes.append(f"Status: {old_order_status} → {order.order_status}")
-                
+
                 # Check payment method change
                 if old_payment_method != order.payment_method:
                     changes.append(f"Payment Method: {old_payment_method} → {order.payment_method}")
-                
+
                 # Check payment status change
                 if old_payment_status != order.payment_status:
                     changes.append(f"Payment Status: {old_payment_status} → {order.payment_status}")
-                
+
                 # Check if partial payment changed
                 if is_partial_payment != old_is_partial:
                     if is_partial_payment:
@@ -3921,18 +3921,18 @@ def order_edit(request, order_id):
                 elif is_partial_payment:
                     if partial_amount_paid != old_partial_paid:
                         changes.append(f"Partial Payment Updated: रू {partial_amount_paid} paid, रू {remaining_amount} remaining")
-                
+
                 # Check if city changed
                 if old_city != branch_city_name:
                     changes.append(f"City: {old_city} → {branch_city_name}")
-                
+
                 # Check if IN/OUT changed
                 if old_in_out != in_out:
                     changes.append(f"IN/OUT: {old_in_out.upper()} → {in_out.upper()}")
-                
+
                 if changes:
                     description += " | " + " | ".join(changes)
-                
+
                 OrderActivityLog.objects.create(
                     order=order,
                     action_type='updated',
@@ -3944,14 +3944,14 @@ def order_edit(request, order_id):
                 success_msg = f"✅ Order {order.order_number} updated successfully!"
                 if is_partial_payment:
                     success_msg += f" | Partial payment: रू {partial_amount_paid} paid"
-                
+
                 messages.success(request, success_msg)
-                
+
                 # CRITICAL: Clear any cache and redirect to order_detail to ensure fresh data
                 # This ensures order_detail will fetch the latest data from database
                 from django.core.cache import cache
                 cache.delete(f'order_{order.id}')
-                
+
                 return redirect("order_detail", order_id=order.id)
 
         except json.JSONDecodeError:
@@ -3967,20 +3967,20 @@ def order_edit(request, order_id):
     # CRITICAL: Fetch fresh order data from database
     order = Order.objects.select_related(
         'api_config',
-        'status_setup', 
-        'payment_setup', 
+        'status_setup',
+        'payment_setup',
         'payment_status_setup',
         'customer',
         'created_by'
     ).get(id=order_id)
-    
+
     # CRITICAL: Ensure all FK relationships are properly synced and setup records exist
     # This ensures dropdowns show selected values correctly
     from .models import Setup
-    
+
     # Sync status with setup
     order = sync_order_status_setup(order)
-    
+
     # Ensure status_setup FK exists and is synced with order_status
     if not order.status_setup and order.order_status:
         try:
@@ -3993,7 +3993,7 @@ def order_edit(request, order_id):
             order.save(update_fields=['status_setup'])
         except Exception as e:
             logger.warning(f"Could not create status_setup for order {order_id}: {str(e)}")
-    
+
     # Ensure payment_setup FK exists and is synced with payment_method
     if not order.payment_setup and order.payment_method:
         try:
@@ -4006,7 +4006,7 @@ def order_edit(request, order_id):
             order.save(update_fields=['payment_setup'])
         except Exception as e:
             logger.warning(f"Could not create payment_setup for order {order_id}: {str(e)}")
-    
+
     # Ensure payment_status_setup FK exists and is synced with payment_status
     if not order.payment_status_setup and order.payment_status:
         try:
@@ -4019,19 +4019,19 @@ def order_edit(request, order_id):
             order.save(update_fields=['payment_status_setup'])
         except Exception as e:
             logger.warning(f"Could not create payment_status_setup for order {order_id}: {str(e)}")
-    
+
     # Reload fresh FK relationships after all syncs
     order = Order.objects.select_related(
         'api_config',
-        'status_setup', 
-        'payment_setup', 
+        'status_setup',
+        'payment_setup',
         'payment_status_setup',
         'customer',
         'created_by'
     ).get(id=order_id)
-    
+
     order_items = order.items.select_related('product', 'product_variation').all()
-    
+
     users = User.objects.filter(is_active=True).order_by("username")
     statuses = ["processing", "confirmed", "shipped", "delivered", "cancelled"]
     order_sources = ["website", "facebook", "instagram", "phone", "walk-in"]
@@ -4053,7 +4053,7 @@ def order_edit(request, order_id):
 
     # Get active cities for Branch/City select (from City management)
     cities = City.objects.filter(is_active=True).order_by('name')
-    
+
     # CRITICAL: GET PAYMENT AND STATUS SETUPS FROM DATABASE
     # These must be fresh to ensure synchronization with order_detail
     from .models import Setup
@@ -4065,12 +4065,12 @@ def order_edit(request, order_id):
     # ✅ SAFE: Handle decimal InvalidOperation errors by deferring problematic decimal fields
     # Some orders have corrupted decimal values in total_amount and other fields
     decimal_fields_to_defer = [
-        'discount_amount', 'shipping_charge', 'delivery_charge', 
+        'discount_amount', 'shipping_charge', 'delivery_charge',
         'expense_amount', 'tax_percent', 'total_amount',
-        'partial_amount_paid', 'remaining_amount', 'cod_collected', 
+        'partial_amount_paid', 'remaining_amount', 'cod_collected',
         'package_weight'
     ]
-    
+
     try:
         recent_orders = Order.objects.defer(
             *decimal_fields_to_defer
@@ -4111,7 +4111,7 @@ def order_delete(request, order_id):
         # REMOVED STOCK RESTORATION - Stock was never reduced during order creation
         # Only orders with status="dispatched" have reduced stock
         # If you want to restore stock for dispatched orders, check status:
-        
+
         if order.order_status == 'dispatched':
             # Restore stock for dispatched orders only
             for item in order.items.all():
@@ -4141,7 +4141,7 @@ def orders_trash(request):
     trashed_orders = Order.objects.filter(
         is_deleted=True
     ).order_by('-deleted_at')
-    
+
     # Search functionality
     search_query = request.GET.get("search", "")
     if search_query:
@@ -4150,18 +4150,18 @@ def orders_trash(request):
             Q(customer_name__icontains=search_query) |
             Q(customer_phone__icontains=search_query)
         )
-    
+
     # Status filter
     status_filter = request.GET.get("status", "")
     if status_filter:
         trashed_orders = trashed_orders.filter(order_status=status_filter)
-    
+
     context = {
         "trashed_orders": trashed_orders,
         "search_query": search_query,
         "status_filter": status_filter,
     }
-    
+
     return render(request, "orders_trash.html", context)
 
 
@@ -4171,13 +4171,13 @@ def order_move_to_trash(request, order_id):
     """Move order to trash (soft delete)"""
     # Removed user filter
     order = get_object_or_404(Order, id=order_id, is_deleted=False)
-    
+
     if request.method == 'POST':
         order_number = order.order_number
         order.is_deleted = True
         order.deleted_at = timezone.now()
         order.save()
-        
+
         # Log activity
         OrderActivityLog.objects.create(
             order=order,
@@ -4185,10 +4185,10 @@ def order_move_to_trash(request, order_id):
             action_type='deleted',
             description=f'Order moved to trash by {request.user.username}'
         )
-        
+
         messages.success(request, f'Order "{order_number}" moved to trash successfully!')
         return redirect('orders_list')
-    
+
     return redirect('order_detail', order_id=order_id)
 
 
@@ -4198,13 +4198,13 @@ def order_restore(request, order_id):
     """Restore order from trash"""
     # Removed user filter
     order = get_object_or_404(Order, id=order_id, is_deleted=True)
-    
+
     if request.method == 'POST':
         order_number = order.order_number
         order.is_deleted = False
         order.deleted_at = None
         order.save()
-        
+
         # Log activity
         OrderActivityLog.objects.create(
             order=order,
@@ -4212,10 +4212,10 @@ def order_restore(request, order_id):
             action_type='restored',
             description=f'Order restored from trash by {request.user.username}'
         )
-        
+
         messages.success(request, f'Order "{order_number}" restored successfully!')
         return redirect('orders_trash')
-    
+
     return redirect('orders_trash')
 
 
@@ -4225,14 +4225,14 @@ def order_permanent_delete(request, order_id):
     """Permanently delete order"""
     # Removed user filter
     order = get_object_or_404(Order, id=order_id, is_deleted=True)
-    
+
     if request.method == 'POST':
         order_number = order.order_number
         order.delete()
-        
+
         messages.success(request, f'Order "{order_number}" permanently deleted!')
         return redirect('orders_trash')
-    
+
     return redirect('orders_trash')
 
 
@@ -4243,11 +4243,11 @@ def orders_trash_bulk_action(request):
     if request.method == "POST":
         order_ids = request.POST.getlist("order_ids")
         action = request.POST.get("bulk_action")
-        
+
         if not order_ids:
             messages.error(request, "No orders selected!")
             return redirect('orders_trash')
-        
+
         try:
             # Removed user filter
             orders = Order.objects.filter(
@@ -4255,14 +4255,14 @@ def orders_trash_bulk_action(request):
                 is_deleted=True
             )
             count = orders.count()
-            
+
             if count == 0:
                 messages.error(request, "No valid orders found!")
                 return redirect('orders_trash')
-            
+
             if action == "restore":
                 orders.update(is_deleted=False, deleted_at=None)
-                
+
                 # Log activity for each restored order
                 for order in orders:
                     OrderActivityLog.objects.create(
@@ -4271,19 +4271,19 @@ def orders_trash_bulk_action(request):
                         action_type='restored',
                         description=f'Order restored from trash by {request.user.username}'
                     )
-                
+
                 messages.success(request, f"✅ {count} order(s) restored successfully!")
-                
+
             elif action == "permanent_delete":
                 orders.delete()
                 messages.success(request, f"✅ {count} order(s) permanently deleted!")
-                
+
             else:
                 messages.error(request, "Invalid action selected!")
-                
+
         except Exception as e:
             messages.error(request, f"Error performing bulk action: {str(e)}")
-            
+
     return redirect('orders_trash')
 
 
@@ -4295,15 +4295,15 @@ def empty_orders_trash(request):
         # Removed user filter - empty ALL trashed orders
         trashed_orders = Order.objects.filter(is_deleted=True)
         count = trashed_orders.count()
-        
+
         if count > 0:
             trashed_orders.delete()
             messages.success(request, f'✅ Trash emptied! {count} order(s) permanently deleted.')
         else:
             messages.info(request, 'Trash is already empty.')
-        
+
         return redirect('orders_trash')
-    
+
     return redirect('orders_trash')
 
 
@@ -4316,23 +4316,23 @@ def return_orders_list(request):
     from django.db.models import Q, Sum
     from decimal import Decimal
     import pytz
-    
+
     # Get all orders with "Return" status
     orders = Order.objects.filter(
         is_deleted=False,
         order_status__iexact='return'  # Case-insensitive search for 'Return' status
     ).select_related(
-        'customer', 'created_by', 'status_setup', 
+        'customer', 'created_by', 'status_setup',
         'payment_setup', 'payment_status_setup'
     ).prefetch_related('items').order_by('-created_at')
-    
+
     # GET FILTER PARAMETERS
     search_query = request.GET.get('search', '')
     payment_filter = request.GET.get('payment', '')
     logistics_filter = request.GET.get('logistics_status', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
-    
+
     # Apply filters
     if search_query:
         orders = orders.filter(
@@ -4341,7 +4341,7 @@ def return_orders_list(request):
             Q(customer_phone__icontains=search_query) |
             Q(customer_email__icontains=search_query)
         )
-    
+
     # Payment status filter
     if payment_filter:
         try:
@@ -4349,7 +4349,7 @@ def return_orders_list(request):
                 setup_type='payment_status',
                 name__iexact=payment_filter.replace('_', ' ')
             ).first()
-            
+
             if payment_setup:
                 orders = orders.filter(
                     Q(payment_status_setup_id=payment_setup.id) |
@@ -4359,13 +4359,13 @@ def return_orders_list(request):
                 orders = orders.filter(payment_status__iexact=payment_filter.replace('_', ' '))
         except Exception:
             orders = orders.filter(payment_status=payment_filter)
-    
+
     # Logistics filter
     if logistics_filter == 'sent':
         orders = orders.exclude(ncm_order_id__isnull=True)
     elif logistics_filter == 'not_sent':
         orders = orders.filter(ncm_order_id__isnull=True)
-    
+
     # Date filter
     if start_date and end_date:
         try:
@@ -4374,18 +4374,18 @@ def return_orders_list(request):
             orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
         except ValueError:
             pass
-    
+
     # Calculate statistics
     total_return_orders = orders.count()
     total_return_amount = orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
     pending_returns = orders.filter(payment_status='pending').count()
-    
+
     # Calculate average return value
     if total_return_orders > 0:
         average_return_value = total_return_amount / Decimal(total_return_orders)
     else:
         average_return_value = Decimal('0')
-    
+
     # Pagination
     per_page = request.GET.get('per_page', '50')
     if per_page not in ('50', '100', '200'):
@@ -4393,21 +4393,21 @@ def return_orders_list(request):
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
     orders_page = paginator.get_page(page_number)
-    
+
     # Fix decimal corruption in orders
     for order in orders_page.object_list:
         try:
             fix_order_decimals(order)
         except Exception:
             pass
-    
+
     # Get payment statuses for filters
     payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
     payment_status_choices = [
         (setup.name.lower().replace(' ', '_'), setup.name)
         for setup in payment_setups
     ]
-    
+
     context = {
         'orders': orders_page,
         'total_return_orders': total_return_orders,
@@ -4423,7 +4423,7 @@ def return_orders_list(request):
         'payment_status_choices': payment_status_choices,
         'page_obj': orders_page,
     }
-    
+
     return render(request, 'return_orders.html', context)
 
 
@@ -5915,14 +5915,14 @@ def api_get_product(request, product_id):
         import traceback
         traceback.print_exc()
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
-    
+
 
 @login_required
 def api_search_orders(request):
     """API endpoint to search orders for the POS Search Orders modal"""
     from django.db.models import Q
     from decimal import Decimal
-    
+
     query = request.GET.get('q', '').strip()
     status_filter = request.GET.get('status', '').strip()
     payment_filter = request.GET.get('payment', '').strip()
@@ -5930,11 +5930,11 @@ def api_search_orders(request):
     date_to = request.GET.get('date_to', '').strip()
     page = int(request.GET.get('page', 1))
     per_page = int(request.GET.get('per_page', 30))
-    
+
     orders = Order.objects.filter(is_deleted=False).select_related(
         'customer', 'created_by', 'status_setup', 'payment_setup', 'payment_status_setup', 'branch'
     ).prefetch_related('items').order_by('-created_at')
-    
+
     if query:
         orders = orders.filter(
             Q(order_number__icontains=query) |
@@ -5947,19 +5947,19 @@ def api_search_orders(request):
             Q(tracking_number__icontains=query) |
             Q(barcode__icontains=query)
         )
-    
+
     if status_filter:
         orders = orders.filter(
             Q(order_status__iexact=status_filter) |
             Q(status_setup__name__iexact=status_filter.replace('_', ' '))
         )
-    
+
     if payment_filter:
         orders = orders.filter(
             Q(payment_status__iexact=payment_filter) |
             Q(payment_status_setup__name__iexact=payment_filter.replace('_', ' '))
         )
-    
+
     if date_from:
         try:
             from datetime import datetime
@@ -5967,7 +5967,7 @@ def api_search_orders(request):
             orders = orders.filter(created_at__date__gte=dt_from.date())
         except ValueError:
             pass
-    
+
     if date_to:
         try:
             from datetime import datetime
@@ -5975,12 +5975,12 @@ def api_search_orders(request):
             orders = orders.filter(created_at__date__lte=dt_to.date())
         except ValueError:
             pass
-    
+
     total_count = orders.count()
     start = (page - 1) * per_page
     end = start + per_page
     paginated_orders = orders[start:end]
-    
+
     results = []
     for order in paginated_orders:
         items_list = []
@@ -5992,23 +5992,23 @@ def api_search_orders(request):
                 'price': str(item.price),
                 'total': str(item.total),
             })
-        
+
         status_display = order.order_status or 'N/A'
         if order.status_setup:
             status_display = order.status_setup.name
-        
+
         payment_status_display = order.payment_status or 'N/A'
         if order.payment_status_setup:
             payment_status_display = order.payment_status_setup.name
-        
+
         payment_method_display = order.payment_method or 'N/A'
         if order.payment_setup:
             payment_method_display = order.payment_setup.name
-        
+
         created_by_name = ''
         if order.created_by:
             created_by_name = order.created_by.get_full_name() or order.created_by.username
-        
+
         branch_name = ''
         if order.branch:
             branch_name = order.branch.name
@@ -6039,7 +6039,7 @@ def api_search_orders(request):
             'items_count': len(items_list),
             'items_summary': ', '.join([f"{i['product_name']} x{i['quantity']}" for i in items_list[:3]]),
         })
-    
+
     return JsonResponse({
         'success': True,
         'orders': results,
@@ -6110,12 +6110,12 @@ def api_search_products(request):
             "products": data,
             "count": len(data)
         })
-    
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         logger.error(f"Error in api_search_products: {str(e)}")
-        
+
         return JsonResponse({
             "success": False,
             "error": str(e),
@@ -6174,7 +6174,7 @@ def api_get_product_variations(request, product_id):
             # ONLY SHOW VARIATIONS WITH STOCK > 0
             if v.stock <= 0:
                 continue
-            
+
             # Get variation display name (prefer explicit variation_name, then name, then SKU)
             if hasattr(v, 'variation_name') and v.variation_name:
                 variation_display = v.variation_name
@@ -6182,7 +6182,7 @@ def api_get_product_variations(request, product_id):
                 variation_display = v.name
             else:
                 variation_display = v.sku
-            
+
             out.append({
                 "id": v.id,
                 "sku": v.sku,
@@ -6202,11 +6202,11 @@ def api_get_product_variations(request, product_id):
             "variations": out,
             "total": len(out)
         })
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
-        
+
         return JsonResponse({
             "success": False,
             "error": str(e),
@@ -6289,13 +6289,13 @@ def api_bestselling_products(request):
                     stock = int(p.stock) if p.stock else 0
             except (AttributeError, ValueError, TypeError):
                 stock = 0
-            
+
             # Get SKU
             try:
                 sku = p.sku if hasattr(p, 'sku') and p.sku else p.slug
             except AttributeError:
                 sku = p.slug
-            
+
             # Get total sold count
             try:
                 total_sold = p.total_sold if hasattr(p, 'total_sold') else 0
@@ -6313,17 +6313,17 @@ def api_bestselling_products(request):
                 "total_sold": total_sold,
                 "category": p.category.name if p.category else "Uncategorized"
             })
-        
+
         return JsonResponse({
             "success": True,
             "products": data,
             "count": len(data)
         })
-    
+
     except Exception as e:
         import traceback
         traceback.print_exc()
-        
+
         return JsonResponse({
             "success": False,
             "error": str(e),
@@ -6342,32 +6342,32 @@ def export_selected_orders_excel(request):
     try:
         from django.db import connection
         import sys
-        
+
         # Get selected order IDs from POST
         order_ids = request.POST.getlist('order_ids')
-        
-        
+
+
         if not order_ids:
             return HttpResponse("No orders selected", status=400)
-        
+
         # Convert to integers
         try:
             order_ids = [int(id) for id in order_ids]
         except (ValueError, TypeError):
             return HttpResponse("Invalid order IDs", status=400)
-        
+
         # Get orders - use same filter as orders_list view (all orders, not just user's)
         orders = Order.objects.filter(id__in=order_ids, is_deleted=False).order_by('-created_at')
-        
-        
+
+
         if not orders.exists():
             return HttpResponse("No orders found", status=404)
-        
+
         # Create workbook
         wb = Workbook()
         ws = wb.active
         ws.title = "Selected Orders"
-        
+
         # Define styles
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         header_font = Font(bold=True, color="FFFFFF", size=10)
@@ -6378,16 +6378,16 @@ def export_selected_orders_excel(request):
             bottom=Side(style='thin')
         )
         center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        
+
         # ============= ROW 1: ALL HEADERS =============
         headers = [
-            'Order ID', 'Order Number', 'Order Date', 'Order Status', 'Payment Status', 
-            'Payment Method', 'Customer Name', 'Phone Number', 'Email Address', 
+            'Order ID', 'Order Number', 'Order Date', 'Order Status', 'Payment Status',
+            'Payment Method', 'Customer Name', 'Phone Number', 'Email Address',
             'Shipping Address', 'Branch/City', 'Landmark', 'IN/OUT',
             'Products (with Qty)', 'SKU', 'Quantities', 'Unit Price(s)', 'Total Price(s)',
             'Grand Total'
         ]
-        
+
         for col_num, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col_num)
             cell.value = header
@@ -6395,13 +6395,13 @@ def export_selected_orders_excel(request):
             cell.font = header_font
             cell.alignment = center_alignment
             cell.border = border
-        
+
         # ✅ FIXED: Get order items using ORM instead of raw SQL
         from django.db.models import Prefetch
         order_items_qs = OrderItem.objects.filter(
             order_id__in=order_ids
         ).select_related('order').order_by('order_id', 'id')
-        
+
         # Group items by order_id
         items_by_order = {}
         for item in order_items_qs:
@@ -6414,12 +6414,12 @@ def export_selected_orders_excel(request):
                 'quantity': item.quantity,
                 'price': item.price,
             })
-        
+
         # ============= WRITE ALL ROWS - ONE ROW PER ORDER =============
         current_row = 2
         for order in orders:
             order_items = items_by_order.get(order.id, [])
-            
+
             # Combine all product info into single fields
             if order_items:
                 product_names = []
@@ -6427,20 +6427,20 @@ def export_selected_orders_excel(request):
                 quantities = []
                 prices = []
                 total_prices = []
-                
+
                 for item in order_items:
                     product_sku = item['product_sku'] or "N/A"
                     product_name = item['product_name'] or "N/A"
                     quantity = item['quantity'] or 0
                     price = float(item['price']) if item['price'] else 0.00
                     total_price = quantity * price
-                    
+
                     product_names.append(f"{product_name} (Qty: {quantity})")
                     product_skus.append(product_sku)
                     quantities.append(str(quantity))
                     prices.append(f"रू {price:.2f}")
                     total_prices.append(f"रू {total_price:.2f}")
-                
+
                 # Combine with semicolon separator
                 combined_products = "; ".join(product_names)
                 combined_skus = "; ".join(product_skus)
@@ -6453,7 +6453,7 @@ def export_selected_orders_excel(request):
                 combined_quantities = ""
                 combined_prices = ""
                 combined_total_prices = ""
-            
+
             # Single row per order with all products combined
             row_data = [
                 order.id, order.order_number, order.created_at.strftime("%Y-%m-%d %H:%M"),
@@ -6462,11 +6462,11 @@ def export_selected_orders_excel(request):
                 order.customer_phone or "N/A", order.customer_email or "N/A",
                 order.shipping_address or "N/A", order.branch_city or "N/A",
                 order.landmark or "N/A", order.in_out.upper() if order.in_out else "IN",
-                combined_products, combined_skus, combined_quantities, 
+                combined_products, combined_skus, combined_quantities,
                 combined_prices, combined_total_prices,
                 float(order.total_amount)
             ]
-            
+
             for col_num, value in enumerate(row_data, 1):
                 cell = ws.cell(row=current_row, column=col_num)
                 cell.value = value
@@ -6475,24 +6475,24 @@ def export_selected_orders_excel(request):
                 if col_num in [19, 20]:  # Price and Total columns
                     cell.alignment = center_alignment
                     cell.number_format = '"रू "#,##0.00'
-            
+
             current_row += 1
-        
+
         # Adjust column widths
         column_widths = [10, 15, 18, 12, 12, 12, 18, 15, 15, 20, 12, 15, 8, 30, 12, 12, 15, 15, 12]
         for col_num, width in enumerate(column_widths, 1):
             ws.column_dimensions[chr(64 + col_num)].width = width
-        
+
         # Create response
         filename = f"Selected_Orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         response = HttpResponse(
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         response['Content-Disposition'] = f'attachment; filename={filename}'
-        
+
         wb.save(response)
         return response
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -6505,11 +6505,11 @@ def export_order_details(request, order_id):
     """Export specific order with item details to Excel - ALL IN ONE ROW"""
     try:
         order = get_object_or_404(Order, id=order_id, created_by=request.user)
-        
+
         wb = Workbook()
         ws = wb.active
         ws.title = f"Order {order.order_number}"
-        
+
         # Define styles
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         header_font = Font(bold=True, color="FFFFFF", size=10)
@@ -6520,16 +6520,16 @@ def export_order_details(request, order_id):
             bottom=Side(style='thin')
         )
         center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        
+
         # ============= ROW 1: ALL HEADERS IN ONE ROW =============
         headers = [
-            'Order ID', 'Order Number', 'Order Date', 'Order Status', 'Payment Status', 
-            'Payment Method', 'Customer Name', 'Phone Number', 'Email Address', 
+            'Order ID', 'Order Number', 'Order Date', 'Order Status', 'Payment Status',
+            'Payment Method', 'Customer Name', 'Phone Number', 'Email Address',
             'Shipping Address', 'Branch/City', 'Landmark', 'IN/OUT',  # UPDATED HEADERS
             'Product #', 'SKU', 'Product Name', 'Quantity', 'Unit Price', 'Total Price',
             'Grand Total'
         ]
-        
+
         for col_num, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col_num)
             cell.value = header
@@ -6537,10 +6537,10 @@ def export_order_details(request, order_id):
             cell.font = header_font
             cell.alignment = center_alignment
             cell.border = border
-        
+
         # ✅ FIXED: Get items using ORM instead of raw SQL
         items = order.items.all()
-        
+
         # ============= ROWS 2+: ONE ROW PER ITEM (WITH ALL DATA) =============
         current_row = 2
         for idx, item in enumerate(items, 1):
@@ -6549,7 +6549,7 @@ def export_order_details(request, order_id):
             quantity = item.quantity or 0
             price = float(item.price) if item.price else 0.00
             total_price = quantity * price
-            
+
             # All data in one row - UPDATED FIELDS
             row_data = [
                 order.id,                                          # Order ID
@@ -6573,34 +6573,34 @@ def export_order_details(request, order_id):
                 total_price,                                      # Total Price
                 float(order.total_amount)                         # Grand Total
             ]
-            
+
             for col_num, value in enumerate(row_data, 1):
                 cell = ws.cell(row=current_row, column=col_num)
                 cell.value = value
                 cell.border = border
                 cell.alignment = center_alignment
-                
+
                 # Format price columns - ADJUSTED COLUMN NUMBERS
                 if col_num in [18, 19, 20]:  # Unit Price, Total Price, Grand Total (adjusted for new columns)
                     cell.number_format = '"रू "#,##0.00'
-            
+
             current_row += 1
-        
+
         # Adjust column widths - ADDED ONE MORE COLUMN FOR IN/OUT
         column_widths = [10, 15, 18, 12, 12, 12, 18, 15, 15, 20, 12, 15, 8, 8, 10, 20, 10, 12, 12, 12]
         for col_num, width in enumerate(column_widths, 1):
             ws.column_dimensions[chr(64 + col_num)].width = width
-        
+
         # Create response
         filename = f"Order_{order.order_number}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         response = HttpResponse(
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        
+
         wb.save(response)
         return response
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -6611,10 +6611,10 @@ def export_order_details(request, order_id):
 def import_orders_excel(request):
     """
     Import orders from an Excel file.
-    
+
     Required columns (red columns): Customer Name, Phone Number, Products (with Qty),
     Total Price(s), Branch/City, Shipping Address.
-    
+
     Optional columns: Quantities, Order From, Staff Name / Created By.
     Ignored columns: Order Number, Order Date (order number is always auto-generated).
     """
@@ -7217,23 +7217,23 @@ def orders_bulk_action(request):
         if not order_ids:
             messages.error(request, 'No orders selected!')
             return redirect(redirect_to)
-        
+
         try:
             # Removed user filter - show all orders
             orders = Order.objects.filter(
-                id__in=order_ids, 
+                id__in=order_ids,
                 is_deleted=False
             )
             count = orders.count()
-            
+
             if count == 0:
                 messages.error(request, "No valid orders found!")
                 return redirect(redirect_to)
-            
+
             # NEW: HANDLE SEND TO NCM ACTION
             if action == 'send_to_ncm':
                 return orders_bulk_ncm_send(request, orders)
-            
+
             elif action == 'delete':
                 # Only users with delete permission can move orders to trash
                 if request.user.role != 'administrator' and not request.user.can_delete_orders:
@@ -7254,7 +7254,7 @@ def orders_bulk_action(request):
                                 if item.product.stock > 0:
                                     item.product.stock_status = 'in_stock'
                                 item.product.save()
-                    
+
                     # Log activity
                     OrderActivityLog.objects.create(
                         order=order,
@@ -7262,30 +7262,30 @@ def orders_bulk_action(request):
                         action_type='deleted',
                         description=f'Order moved to trash by {request.user.username}'
                     )
-                
+
                 # Soft delete instead of permanent delete
                 orders.update(is_deleted=True, deleted_at=timezone.now())
                 messages.success(request, f'✅ {count} order(s) moved to trash successfully!')
-            
+
             # ✅ DYNAMIC ORDER STATUS UPDATE
             elif action.startswith('status_setup_'):
                 try:
                     setup_id = int(action.split('_')[-1])
                     status_setup = Setup.objects.get(id=setup_id, setup_type='status')
                     normalized_status = status_setup.name.lower().replace(' ', '_')
-                    
+
                     # Update orders with the selected status
                     for order in orders:
                         old_status = order.order_status
                         order.status_setup = status_setup
                         order.order_status = normalized_status
-                        
+
                         # Set delivered_at timestamp when status changes to delivered
                         if normalized_status == 'delivered' and old_status != 'delivered':
                             order.delivered_at = timezone.now()
-                        
+
                         order.save()
-                        
+
                         # Log activity
                         OrderActivityLog.objects.create(
                             order=order,
@@ -7293,24 +7293,24 @@ def orders_bulk_action(request):
                             action_type='status_changed',
                             description=f'Order status changed to {status_setup.name} by {request.user.username}'
                         )
-                    
+
                     messages.success(request, f'✅ {count} order(s) marked as {status_setup.name}!')
                 except (ValueError, Setup.DoesNotExist):
                     messages.error(request, 'Invalid status selected!')
-            
+
             # ✅ DYNAMIC PAYMENT STATUS UPDATE
             elif action.startswith('payment_status_setup_'):
                 try:
                     setup_id = int(action.split('_')[-1])
                     payment_setup = Setup.objects.get(id=setup_id, setup_type='payment_status')
                     normalized_payment = payment_setup.name.lower().replace(' ', '_')
-                    
+
                     # Update orders with the selected payment status
                     for order in orders:
                         order.payment_status_setup = payment_setup
                         order.payment_status = normalized_payment
                         order.save()
-                        
+
                         # Log activity
                         OrderActivityLog.objects.create(
                             order=order,
@@ -7318,30 +7318,30 @@ def orders_bulk_action(request):
                             action_type='payment_changed',
                             description=f'Payment status changed to {payment_setup.name} by {request.user.username}'
                         )
-                    
+
                     messages.success(request, f'✅ {count} order(s) marked as {payment_setup.name}!')
                 except (ValueError, Setup.DoesNotExist):
                     messages.error(request, 'Invalid payment status selected!')
-            
+
             # ✅ LEGACY: Keep backward compatibility with old action names
             elif action == 'mark_delivered':
                 for order in orders:
                     order.order_status = 'delivered'
                     order.delivered_at = timezone.now()
                     order.save()
-                    
+
                     OrderActivityLog.objects.create(
                         order=order,
                         user=request.user,
                         action_type='status_changed',
                         description=f'Order status changed to Delivered by {request.user.username}'
                     )
-                
+
                 messages.success(request, f'✅ {count} order(s) marked as delivered!')
-                
+
             elif action == 'mark_cancelled':
                 orders.update(order_status='cancelled')
-                
+
                 # Log activity for each order
                 for order in orders:
                     OrderActivityLog.objects.create(
@@ -7350,12 +7350,12 @@ def orders_bulk_action(request):
                         action_type='status_changed',
                         description=f'Order status changed to Cancelled by {request.user.username}'
                     )
-                
+
                 messages.success(request, f'✅ {count} order(s) marked as cancelled!')
-                
+
             elif action == 'mark_processing':
                 orders.update(order_status='processing')
-                
+
                 # Log activity for each order
                 for order in orders:
                     OrderActivityLog.objects.create(
@@ -7364,12 +7364,12 @@ def orders_bulk_action(request):
                         action_type='status_changed',
                         description=f'Order status changed to Processing by {request.user.username}'
                     )
-                
+
                 messages.success(request, f'✅ {count} order(s) marked as processing!')
-            
+
             elif action == 'mark_shipped':
                 orders.update(order_status='shipped')
-                
+
                 # Log activity for each order
                 for order in orders:
                     OrderActivityLog.objects.create(
@@ -7378,12 +7378,12 @@ def orders_bulk_action(request):
                         action_type='status_changed',
                         description=f'Order status changed to Shipped by {request.user.username}'
                     )
-                
+
                 messages.success(request, f'✅ {count} order(s) marked as shipped!')
-            
+
             elif action == 'mark_paid':
                 orders.update(payment_status='paid')
-                
+
                 # Log activity for each order
                 for order in orders:
                     OrderActivityLog.objects.create(
@@ -7392,12 +7392,12 @@ def orders_bulk_action(request):
                         action_type='payment_changed',
                         description=f'Payment status changed to Paid by {request.user.username}'
                     )
-                
+
                 messages.success(request, f'✅ {count} order(s) marked as paid!')
-            
+
             elif action == 'mark_pending':
                 orders.update(payment_status='pending')
-                
+
                 # Log activity for each order
                 for order in orders:
                     OrderActivityLog.objects.create(
@@ -7406,12 +7406,12 @@ def orders_bulk_action(request):
                         action_type='payment_changed',
                         description=f'Payment status changed to Pending by {request.user.username}'
                     )
-                
+
                 messages.success(request, f'✅ {count} order(s) marked as pending payment!')
-                
+
             else:
                 messages.error(request, 'Invalid action selected!')
-                
+
         except Exception as e:
             messages.error(request, f'Error performing bulk action: {str(e)}')
 
@@ -7580,10 +7580,10 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         # Validate order has required fields
         if not order.order_number:
             return {'status': 'error', 'message': f'Order {order.id} has no order_number'}
-        
+
         if not order.customer_name or not order.customer_phone or not order.shipping_address:
             return {'status': 'error', 'message': f'Order {order.order_number} missing required customer info'}
-        
+
         # Check if already has NCM ID
         if order.ncm_order_id:
             return {'status': 'skipped', 'message': 'Already has NCM ID'}
@@ -7592,7 +7592,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         base_url = ''
         api_key = ''
         matched_api_config = None
-        
+
         if api_config_id:
             try:
                 matched_api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='ncm')
@@ -7600,7 +7600,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 api_key = matched_api_config.api_key
             except LogisticsAPIConfig.DoesNotExist:
                 return {'status': 'error', 'message': 'Selected API configuration not found or inactive'}
-        
+
         if not base_url or not api_key:
             base_url = (getattr(settings, 'NCM_API_BASE_URL', '') or '').rstrip('/')
             api_key = getattr(settings, 'NCM_API_KEY', '') or ''
@@ -7645,17 +7645,17 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
 
         # Clean phone number (remove non-digits)
         phone = ''.join(filter(str.isdigit, str(order.customer_phone or "")))
-        
+
         # FIXED: Generate Vendor Reference ID - Use order ID directly
         # NCM requires vrefid field to be populated with order reference
         vendor_ref_id = str(order.id)  # Start with order ID (guaranteed to exist)
-        
+
         # Try to use order_number if available (better for tracking)
         if order.order_number:
             order_num = str(order.order_number).strip()
             if order_num:
                 vendor_ref_id = order_num
-        
+
         # If vendor_id exists from creator, use it as main reference
         try:
             if order.created_by and hasattr(order.created_by, 'vendor_id') and order.created_by.vendor_id:
@@ -7664,13 +7664,13 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                     vendor_ref_id = vendor_id_str
         except:
             pass
-        
+
         # Ensure vendor_ref_id is always set and valid
         if not vendor_ref_id or vendor_ref_id.strip() == "":
             vendor_ref_id = str(order.id)
-        
+
         vendor_ref_id = vendor_ref_id.strip()
-        
+
         # For partial payments, send remaining amount as COD (not full total)
         cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
         payload = {
@@ -7699,7 +7699,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         # 4. Handle Response
         if response.status_code == 200:
             resp_data = response.json()
-            
+
             # Check NCM specific success message
             if resp_data.get('Message') == 'Order Successfully Created':
                 # Save NCM ID to Order
@@ -7717,27 +7717,27 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                     from services.ncm_service import NCMService
                     ncm_service = NCMService()
                     details_result = ncm_service.get_order_details(order.ncm_order_id)
-                    
+
                     logger.info(f"NCM API response details: {details_result}")
-                    
+
                     if details_result.get('success'):
                         details_data = details_result.get('data', {})
                         logger.info(f"Extracted data from NCM response: {details_data}")
-                        
+
                         # Extract delivery_charge from NCM response - try multiple field names
-                        delivery_charge = (details_data.get('chargeDetail') or 
-                                         details_data.get('deliveryCharge') or 
-                                         details_data.get('deliverycharge') or 
-                                         details_data.get('delivery_charge') or 
-                                         details_data.get('chargedetail') or 
-                                         details_data.get('shippingCharge') or 
-                                         details_data.get('shipping_charge') or 
-                                         details_data.get('charge') or 
+                        delivery_charge = (details_data.get('chargeDetail') or
+                                         details_data.get('deliveryCharge') or
+                                         details_data.get('deliverycharge') or
+                                         details_data.get('delivery_charge') or
+                                         details_data.get('chargedetail') or
+                                         details_data.get('shippingCharge') or
+                                         details_data.get('shipping_charge') or
+                                         details_data.get('charge') or
                                          details_data.get('amount') or
                                          0)
-                        
+
                         logger.info(f"Extracted delivery_charge: {delivery_charge} from data keys: {list(details_data.keys())}")
-                        
+
                         if delivery_charge and float(delivery_charge) > 0:
                             order.delivery_charge = Decimal(str(delivery_charge))
                             order.save(update_fields=['delivery_charge'])
@@ -7760,12 +7760,12 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             else:
                 # API returned 200 but with an internal error message
                 return {'status': 'error', 'message': str(resp_data)}
-        
+
         elif response.status_code == 404:
-            # 404 means the URL is wrong OR the Resource ID is wrong. 
+            # 404 means the URL is wrong OR the Resource ID is wrong.
             # Since we are creating, it's likely the URL.
             return {'status': 'error', 'message': f'API Endpoint 404. Checked URL: {api_url}'}
-            
+
         else:
             return {'status': 'error', 'message': f'HTTP Error {response.status_code}: {response.text}'}
 
@@ -7781,33 +7781,33 @@ def dispatch_management(request):
         order_ids_str = request.POST.get('order_ids', '').strip()
         set_status = request.POST.get('set_status')
         logistics = request.POST.get('logistics')
-        
+
         if not order_ids_str:
             messages.error(request, 'Please scan at least one order ID.')
             return redirect('dispatch_management')
-        
+
         if not set_status or not logistics:
             messages.error(request, 'Please select both status and logistics.')
             return redirect('dispatch_management')
-        
+
         # Parse order IDs (comma-separated or newline-separated)
         order_ids_raw = order_ids_str.replace('\n', ',').replace('\r', '').split(',')
         order_ids = [oid.strip() for oid in order_ids_raw if oid.strip()]
-        
+
         if not order_ids:
             messages.error(request, 'No valid order IDs found.')
             return redirect('dispatch_management')
-        
+
         # Check for duplicates
         if len(order_ids) != len(set(order_ids)):
             messages.error(request, 'Duplicate order IDs detected. Please remove duplicates.')
             return redirect('dispatch_management')
-        
+
         try:
             with transaction.atomic():
                 # Generate batch number
                 batch_number = f"DISPATCH-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-                
+
                 # Create dispatch
                 dispatch = Dispatch.objects.create(
                     batch_number=batch_number,
@@ -7816,25 +7816,25 @@ def dispatch_management(request):
                     total_orders=len(order_ids),
                     created_by=request.user
                 )
-                
+
                 # Create dispatch items and update orders
                 updated_count = 0
                 not_found = []
                 stock_warnings = []
                 stock_deductions = []  # detailed per-item deduction records
-                
+
                 for order_id in order_ids:
                     # Create dispatch item
                     DispatchItem.objects.create(
                         dispatch=dispatch,
                         scanned_order_id=order_id
                     )
-                    
+
                     # Try to find and update order by order_number or barcode
                     order = Order.objects.filter(
                         Q(order_number=order_id) | Q(barcode=order_id)
                     ).first()
-                    
+
                     if order:
                         # Always link the dispatch item to the order (even if already dispatched)
                         DispatchItem.objects.filter(
@@ -7850,7 +7850,7 @@ def dispatch_management(request):
                             ).update(dispatch_status='failed', failure_reason='Already dispatched')
                             messages.warning(request, f'⚠️ Order {order_id} already dispatched')
                             continue
-                        
+
                         # ✅ STOCK DEDUCTION: Reduce stock when status is "dispatched"
                         if set_status == 'dispatched':
                             order_items = order.items.select_related(
@@ -8013,7 +8013,7 @@ def dispatch_management(request):
                                                 'new_stock': product.stock,
                                                 'oversold': oversold,
                                             })
-                        
+
                         # Capture old values BEFORE modification
                         old_order_status = order.order_status
 
@@ -8036,7 +8036,7 @@ def dispatch_management(request):
                         else:
                             order.status_setup = None
                             order.order_status = set_status
-                        
+
                         order.logistics = logistics
                         order.dispatch_date = timezone.now()
                         order.save()
@@ -8051,7 +8051,7 @@ def dispatch_management(request):
                             new_value=set_status,
                             description=f'Order dispatched via batch {batch_number} with {logistics}'
                         )
-                        
+
                         updated_count += 1
                         DispatchItem.objects.filter(
                             dispatch=dispatch,
@@ -8059,7 +8059,7 @@ def dispatch_management(request):
                         ).update(dispatch_status='success')
                     else:
                         not_found.append(order_id)
-                
+
                 # Store detailed stock deduction summary in session for display on detail page
                 import json as _json
                 request.session['stock_deduction_summary'] = _json.dumps({
@@ -8085,13 +8085,13 @@ def dispatch_management(request):
                     )
 
                 return redirect('dispatch_detail', pk=dispatch.pk)
-                
+
         except Exception as e:
             messages.error(request, f'Error creating dispatch: {str(e)}')
             import traceback
             traceback.print_exc()
             return redirect('dispatch_management')
-    
+
     # Get status setups for the dropdown
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
 
@@ -8106,7 +8106,7 @@ def dispatch_management(request):
         'status_setups': status_setups,
         'recent_orders': recent_orders,
     }
-    
+
     return render(request, 'dispatch_management.html', context)
 
 
@@ -8115,24 +8115,24 @@ def dispatch_management(request):
 def dispatch_list(request):
     """List all dispatches (not trashed)"""
     dispatches = Dispatch.objects.filter(is_deleted=False).prefetch_related('items').order_by('-created_at')
-    
+
     # Filters
     logistics_filter = request.GET.get('logistics')
     status_filter = request.GET.get('status')
     search = request.GET.get('search')
-    
+
     if logistics_filter:
         dispatches = dispatches.filter(logistics=logistics_filter)
-    
+
     if status_filter:
         dispatches = dispatches.filter(status=status_filter)
-    
+
     if search:
         dispatches = dispatches.filter(
             Q(batch_number__icontains=search) |
             Q(items__scanned_order_id__icontains=search)
         ).distinct()
-    
+
     context = {
         'dispatches': dispatches,
         'logistics_choices': Dispatch.LOGISTICS_CHOICES,
@@ -8141,7 +8141,7 @@ def dispatch_list(request):
         'logistics_filter': logistics_filter,
         'status_filter': status_filter,
     }
-    
+
     return render(request, 'dispatch_list.html', context)
 
 
@@ -8180,17 +8180,17 @@ def dispatch_detail(request, pk):
 def dispatch_move_to_trash(request, pk):
     """Move dispatch to trash (soft delete)"""
     dispatch = get_object_or_404(Dispatch, pk=pk, is_deleted=False)
-    
+
     if request.method == 'POST':
         batch_number = dispatch.batch_number
         dispatch.is_deleted = True
         dispatch.deleted_by = request.user
         dispatch.deleted_at = timezone.now()
         dispatch.save()
-        
+
         messages.success(request, f'Dispatch "{batch_number}" moved to trash successfully!')
         return redirect('dispatch_list')
-    
+
     return redirect('dispatch_detail', pk=pk)
 
 
@@ -8201,7 +8201,7 @@ def dispatch_trash(request):
     trashed_dispatches = Dispatch.objects.filter(
         is_deleted=True
     ).select_related('created_by', 'deleted_by').prefetch_related('items').order_by('-deleted_at')
-    
+
     # Search functionality
     search_query = request.GET.get('search', '')
     if search_query:
@@ -8209,19 +8209,19 @@ def dispatch_trash(request):
             Q(batch_number__icontains=search_query) |
             Q(items__scanned_order_id__icontains=search_query)
         ).distinct()
-    
+
     # Logistics filter
     logistics_filter = request.GET.get('logistics', '')
     if logistics_filter:
         trashed_dispatches = trashed_dispatches.filter(logistics=logistics_filter)
-    
+
     context = {
         'trashed_dispatches': trashed_dispatches,
         'search_query': search_query,
         'logistics_filter': logistics_filter,
         'logistics_choices': Dispatch.LOGISTICS_CHOICES,
     }
-    
+
     return render(request, 'dispatch_trash.html', context)
 
 
@@ -8230,17 +8230,17 @@ def dispatch_trash(request):
 def dispatch_restore(request, pk):
     """Restore dispatch from trash"""
     dispatch = get_object_or_404(Dispatch, pk=pk, is_deleted=True)
-    
+
     if request.method == 'POST':
         batch_number = dispatch.batch_number
         dispatch.is_deleted = False
         dispatch.deleted_by = None
         dispatch.deleted_at = None
         dispatch.save()
-        
+
         messages.success(request, f'Dispatch "{batch_number}" restored successfully!')
         return redirect('dispatch_trash')
-    
+
     return redirect('dispatch_trash')
 
 
@@ -8249,14 +8249,14 @@ def dispatch_restore(request, pk):
 def dispatch_permanent_delete(request, pk):
     """Permanently delete dispatch"""
     dispatch = get_object_or_404(Dispatch, pk=pk, is_deleted=True)
-    
+
     if request.method == 'POST':
         batch_number = dispatch.batch_number
         dispatch.delete()
-        
+
         messages.success(request, f'Dispatch "{batch_number}" permanently deleted!')
         return redirect('dispatch_trash')
-    
+
     return redirect('dispatch_trash')
 
 
@@ -8267,36 +8267,36 @@ def dispatch_trash_bulk_action(request):
     if request.method == 'POST':
         dispatch_ids = request.POST.getlist('dispatch_ids')
         action = request.POST.get('bulk_action')
-        
+
         if not dispatch_ids:
             messages.error(request, 'No dispatches selected!')
             return redirect('dispatch_trash')
-        
+
         try:
             dispatches = Dispatch.objects.filter(
                 id__in=dispatch_ids,
                 is_deleted=True
             )
             count = dispatches.count()
-            
+
             if count == 0:
                 messages.error(request, 'No valid dispatches found!')
                 return redirect('dispatch_trash')
-            
+
             if action == 'restore':
                 dispatches.update(is_deleted=False, deleted_by=None, deleted_at=None)
                 messages.success(request, f'✅ {count} dispatch(es) restored successfully!')
-                
+
             elif action == 'permanent_delete':
                 dispatches.delete()
                 messages.success(request, f'✅ {count} dispatch(es) permanently deleted!')
-                
+
             else:
                 messages.error(request, 'Invalid action selected!')
-                
+
         except Exception as e:
             messages.error(request, f'Error performing bulk action: {str(e)}')
-    
+
     return redirect('dispatch_trash')
 
 
@@ -8307,15 +8307,15 @@ def empty_dispatch_trash(request):
     if request.method == 'POST':
         trashed_dispatches = Dispatch.objects.filter(is_deleted=True)
         count = trashed_dispatches.count()
-        
+
         if count > 0:
             trashed_dispatches.delete()
             messages.success(request, f'✅ Trash emptied! {count} dispatch(es) permanently deleted.')
         else:
             messages.info(request, 'Trash is already empty.')
-        
+
         return redirect('dispatch_trash')
-    
+
     return redirect('dispatch_trash')
 
 @login_required
@@ -8323,33 +8323,33 @@ def empty_dispatch_trash(request):
 def dispatch_list(request):
     """List all dispatches (not trashed)"""
     dispatches = Dispatch.objects.filter(is_deleted=False).prefetch_related('items').order_by('-created_at')
-    
+
     # Filters
     logistics_filter = request.GET.get('logistics')
     status_filter = request.GET.get('status')
     search = request.GET.get('search')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
-    
+
     if logistics_filter:
         dispatches = dispatches.filter(logistics=logistics_filter)
-    
+
     if status_filter:
         dispatches = dispatches.filter(status=status_filter)
-    
+
     if search:
         dispatches = dispatches.filter(
             Q(batch_number__icontains=search) |
             Q(items__scanned_order_id__icontains=search)
         ).distinct()
-    
+
     # Date filters
     if date_from:
         dispatches = dispatches.filter(created_at__date__gte=date_from)
-    
+
     if date_to:
         dispatches = dispatches.filter(created_at__date__lte=date_to)
-    
+
     context = {
         'dispatches': dispatches,
         'logistics_choices': Dispatch.LOGISTICS_CHOICES,
@@ -8360,7 +8360,7 @@ def dispatch_list(request):
         'date_from': date_from,
         'date_to': date_to,
     }
-    
+
     return render(request, 'dispatch_list.html', context)
 
 
@@ -8415,13 +8415,13 @@ def dispatch_detail(request, pk):
 def dispatch_delete(request, pk):
     """Delete a dispatch"""
     dispatch = get_object_or_404(Dispatch, pk=pk)
-    
+
     if request.method == 'POST':
         batch_number = dispatch.batch_number
         dispatch.delete()
         messages.success(request, f'Dispatch {batch_number} has been deleted.')
         return redirect('dispatch_list')
-    
+
     return redirect('dispatch_detail', pk=pk)
 
 @login_required
@@ -8431,19 +8431,19 @@ def dispatch_bulk_action(request):
     if request.method == 'POST':
         dispatch_ids = request.POST.getlist('dispatch_ids')
         action = request.POST.get('bulk_action')
-        
+
         if not dispatch_ids:
             messages.error(request, 'No dispatches selected!')
             return redirect('dispatch_list')
-        
+
         try:
             dispatches = Dispatch.objects.filter(id__in=dispatch_ids, is_deleted=False)
             count = dispatches.count()
-            
+
             if count == 0:
                 messages.error(request, 'No valid dispatches found!')
                 return redirect('dispatch_list')
-            
+
             if action == 'move_to_trash':
                 dispatches.update(
                     is_deleted=True,
@@ -8451,26 +8451,26 @@ def dispatch_bulk_action(request):
                     deleted_at=timezone.now()
                 )
                 messages.success(request, f'✅ {count} dispatch(es) moved to trash!')
-                
+
             elif action == 'change_status':
                 new_status = request.POST.get('new_status')
                 if not new_status:
                     messages.error(request, 'Please select a new status!')
                     return redirect('dispatch_list')
-                
+
                 dispatches.update(status=new_status)
                 messages.success(request, f'✅ {count} dispatch(es) status updated to {new_status}!')
-                
+
             elif action == 'export_excel':
                 # Export functionality (you can implement this later)
                 messages.info(request, 'Export functionality coming soon!')
-                
+
             else:
                 messages.error(request, 'Invalid action selected!')
-                
+
         except Exception as e:
             messages.error(request, f'Error performing bulk action: {str(e)}')
-    
+
     return redirect('dispatch_list')
 
 
@@ -8483,10 +8483,10 @@ def inventory_dashboard(request):
     try:
         from datetime import datetime, timedelta
         from django.db.models import Sum
-        
+
         # Get all products (role-based access is handled by @permission_required)
         products = Product.objects.filter(is_deleted=False)
-        
+
         # Stock Statistics — account for bundle products using available_stock
         total_products = products.count()
         has_custom_thresholds = products.filter(low_stock_threshold__gt=0).exists()
@@ -8593,7 +8593,7 @@ def inventory_dashboard(request):
             for p in all_products_list if p.available_stock > 0
         ]
         top_products = sorted(products_with_value, key=lambda x: x['value'], reverse=True)
-        
+
         # Recent Dispatched Orders — query via DispatchItem for accuracy
         # (orders are linked to dispatches whether or not order_status was updated)
         dispatched_order_ids = DispatchItem.objects.filter(
@@ -8610,21 +8610,21 @@ def inventory_dashboard(request):
         dispatch_paginator = Paginator(all_dispatched_orders_qs, 15)
         dispatched_page_obj = dispatch_paginator.get_page(dispatch_page_num)
         recent_dispatched_orders = dispatched_page_obj
-        
+
         # Category-wise Stock Distribution WITH CHART DATA
         categories = Category.objects.all()
         category_stock = []
         category_labels = []
         category_data = []
         total_category_value = 0
-        
+
         for cat in categories:
             cat_products = products.filter(category=cat).prefetch_related(
                 'bundle_components__component_product'
             )
             cat_stock = sum(p.available_stock for p in cat_products)
             cat_value = sum(p.available_stock * p.price for p in cat_products if p.available_stock > 0)
-            
+
             if cat_stock > 0:
                 category_stock.append({
                     'category': cat.name,
@@ -8636,14 +8636,14 @@ def inventory_dashboard(request):
                 category_labels.append(cat.name)
                 category_data.append(cat_stock)
                 total_category_value += cat_value
-        
+
         # Calculate percentages for progress bars
         for cat in category_stock:
             if total_category_value > 0:
                 cat['percentage'] = (cat['value'] / total_category_value) * 100
             else:
                 cat['percentage'] = 0
-        
+
         # ── Stock Movement Data with filter support ──────────────────────
         today = timezone.now().date()
 
@@ -8713,12 +8713,12 @@ def inventory_dashboard(request):
             stock_in_data.append(stock_ins_day)
             stock_out_data.append(stock_out_day)
             current_date += timedelta(days=1)
-        
+
         # Stock Turnover Rate
         total_sold_30days = sum(stock_out_data)
         avg_inventory = total_stock_units if total_stock_units > 0 else 1
         stock_turnover_rate = (total_sold_30days / avg_inventory) if avg_inventory > 0 else 0
-        
+
         # Dead Stock (No movement in 90 days)
         ninety_days_ago = timezone.now() - timedelta(days=90)
         try:
@@ -8728,13 +8728,13 @@ def inventory_dashboard(request):
             ).count()
         except:
             dead_stock_count = 0
-        
+
         # SAFE QUERY - Get Recent Stock In Transactions
         recent_stock_ins = []
         try:
             stock_ins_qs = StockIn.objects.all(
             ).only('id', 'reference_number', 'stock_in_type', 'supplier_name', 'created_at', 'total_quantity').order_by('-created_at')[:10]
-            
+
             for stock_in in stock_ins_qs:
                 try:
                     # Safely get total_cost
@@ -8742,7 +8742,7 @@ def inventory_dashboard(request):
                         total_cost = float(stock_in.total_cost) if stock_in.total_cost else 0.0
                     except:
                         total_cost = 0.0
-                    
+
                     # Create safe dict
                     recent_stock_ins.append({
                         'id': stock_in.id,
@@ -8757,10 +8757,10 @@ def inventory_dashboard(request):
                     })
                 except Exception as e:
                     continue
-                    
+
         except Exception as e:
             recent_stock_ins = []
-        
+
         # Damaged Inventory from Returns
         try:
             damaged_inventory = ReturnItem.objects.filter(
@@ -8883,27 +8883,27 @@ def inventory_dashboard(request):
             'data': [in_stock, low_stock, out_of_stock],
             'colors': ['#10b981', '#f59e0b', '#ef4444']
         }
-        
+
         context = {
             # Basic Stats
             'total_products': total_products,
             'in_stock': in_stock,
             'low_stock': low_stock,
             'out_of_stock': out_of_stock,
-            
+
             # Variations Stats
             'total_variations': total_variations,
             'variations_in_stock': variations_in_stock,
             'variations_low_stock': variations_low_stock,
             'variations_out_of_stock': variations_out_of_stock,
-            
+
             # Value Stats
             'total_stock_value': total_stock_value,
             'total_stock_cost_value': total_stock_cost_value,
             'total_stock_units': total_stock_units,
             'stock_turnover_rate': stock_turnover_rate,
             'dead_stock_count': dead_stock_count,
-            
+
             # Product Lists
             'low_stock_products': low_stock_products,
             'out_of_stock_products': out_of_stock_products,
@@ -8914,10 +8914,10 @@ def inventory_dashboard(request):
             'recent_dispatched_orders': recent_dispatched_orders,
             'dispatched_page_obj': dispatched_page_obj,
             'dispatched_total_count': dispatched_order_ids.count(),
-            
+
             # Category Data
             'category_stock': category_stock,
-            
+
             # Stock In Transactions
             'recent_stock_ins': recent_stock_ins,
 
@@ -8984,19 +8984,19 @@ def inventory_dashboard(request):
         }
 
         return render(request, 'inventory_dashboard.html', context)
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         messages.error(request, f'Error loading inventory dashboard: {str(e)}')
         return redirect('dashboard')
 
-# stock in 
+# stock in
 @login_required
 @permission_required('can_manage_inventory')
 def stock_in_create(request):
     """Create new stock in transaction - BULLETPROOF VERSION"""
-    
+
     if request.method == 'POST':
         try:
             # Get form data
@@ -9004,15 +9004,15 @@ def stock_in_create(request):
             supplier_name = request.POST.get('supplier_name', '').strip()
             notes = request.POST.get('notes', '').strip()
             items_json = request.POST.get('items', '[]')
-            
-            
+
+
             # Parse items
             items = json.loads(items_json)
-            
+
             if not items:
                 messages.error(request, 'Please add at least one product')
                 return redirect('stock_in_create')
-            
+
             # Create StockIn WITHOUT totals first
             stock_in = StockIn.objects.create(
                 stock_in_type=stock_in_type,
@@ -9022,39 +9022,39 @@ def stock_in_create(request):
                 total_quantity=0,
                 total_cost=0
             )
-            
-            
+
+
             total_qty = 0
             total_cost = 0.0
-            
+
             # Process items
             for idx, item in enumerate(items, 1):
                 try:
                     product_id = int(item.get('product_id', 0))
                     quantity = int(item.get('quantity', 0))
-                    
+
                     # Parse unit_cost as FLOAT first
                     unit_cost_str = str(item.get('unit_cost', '0')).strip()
                     try:
                         unit_cost_float = float(unit_cost_str)
                     except:
                         unit_cost_float = 0.0
-                    
+
                     if quantity <= 0 or product_id <= 0:
                         continue
-                    
+
                     # Get product
                     product = Product.objects.get(id=product_id, user=request.user)
-                    
+
                     # Get variation if exists
                     variation = None
                     variation_id = item.get('variation_id')
                     if variation_id:
                         variation = ProductVariation.objects.get(id=int(variation_id))
-                    
+
                     # Calculate total as FLOAT
                     item_total = quantity * unit_cost_float
-                    
+
                     # Create item
                     StockInItem.objects.create(
                         stock_in=stock_in,
@@ -9065,7 +9065,7 @@ def stock_in_create(request):
                         total_cost=item_total,
                         notes=item.get('notes', '')
                     )
-                    
+
                     # Update stock
                     if variation:
                         variation.stock += quantity
@@ -9110,33 +9110,33 @@ def stock_in_create(request):
 
                     total_qty += quantity
                     total_cost += item_total
-                    
-                    
+
+
                 except Exception as e:
                     continue
-            
+
             # Update totals
             stock_in.total_quantity = total_qty
             stock_in.total_cost = total_cost
             stock_in.save()
-            
+
             messages.success(
                 request,
                 f'✅ Stock In {stock_in.reference_number} created! '
                 f'{total_qty} items added worth Rs {total_cost:.2f}'
             )
-            
+
             return redirect('inventory_dashboard')
-            
+
         except json.JSONDecodeError:
             messages.error(request, 'Invalid data format')
         except Exception as e:
             import traceback
             traceback.print_exc()
             messages.error(request, f'Error: {str(e)}')
-        
+
         return redirect('stock_in_create')
-    
+
     # GET request
     products = Product.objects.filter(user=request.user, is_active=True).order_by('name')
     return render(request, 'stock_in_create.html', {'products': products})
@@ -9147,23 +9147,23 @@ def stock_in_detail(request, stock_in_id):
     try:
         from django.db import connection
         from django.contrib.auth.models import User
-        
+
         # Get Stock In basic data using RAW SQL
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT 
-                    id, reference_number, stock_in_type, supplier_name, 
+                SELECT
+                    id, reference_number, stock_in_type, supplier_name,
                     notes, total_quantity, created_at, created_by_id
                 FROM dashboard_stockin
                 WHERE id = %s AND created_by_id = %s
             """, [stock_in_id, request.user.id])
-            
+
             row = cursor.fetchone()
-            
+
             if not row:
                 messages.error(request, 'Stock In transaction not found')
                 return redirect('inventory_dashboard')
-            
+
             # Create StockIn object from raw data
             class StockInData:
                 def __init__(self, data):
@@ -9175,7 +9175,7 @@ def stock_in_detail(request, stock_in_id):
                     self.total_quantity = data[5]
                     self.created_at = data[6]
                     self.created_by_id = data[7]
-                
+
                 def get_stock_in_type_display(self):
                     types = {
                         'purchase': 'Purchase Order',
@@ -9185,39 +9185,39 @@ def stock_in_detail(request, stock_in_id):
                         'other': 'Other',
                     }
                     return types.get(self.stock_in_type, self.stock_in_type.title())
-            
+
             stock_in = StockInData(row)
-            
+
             # Get created_by user
             try:
                 stock_in.created_by = User.objects.get(id=stock_in.created_by_id)
             except User.DoesNotExist:
                 stock_in.created_by = type('obj', (object,), {'username': 'Unknown'})()
-        
+
         # Get items using RAW SQL with product info
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT 
-                    si.id, 
-                    si.product_id, 
-                    si.product_variation_id, 
-                    si.quantity, 
+                SELECT
+                    si.id,
+                    si.product_id,
+                    si.product_variation_id,
+                    si.quantity,
                     si.notes,
-                    p.name as product_name, 
-                    p.slug as product_slug, 
+                    p.name as product_name,
+                    p.slug as product_slug,
                     p.image as product_image
                 FROM dashboard_stockinitem si
                 JOIN dashboard_product p ON si.product_id = p.id
                 WHERE si.stock_in_id = %s
                 ORDER BY si.id
             """, [stock_in_id])
-            
+
             item_rows = cursor.fetchall()
-        
+
         # Build items data list
         items_data = []
         total_cost_sum = 0.0
-        
+
         for row in item_rows:
             item_id = row[0]
             product_id = row[1]
@@ -9227,7 +9227,7 @@ def stock_in_detail(request, stock_in_id):
             product_name = row[5]
             product_slug = row[6]
             product_image = row[7]
-            
+
             # Get SAFE costs using RAW SQL
             with connection.cursor() as cursor2:
                 cursor2.execute("""
@@ -9235,15 +9235,15 @@ def stock_in_detail(request, stock_in_id):
                     FROM dashboard_stockinitem
                     WHERE id = %s
                 """, [item_id])
-                
+
                 cost_row = cursor2.fetchone()
-                
+
                 if cost_row:
                     try:
                         safe_unit_cost = float(cost_row[0]) if cost_row[0] else 0.0
                     except (TypeError, ValueError, Decimal.InvalidOperation):
                         safe_unit_cost = 0.0
-                    
+
                     try:
                         safe_total_cost = float(cost_row[1]) if cost_row[1] else 0.0
                     except (TypeError, ValueError, Decimal.InvalidOperation):
@@ -9251,18 +9251,18 @@ def stock_in_detail(request, stock_in_id):
                 else:
                     safe_unit_cost = 0.0
                     safe_total_cost = 0.0
-            
+
             # Get variation name if exists
             variation_name = None
             if variation_id:
                 try:
                     variation = ProductVariation.objects.get(id=variation_id)
-                    
+
                     # Get variation attributes
                     attribute_links = variation.attribute_values.select_related(
                         'attribute_value__attribute'
                     ).all()
-                    
+
                     if attribute_links.exists():
                         variation_parts = []
                         for link in attribute_links:
@@ -9276,21 +9276,21 @@ def stock_in_detail(request, stock_in_id):
                     variation_name = f"Variation #{variation_id}"
                 except Exception as e:
                     variation_name = f"Variation #{variation_id}"
-            
+
             # Create clean item object
             class ItemData:
                 def __init__(self):
                     self.id = item_id
                     self.quantity = quantity
                     self.notes = notes if notes else ""
-                    
+
                     # Create product sub-object
                     class ProductObj:
                         def __init__(self):
                             self.id = product_id
                             self.name = product_name
                             self.slug = product_slug
-                            
+
                             # Handle image
                             if product_image:
                                 class ImageObj:
@@ -9299,14 +9299,14 @@ def stock_in_detail(request, stock_in_id):
                                 self.image = ImageObj(product_image)
                             else:
                                 self.image = None
-                    
+
                     self.product = ProductObj()
-            
+
             item = ItemData()
-            
+
             # Add to total
             total_cost_sum += safe_total_cost
-            
+
             # Add to items list
             items_data.append({
                 'item': item,
@@ -9314,7 +9314,7 @@ def stock_in_detail(request, stock_in_id):
                 'safe_unit_cost': safe_unit_cost,
                 'safe_total_cost': safe_total_cost,
             })
-        
+
         # Get safe total cost from StockIn table
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -9322,9 +9322,9 @@ def stock_in_detail(request, stock_in_id):
                 FROM dashboard_stockin
                 WHERE id = %s
             """, [stock_in_id])
-            
+
             total_row = cursor.fetchone()
-            
+
             if total_row and total_row[0]:
                 try:
                     safe_total_cost = float(total_row[0])
@@ -9332,15 +9332,15 @@ def stock_in_detail(request, stock_in_id):
                     safe_total_cost = total_cost_sum
             else:
                 safe_total_cost = total_cost_sum
-        
+
         context = {
             'stock_in': stock_in,
             'items_data': items_data,
             'safe_total_cost': safe_total_cost,
         }
-        
+
         return render(request, 'stock_in_detail.html', context)
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -9352,19 +9352,19 @@ def stock_in_detail(request, stock_in_id):
 def api_get_product_for_stockin(request, product_id):
     """API to get product details including variations for stock in"""
     product = get_object_or_404(Product, id=product_id, user=request.user)
-    
+
     data = {
         'id': product.id,
         'name': product.name,
         'type': product.product_type,
         'variations': []
     }
-    
+
     if product.product_type == 'variable':
         variations = product.variations.filter(is_active=True).prefetch_related(
             'attribute_values__attribute_value__attribute'
         ).order_by('sku')
-        
+
         for var in variations:
             attrs = []
             for link in var.attribute_values.all():
@@ -9373,7 +9373,7 @@ def api_get_product_for_stockin(request, product_id):
                     'name': av.attribute.name,
                     'value': av.value
                 })
-            
+
             data['variations'].append({
                 'id': var.id,
                 'sku': var.sku,
@@ -9384,7 +9384,7 @@ def api_get_product_for_stockin(request, product_id):
     else:
         data['stock'] = product.stock
         data['price'] = str(product.price)
-    
+
     return JsonResponse(data)
 
 
@@ -9400,7 +9400,7 @@ def city_management(request):
         messages.error(request, '❌ You do not have permission to access City Management.', extra_tags='permission_denied')
         return redirect('dashboard')
     cities = City.objects.all().order_by('name')
-    
+
     if request.method == 'POST':
         # Add new city
         if 'add_city' in request.POST:
@@ -9462,12 +9462,12 @@ def city_management(request):
                     else:
                         cities_to_update.update(is_active=False)
                         messages.success(request, f'✅ {cities_to_update.count()} city(s) deactivated!')
-    
+
     # Get statistics
     total_cities = cities.count()
     valley_cities = cities.filter(valley_status='valley').count()
     out_valley_cities = cities.filter(valley_status='out_valley').count()
-    
+
     context = {
         'cities': cities,
         'total_cities': total_cities,
@@ -9478,7 +9478,7 @@ def city_management(request):
         'can_edit': is_admin or user.can_edit_cities,
         'can_delete': is_admin or user.can_delete_cities,
     }
-    
+
     return render(request, 'city_management.html', context)
 
 @login_required
@@ -9492,12 +9492,12 @@ def city_edit(request, city_id):
         return redirect('city_management')
 
     city = get_object_or_404(City, id=city_id)
-    
+
     if request.method == 'POST':
         name = request.POST.get('city_name', '').strip().title()
         valley_status = request.POST.get('valley_status', 'valley')
         is_active = 'is_active' in request.POST
-        
+
         if name:
             # Check if name already exists (excluding current city)
             if City.objects.filter(name=name).exclude(id=city.id).exists():
@@ -9511,12 +9511,12 @@ def city_edit(request, city_id):
                 return redirect('city_management')
         else:
             messages.error(request, 'Please enter a city name')
-    
+
     context = {
         'city': city,
         'valley_status_choices': City.VALLEY_STATUS_CHOICES,
     }
-    
+
     return render(request, 'city_edit.html', context)
 
 
@@ -9531,13 +9531,13 @@ def city_delete(request, city_id):
         return redirect('city_management')
 
     city = get_object_or_404(City, id=city_id)
-    
+
     if request.method == 'POST':
         city_name = city.name
         city.delete()
         messages.success(request, f'✅ City "{city_name}" deleted successfully!')
         return redirect('city_management')
-    
+
     return render(request, 'city_delete.html', {'city': city})
 
 @login_required
@@ -9554,10 +9554,10 @@ def city_quick_add(request):
             data = json.loads(request.body)
             city_name = data.get('city_name', '').strip().title()
             valley_status = data.get('valley_status', 'valley')
-            
+
             if not city_name:
                 return JsonResponse({'success': False, 'message': 'City name is required'})
-            
+
             city, created = City.objects.get_or_create(
                 name=city_name,
                 defaults={
@@ -9565,7 +9565,7 @@ def city_quick_add(request):
                     'is_active': True
                 }
             )
-            
+
             if created:
                 return JsonResponse({
                     'success': True,
@@ -9602,12 +9602,12 @@ def city_quick_add(request):
                         'is_active': city.is_active,
                     }
                 })
-                
+
         except json.JSONDecodeError:
             return JsonResponse({'success': False, 'message': 'Invalid data format'})
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)})
-    
+
     return JsonResponse({'success': False, 'message': 'Invalid request'})
 
 @login_required
@@ -9624,13 +9624,13 @@ def city_bulk_add(request):
             city_name = data.get('city_name', '').strip().title()
             valley_status = data.get('valley_status', 'valley')
             is_bulk = data.get('is_bulk', False)
-            
+
             if not city_name:
                 return JsonResponse({'success': False, 'message': 'City name is required'})
-            
+
             # Check if city already exists
             existing_city = City.objects.filter(name__iexact=city_name).first()
-            
+
             if existing_city:
                 # Check if valley status needs update
                 if existing_city.valley_status != valley_status:
@@ -9649,14 +9649,14 @@ def city_bulk_add(request):
                         'status': 'skipped',
                         'city_id': existing_city.id
                     })
-            
+
             # Create new city
             city = City.objects.create(
                 name=city_name,
                 valley_status=valley_status,
                 is_active=True
             )
-            
+
             if is_bulk:
                 return JsonResponse({
                     'success': True,
@@ -9671,12 +9671,12 @@ def city_bulk_add(request):
                     'status': 'added',
                     'city_id': city.id
                 })
-                
+
         except json.JSONDecodeError:
             return JsonResponse({'success': False, 'message': 'Invalid data format'})
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)})
-    
+
     return JsonResponse({'success': False, 'message': 'Invalid request'})
 
 
@@ -9686,7 +9686,7 @@ def api_get_cities(request):
     """API to get all cities for dropdown in order create"""
     try:
         cities = City.objects.filter(is_active=True).order_by('name')
-        
+
         city_list = []
         for city in cities:
             city_list.append({
@@ -9696,36 +9696,36 @@ def api_get_cities(request):
                 'display_status': city.get_valley_status_display(),
                 'in_out': 'IN' if city.valley_status == 'valley' else 'OUT'
             })
-        
+
         return JsonResponse({
-            'success': True, 
+            'success': True,
             'cities': city_list,
             'count': len(city_list)
         })
-        
+
     except Exception as e:
         return JsonResponse({
             'success': False,
             'message': f'Error loading cities: {str(e)}',
             'cities': []
         })
-        
+
 @login_required
 @require_http_methods(["GET"])
 def api_get_city_valley_status(request):
     """API to get valley status for a city (for IN/OUT field in order create)"""
     city_name = request.GET.get('city', '').strip().title()
-    
+
     if not city_name:
         return JsonResponse({'success': False, 'message': 'City name required'})
-    
+
     try:
         # Try exact match first, then case-insensitive match
         city = City.objects.filter(
             Q(name=city_name) | Q(name__iexact=city_name),
             is_active=True
         ).first()
-        
+
         if city:
             return JsonResponse({
                 'success': True,
@@ -9739,10 +9739,10 @@ def api_get_city_valley_status(request):
         else:
             # Check if it's in default valley cities
             default_valley_cities = [
-                'Kathmandu', 'Lalitpur', 'Bhaktapur', 'Kirtipur', 
+                'Kathmandu', 'Lalitpur', 'Bhaktapur', 'Kirtipur',
                 'Thimi', 'Tokha', 'Budhanilkantha', 'Gokarneshwor'
             ]
-            
+
             if city_name in default_valley_cities:
                 return JsonResponse({
                     'success': True,
@@ -9757,10 +9757,10 @@ def api_get_city_valley_status(request):
             else:
                 # Check common Out Valley cities
                 common_out_valley_cities = [
-                    'Pokhara', 'Biratnagar', 'Birgunj', 'Dharan', 'Hetauda', 
+                    'Pokhara', 'Biratnagar', 'Birgunj', 'Dharan', 'Hetauda',
                     'Butwal', 'Nepalgunj', 'Dhankuta', 'Janakpur', 'Dhangadhi'
                 ]
-                
+
                 if city_name in common_out_valley_cities:
                     return JsonResponse({
                         'success': True,
@@ -9784,13 +9784,13 @@ def api_get_city_valley_status(request):
                         'is_default': True,
                         'message': f'City "{city_name}" not found in database. Marked as Out Valley by default.'
                     })
-                    
+
     except Exception as e:
         return JsonResponse({
             'success': False,
             'message': f'Error checking city: {str(e)}'
         })
-        
+
 # ==================== VALLEY STATUS API ENDPOINT ====================
 
 @login_required
@@ -9798,19 +9798,19 @@ def api_get_city_valley_status(request):
 def get_valley_status(request):
     """API endpoint to detect if a city is in valley or out valley - FIXED VERSION"""
     city_name = request.GET.get('city', '').strip()
-    
+
     if not city_name:
         return JsonResponse({
             'success': False,
             'message': 'City name is required'
         })
-    
+
     try:
         # Try to find the city in database (case-insensitive)
         city = City.objects.filter(
             Q(name__iexact=city_name) | Q(name__iexact=city_name.title())
         ).first()
-        
+
         if city:
             return JsonResponse({
                 'success': True,
@@ -9823,24 +9823,24 @@ def get_valley_status(request):
         else:
             # If city not found, check patterns
             city_lower = city_name.lower()
-            
+
             # Valley city patterns
             valley_patterns = [
                 'kathmandu', 'lalitpur', 'bhaktapur', 'kirtipur', 'patan',
                 'thamel', 'ktm', 'kath', 'mandu', 'valley'
             ]
-            
+
             # Out-valley city patterns
             out_valley_patterns = [
                 'birgunj', 'pokhara', 'dharan', 'biratnagar', 'dumla',
                 'butwal', 'bhairahawa', 'nepalgunj', 'dhangadhi',
                 'hetauda', 'janakpur', 'dhankuta', 'outside', 'out'
             ]
-            
+
             # Check patterns
             is_valley = any(pattern in city_lower for pattern in valley_patterns)
             is_out_valley = any(pattern in city_lower for pattern in out_valley_patterns)
-            
+
             if is_valley and not is_out_valley:
                 status = 'valley'
                 display = 'Valley (Pattern Match)'
@@ -9854,7 +9854,7 @@ def get_valley_status(request):
                 status = 'out_valley'
                 display = 'Out Valley (Default)'
                 in_out = 'out'
-            
+
             return JsonResponse({
                 'success': True,
                 'valley_status': status,
@@ -9864,28 +9864,28 @@ def get_valley_status(request):
                 'in_out': in_out,
                 'message': f'City detected via pattern matching as {display}'
             })
-            
+
     except Exception as e:
         return JsonResponse({
             'success': False,
             'message': f'Error detecting valley status: {str(e)}'
         })
-        
-        
+
+
 # ==================== RETURN MANAGEMENT VIEWS (WITH TRASH) ====================
 
 @login_required
 @permission_required('can_view_returns')
 def returns_dashboard(request):
     """Return management dashboard with statistics"""
-    
+
     # Get filter parameters
     date_filter = request.GET.get('date_range', 'all')
     status_filter = request.GET.get('status', '')
-    
+
     # Base queryset - exclude deleted
     returns = ReturnRequest.objects.filter(is_deleted=False).select_related('order', 'customer', 'created_by').all()
-    
+
     # Apply date filter
     today = timezone.now().date()
     if date_filter == 'today':
@@ -9901,11 +9901,11 @@ def returns_dashboard(request):
         returns = returns.filter(created_at__date__gte=start)
     elif date_filter == 'this_month':
         returns = returns.filter(created_at__year=today.year, created_at__month=today.month)
-    
+
     # Apply status filter
     if status_filter:
         returns = returns.filter(return_status=status_filter)
-    
+
     # Statistics
     total_returns = returns.count()
     pending_returns = returns.filter(return_status='pending').count()
@@ -9914,22 +9914,22 @@ def returns_dashboard(request):
     inspecting_returns = returns.filter(return_status='inspecting').count()
     refunded_returns = returns.filter(return_status='refunded').count()
     rejected_returns = returns.filter(return_status='rejected').count()
-    
+
     total_refund_amount = returns.filter(
         return_status='refunded'
     ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
-    
+
     # Return reasons breakdown
     reason_stats = returns.values('return_reason').annotate(
         count=Count('id')
     ).order_by('-count')[:5]
-    
+
     # Recent returns
     recent_returns = returns.order_by('-created_at')[:10]
-    
+
     # Trash count
     trash_count = ReturnRequest.objects.filter(is_deleted=True).count()
-    
+
     context = {
         'returns': recent_returns,
         'total_returns': total_returns,
@@ -9945,7 +9945,7 @@ def returns_dashboard(request):
         'status_filter': status_filter,
         'trash_count': trash_count,
     }
-    
+
     return render(request, 'returns/dashboard.html', context)
 
 
@@ -10145,14 +10145,14 @@ def return_create(request):
                 if not order_id:
                     messages.error(request, 'Order not selected')
                     return redirect('return_create')
-                
+
                 order = get_object_or_404(Order, id=order_id, is_deleted=False)
-                
+
                 # Get return details
                 return_reason = request.POST.get('return_reason', '')
                 refund_type = request.POST.get('refund_type', 'full_refund')
                 customer_notes = request.POST.get('customer_notes', '')
-                
+
                 # Parse return items
                 return_items_json = request.POST.get('return_items', '[]')
                 try:
@@ -10160,7 +10160,7 @@ def return_create(request):
                 except (json.JSONDecodeError, ValueError):
                     messages.error(request, 'Invalid return items data.')
                     return redirect('return_create')
-                
+
                 if not return_items_data:
                     messages.error(request, 'No items selected for return')
                     return redirect('return_create')
@@ -10191,7 +10191,7 @@ def return_create(request):
                     order_item = OrderItem.objects.get(id=item_data['order_item_id'])
                     qty = int(item_data['quantity'])
                     total_refund += order_item.price * qty
-                
+
                 # Create return request
                 return_request = ReturnRequest.objects.create(
                     order=order,
@@ -10206,7 +10206,7 @@ def return_create(request):
                     refund_amount=total_refund,
                     created_by=request.user,
                 )
-                
+
                 # Create return items
                 for item_data in return_items_data:
                     order_item = OrderItem.objects.get(id=item_data['order_item_id'])
@@ -10238,7 +10238,7 @@ def return_create(request):
                         damaged_qty=damaged_qty,
                         refund_amount=order_item.price * qty
                     )
-                
+
                 # Log activity
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
@@ -10246,16 +10246,16 @@ def return_create(request):
                     action_type='created',
                     description=f'Return request {return_request.rma_number} created for order {order.order_number}'
                 )
-                
+
                 messages.success(request, f'Return request {return_request.rma_number} created successfully!')
                 return redirect('returns_list')
-                
+
         except Exception as e:
             messages.error(request, f'Error creating return: {str(e)}')
             import traceback
             traceback.print_exc()
             return redirect('return_create')
-    
+
     # GET request
     # Get recent delivered, shipped, or processing orders for scanning
     recent_orders = Order.objects.filter(
@@ -10264,7 +10264,7 @@ def return_create(request):
         'items__product',
         'items__product_variation'
     ).order_by('-created_at')[:50]
-    
+
     # If order_id is provided in GET, load that order
     order = None
     order_items = []
@@ -10277,7 +10277,7 @@ def return_create(request):
             order_items = order.items.all()
         except Order.DoesNotExist:
             messages.error(request, 'Order not found or not in returnable status')
-    
+
     context = {
         'recent_orders': recent_orders,
         'order': order,
@@ -10285,7 +10285,7 @@ def return_create(request):
         'reason_choices': ReturnRequest.RETURN_REASON_CHOICES,
         'refund_type_choices': ReturnRequest.REFUND_TYPE_CHOICES,
     }
-    
+
     return render(request, 'returns/create.html', context)
 
 
@@ -10440,12 +10440,12 @@ def api_get_order_by_barcode(request):
     """AJAX endpoint to fetch order data by barcode/order number"""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     barcode = request.GET.get('barcode', '').strip()
-    
+
     if not barcode:
         return JsonResponse({'success': False, 'error': 'No barcode provided'})
-    
+
     try:
         logger.info(f"API request for barcode: {barcode}")
         # Build query - search by order number
@@ -10453,7 +10453,7 @@ def api_get_order_by_barcode(request):
             order_number__iexact=barcode,  # Case-insensitive match
             is_deleted=False
         ).first()
-        
+
         # If not found, return helpful error
         if not order:
             # Check if order exists but is deleted
@@ -10468,7 +10468,7 @@ def api_get_order_by_barcode(request):
                 'success': False,
                 'error': f'Order "{barcode}" not found'
             })
-        
+
         # Calculate already-returned quantities per order item
         from django.db.models import Sum
         already_returned = {}
@@ -10495,17 +10495,17 @@ def api_get_order_by_barcode(request):
                     # Get SKU and barcode with safe defaults
                     sku = item.product_sku or ''
                     barcode_val = ''
-                    
+
                     # Try to get barcode from variation first
                     if item.product_variation and item.product_variation.barcode:
                         barcode_val = item.product_variation.barcode
                     elif item.product and item.product.barcode:
                         barcode_val = item.product.barcode
-                    
+
                     # Get SKU from variation if not set on item
                     if not sku and item.product_variation:
                         sku = item.product_variation.sku or ''
-                    
+
                     items.append({
                         'id': item.id,
                         'product_name': item.product_name or 'Unknown',
@@ -10537,7 +10537,7 @@ def api_get_order_by_barcode(request):
         except Exception as e:
             logger.error(f"Error processing items for order {order.id}: {str(e)}")
             items = []
-        
+
         # If no returnable items remain, inform the user
         if not items:
             return JsonResponse({
@@ -10558,7 +10558,7 @@ def api_get_order_by_barcode(request):
                 'items': items
             }
         }, status=200)
-        
+
     except Exception as e:
         import traceback
         logger.error(f"API Error: {str(e)}")
@@ -10663,7 +10663,7 @@ def _restock_item(item, restock_qty, user):
 @permission_required('can_view_returns')
 def return_detail(request, return_id):
     """View return request details and update status"""
-    
+
     return_request = get_object_or_404(
         ReturnRequest.objects.select_related(
             'order', 'customer', 'created_by', 'approved_by', 'quality_checked_by'
@@ -10671,10 +10671,10 @@ def return_detail(request, return_id):
         id=return_id,
         is_deleted=False  # Only show non-deleted returns
     )
-    
+
     if request.method == 'POST':
         action = request.POST.get('action')
-        
+
         try:
             if action == 'approve':
                 if return_request.return_status != 'pending':
@@ -10684,16 +10684,16 @@ def return_detail(request, return_id):
                 return_request.approved_by = request.user
                 return_request.approved_at = timezone.now()
                 return_request.save()
-                
+
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
                     user=request.user,
                     action_type='approved',
                     description=f'Return approved by {request.user.username}'
                 )
-                
+
                 messages.success(request, '✅ Return request approved!')
-                
+
             elif action == 'reject':
                 if return_request.return_status != 'pending':
                     messages.error(request, '❌ Only pending returns can be rejected.')
@@ -10704,32 +10704,32 @@ def return_detail(request, return_id):
                 return_request.approved_by = request.user
                 return_request.approved_at = timezone.now()
                 return_request.save()
-                
+
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
                     user=request.user,
                     action_type='rejected',
                     description=f'Return rejected: {rejection_reason}'
                 )
-                
+
                 messages.warning(request, '⚠️ Return request rejected!')
-                
+
             elif action == 'mark_received':
                 if return_request.return_status != 'approved':
                     messages.error(request, '❌ Can only mark approved returns as received.')
                     return redirect('return_detail', return_id=return_request.id)
                 return_request.return_status = 'received'
                 return_request.save()
-                
+
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
                     user=request.user,
                     action_type='received',
                     description='Returned items received at warehouse'
                 )
-                
+
                 messages.success(request, '✅ Return marked as received!')
-                
+
             elif action == 'quality_check':
                 if return_request.return_status != 'received':
                     messages.error(request, '❌ Quality check can only be performed on received returns.')
@@ -10777,7 +10777,7 @@ def return_detail(request, return_id):
                 )
 
                 messages.success(request, 'Quality check completed! Good/Damaged quantities updated.')
-                
+
             elif action == 'process_refund':
                 if return_request.return_status != 'inspecting':
                     messages.error(request, '❌ Refund can only be processed for returns in "Quality Inspection" stage.')
@@ -10798,13 +10798,13 @@ def return_detail(request, return_id):
                     return_request.return_status = 'refunded'
                     return_request.refunded_at = timezone.now()
                     return_request.save()
-                    
+
                     # Update order status to 'returned' with Setup link
                     from .models import Setup
                     order = return_request.order
                     order.status = 'returned'
                     order.order_status = 'returned'
-                    
+
                     try:
                         returned_setup = Setup.objects.get(setup_type='status', name='Returned')
                         order.status_setup = returned_setup
@@ -10815,9 +10815,9 @@ def return_detail(request, return_id):
                             defaults={'is_active': True}
                         )
                         order.status_setup = returned_setup
-                    
+
                     order.save()
-                    
+
                     # Restock good items using the atomic helper
                     restocked_count = 0
                     damaged_count = 0
@@ -10840,37 +10840,37 @@ def return_detail(request, return_id):
                     messages.success(request, f'Refund of Rs. {refund_amount} processed. {restocked_count} good items restocked, {damaged_count} damaged items not restocked.')
                 else:
                     messages.success(request, f'Refund of Rs. {refund_amount} processed. No good items to restock ({damaged_count} damaged items).')
-                
+
             elif action == 'update_notes':
                 admin_notes = request.POST.get('admin_notes', '')
                 return_request.admin_notes = admin_notes
                 return_request.save()
-                
+
                 ReturnActivityLog.objects.create(
                     return_request=return_request,
                     user=request.user,
                     action_type='notes_updated',
                     description='Admin notes updated'
                 )
-                
+
                 messages.success(request, '✅ Notes updated!')
-            
+
             return redirect('return_detail', return_id=return_request.id)
-            
+
         except Exception as e:
             messages.error(request, f'❌ Error: {str(e)}')
             return redirect('return_detail', return_id=return_request.id)
-    
+
     return_items = return_request.items.all()
     activity_logs = return_request.activity_logs.all()[:20]
-    
+
     context = {
         'return_request': return_request,
         'return_items': return_items,
         'activity_logs': activity_logs,
         'condition_choices': ReturnRequest.CONDITION_CHOICES,
     }
-    
+
     return render(request, 'returns/detail.html', context)
 
 
@@ -10881,20 +10881,20 @@ def return_detail(request, return_id):
 def return_trash(request, return_id):
     """Move return to trash (soft delete)"""
     return_request = get_object_or_404(ReturnRequest, id=return_id, is_deleted=False)
-    
+
     if request.method == 'POST':
         return_request.soft_delete(request.user)
-        
+
         ReturnActivityLog.objects.create(
             return_request=return_request,
             user=request.user,
             action_type='trashed',
             description=f'Return {return_request.rma_number} moved to trash by {request.user.username}'
         )
-        
+
         messages.success(request, f'✅ Return {return_request.rma_number} moved to trash!')
         return redirect('returns_list')
-    
+
     context = {'return_request': return_request}
     return render(request, 'returns/trash_confirm.html', context)
 
@@ -10903,11 +10903,11 @@ def return_trash(request, return_id):
 @permission_required('can_view_returns')
 def returns_trash_list(request):
     """View all trashed returns"""
-    
+
     trashed_returns = ReturnRequest.objects.filter(is_deleted=True).select_related(
         'order', 'customer', 'created_by', 'deleted_by'
     ).order_by('-deleted_at')
-    
+
     # Search
     search_query = request.GET.get('search', '')
     if search_query:
@@ -10916,18 +10916,18 @@ def returns_trash_list(request):
             Q(customer_name__icontains=search_query) |
             Q(customer_phone__icontains=search_query)
         )
-    
+
     # Pagination
     from django.core.paginator import Paginator
     paginator = Paginator(trashed_returns, 25)
     page_number = request.GET.get('page')
     returns_page = paginator.get_page(page_number)
-    
+
     context = {
         'trashed_returns': returns_page,
         'search_query': search_query,
     }
-    
+
     return render(request, 'returns/trash_list.html', context)
 
 
@@ -10936,20 +10936,20 @@ def returns_trash_list(request):
 def return_restore(request, return_id):
     """Restore return from trash"""
     return_request = get_object_or_404(ReturnRequest, id=return_id, is_deleted=True)
-    
+
     if request.method == 'POST':
         return_request.restore()
-        
+
         ReturnActivityLog.objects.create(
             return_request=return_request,
             user=request.user,
             action_type='restored',
             description=f'Return {return_request.rma_number} restored from trash by {request.user.username}'
         )
-        
+
         messages.success(request, f'✅ Return {return_request.rma_number} restored successfully!')
         return redirect('return_detail', return_id=return_request.id)
-    
+
     context = {'return_request': return_request}
     return render(request, 'returns/restore_confirm.html', context)
 
@@ -10959,14 +10959,14 @@ def return_restore(request, return_id):
 def return_permanent_delete(request, return_id):
     """Permanently delete return (Admin only)"""
     return_request = get_object_or_404(ReturnRequest, id=return_id, is_deleted=True)
-    
+
     if request.method == 'POST':
         rma_number = return_request.rma_number
         return_request.delete()  # Permanent delete
-        
+
         messages.success(request, f'✅ Return {rma_number} permanently deleted!')
         return redirect('returns_trash_list')
-    
+
     context = {'return_request': return_request}
     return render(request, 'returns/permanent_delete_confirm.html', context)
 
@@ -10975,14 +10975,14 @@ def return_permanent_delete(request, return_id):
 @admin_only
 def returns_empty_trash(request):
     """Empty trash - permanently delete all trashed returns (Admin only)"""
-    
+
     if request.method == 'POST':
         trashed_count = ReturnRequest.objects.filter(is_deleted=True).count()
         ReturnRequest.objects.filter(is_deleted=True).delete()
-        
+
         messages.success(request, f'✅ {trashed_count} return(s) permanently deleted from trash!')
         return redirect('returns_trash_list')
-    
+
     trashed_count = ReturnRequest.objects.filter(is_deleted=True).count()
     context = {'trashed_count': trashed_count}
     return render(request, 'returns/empty_trash_confirm.html', context)
@@ -11092,7 +11092,7 @@ def returns_bulk_action(request):
         refunded_count = 0
         total_restocked = 0
         total_damaged = 0
-        
+
         # Get the "Returned" Setup object once
         from .models import Setup
         try:
@@ -11109,7 +11109,7 @@ def returns_bulk_action(request):
                 ret.return_status = 'refunded'
                 ret.refunded_at = timezone.now()
                 ret.save()
-                
+
                 # Update order status to 'returned' with Setup link
                 order = ret.order
                 order.status = 'returned'
@@ -11232,7 +11232,7 @@ def returns_batch_bulk_action(request):
 
     elif action == 'process_refund':
         from .models import Setup
-        
+
         # Get the "Returned" Setup object once
         try:
             returned_setup = Setup.objects.get(setup_type='status', name='Returned')
@@ -11242,20 +11242,20 @@ def returns_batch_bulk_action(request):
                 name='Returned',
                 defaults={'is_active': True}
             )
-        
+
         with transaction.atomic():
             for ret in returns_qs.filter(return_status='inspecting'):
                 ret.return_status = 'refunded'
                 ret.refunded_at = timezone.now()
                 ret.save()
-                
+
                 # Update order status to 'returned' with Setup link
                 order = ret.order
                 order.status = 'returned'
                 order.order_status = 'returned'
                 order.status_setup = returned_setup
                 order.save()
-                
+
                 for item in ret.items.select_related('product', 'product_variation').all():
                     total_damaged += item.damaged_qty
                     if item.restocked:
@@ -11303,22 +11303,22 @@ def returns_trash_bulk_action(request):
     """Handle bulk actions on trashed returns"""
     return_ids = request.POST.getlist('return_ids')
     action = request.POST.get('bulk_action')
-    
+
     if not return_ids:
         messages.error(request, '❌ No returns selected!')
         return redirect('returns_trash_list')
-    
+
     try:
         returns = ReturnRequest.objects.filter(id__in=return_ids, is_deleted=True)
         count = returns.count()
-        
+
         if count == 0:
             messages.error(request, 'No valid returns found!')
             return redirect('returns_trash_list')
-        
+
         if action == 'restore':
             returns.update(is_deleted=False, deleted_at=None, deleted_by=None)
-            
+
             # Log activity for each restored return
             for return_request in returns:
                 ReturnActivityLog.objects.create(
@@ -11327,21 +11327,21 @@ def returns_trash_bulk_action(request):
                     action_type='restored',
                     description=f'Restored from trash by {request.user.username}'
                 )
-            
+
             messages.success(request, f'✅ {count} return(s) restored successfully!')
-            
+
         elif action == 'permanent_delete':
             returns.delete()
             messages.success(request, f'✅ {count} return(s) permanently deleted!')
-            
+
         else:
             messages.error(request, 'Invalid action selected!')
-            
+
     except Exception as e:
         messages.error(request, f'Error processing bulk action: {str(e)}')
         import traceback
         traceback.print_exc()
-    
+
     return redirect('returns_trash_list')
 
 # phone search API
@@ -11350,17 +11350,17 @@ def returns_trash_bulk_action(request):
 def search_customer_by_phone(request):
     """Search customer by phone number"""
     phone = request.GET.get('phone', '').strip()
-    
+
     if not phone:
         return JsonResponse({'success': False, 'message': 'Phone number required'})
-    
+
     try:
         # Search in Order model for customer with this phone
         from .models import Order
-        
+
         # Get the most recent order with this phone number
         order = Order.objects.filter(customer_phone=phone).order_by('-created_at').first()
-        
+
         if order:
             return JsonResponse({
                 'success': True,
@@ -11378,7 +11378,7 @@ def search_customer_by_phone(request):
                 'success': False,
                 'message': 'No customer found with this phone number'
             })
-    
+
     except Exception as e:
         return JsonResponse({
             'success': False,
@@ -11470,37 +11470,37 @@ def create_custom_product(request):
         category_id = request.POST.get('category', '')
         stock_status = request.POST.get('stock_status', 'in_stock')
         description = request.POST.get('description', '')
-        
+
         # Validate required fields
         if not name:
             return JsonResponse({
                 'success': False,
                 'message': 'Product name is required'
             })
-        
+
         # Convert and validate price and stock
         try:
             price = Decimal(price)
             stock = int(stock)
-            
+
             if price <= 0:
                 return JsonResponse({
                     'success': False,
                     'message': 'Price must be greater than 0'
                 })
-            
+
             if stock < 0:
                 return JsonResponse({
                     'success': False,
                     'message': 'Stock cannot be negative'
                 })
-                
+
         except (ValueError, InvalidOperation):
             return JsonResponse({
                 'success': False,
                 'message': 'Invalid price or stock value'
             })
-        
+
         # Get or create category
         category = None
         if category_id:
@@ -11508,7 +11508,7 @@ def create_custom_product(request):
                 category = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
                 pass
-        
+
         # If no category provided or not found, get/create "Custom" category
         if not category:
             category, _ = Category.objects.get_or_create(
@@ -11517,7 +11517,7 @@ def create_custom_product(request):
                     'slug': 'custom',
                 }
             )
-        
+
         # Generate unique slug
         base_slug = slugify(sku)
         slug = base_slug
@@ -11525,7 +11525,7 @@ def create_custom_product(request):
         while Product.objects.filter(slug=slug).exists():
             slug = f'{base_slug}-{counter}'
             counter += 1
-        
+
         # Create product
         product = Product.objects.create(
             name=name,
@@ -11543,12 +11543,12 @@ def create_custom_product(request):
             user=request.user,
             is_custom_product=True,  # Mark as custom product
         )
-        
+
         # Handle image upload
         if 'image' in request.FILES:
             product.image = request.FILES['image']
             product.save()
-        
+
         # Return success response
         return JsonResponse({
             'success': True,
@@ -11562,7 +11562,7 @@ def create_custom_product(request):
                 'image': product.image.url if product.image else None
             }
         })
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -11570,10 +11570,10 @@ def create_custom_product(request):
             'success': False,
             'message': f'Error creating custom product: {str(e)}'
         }, status=500)
-        
-    
-    
-    
+
+
+
+
     # my name is milan
 
 @login_required
@@ -11584,15 +11584,15 @@ def ncm_order_detail(request, order_id):
     """
     import requests
     from django.conf import settings
-    
+
     order = get_object_or_404(
         Order.objects.select_related('api_config', 'status_setup', 'payment_setup', 'payment_status_setup', 'created_by'),
         id=order_id, is_deleted=False
     )
-    
+
     ncm_order_found = True
     ncm_validation_error = None
-    
+
     # Check if order has NCM ID and validate it exists in NCM system
     if order.ncm_order_id:
         try:
@@ -11603,7 +11603,7 @@ def ncm_order_detail(request, order_id):
             else:
                 base_url = getattr(settings, 'NCM_API_BASE_URL', None)
                 api_key = getattr(settings, 'NCM_API_KEY', None)
-            
+
             if base_url and api_key:
                 api_url = f"{base_url.rstrip('/')}/order/status"
                 response = requests.get(
@@ -11615,7 +11615,7 @@ def ncm_order_detail(request, order_id):
                     },
                     timeout=5  # Short timeout for validation
                 )
-                
+
                 if response.status_code == 404:
                     ncm_order_found = False
                     ncm_validation_error = f'Order ID {order.ncm_order_id} not found in NCM system'
@@ -11636,13 +11636,13 @@ def ncm_order_detail(request, order_id):
             logger.error(f"NCM validation error for order {order.id}: {str(e)}", exc_info=True)
     else:
         messages.warning(request, f'⚠️ Order {order.order_number} has not been sent to NCM yet.')
-    
+
     # Get order items
     order_items = order.items.all().select_related('product')
-    
+
     # Calculate subtotal
     subtotal = sum(item.total for item in order_items)
-    
+
     # Get activity logs
     activity_logs = []
     try:
@@ -11661,7 +11661,7 @@ def ncm_order_detail(request, order_id):
         'ncm_order_found': ncm_order_found,
         'ncm_validation_error': ncm_validation_error,
     }
-    
+
     return render(request, 'ncm_order_detail.html', context)
 
 
@@ -11673,24 +11673,24 @@ def ncm_track_order(request, order_id):
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
-        
+
         # Check if order has NCM ID
         if not order.ncm_order_id:
             messages.error(request, f'❌ Order {order.order_number} has not been sent to NCM yet.')
             return redirect('logistics_orders_list')
-        
+
         # Get NCM API settings
         base_url = getattr(settings, 'NCM_API_BASE_URL', None)
         api_key = getattr(settings, 'NCM_API_KEY', None)
-        
+
         if not base_url or not api_key:
             messages.error(request, '❌ NCM API credentials not configured in settings.')
             return redirect('ncm_order_detail', order_id=order_id)
-        
+
         # Build API URL
         api_url = f"{base_url.rstrip('/')}/order/status"
-        
-        
+
+
         # Call NCM tracking API
         response = requests.get(
             api_url,
@@ -11701,26 +11701,26 @@ def ncm_track_order(request, order_id):
             },
             timeout=15
         )
-        
-        
+
+
         if response.status_code == 200:
             try:
                 data = response.json()
-                
+
                 # NCM returns array of status history
                 if data and isinstance(data, list) and len(data) > 0:
                     latest_status = data[0]
                     new_status = latest_status.get('status', '')
-                    
-                    
+
+
                     if new_status:
                         old_status = order.ncm_status
-                        
+
                         # Update order status if changed
                         if new_status != old_status:
                             order.ncm_status = new_status
                             order.save()
-                            
+
                             # Log activity
                             try:
                                 from dashboard.models import OrderActivityLog
@@ -11743,32 +11743,32 @@ def ncm_track_order(request, order_id):
                         messages.warning(request, 'ℹ️ No status information in response')
                 else:
                     messages.info(request, 'ℹ️ No tracking data available yet from NCM')
-                    
+
             except ValueError as e:
                 messages.error(request, f'❌ Invalid JSON response from NCM API')
-        
+
         elif response.status_code == 404:
             # Order not found in NCM - provide recovery options
             messages.error(request, f'❌ NCM Order ID {order.ncm_order_id} not found in NCM system')
             messages.info(request, f'⚠️ This order may have been deleted from NCM or the ID is invalid. Options: 1) Resend order to NCM, 2) Clear NCM ID and retry, 3) Check order details')
-        
+
         elif response.status_code == 401:
             messages.error(request, '❌ Authentication failed. Check NCM API key.')
-        
+
         else:
             messages.error(request, f'❌ Failed to fetch tracking data (HTTP {response.status_code})')
-        
+
     except requests.exceptions.Timeout:
         messages.error(request, '❌ Request timeout. NCM server is not responding.')
-    
+
     except requests.exceptions.ConnectionError:
         messages.error(request, '❌ Cannot connect to NCM server. Check internet connection.')
-    
+
     except Exception as e:
         messages.error(request, f'❌ Error: {str(e)}')
         import traceback
         traceback.print_exc()
-    
+
     # Redirect back to detail page
     return redirect('ncm_order_detail', order_id=order_id)
 
@@ -11782,13 +11782,13 @@ def ncm_sync_all_statuses(request):
     if not request.user.is_staff:
         messages.error(request, '❌ Admin access required')
         return redirect('logistics_orders_list')
-    
+
     try:
         from services.ncm_service import NCMService
         from decimal import Decimal
-        
+
         ncm_service = NCMService()
-        
+
         # Get all NCM orders
         ncm_orders = Order.objects.filter(
             is_deleted=False,
@@ -11796,23 +11796,23 @@ def ncm_sync_all_statuses(request):
         ).exclude(
             Q(ncm_order_id__isnull=True) | Q(ncm_order_id='')
         )
-        
+
         total = ncm_orders.count()
         updated = 0
         charges_updated = 0
         errors = 0
-        
+
         for order in ncm_orders:
             try:
                 # Call tracking for each order
                 base_url = getattr(settings, 'NCM_API_BASE_URL', None)
                 api_key = getattr(settings, 'NCM_API_KEY', None)
-                
+
                 if not base_url or not api_key:
                     continue
-                
+
                 api_url = f"{base_url.rstrip('/')}/order/status"
-                
+
                 response = requests.get(
                     api_url,
                     params={'id': order.ncm_order_id},
@@ -11822,18 +11822,18 @@ def ncm_sync_all_statuses(request):
                     },
                     timeout=10
                 )
-                
+
                 if response.status_code == 200:
                     data = response.json()
                     if data and isinstance(data, list) and len(data) > 0:
                         latest_status = data[0]
                         new_status = latest_status.get('status', '')
-                        
+
                         if new_status and new_status != order.ncm_status:
                             order.ncm_status = new_status
                             order.save(update_fields=['ncm_status', 'updated_at'])
                             updated += 1
-                
+
                 # ✅ Fetch and update delivery charge from NCM
                 if not order.delivery_charge or order.delivery_charge == 0:
                     try:
@@ -11841,17 +11841,17 @@ def ncm_sync_all_statuses(request):
                         if details_result.get('success'):
                             details_data = details_result.get('data', {})
                             # Try multiple possible field names for delivery charge
-                            delivery_charge = (details_data.get('chargeDetail') or 
-                                             details_data.get('deliveryCharge') or 
-                                             details_data.get('deliverycharge') or 
-                                             details_data.get('delivery_charge') or 
-                                             details_data.get('chargedetail') or 
-                                             details_data.get('shippingCharge') or 
-                                             details_data.get('shipping_charge') or 
-                                             details_data.get('charge') or 
-                                             details_data.get('amount') or 
+                            delivery_charge = (details_data.get('chargeDetail') or
+                                             details_data.get('deliveryCharge') or
+                                             details_data.get('deliverycharge') or
+                                             details_data.get('delivery_charge') or
+                                             details_data.get('chargedetail') or
+                                             details_data.get('shippingCharge') or
+                                             details_data.get('shipping_charge') or
+                                             details_data.get('charge') or
+                                             details_data.get('amount') or
                                              0)
-                            
+
                             if delivery_charge and float(delivery_charge) > 0:
                                 order.delivery_charge = Decimal(str(delivery_charge))
                                 order.save(update_fields=['delivery_charge', 'updated_at'])
@@ -11861,14 +11861,14 @@ def ncm_sync_all_statuses(request):
                         logger.warning(f"Could not fetch delivery charge for order {order.ncm_order_id}: {str(e)}")
                         # Don't fail the whole sync, just log and continue
                         pass
-                        
+
             except Exception as e:
                 logger.error(f"Error syncing order {order.ncm_order_id}: {str(e)}")
                 errors += 1
                 continue
-        
+
         messages.success(request, f'✅ Synced {updated} statuses, {charges_updated} delivery charges out of {total} orders. Errors: {errors}')
-    
+
     except Exception as e:
         messages.error(request, f'❌ Sync failed: {str(e)}')
         logger.error(f"Error in ncm_sync_all_statuses: {str(e)}")
@@ -11939,7 +11939,7 @@ def ncm_branches_json(request):
         'Sudhodhan Rural Municipality': 'Rupandehi',
         'Aanbuk Khaireni': 'Tanahu',
     }
-    
+
     try:
         base_url = getattr(settings, 'NCM_API_BASE_URL_V2', None)
         if not base_url:
@@ -12047,17 +12047,17 @@ def ncm_branches_json(request):
         error_message = 'Cannot connect to NCM server'
     except Exception as e:
         error_message = f'Error fetching branches: {str(e)}'
-    
+
     # Return JSON if requested via API
     if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
         if error_message:
             return JsonResponse({'error': error_message, 'branches': []}, status=400)
         return JsonResponse({'branches': branches})
-    
+
     # Otherwise return HTML page
     # Ensure districts is always a safe iterable for the template
     safe_districts = sorted(list(districts)) if districts else []
-    
+
     context = {
         'branches': branches,
         'error_message': error_message,
@@ -12243,22 +12243,22 @@ def ncm_single_order_send(request, order_id):
     if request.method != 'POST':
         messages.error(request, '❌ Invalid request method')
         return redirect('order_detail', order_id=order_id)
-    
+
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
-        
+
         result = send_single_order_to_ncm(request, order)
-        
+
         if result['status'] == 'success':
             messages.success(request, f"✅ {result['message']}")
         elif result['status'] == 'skipped':
             messages.warning(request, f"⚠️ {result['message']}")
         else:
             messages.error(request, f"❌ {result['message']}")
-    
+
     except Exception as e:
         messages.error(request, f'❌ Error: {str(e)}')
-    
+
     return redirect('order_detail', order_id=order_id)
 
 
@@ -12270,7 +12270,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
     import requests
     from django.conf import settings
     from django.utils import timezone
-    
+
     try:
         # CHECK 1: Already sent?
         if hasattr(order, 'ncm_order_id') and order.ncm_order_id:
@@ -12278,7 +12278,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 'status': 'skipped',
                 'message': f'Already sent (NCM ID: {order.ncm_order_id})'
             }
-        
+
         # CHECK 2: Required fields
         missing = []
         if not getattr(order, 'customer_name', None):
@@ -12287,13 +12287,13 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             missing.append('customer_phone')
         if not getattr(order, 'shipping_address', None):
             missing.append('shipping_address')
-        
+
         if missing:
             return {
                 'status': 'skipped',
                 'message': f'Missing required fields: {", ".join(missing)}'
             }
-        
+
         # Get product name with variant info
         product_name = 'General Items'
         try:
@@ -12314,7 +12314,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                         product_name += f' and {total_items - 3} more'
         except Exception:
             pass
-        
+
         # Get weight
         weight = default_weight
         if hasattr(order, 'package_weight') and order.package_weight:
@@ -12322,12 +12322,12 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 weight = float(order.package_weight)
             except:
                 weight = default_weight
-        
+
         # Get destination branch
         destination_branch = 'KATHMANDU'
         if hasattr(order, 'branch_city') and order.branch_city:
             destination_branch = str(order.branch_city).upper()
-        
+
         # Get API credentials - try dynamic config first, then fall back to settings
         base_url = ''
         api_key = ''
@@ -12353,17 +12353,17 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 matched_api_config = LogisticsAPIConfig.objects.filter(
                     logistics_provider='ncm', is_active=True, api_key=api_key
                 ).order_by('-id').first()
-        
+
         if not base_url or not api_key:
             return {
                 'status': 'error',
                 'message': 'NCM API not configured in settings'
             }
-        
+
         # Build API URL
         base_url = base_url.rstrip('/')
         api_url = f"{base_url}/order/create"
-        
+
         # Build payload - for partial payments, send remaining amount as COD
         cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
         payload = {
@@ -12380,8 +12380,8 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             "delivery_type": delivery_type,
             "weight": weight
         }
-        
-        
+
+
         # Call NCM API
         response = requests.post(
             api_url,
@@ -12392,8 +12392,8 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             },
             timeout=30
         )
-        
-        
+
+
         # Handle response
         if response.status_code == 200:
             try:
@@ -12403,17 +12403,17 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                     'status': 'error',
                     'message': 'Invalid JSON response from NCM'
                 }
-            
+
             # NCM SUCCESS: {"Message": "Order Successfully Created", "orderid": 747}
             if data.get('Message') == 'Order Successfully Created':
                 ncm_id = data.get('orderid')
-                
+
                 if not ncm_id:
                     return {
                         'status': 'error',
                         'message': 'No order ID in NCM response'
                     }
-                
+
                 # Update order - assign as integer
                 order.ncm_order_id = int(ncm_id)
                 order.ncm_status = 'Pickup Order Created'
@@ -12424,8 +12424,8 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 if matched_api_config:
                     order.api_config = matched_api_config
                 order.save()
-                
-                
+
+
                 # Log activity
                 try:
                     from dashboard.models import OrderActivityLog
@@ -12448,7 +12448,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                     'status': 'error',
                     'message': f'NCM Error: {error_msg}'
                 }
-        
+
         elif response.status_code == 400:
             try:
                 data = response.json()
@@ -12460,42 +12460,42 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                     error_msg = str(errors)
             except:
                 error_msg = response.text[:200]
-            
+
             return {
                 'status': 'error',
                 'message': f'Validation error: {error_msg}'
             }
-        
+
         elif response.status_code == 401:
             return {
                 'status': 'error',
                 'message': 'Authentication failed - Check NCM_API_KEY'
             }
-        
+
         elif response.status_code == 404:
             return {
                 'status': 'error',
                 'message': 'API endpoint not found - Check NCM_API_BASE_URL'
             }
-        
+
         else:
             return {
                 'status': 'error',
                 'message': f'HTTP {response.status_code}'
             }
-    
+
     except requests.exceptions.Timeout:
         return {
             'status': 'error',
             'message': 'Request timeout (30s)'
         }
-    
+
     except requests.exceptions.ConnectionError:
         return {
             'status': 'error',
             'message': 'Cannot connect to NCM server'
         }
-    
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -12524,11 +12524,11 @@ def ncm_orders_trash(request):
         logistics='ncm',
         ncm_order_id__isnull=False
     ).order_by('-deleted_at')
-    
+
     # Get filter parameters
     search_query = request.GET.get('search', '').strip()
     branch_filter = request.GET.get('branch', '').strip()
-    
+
     # Search filter
     if search_query:
         orders = orders.filter(
@@ -12537,14 +12537,14 @@ def ncm_orders_trash(request):
             Q(customer_name__icontains=search_query) |
             Q(customer_phone__icontains=search_query)
         )
-    
+
     # Branch filter
     if branch_filter:
         orders = orders.filter(ncm_from_branch=branch_filter)
-    
+
     # Get total count before pagination
     total_orders = orders.count()
-    
+
     # Get unique branches for filter dropdown
     branches = Order.objects.filter(
         is_deleted=True,
@@ -12554,12 +12554,12 @@ def ncm_orders_trash(request):
     ).exclude(
         ncm_from_branch=''
     ).values_list('ncm_from_branch', flat=True).distinct().order_by('ncm_from_branch')
-    
+
     # Pagination
     paginator = Paginator(orders, 25)
     page_number = request.GET.get('page', 1)
     orders_page = paginator.get_page(page_number)
-    
+
     # Get product names
     order_products = {}
     for order in orders_page:
@@ -12571,7 +12571,7 @@ def ncm_orders_trash(request):
                 order_products[order.id] = "No products"
         except:
             order_products[order.id] = "No products"
-    
+
     context = {
         'orders': orders_page,
         'total_orders': total_orders,
@@ -12580,7 +12580,7 @@ def ncm_orders_trash(request):
         'branches': list(branches),
         'order_products': order_products,
     }
-    
+
     return render(request, 'ncm_orders_trash.html', context)
 
 
@@ -12593,13 +12593,13 @@ def ncm_order_move_to_trash(request, order_id):
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
-        
+
         # Soft delete
         order.is_deleted = True
         order.deleted_at = timezone.now()
         order.deleted_by = request.user
         order.save()
-        
+
         # Log activity
         try:
             from dashboard.models import OrderActivityLog
@@ -12611,12 +12611,12 @@ def ncm_order_move_to_trash(request, order_id):
             )
         except:
             pass
-        
+
         messages.success(request, f'✅ Order {order.order_number} moved to trash successfully')
-    
+
     except Exception as e:
         messages.error(request, f'❌ Error: {str(e)}')
-    
+
     # Check referer to redirect appropriately
     referer = request.META.get('HTTP_REFERER', '')
     if 'ncm-orders' in referer or 'logistics/orders' in referer:
@@ -12634,13 +12634,13 @@ def ncm_order_restore(request, order_id):
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=True)
-        
+
         # Restore order
         order.is_deleted = False
         order.deleted_at = None
         order.deleted_by = None
         order.save()
-        
+
         # Log activity
         try:
             from dashboard.models import OrderActivityLog
@@ -12652,12 +12652,12 @@ def ncm_order_restore(request, order_id):
             )
         except:
             pass
-        
+
         messages.success(request, f'✅ Order {order.order_number} restored successfully')
-    
+
     except Exception as e:
         messages.error(request, f'❌ Error: {str(e)}')
-    
+
     return redirect('ncm_orders_trash')
 
 
@@ -12670,17 +12670,17 @@ def ncm_order_permanent_delete(request, order_id):
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=True)
-        
+
         order_number = order.order_number
-        
+
         # Permanently delete
         order.delete()
-        
+
         messages.success(request, f'✅ Order {order_number} permanently deleted')
-    
+
     except Exception as e:
         messages.error(request, f'❌ Error: {str(e)}')
-    
+
     return redirect('ncm_orders_trash')
 
 
@@ -12694,18 +12694,18 @@ def ncm_orders_bulk_trash_action(request):
     try:
         order_ids = request.POST.getlist('order_ids')
         action = request.POST.get('bulk_action')
-        
+
         if not order_ids:
             messages.error(request, '❌ No orders selected')
             return redirect('ncm_orders_trash')
-        
+
         if not action:
             messages.error(request, '❌ No action selected')
             return redirect('ncm_orders_trash')
-        
+
         orders = Order.objects.filter(id__in=order_ids, is_deleted=True)
         count = orders.count()
-        
+
         if action == 'restore':
             # Restore all selected orders
             for order in orders:
@@ -12713,7 +12713,7 @@ def ncm_orders_bulk_trash_action(request):
                 order.deleted_at = None
                 order.deleted_by = None
                 order.save()
-                
+
                 # Log activity
                 try:
                     from dashboard.models import OrderActivityLog
@@ -12725,20 +12725,20 @@ def ncm_orders_bulk_trash_action(request):
                     )
                 except:
                     pass
-            
+
             messages.success(request, f'✅ {count} order(s) restored successfully')
-        
+
         elif action == 'permanent_delete':
             # Permanently delete all selected orders
             orders.delete()
             messages.success(request, f'✅ {count} order(s) permanently deleted')
-        
+
         else:
             messages.error(request, f'❌ Invalid action: {action}')
-    
+
     except Exception as e:
         messages.error(request, f'❌ Error: {str(e)}')
-    
+
     return redirect('ncm_orders_trash')
 
 
@@ -12752,7 +12752,7 @@ def ncm_orders_empty_trash(request):
     if not request.user.is_staff:
         messages.error(request, '❌ Admin access required')
         return redirect('ncm_orders_trash')
-    
+
     try:
         # Get all deleted NCM orders
         orders = Order.objects.filter(
@@ -12761,21 +12761,21 @@ def ncm_orders_empty_trash(request):
         ).exclude(
             Q(ncm_order_id__isnull=True) | Q(ncm_order_id='')
         )
-        
+
         count = orders.count()
-        
+
         if count == 0:
             messages.info(request, 'ℹ️ Trash is already empty')
             return redirect('ncm_orders_trash')
-        
+
         # Permanently delete all
         orders.delete()
-        
+
         messages.success(request, f'✅ Trash emptied! {count} order(s) permanently deleted')
-    
+
     except Exception as e:
         messages.error(request, f'❌ Error: {str(e)}')
-    
+
     return redirect('ncm_orders_trash')
 
 
@@ -12808,22 +12808,22 @@ def setup_management(request):
 def setup_add(request):
     """Add new setup (Payment or Status)"""
     from .models import Setup
-    
+
     if request.method == 'POST':
         setup_type = request.POST.get('setup_type')
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
         is_active = request.POST.get('is_active') == 'on'
-        
+
         if not setup_type or not name:
             messages.error(request, '❌ Setup type and name are required!')
             return redirect('setup_management')
-        
+
         # Check if setup already exists
         if Setup.objects.filter(setup_type=setup_type, name=name).exists():
             messages.error(request, f'❌ {name} already exists!')
             return redirect('setup_management')
-        
+
         try:
             setup = Setup.objects.create(
                 setup_type=setup_type,
@@ -12834,9 +12834,9 @@ def setup_add(request):
             messages.success(request, f'✅ {name} setup created successfully!')
         except Exception as e:
             messages.error(request, f'❌ Error creating setup: {str(e)}')
-        
+
         return redirect('setup_management')
-    
+
     return redirect('setup_management')
 
 
@@ -12845,23 +12845,23 @@ def setup_add(request):
 def setup_edit(request, setup_id):
     """Edit existing setup"""
     from .models import Setup
-    
+
     setup = get_object_or_404(Setup, id=setup_id)
-    
+
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
         is_active = request.POST.get('is_active') == 'on'
-        
+
         if not name:
             messages.error(request, '❌ Setup name is required!')
             return redirect('setup_management')
-        
+
         # Check if name already exists (excluding current setup)
         if Setup.objects.filter(setup_type=setup.setup_type, name=name).exclude(id=setup_id).exists():
             messages.error(request, f'❌ {name} already exists!')
             return redirect('setup_management')
-        
+
         try:
             setup.name = name
             setup.description = description
@@ -12870,9 +12870,9 @@ def setup_edit(request, setup_id):
             messages.success(request, f'✅ {name} setup updated successfully!')
         except Exception as e:
             messages.error(request, f'❌ Error updating setup: {str(e)}')
-        
+
         return redirect('setup_management')
-    
+
     return redirect('setup_management')
 
 
@@ -12881,10 +12881,10 @@ def setup_edit(request, setup_id):
 def setup_delete(request, setup_id):
     """Delete setup"""
     from .models import Setup
-    
+
     setup = get_object_or_404(Setup, id=setup_id)
     setup_name = setup.name
-    
+
     try:
         setup.delete()
         messages.success(request, f'✅ {setup_name} setup deleted successfully!')
@@ -12899,9 +12899,9 @@ def setup_delete(request, setup_id):
 def setup_toggle_default(request, setup_id):
     """Toggle default status for a setup item. Only one default per setup_type."""
     from .models import Setup
-    
+
     setup = get_object_or_404(Setup, id=setup_id)
-    
+
     if setup.is_default:
         # Unset default
         setup.is_default = False
@@ -12913,7 +12913,7 @@ def setup_toggle_default(request, setup_id):
         setup.is_default = True
         setup.save()
         messages.success(request, f'⭐ {setup.name} is now the default {setup.get_setup_type_display().lower()}.')
-    
+
     return redirect('setup_management')
 
 
@@ -14472,7 +14472,7 @@ def staff_performance_analytics(request):
     # ========== SESSION PERSISTENCE LOGIC ==========
     # Check if user wants to clear filters
     clear_filters = request.GET.get('clear_filters', 'false') == 'true'
-    
+
     if clear_filters:
         # Clear the session filters (including custom date range)
         for key in ('staff_performance_period', 'staff_performance_filter',
@@ -14520,7 +14520,7 @@ def staff_performance_analytics(request):
         request.session['staff_performance_custom_end'] = custom_end_str
     request.session['staff_performance_filters_saved_at'] = _time.time()
     request.session.modified = True  # Ensure session is saved
-    
+
     # Calculate date range based on period
     today = timezone.now().date()
 
@@ -14531,7 +14531,7 @@ def staff_performance_analytics(request):
             return _date.fromisoformat(date_str.strip())
         except Exception:
             return None
-    
+
     if period == 'today':
         start_date = today
         end_date = today
@@ -14561,14 +14561,14 @@ def staff_performance_analytics(request):
         start_date = today.replace(day=1)
         end_date = today
         date_range_text = start_date.strftime('%B %Y')
-    
+
     # Base queryset for orders in date range
     orders_qs = Order.objects.filter(
         created_at__date__gte=start_date,
         created_at__date__lte=end_date,
         is_deleted=False
     )
-    
+
     # Filter by staff if specified
     if staff_filter != 'all':
         try:
@@ -14576,16 +14576,16 @@ def staff_performance_analytics(request):
             orders_qs = orders_qs.filter(created_by_id=staff_id)
         except (ValueError, TypeError):
             pass
-    
+
     # ========== KPI CALCULATIONS ==========
     total_orders = orders_qs.count()
-    
+
     # Successful deliveries (case-insensitive: DB may store 'Delivered' or 'delivered')
     successful_orders = orders_qs.filter(
         Q(status__iexact='delivered') | Q(order_status__iexact='delivered')
     ).count()
     success_rate = (successful_orders / total_orders * 100) if total_orders > 0 else 0.0
-    
+
     # Returns
     return_requests = ReturnRequest.objects.filter(
         order__created_at__date__gte=start_date,
@@ -14598,10 +14598,10 @@ def staff_performance_analytics(request):
             return_requests = return_requests.filter(order__created_by_id=staff_id)
         except (ValueError, TypeError):
             pass
-    
+
     returns_count = return_requests.count()
     return_rate = (returns_count / total_orders * 100) if total_orders > 0 else 0.0
-    
+
     # Revenue - use aggregation with larger max_digits for aggregated totals
     revenue_result = orders_qs.aggregate(Sum('total_amount'))
     total_revenue = safe_decimal(
@@ -14609,19 +14609,19 @@ def staff_performance_analytics(request):
         max_digits=12,  # Allow aggregated sums to exceed single order limit
         decimal_places=2
     )
-    
+
     # Products sold
     total_products_sold = OrderItem.objects.filter(
         order__in=orders_qs
     ).count()
-    
+
     # Active staff count
     active_staff = User.objects.filter(
         is_active=True,
         is_deleted=False,
         role__in=['sales', 'warehouse']
     ).count()
-    
+
     # ========== STAFF PERFORMANCE DATA ==========
     # Show ALL active users in the dropdown (not just sales/warehouse)
     staff_members = User.objects.filter(
@@ -14629,7 +14629,7 @@ def staff_performance_analytics(request):
         is_deleted=False,
         is_superuser=False,
     ).order_by('first_name', 'last_name')
-    
+
     # ✅ Create a separate list for filtering based on selected staff
     staff_to_show = staff_members
     if staff_filter != 'all':
@@ -14639,9 +14639,9 @@ def staff_performance_analytics(request):
             staff_to_show = staff_members.filter(id=staff_id)
         except (ValueError, TypeError):
             pass
-    
+
     staff_performance_data = []
-    
+
     for staff in staff_to_show:
         staff_orders = orders_qs.filter(created_by=staff)
         # Case-insensitive: DB may store 'Delivered' or 'delivered'
@@ -14708,7 +14708,7 @@ def staff_performance_analytics(request):
             'total_return_amount': staff_total_return_amount,
             'return_reasons': list(staff_return_reasons),
         })
-    
+
     # Sort by composite score: most deliveries → highest success rate → most orders → name
     # This ensures meaningful ranking even when success rates are identical (e.g., all 0%)
     staff_performance_data.sort(key=lambda x: (
@@ -14717,22 +14717,22 @@ def staff_performance_analytics(request):
         -x['total_orders'],            # More activity = better rank (tiebreaker)
         x['name'].lower()              # Alphabetical last tiebreaker
     ))
-    
+
     # ========== TOP PERFORMING PRODUCTS ==========
     # Build product revenue with proportional order totals
     from django.db.models import F, Case, When, Value, DecimalField
-    
+
     product_revenues = {}
-    
+
     # Get all order items and their parent order totals
     order_items = OrderItem.objects.filter(
         order__in=orders_qs,
         product__isnull=False
     ).select_related('product', 'order').values_list(
-        'product_id', 'product__name', 'product__product_type', 
+        'product_id', 'product__name', 'product__product_type',
         'quantity', 'total'
     )
-    
+
     for product_id, product_name, product_type, qty, item_total in order_items:
         if product_id not in product_revenues:
             product_revenues[product_id] = {
@@ -14741,12 +14741,12 @@ def staff_performance_analytics(request):
                 'units_sold': 0,
                 'total_revenue': Decimal('0'),
             }
-        
+
         product_revenues[product_id]['units_sold'] += qty
-        
+
         # Use the actual item-level total (price × qty for this item) for accurate revenue
         product_revenues[product_id]['total_revenue'] += safe_decimal(item_total or 0, max_digits=12, decimal_places=2)
-    
+
     # Convert to list format expected by the rest of the code
     top_products_data = []
     for product_id, info in product_revenues.items():
@@ -14757,11 +14757,11 @@ def staff_performance_analytics(request):
             'units_sold': info['units_sold'],
             'total_revenue': info['total_revenue']
         })
-    
+
     # Sort by revenue descending and take top 5
     top_products_data.sort(key=lambda x: x['total_revenue'], reverse=True)
     top_products_data = top_products_data[:5]
-    
+
     top_products = []
     for i, item in enumerate(top_products_data, 1):
         # Use safe_decimal on aggregated value with larger max_digits
@@ -14771,13 +14771,13 @@ def staff_performance_analytics(request):
             max_digits=12,  # Allow aggregated sums to exceed single order limit
             decimal_places=2
         )
-        
+
         # Determine if product is simple or variable
         product_type = item.get('product__product_type', 'simple')
         product_name = item['product__name'] or 'Unknown Product'
         units_sold = item['units_sold'] or 0
         product_id = item['product_id']
-        
+
         product_data = {
             'rank': i,
             'name': product_name,
@@ -14787,7 +14787,7 @@ def staff_performance_analytics(request):
             'revenue': revenue,
             'variants': []
         }
-        
+
         # ✅ FETCH VARIANT DETAILS FOR VARIABLE PRODUCTS
         if product_type == 'variable':
             variants_data = OrderItem.objects.filter(
@@ -14802,10 +14802,10 @@ def staff_performance_analytics(request):
                 variant_units=Sum('quantity'),
                 variant_revenue=Sum('total')
             ).order_by('-variant_revenue')
-            
+
             # ✅ COLLECT VARIANT DATA AND SUM VARIANT UNITS (but NOT revenue)
             total_variant_units = 0
-            
+
             for variant in variants_data:
                 variant_revenue = safe_decimal(
                     variant['variant_revenue'] or Decimal('0'),
@@ -14813,22 +14813,22 @@ def staff_performance_analytics(request):
                     decimal_places=2
                 )
                 variant_units = variant['variant_units'] or 0
-                
+
                 # Sum units for main product totals
                 total_variant_units += variant_units
-                
+
                 product_data['variants'].append({
                     'name': variant['product_variation__variation_name'] or variant['product_name'],
                     'units': variant_units,
                     'revenue': variant_revenue,  # Variant row shows OrderItem.total
                 })
-            
+
             # ✅ UPDATE MAIN PRODUCT UNITS (from variant sum) BUT KEEP REVENUE FROM Order.total_amount
             product_data['units'] = total_variant_units
             # NOTE: product_data['revenue'] was already set to Order.total_amount sum above - do NOT override it
-        
+
         top_products.append(product_data)
-    
+
     # ========== PERFORMANCE TRENDS OVER TIME ==========
     daily_data = orders_qs.values('created_at__date').annotate(
         daily_orders=Count('id'),
@@ -14851,7 +14851,7 @@ def staff_performance_analytics(request):
             order__created_at__date=date
         ).count()
         success_rate_daily = (delivered / orders * 100) if orders > 0 else 0.0
-        
+
         performance_trends.append({
             'date': date.strftime('%d %b'),
             'orders': orders,
@@ -14860,10 +14860,10 @@ def staff_performance_analytics(request):
             'revenue': float(revenue),
             'success_rate': round(success_rate_daily, 2)
         })
-    
+
     # Convert to JSON for chart
     performance_trends_json = json.dumps(performance_trends)
-    
+
     # ========== ORDER STATUS BREAKDOWN ==========
     # Combine both status and order_status fields, using .lower() for case-insensitive grouping
     status_breakdown = {
@@ -14872,7 +14872,7 @@ def staff_performance_analytics(request):
         'returns': 0,
         'other': 0
     }
-    
+
     for field in ('status', 'order_status'):
         for status_item in orders_qs.values(field).annotate(count=Count('id')):
             status = (status_item[field] or 'unknown').lower()
@@ -14885,7 +14885,7 @@ def staff_performance_analytics(request):
                 status_breakdown['pending'] += count
             else:
                 status_breakdown['other'] += count
-    
+
     # Ensure status_breakdown has all keys for chart
     status_breakdown_json = json.dumps(status_breakdown)
 
@@ -15001,7 +15001,7 @@ def staff_performance_analytics(request):
         'selected_orders_status': staff_orders_status,
         'staff_order_summary': staff_order_summary,
     }
-    
+
     return render(request, 'staff_performance.html', context)
 
 
@@ -16957,7 +16957,7 @@ def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=N
         api_secret = None
         base_url = None
         matched_api_config = None
-        
+
         if api_config_id:
             try:
                 matched_api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='pick_and_drop')
@@ -16969,7 +16969,7 @@ def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=N
                     'status': 'error',
                     'message': 'Selected API configuration not found or inactive'
                 }
-        
+
         if not api_key or not api_secret or not base_url:
             api_key = getattr(settings, 'PND_API_KEY', None)
             api_secret = getattr(settings, 'PND_API_SECRET', None)
@@ -17945,9 +17945,9 @@ def api_integration_list(request):
     if not (request.user.is_superuser or request.user.role == 'administrator'):
         messages.error(request, 'Access denied. Administrator privileges required.')
         return redirect('dashboard')
-    
+
     api_configs = LogisticsAPIConfig.objects.all()
-    
+
     context = {
         'api_configs': api_configs,
         'provider_choices': LogisticsAPIConfig.LOGISTICS_PROVIDER_CHOICES,
@@ -17961,14 +17961,14 @@ def api_integration_add(request):
     """Add a new Logistics API configuration"""
     if not (request.user.is_superuser or request.user.role == 'administrator'):
         return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
-    
+
     try:
         api_name = request.POST.get('api_name', '').strip()
         logistics_provider = request.POST.get('logistics_provider', '').strip()
         api_key = request.POST.get('api_key', '').strip()
         api_secret = request.POST.get('api_secret', '').strip()
         is_active = request.POST.get('is_active') == 'on'
-        
+
         # Collect base URLs (multiple)
         base_urls = []
         base_url_values = request.POST.getlist('base_urls')
@@ -17976,7 +17976,7 @@ def api_integration_add(request):
             url = url.strip()
             if url:
                 base_urls.append(url)
-        
+
         # Validation
         if not api_name:
             messages.error(request, 'API Name is required.')
@@ -17990,7 +17990,7 @@ def api_integration_add(request):
         if not base_urls:
             messages.error(request, 'At least one Base URL is required.')
             return redirect('api_integration_list')
-        
+
         LogisticsAPIConfig.objects.create(
             api_name=api_name,
             logistics_provider=logistics_provider,
@@ -18000,11 +18000,11 @@ def api_integration_add(request):
             is_active=is_active,
             created_by=request.user,
         )
-        
+
         messages.success(request, f'API configuration "{api_name}" added successfully.')
     except Exception as e:
         messages.error(request, f'Error adding API configuration: {str(e)}')
-    
+
     return redirect('api_integration_list')
 
 
@@ -18014,16 +18014,16 @@ def api_integration_edit(request, config_id):
     """Edit an existing Logistics API configuration"""
     if not (request.user.is_superuser or request.user.role == 'administrator'):
         return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
-    
+
     config = get_object_or_404(LogisticsAPIConfig, id=config_id)
-    
+
     try:
         api_name = request.POST.get('api_name', '').strip()
         logistics_provider = request.POST.get('logistics_provider', '').strip()
         api_key = request.POST.get('api_key', '').strip()
         api_secret = request.POST.get('api_secret', '').strip()
         is_active = request.POST.get('is_active') == 'on'
-        
+
         # Collect base URLs (multiple)
         base_urls = []
         base_url_values = request.POST.getlist('base_urls')
@@ -18031,7 +18031,7 @@ def api_integration_edit(request, config_id):
             url = url.strip()
             if url:
                 base_urls.append(url)
-        
+
         # Validation
         if not api_name:
             messages.error(request, 'API Name is required.')
@@ -18045,19 +18045,19 @@ def api_integration_edit(request, config_id):
         if not base_urls:
             messages.error(request, 'At least one Base URL is required.')
             return redirect('api_integration_list')
-        
+
         config.api_name = api_name
         config.logistics_provider = logistics_provider
         config.api_key = api_key
         config.api_secret = api_secret
         config.is_active = is_active
         config.base_urls = base_urls
-        
+
         config.save()
         messages.success(request, f'API configuration "{config.api_name}" updated successfully.')
     except Exception as e:
         messages.error(request, f'Error updating API configuration: {str(e)}')
-    
+
     return redirect('api_integration_list')
 
 
@@ -18067,7 +18067,7 @@ def api_integration_delete(request, config_id):
     """Delete a Logistics API configuration"""
     if not (request.user.is_superuser or request.user.role == 'administrator'):
         return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
-    
+
     config = get_object_or_404(LogisticsAPIConfig, id=config_id)
     name = config.api_name
     config.delete()
@@ -18081,11 +18081,11 @@ def api_integration_toggle(request, config_id):
     """Toggle active/inactive status of an API configuration"""
     if not (request.user.is_superuser or request.user.role == 'administrator'):
         return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
-    
+
     config = get_object_or_404(LogisticsAPIConfig, id=config_id)
     config.is_active = not config.is_active
     config.save()
-    
+
     status = "activated" if config.is_active else "deactivated"
     messages.success(request, f'API "{config.api_name}" {status}.')
     return redirect('api_integration_list')
@@ -18096,7 +18096,7 @@ def api_integration_get(request, config_id):
     """Get API config data as JSON for edit modal"""
     if not (request.user.is_superuser or request.user.role == 'administrator'):
         return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
-    
+
     config = get_object_or_404(LogisticsAPIConfig, id=config_id)
     return JsonResponse({
         'success': True,
@@ -18374,6 +18374,127 @@ def get_rtv_followups(request, rtv_id):
     return JsonResponse({'success': True, 'followups': data})
 
 
+# ==================== RTV STATUS OPTIONS ====================
+
+@login_required
+def rtv_status_list(request):
+    """Setup page for managing RTV status options."""
+    from dashboard.models import RTVStatusOption
+    statuses = RTVStatusOption.objects.all()
+    return render(request, 'rtv_status_list.html', {'statuses': statuses})
+
+
+@login_required
+@require_POST
+def rtv_status_create(request):
+    """AJAX: create a new RTV status option."""
+    from dashboard.models import RTVStatusOption
+    import json
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, Exception):
+        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
+
+    name = body.get('name', '').strip()
+    color = body.get('color', '#667eea').strip()
+    sort_order = body.get('sort_order', 0)
+
+    if not name:
+        return JsonResponse({'success': False, 'message': 'Name is required'}, status=400)
+    if not color.startswith('#') or len(color) not in (4, 7):
+        color = '#667eea'
+
+    try:
+        sort_order = int(sort_order)
+    except (ValueError, TypeError):
+        sort_order = 0
+
+    status = RTVStatusOption.objects.create(name=name, color=color, sort_order=sort_order)
+    return JsonResponse({'success': True, 'id': status.id, 'name': status.name, 'color': status.color, 'sort_order': status.sort_order})
+
+
+@login_required
+@require_POST
+def rtv_status_edit(request, status_id):
+    """AJAX: edit an existing RTV status option."""
+    from dashboard.models import RTVStatusOption
+    import json
+    status_obj = get_object_or_404(RTVStatusOption, id=status_id)
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, Exception):
+        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
+
+    name = body.get('name', '').strip()
+    color = body.get('color', status_obj.color).strip()
+    sort_order = body.get('sort_order', status_obj.sort_order)
+    is_active = body.get('is_active', status_obj.is_active)
+
+    if not name:
+        return JsonResponse({'success': False, 'message': 'Name is required'}, status=400)
+    if not color.startswith('#') or len(color) not in (4, 7):
+        color = status_obj.color
+
+    try:
+        sort_order = int(sort_order)
+    except (ValueError, TypeError):
+        sort_order = status_obj.sort_order
+
+    status_obj.name = name
+    status_obj.color = color
+    status_obj.sort_order = sort_order
+    status_obj.is_active = bool(is_active)
+    status_obj.save()
+    return JsonResponse({'success': True, 'id': status_obj.id, 'name': status_obj.name, 'color': status_obj.color, 'sort_order': status_obj.sort_order, 'is_active': status_obj.is_active})
+
+
+@login_required
+@require_POST
+def rtv_status_delete(request, status_id):
+    """AJAX: delete an RTV status option."""
+    from dashboard.models import RTVStatusOption
+    status_obj = get_object_or_404(RTVStatusOption, id=status_id)
+    status_obj.delete()
+    return JsonResponse({'success': True})
+
+
+@login_required
+def rtv_status_json(request):
+    """AJAX: return all active RTV status options as JSON."""
+    from dashboard.models import RTVStatusOption
+    statuses = list(RTVStatusOption.objects.filter(is_active=True).values('id', 'name', 'color', 'sort_order'))
+    return JsonResponse({'statuses': statuses})
+
+
+@login_required
+@require_POST
+def rtv_set_status(request, rtv_id):
+    """AJAX: set (or clear) the status of an RTVOrder."""
+    from dashboard.models import RTVStatusOption
+    import json
+    rtv = get_object_or_404(RTVOrder, id=rtv_id)
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, Exception):
+        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
+
+    status_option_id = body.get('status_option_id')
+    if status_option_id is None or status_option_id == '':
+        rtv.rtv_status_option = None
+        rtv.save(update_fields=['rtv_status_option'])
+        return JsonResponse({'success': True, 'status_name': None, 'status_color': None})
+
+    try:
+        status_option_id = int(status_option_id)
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'message': 'Invalid status_option_id'}, status=400)
+
+    status_obj = get_object_or_404(RTVStatusOption, id=status_option_id, is_active=True)
+    rtv.rtv_status_option = status_obj
+    rtv.save(update_fields=['rtv_status_option'])
+    return JsonResponse({'success': True, 'status_name': status_obj.name, 'status_color': status_obj.color})
+
+
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtvs_list(request):
@@ -18457,7 +18578,7 @@ def ncm_rtvs_list(request):
         except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
             api_config_id = ''
 
-    qs = RTVOrder.objects.select_related('vendor', 'api_config').order_by(
+    qs = RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status_option').order_by(
         models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
     )
 
@@ -18536,7 +18657,9 @@ def ncm_rtvs_list(request):
             'order_id': rtv.order_id,
             'comment': rtv.comment or '—',
             'created_at': display_time_str,
-            'status': '',
+            'status_name': rtv.rtv_status_option.name if rtv.rtv_status_option else None,
+            'status_color': rtv.rtv_status_option.color if rtv.rtv_status_option else None,
+            'status_option_id': rtv.rtv_status_option_id,
             'api_config_name': rtv.api_config.api_name if rtv.api_config else None,
             'followup': followup_meta.get(rtv.id),
         })
@@ -19114,7 +19237,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                         'timestamp': s.get('date', s.get('timestamp', s.get('added_time', s.get('created_at', '')))),
                         'remarks': s.get('remarks', s.get('comment', '')),
                     })
-    
+
     # 3. Process NCM comments
     if comments_result.get('success'):
         response_data['comments'] = comments_result.get('data', [])

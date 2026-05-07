@@ -36,23 +36,23 @@ class Branch(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     def __str__(self):
         return f"{self.name} - {self.city}"
-    
+
     class Meta:
         ordering = ['name']
         verbose_name_plural = "Branches"
 
 
 class Product(models.Model):
-    
+
     PRODUCT_TYPE = (
         ('simple', 'Simple Product'),
         ('variable', 'Variable Product'),
         ('bundle', 'Bundle/Combo Product'),
     )
-    
+
     STOCK_STATUS = (
         ('in_stock', 'In Stock'),
         ('out_of_stock', 'Out of Stock'),
@@ -66,21 +66,21 @@ class Product(models.Model):
 
     # User/Owner
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='products')
-    
+
     # Basic Information
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
     description = models.TextField()
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
-    
+
     # Product Type
     product_type = models.CharField(max_length=20, choices=PRODUCT_TYPE, default='simple')
-    
+
     # Pricing
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     cost_price_type = models.CharField(max_length=10, choices=COST_PRICE_TYPE, default='fixed')
-    
+
     # Inventory
     stock = models.IntegerField(default=0)
     reserved_qty = models.IntegerField(default=0, help_text="Units locked by unshipped orders")
@@ -88,20 +88,20 @@ class Product(models.Model):
     backorders_allowed = models.BooleanField(default=False, help_text="Allow orders beyond available stock")
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS, default='in_stock')
     low_stock_threshold = models.IntegerField(default=0, help_text="Alert when stock falls to or below this value")
-    
+
     # Media
     image = models.ImageField(upload_to='products/', blank=True, null=True)
-    
+
     # Identifiers
     barcode = models.CharField(max_length=100, blank=True, null=True)
-    
+
     # Status Flags
     is_active = models.BooleanField(default=True, null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
-    
+
     # ✅ NEW: Custom Product Flag (for quick sales)
     is_custom_product = models.BooleanField(default=False, help_text="Mark as custom/quick sale product")
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -218,7 +218,7 @@ class Customer(models.Model):
         ('wholesale', 'Wholesale'),
         ('vip', 'VIP'),
     ]
-    
+
     name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20, blank=True, db_index=True)
     alternate_phone = models.CharField(max_length=20, blank=True)
@@ -234,26 +234,26 @@ class Customer(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     def __str__(self):
         return self.name
-    
+
     class Meta:
         ordering = ['-created_at']
 
 
 class OrderQuerySet(models.QuerySet):
     """Custom QuerySet for Order model to handle decimal field issues gracefully"""
-    
+
     def safe_recent(self, limit=6):
         """
         Safely load recent orders, deferring decimal fields to prevent
         decimal.InvalidOperation errors from corrupted database values.
         """
         decimal_fields_to_defer = [
-            'discount_amount', 'shipping_charge', 'delivery_charge', 
+            'discount_amount', 'shipping_charge', 'delivery_charge',
             'expense_amount', 'tax_percent', 'total_amount',
-            'partial_amount_paid', 'remaining_amount', 'cod_collected', 
+            'partial_amount_paid', 'remaining_amount', 'cod_collected',
             'package_weight'
         ]
         return self.defer(*decimal_fields_to_defer).order_by('-created_at')[:limit]
@@ -261,10 +261,10 @@ class OrderQuerySet(models.QuerySet):
 
 class OrderManager(models.Manager):
     """Custom manager for Order model"""
-    
+
     def get_queryset(self):
         return OrderQuerySet(self.model, using=self._db)
-    
+
     def safe_recent(self, limit=6):
         """Get recent orders safely without decimal conversion issues"""
         return self.get_queryset().safe_recent(limit)
@@ -279,26 +279,26 @@ class Order(models.Model):
         ('local', 'Local Delivery'),
         ('other', 'Other'),
     ]
-    
+
     branch_city = models.CharField(max_length=100)
-    
+
     IN_OUT_CHOICES = [
         ('in', 'IN'),
         ('out', 'OUT'),
     ]
-    
+
     # ✅ CUSTOM MANAGER: Use for safe decimal field handling
     objects = OrderManager()
-    
+
     in_out = models.CharField(max_length=3, choices=IN_OUT_CHOICES, default='in')
-    
+
     logistics = models.CharField(max_length=50, choices=LOGISTICS_CHOICES, blank=True, null=True)
     status = models.CharField(max_length=50, default='processing')  # Rename from order_status
     dispatch_date = models.DateTimeField(blank=True, null=True)
     order_number = models.CharField(max_length=50, unique=True)
-    
-    barcode = models.CharField(max_length=100, blank=True, null=True)  # ADD THIS 
-    
+
+    barcode = models.CharField(max_length=100, blank=True, null=True)  # ADD THIS
+
     # ✅ FIXED: Changed User to settings.AUTH_USER_MODEL
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_orders')
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
@@ -306,18 +306,18 @@ class Order(models.Model):
     customer_name = models.CharField(max_length=255)
     customer_phone = models.CharField(max_length=20)
     customer_email = models.EmailField(blank=True)
-    
+
     shipping_address = models.TextField()
     landmark = models.CharField(max_length=255, blank=True)
     order_from = models.CharField(max_length=50)
     order_status = models.CharField(max_length=50, default='processing')
-    
+
     # ✅ NEW: ForeignKey to Setup for Payment Setup
     payment_setup = models.ForeignKey(
-        'Setup', 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
+        'Setup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='orders_payment',
         limit_choices_to={'setup_type': 'payment'}
     )
@@ -343,10 +343,10 @@ class Order(models.Model):
         related_name='orders_status',
         limit_choices_to={'setup_type': 'status'}
     )
-    
+
     # ✅ NEW: COD Collected amount
     cod_collected = models.DecimalField(max_digits=18, decimal_places=2, default=0, help_text="Amount collected as COD")
-    
+
     discount_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     shipping_charge = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     delivery_charge = models.DecimalField(max_digits=18, decimal_places=2, default=0, help_text="NCM delivery charge or logistics charge")
@@ -354,18 +354,18 @@ class Order(models.Model):
     tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=18, decimal_places=2)
     notes = models.TextField(blank=True)
-    
+
     tracking_number = models.CharField(max_length=100, blank=True, null=True)
     admin_notes = models.TextField(blank=True, null=True)
     delivered_at = models.DateTimeField(blank=True, null=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     is_partial_payment = models.BooleanField(default=False)
     partial_amount_paid = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     remaining_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
-    
+
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
 
@@ -385,16 +385,16 @@ class Order(models.Model):
 
     def __str__(self):
         return self.order_number
-    
+
      # ✅ ADD THESE NCM INTEGRATION FIELDS
     ncm_order_id = models.IntegerField(blank=True, null=True, unique=True, db_index=True)
     ncm_status = models.CharField(max_length=100, blank=True)
     ncm_created_at = models.DateTimeField(blank=True, null=True)
-    
+
     # NCM Branch details (use these for API calls)
     ncm_from_branch = models.CharField(max_length=100, blank=True, default='TINKUNE')
     ncm_destination_branch = models.CharField(max_length=100, blank=True)
-    
+
     # Delivery type for NCM
     NCM_DELIVERY_TYPES = [
         ('Door2Door', 'Door to Door'),
@@ -403,7 +403,7 @@ class Order(models.Model):
         ('Branch2Branch', 'Branch to Branch'),
     ]
     ncm_delivery_type = models.CharField(max_length=20, choices=NCM_DELIVERY_TYPES, default='Door2Door')
-    
+
     # Weight for shipping calculation
     package_weight = models.DecimalField(max_digits=8, decimal_places=2, default=1.0, help_text="Weight in kg")
 
@@ -438,18 +438,18 @@ class Order(models.Model):
     def calculate_totals(self):
         """Calculate order totals based on items, discount, shipping, and tax"""
         from decimal import Decimal
-        
+
         subtotal = sum(item.total for item in self.items.all()) or Decimal('0.00')
         after_discount = subtotal - self.discount_amount
         tax_amount = (after_discount * self.tax_percent) / 100
         self.total_amount = after_discount + tax_amount + self.shipping_charge
-    
+
     def save(self, *args, **kwargs):
         """Validate and sanitize decimal fields before saving."""
         # Validate all decimal fields to prevent InvalidOperation errors
         self, _ = validate_decimal_fields(self)
         super().save(*args, **kwargs)
-    
+
     class Meta:
         ordering = ['-created_at']
 
@@ -459,14 +459,14 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey('Product', on_delete=models.SET_NULL, null=True)
     product_variation = models.ForeignKey('ProductVariation', on_delete=models.SET_NULL, null=True, blank=True)
-    
+
     product_name = models.CharField(max_length=255, default='')
     product_sku = models.CharField(max_length=100, blank=True, null=True)
     variation_name = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
     price = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=18, decimal_places=2, default=0)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -475,13 +475,13 @@ class OrderItem(models.Model):
     def save(self, *args, **kwargs):
         # Calculate total with proper decimal handling
         from .decimal_utils import validate_order_item_decimal_fields, safe_decimal
-        
+
         # Ensure price and quantity are valid
         if self.price is None:
             self.price = Decimal('0')
         if self.quantity is None:
             self.quantity = 0
-        
+
         # Calculate total safely
         try:
             self.total = safe_decimal(
@@ -493,7 +493,7 @@ class OrderItem(models.Model):
         except Exception as e:
             logger.error(f"Error calculating OrderItem total: {e}")
             self.total = Decimal('0')
-        
+
         # Validate all decimal fields to prevent InvalidOperation errors
         self, _ = validate_order_item_decimal_fields(self)
         super().save(*args, **kwargs)
@@ -529,7 +529,7 @@ class ProductVariation(models.Model):
         ('inactive', 'Inactive'),
         ('out_of_stock', 'Out of Stock'),
     ]
-    
+
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variations')
     variation_name = models.CharField(max_length=200, blank=True, null=True)  # ✅ ADD THIS LINE
     sku = models.CharField(max_length=100, unique=True)
@@ -542,10 +542,10 @@ class ProductVariation(models.Model):
     barcode = models.CharField(max_length=100, blank=True, null=True)  # ADD THIS
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     def __str__(self):
         return f"{self.product.name} - {self.sku}"
-    
+
     class Meta:
         ordering = ['sku']
 
@@ -591,10 +591,10 @@ class ProductVariantOption(models.Model):
     option_name = models.CharField(max_length=100)
     option_values = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     def __str__(self):
         return f"{self.product.name} - {self.option_name}"
-    
+
     def get_values_list(self):
         return [v.strip() for v in self.option_values.split(',') if v.strip()]
 
@@ -611,23 +611,23 @@ class OrderActivityLog(models.Model):
         ('notes_updated', 'Admin Notes Updated'),
         ('updated', 'Order Updated'),
     ]
-    
+
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='activity_logs')
     action_type = models.CharField(max_length=50, choices=ACTION_TYPES)
-    
+
     # ✅ FIXED: Changed User to settings.AUTH_USER_MODEL
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
-    
+
     field_name = models.CharField(max_length=100, blank=True)
     old_value = models.CharField(max_length=255, blank=True)
     new_value = models.CharField(max_length=255, blank=True)
-    
+
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     def __str__(self):
         return f"{self.order.order_number} - {self.get_action_type_display()}"
-    
+
     class Meta:
         ordering = ['-created_at']
 
@@ -638,10 +638,10 @@ class OrderAdminNote(models.Model):
     content = models.TextField(help_text="Admin's note content")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_order_notes')
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     def __str__(self):
         return f"{self.order.order_number} - Note by {self.created_by.username} on {self.created_at.date()}"
-    
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = "Order Admin Note"
@@ -657,35 +657,35 @@ class StockIn(models.Model):
         ('transfer', 'Transfer In'),
         ('other', 'Other'),
     )
-    
+
     reference_number = models.CharField(max_length=50, unique=True, editable=False, blank=True)
     stock_in_type = models.CharField(max_length=20, choices=STOCK_IN_TYPES, default='purchase')
     supplier_name = models.CharField(max_length=200, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     total_quantity = models.IntegerField(default=0)
     total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    
+
     # ✅ FIXED: Changed User to settings.AUTH_USER_MODEL
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='stock_ins')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Stock In'
         verbose_name_plural = 'Stock Ins'
-    
+
     def __str__(self):
         return f"{self.reference_number} - {self.get_stock_in_type_display()}"
-    
+
     def save(self, *args, **kwargs):
         if not self.reference_number:
             from datetime import datetime
-            
+
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             random_str = ''.join(random.choices(string.digits, k=4))
             self.reference_number = f"SI-{timestamp}-{random_str}"
-        
+
         super().save(*args, **kwargs)
 
 
@@ -694,9 +694,9 @@ class StockInItem(models.Model):
     stock_in = models.ForeignKey(StockIn, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='stock_in_items')
     product_variation = models.ForeignKey(
-        ProductVariation, 
-        on_delete=models.CASCADE, 
-        null=True, 
+        ProductVariation,
+        on_delete=models.CASCADE,
+        null=True,
         blank=True,
         related_name='stock_in_items'
     )
@@ -705,11 +705,11 @@ class StockInItem(models.Model):
     total_cost = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     notes = models.CharField(max_length=500, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         verbose_name = 'Stock In Item'
         verbose_name_plural = 'Stock In Items'
-    
+
     def __str__(self):
         if self.product_variation:
             return f"{self.product.name} ({self.product_variation.sku}) - Qty: {self.quantity}"
@@ -722,25 +722,25 @@ class City(models.Model):
         ('valley', 'Valley'),
         ('out_valley', 'Out Valley'),
     ]
-    
+
     name = models.CharField(max_length=100, unique=True)
     valley_status = models.CharField(
-        max_length=20, 
+        max_length=20,
         choices=VALLEY_STATUS_CHOICES,
         default='valley'
     )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         verbose_name_plural = "Cities"
         ordering = ['name']
-    
+
     def __str__(self):
         return f"{self.name} ({self.get_valley_status_display()})"
-    
-    
+
+
 
 # Add these imports at the top
 User = get_user_model()
@@ -748,7 +748,7 @@ User = get_user_model()
 # ==================== RETURN MANAGEMENT MODELS ====================
 class ReturnRequest(models.Model):
     """Main return request model"""
-    
+
     RETURN_STATUS_CHOICES = [
         ('pending', 'Pending Review'),
         ('approved', 'Approved'),
@@ -761,7 +761,7 @@ class ReturnRequest(models.Model):
         ('exchanged', 'Exchanged'),
         ('cancelled', 'Cancelled'),
     ]
-    
+
     RETURN_REASON_CHOICES = [
         ('defective', 'Defective/Damaged Product'),
         ('wrong_item', 'Wrong Item Received'),
@@ -773,7 +773,7 @@ class ReturnRequest(models.Model):
         ('late_delivery', 'Late Delivery'),
         ('other', 'Other'),
     ]
-    
+
     REFUND_TYPE_CHOICES = [
         ('full_refund', 'Full Refund'),
         ('partial_refund', 'Partial Refund'),
@@ -781,7 +781,7 @@ class ReturnRequest(models.Model):
         ('exchange', 'Exchange for Another Item'),
         ('no_refund', 'No Refund'),
     ]
-    
+
     CONDITION_CHOICES = [
         ('new', 'New/Unused'),
         ('opened', 'Opened but Unused'),
@@ -789,7 +789,7 @@ class ReturnRequest(models.Model):
         ('damaged', 'Damaged'),
         ('defective', 'Defective'),
     ]
-    
+
     # Basic Info
     rma_number = models.CharField(max_length=50, unique=True, editable=False)
     order = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='returns')
@@ -797,33 +797,33 @@ class ReturnRequest(models.Model):
     customer_name = models.CharField(max_length=255)
     customer_phone = models.CharField(max_length=20)
     customer_email = models.EmailField(blank=True, null=True)
-    
+
     # Return Details
     return_reason = models.CharField(max_length=50, choices=RETURN_REASON_CHOICES, blank=True, default='')
     return_status = models.CharField(max_length=50, choices=RETURN_STATUS_CHOICES, default='pending')
     refund_type = models.CharField(max_length=50, choices=REFUND_TYPE_CHOICES, default='full_refund')
-    
+
     # Financial
     total_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     refund_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     restocking_fee = models.DecimalField(max_digits=18, decimal_places=2, default=0)
-    
+
     # Quality Check
     condition_received = models.CharField(max_length=50, choices=CONDITION_CHOICES, blank=True, null=True)
     quality_check_notes = models.TextField(blank=True, null=True)
     quality_checked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='quality_checked_returns')
     quality_checked_at = models.DateTimeField(null=True, blank=True)
-    
+
     # Images
     return_image_1 = models.ImageField(upload_to='returns/', blank=True, null=True)
     return_image_2 = models.ImageField(upload_to='returns/', blank=True, null=True)
     return_image_3 = models.ImageField(upload_to='returns/', blank=True, null=True)
-    
+
     # Notes
     customer_notes = models.TextField(blank=True, null=True, help_text="Customer's reason for return")
     admin_notes = models.TextField(blank=True, null=True, help_text="Internal admin notes")
     rejection_reason = models.TextField(blank=True, null=True)
-    
+
     # Tracking
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_returns')
     approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_returns')
@@ -833,24 +833,24 @@ class ReturnRequest(models.Model):
     # Batch tracking - groups returns created together via bulk
     batch_id = models.CharField(max_length=50, blank=True, null=True, db_index=True,
                                 help_text="Groups bulk-created returns together")
-    
+
     # ✅ SOFT DELETE FIELDS
     is_deleted = models.BooleanField(default=False)
     deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_returns')
     deleted_at = models.DateTimeField(null=True, blank=True)
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Return Request'
         verbose_name_plural = 'Return Requests'
-    
+
     def __str__(self):
         return f"{self.rma_number} - {self.customer_name}"
-    
+
     def save(self, *args, **kwargs):
         if not self.rma_number:
             # Generate RMA number: RMA-YYYYMMDD-XXXX
@@ -859,17 +859,17 @@ class ReturnRequest(models.Model):
             last_return = ReturnRequest.objects.filter(
                 rma_number__startswith=f'RMA-{date_str}'
             ).order_by('-rma_number').first()
-            
+
             if last_return:
                 last_num = int(last_return.rma_number.split('-')[-1])
                 new_num = last_num + 1
             else:
                 new_num = 1
-            
+
             self.rma_number = f'RMA-{date_str}-{new_num:04d}'
-        
+
         super().save(*args, **kwargs)
-    
+
     def get_status_display_class(self):
         """Return Bootstrap class for status badge"""
         status_classes = {
@@ -885,7 +885,7 @@ class ReturnRequest(models.Model):
             'cancelled': 'dark',
         }
         return status_classes.get(self.return_status, 'secondary')
-    
+
     # ✅ SOFT DELETE METHOD
     def soft_delete(self, user):
         """Move to trash instead of permanent delete"""
@@ -893,7 +893,7 @@ class ReturnRequest(models.Model):
         self.deleted_by = user
         self.deleted_at = timezone.now()
         self.save()
-    
+
     # ✅ RESTORE METHOD
     def restore(self):
         """Restore from trash"""
@@ -909,7 +909,7 @@ class ReturnItem(models.Model):
     order_item = models.ForeignKey('OrderItem', on_delete=models.CASCADE)
     product = models.ForeignKey('Product', on_delete=models.CASCADE)
     product_variation = models.ForeignKey('ProductVariation', on_delete=models.SET_NULL, null=True, blank=True)
-    
+
     product_name = models.CharField(max_length=255)
     product_sku = models.CharField(max_length=100, blank=True)
     quantity = models.PositiveIntegerField(default=1)
@@ -921,17 +921,17 @@ class ReturnItem(models.Model):
     good_qty = models.PositiveIntegerField(default=0, help_text="Quantity in good/resellable condition")
     damaged_qty = models.PositiveIntegerField(default=0, help_text="Quantity that is damaged/defective")
     refund_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
-    
+
     # Inventory action
     restocked = models.BooleanField(default=False)
     restocked_at = models.DateTimeField(null=True, blank=True)
     restocked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['id']
-    
+
     def __str__(self):
         return f"{self.product_name} x{self.return_quantity}"
 
@@ -946,10 +946,10 @@ class ReturnActivityLog(models.Model):
     old_value = models.TextField(blank=True, null=True)
     new_value = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.return_request.rma_number} - {self.action_type}"
 
@@ -957,7 +957,7 @@ class ReturnActivityLog(models.Model):
 
 class Dispatch(models.Model):
     """Dispatch/Batch management for orders"""
-    
+
     STATUS_CHOICES = [
         ('pending', 'Pending payment'),
         ('processing', 'Processing'),
@@ -968,7 +968,7 @@ class Dispatch(models.Model):
         ('cancelled', 'Cancelled'),
         ('dispatched', 'Dispatched'),
     ]
-    
+
     LOGISTICS_CHOICES = [
         ('ncm', 'NCM'),
         ('pick_and_drop', 'Pick and Drop'),
@@ -977,37 +977,37 @@ class Dispatch(models.Model):
         ('local', 'Local Delivery'),
         ('other', 'Other'),
     ]
-    
+
     # Basic Info
     batch_number = models.CharField(max_length=50, unique=True, db_index=True)
     logistics = models.CharField(max_length=50, choices=LOGISTICS_CHOICES)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='dispatched')
     total_orders = models.IntegerField(default=0)
     notes = models.TextField(blank=True, null=True)
-    
+
     # User Tracking
     created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.SET_NULL, 
-        null=True, 
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
         related_name='created_dispatches'
     )
-    
+
     # ✅ SOFT DELETE FIELDS
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='deleted_dispatches'
     )
     deleted_at = models.DateTimeField(null=True, blank=True)
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Dispatch'
@@ -1017,34 +1017,34 @@ class Dispatch(models.Model):
             models.Index(fields=['batch_number']),
             models.Index(fields=['is_deleted']),
         ]
-    
+
     def __str__(self):
         return f"{self.batch_number} - {self.logistics}"
-    
+
     def get_order_ids(self):
         """Return list of all scanned order IDs in this dispatch"""
         return [item.scanned_order_id for item in self.items.all()]
-    
+
     def get_linked_orders_count(self):
         """Count orders that were successfully linked"""
         return self.items.filter(order__isnull=False).count()
-    
+
     def get_unlinked_orders_count(self):
         """Count order IDs that couldn't be found in system"""
         return self.items.filter(order__isnull=True).count()
-    
+
     def get_success_count(self):
         """Count orders that were successfully dispatched"""
         return self.items.filter(dispatch_status='success').count()
-    
+
     def get_failed_count(self):
         """Count orders that failed (e.g. already dispatched)"""
         return self.items.filter(dispatch_status='failed').count()
-    
+
     def get_not_found_count(self):
         """Count orders that were not found in system"""
         return self.items.filter(dispatch_status='not_found').count()
-    
+
     # ✅ SOFT DELETE METHOD
     def soft_delete(self, user):
         """Move to trash instead of permanent delete"""
@@ -1052,7 +1052,7 @@ class Dispatch(models.Model):
         self.deleted_by = user
         self.deleted_at = timezone.now()
         self.save()
-    
+
     # ✅ RESTORE METHOD
     def restore(self):
         """Restore from trash"""
@@ -1064,35 +1064,35 @@ class Dispatch(models.Model):
 
 class DispatchItem(models.Model):
     """Individual order items in a dispatch batch"""
-    
+
     DISPATCH_STATUS_CHOICES = [
         ('success', 'Success'),
         ('failed', 'Failed'),
         ('not_found', 'Not Found'),
     ]
-    
+
     dispatch = models.ForeignKey(
-        Dispatch, 
-        on_delete=models.CASCADE, 
+        Dispatch,
+        on_delete=models.CASCADE,
         related_name='items'
     )
     scanned_order_id = models.CharField(max_length=100, db_index=True)
     order = models.ForeignKey(
-        'Order', 
-        on_delete=models.SET_NULL, 
-        null=True, 
+        'Order',
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
         related_name='dispatch_items'
     )
     dispatch_status = models.CharField(
-        max_length=20, 
-        choices=DISPATCH_STATUS_CHOICES, 
+        max_length=20,
+        choices=DISPATCH_STATUS_CHOICES,
         default='not_found',
         db_index=True
     )
     failure_reason = models.CharField(max_length=255, blank=True, default='')
     scanned_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['scanned_at']
         verbose_name = 'Dispatch Item'
@@ -1101,20 +1101,20 @@ class DispatchItem(models.Model):
             models.Index(fields=['scanned_order_id']),
             models.Index(fields=['scanned_at']),
         ]
-    
+
     def __str__(self):
         return f"{self.scanned_order_id} in {self.dispatch.batch_number}"
-    
+
     def is_linked(self):
         """Check if order was successfully linked"""
         return self.order is not None
-    
+
     def get_order_status(self):
         """Get the status of linked order"""
         if self.order:
             return self.order.get_order_status_display()
         return "Not Found"
-    
+
     def get_customer_name(self):
         """Get customer name from linked order"""
         if self.order:
@@ -1129,7 +1129,7 @@ class LogisticsAPIConfig(models.Model):
         ('pick_and_drop', 'Pick and Drop'),
         ('other', 'Other'),
     ]
-    
+
     api_name = models.CharField(max_length=100, help_text="Descriptive name for this API configuration")
     logistics_provider = models.CharField(max_length=50, choices=LOGISTICS_PROVIDER_CHOICES)
     api_key = models.CharField(max_length=500)
@@ -1142,22 +1142,22 @@ class LogisticsAPIConfig(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name='api_configs'
     )
-    
+
     class Meta:
         ordering = ['logistics_provider', 'api_name']
         verbose_name = 'Logistics API Configuration'
         verbose_name_plural = 'Logistics API Configurations'
-    
+
     def __str__(self):
         status = "Active" if self.is_active else "Inactive"
         return f"{self.api_name} ({self.get_logistics_provider_display()}) - {status}"
-    
+
     def get_primary_base_url(self):
         """Return the first base URL or empty string"""
         if self.base_urls and len(self.base_urls) > 0:
             return self.base_urls[0].rstrip('/')
         return ''
-    
+
     def get_base_url_v2(self):
         """Return the second base URL (v2) or empty string"""
         if self.base_urls and len(self.base_urls) > 1:
@@ -1173,7 +1173,7 @@ class Setup(models.Model):
         ('payment_status', 'Payment Status Setup'),
         ('order_source', 'Order Source'),
     ]
-    
+
     setup_type = models.CharField(max_length=50, choices=SETUP_TYPES)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
@@ -1181,13 +1181,13 @@ class Setup(models.Model):
     is_default = models.BooleanField(default=False, help_text="Default selection for this setup type in order forms")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         verbose_name = 'Setup'
         verbose_name_plural = 'Setups'
         unique_together = ('setup_type', 'name')
         ordering = ['setup_type', 'name']
-    
+
     def __str__(self):
         return f"{self.get_setup_type_display()} - {self.name}"
 
@@ -1195,34 +1195,34 @@ class Setup(models.Model):
 class StaffPerformance(models.Model):
     """Track staff member performance metrics"""
     staff_member = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='staff_performance')
-    
+
     # Metrics
     total_orders = models.IntegerField(default=0)
     successful_orders = models.IntegerField(default=0)
     return_count = models.IntegerField(default=0)
     total_revenue = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     success_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Percentage 0-100")
-    
+
     # Period tracking
     period_start = models.DateField(auto_now_add=True)
     period_end = models.DateField(null=True, blank=True)
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     def calculate_metrics(self):
         """Calculate performance metrics based on orders created by this staff member"""
         from decimal import Decimal
-        
+
         orders = Order.objects.filter(created_by=self.staff_member, is_deleted=False)
         self.total_orders = orders.count()
-        
+
         # Successful = delivered orders
         self.successful_orders = orders.filter(
             Q(order_status='delivered') | Q(status='delivered')
         ).count()
-        
+
         # Calculate success rate
         if self.total_orders > 0:
             self.success_rate = Decimal(str((self.successful_orders / self.total_orders) * 100)).quantize(
@@ -1230,23 +1230,23 @@ class StaffPerformance(models.Model):
             )
         else:
             self.success_rate = Decimal('0')
-        
+
         # Calculate total revenue from paid orders
         revenue_data = orders.filter(payment_status='paid').aggregate(
             total=Sum('total_amount')
         )
         self.total_revenue = revenue_data['total'] or Decimal('0')
-        
+
         # Count returns
         self.return_count = ReturnRequest.objects.filter(
             order__created_by=self.staff_member
         ).count()
-        
+
         self.save()
-    
+
     def __str__(self):
         return f"{self.staff_member.get_full_name() or self.staff_member.username} - {self.success_rate}%"
-    
+
     class Meta:
         verbose_name = 'Staff Performance'
         verbose_name_plural = 'Staff Performance Metrics'
@@ -1567,6 +1567,13 @@ class RTVOrder(models.Model):
         related_name='rtv_orders',
         help_text="Which API config (portal) this RTV belongs to",
     )
+    rtv_status_option = models.ForeignKey(
+        'RTVStatusOption',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rtv_orders',
+        help_text="Manually set status for this RTV order",
+    )
 
     class Meta:
         ordering = ['-rtv_marked_at', '-created_at']
@@ -1575,6 +1582,23 @@ class RTVOrder(models.Model):
 
     def __str__(self):
         return f"RTV #{self.order_id} by {self.vendor}"
+
+
+class RTVStatusOption(models.Model):
+    """Custom status options for RTV orders, managed from the Setup menu."""
+    name = models.CharField(max_length=100)
+    color = models.CharField(max_length=7, default='#667eea', help_text='Hex color code, e.g. #667eea')
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name = 'RTV Status Option'
+        verbose_name_plural = 'RTV Status Options'
+
+    def __str__(self):
+        return self.name
 
 
 class RTVFollowUp(models.Model):
