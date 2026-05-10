@@ -1653,12 +1653,10 @@
                             <span class="comment-tag pnr-pur-pso"><i class="fas fa-ban"></i> {{ comment }}</span>
                             {% elif 'Ignorance' in comment or 'Rejection' in comment or 'not ordered' in comment %}
                             <span class="comment-tag ignorance"><i class="fas fa-user-times"></i> {{ comment }}</span>
-                            {% elif 'Product Issue' in comment or 'Size' in comment or 'Quality' in comment or 'Price'
-                            in comment %}
+                            {% elif 'Product Issue' in comment or 'Size' in comment or 'Quality' in comment or 'Price' in comment %}
                             <span class="comment-tag product-issue"><i class="fas fa-box-open"></i> {{ comment }}</span>
                             {% elif 'Wrong Location' in comment or 'Coverage' in comment %}
-                            <span class="comment-tag location"><i class="fas fa-map-marker-alt"></i> {{ comment
-                                }}</span>
+                            <span class="comment-tag location"><i class="fas fa-map-marker-alt"></i> {{ comment }}</span>
                             {% elif 'Wrong Number' in comment or 'Unable to contact' in comment %}
                             <span class="comment-tag contact"><i class="fas fa-phone-slash"></i> {{ comment }}</span>
                             {% elif 'vendor request' in comment or 'vendor' in comment and 'return' in comment %}
@@ -1898,8 +1896,7 @@
                     </label>
                     <select class="rtv-form-input" id="createRtvApiConfig">
                         {% for cfg in ncm_api_configs %}
-                        <option value="{{ cfg.id }}" {% if selected_api_config_id==cfg.id|stringformat:'s' %}selected{%
-                            endif %} {% if not cfg.is_active %}disabled{% endif %}>
+                        <option value="{{ cfg.id }}" {% if selected_api_config_id == cfg.id|stringformat:'s' %}selected{% endif %} {% if not cfg.is_active %}disabled{% endif %}>
                             {{ cfg.api_name }}{% if not cfg.is_active %} (Inactive){% endif %}
                         </option>
                         {% endfor %}
@@ -2152,10 +2149,9 @@
         let activeFilter = 'all';
 
         // S/N offset from server so numbering is continuous across pages
-        const snOffset = {{ sn_offset|default: 0
-    }};
+        const snOffset = {{ sn_offset|default:0 }};
 
-    var totalCount = {{ total_count|default: 0 }};
+    var totalCount = {{ total_count|default:0 }};
 
     function applyFilters() {
         let visibleIdx = 0;
