@@ -270,6 +270,114 @@
   }
   .cs-save-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.18); }
 
+  /* ===================== MAINTENANCE MODE STYLES ===================== */
+  .mm-status-card {
+    border-radius: 16px; overflow: hidden;
+    border: 2px solid #e9ecef; transition: all .3s ease;
+  }
+  .mm-status-card.mm-active { border-color: #ef4444; }
+  .mm-status-card.mm-inactive { border-color: #22c55e; }
+  .mm-status-header {
+    padding: 1.5rem 1.75rem;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem;
+  }
+  .mm-status-header.mm-on { background: linear-gradient(135deg, #fef2f2, #fee2e2); }
+  .mm-status-header.mm-off { background: linear-gradient(135deg, #f0fdf4, #dcfce7); }
+  .mm-status-icon {
+    width: 54px; height: 54px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; flex-shrink: 0;
+  }
+  .mm-status-icon.mm-on { background: #fee2e2; color: #dc2626; }
+  .mm-status-icon.mm-off { background: #dcfce7; color: #16a34a; }
+  .mm-status-label { font-size: 1.1rem; font-weight: 700; color: #1f2937; }
+  .mm-status-sub { font-size: .82rem; color: #6b7280; margin-top: .15rem; }
+  /* Toggle Switch */
+  .mm-toggle-wrapper { display: flex; align-items: center; gap: .75rem; }
+  .mm-switch {
+    position: relative; width: 56px; height: 30px;
+    background: #d1d5db; border-radius: 30px; cursor: pointer;
+    transition: background .3s ease; border: none; padding: 0;
+    flex-shrink: 0;
+  }
+  .mm-switch::after {
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 24px; height: 24px; background: #fff; border-radius: 50%;
+    transition: transform .3s ease;
+    box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  }
+  .mm-switch.active { background: #ef4444; }
+  .mm-switch.active::after { transform: translateX(26px); }
+  .mm-switch-label { font-size: .82rem; font-weight: 600; color: #6b7280; }
+  /* Info cards */
+  .mm-info-card {
+    background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 1rem 1.25rem;
+  }
+  .mm-info-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; margin-bottom: .25rem; }
+  .mm-info-value { font-size: .9rem; font-weight: 600; color: #334155; }
+  /* Log table */
+  .mm-log-table { margin: 0; }
+  .mm-log-table thead th {
+    background: #f9fafb; color: #6b7280; font-size: .72rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    border-bottom: 1px solid #e5e7eb; padding: .65rem .75rem; white-space: nowrap;
+  }
+  .mm-log-table tbody td {
+    padding: .65rem .75rem; vertical-align: middle;
+    border-bottom: 1px solid #f3f4f6; font-size: .84rem;
+  }
+  .mm-log-table tbody tr:last-child td { border-bottom: none; }
+  .mm-log-table tbody tr:hover td { background: #f9fafb; }
+  .mm-badge-on {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #fee2e2; color: #991b1b; font-size: .72rem;
+    font-weight: 600; padding: .2rem .55rem; border-radius: 20px;
+  }
+  .mm-badge-off {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #d1fae5; color: #065f46; font-size: .72rem;
+    font-weight: 600; padding: .2rem .55rem; border-radius: 20px;
+  }
+  /* Confirmation Modal */
+  .mm-confirm-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    z-index: 10000; display: none; align-items: center; justify-content: center;
+    animation: mmFadeIn .2s ease;
+  }
+  .mm-confirm-overlay.show { display: flex; }
+  .mm-confirm-box {
+    background: #fff; border-radius: 18px; padding: 2rem;
+    max-width: 400px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,.2);
+    text-align: center; animation: mmSlideUp .3s ease;
+  }
+  .mm-confirm-icon {
+    width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 1rem;
+    display: flex; align-items: center; justify-content: center; font-size: 1.6rem;
+  }
+  .mm-confirm-icon.mm-warn { background: #fef3c7; color: #d97706; }
+  .mm-confirm-icon.mm-ok { background: #d1fae5; color: #059669; }
+  .mm-confirm-title { font-size: 1.15rem; font-weight: 700; color: #1f2937; margin-bottom: .4rem; }
+  .mm-confirm-text { font-size: .88rem; color: #6b7280; margin-bottom: 1.25rem; }
+  .mm-confirm-actions { display: flex; gap: .75rem; justify-content: center; }
+  .mm-btn-cancel {
+    padding: .55rem 1.5rem; border-radius: 10px; border: 2px solid #e5e7eb;
+    background: #fff; color: #374151; font-weight: 600; font-size: .88rem;
+    cursor: pointer; transition: all .15s;
+  }
+  .mm-btn-cancel:hover { background: #f3f4f6; }
+  .mm-btn-confirm {
+    padding: .55rem 1.5rem; border-radius: 10px; border: none;
+    font-weight: 600; font-size: .88rem; cursor: pointer; transition: all .15s;
+  }
+  .mm-btn-enable { background: #ef4444; color: #fff; }
+  .mm-btn-enable:hover { background: #dc2626; }
+  .mm-btn-disable { background: #22c55e; color: #fff; }
+  .mm-btn-disable:hover { background: #16a34a; }
+  @keyframes mmFadeIn { from{opacity:0} to{opacity:1} }
+  @keyframes mmSlideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+
   /* ===================== ZEKTO STYLES ===================== */
   .stat-card { border-radius: 12px; border: 1px solid #e9ecef; padding: 1.15rem; }
   .stat-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.05rem; }
@@ -349,6 +457,12 @@
         <a href="#" onclick="shScrollTo('sh-api-settings');return false;" class="sh-nav-link" data-target="sh-api-settings">
           <span class="sh-nav-icon"><i class="fas fa-clock"></i></span>
           <span>API Sync Settings</span>
+        </a>
+      </li>
+      <li class="sh-nav-item">
+        <a href="#" onclick="shScrollTo('sh-maintenance');return false;" class="sh-nav-link" data-target="sh-maintenance">
+          <span class="sh-nav-icon"><i class="fas fa-hard-hat"></i></span>
+          <span>Maintenance Mode</span>
         </a>
       </li>
     </ul>
@@ -914,6 +1028,131 @@
     </form>
     </div><!-- /sh-section #sh-api-settings -->
 
+    <!-- ============================================================
+         MAINTENANCE MODE SECTION
+    ============================================================ -->
+    <div class="sh-divider" style="margin:2.5rem 0"></div>
+    <div class="sh-section" id="sh-maintenance">
+    <div class="sh-section-title"><i class="fas fa-hard-hat me-2" style="color:#d97706;"></i>Maintenance Mode</div>
+    <div class="sh-section-sub">Enable maintenance mode to block all non-admin pages with a maintenance overlay. Admin users bypass the block entirely.</div>
+    <div class="sh-divider"></div>
+
+    <!-- Status Card -->
+    <div class="mm-status-card {% if maintenance.is_enabled %}mm-active{% else %}mm-inactive{% endif %}" id="mmStatusCard">
+      <div class="mm-status-header {% if maintenance.is_enabled %}mm-on{% else %}mm-off{% endif %}" id="mmStatusHeader">
+        <div class="d-flex align-items-center gap-3">
+          <div class="mm-status-icon {% if maintenance.is_enabled %}mm-on{% else %}mm-off{% endif %}" id="mmStatusIcon">
+            <i class="fas {% if maintenance.is_enabled %}fa-tools{% else %}fa-check-circle{% endif %}" id="mmStatusIconI"></i>
+          </div>
+          <div>
+            <div class="mm-status-label" id="mmStatusLabel">
+              {% if maintenance.is_enabled %}Maintenance Mode is ON{% else %}System is Operational{% endif %}
+            </div>
+            <div class="mm-status-sub" id="mmStatusSub">
+              {% if maintenance.is_enabled %}All non-admin pages are currently blocked{% else %}All pages are accessible to all users{% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="mm-toggle-wrapper">
+          <span class="mm-switch-label" id="mmToggleLabel">{% if maintenance.is_enabled %}ON{% else %}OFF{% endif %}</span>
+          <button type="button" class="mm-switch {% if maintenance.is_enabled %}active{% endif %}" id="mmToggleBtn" onclick="mmConfirmToggle()" title="Toggle Maintenance Mode"></button>
+        </div>
+      </div>
+
+      <!-- Info details -->
+      <div class="p-3" id="mmInfoPanel">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="mm-info-card">
+              <div class="mm-info-label">Current Status</div>
+              <div class="mm-info-value" id="mmInfoStatus">
+                {% if maintenance.is_enabled %}
+                  <span class="mm-badge-on"><i class="fas fa-exclamation-circle"></i> Active</span>
+                {% else %}
+                  <span class="mm-badge-off"><i class="fas fa-check-circle"></i> Inactive</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mm-info-card">
+              <div class="mm-info-label">Enabled Since</div>
+              <div class="mm-info-value" id="mmInfoSince">
+                {% if maintenance.is_enabled and maintenance.enabled_at %}
+                  {{ maintenance.enabled_at|date:"M d, Y h:i A" }}
+                {% else %}
+                  <span style="color:#94a3b8;">—</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mm-info-card">
+              <div class="mm-info-label">Enabled By</div>
+              <div class="mm-info-value" id="mmInfoBy">
+                {% if maintenance.is_enabled and maintenance.enabled_by %}
+                  {{ maintenance.enabled_by.get_full_name|default:maintenance.enabled_by.username }}
+                {% else %}
+                  <span style="color:#94a3b8;">—</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Logs -->
+    <div class="cs-card mt-4">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#fef3c7;color:#d97706;"><i class="fas fa-history"></i></span>
+        Maintenance Event Log
+      </div>
+      <div class="table-responsive">
+        <table class="table mm-log-table" id="mmLogTable">
+          <thead>
+            <tr>
+              <th>#</th><th>Action</th><th>Performed By</th><th>Timestamp</th><th>IP Address</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in maintenance_logs %}
+            <tr>
+              <td style="color:#9ca3af;">{{ forloop.counter }}</td>
+              <td>
+                {% if log.action == 'enabled' %}
+                  <span class="mm-badge-on"><i class="fas fa-toggle-on"></i> Enabled</span>
+                {% else %}
+                  <span class="mm-badge-off"><i class="fas fa-toggle-off"></i> Disabled</span>
+                {% endif %}
+              </td>
+              <td style="font-weight:600;color:#374151;">{{ log.performed_by.get_full_name|default:log.performed_by.username }}</td>
+              <td style="color:#4b5563;font-size:.83rem;">{{ log.timestamp|date:"M d, Y h:i A" }}</td>
+              <td style="font-family:monospace;color:#6b7280;font-size:.82rem;">{{ log.ip_address|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-muted py-4"><i class="fas fa-clipboard-list d-block mb-2" style="font-size:1.5rem;opacity:.4;"></i>No maintenance events logged yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    </div><!-- /sh-section #sh-maintenance -->
+
+    <!-- Maintenance Confirmation Overlay -->
+    <div class="mm-confirm-overlay" id="mmConfirmOverlay">
+      <div class="mm-confirm-box">
+        <div class="mm-confirm-icon" id="mmConfirmIcon"><i id="mmConfirmIconI" class="fas fa-exclamation-triangle"></i></div>
+        <div class="mm-confirm-title" id="mmConfirmTitle">Enable Maintenance Mode?</div>
+        <div class="mm-confirm-text" id="mmConfirmText">All non-admin users will see a maintenance overlay and won't be able to access the system.</div>
+        <div class="mm-confirm-actions">
+          <button class="mm-btn-cancel" onclick="mmCancelConfirm()"><i class="fas fa-times me-1"></i>Cancel</button>
+          <button class="mm-btn-confirm" id="mmConfirmBtn" onclick="mmDoToggle()"><i class="fas fa-check me-1"></i>Confirm</button>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /sh-content -->
 </div><!-- /sh-container -->
 {% endblock %}
@@ -1264,5 +1503,140 @@ document.addEventListener('DOMContentLoaded', function() {
     input.addEventListener('input', function() { updateSyncDisplay(this.value); });
   }
 });
+
+/* ===================== MAINTENANCE MODE ===================== */
+var _mmIsEnabled = {{ maintenance.is_enabled|yesno:"true,false" }};
+
+function mmConfirmToggle() {
+  var overlay = document.getElementById('mmConfirmOverlay');
+  var icon = document.getElementById('mmConfirmIcon');
+  var iconI = document.getElementById('mmConfirmIconI');
+  var title = document.getElementById('mmConfirmTitle');
+  var text = document.getElementById('mmConfirmText');
+  var btn = document.getElementById('mmConfirmBtn');
+
+  if (_mmIsEnabled) {
+    // Currently ON → confirm disable
+    icon.className = 'mm-confirm-icon mm-ok';
+    iconI.className = 'fas fa-check-circle';
+    title.textContent = 'Disable Maintenance Mode?';
+    text.textContent = 'The system will become accessible to all users again.';
+    btn.className = 'mm-btn-confirm mm-btn-disable';
+    btn.innerHTML = '<i class="fas fa-check me-1"></i>Disable';
+  } else {
+    // Currently OFF → confirm enable
+    icon.className = 'mm-confirm-icon mm-warn';
+    iconI.className = 'fas fa-exclamation-triangle';
+    title.textContent = 'Enable Maintenance Mode?';
+    text.textContent = 'All non-admin users will see a maintenance overlay and won\'t be able to access the system.';
+    btn.className = 'mm-btn-confirm mm-btn-enable';
+    btn.innerHTML = '<i class="fas fa-tools me-1"></i>Enable';
+  }
+  overlay.classList.add('show');
+}
+
+function mmCancelConfirm() {
+  document.getElementById('mmConfirmOverlay').classList.remove('show');
+}
+
+function mmDoToggle() {
+  var overlay = document.getElementById('mmConfirmOverlay');
+  overlay.classList.remove('show');
+
+  var formData = new FormData();
+  fetch('{% url "maintenance_toggle" %}', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf()},
+    body: formData,
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      _mmIsEnabled = data.is_enabled;
+      mmUpdateUI(data);
+      showToast(
+        data.is_enabled ? 'System is under maintenance mode' : 'Maintenance mode disabled — system is live',
+        data.is_enabled ? 'error' : 'success'
+      );
+      // Refresh the logs table
+      mmRefreshLogs();
+    } else {
+      showToast(data.error || 'Failed to toggle maintenance mode', 'error');
+    }
+  })
+  .catch(function() {
+    showToast('Network error. Please try again.', 'error');
+  });
+}
+
+function mmUpdateUI(data) {
+  var card = document.getElementById('mmStatusCard');
+  var header = document.getElementById('mmStatusHeader');
+  var icon = document.getElementById('mmStatusIcon');
+  var iconI = document.getElementById('mmStatusIconI');
+  var label = document.getElementById('mmStatusLabel');
+  var sub = document.getElementById('mmStatusSub');
+  var toggleBtn = document.getElementById('mmToggleBtn');
+  var toggleLabel = document.getElementById('mmToggleLabel');
+  var infoStatus = document.getElementById('mmInfoStatus');
+  var infoSince = document.getElementById('mmInfoSince');
+  var infoBy = document.getElementById('mmInfoBy');
+
+  if (data.is_enabled) {
+    card.className = 'mm-status-card mm-active';
+    header.className = 'mm-status-header mm-on';
+    icon.className = 'mm-status-icon mm-on';
+    iconI.className = 'fas fa-tools';
+    label.textContent = 'Maintenance Mode is ON';
+    sub.textContent = 'All non-admin pages are currently blocked';
+    toggleBtn.classList.add('active');
+    toggleLabel.textContent = 'ON';
+    infoStatus.innerHTML = '<span class="mm-badge-on"><i class="fas fa-exclamation-circle"></i> Active</span>';
+    infoSince.textContent = data.enabled_at || '—';
+    infoBy.textContent = data.enabled_by || '—';
+  } else {
+    card.className = 'mm-status-card mm-inactive';
+    header.className = 'mm-status-header mm-off';
+    icon.className = 'mm-status-icon mm-off';
+    iconI.className = 'fas fa-check-circle';
+    label.textContent = 'System is Operational';
+    sub.textContent = 'All pages are accessible to all users';
+    toggleBtn.classList.remove('active');
+    toggleLabel.textContent = 'OFF';
+    infoStatus.innerHTML = '<span class="mm-badge-off"><i class="fas fa-check-circle"></i> Inactive</span>';
+    infoSince.innerHTML = '<span style="color:#94a3b8;">—</span>';
+    infoBy.innerHTML = '<span style="color:#94a3b8;">—</span>';
+  }
+}
+
+function mmRefreshLogs() {
+  fetch('{% url "maintenance_logs" %}')
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      var tbody = document.querySelector('#mmLogTable tbody');
+      if (!tbody) return;
+      if (data.logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4"><i class="fas fa-clipboard-list d-block mb-2" style="font-size:1.5rem;opacity:.4;"></i>No maintenance events logged yet.</td></tr>';
+        return;
+      }
+      var html = '';
+      data.logs.forEach(function(log, i) {
+        var badge = log.action === 'enabled'
+          ? '<span class="mm-badge-on"><i class="fas fa-toggle-on"></i> Enabled</span>'
+          : '<span class="mm-badge-off"><i class="fas fa-toggle-off"></i> Disabled</span>';
+        html += '<tr>'
+          + '<td style="color:#9ca3af;">' + (i + 1) + '</td>'
+          + '<td>' + badge + '</td>'
+          + '<td style="font-weight:600;color:#374151;">' + log.performed_by + '</td>'
+          + '<td style="color:#4b5563;font-size:.83rem;">' + log.timestamp + '</td>'
+          + '<td style="font-family:monospace;color:#6b7280;font-size:.82rem;">' + log.ip_address + '</td>'
+          + '</tr>';
+      });
+      tbody.innerHTML = html;
+    }
+  })
+  .catch(function() {});
+}
 </script>
 {% endblock %}

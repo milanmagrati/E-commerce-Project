@@ -1642,3 +1642,67 @@ class RTVFollowUp(models.Model):
 
     def __str__(self):
         return f"RTV Follow-up on #{self.rtv_order.order_id} by {self.user}"
+
+
+# ==================== MAINTENANCE MODE ====================
+class MaintenanceMode(models.Model):
+    """Singleton model to control system-wide maintenance mode."""
+    is_enabled = models.BooleanField(default=False, help_text="When enabled, non-admin users see a maintenance overlay.")
+    message = models.CharField(
+        max_length=500,
+        default='System is under maintenance. Please check back later.',
+        blank=True,
+        help_text="Custom message shown on the maintenance overlay."
+    )
+    enabled_at = models.DateTimeField(null=True, blank=True)
+    enabled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='maintenance_enabled',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Maintenance Mode'
+        verbose_name_plural = 'Maintenance Mode'
+
+    def __str__(self):
+        return f"Maintenance Mode: {'ON' if self.is_enabled else 'OFF'}"
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+
+
+class MaintenanceLog(models.Model):
+    """Logs every enable/disable event of Maintenance Mode with timestamp."""
+    ACTION_CHOICES = [
+        ('enabled', 'Enabled'),
+        ('disabled', 'Disabled'),
+    ]
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='maintenance_logs',
+    )
+    timestamp = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    note = models.CharField(max_length=500, blank=True, default='')
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = 'Maintenance Log'
+        verbose_name_plural = 'Maintenance Logs'
+
+    def __str__(self):
+        return f"Maintenance {self.action} by {self.performed_by} at {self.timestamp}"

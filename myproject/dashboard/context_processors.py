@@ -150,3 +150,28 @@ def low_stock_notifications(request):
         'low_stock_notification_products': items,
         'low_stock_notification_count': len(items),
     }
+
+
+def maintenance_mode(request):
+    """Inject maintenance mode state into every template context."""
+    if not request.user.is_authenticated:
+        return {}
+
+    try:
+        from dashboard.models import MaintenanceMode
+        mm = MaintenanceMode.get_settings()
+        is_admin = (
+            getattr(request.user, 'is_superuser', False) or
+            getattr(request.user, 'role', '') == 'administrator'
+        )
+        return {
+            'MAINTENANCE_MODE': mm.is_enabled,
+            'MAINTENANCE_MESSAGE': mm.message,
+            'IS_ADMIN_USER': is_admin,
+        }
+    except Exception:
+        return {
+            'MAINTENANCE_MODE': False,
+            'MAINTENANCE_MESSAGE': '',
+            'IS_ADMIN_USER': False,
+        }

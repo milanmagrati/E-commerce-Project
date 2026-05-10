@@ -18128,6 +18128,10 @@ def settings_hub(request):
     company = CompanySetup.get_settings()
     api_settings = APISettings.get_settings()
 
+    from .models import MaintenanceMode, MaintenanceLog
+    maintenance = MaintenanceMode.get_settings()
+    maintenance_logs_qs = MaintenanceLog.objects.select_related('performed_by').order_by('-timestamp')[:10]
+
     from hrm.models import ZKDevice
     devices_qs = ZKDevice.objects.all()
     now = timezone.now()
@@ -18233,6 +18237,8 @@ def settings_hub(request):
         'api_settings': api_settings,
         'devices': device_list,
         'device_count': len(device_list),
+        'maintenance': maintenance,
+        'maintenance_logs': maintenance_logs_qs,
     }
     return render(request, 'settings_hub.html', context)
 
@@ -19546,3 +19552,82 @@ def create_exchange_order_view(request, order_id):
         order.exchange_status = 'failed'
         order.save(update_fields=['exchange_status'])
         return JsonResponse({'success': False, 'error': f'Server error: {str(e)}'}, status=500)
+
+
+# ==================== MAINTENANCE MODE ====================
+
+@login_required
+@require_POST
+def maintenance_toggle(request):
+    """Toggle maintenance mode on/off (admin only). Returns JSON."""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+
+    from .models import MaintenanceMode, MaintenanceLog
+
+    try:
+        mm = MaintenanceMode.get_settings()
+        new_state = not mm.is_enabled
+        mm.is_enabled = new_state
+
+        if new_state:
+            mm.enabled_at = timezone.now()
+            mm.enabled_by = request.user
+        else:
+            mm.enabled_at = None
+            mm.enabled_by = None
+
+        # Update custom message if provided
+        custom_message = request.POST.get('message', '').strip()
+        if custom_message:
+            mm.message = custom_message
+
+        mm.save()
+
+        # Get client IP
+        x_forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+        ip = x_forwarded.split(',')[0].strip() if x_forwarded else request.META.get('REMOTE_ADDR')
+
+        # Log the event
+        MaintenanceLog.objects.create(
+            action='enabled' if new_state else 'disabled',
+            performed_by=request.user,
+            ip_address=ip,
+            note=custom_message or '',
+        )
+
+        return JsonResponse({
+            'success': True,
+            'is_enabled': mm.is_enabled,
+            'message': mm.message,
+            'enabled_at': mm.enabled_at.strftime('%b %d, %Y %I:%M %p') if mm.enabled_at else None,
+            'enabled_by': (mm.enabled_by.get_full_name() or mm.enabled_by.username) if mm.enabled_by else None,
+        })
+    except Exception as e:
+        logger.error(f"Maintenance toggle error: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@login_required
+def maintenance_logs(request):
+    """Return maintenance logs as JSON (admin only)."""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+
+    from .models import MaintenanceLog
+    import pytz
+
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    logs = MaintenanceLog.objects.select_related('performed_by').order_by('-timestamp')[:50]
+    data = []
+    for log in logs:
+        data.append({
+            'action': log.action,
+            'action_display': log.get_action_display(),
+            'performed_by': (log.performed_by.get_full_name() or log.performed_by.username) if log.performed_by else 'Unknown',
+            'timestamp': log.timestamp.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+            'ip_address': log.ip_address or '—',
+            'note': log.note,
+        })
+
+    return JsonResponse({'success': True, 'logs': data})

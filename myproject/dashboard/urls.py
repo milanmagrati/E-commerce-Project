@@ -317,4 +317,8 @@ urlpatterns = [
     path('api-integration/<int:config_id>/delete/', views.api_integration_delete, name='api_integration_delete'),
     path('api-integration/<int:config_id>/toggle/', views.api_integration_toggle, name='api_integration_toggle'),
     path('api-integration/<int:config_id>/get/', views.api_integration_get, name='api_integration_get'),
+
+    # ==================== MAINTENANCE MODE ====================
+    path('settings/maintenance/toggle/', views.maintenance_toggle, name='maintenance_toggle'),
+    path('settings/maintenance/logs/', views.maintenance_logs, name='maintenance_logs'),
 ]
