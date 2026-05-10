@@ -1,0 +1,290 @@
+{% extends 'base.html' %}
+{% block title %}RTV Status Setup{% endblock %}
+
+{% block extra_css %}
+<style>
+    .rtvst-page { padding: 0.5rem 0 2rem; }
+
+    /* Header */
+    .rtvst-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 20px;
+        padding: 2rem 2.5rem;
+        color: #fff;
+        margin-bottom: 1.75rem;
+        box-shadow: 0 10px 40px rgba(102,126,234,.28);
+        position: relative;
+        overflow: hidden;
+    }
+    .rtvst-header::before {
+        content:''; position:absolute; border-radius:50%;
+        background:rgba(255,255,255,.06); pointer-events:none;
+        width:320px; height:320px; top:-130px; right:-70px;
+    }
+    .rtvst-header-inner { position:relative; z-index:1; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; }
+    .rtvst-header h2 { margin:0 0 .3rem; font-weight:800; font-size:1.5rem; display:flex; align-items:center; gap:.65rem; }
+    .rtvst-header h2 .icon-wrap { width:42px; height:42px; background:rgba(255,255,255,.18); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:1.1rem; flex-shrink:0; }
+    .rtvst-header p { margin:0; opacity:.82; font-size:.9rem; }
+
+    /* Card */
+    .rtvst-card { background:#fff; border-radius:16px; box-shadow:0 2px 20px rgba(0,0,0,.06); overflow:hidden; margin-bottom:1.5rem; }
+    .rtvst-card-header { padding:1.1rem 1.75rem; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; }
+    .rtvst-card-title { font-size:.95rem; font-weight:700; color:#334155; display:flex; align-items:center; gap:.5rem; }
+    .rtvst-add-btn {
+        height:38px; padding:0 1.1rem; border-radius:10px; border:none;
+        background:linear-gradient(135deg,#667eea,#764ba2); color:#fff;
+        font-size:.83rem; font-weight:700; cursor:pointer;
+        display:inline-flex; align-items:center; gap:.45rem; transition:all .2s;
+        box-shadow:0 3px 10px rgba(102,126,234,.3); white-space:nowrap;
+    }
+    .rtvst-add-btn:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(102,126,234,.42); }
+
+    /* Table */
+    .rtvst-table { width:100%; border-collapse:collapse; min-width:500px; }
+    .rtvst-table thead { background:linear-gradient(135deg,#f8fafc,#f1f5f9); }
+    .rtvst-table thead th { padding:.9rem 1.4rem; font-weight:700; font-size:.73rem; text-transform:uppercase; letter-spacing:.7px; color:#475569; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
+    .rtvst-table thead th:first-child { padding-left:1.75rem; }
+    .rtvst-table thead th:last-child { padding-right:1.75rem; }
+    .rtvst-table tbody tr { border-bottom:1px solid #f1f5f9; transition:background .15s; }
+    .rtvst-table tbody tr:last-child { border-bottom:none; }
+    .rtvst-table tbody tr:hover { background:#fafbff; }
+    .rtvst-table tbody td { padding:.95rem 1.4rem; vertical-align:middle; font-size:.88rem; color:#334155; }
+    .rtvst-table tbody td:first-child { padding-left:1.75rem; }
+    .rtvst-table tbody td:last-child { padding-right:1.75rem; }
+
+    /* Status pill */
+    .status-pill {
+        display:inline-flex; align-items:center; gap:.4rem;
+        padding:.32rem .85rem; border-radius:9px; font-size:.82rem; font-weight:700;
+        color:#fff; white-space:nowrap;
+    }
+    .status-pill .pill-dot { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.7); flex-shrink:0; }
+
+    /* Action btns */
+    .rtvst-actions { display:flex; gap:.45rem; align-items:center; }
+    .rtvst-action-btn { width:32px; height:32px; border-radius:8px; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .18s; font-size:.8rem; }
+    .rtvst-action-btn.edit-btn { background:#eff6ff; color:#3b82f6; }
+    .rtvst-action-btn.edit-btn:hover { background:#3b82f6; color:#fff; box-shadow:0 3px 10px rgba(59,130,246,.28); transform:translateY(-1px); }
+    .rtvst-action-btn.del-btn { background:#fff5f5; color:#ef4444; }
+    .rtvst-action-btn.del-btn:hover { background:#ef4444; color:#fff; box-shadow:0 3px 10px rgba(239,68,68,.28); transform:translateY(-1px); }
+
+    /* Empty state */
+    .rtvst-empty { text-align:center; padding:4rem 2rem; color:#94a3b8; }
+    .rtvst-empty i { font-size:2.8rem; opacity:.35; display:block; margin-bottom:1rem; }
+    .rtvst-empty p { font-size:.9rem; margin:0; }
+
+    /* Modals */
+    .rtvst-modal .modal-content { border-radius:16px; border:none; box-shadow:0 24px 64px rgba(0,0,0,.14); overflow:hidden; }
+    .rtvst-modal .modal-header { background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; padding:1.1rem 1.5rem; border:none; }
+    .rtvst-modal .modal-header .btn-close { filter:brightness(0) invert(1); opacity:.8; }
+    .rtvst-modal .modal-title { font-weight:700; font-size:.95rem; }
+    .rtvst-modal .modal-body { padding:1.5rem; }
+    .rtvst-form-input { border:2px solid #e2e8f0; border-radius:11px; padding:.6rem .9rem; font-size:.87rem; transition:all .2s; background:#f8fafc; width:100%; }
+    .rtvst-form-input:focus { border-color:#667eea; box-shadow:0 0 0 3px rgba(102,126,234,.12); outline:none; background:#fff; }
+    .rtvst-submit-btn { width:100%; padding:.7rem; border:none; border-radius:11px; background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; font-weight:700; font-size:.9rem; cursor:pointer; transition:all .2s; box-shadow:0 4px 14px rgba(102,126,234,.3); }
+    .rtvst-submit-btn:hover { transform:translateY(-2px); box-shadow:0 7px 22px rgba(102,126,234,.42); }
+
+    /* Color picker wrapper */
+    .color-picker-wrap { display:flex; align-items:center; gap:.75rem; }
+    .color-picker-wrap input[type=color] { width:44px; height:38px; border:2px solid #e2e8f0; border-radius:9px; padding:2px; cursor:pointer; flex-shrink:0; }
+    .color-preview-text { font-size:.82rem; color:#64748b; font-weight:500; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rtvst-page">
+
+    <!-- Header -->
+    <div class="rtvst-header">
+        <div class="rtvst-header-inner">
+            <div>
+                <h2><span class="icon-wrap"><i class="fas fa-tags"></i></span> RTV Status Setup</h2>
+                <p>Manage custom statuses for Return-to-Vendor orders. These are local statuses — not fetched from NCM.</p>
+            </div>
+            <button class="rtvst-add-btn" onclick="openAddModal()">
+                <i class="fas fa-plus"></i> Add Status
+            </button>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+    {% for msg in messages %}
+    <div class="alert alert-{% if msg.tags == 'error' %}danger{% else %}{{ msg.tags }}{% endif %} alert-dismissible fade show mb-3" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- Table Card -->
+    <div class="rtvst-card">
+        <div class="rtvst-card-header">
+            <span class="rtvst-card-title"><i class="fas fa-list-ul"></i> All RTV Statuses</span>
+            <small class="text-muted">{{ statuses|length }} status{{ statuses|length|pluralize:"es" }}</small>
+        </div>
+        <div class="table-responsive">
+            {% if statuses %}
+            <table class="rtvst-table">
+                <thead>
+                    <tr>
+                        <th>S/N</th>
+                        <th>Status Name</th>
+                        <th>Color</th>
+                        <th>Description</th>
+                        <th>Active</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in statuses %}
+                    <tr>
+                        <td style="color:#cbd5e1; font-size:.8rem; font-weight:700; width:48px;">{{ forloop.counter }}</td>
+                        <td>
+                            <span class="status-pill" style="background:{{ s.color }};">
+                                <span class="pill-dot"></span>
+                                {{ s.name }}
+                            </span>
+                        </td>
+                        <td>
+                            <div style="display:flex; align-items:center; gap:.5rem;">
+                                <span style="width:20px; height:20px; border-radius:5px; background:{{ s.color }}; display:inline-block; border:1px solid rgba(0,0,0,.1);"></span>
+                                <code style="font-size:.8rem; color:#64748b;">{{ s.color }}</code>
+                            </div>
+                        </td>
+                        <td style="color:#64748b; max-width:260px;">{{ s.description|default:"—" }}</td>
+                        <td>
+                            {% if s.is_active %}
+                            <span class="badge bg-success" style="font-size:.72rem;">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary" style="font-size:.72rem;">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="rtvst-actions">
+                                <button class="rtvst-action-btn edit-btn" title="Edit" onclick="openEditModal({{ s.id }})">
+                                    <i class="fas fa-pen"></i>
+                                </button>
+                                <form method="post" action="{% url 'rtv_status_delete' s.id %}" onsubmit="return confirm('Delete status \'{{ s.name }}\'? Orders using this status will be unlinked.');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="rtvst-action-btn del-btn" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="rtvst-empty">
+                <i class="fas fa-tags"></i>
+                <p>No RTV statuses yet. Click <strong>Add Status</strong> to create your first one.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+
+<!-- ===== ADD STATUS MODAL ===== -->
+<div class="modal fade rtvst-modal" id="addStatusModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:440px;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i>Add RTV Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form method="post" action="{% url 'rtv_status_add' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold mb-1" style="font-size:.85rem;">Status Name <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="rtvst-form-input" placeholder="e.g. In Transit, Received, Resolved…" required maxlength="100">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold mb-1" style="font-size:.85rem;">Color</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" name="color" id="addColorPicker" value="#667eea" oninput="document.getElementById('addColorText').textContent=this.value;">
+                            <span class="color-preview-text" id="addColorText">#667eea</span>
+                        </div>
+                        <small class="text-muted d-block mt-1" style="font-size:.75rem;">Pick a color to visually identify this status in the table.</small>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-bold mb-1" style="font-size:.85rem;">Description <span class="text-muted fw-normal">(optional)</span></label>
+                        <textarea name="description" class="rtvst-form-input" rows="2" placeholder="Brief description of this status…"></textarea>
+                    </div>
+                    <button type="submit" class="rtvst-submit-btn"><i class="fas fa-check me-1"></i> Create Status</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== EDIT STATUS MODAL ===== -->
+<div class="modal fade rtvst-modal" id="editStatusModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:440px;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-pen me-2"></i>Edit RTV Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form method="post" id="editStatusForm" action="">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold mb-1" style="font-size:.85rem;">Status Name <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="rtvst-form-input" required maxlength="100">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold mb-1" style="font-size:.85rem;">Color</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" name="color" id="editColorPicker" oninput="document.getElementById('editColorText').textContent=this.value;">
+                            <span class="color-preview-text" id="editColorText"></span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold mb-1" style="font-size:.85rem;">Description</label>
+                        <textarea name="description" id="editDescription" class="rtvst-form-input" rows="2"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <div class="form-check">
+                            <input type="checkbox" name="is_active" id="editIsActive" class="form-check-input" value="1">
+                            <label class="form-check-label" for="editIsActive" style="font-size:.85rem; font-weight:600;">Active</label>
+                        </div>
+                    </div>
+                    <button type="submit" class="rtvst-submit-btn"><i class="fas fa-save me-1"></i> Save Changes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function openAddModal() {
+        const modal = new bootstrap.Modal(document.getElementById('addStatusModal'));
+        modal.show();
+    }
+
+    function openEditModal(statusId) {
+        fetch(`/setup/rtv-status/${statusId}/get/`)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) { alert('Failed to load status data.'); return; }
+                const d = data.data;
+                document.getElementById('editStatusForm').action = `/setup/rtv-status/${d.id}/edit/`;
+                document.getElementById('editName').value = d.name;
+                document.getElementById('editColorPicker').value = d.color;
+                document.getElementById('editColorText').textContent = d.color;
+                document.getElementById('editDescription').value = d.description || '';
+                document.getElementById('editIsActive').checked = d.is_active;
+                const modal = new bootstrap.Modal(document.getElementById('editStatusModal'));
+                modal.show();
+            })
+            .catch(() => alert('Failed to load status data.'));
+    }
+</script>
+{% endblock %}

@@ -18312,7 +18312,141 @@ def company_setup(request):
     return render(request, 'company_setup.html', {'company': company})
 
 
+# ===================== RTV STATUS MANAGEMENT =====================
+
+@login_required
+def rtv_status_list(request):
+    """List all RTV statuses - CRUD management page."""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, 'Access denied.', extra_tags='permission_denied')
+        return redirect('dashboard')
+    from dashboard.models import RTVStatus
+    statuses = RTVStatus.objects.all().order_by('name')
+    return render(request, 'rtv_status_list.html', {'statuses': statuses})
+
+
+@login_required
+@require_POST
+def rtv_status_add(request):
+    """Add a new RTV status."""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+    from dashboard.models import RTVStatus
+    name = request.POST.get('name', '').strip()
+    color = request.POST.get('color', '#667eea').strip()
+    description = request.POST.get('description', '').strip()
+    if not name:
+        messages.error(request, 'Status name is required.')
+        return redirect('rtv_status_list')
+    if RTVStatus.objects.filter(name__iexact=name).exists():
+        messages.error(request, f'A status named "{name}" already exists.')
+        return redirect('rtv_status_list')
+    RTVStatus.objects.create(name=name, color=color, description=description)
+    messages.success(request, f'RTV Status "{name}" created successfully.')
+    return redirect('rtv_status_list')
+
+
+@login_required
+@require_POST
+def rtv_status_edit(request, status_id):
+    """Edit an existing RTV status."""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+    from dashboard.models import RTVStatus
+    status = get_object_or_404(RTVStatus, pk=status_id)
+    name = request.POST.get('name', '').strip()
+    color = request.POST.get('color', status.color).strip()
+    description = request.POST.get('description', '').strip()
+    is_active = request.POST.get('is_active', '1') == '1'
+    if not name:
+        messages.error(request, 'Status name is required.')
+        return redirect('rtv_status_list')
+    if RTVStatus.objects.filter(name__iexact=name).exclude(pk=status_id).exists():
+        messages.error(request, f'A status named "{name}" already exists.')
+        return redirect('rtv_status_list')
+    status.name = name
+    status.color = color
+    status.description = description
+    status.is_active = is_active
+    status.save()
+    messages.success(request, f'RTV Status "{name}" updated successfully.')
+    return redirect('rtv_status_list')
+
+
+@login_required
+@require_POST
+def rtv_status_delete(request, status_id):
+    """Delete an RTV status."""
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+    from dashboard.models import RTVStatus
+    status = get_object_or_404(RTVStatus, pk=status_id)
+    name = status.name
+    # Unlink any RTVOrders using this status
+    status.rtv_orders.update(rtv_status=None)
+    status.delete()
+    messages.success(request, f'RTV Status "{name}" deleted.')
+    return redirect('rtv_status_list')
+
+
+@login_required
+def rtv_status_get(request, status_id):
+    """Return status data as JSON for edit modal."""
+    from dashboard.models import RTVStatus
+    status = get_object_or_404(RTVStatus, pk=status_id)
+    return JsonResponse({
+        'success': True,
+        'data': {
+            'id': status.id,
+            'name': status.name,
+            'color': status.color,
+            'description': status.description,
+            'is_active': status.is_active,
+        }
+    })
+
+
+@login_required
+@require_POST
+def rtv_set_status(request, rtv_id):
+    """AJAX: Set the rtv_status on an RTVOrder (local, not NCM)."""
+    import json
+    from dashboard.models import RTVOrder, RTVStatus
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    status_id = body.get('status_id')
+    try:
+        rtv = RTVOrder.objects.get(pk=rtv_id)
+    except RTVOrder.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'RTV not found'}, status=404)
+
+    if status_id:
+        try:
+            new_status = RTVStatus.objects.get(pk=int(status_id), is_active=True)
+            rtv.rtv_status = new_status
+            rtv.save(update_fields=['rtv_status'])
+            return JsonResponse({
+                'success': True,
+                'status': {
+                    'id': new_status.id,
+                    'name': new_status.name,
+                    'color': new_status.color,
+                }
+            })
+        except (RTVStatus.DoesNotExist, ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Invalid status'}, status=400)
+    else:
+        # Clear status
+        rtv.rtv_status = None
+        rtv.save(update_fields=['rtv_status'])
+        return JsonResponse({'success': True, 'status': None})
+
+
 # ===================== NCM RTVs (Return to Vendor) =====================
+
 
 @login_required
 @permission_required('can_view_orders')
@@ -18457,7 +18591,7 @@ def ncm_rtvs_list(request):
         except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
             api_config_id = ''
 
-    qs = RTVOrder.objects.select_related('vendor', 'api_config').order_by(
+    qs = RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status').order_by(
         models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
     )
 
@@ -18528,18 +18662,35 @@ def ncm_rtvs_list(request):
 
     page_rtvs = []
     for rtv in page_objs:
-        # Use rtv_marked_at (actual NCM RTV date) if available, else fall back to created_at
-        display_time = rtv.rtv_marked_at or rtv.created_at
-        display_time_str = display_time.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if display_time else '—'
+        # rtv_marked_at = authoritative date (from NCM RTV comment added_time)
+        # created_at    = local DB insert time; may have been corrupted in older syncs
+        #                 by overwriting with NCM's order created_date — do NOT trust it
+        #                 as a fallback for display.
+        if rtv.rtv_marked_at:
+            display_time_str = rtv.rtv_marked_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p')
+        else:
+            display_time_str = '—'
+            
+        status_dict = None
+        if rtv.rtv_status:
+            status_dict = {
+                'id': rtv.rtv_status.id,
+                'name': rtv.rtv_status.name,
+                'color': rtv.rtv_status.color,
+            }
+            
         page_rtvs.append({
             'rtv_id': rtv.id,
             'order_id': rtv.order_id,
             'comment': rtv.comment or '—',
             'created_at': display_time_str,
-            'status': '',
+            'status': status_dict,
             'api_config_name': rtv.api_config.api_name if rtv.api_config else None,
             'followup': followup_meta.get(rtv.id),
         })
+
+    from dashboard.models import RTVStatus
+    rtv_statuses = list(RTVStatus.objects.filter(is_active=True).order_by('name').values('id', 'name', 'color'))
 
     context = {
         'rtvs': page_rtvs,
@@ -18555,6 +18706,7 @@ def ncm_rtvs_list(request):
         'ncm_api_configs': ncm_api_configs,
         'selected_api_config_id': api_config_id,
         'selected_config': selected_config,
+        'rtv_statuses': rtv_statuses,
     }
     return render(request, 'ncm_rtvs.html', context)
 
@@ -18741,7 +18893,14 @@ def ncm_rtvs_sync(request):
                     new_count += len(new_rtvs)
                     if date_map:
                         for oid, dt in date_map.items():
-                            RTVOrder.objects.filter(order_id=oid).update(created_at=dt)
+                            # Store NCM's created_date into rtv_marked_at as a fallback
+                            # display date. Do NOT overwrite created_at — that field tracks
+                            # when we first saved the record locally and is used as the last
+                            # fallback. The real RTV date will be set from comment added_time
+                            # during the immediate comment-fetch below.
+                            RTVOrder.objects.filter(
+                                order_id=oid, rtv_marked_at__isnull=True
+                            ).update(rtv_marked_at=dt)
 
                     # Immediately fetch comments for new RTVs (up to 8) to get rtv_marked_at
                     # New RTVs are few per day so this is safe and ensures correct date from the start

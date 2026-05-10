@@ -1143,6 +1143,9 @@
                         <li class="{% if request.resolver_match.url_name == 'setup_management' %}active{% endif %}">
                             <a href="{% url 'setup_management' %}">Payment & Status Setup</a>
                         </li>
+                        <li class="{% if request.resolver_match.url_name == 'rtv_status_list' %}active{% endif %}">
+                            <a href="{% url 'rtv_status_list' %}"><i class="fas fa-tags me-1"></i> RTV Status</a>
+                        </li>
                         <li class="{% if request.resolver_match.url_name == 'api_integration_list' %}active{% endif %}">
                             <a href="{% url 'api_integration_list' %}"><i class="fas fa-plug me-1"></i> API
                                 Integration</a>

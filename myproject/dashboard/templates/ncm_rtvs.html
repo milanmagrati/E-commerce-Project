@@ -1625,6 +1625,7 @@
                         <th>S/N</th>
                         <th>Order ID</th>
                         <th>Comment</th>
+                        <th>Status</th>
                         {% if not selected_api_config_id %}<th>API Portal</th>{% endif %}
                         <th>Last Follow-Up</th>
                         <th>Added Time</th>
@@ -1668,6 +1669,16 @@
                             <span class="comment-tag default"><i class="fas fa-comment-dots"></i> {{ comment }}</span>
                             {% endif %}
                             {% endwith %}
+                        </td>
+                        <td class="status-col" id="status-col-{{ rtv.rtv_id }}">
+                            {% if rtv.status %}
+                            <span class="status-pill" style="background:{{ rtv.status.color }}; display:inline-flex; align-items:center; gap:0.4rem; padding:0.32rem 0.85rem; border-radius:9px; font-size:0.82rem; font-weight:700; color:#fff; white-space:nowrap;">
+                                <span class="pill-dot" style="width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.7); flex-shrink:0;"></span>
+                                {{ rtv.status.name }}
+                            </span>
+                            {% else %}
+                            <span class="text-muted small">Not Set</span>
+                            {% endif %}
                         </td>
                         {% if not selected_api_config_id %}
                         <td>
@@ -1727,6 +1738,10 @@
                                 <button class="rtv-action-btn view-btn" title="View NCM Order Details"
                                     onclick="viewOrderDetails('{{ rtv.order_id|escapejs }}')">
                                     <i class="fas fa-external-link-alt"></i>
+                                </button>
+                                <button class="rtv-action-btn edit-btn" style="background:#eff6ff; color:#3b82f6;" title="Set Status"
+                                    onclick="openSetStatusModal({{ rtv.rtv_id }}, '{{ rtv.order_id|escapejs }}', {% if rtv.status %}{{ rtv.status.id }}{% else %}null{% endif %})">
+                                    <i class="fas fa-tag"></i>
                                 </button>
                             </div>
                         </td>
@@ -1926,6 +1941,36 @@
     </div>
 </div>
 
+<!-- ===================== SET STATUS MODAL ===================== -->
+<div class="modal fade rtv-modal" id="setStatusModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:400px;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-tag me-2"></i>
+                    Set Status — #<span id="setStatusOrderId"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="setStatusRtvId">
+                <div class="mb-4">
+                    <label class="form-label fw-bold mb-2" style="font-size:0.85rem;">Select Status</label>
+                    <select class="rtv-form-input" id="setStatusSelect">
+                        <option value="">-- No Status (Clear) --</option>
+                        {% for st in rtv_statuses %}
+                        <option value="{{ st.id }}">{{ st.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="rtv-submit-btn" id="setStatusBtn" onclick="saveStatus()">
+                    <i class="fas fa-save me-1"></i> Save Status
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===================== ORDER DETAIL MODAL ===================== -->
 <div class="modal fade rtv-modal" id="orderDetailModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
@@ -1962,6 +2007,69 @@
 <script>
     (function () {
         'use strict';
+
+        // ==================== SET STATUS SYSTEM ====================
+        window.openSetStatusModal = function(rtvId, orderId, currentStatusId) {
+            document.getElementById('setStatusRtvId').value = rtvId;
+            document.getElementById('setStatusOrderId').textContent = orderId;
+            document.getElementById('setStatusSelect').value = currentStatusId || '';
+            const modal = new bootstrap.Modal(document.getElementById('setStatusModal'));
+            modal.show();
+        };
+
+        window.saveStatus = function() {
+            const btn = document.getElementById('setStatusBtn');
+            const rtvId = document.getElementById('setStatusRtvId').value;
+            const statusId = document.getElementById('setStatusSelect').value;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
+            
+            fetch(`/api/rtv/${rtvId}/set-status/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCSRFToken(),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status_id: statusId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const col = document.getElementById(`status-col-${rtvId}`);
+                    if (data.status) {
+                        col.innerHTML = `
+                            <span class="status-pill" style="background:${data.status.color}; display:inline-flex; align-items:center; gap:0.4rem; padding:0.32rem 0.85rem; border-radius:9px; font-size:0.82rem; font-weight:700; color:#fff; white-space:nowrap;">
+                                <span class="pill-dot" style="width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.7); flex-shrink:0;"></span>
+                                ${data.status.name}
+                            </span>
+                        `;
+                    } else {
+                        col.innerHTML = '<span class="text-muted small">Not Set</span>';
+                    }
+                    
+                    // Update the onclick handler to pass the new status ID
+                    const actionBtn = col.nextElementSibling.nextElementSibling.nextElementSibling.nextElementSibling.querySelector('.edit-btn');
+                    if (actionBtn) {
+                        const orderId = document.getElementById('setStatusOrderId').textContent;
+                        actionBtn.setAttribute('onclick', `openSetStatusModal(${rtvId}, '${orderId}', ${data.status ? data.status.id : 'null'})`);
+                    }
+
+                    showToast('Status updated successfully.', 'success');
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('setStatusModal'));
+                    modal.hide();
+                } else {
+                    showToast(data.error || 'Failed to update status.', 'error');
+                }
+            })
+            .catch(() => {
+                showToast('A network error occurred.', 'error');
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save me-1"></i> Save Status';
+            });
+        };
 
         // ==================== FOLLOW-UP SYSTEM ====================
         const followUpLoadedOrders = {};

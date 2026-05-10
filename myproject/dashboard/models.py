@@ -1533,6 +1533,28 @@ class APISettings(models.Model):
         super().save(*args, **kwargs)
 
 
+# ==================== RTV STATUS (local, not from NCM) ====================
+class RTVStatus(models.Model):
+    """User-defined statuses for RTV orders (stored locally, not fetched from NCM)"""
+    name = models.CharField(max_length=100, unique=True)
+    color = models.CharField(
+        max_length=7, default='#667eea',
+        help_text="Hex color code (e.g. #667eea)"
+    )
+    description = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'RTV Status'
+        verbose_name_plural = 'RTV Statuses'
+
+    def __str__(self):
+        return self.name
+
+
 # ==================== NCM RTV (Return to Vendor) ====================
 class RTVOrder(models.Model):
     """Tracks orders returned to vendor via NCM API"""
@@ -1555,6 +1577,13 @@ class RTVOrder(models.Model):
     tracking_id = models.CharField(max_length=100, blank=True, default='')
     last_status = models.CharField(max_length=100, blank=True, default='')
     product_description = models.TextField(blank=True, default='')
+    rtv_status = models.ForeignKey(
+        'RTVStatus',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rtv_orders',
+        help_text="Locally assigned status for this RTV",
+    )
     vendor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
