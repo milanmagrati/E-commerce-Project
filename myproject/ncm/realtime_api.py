@@ -44,13 +44,16 @@ def set_cached_comments(order_id, data):
     _comment_cache[cache_key] = (data, timezone.now())
 
 
-def send_ncm_comment_async(ncm_order_id, comment_text, order_id, user_id):
+def send_ncm_comment_async(ncm_order_id, comment_text, order_id, user_id, api_config_id=None):
     """
     Send comment to NCM in background thread to avoid blocking the response.
     This allows the API to return immediately to the user.
+    Uses the order's api_config_id to ensure the correct API credentials are used.
     """
     try:
-        result = ncm_service.create_order_comment(ncm_order_id, comment_text)
+        # Use order-specific API config if available (same credentials used when creating the NCM shipment)
+        svc = NCMService(api_config_id=api_config_id) if api_config_id else ncm_service
+        result = svc.create_order_comment(ncm_order_id, comment_text)
         
         if result['success']:
             logger.info(f"NCM comment sent successfully for order {order_id}")
@@ -407,6 +410,9 @@ def api_get_order_comments(request, order_id):
 
         all_comments = []
 
+        # Use order's specific API config (same credentials used when creating the NCM shipment)
+        order_ncm_service = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
+
         # 0. Fetch local comments from OrderActivityLog (NCM comments only)
         local_comments = OrderActivityLog.objects.filter(
             order=order,
@@ -426,42 +432,52 @@ def api_get_order_comments(request, order_id):
                 'is_local': True
             })
 
-        # 1. Fetch order details - extract comments if NCM API includes them
-        details_result = ncm_service.get_order_details(order.ncm_order_id)
-        if details_result['success']:
-            data = details_result['data']
-            if isinstance(data, dict):
-                raw_comments = data.get('comments', data.get('comment', []))
-                if isinstance(raw_comments, list):
-                    for c in raw_comments:
-                        if isinstance(c, dict):
-                            all_comments.append(c)
-                        elif isinstance(c, str) and c.strip():
-                            all_comments.append({
-                                'comment': c,
-                                'created_by': 'NCM',
-                                'role': 'ncm'
-                            })
-                elif isinstance(raw_comments, str) and raw_comments.strip():
-                    all_comments.append({
-                        'comment': raw_comments,
-                        'created_by': 'NCM',
-                        'role': 'ncm'
-                    })
-
-        # Fetch NCM Staff comments from /ordercomment endpoint
+        # 1. Fetch ALL comments from the NCM /order/comment endpoint (all authors)
+        # This matches the working ncm_rtvs.html implementation which uses get_order_comments
         try:
-            staff_result = ncm_service.get_staff_comments(order.ncm_order_id)
-            if staff_result.get('success'):
-                staff_comments = staff_result.get('data', [])
-                # De-duplicate: skip staff comments whose text already exists
+            all_ncm_result = order_ncm_service.get_order_comments(order.ncm_order_id)
+            if all_ncm_result.get('success'):
+                ncm_comments = all_ncm_result.get('data', [])
                 existing_texts = {c.get('comment', '').strip().lower() for c in all_comments}
-                for sc in staff_comments:
-                    if sc.get('comment', '').strip().lower() not in existing_texts:
-                        all_comments.append(sc)
-                        existing_texts.add(sc.get('comment', '').strip().lower())
-        except Exception as staff_err:
-            logger.warning(f"Could not fetch NCM staff comments for order {order.ncm_order_id}: {staff_err}")
+                for nc in ncm_comments:
+                    comment_text = nc.get('comment', '').strip().lower()
+                    if comment_text not in existing_texts:
+                        # Normalize field names to match createCommentElement expectations
+                        all_comments.append({
+                            'comment': nc.get('comment', ''),
+                            'created_by': nc.get('added_by', nc.get('created_by', 'NCM Staff')),
+                            'created_at': nc.get('added_time', nc.get('created_at', '')),
+                            'role': 'ncm' if 'ncm' in nc.get('added_by', '').lower() else 'admin',
+                            'is_ncm_staff': 'ncm' in nc.get('added_by', '').lower(),
+                        })
+                        existing_texts.add(comment_text)
+        except Exception as ncm_err:
+            logger.warning(f"Could not fetch NCM comments for order {order.ncm_order_id}: {ncm_err}")
+
+        # 2. Also check order details endpoint for any embedded comments
+        try:
+            details_result = order_ncm_service.get_order_details(order.ncm_order_id)
+            if details_result['success']:
+                data = details_result['data']
+                if isinstance(data, dict):
+                    raw_comments = data.get('comments', data.get('comment', []))
+                    existing_texts = {c.get('comment', '').strip().lower() for c in all_comments}
+                    if isinstance(raw_comments, list):
+                        for c in raw_comments:
+                            if isinstance(c, dict):
+                                ct = c.get('comment', c.get('comments', '')).strip().lower()
+                                if ct not in existing_texts:
+                                    all_comments.append(c)
+                                    existing_texts.add(ct)
+                            elif isinstance(c, str) and c.strip() and c.strip().lower() not in existing_texts:
+                                all_comments.append({
+                                    'comment': c,
+                                    'created_by': 'NCM',
+                                    'role': 'ncm'
+                                })
+                                existing_texts.add(c.strip().lower())
+        except Exception as detail_err:
+            logger.warning(f"Could not fetch NCM order details for order {order.ncm_order_id}: {detail_err}")
 
         # Cache the results to reduce API calls (429 rate limiting)
         set_cached_comments(order_id, all_comments)
@@ -524,9 +540,10 @@ def api_add_order_comment(request, order_id):
             del _comment_cache[cache_key]
 
         # Send comment to NCM in background (non-blocking)
+        # Pass order's api_config_id so the correct API credentials are used
         thread = threading.Thread(
             target=send_ncm_comment_async,
-            args=(order.ncm_order_id, comment_text, order.id, request.user.id),
+            args=(order.ncm_order_id, comment_text, order.id, request.user.id, order.api_config_id),
             daemon=True
         )
         thread.start()

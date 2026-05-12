@@ -60,6 +60,58 @@ class NCMService:
                 except (ValueError, AttributeError):
                     error_msg = e.response.text if hasattr(e.response, 'text') else str(e)
             return {'success': False, 'error': error_msg}
+
+    def _fetch_comments(self, ncm_order_id: int):
+        """Fetch comments for an NCM order, trying v2 then v1.
+
+        The NCM API returns HTTP 404 when an order has NO comments yet.
+        This is normal behaviour (not an error) — we treat 404 as an
+        empty list so it never pollutes the terminal logs.
+        """
+        import requests as _req
+        params = {'id': ncm_order_id}
+        urls_to_try = [
+            f"{self.base_url_v2}/order/comment",
+            f"{self.base_url}/order/comment",
+        ]
+        for url in urls_to_try:
+            try:
+                if self.base_url_v2 == self.base_url and url == urls_to_try[1]:
+                    # Skip duplicate when v2 == v1 (no second base URL configured)
+                    break
+                timeout = 30
+                try:
+                    from dashboard.models import APISettings
+                    timeout = APISettings.get_settings().ncm_api_timeout
+                except Exception:
+                    pass
+                resp = _req.get(url, headers=self.headers, params=params, timeout=timeout)
+                if resp.status_code == 404:
+                    # No comments for this order — this is normal, not an error
+                    logger.debug(f"NCM: no comments for order {ncm_order_id} at {url} (404 = empty)")
+                    return {'success': True, 'data': []}
+                resp.raise_for_status()
+                return {'success': True, 'data': resp.json()}
+            except _req.exceptions.Timeout:
+                logger.warning(f"NCM comment fetch timeout: {url}")
+                continue
+            except _req.exceptions.RequestException as e:
+                status = getattr(getattr(e, 'response', None), 'status_code', None)
+                if status == 404:
+                    logger.debug(f"NCM: no comments for order {ncm_order_id} (404 = empty)")
+                    return {'success': True, 'data': []}
+                logger.warning(f"NCM comment fetch error ({url}): {e}")
+                continue
+        # All URLs failed — return empty rather than error to keep UI clean
+        return {'success': True, 'data': []}
+
+    def _post_comment(self, ncm_order_id: int, comment: str):
+        """Post a comment to NCM, trying v2 then v1."""
+        data = {'orderid': ncm_order_id, 'comments': comment}
+        result = self._make_request('POST', f"{self.base_url_v2}/order/comment", data=data)
+        if not result['success']:
+            result = self._make_request('POST', f"{self.base_url}/comment", data=data)
+        return result
     
     def get_branches(self):
         """Get list of NCM branches"""
@@ -133,77 +185,56 @@ class NCMService:
         return self._make_request('POST', url, data=data)
 
     def get_staff_comments(self, ncm_order_id: int):
-        """Fetch NCM order comments via GET /order/comment?id=<ncm_order_id>.
+        """Fetch NCM order comments, returning only NCM Staff entries.
 
-        NCM API docs:
-          GET /api/v1/order/comment?id=ORDERID
-          Returns a list: [{orderid, comments, addedBy, added_time}, ...]
-
-        Returns only comments where addedBy == 'NCM Staff'.
+        404 from NCM = no comments yet (treated as empty list, not an error).
         """
-        url = f"{self.base_url}/order/comment"
-        params = {'id': ncm_order_id}
-        result = self._make_request('GET', url, params=params)
+        result = self._fetch_comments(ncm_order_id)
         if result['success']:
             raw = result['data']
-            # API returns a flat JSON list
-            if isinstance(raw, list):
-                items = raw
-            elif isinstance(raw, dict):
-                # Fallback if wrapped in an object
-                items = raw.get('data', raw.get('results', []))
-                if isinstance(items, dict):
-                    items = [items]
-            else:
-                items = []
-
-            staff_comments = []
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                if item.get('addedBy') == 'NCM Staff':
-                    staff_comments.append({
-                        'comment': item.get('comments', ''),
-                        'created_by': item.get('addedBy', 'NCM Staff'),
-                        'created_at': item.get('added_time', ''),
-                        'role': 'ncm',
-                        'is_ncm_staff': True,
-                    })
+            items = raw if isinstance(raw, list) else raw.get('data', raw.get('results', [])) if isinstance(raw, dict) else []
+            if isinstance(items, dict):
+                items = [items]
+            staff_comments = [
+                {
+                    'comment': item.get('comments', ''),
+                    'created_by': item.get('addedBy', 'NCM Staff'),
+                    'created_at': item.get('added_time', ''),
+                    'role': 'ncm',
+                    'is_ncm_staff': True,
+                }
+                for item in items
+                if isinstance(item, dict) and item.get('addedBy') == 'NCM Staff'
+            ]
             return {'success': True, 'data': staff_comments}
         return result
 
     def get_order_comments(self, ncm_order_id: int):
-        """Fetch all comments for an NCM order (all authors)"""
-        url = f"{self.base_url}/order/comment"
-        params = {'id': ncm_order_id}
-        result = self._make_request('GET', url, params=params)
+        """Fetch all comments for an NCM order (all authors).
+
+        404 from NCM = no comments yet (treated as empty list, not an error).
+        """
+        result = self._fetch_comments(ncm_order_id)
         if result['success']:
             raw = result['data']
-            if isinstance(raw, list):
-                items = raw
-            elif isinstance(raw, dict):
-                items = raw.get('data', raw.get('results', []))
-                if isinstance(items, dict):
-                    items = [items]
-            else:
-                items = []
-            comments = []
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                comments.append({
+            items = raw if isinstance(raw, list) else raw.get('data', raw.get('results', [])) if isinstance(raw, dict) else []
+            if isinstance(items, dict):
+                items = [items]
+            comments = [
+                {
                     'comment': item.get('comments', item.get('comment', '')),
                     'added_by': item.get('addedBy', item.get('added_by', 'Unknown')),
                     'added_time': item.get('added_time', item.get('created_at', '')),
-                })
+                }
+                for item in items
+                if isinstance(item, dict)
+            ]
             return {'success': True, 'data': comments}
         return result
 
     def create_order_comment(self, ncm_order_id: int, comment: str):
-        """Add comment to NCM order"""
-        url = f"{self.base_url}/comment"
-        data = {'orderid': ncm_order_id, 'comments': comment}
-        return self._make_request('POST', url, data=data)
+        """Add comment to NCM order (tries v2 then v1)."""
+        return self._post_comment(ncm_order_id, comment)
 
     def get_vendor_rtvs_by_status(self, page_size: int = 500, include_recent: bool = True):
         """Fetch active RTVs using the status filter — fast path.
