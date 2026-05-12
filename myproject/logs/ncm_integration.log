@@ -5349,3 +5349,5 @@ Created system user for webhook operations
 [ERROR] 2026-05-12 15:39:06 ncm_service._make_request:55 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18801791
 [DEBUG] 2026-05-12 15:39:16 ncm_service._fetch_comments:91 NCM: no comments for order 18801791 at https://portal.nepalcanmove.com/api/v2/order/comment (404 = empty)
 [ERROR] 2026-05-12 15:39:16 ncm_service._make_request:55 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18801791
+[DEBUG] 2026-05-12 15:41:36 ncm_service._fetch_comments:91 NCM: no comments for order 18801791 at https://portal.nepalcanmove.com/api/v2/order/comment (404 = empty)
+[ERROR] 2026-05-12 15:41:37 ncm_service._make_request:55 NCM API error: 404 Client Error: Not Found for url: https://portal.nepalcanmove.com/api/v1/order?id=18801791

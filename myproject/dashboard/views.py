@@ -2436,7 +2436,8 @@ def variation_delete(request, variation_id):
 @login_required
 @permission_required('can_view_customers')
 def customers_list(request):
-    """List all customers with search and filter"""
+    """List all customers with search, filter, and pagination"""
+    from django.core.paginator import Paginator
     customers = Customer.objects.all().order_by('-created_at')
 
     # Search
@@ -2453,11 +2454,25 @@ def customers_list(request):
     if customer_type:
         customers = customers.filter(customer_type=customer_type)
 
-    # Add statistics
+    # Total count (before pagination, for stats cards)
+    total_customers = customers.count()
+    vip_count = customers.filter(customer_type='vip').count()
+
+    # Per-page selection
+    valid_per_page = ('100', '200', '300', '500')
+    per_page = request.GET.get('per_page', '100')
+    if per_page not in valid_per_page:
+        per_page = '100'
+
+    paginator = Paginator(customers, int(per_page))
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    # Build stats only for the current page's customers
     customers_data = []
-    for customer in customers:
-      orders = customer.orders.all()
-      customers_data.append({
+    for customer in page_obj.object_list:
+        orders = customer.orders.all()
+        customers_data.append({
             'customer': customer,
             'total_orders': orders.count(),
             'total_spent': orders.filter(payment_status='paid').aggregate(
@@ -2467,6 +2482,10 @@ def customers_list(request):
 
     context = {
         'customers_data': customers_data,
+        'page_obj': page_obj,
+        'per_page': per_page,
+        'total_customers': total_customers,
+        'vip_count': vip_count,
         'search_query': search_query,
         'customer_type': customer_type,
     }
