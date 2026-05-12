@@ -613,8 +613,7 @@
                         style="max-height:44px;max-width:180px;object-fit:contain;"></div>
                 {% endif %}
                 <h3>{{ COMPANY_NAME|default:'Trendy Shopping' }}</h3>
-                {% if COMPANY_TAGLINE %}<small class="text-light d-block" style="opacity:.7;font-size:.75rem;">{{
-                    COMPANY_TAGLINE }}</small>{% endif %}
+                {% if COMPANY_TAGLINE %}<small class="text-light d-block" style="opacity:.7;font-size:.75rem;">{{ COMPANY_TAGLINE }}</small>{% endif %}
                 <p class="text-warning fw-bold mb-0">{{ user.get_role_display|default:"User" }}</p>
             </div>
 
@@ -1433,11 +1432,9 @@
                                             <i class="fas fa-user"></i>
                                         </div>
                                         <div>
-                                            <strong class="d-block">{{ user.get_full_name|default:user.username
-                                                }}</strong>
+                                            <strong class="d-block">{{ user.get_full_name|default:user.username }}</strong>
                                             <small class="text-muted">{{ user.email }}</small>
-                                            <div class="mt-1"><span class="badge bg-primary">{{ user.get_role_display
-                                                    }}</span></div>
+                                            <div class="mt-1"><span class="badge bg-primary">{{ user.get_role_display }}</span></div>
                                         </div>
                                     </div>
                                 </li>
