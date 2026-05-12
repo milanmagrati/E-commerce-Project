@@ -1172,6 +1172,8 @@
                                         <i class="fas fa-barcode"></i>
                                     {% elif log.action_type == 'notes_added' or log.action_type == 'notes_updated' %}
                                         <i class="fas fa-sticky-note"></i>
+                                    {% elif log.action_type == 'redirected' %}
+                                        <i class="fas fa-random"></i>
                                     {% else %}
                                         <i class="fas fa-edit"></i>
                                     {% endif %}
@@ -2607,6 +2609,11 @@ tfoot td strong.text-danger {
 .activity-icon[data-action="notes_added"],
 .activity-icon[data-action="notes_updated"] {
     color: #ec4899;
+}
+
+.activity-icon[data-action="redirected"] {
+    color: #7c3aed;
+    background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
 }
 
 .activity-timeline-line {

@@ -610,6 +610,7 @@ class OrderActivityLog(models.Model):
         ('notes_added', 'Admin Notes Added'),
         ('notes_updated', 'Admin Notes Updated'),
         ('updated', 'Order Updated'),
+        ('redirected', 'Order Redirected'),
     ]
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='activity_logs')

@@ -4983,6 +4983,25 @@ def redirect_order_save(request, order_id):
                         _matched_order.status_setup = _redir_st
                         _matched_order.order_status = _redir_st.name.lower()
                         _matched_order.save(update_fields=['status_setup', 'order_status'])
+                        # Log redirect on the matched order's activity log
+                        try:
+                            OrderActivityLog.objects.create(
+                                order=_matched_order,
+                                action_type='redirected',
+                                user=request.user if request.user.is_authenticated else None,
+                                description=(
+                                    f"Order redirected via NCM Possible Redirection "
+                                    f"(NCM Order #{order.ncm_order_id}). "
+                                    f"Customer details used for redirect: {order.customer_name}, "
+                                    f"Phone: {order.customer_phone}, "
+                                    f"Address: {order.shipping_address}."
+                                ),
+                                field_name='ncm_status',
+                                old_value='',
+                                new_value='redirected',
+                            )
+                        except Exception:
+                            pass
                     except (Order.DoesNotExist, Setup.DoesNotExist, ValueError, TypeError):
                         pass
 
@@ -5307,8 +5326,48 @@ def redirect_rtv_save(request, ncm_order_id):
                     _matched_order.status_setup = _redir_st
                     _matched_order.order_status = _redir_st.name.lower()
                     _matched_order.save(update_fields=['status_setup', 'order_status'])
+                    # Log the redirect on the matched (confirmed) order
+                    try:
+                        OrderActivityLog.objects.create(
+                            order=_matched_order,
+                            action_type='redirected',
+                            user=request.user if request.user.is_authenticated else None,
+                            description=(
+                                f"Order redirected via NCM Possible Redirection (NCM Order #{ncm_order_id}). "
+                                f"Customer details used: {payload.get('name', '')}, "
+                                f"Phone: {payload.get('phone', '')}, "
+                                f"Address: {payload.get('address', '')}."
+                            ),
+                            field_name='ncm_status',
+                            old_value='',
+                            new_value='redirected',
+                        )
+                    except Exception:
+                        pass
                 except (Order.DoesNotExist, Setup.DoesNotExist, ValueError, TypeError):
                     pass
+
+            # Log the redirect on the linked local order (if it exists)
+            try:
+                _log_local = Order.objects.get(ncm_order_id=ncm_order_id, is_deleted=False)
+                OrderActivityLog.objects.create(
+                    order=_log_local,
+                    action_type='redirected',
+                    user=request.user if request.user.is_authenticated else None,
+                    description=(
+                        f"Order redirected via NCM API (NCM Order #{ncm_order_id}). "
+                        f"New customer: {payload.get('name', '')}, "
+                        f"Phone: {payload.get('phone', '')}, "
+                        f"Address: {payload.get('address', '')}."
+                    ),
+                    field_name='ncm_status',
+                    old_value='',
+                    new_value='redirected',
+                )
+            except Order.DoesNotExist:
+                pass
+            except Exception:
+                pass
 
             return JsonResponse({
                 'status': 'success',
@@ -5464,6 +5523,26 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
                 pass
 
             order.save(update_fields=update_fields)
+
+            # Log the redirect action in the order's activity log
+            try:
+                _redirect_user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+                _ncm_redirect_id = data.get('order') or order.ncm_order_id
+                OrderActivityLog.objects.create(
+                    order=order,
+                    action_type='redirected',
+                    user=_redirect_user,
+                    description=(
+                        f"Order redirected via NCM API (NCM Order #{_ncm_redirect_id}). "
+                        f"New customer: {order.customer_name}, Phone: {order.customer_phone}, "
+                        f"Address: {order.shipping_address}."
+                    ),
+                    field_name='ncm_status',
+                    old_value='',
+                    new_value='redirected',
+                )
+            except Exception:
+                pass  # Don't fail the redirect if logging fails
 
             return {
                 'status': 'success',
