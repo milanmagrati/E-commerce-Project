@@ -10,6 +10,9 @@
     /* --- Page wrapper ------------------------------------------------ */
     .rtv-page {
         padding: 0.5rem 0 2rem;
+        overflow-x: hidden;
+        max-width: 100%;
+        box-sizing: border-box;
     }
 
     /* --- Header ------------------------------------------------------ */
@@ -128,11 +131,14 @@
         align-items: center;
         gap: 0.75rem;
         flex-wrap: wrap;
+        min-width: 0;
+        overflow: hidden;
     }
 
     .rtv-search-box {
         flex: 1;
-        min-width: 260px;
+        min-width: 180px;
+        max-width: 100%;
         position: relative;
     }
 
@@ -549,6 +555,8 @@
         background: #f8fafc;
         border-bottom: 1px solid #e2e8f0;
         flex-wrap: wrap;
+        overflow-x: hidden;
+        box-sizing: border-box;
     }
 
     .rtv-api-selector .api-sel-label {
@@ -1289,10 +1297,12 @@
 
         .rtv-search-box {
             min-width: 100%;
+            flex: 1 1 100%;
         }
 
         .rtv-toolbar-right {
             margin-left: 0;
+            flex-wrap: wrap;
         }
 
         .rtv-table-card {
@@ -1302,6 +1312,11 @@
         .rtv-pagination-wrap {
             flex-direction: column;
             align-items: flex-start;
+        }
+
+        .rtv-api-selector {
+            padding: 0.65rem 1rem;
+            gap: 0.4rem;
         }
     }
 

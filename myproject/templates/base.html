@@ -109,6 +109,7 @@
             width: 100%;
             align-items: stretch;
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
         .sidebar {
@@ -172,10 +173,11 @@
 
         /* Content area adjustment */
         #content {
-            width: 100%;
+            width: calc(100% - 250px);
             min-height: 100vh;
             transition: all 0.3s;
             margin-left: 250px;
+            overflow-x: hidden;
         }
 
         /* Sidebar collapsed state */
@@ -185,6 +187,7 @@
 
         #content.active {
             margin-left: 0;
+            width: 100%;
         }
 
         /* Mobile responsive */
