@@ -87,9 +87,9 @@ class NCMService:
                     pass
                 resp = _req.get(url, headers=self.headers, params=params, timeout=timeout)
                 if resp.status_code == 404:
-                    # No comments for this order — this is normal, not an error
-                    logger.debug(f"NCM: no comments for order {ncm_order_id} at {url} (404 = empty)")
-                    return {'success': True, 'data': []}
+                    # Might be missing endpoint (v2) or no comments. Let's try fallback.
+                    logger.debug(f"NCM: 404 returned for order {ncm_order_id} at {url}, trying next...")
+                    continue
                 resp.raise_for_status()
                 return {'success': True, 'data': resp.json()}
             except _req.exceptions.Timeout:
@@ -98,8 +98,8 @@ class NCMService:
             except _req.exceptions.RequestException as e:
                 status = getattr(getattr(e, 'response', None), 'status_code', None)
                 if status == 404:
-                    logger.debug(f"NCM: no comments for order {ncm_order_id} (404 = empty)")
-                    return {'success': True, 'data': []}
+                    logger.debug(f"NCM: 404 returned for order {ncm_order_id} at {url}, trying next...")
+                    continue
                 logger.warning(f"NCM comment fetch error ({url}): {e}")
                 continue
         # All URLs failed — return empty rather than error to keep UI clean

@@ -18868,9 +18868,23 @@ def ncm_rtvs_sync(request):
                 fallback_ids = list(
                     RTVOrder.objects.filter(
                         comment='', api_config=cfg
-                    ).values_list('order_id', flat=True)[:6 - len(priority_ids)]
+                    ).values_list('order_id', flat=True)[:3]
                 )
-                no_comment_ids = priority_ids + fallback_ids
+                
+                # Priority 3: Random active RTVs to keep existing records fresh 
+                # (helps catch unmark -> re-mark scenarios that otherwise aren't noticed)
+                remaining = 6 - (len(priority_ids) + len(fallback_ids))
+                random_ids = []
+                if remaining > 0:
+                    random_ids = list(
+                        RTVOrder.objects.filter(
+                            vendor_return=True, api_config=cfg
+                        ).exclude(
+                            order_id__in=priority_ids + fallback_ids
+                        ).order_by('?')[:remaining].values_list('order_id', flat=True)
+                    )
+                    
+                no_comment_ids = priority_ids + fallback_ids + random_ids
                 for i, oid in enumerate(no_comment_ids):
                     if i > 0:
                         time.sleep(1.0)  # 1-second delay between sequential requests
@@ -18879,37 +18893,49 @@ def ncm_rtvs_sync(request):
                         if cresult['success'] and cresult['data']:
                             rtv_comment = ''
                             rtv_marked_at = None
+                            vendor_return_status = None
+                            # Comments are newest-first, so the first match is the latest state
                             for c in cresult['data']:
                                 text = c.get('comment', '')
                                 if text.startswith('RTV marked'):
                                     rtv_comment = text.replace('RTV marked - ', '').strip()
-                                    # Parse the added_time as the actual RTV date
+                                    vendor_return_status = True
                                     added_time_str = c.get('added_time', '')
                                     if added_time_str:
                                         try:
                                             from django.utils.dateparse import parse_datetime
-                                            rtv_marked_at = parse_datetime(added_time_str)
+                                            parsed_dt = parse_datetime(added_time_str)
+                                            if parsed_dt:
+                                                rtv_marked_at = parsed_dt
                                         except Exception:
                                             pass
                                     break
-                            if not rtv_comment:
+                                elif text.startswith('RTV removed'):
+                                    vendor_return_status = False
+                                    break
+
+                            if vendor_return_status is None and not rtv_comment:
                                 for c in cresult['data']:
                                     if c.get('added_by', '') == 'NCM Staff':
                                         rtv_comment = c.get('comment', '')
-                                        # Use this comment's added_time as rtv date fallback
                                         if not rtv_marked_at:
                                             fallback_time_str = c.get('added_time', '')
                                             if fallback_time_str:
                                                 try:
+                                                    from django.utils.dateparse import parse_datetime
                                                     rtv_marked_at = parse_datetime(fallback_time_str)
                                                 except Exception:
                                                     pass
                                         break
+                                        
                             update_fields = {}
                             if rtv_comment:
                                 update_fields['comment'] = rtv_comment
                             if rtv_marked_at:
                                 update_fields['rtv_marked_at'] = rtv_marked_at
+                            if vendor_return_status is not None:
+                                update_fields['vendor_return'] = vendor_return_status
+                            
                             if update_fields:
                                 RTVOrder.objects.filter(order_id=oid).update(**update_fields)
                                 comments_updated += 1
@@ -18935,6 +18961,7 @@ def ncm_rtvs_sync(request):
         ).order_by('-id').first()
         configs_to_sync = [primary] if primary else []
     new_count = 0
+    updated_count = 0
     tagged_count = 0
     existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
 
@@ -18959,6 +18986,8 @@ def ncm_rtvs_sync(request):
                 new_rtvs = []
                 date_map = {}
                 found_oids = []
+                # Collect existing order IDs that need updating (re-marked RTVs)
+                update_oids = []
 
                 for order in api_result['data']:
                     oid = order.get('orderid') or order.get('id') or order.get('pk') or order.get('order_id')
@@ -18966,6 +18995,7 @@ def ncm_rtvs_sync(request):
                         continue
                     found_oids.append(oid)
                     if oid not in existing_ids:
+                        # Brand new RTV — bulk_create later
                         new_rtvs.append(RTVOrder(
                             order_id=oid,
                             vendor_return=True,
@@ -18991,6 +19021,79 @@ def ncm_rtvs_sync(request):
                                     date_map[oid] = dt
                             except Exception:
                                 pass
+                    else:
+                        # Existing RTV — update with latest NCM data
+                        # This handles the unmark → re-mark scenario:
+                        # vendor_return, NCM fields, and api_config are refreshed.
+                        # comment & rtv_marked_at are NOT touched here — the
+                        # comment-fetch logic below will set them from the new
+                        # "RTV marked" comment's added_time.
+                        update_oids.append(oid)
+
+                # Bulk-update existing RTVs that were found again in NCM
+                if update_oids:
+                    # Build a map of oid → NCM order data for quick lookup
+                    ncm_order_map = {}
+                    for order in api_result['data']:
+                        _oid = order.get('orderid') or order.get('id') or order.get('pk') or order.get('order_id')
+                        if _oid:
+                            ncm_order_map[_oid] = order
+
+                    existing_rtv_objs = list(RTVOrder.objects.filter(order_id__in=update_oids))
+                    rtvs_to_bulk_update = []
+                    for rtv in existing_rtv_objs:
+                        o = ncm_order_map.get(rtv.order_id, {})
+                        changed = False
+
+                        # Re-mark: ensure vendor_return is True
+                        if not rtv.vendor_return:
+                            rtv.vendor_return = True
+                            changed = True
+
+                        # Refresh NCM metadata fields
+                        new_receiver = o.get('receiver', '')
+                        if new_receiver and new_receiver != rtv.receiver_name:
+                            rtv.receiver_name = new_receiver
+                            rtv.receiver_phone = o.get('receiver_phone', '')
+                            rtv.receiver_address = o.get('receiver_address', '')
+                            rtv.from_branch = o.get('frombranch', o.get('from_branch', ''))
+                            rtv.to_branch = o.get('branch', o.get('to_branch', ''))
+                            rtv.cod_charge = o.get('cod_charge', '')
+                            rtv.delivery_charge = o.get('delivery_charge', '')
+                            rtv.tracking_id = o.get('trackid', o.get('tracking_id', ''))
+                            changed = True
+
+                        new_status = o.get('last_delivery_status', '')
+                        if new_status and new_status != rtv.last_status:
+                            rtv.last_status = new_status
+                            changed = True
+
+                        new_desc = (
+                            o.get('description') or o.get('productdescription') or
+                            o.get('product_description') or o.get('item_description') or ''
+                        )
+                        if new_desc and not rtv.product_description:
+                            rtv.product_description = new_desc
+                            changed = True
+
+                        # Assign api_config if missing
+                        if rtv.api_config_id is None:
+                            rtv.api_config = cfg
+                            changed = True
+
+                        if changed:
+                            rtvs_to_bulk_update.append(rtv)
+
+                    if rtvs_to_bulk_update:
+                        RTVOrder.objects.bulk_update(
+                            rtvs_to_bulk_update,
+                            ['vendor_return', 'receiver_name', 'receiver_phone',
+                             'receiver_address', 'from_branch', 'to_branch',
+                             'cod_charge', 'delivery_charge', 'tracking_id',
+                             'last_status', 'product_description', 'api_config'],
+                            batch_size=500,
+                        )
+                        updated_count += len(rtvs_to_bulk_update)
 
                 if new_rtvs:
                     RTVOrder.objects.bulk_create(new_rtvs, ignore_conflicts=True)
@@ -19006,44 +19109,71 @@ def ncm_rtvs_sync(request):
                                 order_id=oid, rtv_marked_at__isnull=True
                             ).update(rtv_marked_at=dt)
 
-                    # Immediately fetch comments for new RTVs (up to 8) to get rtv_marked_at
-                    # New RTVs are few per day so this is safe and ensures correct date from the start
-                    new_oids = [r.order_id for r in new_rtvs[:8]]
-                    for i, oid in enumerate(new_oids):
-                        if i > 0:
-                            time.sleep(1.0)
-                        try:
-                            cresult = ncm_service.get_order_comments(oid)
-                            if cresult.get('success') and cresult.get('data'):
-                                comments = cresult['data']
-                                rtv_comment = ''
-                                rtv_marked_at = None
+                # Immediately fetch comments for:
+                # 1. New RTVs (up to 8) — to get rtv_marked_at from the start
+                # 2. Existing RTVs missing dates (rtv_marked_at=NULL, up to 6)
+                #    — catches re-marked orders and old records that never had dates
+                # For re-marked orders there may be multiple "RTV marked" comments;
+                # we want the LAST one (newest date).
+                comment_fetch_oids = [r.order_id for r in new_rtvs[:8]]
+                # Prioritize existing RTVs that have no date yet
+                missing_date_oids = list(
+                    RTVOrder.objects.filter(
+                        order_id__in=found_oids,
+                        rtv_marked_at__isnull=True,
+                    ).exclude(
+                        order_id__in=comment_fetch_oids,
+                    ).values_list('order_id', flat=True)[:6]
+                )
+                comment_fetch_oids.extend(missing_date_oids)
+                for i, oid in enumerate(comment_fetch_oids):
+                    if i > 0:
+                        time.sleep(1.0)
+                    try:
+                        cresult = ncm_service.get_order_comments(oid)
+                        if cresult.get('success') and cresult.get('data'):
+                            comments = cresult['data']
+                            rtv_comment = ''
+                            rtv_marked_at = None
+                            vendor_return_status = None
+                            # Comments are newest-first, so the first match is the latest state
+                            for c in comments:
+                                text = c.get('comment', '')
+                                if text.startswith('RTV marked'):
+                                    rtv_comment = text.replace('RTV marked - ', '').strip()
+                                    vendor_return_status = True
+                                    at = c.get('added_time', '')
+                                    if at:
+                                        parsed_dt = parse_datetime(at)
+                                        if parsed_dt:
+                                            rtv_marked_at = parsed_dt
+                                    break
+                                elif text.startswith('RTV removed'):
+                                    vendor_return_status = False
+                                    break
+                                    
+                            if vendor_return_status is None and not rtv_comment:
                                 for c in comments:
-                                    text = c.get('comment', '')
-                                    if text.startswith('RTV marked'):
-                                        rtv_comment = text.replace('RTV marked - ', '').strip()
-                                        at = c.get('added_time', '')
-                                        if at:
-                                            rtv_marked_at = parse_datetime(at)
+                                    if c.get('added_by', '') == 'NCM Staff':
+                                        rtv_comment = c.get('comment', '')
+                                        if not rtv_marked_at:
+                                            at = c.get('added_time', '')
+                                            if at:
+                                                rtv_marked_at = parse_datetime(at)
                                         break
-                                if not rtv_comment:
-                                    for c in comments:
-                                        if c.get('added_by', '') == 'NCM Staff':
-                                            rtv_comment = c.get('comment', '')
-                                            if not rtv_marked_at:
-                                                at = c.get('added_time', '')
-                                                if at:
-                                                    rtv_marked_at = parse_datetime(at)
-                                            break
-                                upd = {}
-                                if rtv_comment:
-                                    upd['comment'] = rtv_comment
-                                if rtv_marked_at:
-                                    upd['rtv_marked_at'] = rtv_marked_at
-                                if upd:
-                                    RTVOrder.objects.filter(order_id=oid).update(**upd)
-                        except Exception:
-                            pass
+                                        
+                            upd = {}
+                            if rtv_comment:
+                                upd['comment'] = rtv_comment
+                            if rtv_marked_at:
+                                upd['rtv_marked_at'] = rtv_marked_at
+                            if vendor_return_status is not None:
+                                upd['vendor_return'] = vendor_return_status
+                                
+                            if upd:
+                                RTVOrder.objects.filter(order_id=oid).update(**upd)
+                    except Exception:
+                        pass
 
                 # Update existing RTVs that are missing NCM fields OR have stale status
                 ncm_field_map = {}
@@ -19164,6 +19294,7 @@ def ncm_rtvs_sync(request):
     return JsonResponse({
         'success': True,
         'new_count': new_count,
+        'updated_count': updated_count,
         'tagged_count': tagged_count,
         'total_count': total,
     })
