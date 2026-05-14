@@ -4455,12 +4455,15 @@ def possible_redirection_list(request):
     Matching is computed before stats/pagination so the entire page — counts,
     table, sub-rows — reflects only actionable redirection candidates.
     """
+    # pyrefly: ignore [missing-import]
     from django.db.models import Q, CharField
+    # pyrefly: ignore [missing-import]
     from django.db.models.functions import Cast
     from django.db import models as db_models
+    import re
 
-    # Base queryset: all RTV records, ordered like ncm_rtvs page
-    rtvs = RTVOrder.objects.select_related('api_config').order_by(
+    # Base queryset: all active RTV records, ordered like ncm_rtvs page
+    rtvs = RTVOrder.objects.filter(vendor_return=True).select_related('api_config').order_by(
         db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
     )
 
@@ -4537,7 +4540,6 @@ def possible_redirection_list(request):
                     _pn_lower = _it.product_name.lower().strip()
                     _names.append(_it.product_name.strip())
                     _kws.add(_pn_lower)
-                    _kws.update(w for w in _pn_lower.split() if len(w) > 3)
             if _kws:
                 _rtv_local_keywords[_lo.ncm_order_id] = frozenset(_kws)
                 _rtv_local_item_names[_lo.ncm_order_id] = _names
@@ -4593,18 +4595,21 @@ def possible_redirection_list(request):
                 # No product info at all — branch match alone qualifies this RTV.
                 _has_match_ids.add(_oid)
             else:
-                # Combine local-item keywords + product_description keywords.
-                _combined = set(_item_kws)
-                if _desc:
-                    _combined.add(_desc)
-                    _combined.update(w for w in _desc.split() if len(w) > 3)
                 for _o in _branch_orders:
                     for _item in _o.items.all():
                         if _item.product_name:
                             _pn = _item.product_name.lower().strip()
-                            if _pn and any(kw in _pn or _pn in kw for kw in _combined):
-                                _has_match_ids.add(_oid)
-                                break
+                            if _pn:
+                                _match_found = False
+                                if _item_kws:
+                                    if any(kw == _pn for kw in _item_kws):
+                                        _match_found = True
+                                elif _desc and _desc == _pn:
+                                    _match_found = True
+                                
+                                if _match_found:
+                                    _has_match_ids.add(_oid)
+                                    break
                     if _oid in _has_match_ids:
                         break
         rtvs = rtvs.filter(order_id__in=_has_match_ids) if _has_match_ids else rtvs.none()
@@ -4704,18 +4709,22 @@ def possible_redirection_list(request):
             _matched = list(_branch_candidates)
             entry['is_branch_only_match'] = True
         else:
-            _combined = set(_item_kws)
-            if _desc:
-                _combined.add(_desc)
-                _combined.update(w for w in _desc.split() if len(w) > 3)
             _matched = []
             for _o in _branch_candidates:
                 for _item in _o.items.all():
                     if _item.product_name:
                         _pn = _item.product_name.lower().strip()
-                        if _pn and any(kw in _pn or _pn in kw for kw in _combined):
-                            _matched.append(_o)
-                            break
+                        if _pn:
+                            _match_found = False
+                            if _item_kws:
+                                if any(kw == _pn for kw in _item_kws):
+                                    _match_found = True
+                            elif _desc and _desc == _pn:
+                                _match_found = True
+                                
+                            if _match_found:
+                                _matched.append(_o)
+                                break
             entry['is_branch_only_match'] = False
         entry['matching_orders'] = _matched
         entry['matching_count'] = len(_matched)
