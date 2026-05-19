@@ -2334,15 +2334,43 @@
         window.location.href = url.toString();
     }
 
+    // Auto-focus search input on page load so cursor is always ready
+    if (searchInput) {
+        // Place cursor at end of any pre-filled value
+        var _preVal = searchInput.value;
+        searchInput.focus();
+        searchInput.value = '';
+        searchInput.value = _preVal;
+    }
+
     if (searchInput) {
         searchInput.addEventListener('input', function () {
             clearTimeout(searchDebounceTimer);
-            searchDebounceTimer = setTimeout(doServerSearch, 500);
+            // Show a subtle pending indicator while user is still typing
+            var searchIcon = document.querySelector('.rtv-search-box .search-icon');
+            if (searchIcon) {
+                searchIcon.className = 'fas fa-clock search-icon';
+                searchIcon.style.color = '#f59e0b';
+            }
+            // Wait 2 seconds after user stops typing before searching
+            searchDebounceTimer = setTimeout(function () {
+                if (searchIcon) {
+                    searchIcon.className = 'fas fa-search search-icon';
+                    searchIcon.style.color = '';
+                }
+                doServerSearch();
+            }, 2000);
         });
         searchInput.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 clearTimeout(searchDebounceTimer);
+                // Reset icon and search immediately on Enter
+                var searchIcon = document.querySelector('.rtv-search-box .search-icon');
+                if (searchIcon) {
+                    searchIcon.className = 'fas fa-search search-icon';
+                    searchIcon.style.color = '';
+                }
                 doServerSearch();
             }
         });
@@ -2352,6 +2380,12 @@
     if (clearBtn) {
         clearBtn.addEventListener('click', function () {
             clearTimeout(searchDebounceTimer);
+            // Reset pending icon if it was showing
+            var searchIcon = document.querySelector('.rtv-search-box .search-icon');
+            if (searchIcon) {
+                searchIcon.className = 'fas fa-search search-icon';
+                searchIcon.style.color = '';
+            }
             if (searchInput) { searchInput.value = ''; }
             var url = new URL(window.location.href);
             if (url.searchParams.get('search')) {
