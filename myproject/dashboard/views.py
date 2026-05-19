@@ -15598,9 +15598,10 @@ def product_sales_report(request):
             .order_by('day')
         )
         for entry in daily:
-            chart_labels.append(entry['day'].strftime('%b %d'))
-            chart_qty_data.append(int(entry['qty'] or 0))
-            chart_revenue_data.append(float(entry['rev'] or 0))
+            if entry['day'] is not None:
+                chart_labels.append(entry['day'].strftime('%b %d'))
+                chart_qty_data.append(int(entry['qty'] or 0))
+                chart_revenue_data.append(float(entry['rev'] or 0))
 
         # -- Order status breakdown for this product --
         status_data = (
