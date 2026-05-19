@@ -13338,7 +13338,7 @@ def low_stock_alerts(request):
 @permission_required('can_view_sales_reports')
 def sales_report(request):
     """Comprehensive sales analytics with smart forecasting"""
-    from django.db.models.functions import TruncDate, TruncHour, ExtractHour
+    from django.db.models.functions import ExtractHour
     from collections import defaultdict
     import math
 
@@ -13420,32 +13420,37 @@ def sales_report(request):
     orders_growth = calc_growth(total_orders, prev_orders)
     products_growth = calc_growth(products_sold, prev_items)
 
-    # ── 2. Daily Sales Trend ──
-    daily_sales_raw = (
-        orders_qs
-        .annotate(day=TruncDate('created_at'))
-        .values('day')
-        .annotate(revenue=Sum('total_amount'), count=Count('id'))
-        .order_by('day')
-    )
+    # ── 2. Daily Sales Trend (Python-side grouping — TruncDate unreliable on this DB) ──
+    _daily_orders_raw = orders_qs.values('created_at', 'total_amount')
+    _daily_map = {}  # date → {'revenue': float, 'count': int}
+    for _o in _daily_orders_raw:
+        _d = timezone.localtime(_o['created_at']).date()
+        if _d not in _daily_map:
+            _daily_map[_d] = {'revenue': 0.0, 'count': 0}
+        _daily_map[_d]['revenue'] += float(_o['total_amount'] or 0)
+        _daily_map[_d]['count'] += 1
+
     daily_labels = []
     daily_revenue_data = []
     daily_orders_data = []
     daily_breakdown = []
-    for entry in daily_sales_raw:
-        day_str = entry['day'].strftime('%b %d')
-        daily_labels.append(day_str)
-        daily_revenue_data.append(float(entry['revenue'] or 0))
-        daily_orders_data.append(entry['count'])
+    for _d in sorted(_daily_map.keys()):
+        _info = _daily_map[_d]
+        daily_labels.append(_d.strftime('%b %d'))
+        daily_revenue_data.append(round(_info['revenue'], 2))
+        daily_orders_data.append(_info['count'])
         # Products sold that day
+        _d_start = timezone.make_aware(datetime.combine(_d, datetime.min.time()))
+        _d_end = timezone.make_aware(datetime.combine(_d, datetime.max.time()))
         day_products = OrderItem.objects.filter(
             order__is_deleted=False,
-            order__created_at__date=entry['day'],
+            order__created_at__gte=_d_start,
+            order__created_at__lte=_d_end,
         ).aggregate(t=Sum('quantity'))['t'] or 0
         daily_breakdown.append({
-            'date': entry['day'].strftime('%b %d, %Y'),
-            'orders': entry['count'],
-            'revenue': float(entry['revenue'] or 0),
+            'date': _d.strftime('%b %d, %Y'),
+            'orders': _info['count'],
+            'revenue': round(_info['revenue'], 2),
             'products': day_products,
         })
 
@@ -13480,22 +13485,21 @@ def sales_report(request):
         days_of_stock_remaining, restock_urgency,
     )
     _30d_start = today_start - timedelta(days=30)
-    _all_daily_raw = (
+    # Python-side grouping — TruncDate unreliable on this DB
+    _all_daily_raw_qs = (
         OrderItem.objects.filter(
             order__is_deleted=False,
             order__created_at__gte=_30d_start,
             product__isnull=False,
             product__is_deleted=False,
         )
-        .annotate(day=TruncDate('order__created_at'))
-        .values('product__id', 'product_variation__id', 'day')
-        .annotate(day_qty=Sum('quantity'))
-        .order_by('product__id', 'product_variation__id', 'day')
+        .values('product__id', 'product_variation__id', 'order__created_at', 'quantity')
     )
     _all_day_map = defaultdict(dict)
-    for _r in _all_daily_raw:
+    for _r in _all_daily_raw_qs:
         _key = (_r['product__id'], _r['product_variation__id'])
-        _all_day_map[_key][_r['day']] = _r['day_qty'] or 0
+        _d = timezone.localtime(_r['order__created_at']).date()
+        _all_day_map[_key][_d] = _all_day_map[_key].get(_d, 0) + (_r['quantity'] or 0)
 
     def _build_sales_list(prod_id, var_id):
         """Build a 30-element daily sales list (oldest→newest, 0-fill)."""
@@ -13598,20 +13602,18 @@ def sales_report(request):
 
     # --- Revenue forecast using EWS on 30-day daily revenue ---
     last_30_start = _30d_start  # reuse from Section 3
-    daily_rev_30 = (
-        Order.objects.filter(
-            is_deleted=False,
-            created_at__gte=last_30_start,
-            created_at__lte=now,
-        )
-        .annotate(day=TruncDate('created_at'))
-        .values('day')
-        .annotate(rev=Sum('total_amount'), cnt=Count('id'))
-        .order_by('day')
-    )
-    # Build a full 30-day list (0 for days with no orders)
-    rev_by_day = {r['day']: float(r['rev'] or 0) for r in daily_rev_30}
-    cnt_by_day = {r['day']: r['cnt'] for r in daily_rev_30}
+    # Python-side grouping — TruncDate unreliable on this DB
+    _rev30_qs = Order.objects.filter(
+        is_deleted=False,
+        created_at__gte=last_30_start,
+        created_at__lte=now,
+    ).values('created_at', 'total_amount')
+    rev_by_day = {}
+    cnt_by_day = {}
+    for _ro in _rev30_qs:
+        _d = timezone.localtime(_ro['created_at']).date()
+        rev_by_day[_d] = rev_by_day.get(_d, 0.0) + float(_ro['total_amount'] or 0)
+        cnt_by_day[_d] = cnt_by_day.get(_d, 0) + 1
     revenue_series = []
     orders_series = []
     for offset in range(30):
@@ -14682,9 +14684,13 @@ def staff_performance_analytics(request):
         date_range_text = start_date.strftime('%B %Y')
 
     # Base queryset for orders in date range
+    from datetime import datetime, time
+    start_datetime = timezone.make_aware(datetime.combine(start_date, time.min))
+    end_datetime = timezone.make_aware(datetime.combine(end_date, time.max))
+
     orders_qs = Order.objects.filter(
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date,
+        created_at__gte=start_datetime,
+        created_at__lte=end_datetime,
         is_deleted=False
     )
 
@@ -14703,12 +14709,11 @@ def staff_performance_analytics(request):
     successful_orders = orders_qs.filter(
         Q(status__iexact='delivered') | Q(order_status__iexact='delivered')
     ).count()
-    success_rate = (successful_orders / total_orders * 100) if total_orders > 0 else 0.0
 
     # Returns
     return_requests = ReturnRequest.objects.filter(
-        order__created_at__date__gte=start_date,
-        order__created_at__date__lte=end_date,
+        order__created_at__gte=start_datetime,
+        order__created_at__lte=end_datetime,
         is_deleted=False
     )
     if staff_filter != 'all':
@@ -14720,6 +14725,10 @@ def staff_performance_analytics(request):
 
     returns_count = return_requests.count()
     return_rate = (returns_count / total_orders * 100) if total_orders > 0 else 0.0
+
+    # Calculate overall success rate based on resolved orders only (Delivered + Returned)
+    resolved_orders = successful_orders + returns_count
+    success_rate = (successful_orders / resolved_orders * 100) if resolved_orders > 0 else 0.0
 
     # Revenue - use aggregation with larger max_digits for aggregated totals
     revenue_result = orders_qs.aggregate(Sum('total_amount'))
@@ -14774,11 +14783,12 @@ def staff_performance_analytics(request):
         staff_revenue_result = staff_orders.aggregate(Sum('total_amount'))
         staff_revenue = safe_decimal(
             staff_revenue_result.get('total_amount__sum') or 0,
-            max_digits=12,  # Allow aggregated sums to exceed single order limit
+            max_digits=12,
             decimal_places=2
         )
 
-        staff_success_rate = (staff_delivered / staff_orders.count() * 100) if staff_orders.count() > 0 else 0.0
+        staff_resolved = staff_delivered + staff_returns
+        staff_success_rate = (staff_delivered / staff_resolved * 100) if staff_resolved > 0 else 0.0
 
         # Return status breakdown per staff (normalize keys to lowercase for case-insensitive lookup)
         staff_return_statuses = staff_return_qs.values('return_status').annotate(
@@ -14949,30 +14959,49 @@ def staff_performance_analytics(request):
         top_products.append(product_data)
 
     # ========== PERFORMANCE TRENDS OVER TIME ==========
-    daily_data = orders_qs.values('created_at__date').annotate(
-        daily_orders=Count('id'),
-        daily_delivered=Count('id', filter=Q(status__iexact='delivered') | Q(order_status__iexact='delivered')),
-        daily_revenue=Sum('total_amount')
-    ).order_by('created_at__date')
+    performance_trends_raw = orders_qs.values('created_at', 'status', 'order_status', 'total_amount')
+    
+    daily_stats = {}
+    for entry in performance_trends_raw:
+        if not entry['created_at']: continue
+        date_obj = timezone.localtime(entry['created_at']).date()
+        if date_obj not in daily_stats:
+            daily_stats[date_obj] = {
+                'orders': 0, 'delivered': 0, 'revenue': Decimal('0'), 'returns': 0
+            }
+        
+        daily_stats[date_obj]['orders'] += 1
+        status = (entry['status'] or '').lower()
+        order_status = (entry['order_status'] or '').lower()
+        if status == 'delivered' or order_status == 'delivered':
+            daily_stats[date_obj]['delivered'] += 1
+            
+        daily_stats[date_obj]['revenue'] += entry['total_amount'] or Decimal('0')
+
+    returns_raw = return_requests.values('order__created_at')
+    for ret in returns_raw:
+        if not ret['order__created_at']: continue
+        date_obj = timezone.localtime(ret['order__created_at']).date()
+        if date_obj in daily_stats:
+            daily_stats[date_obj]['returns'] += 1
+        else:
+            daily_stats[date_obj] = {
+                'orders': 0, 'delivered': 0, 'revenue': Decimal('0'), 'returns': 1
+            }
 
     performance_trends = []
-    for entry in daily_data:
-        date = entry['created_at__date']
-        orders = entry['daily_orders'] or 0
-        delivered = entry['daily_delivered'] or 0
-        # Use data directly from aggregation with larger max_digits for daily totals
-        revenue = safe_decimal(
-            entry['daily_revenue'] or 0,
-            max_digits=12,  # Allow aggregated sums to exceed single order limit
-            decimal_places=2
-        )
-        returns = return_requests.filter(
-            order__created_at__date=date
-        ).count()
-        success_rate_daily = (delivered / orders * 100) if orders > 0 else 0.0
-
+    for date_obj in sorted(daily_stats.keys()):
+        stats = daily_stats[date_obj]
+        orders = stats['orders']
+        delivered = stats['delivered']
+        revenue = safe_decimal(stats['revenue'], max_digits=12, decimal_places=2)
+        returns = stats['returns']
+        
+        resolved_daily = delivered + returns
+        success_rate_daily = (delivered / resolved_daily * 100) if resolved_daily > 0 else 0.0
+        
         performance_trends.append({
-            'date': date.strftime('%d %b'),
+            'date': date_obj.strftime('%d %b'),
             'orders': orders,
             'delivered': delivered,
             'returns': returns,
@@ -14983,27 +15012,28 @@ def staff_performance_analytics(request):
     # Convert to JSON for chart
     performance_trends_json = json.dumps(performance_trends)
 
-    # ========== ORDER STATUS BREAKDOWN ==========
-    # Combine both status and order_status fields, using .lower() for case-insensitive grouping
+    # Combine both status and order_status fields, avoiding double-counting
     status_breakdown = {
         'delivered': 0,
         'pending': 0,
         'returns': 0,
         'other': 0
     }
-
-    for field in ('status', 'order_status'):
-        for status_item in orders_qs.values(field).annotate(count=Count('id')):
-            status = (status_item[field] or 'unknown').lower()
-            count = status_item['count']
-            if status in ['delivered', 'completed']:
-                status_breakdown['delivered'] += count
-            elif status in ['returned', 'return']:
-                status_breakdown['returns'] += count
-            elif status in ['pending', 'processing']:
-                status_breakdown['pending'] += count
-            else:
-                status_breakdown['other'] += count
+    
+    # Iterate through all orders in the queryset to count their effective status
+    for entry in orders_qs.values('status', 'order_status'):
+        status = (entry['status'] or '').lower()
+        order_status = (entry['order_status'] or '').lower()
+        
+        # Determine effective status
+        if status in ['delivered', 'completed'] or order_status in ['delivered', 'completed']:
+            status_breakdown['delivered'] += 1
+        elif status in ['returned', 'return'] or order_status in ['returned', 'return']:
+            status_breakdown['returns'] += 1
+        elif status in ['pending', 'processing'] or order_status in ['pending', 'processing']:
+            status_breakdown['pending'] += 1
+        else:
+            status_breakdown['other'] += 1
 
     # Ensure status_breakdown has all keys for chart
     status_breakdown_json = json.dumps(status_breakdown)

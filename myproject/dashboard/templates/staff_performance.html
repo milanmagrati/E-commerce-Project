@@ -1941,8 +1941,8 @@
                                 </div>
                             </td>
                             <td style="text-align: center;">
-                                <span class="sp-order-status-pill sp-order-status-{{ order.status }}">
-                                    {{ order.status|title }}
+                                <span class="sp-order-status-pill sp-order-status-{{ order.order_status|default:order.status|lower }}">
+                                    {{ order.order_status|default:order.status|title }}
                                 </span>
                             </td>
                             <td style="text-align: center;">
