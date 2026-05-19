@@ -147,7 +147,7 @@
                 </div>
             </div>
             <div class="card-body">
-                <canvas id="ordersOverviewChart" height="60"></canvas>
+                <canvas id="ordersOverviewChart" height="80"></canvas>
             </div>
         </div>
     </div>
@@ -199,7 +199,7 @@
                 </div>
             </div>
             <div class="card-body">
-                <canvas id="orderSourceChart" height="50"></canvas>
+                <canvas id="orderSourceChart" height="80"></canvas>
             </div>
         </div>
     </div>
@@ -728,6 +728,7 @@
                                     text: 'Number of Orders'
                                 },
                                 beginAtZero: true,
+                                suggestedMax: 5,
                                 ticks: {
                                     stepSize: 1
                                 }
@@ -752,8 +753,12 @@
     const thirtyDaysAgo = new Date(today);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
-    document.getElementById('customFromDate').value = thirtyDaysAgo.toISOString().split('T')[0];
-    document.getElementById('customToDate').value = today.toISOString().split('T')[0];
+    function getLocalDateStr(d) {
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    
+    document.getElementById('customFromDate').value = getLocalDateStr(thirtyDaysAgo);
+    document.getElementById('customToDate').value = getLocalDateStr(today);
     
     // Initialize chart with default 7 days
     updateOrderSourceChart(7);
@@ -873,6 +878,7 @@
                         scales: {
                             y: {
                                 beginAtZero: true,
+                                suggestedMax: 5,
                                 ticks: {
                                     stepSize: 1,
                                     precision: 0
@@ -896,8 +902,8 @@
     }
 
     // Set default custom range dates for overview
-    document.getElementById('overviewFromDate').value = thirtyDaysAgo.toISOString().split('T')[0];
-    document.getElementById('overviewToDate').value = today.toISOString().split('T')[0];
+    document.getElementById('overviewFromDate').value = getLocalDateStr(thirtyDaysAgo);
+    document.getElementById('overviewToDate').value = getLocalDateStr(today);
 
     // Initialize Orders Overview chart with Today
     updateOrdersOverviewChart(30);

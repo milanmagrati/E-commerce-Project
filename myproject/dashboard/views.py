@@ -1942,8 +1942,11 @@ def chart_data(request):
 
 @login_required
 def order_overview_data(request):
-    """API endpoint to get total order counts per day for the Orders Overview chart"""
-    from datetime import datetime
+    """API endpoint to get total order counts per day/hour for the Orders Overview chart"""
+    from datetime import datetime, time
+    from django.utils import timezone
+    from django.db.models.functions import TruncHour, TruncDate
+    from django.db.models import Count
 
     custom_from = request.GET.get('custom_from')
     custom_to = request.GET.get('custom_to')
@@ -1958,45 +1961,57 @@ def order_overview_data(request):
             start_date = (timezone.now() - timedelta(days=6)).date()
             end_date = timezone.now().date()
     else:
-        days = request.GET.get('days', 7)
+        days = request.GET.get('days', 30)
         try:
             days = int(days)
             if days not in [1, 7, 30, 60, 90]:
-                days = 7
+                days = 30
         except (ValueError, TypeError):
-            days = 7
+            days = 30
+            
         if days == 1:
             start_date = timezone.now().date()
         else:
             start_date = (timezone.now() - timedelta(days=days - 1)).date()
         end_date = timezone.now().date()
 
-    # Build list of dates in range
-    dates_list = []
-    current = start_date
-    while current <= end_date:
-        dates_list.append(current)
-        current += timedelta(days=1)
+    if start_date == end_date:
+        # Hourly aggregation for a single day
+        start_dt = timezone.make_aware(datetime.combine(start_date, time.min))
+        end_dt = timezone.make_aware(datetime.combine(end_date, time.max))
 
-    # Aggregate order counts per day
-    counts_qs = (
-        Order.objects
-        .filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
-        .annotate(order_date=TruncDate('created_at'))
-        .values('order_date')
-        .annotate(count=Count('id'))
-        .order_by('order_date')
-    )
-    counts_map = {entry['order_date']: entry['count'] for entry in counts_qs}
-
-    # Use "Today" label when day range is 1, else "MMM DD"
-    if len(dates_list) == 1:
-        labels = ['Today']
+        orders = Order.objects.filter(created_at__range=(start_dt, end_dt)).values('created_at')
+        counts_map = {}
+        for order in orders:
+            local_dt = timezone.localtime(order['created_at'])
+            order_hour = local_dt.hour
+            counts_map[order_hour] = counts_map.get(order_hour, 0) + 1
+        
+        labels = [f"{hour:02d}:00" for hour in range(24)]
+        counts = [counts_map.get(hour, 0) for hour in range(24)]
+        total = sum(counts)
     else:
-        labels = [d.strftime('%b %d') for d in dates_list]
+        # Daily aggregation
+        start_dt = timezone.make_aware(datetime.combine(start_date, time.min))
+        end_dt = timezone.make_aware(datetime.combine(end_date, time.max))
 
-    counts = [counts_map.get(d, 0) for d in dates_list]
-    total = sum(counts)
+        # Build list of dates in range
+        dates_list = []
+        current = start_date
+        while current <= end_date:
+            dates_list.append(current)
+            current += timedelta(days=1)
+
+        orders = Order.objects.filter(created_at__range=(start_dt, end_dt)).values('created_at')
+        counts_map = {}
+        for order in orders:
+            local_dt = timezone.localtime(order['created_at'])
+            order_date = local_dt.date()
+            counts_map[order_date] = counts_map.get(order_date, 0) + 1
+
+        labels = [d.strftime('%b %d') for d in dates_list]
+        counts = [counts_map.get(d, 0) for d in dates_list]
+        total = sum(counts)
 
     return JsonResponse({'dates': labels, 'counts': counts, 'total': total})
 
@@ -2004,13 +2019,17 @@ def order_overview_data(request):
 @login_required
 def order_sources_data(request):
     """API endpoint to get order sources data with date range filtering"""
+    from datetime import datetime, time
+    from django.utils import timezone
+    from django.db.models.functions import TruncDate
+    from django.db.models import Count
+    
     # Check if custom date range is provided
     custom_from = request.GET.get('custom_from')
     custom_to = request.GET.get('custom_to')
 
     if custom_from and custom_to:
         try:
-            from datetime import datetime
             start_date = datetime.strptime(custom_from, '%Y-%m-%d').date()
             end_date = datetime.strptime(custom_to, '%Y-%m-%d').date()
 
@@ -2046,35 +2065,28 @@ def order_sources_data(request):
             date = (timezone.now() - timedelta(days=i)).date()
             dates_list.append(date)
 
-    orders = Order.objects.all()
+    if not dates_list:
+        return JsonResponse({'dates': [], 'sources': [], 'data': {}})
 
-    # Get all sources first
+    start_dt = timezone.make_aware(datetime.combine(dates_list[0], time.min))
+    end_dt = timezone.make_aware(datetime.combine(dates_list[-1], time.max))
+
+    orders = Order.objects.filter(created_at__range=(start_dt, end_dt)).values('created_at', 'order_from')
+
     all_sources = set()
-    source_dates_data = orders.annotate(
-        order_date=TruncDate('created_at')
-    ).values('order_date', 'order_from').annotate(
-        count=Count('id')
-    ).order_by('order_date', 'order_from')
-
-    for entry in source_dates_data:
-        source_name = entry['order_from'] if entry['order_from'] else 'Direct'
-        all_sources.add(source_name)
-
-    # Build data structure: {date: {source: count}}
     order_sources_by_date = {date: {} for date in dates_list}
 
-    for source_name in all_sources:
-        source_data = orders.filter(
-            order_from=source_name if source_name != 'Direct' else ''
-        ).annotate(
-            order_date=TruncDate('created_at')
-        ).values('order_date').annotate(
-            count=Count('id')
-        ).order_by('order_date')
-
-        for entry in source_data:
-            if entry['order_date'] in order_sources_by_date:
-                order_sources_by_date[entry['order_date']][source_name] = entry['count']
+    for order in orders:
+        local_dt = timezone.localtime(order['created_at'])
+        order_date = local_dt.date()
+        source_raw = (order['order_from'] or '').strip()
+        if not source_raw:
+            source_raw = 'Direct'
+        source_name = source_raw.replace('_', ' ').title()
+        
+        all_sources.add(source_name)
+        if order_date in order_sources_by_date:
+            order_sources_by_date[order_date][source_name] = order_sources_by_date[order_date].get(source_name, 0) + 1
 
     # Format for JSON: prepare chart data
     order_sources = {
