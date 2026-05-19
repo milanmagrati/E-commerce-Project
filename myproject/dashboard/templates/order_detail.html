@@ -37,8 +37,7 @@
                 <button type="button" class="btn btn-exchange-done" id="makeExchangeBtn" disabled
                     title="Exchange already created (Customer: {{ order.ncm_exchange_cust_order }}, Vendor: {{ order.ncm_exchange_ven_order }})">
                     <i class="fas fa-check-circle"></i> Exchanged
-                    <span class="exchange-ids-badge">C:{{ order.ncm_exchange_cust_order }} V:{{
-                        order.ncm_exchange_ven_order }}</span>
+                    <span class="exchange-ids-badge">C:{{ order.ncm_exchange_cust_order }} V:{{ order.ncm_exchange_ven_order }}</span>
                 </button>
                 {% else %}
                 <button type="button"
@@ -56,8 +55,7 @@
                 {% endif %}
                 {% endif %}
                 <a href="{% if request.user.role == 'administrator' or request.user.can_edit_orders %}{% url 'order_edit' order.id %}{% else %}#{% endif %}"
-                    class="btn btn-warning" {% if not request.user.can_edit_orders and request.user.role
-                    !='administrator' %}
+                    class="btn btn-warning" {% if not request.user.can_edit_orders and request.user.role != 'administrator' %}
                     onclick="event.preventDefault(); showAccessDenied('You do not have permission to edit orders. Please contact your administrator.');"
                     {% endif %}>
                     <i class="fas fa-edit"></i> Edit Order
@@ -291,10 +289,8 @@
                     <hr class="my-3">
                     <p class="mb-0">
                         <i class="fas fa-info-circle"></i>
-                        <strong>Note:</strong> This is a partial payment order. Customer has paid <strong>रू {{
-                            order.partial_amount_paid|floatformat:2 }}</strong>
-                        and still owes <strong class="text-danger">रू {{ order.remaining_amount|floatformat:2
-                            }}</strong>.
+                        <strong>Note:</strong> This is a partial payment order. Customer has paid <strong>रू {{ order.partial_amount_paid|floatformat:2 }}</strong>
+                        and still owes <strong class="text-danger">रू {{ order.remaining_amount|floatformat:2 }}</strong>.
                     </p>
                 </div>
             </div>
@@ -395,8 +391,7 @@
                         <tfoot class="table-light">
                             <tr>
                                 <td colspan="5" class="text-end"><strong>Subtotal:</strong></td>
-                                <td style="word-break: break-word; overflow-wrap: break-word;"><strong>रू {{
-                                        subtotal|floatformat:2 }}</strong></td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;"><strong>रू {{ subtotal|floatformat:2 }}</strong></td>
                             </tr>
                             {% if order.discount_amount > 0 %}
                             <tr>
@@ -412,8 +407,7 @@
                                 <td colspan="5" class="text-end">
                                     <i class="fas fa-truck text-info"></i> Shipping:
                                 </td>
-                                <td style="word-break: break-word; overflow-wrap: break-word;">रू {{
-                                    order.shipping_charge|floatformat:2 }}</td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;">रू {{ order.shipping_charge|floatformat:2 }}</td>
                             </tr>
                             {% endif %}
                             {% if tax_amount > 0 %}
@@ -421,8 +415,7 @@
                                 <td colspan="5" class="text-end">
                                     <i class="fas fa-receipt text-warning"></i> Tax ({{ order.tax_percent }}%):
                                 </td>
-                                <td style="word-break: break-word; overflow-wrap: break-word;">रू {{
-                                    tax_amount|floatformat:2 }}</td>
+                                <td style="word-break: break-word; overflow-wrap: break-word;">रू {{ tax_amount|floatformat:2 }}</td>
                             </tr>
                             {% endif %}
                             <tr class="table-success">
@@ -474,8 +467,7 @@
                                 <option value="">-- Select Order Status --</option>
                                 {% if status_setups %}
                                 {% for setup in status_setups %}
-                                <option value="{{ setup.id }}" {% if order.status_setup and
-                                    order.status_setup.id==setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                <option value="{{ setup.id }}" {% if order.status_setup and order.status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
                                 {% endfor %}
                                 {% else %}
                                 <option value="" disabled>No statuses available</option>
@@ -489,8 +481,7 @@
                                 <option value="">-- Select Payment Status --</option>
                                 {% if payment_status_setups %}
                                 {% for setup in payment_status_setups %}
-                                <option value="{{ setup.id }}" {% if order.payment_status_setup and
-                                    order.payment_status_setup.id==setup.id %}selected{% endif %}>{{ setup.name }}
+                                <option value="{{ setup.id }}" {% if order.payment_status_setup and order.payment_status_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}
                                 </option>
                                 {% endfor %}
                                 {% else %}
@@ -504,8 +495,7 @@
                                 <option value="">-- Select Payment Method --</option>
                                 {% if payment_setups %}
                                 {% for setup in payment_setups %}
-                                <option value="{{ setup.id }}" {% if order.payment_setup and
-                                    order.payment_setup.id==setup.id %}selected{% endif %}>{{ setup.name }}</option>
+                                <option value="{{ setup.id }}" {% if order.payment_setup and order.payment_setup.id == setup.id %}selected{% endif %}>{{ setup.name }}</option>
                                 {% endfor %}
                                 {% else %}
                                 <option value="" disabled>No payment methods available</option>
@@ -528,14 +518,12 @@
                                     <span class="logistics-provider-icon"
                                         style="background: linear-gradient(135deg, #1a73e8, #0d47a1);"><i
                                             class="fas fa-truck-fast"></i></span>
-                                    <span class="logistics-provider-name">NCM Logistics{% if order.api_config %} — {{
-                                        order.api_config.api_name }}{% endif %}</span>
+                                    <span class="logistics-provider-name">NCM Logistics{% if order.api_config %} — {{ order.api_config.api_name }}{% endif %}</span>
                                     {% elif order.logistics == 'pick_and_drop' %}
                                     <span class="logistics-provider-icon"
                                         style="background: linear-gradient(135deg, #e67e22, #d35400);"><i
                                             class="fas fa-truck-moving"></i></span>
-                                    <span class="logistics-provider-name">Pick and Drop{% if order.api_config %} — {{
-                                        order.api_config.api_name }}{% endif %}</span>
+                                    <span class="logistics-provider-name">Pick and Drop{% if order.api_config %} — {{ order.api_config.api_name }}{% endif %}</span>
                                     {% elif order.logistics == 'sundarijal' %}
                                     <span class="logistics-provider-icon"
                                         style="background: linear-gradient(135deg, #27ae60, #1e8449);"><i
@@ -786,8 +774,7 @@
                     </div>
                     <input type="hidden" name="ncm_branch_name" id="ncmBranchName" value="">
 
-                    <button type="submit" class="btn-ncm-create" id="ncmCreateBtn" {% if not order.customer_name or not
-                        order.customer_phone or not order.shipping_address %}disabled{% endif %}>
+                    <button type="submit" class="btn-ncm-create" id="ncmCreateBtn" {% if not order.customer_name or not order.customer_phone or not order.shipping_address %}disabled{% endif %}>
                         <i class="fas fa-plus-circle"></i>
                         <span>Create Shipment in NCM</span>
                     </button>
@@ -957,8 +944,7 @@
 
                     <button type="submit" class="btn btn-lg w-100"
                         style="background: linear-gradient(135deg, #e67e22, #d35400); color: white; border: none;"
-                        id="pndCreateBtn" {% if not order.customer_name or not order.customer_phone or not
-                        order.shipping_address %}disabled{% endif %}>
+                        id="pndCreateBtn" {% if not order.customer_name or not order.customer_phone or not order.shipping_address %}disabled{% endif %}>
                         <i class="fas fa-plus-circle"></i>
                         <span>Create Shipment in Pick and Drop</span>
                     </button>
@@ -1115,8 +1101,7 @@
                         <small class="text-muted d-block mb-1"
                             style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Note
                             added during order creation</small>
-                        <p class="mb-0" style="color: #2c3e50; line-height: 1.6; white-space: pre-wrap;">{{ order.notes
-                            }}</p>
+                        <p class="mb-0" style="color: #2c3e50; line-height: 1.6; white-space: pre-wrap;">{{ order.notes }}</p>
                     </div>
                 </div>
                 {% endif %}
@@ -1142,13 +1127,11 @@
                                 Note</small>
                             <small class="text-muted" style="font-size: 0.65rem;">
                                 <i class="fas fa-user-circle"></i>
-                                <strong>{{ admin_note.created_by.get_full_name|default:admin_note.created_by.username
-                                    }}</strong>
+                                <strong>{{ admin_note.created_by.get_full_name|default:admin_note.created_by.username }}</strong>
                                 — {{ admin_note.created_at|date:"F d, Y \a\t h:i A" }}
                             </small>
                         </div>
-                        <p class="mb-0" style="color: #2c3e50; line-height: 1.6; white-space: pre-wrap;">{{
-                            admin_note.content }}</p>
+                        <p class="mb-0" style="color: #2c3e50; line-height: 1.6; white-space: pre-wrap;">{{ admin_note.content }}</p>
                     </div>
                 </div>
                 {% endfor %}
@@ -1402,8 +1385,7 @@
                                         </span>
                                         {% if config.base_urls %}
                                         <span class="api-config-url">
-                                            <i class="fas fa-link"></i> {{ config.get_primary_base_url|truncatechars:35
-                                            }}
+                                            <i class="fas fa-link"></i> {{ config.get_primary_base_url|truncatechars:35 }}
                                         </span>
                                         {% endif %}
                                     </div>
@@ -1449,8 +1431,7 @@
                                         </span>
                                         {% if config.base_urls %}
                                         <span class="api-config-url">
-                                            <i class="fas fa-link"></i> {{ config.get_primary_base_url|truncatechars:35
-                                            }}
+                                            <i class="fas fa-link"></i> {{ config.get_primary_base_url|truncatechars:35 }}
                                         </span>
                                         {% endif %}
                                     </div>
@@ -4037,11 +4018,11 @@
         ncm_status: '{{ order.ncm_status }}',
         payment_status: '{{ order.payment_status }}',
         delivered_at: '{{ order.delivered_at|date:"Y-m-d H:i" }}',
-        cod_collected: {{ order.cod_collected|default: 0 }}
+        cod_collected: {{ order.cod_collected|default:0 }}
 };
 
     // Auto-sync interval (in milliseconds)
-    let autoSyncInterval = {{ AUTO_SYNC_INTERVAL|default: 14400 }} * 1000;
+    let autoSyncInterval = {{ AUTO_SYNC_INTERVAL|default:14400 }} * 1000;
     let autoSyncTimer = null;
 
     /**
