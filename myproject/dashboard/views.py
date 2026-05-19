@@ -4531,12 +4531,9 @@ def possible_redirection_list(request):
             .exclude(to_branch='')
             .values_list('order_id', 'to_branch', 'product_description')
     )
-    # Pre-fetch local order item keywords for product-aware matching.
-    # For each RTV that has a linked local Order (ncm_order_id match), extract
-    # the product names from that local order's items and use them as the
-    # matching reference instead of relying on the often-empty product_description.
+    # Pre-fetch local order item names for DISPLAY ONLY (not for matching).
+    # Product matching is done exclusively via RTV's product_description.
     _all_ncm_ids_for_prefetch = {row[0] for row in _all_rtv_tuples}
-    _rtv_local_keywords = {}    # ncm_order_id → frozenset of lowercase keyword strings
     _rtv_local_item_names = {}  # ncm_order_id → list of product name strings (for display)
     if _all_ncm_ids_for_prefetch:
         for _lo in Order.objects.filter(
@@ -4545,15 +4542,11 @@ def possible_redirection_list(request):
         ).prefetch_related(
             _Pf('items', queryset=OrderItem.objects.only('order_id', 'product_name'))
         ).only('id', 'ncm_order_id'):
-            _kws = set()
             _names = []
             for _it in _lo.items.all():
                 if _it.product_name:
-                    _pn_lower = _it.product_name.lower().strip()
                     _names.append(_it.product_name.strip())
-                    _kws.add(_pn_lower)
-            if _kws:
-                _rtv_local_keywords[_lo.ncm_order_id] = frozenset(_kws)
+            if _names:
                 _rtv_local_item_names[_lo.ncm_order_id] = _names
 
     # _confirmed_branch_map: uppercase branch_city → [Order objects] — built once,
@@ -4590,20 +4583,17 @@ def possible_redirection_list(request):
         # Determine which RTVs have at least one matching confirmed order.
         # Matching rules:
         #   - Branch must match (rtv.to_branch == order.branch_city, case-insensitive)
-        #   - If the RTV has product_description, at least one order item name must
-        #     appear in it (substring or any word >3 chars); otherwise branch match alone
-        #     is sufficient (product_description is empty for most NCM RTVs).
+        #   - RTV's product_description MUST match the order item name EXACTLY
+        #   - If RTV has no product_description, branch match alone is sufficient
         _has_match_ids = set()
         for _oid, _tbranch, _pdesc in _all_rtv_tuples:
             _bk = (_tbranch or '').upper()
             _branch_orders = _confirmed_branch_map.get(_bk, [])
             if not _branch_orders:
                 continue
-            # Build keyword set: local order item keywords take priority; fall back
-            # to product_description text if no linked local order has items.
-            _item_kws = _rtv_local_keywords.get(_oid, frozenset())
+            # Use RTV's product_description for matching, NOT linked local order items
             _desc = (_pdesc or '').lower().strip()
-            if not _item_kws and not _desc:
+            if not _desc:
                 # No product info at all — branch match alone qualifies this RTV.
                 _has_match_ids.add(_oid)
             else:
@@ -4612,14 +4602,8 @@ def possible_redirection_list(request):
                         if _item.product_name:
                             _pn = _item.product_name.lower().strip()
                             if _pn:
-                                _match_found = False
-                                if _item_kws:
-                                    if any(kw == _pn for kw in _item_kws):
-                                        _match_found = True
-                                elif _desc and _desc == _pn:
-                                    _match_found = True
-
-                                if _match_found:
+                                # Match candidate order's products against RTV's product_description exactly
+                                if _desc == _pn:
                                     _has_match_ids.add(_oid)
                                     break
                     if _oid in _has_match_ids:
@@ -4709,13 +4693,13 @@ def possible_redirection_list(request):
         _bk = (entry['rtv'].to_branch or '').upper()
         _branch_candidates = _confirmed_branch_map.get(_bk, [])
         _ncm_id = entry['ncm_order_id']
-        # Product keywords: local order item keywords take priority over product_description
-        _item_kws = _rtv_local_keywords.get(_ncm_id, frozenset())
+        # Use RTV's product_description for matching (what's actually being returned)
+        # Do NOT use linked local order items for matching — they're only for display
         _desc = (entry['rtv'].product_description or '').lower().strip()
         # Store local order product names for display in the template
         entry['local_order_product_names'] = _rtv_local_item_names.get(_ncm_id, [])
 
-        if not _item_kws and not _desc:
+        if not _desc:
             # No product info — all confirmed orders at this branch match.
             # Mark as branch-only so the template can warn the user.
             _matched = list(_branch_candidates)
@@ -4727,14 +4711,8 @@ def possible_redirection_list(request):
                     if _item.product_name:
                         _pn = _item.product_name.lower().strip()
                         if _pn:
-                            _match_found = False
-                            if _item_kws:
-                                if any(kw == _pn for kw in _item_kws):
-                                    _match_found = True
-                            elif _desc and _desc == _pn:
-                                _match_found = True
-
-                            if _match_found:
+                            # Match candidate order's products against RTV's product_description exactly
+                            if _desc == _pn:
                                 _matched.append(_o)
                                 break
             entry['is_branch_only_match'] = False
