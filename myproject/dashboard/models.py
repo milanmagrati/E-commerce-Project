@@ -626,6 +626,7 @@ class OrderActivityLog(models.Model):
     description = models.TextField(blank=True)
 
     # Metadata for storing detailed information (e.g., old customer details during redirections)
+    # ✅ Uses dict (callable) as default - Django will call it for each instance
     metadata = models.JSONField(default=dict, blank=True, null=True, help_text="Additional data for specific action types (e.g., old customer details for redirections)")
 
     created_at = models.DateTimeField(auto_now_add=True)
