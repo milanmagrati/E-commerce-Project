@@ -16760,14 +16760,19 @@ def manage_targets(request):
 
     # Date filter: today (default), 7, 15, 30
     orders_date_filter = request.GET.get('orders_date', 'today')
+    
+    from datetime import datetime, time
+    today_start = timezone.make_aware(datetime.combine(today, time.min))
+    today_end = timezone.make_aware(datetime.combine(today, time.max))
+
     if orders_date_filter == 'today':
-        target_orders_qs = target_orders_qs.filter(created_at__date=today)
+        target_orders_qs = target_orders_qs.filter(created_at__gte=today_start, created_at__lte=today_end)
     elif orders_date_filter == '7':
-        target_orders_qs = target_orders_qs.filter(created_at__date__gte=today - timedelta(days=7))
+        target_orders_qs = target_orders_qs.filter(created_at__gte=today_start - timedelta(days=7))
     elif orders_date_filter == '15':
-        target_orders_qs = target_orders_qs.filter(created_at__date__gte=today - timedelta(days=15))
+        target_orders_qs = target_orders_qs.filter(created_at__gte=today_start - timedelta(days=15))
     elif orders_date_filter == '30':
-        target_orders_qs = target_orders_qs.filter(created_at__date__gte=today - timedelta(days=30))
+        target_orders_qs = target_orders_qs.filter(created_at__gte=today_start - timedelta(days=30))
 
     target_orders_paginator = Paginator(target_orders_qs, 15)
     target_orders_page = target_orders_paginator.get_page(request.GET.get('orders_page', 1))
@@ -16856,14 +16861,19 @@ def my_targets(request):
 
     # Date filter: today (default), 7, 15, 30
     orders_date_filter = request.GET.get('orders_date', 'today')
+
+    from datetime import datetime, time
+    today_start = timezone.make_aware(datetime.combine(today, time.min))
+    today_end = timezone.make_aware(datetime.combine(today, time.max))
+
     if orders_date_filter == 'today':
-        my_orders_qs = my_orders_qs.filter(created_at__date=today)
+        my_orders_qs = my_orders_qs.filter(created_at__gte=today_start, created_at__lte=today_end)
     elif orders_date_filter == '7':
-        my_orders_qs = my_orders_qs.filter(created_at__date__gte=today - timedelta(days=7))
+        my_orders_qs = my_orders_qs.filter(created_at__gte=today_start - timedelta(days=7))
     elif orders_date_filter == '15':
-        my_orders_qs = my_orders_qs.filter(created_at__date__gte=today - timedelta(days=15))
+        my_orders_qs = my_orders_qs.filter(created_at__gte=today_start - timedelta(days=15))
     elif orders_date_filter == '30':
-        my_orders_qs = my_orders_qs.filter(created_at__date__gte=today - timedelta(days=30))
+        my_orders_qs = my_orders_qs.filter(created_at__gte=today_start - timedelta(days=30))
 
     my_orders_paginator = Paginator(my_orders_qs, 15)
     my_orders_page = my_orders_paginator.get_page(request.GET.get('orders_page', 1))
@@ -16890,7 +16900,8 @@ def my_targets(request):
     today_orders = Order.objects.filter(
         created_by=user,
         is_deleted=False,
-        created_at__date=today,
+        created_at__gte=today_start,
+        created_at__lte=today_end,
     ).select_related(
         'status_setup', 'payment_status_setup'
     ).prefetch_related('items__product').order_by('-created_at')
@@ -17019,15 +17030,25 @@ def api_target_detail(request, target_id):
 
 def _calculate_achievement(target):
     """Calculate achievement value for a target based on its type and period"""
+    from datetime import datetime, time
+    
     start = target.start_date
     end = target.end_date
+    
+    if isinstance(start, datetime):
+        start = start.date()
+    if isinstance(end, datetime):
+        end = end.date()
+
+    start_dt = timezone.make_aware(datetime.combine(start, time.min))
+    end_dt = timezone.make_aware(datetime.combine(end, time.max))
 
     if target.target_type == 'sales':
         # Sum of total_amount from delivered/confirmed orders created by this staff in the period
         result = Order.objects.filter(
             created_by=target.staff,
-            created_at__date__gte=start,
-            created_at__date__lte=end,
+            created_at__gte=start_dt,
+            created_at__lte=end_dt,
             is_deleted=False,
         ).filter(
             Q(order_status='delivered') | Q(status='delivered') |
@@ -17040,8 +17061,8 @@ def _calculate_achievement(target):
         # Count of dispatched/processed orders in the period
         count = Order.objects.filter(
             created_by=target.staff,
-            created_at__date__gte=start,
-            created_at__date__lte=end,
+            created_at__gte=start_dt,
+            created_at__lte=end_dt,
             is_deleted=False,
         ).filter(
             Q(order_status='dispatched') | Q(status='dispatched') |
