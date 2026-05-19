@@ -1968,7 +1968,7 @@ def order_overview_data(request):
                 days = 30
         except (ValueError, TypeError):
             days = 30
-            
+
         if days == 1:
             start_date = timezone.now().date()
         else:
@@ -1986,7 +1986,7 @@ def order_overview_data(request):
             local_dt = timezone.localtime(order['created_at'])
             order_hour = local_dt.hour
             counts_map[order_hour] = counts_map.get(order_hour, 0) + 1
-        
+
         labels = [f"{hour:02d}:00" for hour in range(24)]
         counts = [counts_map.get(hour, 0) for hour in range(24)]
         total = sum(counts)
@@ -2023,7 +2023,7 @@ def order_sources_data(request):
     from django.utils import timezone
     from django.db.models.functions import TruncDate
     from django.db.models import Count
-    
+
     # Check if custom date range is provided
     custom_from = request.GET.get('custom_from')
     custom_to = request.GET.get('custom_to')
@@ -2083,7 +2083,7 @@ def order_sources_data(request):
         if not source_raw:
             source_raw = 'Direct'
         source_name = source_raw.replace('_', ' ').title()
-        
+
         all_sources.add(source_name)
         if order_date in order_sources_by_date:
             order_sources_by_date[order_date][source_name] = order_sources_by_date[order_date].get(source_name, 0) + 1
@@ -4618,7 +4618,7 @@ def possible_redirection_list(request):
                                         _match_found = True
                                 elif _desc and _desc == _pn:
                                     _match_found = True
-                                
+
                                 if _match_found:
                                     _has_match_ids.add(_oid)
                                     break
@@ -4733,7 +4733,7 @@ def possible_redirection_list(request):
                                     _match_found = True
                             elif _desc and _desc == _pn:
                                 _match_found = True
-                                
+
                             if _match_found:
                                 _matched.append(_o)
                                 break
@@ -4852,6 +4852,14 @@ def redirect_order_save(request, order_id):
 
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
+
+        # Capture old customer details before any changes
+        _old_customer_details = {
+            'customer_name': order.customer_name,
+            'customer_phone': order.customer_phone,
+            'shipping_address': order.shipping_address,
+            'branch_city': order.branch_city,
+        }
 
         with transaction.atomic():
             # Update customer/shipping fields
@@ -5009,6 +5017,7 @@ def redirect_order_save(request, order_id):
                 api_config_id=api_config_id,
                 destination=destination,
                 cod_charge=cod_charge,
+                old_customer_details=_old_customer_details,  # Pass old details for activity log
             )
             logistics_result = result
 
@@ -5019,6 +5028,15 @@ def redirect_order_save(request, order_id):
                 if _matched_oid:
                     try:
                         _matched_order = Order.objects.get(id=int(_matched_oid), is_deleted=False)
+
+                        # Capture old matched order customer details for activity log
+                        _matched_old_details = {
+                            'customer_name': _matched_order.customer_name,
+                            'customer_phone': _matched_order.customer_phone,
+                            'shipping_address': _matched_order.shipping_address,
+                            'branch_city': _matched_order.branch_city,
+                        }
+
                         _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
                         _matched_order.status_setup = _redir_st
                         _matched_order.order_status = _redir_st.name.lower()
@@ -5039,6 +5057,7 @@ def redirect_order_save(request, order_id):
                                 field_name='ncm_status',
                                 old_value='',
                                 new_value='redirected',
+                                metadata=_matched_old_details,  # Store old customer details
                             )
                         except Exception:
                             pass
@@ -5337,8 +5356,19 @@ def redirect_rtv_save(request, ncm_order_id):
                 pass
 
             # Update linked local order if it exists
+            # Capture old customer details for activity log
+            _old_customer_details = None
             try:
                 local_order = Order.objects.get(ncm_order_id=ncm_order_id, is_deleted=False)
+
+                # Store old customer details before updating
+                _old_customer_details = {
+                    'customer_name': local_order.customer_name,
+                    'customer_phone': local_order.customer_phone,
+                    'shipping_address': local_order.shipping_address,
+                    'branch_city': local_order.branch_city,
+                }
+
                 local_order.ncm_status = 'redirected'
                 local_order.customer_name = payload['name'] or local_order.customer_name
                 local_order.customer_phone = payload['phone'] or local_order.customer_phone
@@ -5362,6 +5392,15 @@ def redirect_rtv_save(request, ncm_order_id):
             if _matched_oid:
                 try:
                     _matched_order = Order.objects.get(id=int(_matched_oid), is_deleted=False)
+
+                    # Capture old matched order customer details for activity log
+                    _matched_old_details = {
+                        'customer_name': _matched_order.customer_name,
+                        'customer_phone': _matched_order.customer_phone,
+                        'shipping_address': _matched_order.shipping_address,
+                        'branch_city': _matched_order.branch_city,
+                    }
+
                     _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
                     _matched_order.status_setup = _redir_st
                     _matched_order.order_status = _redir_st.name.lower()
@@ -5381,6 +5420,7 @@ def redirect_rtv_save(request, ncm_order_id):
                             field_name='ncm_status',
                             old_value='',
                             new_value='redirected',
+                            metadata=_matched_old_details,  # Store old customer details
                         )
                     except Exception:
                         pass
@@ -5403,6 +5443,7 @@ def redirect_rtv_save(request, ncm_order_id):
                     field_name='ncm_status',
                     old_value='',
                     new_value='redirected',
+                    metadata=_old_customer_details or {},  # Store old customer details
                 )
             except Order.DoesNotExist:
                 pass
@@ -5436,11 +5477,12 @@ def redirect_rtv_save(request, ncm_order_id):
         return JsonResponse({'status': 'error', 'message': f'Redirect failed: {str(e)}'}, status=500)
 
 
-def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, cod_charge=None):
+def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, cod_charge=None, old_customer_details=None):
     """
     Redirect an existing NCM order to a different address/customer using NCM v2 redirect API.
     Endpoint: POST /api/v2/vendor/order/redirect
     Params: pk (NCM order ID), name, phone, address, vendorOrderid, destination (branch ID), cod_charge
+    old_customer_details: Dict with old customer info for activity log
     """
     import requests
     from django.conf import settings
@@ -5580,6 +5622,7 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
                     field_name='ncm_status',
                     old_value='',
                     new_value='redirected',
+                    metadata=old_customer_details or {},  # Store old customer details if provided
                 )
             except Exception:
                 pass  # Don't fail the redirect if logging fails
@@ -14960,7 +15003,7 @@ def staff_performance_analytics(request):
 
     # ========== PERFORMANCE TRENDS OVER TIME ==========
     performance_trends_raw = orders_qs.values('created_at', 'status', 'order_status', 'total_amount')
-    
+
     daily_stats = {}
     for entry in performance_trends_raw:
         if not entry['created_at']: continue
@@ -14969,13 +15012,13 @@ def staff_performance_analytics(request):
             daily_stats[date_obj] = {
                 'orders': 0, 'delivered': 0, 'revenue': Decimal('0'), 'returns': 0
             }
-        
+
         daily_stats[date_obj]['orders'] += 1
         status = (entry['status'] or '').lower()
         order_status = (entry['order_status'] or '').lower()
         if status == 'delivered' or order_status == 'delivered':
             daily_stats[date_obj]['delivered'] += 1
-            
+
         daily_stats[date_obj]['revenue'] += entry['total_amount'] or Decimal('0')
 
     returns_raw = return_requests.values('order__created_at')
@@ -14996,10 +15039,10 @@ def staff_performance_analytics(request):
         delivered = stats['delivered']
         revenue = safe_decimal(stats['revenue'], max_digits=12, decimal_places=2)
         returns = stats['returns']
-        
+
         resolved_daily = delivered + returns
         success_rate_daily = (delivered / resolved_daily * 100) if resolved_daily > 0 else 0.0
-        
+
         performance_trends.append({
             'date': date_obj.strftime('%d %b'),
             'orders': orders,
@@ -15019,12 +15062,12 @@ def staff_performance_analytics(request):
         'returns': 0,
         'other': 0
     }
-    
+
     # Iterate through all orders in the queryset to count their effective status
     for entry in orders_qs.values('status', 'order_status'):
         status = (entry['status'] or '').lower()
         order_status = (entry['order_status'] or '').lower()
-        
+
         # Determine effective status
         if status in ['delivered', 'completed'] or order_status in ['delivered', 'completed']:
             status_breakdown['delivered'] += 1
@@ -18825,7 +18868,7 @@ def ncm_rtvs_list(request):
             display_time_str = rtv.rtv_marked_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p')
         else:
             display_time_str = '—'
-            
+
         status_dict = None
         if rtv.rtv_status:
             status_dict = {
@@ -18833,7 +18876,7 @@ def ncm_rtvs_list(request):
                 'name': rtv.rtv_status.name,
                 'color': rtv.rtv_status.color,
             }
-            
+
         page_rtvs.append({
             'rtv_id': rtv.id,
             'order_id': rtv.order_id,
@@ -18921,8 +18964,8 @@ def ncm_rtvs_sync(request):
                         comment='', api_config=cfg
                     ).values_list('order_id', flat=True)[:3]
                 )
-                
-                # Priority 3: Random active RTVs to keep existing records fresh 
+
+                # Priority 3: Random active RTVs to keep existing records fresh
                 # (helps catch unmark -> re-mark scenarios that otherwise aren't noticed)
                 remaining = 6 - (len(priority_ids) + len(fallback_ids))
                 random_ids = []
@@ -18934,7 +18977,7 @@ def ncm_rtvs_sync(request):
                             order_id__in=priority_ids + fallback_ids
                         ).order_by('?')[:remaining].values_list('order_id', flat=True)
                     )
-                    
+
                 no_comment_ids = priority_ids + fallback_ids + random_ids
                 for i, oid in enumerate(no_comment_ids):
                     if i > 0:
@@ -18978,7 +19021,7 @@ def ncm_rtvs_sync(request):
                                                 except Exception:
                                                     pass
                                         break
-                                        
+
                             update_fields = {}
                             if rtv_comment:
                                 update_fields['comment'] = rtv_comment
@@ -18986,7 +19029,7 @@ def ncm_rtvs_sync(request):
                                 update_fields['rtv_marked_at'] = rtv_marked_at
                             if vendor_return_status is not None:
                                 update_fields['vendor_return'] = vendor_return_status
-                            
+
                             if update_fields:
                                 RTVOrder.objects.filter(order_id=oid).update(**update_fields)
                                 comments_updated += 1
@@ -19202,7 +19245,7 @@ def ncm_rtvs_sync(request):
                                 elif text.startswith('RTV removed'):
                                     vendor_return_status = False
                                     break
-                                    
+
                             if vendor_return_status is None and not rtv_comment:
                                 for c in comments:
                                     if c.get('added_by', '') == 'NCM Staff':
@@ -19212,7 +19255,7 @@ def ncm_rtvs_sync(request):
                                             if at:
                                                 rtv_marked_at = parse_datetime(at)
                                         break
-                                        
+
                             upd = {}
                             if rtv_comment:
                                 upd['comment'] = rtv_comment
@@ -19220,7 +19263,7 @@ def ncm_rtvs_sync(request):
                                 upd['rtv_marked_at'] = rtv_marked_at
                             if vendor_return_status is not None:
                                 upd['vendor_return'] = vendor_return_status
-                                
+
                             if upd:
                                 RTVOrder.objects.filter(order_id=oid).update(**upd)
                     except Exception:
