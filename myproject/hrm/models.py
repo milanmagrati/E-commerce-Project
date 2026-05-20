@@ -1019,3 +1019,35 @@ class AdvancePayment(models.Model):
             next_id = (last.id + 1) if last else 1
             self.advance_number = f"ADV-{tz.now().year}-{next_id:04d}"
         super().save(*args, **kwargs)
+
+
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from django.db.models import Sum
+
+@receiver(post_save, sender=LeaveRequest)
+@receiver(post_delete, sender=LeaveRequest)
+def update_leave_balance_used_days(sender, instance, **kwargs):
+    if not instance.employee:
+        return
+    
+    # Also ensure a balance exists for the current request's year and leave type
+    if instance.leave_type and instance.start_date:
+        LeaveBalance.objects.get_or_create(
+            employee=instance.employee,
+            leave_type=instance.leave_type,
+            year=instance.start_date.year
+        )
+
+    # Recalculate for all balances of this employee to handle changes in year/type
+    for balance in LeaveBalance.objects.filter(employee=instance.employee):
+        used = LeaveRequest.objects.filter(
+            employee=balance.employee,
+            leave_type=balance.leave_type,
+            start_date__year=balance.year,
+            status='approved'
+        ).aggregate(total=Sum('days'))['total'] or 0
+        
+        if balance.used_days != used:
+            balance.used_days = used
+            balance.save()

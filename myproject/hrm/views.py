@@ -7567,6 +7567,9 @@ def leave_application_update(request, pk):
         la.start_date = dt.strptime(start_date, '%Y-%m-%d').date()
         la.end_date = dt.strptime(end_date, '%Y-%m-%d').date()
         la.reason = reason
+        status = request.POST.get('status')
+        if status in ('pending', 'approved', 'rejected', 'cancelled'):
+            la.status = status
         if 'attachment' in request.FILES:
             la.attachment = request.FILES['attachment']
         la.save()
