@@ -24,6 +24,9 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2><i class="fas fa-random text-primary"></i> Possible Redirection</h2>
             <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'redirect_orders_list' %}" class="btn btn-danger text-white">
+                    <i class="fas fa-exchange-alt"></i> Redirect Orders
+                </a>
                 <button type="button" class="btn btn-success" id="syncRtvBtn" onclick="syncRtvFromNcm()">
                     <i class="fas fa-sync-alt" id="syncRtvIcon"></i> Sync RTV from NCM
                 </button>

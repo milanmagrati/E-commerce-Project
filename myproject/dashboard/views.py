@@ -4754,6 +4754,180 @@ def possible_redirection_list(request):
 
 @login_required
 @permission_required('can_view_orders')
+def redirect_orders_list(request):
+    """Display all orders that have been redirected with detailed history and old customer details"""
+    # pyrefly: ignore [missing-import]
+    from django.db.models import Q, CharField, Prefetch as _Pf, Sum
+    # pyrefly: ignore [missing-import]
+    from django.db.models.functions import Cast, Coalesce
+    from django.db import models as db_models
+
+    # Base queryset: orders that are either redirected OR have a redirected activity log
+    redirect_log_order_ids = OrderActivityLog.objects.filter(
+        action_type='redirected'
+    ).values_list('order_id', flat=True)
+    
+    orders = Order.objects.filter(
+        is_deleted=False
+    ).filter(
+        Q(ncm_status='redirected') | Q(id__in=redirect_log_order_ids)
+    ).select_related(
+        'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
+    ).prefetch_related(
+        _Pf('items', queryset=OrderItem.objects.only('product_name', 'quantity', 'price', 'total')),
+        _Pf('activity_logs', queryset=OrderActivityLog.objects.filter(action_type='redirected').order_by('-created_at'))
+    ).order_by('-updated_at')
+
+    # GET FILTER PARAMETERS
+    search_query = request.GET.get('search', '')
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+    redirection_status = request.GET.get('status', '')
+    branch_filter = request.GET.get('branch', '')
+
+    # Apply search filter (search by order number, NCM ID, customer name, phone)
+    if search_query:
+        orders = orders.annotate(
+            _ncm_id_str=Cast('ncm_order_id', output_field=CharField())
+        )
+        search_q = (
+            Q(order_number__icontains=search_query) |
+            Q(_ncm_id_str__icontains=search_query) |
+            Q(customer_name__icontains=search_query) |
+            Q(customer_phone__icontains=search_query)
+        )
+        orders = orders.filter(search_q)
+
+    # Apply date range filter using timezone-aware datetimes to avoid DB __date cast issues
+    from django.utils import timezone
+    from datetime import datetime, time
+    
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            start_dt = timezone.make_aware(datetime.combine(start_date_obj, time.min))
+            orders = orders.filter(updated_at__gte=start_dt)
+        except ValueError:
+            pass
+
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            end_dt = timezone.make_aware(datetime.combine(end_date_obj, time.max))
+            orders = orders.filter(updated_at__lte=end_dt)
+        except ValueError:
+            pass
+
+    # Apply branch filter
+    if branch_filter:
+        orders = orders.filter(branch_city__iexact=branch_filter)
+
+    # Apply status filter
+    if redirection_status == 'redirected':
+        orders = orders.filter(ncm_status='redirected')
+    elif redirection_status == 'pending':
+        orders = orders.exclude(ncm_status='redirected')
+
+    # Stats
+    total_redirected = Order.objects.filter(is_deleted=False, ncm_status='redirected').count()
+
+    # Count pending redirections (orders with redirection activity log but not yet completed)
+    pending_redirection_ids = set(
+        OrderActivityLog.objects.filter(
+            action_type='redirected',
+            order__is_deleted=False
+        ).exclude(
+            order__ncm_status='redirected'
+        ).values_list('order_id', flat=True)
+    )
+    pending_redirection_count = len(pending_redirection_ids)
+
+    # Calculate Total Value for the current filtered view
+    total_value = orders.aggregate(total=Sum('total_amount'))['total'] or 0
+
+    # Pagination
+    per_page = request.GET.get('per_page', '50')
+    if per_page not in ('50', '100', '200'):
+        per_page = '50'
+    paginator = Paginator(orders, int(per_page))
+    page_number = request.GET.get('page')
+    orders_page = paginator.get_page(page_number)
+
+    # Build enriched entries with redirection history
+    redirect_entries = []
+    for order in orders_page.object_list:
+        # Get redirection activity logs
+        redirection_logs = order.activity_logs.all()[:1]  # Get latest redirection log
+
+        old_customer_info = {}
+        redirect_timestamp = None
+        redirect_user = None
+        redirect_reason = ''
+
+        if redirection_logs:
+            log = redirection_logs[0]
+            redirect_timestamp = log.created_at
+            redirect_user = log.user.username if log.user else 'System'
+            redirect_reason = log.description or ''
+
+            # Extract old customer info from metadata
+            if log.metadata:
+                old_customer_info = {
+                    'name': log.metadata.get('old_customer_name', '—'),
+                    'phone': log.metadata.get('old_customer_phone', '—'),
+                    'address': log.metadata.get('old_shipping_address', '—'),
+                    'branch': log.metadata.get('old_branch_city', '—'),
+                }
+
+        entry = {
+            'order': order,
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'ncm_order_id': order.ncm_order_id,
+            'new_customer_name': order.customer_name,
+            'new_customer_phone': order.customer_phone,
+            'new_branch': order.branch_city,
+            'new_address': order.shipping_address,
+            'old_customer_info': old_customer_info,
+            'redirect_timestamp': redirect_timestamp,
+            'redirect_user': redirect_user,
+            'redirect_reason': redirect_reason,
+            'total_amount': order.total_amount,
+            'order_status': order.order_status,
+            'ncm_status': order.ncm_status,
+            'is_pending': order.ncm_status != 'redirected',
+            'items_count': order.items.count(),
+            'updated_at': order.updated_at,
+        }
+        redirect_entries.append(entry)
+
+    # Get unique branches for filter
+    branches = Branch.objects.filter(is_active=True).order_by('name')
+
+    # Get all cities for reference
+    cities = City.objects.all().order_by('name')
+
+    context = {
+        'redirect_entries': redirect_entries,
+        'orders_page': orders_page,
+        'total_redirected': total_redirected,
+        'pending_redirection_count': pending_redirection_count,
+        'total_value': total_value,
+        'search_query': search_query,
+        'redirection_status': redirection_status,
+        'branch_filter': branch_filter,
+        'start_date': start_date,
+        'end_date': end_date,
+        'per_page': per_page,
+        'branches': branches,
+        'cities': cities,
+    }
+
+    return render(request, 'redirect_orders.html', context)
+
+
+@login_required
+@permission_required('can_view_orders')
 def redirect_order_get(request, order_id):
     """AJAX: Get order data for redirect modal."""
     from django.http import JsonResponse
@@ -15205,7 +15379,7 @@ def api_product_staff_orders(request):
 
     if not staff_id or not product_id:
         return JsonResponse({'error': 'staff_id and product_id are required'}, status=400)
-    
+
     # Handle cases where staff_id is literally "None" (e.g. from template rendering of null values)
     staff_filter = {'order__created_by__isnull': True} if staff_id == 'None' else {'order__created_by_id': staff_id}
     order_staff_filter = {'created_by__isnull': True} if staff_id == 'None' else {'created_by_id': staff_id}
@@ -16768,7 +16942,7 @@ def manage_targets(request):
 
     # Date filter: today (default), 7, 15, 30
     orders_date_filter = request.GET.get('orders_date', 'today')
-    
+
     from datetime import datetime, time
     today_start = timezone.make_aware(datetime.combine(today, time.min))
     today_end = timezone.make_aware(datetime.combine(today, time.max))
@@ -17039,10 +17213,10 @@ def api_target_detail(request, target_id):
 def _calculate_achievement(target):
     """Calculate achievement value for a target based on its type and period"""
     from datetime import datetime, time
-    
+
     start = target.start_date
     end = target.end_date
-    
+
     if isinstance(start, datetime):
         start = start.date()
     if isinstance(end, datetime):
@@ -19962,3 +20136,79 @@ def maintenance_logs(request):
         })
 
     return JsonResponse({'success': True, 'logs': data})
+
+
+@login_required
+@permission_required('can_view_orders')
+def get_redirect_order_details(request, order_id):
+    """AJAX: Get detailed information about a redirected order including old and new customer details"""
+    try:
+        order = Order.objects.select_related(
+            'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
+        ).prefetch_related('items', 'activity_logs').get(id=order_id, is_deleted=False)
+
+        # Get the latest redirection activity log
+        redirection_log = order.activity_logs.filter(action_type='redirected').first()
+
+        old_customer_info = {}
+        redirect_history = []
+
+        if redirection_log:
+            old_customer_info = redirection_log.metadata or {}
+
+            # Get all redirection logs for history
+            for log in order.activity_logs.filter(action_type='redirected').order_by('-created_at'):
+                redirect_history.append({
+                    'redirect_user': log.user.username if log.user else 'System',
+                    'redirect_timestamp': log.created_at.isoformat(),
+                    'redirect_reason': log.description or '',
+                })
+
+        # Get all order items
+        items = []
+        for item in order.items.all():
+            items.append({
+                'product_name': item.product_name or '',
+                'quantity': item.quantity,
+                'price': str(item.price or '0'),
+                'total': str(item.total or '0'),
+            })
+
+        # Format dates
+        import pytz
+        nepal_tz = pytz.timezone('Asia/Kathmandu')
+
+        data = {
+            'success': True,
+            'order': {
+                'id': order.id,
+                'order_number': order.order_number,
+                'ncm_order_id': order.ncm_order_id,
+                'order_status': order.order_status or '',
+                'ncm_status': order.ncm_status or '',
+                'total_amount': str(order.total_amount or '0'),
+                'discount_amount': str(order.discount_amount or '0'),
+                'shipping_charge': str(order.shipping_charge or '0'),
+                'tax_percent': str(order.tax_percent or '0'),
+                'customer_name': order.customer_name or '',
+                'customer_phone': order.customer_phone or '',
+                'customer_email': order.customer_email or '',
+                'branch_city': order.branch_city or '',
+                'shipping_address': order.shipping_address or '',
+                'landmark': order.landmark or '',
+                'in_out': order.in_out or '',
+                'delivery_type': order.ncm_delivery_type or '',
+                'created_at': order.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+                'updated_at': order.updated_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+                'old_customer_info': old_customer_info,
+                'redirect_history': redirect_history,
+                'items': items,
+            }
+        }
+
+        return JsonResponse(data)
+    except Order.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Order not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error fetching redirect order details: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

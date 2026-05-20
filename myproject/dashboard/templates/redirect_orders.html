@@ -1,0 +1,951 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Redirect Orders - Admin Panel{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Responsive Layout Constraints */
+    body {
+        overflow-x: hidden;
+    }
+
+    .main-content {
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100vw;
+        box-sizing: border-box;
+    }
+
+    .redirect-table {
+        min-width: 600px;
+        width: 100%;
+        table-layout: auto;
+    }
+
+    /* Professional Card Styling */
+    .stat-card {
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        border-left: 4px solid;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    .stat-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 50px;
+        height: 50px;
+        border-radius: 8px;
+        opacity: 0.1;
+        font-size: 1.8rem;
+    }
+
+    .stat-label {
+        letter-spacing: 0.5px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .stat-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #2c3e50;
+    }
+
+    .border-left-primary {
+        border-left: 4px solid #0d6efd !important;
+    }
+
+    .border-left-warning {
+        border-left: 4px solid #ffc107 !important;
+    }
+
+    .border-left-success {
+        border-left: 4px solid #198754 !important;
+    }
+
+    .border-left-danger {
+        border-left: 4px solid #dc3545 !important;
+    }
+    
+    .border-left-info {
+        border-left: 4px solid #0dcaf0 !important;
+    }
+
+    /* Table Styling */
+    .table-responsive {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .table tbody tr {
+        transition: all 0.3s ease;
+        border-bottom: 1px solid #e9ecef;
+    }
+
+    .table tbody tr:hover {
+        background-color: #f8f9ff;
+        box-shadow: inset 3px 0 0 #0d6efd;
+    }
+
+    .table th {
+        background-color: #f8f9fa;
+        color: #495057;
+        font-weight: 600;
+        border-bottom: 2px solid #dee2e6;
+        padding: 1.25rem !important;
+        font-size: 0.9rem;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+    }
+
+    .table td {
+        padding: 1rem !important;
+        vertical-align: middle;
+        font-size: 0.95rem;
+    }
+
+    /* Customer Info Badge */
+    .customer-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background-color: #f0f7ff;
+        border-left: 3px solid;
+        font-size: 0.9rem;
+    }
+
+    .customer-badge.old {
+        border-left-color: #6c757d;
+    }
+
+    .customer-badge.new {
+        border-left-color: #28a745;
+    }
+
+    .customer-name {
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .customer-phone {
+        color: #6c757d;
+        font-size: 0.85rem;
+    }
+
+    /* Redirect History Badge */
+    .redirect-badge {
+        display: inline-block;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background-color: #e9ecef;
+        color: #495057;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+
+    .redirect-by {
+        display: block;
+        font-size: 0.8rem;
+        opacity: 0.9;
+        margin-top: 4px;
+    }
+
+    /* Filter Card */
+    .filter-card {
+        border: none;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    }
+
+    .filter-card .card-body {
+        background: white;
+        border-radius: 0 0 8px 8px;
+    }
+
+    .input-group-text {
+        background: white;
+        border: 1px solid #e0e0e0;
+    }
+
+    .form-control,
+    .form-select {
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        transition: all 0.3s ease;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.15);
+    }
+
+    /* Buttons */
+    .btn-group-sm .btn {
+        border-radius: 4px;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.8rem;
+    }
+
+    .btn {
+        border-radius: 6px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        border: none;
+    }
+
+    /* Pagination */
+    .pagination {
+        margin-top: 2rem;
+    }
+
+    /* Empty State */
+    .empty-state {
+        padding: 3rem 2rem;
+        text-align: center;
+    }
+
+    .empty-icon {
+        opacity: 0.3;
+    }
+
+    .od-field-label {
+        font-weight: 600;
+        font-size: 0.85rem;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.5rem;
+    }
+
+    .od-field-value {
+        font-size: 1rem;
+        color: #2c3e50;
+    }
+
+    .od-section {
+        border-bottom: 1px solid #e9ecef;
+        padding: 1.5rem;
+    }
+
+    .od-section-header {
+        font-weight: 700;
+        font-size: 1rem;
+        color: #2c3e50;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid #f0f0f0;
+    }
+
+    .od-section-body {
+        padding: 1rem 0;
+    }
+
+    /* Modal Styling */
+    .modal-content {
+        border: none;
+        border-radius: 10px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .od-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 10px 10px 0 0;
+    }
+
+    .od-footer {
+        background: #f8f9fa;
+        border-top: 1px solid #e9ecef;
+        border-radius: 0 0 10px 10px;
+    }
+
+    /* Info Box */
+    .info-box {
+        background: #f0f7ff;
+        border-left: 4px solid #0d6efd;
+        padding: 1rem;
+        border-radius: 6px;
+        margin-bottom: 1rem;
+    }
+
+    .info-box.warning {
+        background: #fff8f0;
+        border-left-color: #ffc107;
+    }
+
+    .info-box.success {
+        background: #f0fff4;
+        border-left-color: #28a745;
+    }
+
+    /* Responsive */
+    @media (max-width: 992px) {
+        .hide-md {
+            display: none !important;
+        }
+
+        .customer-badge {
+            display: block;
+            margin-bottom: 8px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .hide-sm {
+            display: none !important;
+        }
+
+        .stat-card {
+            margin-bottom: 1rem;
+        }
+
+        .table {
+            font-size: 0.85rem;
+        }
+
+        .table th,
+        .table td {
+            padding: 0.75rem !important;
+        }
+    }
+
+    /* Breadcrumb Styling */
+    .breadcrumb {
+        background: transparent;
+        padding: 0;
+        margin-bottom: 1.5rem;
+    }
+
+    .breadcrumb-item.active {
+        color: #667eea;
+        font-weight: 600;
+    }
+
+    /* Badge Styling */
+    .badge {
+        padding: 0.5rem 0.75rem;
+        border-radius: 4px;
+        font-weight: 500;
+        font-size: 0.75rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h2 class="mb-1"><i class="fas fa-exchange-alt text-primary"></i> Redirect Orders</h2>
+                <p class="text-muted mb-0">View all orders that have been redirected to new customers</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'possible_redirection_list' %}" class="btn btn-outline-primary">
+                    <i class="fas fa-random"></i> Possible Redirection
+                </a>
+                <a href="{% url 'orders_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> All Orders
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4 col-sm-6">
+        <div class="card stat-card border-left-success shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1 text-uppercase stat-label">Total Redirected</h6>
+                        <h3 class="mb-0 stat-value text-success">{{ total_redirected }}</h3>
+                    </div>
+                    <div class="stat-icon text-success"><i class="fas fa-exchange-alt fa-2x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card stat-card border-left-warning shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1 text-uppercase stat-label">This Page</h6>
+                        <h3 class="text-warning mb-0 stat-value">{{ orders_page.object_list|length }}</h3>
+                    </div>
+                    <div class="stat-icon text-warning"><i class="fas fa-list fa-2x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card stat-card border-left-info shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1 text-uppercase stat-label">Total Value</h6>
+                        <h3 class="text-info mb-0 stat-value">Rs.{{ total_value|floatformat:2 }}</h3>
+                    </div>
+                    <div class="stat-icon text-info"><i class="fas fa-rupee-sign fa-2x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-4 filter-card">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end" id="filterForm">
+            <div class="col-lg-2 col-md-4">
+                <label class="form-label small text-muted mb-1">Search</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" name="search" placeholder="Order #, NCM ID, Name..."
+                        value="{{ search_query }}">
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label class="form-label small text-muted mb-1">Branch</label>
+                <select name="branch" class="form-select form-select-sm">
+                    <option value="">All Branches</option>
+                    {% for city in cities %}
+                    <option value="{{ city.name }}" {% if branch_filter == city.name %}selected{% endif %}>{{ city.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-2">
+                <label class="form-label small text-muted mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="redirected" {% if redirection_status == 'redirected' %}selected{% endif %}>Redirected</option>
+                    <option value="pending" {% if redirection_status == 'pending' %}selected{% endif %}>Pending</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label class="form-label small text-muted mb-1">Start Date</label>
+                <input type="date" class="form-control form-control-sm" name="start_date" value="{{ start_date }}">
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label class="form-label small text-muted mb-1">End Date</label>
+                <input type="date" class="form-control form-control-sm" name="end_date" value="{{ end_date }}">
+            </div>
+            <div class="col-lg-2 col-md-2">
+                <div class="d-flex gap-1">
+                    <button type="submit" class="btn btn-primary btn-sm flex-grow-1" title="Filter"><i
+                            class="fas fa-filter"></i></button>
+                    <a href="{% url 'redirect_orders_list' %}" class="btn btn-secondary btn-sm" title="Reset"><i
+                            class="fas fa-redo"></i></a>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-2 d-flex justify-content-end">
+                <input type="hidden" name="per_page" value="{{ per_page }}" id="perPageHidden">
+                <label class="form-label small text-muted mb-1 me-2">Per page:</label>
+                <select class="form-select form-select-sm" style="width: auto; min-width: 70px;"
+                    onchange="changePerPage(this.value)">
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                    <option value="200" {% if per_page == '200' %}selected{% endif %}>200</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Orders Table -->
+<div class="card shadow-sm mb-4 border-0">
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+        <h5 class="text-primary fw-bold mb-0"><i class="fas fa-exchange-alt me-2"></i>Redirected Orders</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive mt-2">
+            <table class="table table-hover mb-0 redirect-table align-middle">
+                <thead class="table-light">
+                    <tr>
+                    <th>Order #</th>
+                    <th>Old Customer</th>
+                    <th class="hide-md">Old Branch</th>
+                    <th>New Customer</th>
+                    <th class="hide-md">New Branch</th>
+                    <th class="hide-sm">Redirect Date</th>
+                    <th class="hide-sm">Status</th>
+                    <th class="hide-sm">By</th>
+                    <th class="text-center">Amount</th>
+                    <th class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if redirect_entries %}
+                {% for entry in redirect_entries %}
+                <tr class="redirect-row" data-order-id="{{ entry.order_id }}">
+                    <td>
+                        <button type="button"
+                            class="btn btn-link fw-bold text-primary p-0 border-0 text-decoration-none"
+                            onclick="openOrderDetailModal({{ entry.order_id }})">
+                            <i class="fas fa-search-plus me-1 small opacity-50"></i>#{{ entry.order_number }}
+                        </button>
+                        {% if entry.ncm_order_id %}
+                        <div class="small text-muted">
+                            <i class="fas fa-cloud me-1"></i>NCM: {{ entry.ncm_order_id }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="customer-badge old">
+                            <div>
+                                <div class="customer-name">{{ entry.old_customer_info.name }}</div>
+                                <div class="customer-phone">{{ entry.old_customer_info.phone }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="hide-md">
+                        <span class="badge bg-secondary text-white" title="{{ entry.old_customer_info.branch }}">
+                            {{ entry.old_customer_info.branch|truncatechars:15 }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="customer-badge new">
+                            <i class="fas fa-check-circle text-success"></i>
+                            <div>
+                                <div class="customer-name">{{ entry.new_customer_name }}</div>
+                                <div class="customer-phone">{{ entry.new_customer_phone }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="hide-md">
+                        <span class="badge bg-success text-white" title="{{ entry.new_branch }}">
+                            {{ entry.new_branch|truncatechars:15 }}
+                        </span>
+                    </td>
+                    <td class="hide-sm">
+                        <div class="small">
+                            {% if entry.redirect_timestamp %}
+                            <strong>{{ entry.redirect_timestamp|date:"M d, Y" }}</strong>
+                            <div class="text-muted">{{ entry.redirect_timestamp|time:"h:i A" }}</div>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="hide-sm">
+                        {% if entry.is_pending %}
+                            <span class="badge bg-warning text-dark"><i class="fas fa-hourglass-half me-1"></i>Pending</span>
+                        {% else %}
+                            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Redirected</span>
+                        {% endif %}
+                    </td>
+                    <td class="hide-sm">
+                        <span class="badge bg-primary text-white">{{ entry.redirect_user }}</span>
+                    </td>
+                    <td class="text-center fw-bold text-success">
+                        Rs.{{ entry.total_amount }}
+                    </td>
+                    <td class="text-center">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-primary" title="View Details"
+                                onclick="openOrderDetailModal({{ entry.order_id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <a href="{% url 'order_detail' entry.order_id %}" class="btn btn-outline-success"
+                                title="Open Full Order">
+                                <i class="fas fa-external-link-alt"></i>
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr>
+                    <td colspan="10" class="text-center py-5">
+                        <div class="empty-state">
+                            <div class="empty-icon mb-3"><i class="fas fa-exchange-alt fa-3x text-muted"></i></div>
+                            <h5 class="text-muted">No Redirected Orders Found</h5>
+                            <p class="text-muted mb-3">No orders have been redirected yet.</p>
+                            <a href="{% url 'possible_redirection_list' %}" class="btn btn-primary btn-sm">
+                                <i class="fas fa-random me-1"></i> View Possible Redirections
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if orders_page.has_other_pages %}
+<nav aria-label="Page navigation">
+    <ul class="pagination justify-content-center">
+        {% if orders_page.has_previous %}
+        <li class="page-item"><a class="page-link"
+                href="?page=1&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i
+                    class="fas fa-step-backward"></i></a></li>
+        <li class="page-item"><a class="page-link"
+                href="?page={{ orders_page.previous_page_number }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i
+                    class="fas fa-chevron-left"></i></a></li>
+        {% endif %}
+        {% for num in orders_page.paginator.page_range %}
+        {% if num == orders_page.number %}
+        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+        {% elif num > orders_page.number|add:'-3' and num < orders_page.number|add:'3' %} <li class="page-item"><a
+                class="page-link"
+                href="?page={{ num }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{
+                num }}</a></li>
+            {% endif %}
+            {% endfor %}
+            {% if orders_page.has_next %}
+            <li class="page-item"><a class="page-link"
+                    href="?page={{ orders_page.next_page_number }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i
+                        class="fas fa-chevron-right"></i></a></li>
+            <li class="page-item"><a class="page-link"
+                    href="?page={{ orders_page.paginator.num_pages }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i
+                        class="fas fa-step-forward"></i></a></li>
+            {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+
+
+<!-- ===================== ORDER DETAIL MODAL ===================== -->
+<div class="modal fade" id="orderDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+
+            <div class="modal-header od-header">
+                <div class="flex-grow-1">
+                    <h5 class="modal-title mb-0"><i class="fas fa-box-open me-2"></i>Order Details & Redirection History
+                    </h5>
+                    <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+                        <span id="od_order_badge" class="badge bg-light text-dark" style="font-size:.75rem;"></span>
+                        <span id="od_status_badge" class="badge bg-success" style="font-size:.72rem;"></span>
+                        <span id="od_redirected_badge" class="badge bg-warning text-dark"
+                            style="font-size:.72rem;"></span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body p-0">
+                <div id="odLoading" class="text-center py-5">
+                    <div class="spinner-border text-primary" style="width:3rem;height:3rem;"><span
+                            class="visually-hidden">Loading...</span></div>
+                    <p class="mt-3 text-muted">Fetching order details…</p>
+                </div>
+                <div id="odContent" style="display:none;">
+
+                    <!-- Overview -->
+                    <div class="od-section">
+                        <div class="od-section-header"><i class="fas fa-info-circle text-primary me-2"></i>Order
+                            Overview</div>
+                        <div class="od-section-body">
+                            <div class="row g-3">
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Order Number</div>
+                                    <div class="od-field-value fw-bold text-primary" id="od_order_number">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">NCM Order ID</div>
+                                    <div class="od-field-value" id="od_ncm_order_id">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Order Status</div>
+                                    <div class="od-field-value" id="od_order_status">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Total Amount</div>
+                                    <div class="od-field-value fw-bold text-success" style="font-size:1.1rem;"
+                                        id="od_total_amount">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Created At</div>
+                                    <div class="od-field-value small" id="od_created_at">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Updated At</div>
+                                    <div class="od-field-value small" id="od_updated_at">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Items Count</div>
+                                    <div class="od-field-value" id="od_items_count">—</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Old Customer (Original) -->
+                    <div class="od-section">
+                        <div class="od-section-header"><i class="fas fa-user text-secondary me-2"></i>Original Customer
+                            Details</div>
+                        <div class="od-section-body">
+                            <div class="info-box">
+                                <div class="row g-3">
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Name</div>
+                                        <div class="od-field-value fw-semibold" id="od_old_customer_name">—</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Phone</div>
+                                        <div class="od-field-value" id="od_old_customer_phone">—</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Email</div>
+                                        <div class="od-field-value" id="od_old_customer_email">—</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Branch / City</div>
+                                        <div class="od-field-value" id="od_old_branch_city">—</div>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <div class="od-field-label">Shipping Address</div>
+                                        <div class="od-field-value" id="od_old_shipping_address">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- New Customer (Redirected) -->
+                    <div class="od-section">
+                        <div class="od-section-header"><i class="fas fa-user text-success me-2"></i>Redirected To (New
+                            Customer)</div>
+                        <div class="od-section-body">
+                            <div class="info-box success">
+                                <div class="row g-3">
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Name</div>
+                                        <div class="od-field-value fw-semibold text-success" id="od_new_customer_name">—
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Phone</div>
+                                        <div class="od-field-value" id="od_new_customer_phone">—</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Email</div>
+                                        <div class="od-field-value" id="od_new_customer_email">—</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Branch / City</div>
+                                        <div class="od-field-value" id="od_new_branch_city">—</div>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <div class="od-field-label">Shipping Address</div>
+                                        <div class="od-field-value" id="od_new_shipping_address">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Redirection History -->
+                    <div class="od-section">
+                        <div class="od-section-header"><i class="fas fa-history text-warning me-2"></i>Redirection
+                            History</div>
+                        <div class="od-section-body">
+                            <div id="od_redirect_history">
+                                <div class="alert alert-info mb-0">
+                                    <i class="fas fa-hourglass-half me-2"></i> Loading redirection history...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Products -->
+                    <div class="od-section">
+                        <div class="od-section-header d-flex align-items-center justify-content-between">
+                            <span><i class="fas fa-boxes text-warning me-2"></i>Products / Items</span>
+                            <span id="od_items_count_badge" class="badge bg-warning text-dark"></span>
+                        </div>
+                        <div class="od-section-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th class="ps-3" style="width:40px;">#</th>
+                                            <th>Product</th>
+                                            <th class="text-center" style="width:60px;">Qty</th>
+                                            <th class="text-end" style="width:110px;">Price</th>
+                                            <th class="text-end pe-3" style="width:110px;">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="odItemsBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Financial Details -->
+                    <div class="od-section">
+                        <div class="od-section-header"><i class="fas fa-calculator text-success me-2"></i>Financial
+                            Details</div>
+                        <div class="od-section-body">
+                            <div class="row g-3">
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Discount</div>
+                                    <div class="od-field-value text-danger" id="od_discount_amount">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Shipping Charge</div>
+                                    <div class="od-field-value" id="od_shipping_charge">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Tax %</div>
+                                    <div class="od-field-value" id="od_tax_percent">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Total Amount</div>
+                                    <div class="od-field-value fw-bold text-success" id="od_total_amount_2">—</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div><!-- /odContent -->
+            </div><!-- /modal-body -->
+
+            <div class="modal-footer od-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"><i
+                        class="fas fa-times me-1"></i>Close</button>
+                <a id="od_full_order_link" class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener"><i
+                        class="fas fa-external-link-alt me-1"></i>Full Order</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== JAVASCRIPT ===================== -->
+<script>
+    function changePerPage(value) {
+        document.getElementById('perPageHidden').value = value;
+        document.getElementById('filterForm').submit();
+    }
+
+    function openOrderDetailModal(orderId) {
+        const modal = new bootstrap.Modal(document.getElementById('orderDetailModal'));
+        const odLoading = document.getElementById('odLoading');
+        const odContent = document.getElementById('odContent');
+
+        // Show loading state
+        odLoading.style.display = 'block';
+        odContent.style.display = 'none';
+        modal.show();
+
+        // Fetch order details
+        fetch(`/api/orders/${orderId}/get-redirect-details/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    populateOrderDetails(data.order);
+                    odLoading.style.display = 'none';
+                    odContent.style.display = 'block';
+                } else {
+                    alert('Error loading order details');
+                    modal.hide();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error loading order details');
+                modal.hide();
+            });
+    }
+
+    function populateOrderDetails(order) {
+        // Overview
+        document.getElementById('od_order_number').textContent = order.order_number || '—';
+        document.getElementById('od_ncm_order_id').textContent = order.ncm_order_id ? '#' + order.ncm_order_id : '—';
+        document.getElementById('od_order_status').textContent = order.order_status || '—';
+        document.getElementById('od_total_amount').textContent = 'Rs.' + (order.total_amount || '0');
+        document.getElementById('od_total_amount_2').textContent = 'Rs.' + (order.total_amount || '0');
+        document.getElementById('od_created_at').textContent = formatDateTime(order.created_at);
+        document.getElementById('od_updated_at').textContent = formatDateTime(order.updated_at);
+        document.getElementById('od_items_count').textContent = (order.items || []).length + ' items';
+        document.getElementById('od_items_count_badge').textContent = (order.items || []).length;
+
+        // Badges
+        document.getElementById('od_order_badge').textContent = 'Order #' + order.order_number;
+        document.getElementById('od_status_badge').textContent = order.ncm_status || 'Processing';
+        document.getElementById('od_redirected_badge').textContent = 'Redirected';
+
+        // Old Customer (from metadata)
+        const oldCustomer = order.old_customer_info || {};
+        document.getElementById('od_old_customer_name').textContent = oldCustomer.name || '—';
+        document.getElementById('od_old_customer_phone').textContent = oldCustomer.phone || '—';
+        document.getElementById('od_old_customer_email').textContent = oldCustomer.email || '—';
+        document.getElementById('od_old_branch_city').textContent = oldCustomer.branch || '—';
+        document.getElementById('od_old_shipping_address').textContent = oldCustomer.address || '—';
+
+        // New Customer (current)
+        document.getElementById('od_new_customer_name').textContent = order.customer_name || '—';
+        document.getElementById('od_new_customer_phone').textContent = order.customer_phone || '—';
+        document.getElementById('od_new_customer_email').textContent = order.customer_email || '—';
+        document.getElementById('od_new_branch_city').textContent = order.branch_city || '—';
+        document.getElementById('od_new_shipping_address').textContent = order.shipping_address || '—';
+
+        // Redirection History
+        if (order.redirect_history) {
+            const historyHTML = order.redirect_history.map(log => `
+            <div class="alert alert-light border mb-2">
+                <div class="d-flex align-items-start gap-3">
+                    <i class="fas fa-arrow-right text-success mt-1"></i>
+                    <div class="flex-grow-1">
+                        <div class="fw-bold">Redirected by <strong>${log.redirect_user}</strong></div>
+                        <div class="small text-muted">${formatDateTime(log.redirect_timestamp)}</div>
+                        ${log.redirect_reason ? `<div class="mt-2 text-dark"><strong>Reason:</strong> ${log.redirect_reason}</div>` : ''}
+                    </div>
+                </div>
+            </div>
+        `).join('');
+            document.getElementById('od_redirect_history').innerHTML = historyHTML;
+        }
+
+        // Items
+        const itemsHTML = (order.items || []).map((item, idx) => `
+        <tr>
+            <td class="ps-3">${idx + 1}</td>
+            <td>${item.product_name || '—'}</td>
+            <td class="text-center">${item.quantity}</td>
+            <td class="text-end">Rs.${parseFloat(item.price).toFixed(2)}</td>
+            <td class="text-end pe-3">Rs.${parseFloat(item.total).toFixed(2)}</td>
+        </tr>
+    `).join('');
+        document.getElementById('odItemsBody').innerHTML = itemsHTML;
+
+        // Financial Details
+        document.getElementById('od_discount_amount').textContent = 'Rs.' + (order.discount_amount || '0');
+        document.getElementById('od_shipping_charge').textContent = 'Rs.' + (order.shipping_charge || '0');
+        document.getElementById('od_tax_percent').textContent = (order.tax_percent || '0') + '%';
+
+        // Links
+        document.getElementById('od_full_order_link').href = `/orders/${order.id}/`;
+    }
+
+    function formatDateTime(dateStr) {
+        if (!dateStr) return '—';
+        const date = new Date(dateStr);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function () {
+        // Add any initialization code here
+    });
+</script>
+{% endblock %}
