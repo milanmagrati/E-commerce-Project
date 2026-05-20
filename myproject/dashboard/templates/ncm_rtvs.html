@@ -1498,6 +1498,57 @@
         font-weight: 600;
         box-shadow: 0 4px 18px rgba(239, 68, 68, 0.35);
     }
+
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    .dropdown-menu-sm {
+        min-width: 160px;
+        font-size: 13px;
+        position: fixed !important;
+        z-index: 9999;
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+        padding: 0.5rem;
+        background: #fff;
+        animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    @keyframes scaleIn {
+        from { opacity: 0; transform: scale(0.95) translateY(-5px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .dropdown-menu-sm .dropdown-item {
+        padding: 0.45rem 0.85rem;
+        display: flex;
+        align-items: center;
+        border-radius: 8px;
+        color: #475569;
+        font-weight: 500;
+        transition: all 0.15s ease;
+        margin-bottom: 2px;
+    }
+    
+    .dropdown-menu-sm .dropdown-item:last-child {
+        margin-bottom: 0;
+    }
+
+    .dropdown-menu-sm .dropdown-item:hover,
+    .dropdown-menu-sm .dropdown-item:focus {
+        background-color: #f1f5f9;
+        color: #1e293b;
+    }
+
+    .dropdown-menu-sm .dropdown-item.active {
+        background-color: #e0e7ff;
+        color: #3730a3;
+        font-weight: 600;
+    }
 </style>
 <style>
     /* Order Detail Modal - responsive grid overrides via JS inline styles
@@ -1686,14 +1737,26 @@
                             {% endwith %}
                         </td>
                         <td class="status-col" id="status-col-{{ rtv.rtv_id }}">
-                            {% if rtv.status %}
-                            <span class="status-pill" style="background:{{ rtv.status.color }}; display:inline-flex; align-items:center; gap:0.4rem; padding:0.32rem 0.85rem; border-radius:9px; font-size:0.82rem; font-weight:700; color:#fff; white-space:nowrap;">
-                                <span class="pill-dot" style="width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.7); flex-shrink:0;"></span>
-                                {{ rtv.status.name }}
-                            </span>
-                            {% else %}
-                            <span class="text-muted small">Not Set</span>
-                            {% endif %}
+                            <div class="dropdown">
+                                <button class="badge border-0 dropdown-toggle status-pill"
+                                        data-bs-toggle="dropdown" aria-expanded="false" data-bs-display="static"
+                                        style="cursor:pointer; {% if rtv.status %}background:{{ rtv.status.color }};{% else %}background:#6b7280;{% endif %} display:inline-flex; align-items:center; gap:0.4rem; padding:0.32rem 0.85rem; border-radius:9px; font-size:0.82rem; font-weight:700; color:#fff; white-space:nowrap;">
+                                    {% if rtv.status %}
+                                    <span class="pill-dot" style="width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.7); flex-shrink:0;"></span>
+                                    {{ rtv.status.name }}
+                                    {% else %}
+                                    Not Set
+                                    {% endif %}
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-sm">
+                                    <li><a class="dropdown-item {% if not rtv.status %}active{% endif %}" href="#" onclick="changeRtvStatus({{ rtv.rtv_id }}, ''); return false;">
+                                        <span class="status-dot bg-secondary me-2"></span>Not Set</a></li>
+                                    {% for st in rtv_statuses %}
+                                    <li><a class="dropdown-item {% if rtv.status and rtv.status.id == st.id %}active{% endif %}" href="#" onclick="changeRtvStatus({{ rtv.rtv_id }}, '{{ st.id }}'); return false;">
+                                        <span class="status-dot me-2" style="background-color: {{ st.color }};"></span>{{ st.name }}</a></li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
                         </td>
                         {% if not selected_api_config_id %}
                         <td>
@@ -1753,10 +1816,6 @@
                                 <button class="rtv-action-btn view-btn" title="View NCM Order Details"
                                     onclick="viewOrderDetails('{{ rtv.order_id|escapejs }}')">
                                     <i class="fas fa-external-link-alt"></i>
-                                </button>
-                                <button class="rtv-action-btn edit-btn" style="background:#eff6ff; color:#3b82f6;" title="Set Status"
-                                    onclick="openSetStatusModal({{ rtv.rtv_id }}, '{{ rtv.order_id|escapejs }}', {% if rtv.status %}{{ rtv.status.id }}{% else %}null{% endif %})">
-                                    <i class="fas fa-tag"></i>
                                 </button>
                             </div>
                         </td>
@@ -1954,35 +2013,6 @@
     </div>
 </div>
 
-<!-- ===================== SET STATUS MODAL ===================== -->
-<div class="modal fade rtv-modal" id="setStatusModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" style="max-width:400px;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-tag me-2"></i>
-                    Set Status — #<span id="setStatusOrderId"></span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="setStatusRtvId">
-                <div class="mb-4">
-                    <label class="form-label fw-bold mb-2" style="font-size:0.85rem;">Select Status</label>
-                    <select class="rtv-form-input" id="setStatusSelect">
-                        <option value="">-- No Status (Clear) --</option>
-                        {% for st in rtv_statuses %}
-                        <option value="{{ st.id }}">{{ st.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <button class="rtv-submit-btn" id="setStatusBtn" onclick="saveStatus()">
-                    <i class="fas fa-save me-1"></i> Save Status
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 
 <!-- ===================== ORDER DETAIL MODAL ===================== -->
 <div class="modal fade rtv-modal" id="orderDetailModal" tabindex="-1" aria-hidden="true">
@@ -2022,22 +2052,7 @@
         'use strict';
 
         // ==================== SET STATUS SYSTEM ====================
-        window.openSetStatusModal = function(rtvId, orderId, currentStatusId) {
-            document.getElementById('setStatusRtvId').value = rtvId;
-            document.getElementById('setStatusOrderId').textContent = orderId;
-            document.getElementById('setStatusSelect').value = currentStatusId || '';
-            const modal = new bootstrap.Modal(document.getElementById('setStatusModal'));
-            modal.show();
-        };
-
-        window.saveStatus = function() {
-            const btn = document.getElementById('setStatusBtn');
-            const rtvId = document.getElementById('setStatusRtvId').value;
-            const statusId = document.getElementById('setStatusSelect').value;
-            
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
-            
+        window.changeRtvStatus = function(rtvId, statusId) {
             fetch(`/api/rtv/${rtvId}/set-status/`, {
                 method: 'POST',
                 headers: {
@@ -2049,40 +2064,28 @@
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    const col = document.getElementById(`status-col-${rtvId}`);
-                    if (data.status) {
-                        col.innerHTML = `
-                            <span class="status-pill" style="background:${data.status.color}; display:inline-flex; align-items:center; gap:0.4rem; padding:0.32rem 0.85rem; border-radius:9px; font-size:0.82rem; font-weight:700; color:#fff; white-space:nowrap;">
-                                <span class="pill-dot" style="width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.7); flex-shrink:0;"></span>
-                                ${data.status.name}
-                            </span>
-                        `;
-                    } else {
-                        col.innerHTML = '<span class="text-muted small">Not Set</span>';
-                    }
-                    
-                    // Update the onclick handler to pass the new status ID
-                    const actionBtn = col.nextElementSibling.nextElementSibling.nextElementSibling.nextElementSibling.querySelector('.edit-btn');
-                    if (actionBtn) {
-                        const orderId = document.getElementById('setStatusOrderId').textContent;
-                        actionBtn.setAttribute('onclick', `openSetStatusModal(${rtvId}, '${orderId}', ${data.status ? data.status.id : 'null'})`);
-                    }
-
                     showToast('Status updated successfully.', 'success');
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('setStatusModal'));
-                    modal.hide();
+                    setTimeout(() => location.reload(), 600);
                 } else {
                     showToast(data.error || 'Failed to update status.', 'error');
                 }
             })
             .catch(() => {
                 showToast('A network error occurred.', 'error');
-            })
-            .finally(() => {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-save me-1"></i> Save Status';
             });
         };
+
+        // Reposition fixed dropdowns so they appear next to the badge button
+        document.querySelectorAll('.dropdown').forEach(function(dd) {
+            dd.addEventListener('shown.bs.dropdown', function() {
+                var btn = dd.querySelector('.dropdown-toggle');
+                var menu = dd.querySelector('.dropdown-menu');
+                if (!btn || !menu) return;
+                var rect = btn.getBoundingClientRect();
+                menu.style.top = (rect.bottom + 2) + 'px';
+                menu.style.left = rect.left + 'px';
+            });
+        });
 
         // ==================== FOLLOW-UP SYSTEM ====================
         const followUpLoadedOrders = {};
