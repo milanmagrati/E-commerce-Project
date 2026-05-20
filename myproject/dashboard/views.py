@@ -15205,6 +15205,10 @@ def api_product_staff_orders(request):
 
     if not staff_id or not product_id:
         return JsonResponse({'error': 'staff_id and product_id are required'}, status=400)
+    
+    # Handle cases where staff_id is literally "None" (e.g. from template rendering of null values)
+    staff_filter = {'order__created_by__isnull': True} if staff_id == 'None' else {'order__created_by_id': staff_id}
+    order_staff_filter = {'created_by__isnull': True} if staff_id == 'None' else {'created_by_id': staff_id}
 
     now = timezone.now()
     try:
@@ -15222,7 +15226,7 @@ def api_product_staff_orders(request):
             order = Order.objects.select_related(
                 'customer', 'created_by', 'status_setup', 'payment_setup', 'payment_status_setup'
             ).prefetch_related('items__product', 'items__product_variation').get(
-                id=order_id, is_deleted=False, created_by_id=staff_id
+                id=order_id, is_deleted=False, **order_staff_filter
             )
         except Order.DoesNotExist:
             return JsonResponse({'error': 'Order not found'}, status=404)
@@ -15289,10 +15293,10 @@ def api_product_staff_orders(request):
     # ---- ORDERS LIST ----
     items_qs = OrderItem.objects.filter(
         product_id=product_id,
-        order__created_by_id=staff_id,
         order__is_deleted=False,
         order__created_at__gte=from_date,
         order__created_at__lte=to_date,
+        **staff_filter
     ).select_related('order', 'order__customer', 'order__created_by')
 
     if variation_id:
@@ -15590,18 +15594,22 @@ def product_sales_report(request):
             staff_chart_data.append(row['units_sold'])
 
         # -- Chart data (daily) --
-        daily = (
-            items_qs
-            .annotate(day=TruncDate('order__created_at'))
-            .values('day')
-            .annotate(qty=Sum('quantity'), rev=Sum('total'))
-            .order_by('day')
-        )
-        for entry in daily:
-            if entry['day'] is not None:
-                chart_labels.append(entry['day'].strftime('%b %d'))
-                chart_qty_data.append(int(entry['qty'] or 0))
-                chart_revenue_data.append(float(entry['rev'] or 0))
+        daily_dict = {}
+        for row in items_qs.values('order__created_at', 'quantity', 'total'):
+            created_at = row['order__created_at']
+            if created_at:
+                local_dt = timezone.localtime(created_at)
+                day_str = local_dt.strftime('%Y-%m-%d')
+                if day_str not in daily_dict:
+                    daily_dict[day_str] = {'qty': 0, 'rev': Decimal('0'), 'dt': local_dt}
+                daily_dict[day_str]['qty'] += (row['quantity'] or 0)
+                daily_dict[day_str]['rev'] += (row['total'] or Decimal('0'))
+
+        sorted_daily = sorted(daily_dict.values(), key=lambda x: x['dt'])
+        for entry in sorted_daily:
+            chart_labels.append(entry['dt'].strftime('%b %d'))
+            chart_qty_data.append(int(entry['qty']))
+            chart_revenue_data.append(float(entry['rev']))
 
         # -- Order status breakdown for this product --
         status_data = (
