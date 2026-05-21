@@ -16,6 +16,9 @@
                 <p class="header-subtitle">Real-time stock monitoring & analytics system</p>
             </div>
             <div class="header-actions">
+                <a href="{% url 'backorder_management' %}" class="action-btn btn-backorder">
+                    <i class="fas fa-arrow-repeat"></i> Backorders
+                </a>
                 <a href="{% url 'stock_in_create' %}" class="action-btn btn-stock-in">
                     <i class="fas fa-box-open"></i> Stock In
                 </a>
@@ -1381,6 +1384,12 @@
     border-color: var(--accent-green); 
     color: var(--accent-green); 
     background: rgba(5, 150, 105, 0.1);
+}
+
+.btn-backorder:hover {
+    border-color: #f59e0b;
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
 }
 
 /* Stats Grid */

@@ -938,7 +938,7 @@
                 <!-- ==================== INVENTORY ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_inventory %}
                 <li
-                    class="{% if 'inventory' in request.resolver_match.url_name or 'stock' in request.resolver_match.url_name %}active{% endif %}">
+                    class="{% if 'inventory' in request.resolver_match.url_name or 'stock' in request.resolver_match.url_name or 'backorder' in request.resolver_match.url_name %}active{% endif %}">
                     <a href="#" data-bs-toggle="collapse" data-bs-target="#inventoryMenu" aria-expanded="false">
                         <i class="fas fa-warehouse"></i> Inventory
                         <i class="fas fa-chevron-down float-end mt-1"></i>
@@ -957,6 +957,9 @@
                         </li>
                         <li class="{% if request.resolver_match.url_name == 'low_stock_alerts' %}active{% endif %}">
                             <a href="{% url 'low_stock_alerts' %}">Low Stock Alerts</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'backorder_management' %}active{% endif %}">
+                            <a href="{% url 'backorder_management' %}">Backorders</a>
                         </li>
                     </ul>
                 </li>

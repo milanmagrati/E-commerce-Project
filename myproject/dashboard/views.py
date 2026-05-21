@@ -8,7 +8,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib import messages
 from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg, IntegerField, Case, When, Value
 from django.db.models.functions import TruncDate, Cast, Substr
-from django.http import JsonResponse, HttpResponse, Http404
+from django.http import JsonResponse, HttpResponse, Http404, HttpResponseRedirect
 from django.core.paginator import Paginator
 from datetime import datetime, timedelta
 import pytz
@@ -3394,6 +3394,15 @@ def order_detail(request, order_id):
                 # ====== SET DELIVERED TIMESTAMP ======
                 if order.order_status == 'delivered' and old_order_status != 'delivered':
                     order.delivered_at = timezone.now()
+
+                # ====== RELEASE STOCK RESERVATIONS ON CANCEL ======
+                if (order.order_status in ('cancelled', 'canceled') and
+                        old_order_status not in ('cancelled', 'canceled')):
+                    try:
+                        from inventory.services import release_order_reservations
+                        release_order_reservations(order)
+                    except Exception as e:
+                        logger.error(f"Failed to release reservations for order {order.order_number}: {e}")
 
                 # Save the order
                 order.save()
@@ -7554,9 +7563,9 @@ def orders_bulk_action(request):
                     messages.error(request, '❌ You do not have permission to delete orders.')
                     return redirect(redirect_to)
                 # SOFT DELETE - Move to trash instead of permanent delete
-                # Only restore stock for dispatched orders
                 for order in orders:
                     if order.order_status == 'dispatched':
+                        # Restore stock for dispatched orders
                         for item in order.items.all():
                             if item.product_variation:
                                 item.product_variation.stock += item.quantity
@@ -7568,6 +7577,13 @@ def orders_bulk_action(request):
                                 if item.product.stock > 0:
                                     item.product.stock_status = 'in_stock'
                                 item.product.save()
+                    else:
+                        # Release stock reservations for non-dispatched orders
+                        try:
+                            from inventory.services import release_order_reservations
+                            release_order_reservations(order)
+                        except Exception as e:
+                            logger.error(f"Failed to release reservations for trashed order {order.order_number}: {e}")
 
                     # Log activity
                     OrderActivityLog.objects.create(
@@ -7597,6 +7613,15 @@ def orders_bulk_action(request):
                         # Set delivered_at timestamp when status changes to delivered
                         if normalized_status == 'delivered' and old_status != 'delivered':
                             order.delivered_at = timezone.now()
+
+                        # Release stock reservations when cancelling
+                        if (normalized_status in ('cancelled', 'canceled') and
+                                old_status not in ('cancelled', 'canceled')):
+                            try:
+                                from inventory.services import release_order_reservations
+                                release_order_reservations(order)
+                            except Exception as e:
+                                logger.error(f"Failed to release reservations for order {order.order_number}: {e}")
 
                         order.save()
 
@@ -7654,6 +7679,14 @@ def orders_bulk_action(request):
                 messages.success(request, f'✅ {count} order(s) marked as delivered!')
 
             elif action == 'mark_cancelled':
+                # Release stock reservations before cancelling
+                for order in orders:
+                    try:
+                        from inventory.services import release_order_reservations
+                        release_order_reservations(order)
+                    except Exception as e:
+                        logger.error(f"Failed to release reservations for order {order.order_number}: {e}")
+
                 orders.update(order_status='cancelled')
 
                 # Log activity for each order
@@ -8787,6 +8820,164 @@ def dispatch_bulk_action(request):
 
     return redirect('dispatch_list')
 
+
+# ==================== BACKORDER MANAGEMENT ====================
+@login_required
+@permission_required('can_manage_inventory')
+def backorder_management(request):
+    """Backorder management dashboard — view reservations, backorders, and reset counters."""
+    from store.models import OrderItem as StoreOrderItem
+    from django.db.models import Sum, Q
+    from django.core.paginator import Paginator
+    from urllib.parse import urlencode
+
+    # Preserve filter state for redirects after POST actions
+    def _build_redirect_url():
+        params = {}
+        # Pull from POST hidden fields or GET params
+        s = request.POST.get('current_search', '') or request.GET.get('search', '')
+        f = request.POST.get('current_filter', '') or request.GET.get('filter', '')
+        p = request.POST.get('current_page', '') or request.GET.get('page', '')
+        if s:
+            params['search'] = s
+        if f and f != 'all':
+            params['filter'] = f
+        if p and p != '1':
+            params['page'] = p
+        from django.urls import reverse as url_reverse
+        base = url_reverse('backorder_management')
+        if params:
+            return f"{base}?{urlencode(params)}"
+        return base
+
+    # Handle POST actions
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'reset_counters':
+            try:
+                from inventory.services import reset_stale_counters
+                fixed = reset_stale_counters()
+                messages.success(request, f'✅ Reset complete — fixed {fixed} product(s) with stale counters.')
+            except Exception as e:
+                messages.error(request, f'❌ Error resetting counters: {str(e)}')
+            return redirect('backorder_management')
+
+        elif action == 'toggle_backorders':
+            product_id = request.POST.get('product_id')
+            try:
+                product = Product.objects.get(id=product_id)
+                product.backorders_allowed = not product.backorders_allowed
+                product.save(update_fields=['backorders_allowed'])
+                status = 'enabled' if product.backorders_allowed else 'disabled'
+                messages.success(request, f'✅ Backorders {status} for "{product.name}"')
+            except Product.DoesNotExist:
+                messages.error(request, '❌ Product not found.')
+            return HttpResponseRedirect(_build_redirect_url())
+
+        elif action == 'clear_product_counters':
+            product_id = request.POST.get('product_id')
+            try:
+                product = Product.objects.get(id=product_id)
+                old_reserved = product.reserved_qty
+                old_backordered = product.backordered_qty
+                product.reserved_qty = 0
+                product.backordered_qty = 0
+                product.save(update_fields=['reserved_qty', 'backordered_qty'])
+                messages.success(
+                    request,
+                    f'✅ Cleared counters for "{product.name}" '
+                    f'(reserved: {old_reserved}→0, backordered: {old_backordered}→0)'
+                )
+            except Product.DoesNotExist:
+                messages.error(request, '❌ Product not found.')
+            return HttpResponseRedirect(_build_redirect_url())
+
+        elif action == 'bulk_enable':
+            product_ids = request.POST.getlist('selected_products')
+            if product_ids:
+                count = Product.objects.filter(id__in=product_ids).update(backorders_allowed=True)
+                messages.success(request, f'✅ Backorders enabled for {count} product(s).')
+            else:
+                messages.warning(request, '⚠️ No products selected.')
+            return HttpResponseRedirect(_build_redirect_url())
+
+        elif action == 'bulk_disable':
+            product_ids = request.POST.getlist('selected_products')
+            if product_ids:
+                count = Product.objects.filter(id__in=product_ids).update(backorders_allowed=False)
+                messages.success(request, f'✅ Backorders disabled for {count} product(s).')
+            else:
+                messages.warning(request, '⚠️ No products selected.')
+            return HttpResponseRedirect(_build_redirect_url())
+
+    # Filters
+    search = request.GET.get('search', '').strip()
+    filter_type = request.GET.get('filter', 'all')
+
+    # Products with backorder-related data
+    products_qs = Product.objects.filter(is_deleted=False).order_by('name')
+
+    if search:
+        products_qs = products_qs.filter(
+            Q(name__icontains=search) | Q(barcode__icontains=search) | Q(slug__icontains=search)
+        )
+
+    if filter_type == 'reserved':
+        products_qs = products_qs.filter(reserved_qty__gt=0)
+    elif filter_type == 'backordered':
+        products_qs = products_qs.filter(backordered_qty__gt=0)
+    elif filter_type == 'allowed':
+        products_qs = products_qs.filter(backorders_allowed=True)
+    elif filter_type == 'issues':
+        products_qs = products_qs.filter(
+            Q(reserved_qty__gt=0) | Q(backordered_qty__gt=0)
+        )
+    elif filter_type == 'out_of_stock':
+        products_qs = products_qs.filter(stock__lte=0)
+
+    # Summary stats (always from all products, unfiltered)
+    all_products = Product.objects.filter(is_deleted=False)
+    stats = all_products.aggregate(
+        total_reserved=Sum('reserved_qty'),
+        total_backordered=Sum('backordered_qty'),
+    )
+    total_reserved = stats['total_reserved'] or 0
+    total_backordered = stats['total_backordered'] or 0
+    backorders_enabled_count = all_products.filter(backorders_allowed=True).count()
+    products_with_reservations = all_products.filter(reserved_qty__gt=0).count()
+    products_with_backorders = all_products.filter(backordered_qty__gt=0).count()
+
+    # Products pagination (15 per page for better UX)
+    paginator = Paginator(products_qs, 15)
+    page = request.GET.get('page', 1)
+    products_page = paginator.get_page(page)
+
+    # Store OrderItem-level backorder details with pagination
+    backordered_items_qs = (
+        StoreOrderItem.objects
+        .filter(Q(reserved_qty__gt=0) | Q(backordered_qty__gt=0))
+        .select_related('order', 'product')
+        .order_by('-order__created_at')
+    )
+    items_paginator = Paginator(backordered_items_qs, 20)
+    items_page = request.GET.get('items_page', 1)
+    backordered_items_page = items_paginator.get_page(items_page)
+
+    context = {
+        'products': products_page,
+        'search': search,
+        'filter_type': filter_type,
+        'total_reserved': total_reserved,
+        'total_backordered': total_backordered,
+        'backorders_enabled_count': backorders_enabled_count,
+        'products_with_reservations': products_with_reservations,
+        'products_with_backorders': products_with_backorders,
+        'backordered_items': backordered_items_page,
+        'total_products': all_products.count(),
+    }
+
+    return render(request, 'backorder_management.html', context)
 
 
 # inventory dashboard

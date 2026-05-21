@@ -1,0 +1,727 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dashboard_extras %}
+{% load humanize %}
+
+{% block title %}Backorder Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+    <!-- ==================== HEADER ==================== -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-arrow-repeat"></i> Backorder Management
+            </h2>
+            <p class="text-muted mb-0">
+                Monitor stock reservations, backorders, and manage product availability controls.
+            </p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{% url 'inventory_dashboard' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-speedometer2"></i> Inventory Dashboard
+            </a>
+            <form method="post" class="d-inline" id="resetForm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reset_counters">
+                <button type="button" class="btn btn-warning btn-sm" onclick="confirmReset()">
+                    <i class="bi bi-arrow-clockwise"></i> Reset Stale Counters
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== STATS CARDS ==================== -->
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-lg-2">
+            <div class="bo-stat-card bo-stat-primary">
+                <div class="bo-stat-icon"><i class="bi bi-box-seam"></i></div>
+                <div class="bo-stat-content">
+                    <div class="bo-stat-number">{{ total_products|intcomma }}</div>
+                    <div class="bo-stat-label">Total Products</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-2">
+            <div class="bo-stat-card bo-stat-info">
+                <div class="bo-stat-icon"><i class="bi bi-lock-fill"></i></div>
+                <div class="bo-stat-content">
+                    <div class="bo-stat-number">{{ total_reserved|intcomma }}</div>
+                    <div class="bo-stat-label">Total Reserved</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-2">
+            <div class="bo-stat-card bo-stat-warning">
+                <div class="bo-stat-icon"><i class="bi bi-hourglass-split"></i></div>
+                <div class="bo-stat-content">
+                    <div class="bo-stat-number">{{ total_backordered|intcomma }}</div>
+                    <div class="bo-stat-label">Total Backordered</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-2">
+            <div class="bo-stat-card bo-stat-success">
+                <div class="bo-stat-icon"><i class="bi bi-toggle-on"></i></div>
+                <div class="bo-stat-content">
+                    <div class="bo-stat-number">{{ backorders_enabled_count }}</div>
+                    <div class="bo-stat-label">Backorders Enabled</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-2">
+            <div class="bo-stat-card bo-stat-purple">
+                <div class="bo-stat-icon"><i class="bi bi-archive-fill"></i></div>
+                <div class="bo-stat-content">
+                    <div class="bo-stat-number">{{ products_with_reservations }}</div>
+                    <div class="bo-stat-label">With Reservations</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-2">
+            <div class="bo-stat-card bo-stat-danger">
+                <div class="bo-stat-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+                <div class="bo-stat-content">
+                    <div class="bo-stat-number">{{ products_with_backorders }}</div>
+                    <div class="bo-stat-label">With Backorders</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== FILTERS ==================== -->
+    <div class="card mb-3 shadow-sm bo-filter-card">
+        <div class="card-body py-2 px-3">
+            <form method="get" class="d-flex gap-2 align-items-end flex-wrap">
+                <div class="flex-grow-1" style="min-width: 200px;">
+                    <label class="form-label form-label-sm mb-1">Search Product</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" name="search" class="form-control form-control-sm"
+                               placeholder="Product name or barcode..." value="{{ search }}">
+                    </div>
+                </div>
+                <div style="min-width: 160px;">
+                    <label class="form-label form-label-sm mb-1">Filter</label>
+                    <select name="filter" class="form-select form-select-sm">
+                        <option value="all" {% if filter_type == 'all' %}selected{% endif %}>All Products</option>
+                        <option value="reserved" {% if filter_type == 'reserved' %}selected{% endif %}>Has Reservations</option>
+                        <option value="backordered" {% if filter_type == 'backordered' %}selected{% endif %}>Has Backorders</option>
+                        <option value="allowed" {% if filter_type == 'allowed' %}selected{% endif %}>Backorders Enabled</option>
+                        <option value="issues" {% if filter_type == 'issues' %}selected{% endif %}>Any Active Counters</option>
+                        <option value="out_of_stock" {% if filter_type == 'out_of_stock' %}selected{% endif %}>Out of Stock</option>
+                    </select>
+                </div>
+                <div>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-funnel"></i> Filter
+                    </button>
+                </div>
+                {% if search or filter_type != 'all' %}
+                <div>
+                    <a href="{% url 'backorder_management' %}" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-x-circle"></i> Clear
+                    </a>
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== PRODUCTS TABLE ==================== -->
+    <form method="post" id="bulkForm">
+        {% csrf_token %}
+        <input type="hidden" name="current_search" value="{{ search }}">
+        <input type="hidden" name="current_filter" value="{{ filter_type }}">
+        <input type="hidden" name="current_page" value="{{ products.number }}">
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-bold">
+                    <i class="bi bi-table"></i> Product Stock & Reservation Status
+                    <span class="badge bg-secondary ms-1">{{ products.paginator.count }}</span>
+                </h6>
+                <div class="d-flex align-items-center gap-2">
+                    <select name="action" class="form-select form-select-sm" style="width: auto;" required>
+                        <option value="">Bulk Actions...</option>
+                        <option value="bulk_enable">Enable Backorders</option>
+                        <option value="bulk_disable">Disable Backorders</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Apply bulk action to selected products?');">Apply</button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle mb-0 bo-table">
+                        <thead>
+                            <tr>
+                                <th class="ps-3" style="width: 40px;">
+                                    <input class="form-check-input" type="checkbox" id="selectAll">
+                                </th>
+                                <th>Product</th>
+                                <th class="text-center">Stock</th>
+                                <th class="text-center">Reserved</th>
+                                <th class="text-center">Backordered</th>
+                                <th class="text-center">Available</th>
+                                <th class="text-center">Backorders</th>
+                                <th class="text-center" style="min-width: 150px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in products %}
+                            <tr class="{% if product.backordered_qty > 0 %}bo-row-warning{% elif product.reserved_qty > 0 %}bo-row-info{% endif %}">
+                                <td class="ps-3">
+                                    <input class="form-check-input product-checkbox" type="checkbox" name="selected_products" value="{{ product.id }}">
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        {% if product.image %}
+                                        <img src="{{ product.image.url }}" alt="" class="bo-product-img">
+                                        {% else %}
+                                        <div class="bo-product-img-placeholder">
+                                            <i class="bi bi-image"></i>
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <a href="{% url 'product_detail' product.id %}" class="fw-semibold text-dark text-decoration-none bo-product-name">
+                                                {{ product.name }}
+                                            </a>
+                                            <div class="d-flex gap-1 mt-1">
+                                                <span class="badge bo-badge-type">{{ product.get_product_type_display }}</span>
+                                                {% if product.barcode %}
+                                                <span class="badge bo-badge-barcode">{{ product.barcode }}</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <span class="fw-bold">{{ product.stock|intcomma }}</span>
+                                </td>
+                                <td class="text-center">
+                                    {% if product.reserved_qty > 0 %}
+                                    <span class="badge bo-counter-reserved">
+                                        <i class="bi bi-lock-fill"></i> {{ product.reserved_qty|intcomma }}
+                                    </span>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if product.backordered_qty > 0 %}
+                                    <span class="badge bo-counter-backordered">
+                                        <i class="bi bi-hourglass-split"></i> {{ product.backordered_qty|intcomma }}
+                                    </span>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% with avail=product.available_stock %}
+                                    <span class="fw-bold {% if avail <= 0 %}text-danger{% elif avail <= 10 %}text-warning{% else %}text-success{% endif %}">
+                                        {{ avail|intcomma }}
+                                    </span>
+                                    {% endwith %}
+                                </td>
+                                <td class="text-center" onclick="event.stopPropagation();">
+                                    <button type="button" class="btn btn-sm {% if product.backorders_allowed %}bo-toggle-on{% else %}bo-toggle-off{% endif %}"
+                                            onclick="submitToggleForm({{ product.id }})"
+                                            title="{% if product.backorders_allowed %}Click to disable backorders{% else %}Click to enable backorders{% endif %}">
+                                        {% if product.backorders_allowed %}
+                                        <i class="bi bi-toggle-on"></i> Enabled
+                                        {% else %}
+                                        <i class="bi bi-toggle-off"></i> Disabled
+                                        {% endif %}
+                                    </button>
+                                </td>
+                                <td class="text-center" onclick="event.stopPropagation();">
+                                    <div class="d-flex justify-content-center gap-1">
+                                        <a href="{% url 'product_detail' product.id %}" class="btn btn-sm btn-outline-primary py-0 px-2" title="View Product">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                        <a href="{% url 'product_edit' product.id %}" class="btn btn-sm btn-outline-secondary py-0 px-2" title="Edit Product">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        {% if product.reserved_qty > 0 or product.backordered_qty > 0 %}
+                                        <button type="button" class="bo-action-btn bo-action-clear ms-1"
+                                                onclick="submitClearForm({{ product.id }}, '{{ product.name|escapejs }}', {{ product.reserved_qty }}, {{ product.backordered_qty }})"
+                                                title="Clear reserved & backordered counters">
+                                            <i class="bi bi-eraser-fill"></i> Clear
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center py-5">
+                                    <i class="bi bi-inbox" style="font-size: 48px; color: #cbd5e1;"></i>
+                                    <p class="text-muted mt-2 mb-0">No products found matching your filters.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            {% if products.has_other_pages %}
+            <div class="card-footer bg-white border-top py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span class="text-muted small">
+                    Showing {{ products.start_index }} to {{ products.end_index }} of {{ products.paginator.count }} entries
+                </span>
+                <nav>
+                    <ul class="pagination pagination-sm justify-content-end mb-0">
+                        {% if products.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ products.previous_page_number }}&search={{ search }}&filter={{ filter_type }}">
+                                <i class="bi bi-chevron-left"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+
+                        {% for num in products.paginator.page_range %}
+                            {% if products.number == num %}
+                            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                            {% elif num > products.number|add:'-3' and num < products.number|add:'3' %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}&search={{ search }}&filter={{ filter_type }}">{{ num }}</a>
+                            </li>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if products.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ products.next_page_number }}&search={{ search }}&filter={{ filter_type }}">
+                                <i class="bi bi-chevron-right"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+    
+    <!-- Hidden forms for toggle and clear actions to submit via POST but outside the bulk form -->
+    <form method="post" id="toggleForm" class="d-none">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="toggle_backorders">
+        <input type="hidden" name="product_id" id="toggleProductId">
+        <input type="hidden" name="current_search" value="{{ search }}">
+        <input type="hidden" name="current_filter" value="{{ filter_type }}">
+        <input type="hidden" name="current_page" value="{{ products.number }}">
+    </form>
+    
+    <form method="post" id="clearForm" class="d-none">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="clear_product_counters">
+        <input type="hidden" name="product_id" id="clearProductId">
+        <input type="hidden" name="current_search" value="{{ search }}">
+        <input type="hidden" name="current_filter" value="{{ filter_type }}">
+        <input type="hidden" name="current_page" value="{{ products.number }}">
+    </form>
+
+    <!-- ==================== ACTIVE ORDER ITEMS TABLE ==================== -->
+    {% if backordered_items %}
+    <div class="card shadow-sm">
+        <div class="card-header bg-white py-2">
+            <h6 class="mb-0 fw-bold">
+                <i class="bi bi-cart-check"></i> Active Order Reservations & Backorders
+                <span class="badge bg-warning text-dark ms-1">{{ backordered_items.paginator.count }}</span>
+            </h6>
+            <small class="text-muted">Store order items with active reservation or backorder counters</small>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-sm align-middle mb-0 bo-table">
+                    <thead>
+                        <tr>
+                            <th class="ps-3">Order #</th>
+                            <th>Product</th>
+                            <th class="text-center">Qty Ordered</th>
+                            <th class="text-center">Reserved</th>
+                            <th class="text-center">Backordered</th>
+                            <th class="text-center">Order Status</th>
+                            <th class="d-none d-md-table-cell">Order Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in backordered_items %}
+                        <tr>
+                            <td class="ps-3">
+                                <span class="fw-bold text-primary">{{ item.order.order_number }}</span>
+                            </td>
+                            <td>
+                                {% if item.product %}
+                                <span class="bo-product-name-sm">{{ item.product.name }}</span>
+                                {% else %}
+                                <span class="text-muted">Deleted Product</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center fw-bold">{{ item.quantity }}</td>
+                            <td class="text-center">
+                                {% if item.reserved_qty > 0 %}
+                                <span class="badge bo-counter-reserved">{{ item.reserved_qty }}</span>
+                                {% else %}
+                                <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if item.backordered_qty > 0 %}
+                                <span class="badge bo-counter-backordered">{{ item.backordered_qty }}</span>
+                                {% else %}
+                                <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% with status=item.order.status %}
+                                <span class="badge bo-status-{{ status }}">
+                                    {{ status|title }}
+                                </span>
+                                {% endwith %}
+                            </td>
+                            <td class="d-none d-md-table-cell">
+                                <small>{{ item.order.created_at|date:"d M Y" }}</small><br>
+                                <small class="text-muted">{{ item.order.created_at|date:"h:i A" }}</small>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Items Pagination -->
+        {% if backordered_items.has_other_pages %}
+        <div class="card-footer bg-white border-top py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="text-muted small">
+                Showing {{ backordered_items.start_index }} to {{ backordered_items.end_index }} of {{ backordered_items.paginator.count }} entries
+            </span>
+            <nav>
+                <ul class="pagination pagination-sm justify-content-end mb-0">
+                    {% if backordered_items.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?items_page={{ backordered_items.previous_page_number }}&page={{ products.number }}&search={{ search }}&filter={{ filter_type }}">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    {% for num in backordered_items.paginator.page_range %}
+                        {% if backordered_items.number == num %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num > backordered_items.number|add:'-3' and num < backordered_items.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?items_page={{ num }}&page={{ products.number }}&search={{ search }}&filter={{ filter_type }}">{{ num }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if backordered_items.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?items_page={{ backordered_items.next_page_number }}&page={{ products.number }}&search={{ search }}&filter={{ filter_type }}">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+</div>
+
+<!-- ==================== STYLES ==================== -->
+<style>
+    /* ── STAT CARDS ────────────────────────────── */
+    .bo-stat-card {
+        display: flex;
+        align-items: center;
+        padding: 0.65rem 0.9rem;
+        border-radius: 10px;
+        background: white;
+        box-shadow: 0 1px 4px rgba(0,0,0,.08);
+        transition: box-shadow .2s, transform .2s;
+        border-left: 3px solid;
+        height: 100%;
+    }
+    .bo-stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,.12);
+    }
+    .bo-stat-primary  { border-left-color: #0d6efd; background: linear-gradient(135deg,#fff 0%,#e7f1ff 100%); }
+    .bo-stat-info     { border-left-color: #0ea5e9; background: linear-gradient(135deg,#fff 0%,#e0f2fe 100%); }
+    .bo-stat-warning  { border-left-color: #f59e0b; background: linear-gradient(135deg,#fff 0%,#fef3c7 100%); }
+    .bo-stat-success  { border-left-color: #10b981; background: linear-gradient(135deg,#fff 0%,#d1fae5 100%); }
+    .bo-stat-purple   { border-left-color: #8b5cf6; background: linear-gradient(135deg,#fff 0%,#ede9fe 100%); }
+    .bo-stat-danger   { border-left-color: #ef4444; background: linear-gradient(135deg,#fff 0%,#fee2e2 100%); }
+
+    .bo-stat-icon {
+        font-size: 1.6rem;
+        margin-right: 0.75rem;
+        opacity: 0.75;
+        flex-shrink: 0;
+    }
+    .bo-stat-primary .bo-stat-icon { color: #0d6efd; }
+    .bo-stat-info    .bo-stat-icon { color: #0ea5e9; }
+    .bo-stat-warning .bo-stat-icon { color: #f59e0b; }
+    .bo-stat-success .bo-stat-icon { color: #10b981; }
+    .bo-stat-purple  .bo-stat-icon { color: #8b5cf6; }
+    .bo-stat-danger  .bo-stat-icon { color: #ef4444; }
+
+    .bo-stat-content { flex: 1; min-width: 0; }
+    .bo-stat-number {
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1.1;
+        color: #1e293b;
+        white-space: nowrap;
+    }
+    .bo-stat-label {
+        font-size: 0.68rem;
+        color: #6c757d;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* ── FILTER CARD ────────────────────────────── */
+    .bo-filter-card {
+        border-left: 3px solid #0d6efd;
+    }
+
+    /* ── TABLE ────────────────────────────── */
+    .bo-table thead th {
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        letter-spacing: 0.4px;
+        color: #495057;
+        white-space: nowrap;
+        background: #f8f9fa;
+        border-bottom: 2px solid #e2e8f0;
+        padding: 0.6rem 0.5rem;
+    }
+    .bo-table td {
+        vertical-align: middle;
+        padding: 0.5rem;
+        font-size: 0.85rem;
+    }
+    .bo-row-warning {
+        background: rgba(245, 158, 11, 0.04) !important;
+        border-left: 3px solid #f59e0b;
+    }
+    .bo-row-info {
+        background: rgba(14, 165, 233, 0.03) !important;
+        border-left: 3px solid #0ea5e9;
+    }
+
+    /* ── PRODUCT IMAGE ────────────────────────────── */
+    .bo-product-img {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        object-fit: cover;
+        flex-shrink: 0;
+        border: 1px solid #e2e8f0;
+    }
+    .bo-product-img-placeholder {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        background: #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #94a3b8;
+        flex-shrink: 0;
+        font-size: 0.9rem;
+    }
+    .bo-product-name {
+        font-size: 0.85rem;
+        max-width: 250px;
+        display: inline-block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .bo-product-name:hover {
+        color: #0d6efd !important;
+    }
+    .bo-product-name-sm {
+        font-size: 0.82rem;
+        max-width: 200px;
+        display: inline-block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* ── BADGES ────────────────────────────── */
+    .bo-badge-type {
+        font-size: 0.65rem;
+        padding: 2px 6px;
+        background: #e2e8f0;
+        color: #475569;
+        font-weight: 500;
+    }
+    .bo-badge-barcode {
+        font-size: 0.65rem;
+        padding: 2px 6px;
+        background: #f0f9ff;
+        color: #0369a1;
+        font-weight: 500;
+        font-family: 'Consolas', monospace;
+    }
+    .bo-counter-reserved {
+        background: linear-gradient(135deg, #0ea5e9, #0284c7);
+        color: white;
+        padding: 3px 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 6px;
+    }
+    .bo-counter-backordered {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: white;
+        padding: 3px 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 6px;
+    }
+
+    /* ── TOGGLE BUTTONS ────────────────────────────── */
+    .bo-toggle-on {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: white;
+        border: none;
+        padding: 3px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 6px;
+        transition: all 0.2s;
+    }
+    .bo-toggle-on:hover {
+        background: linear-gradient(135deg, #059669, #047857);
+        color: white;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+    }
+    .bo-toggle-off {
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+        padding: 3px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 6px;
+        transition: all 0.2s;
+    }
+    .bo-toggle-off:hover {
+        background: #e2e8f0;
+        color: #475569;
+        transform: translateY(-1px);
+    }
+
+    /* ── ACTION BUTTONS ────────────────────────────── */
+    .bo-action-btn {
+        display: inline-block;
+        padding: 3px 9px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-decoration: none;
+        border: none;
+        border-radius: 5px;
+        transition: all 0.2s ease;
+        cursor: pointer;
+        background: none;
+        white-space: nowrap;
+    }
+    .bo-action-clear {
+        color: #dc3545;
+        background: rgba(220, 53, 69, 0.1);
+    }
+    .bo-action-clear:hover {
+        color: #fff;
+        background: #dc3545;
+        transform: translateY(-1px);
+    }
+
+    /* ── ORDER STATUS BADGES ────────────────────────────── */
+    .bo-status-pending    { background: #94a3b8; color: white; }
+    .bo-status-confirmed  { background: #3b82f6; color: white; }
+    .bo-status-shipped    { background: #8b5cf6; color: white; }
+    .bo-status-delivered   { background: #10b981; color: white; }
+    .bo-status-cancelled  { background: #ef4444; color: white; }
+
+    /* ── RESPONSIVE ────────────────────────────── */
+    @media (max-width: 576px) {
+        .bo-stat-number { font-size: 1.2rem; }
+        .bo-stat-icon { font-size: 1.3rem; margin-right: 0.5rem; }
+        .bo-stat-card { padding: 0.5rem 0.65rem; }
+        .container-fluid { padding-left: 0.75rem; padding-right: 0.75rem; }
+        .bo-product-name { max-width: 140px; }
+    }
+
+    /* ── PAGINATION ────────────────────────────── */
+    .pagination .page-link {
+        color: #0d6efd;
+        border-color: #e2e8f0;
+        font-size: 0.8rem;
+        padding: 0.25rem 0.6rem;
+    }
+    .pagination .page-item.active .page-link {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+</style>
+
+<!-- ==================== SCRIPTS ==================== -->
+<script>
+    function confirmReset() {
+        if (confirm(
+            '⚠️ Reset Stale Counters?\n\n' +
+            'This will recalculate reserved_qty and backordered_qty on ALL products ' +
+            'based on actual store order items.\n\n' +
+            'This is safe to run and fixes counter drift from ' +
+            'previously missing cancel/dispatch handling.\n\n' +
+            'Continue?'
+        )) {
+            document.getElementById('resetForm').submit();
+        }
+    }
+
+    function submitToggleForm(productId) {
+        document.getElementById('toggleProductId').value = productId;
+        document.getElementById('toggleForm').submit();
+    }
+
+    function submitClearForm(productId, productName, reserved, backordered) {
+        if (confirm(
+            `⚠️ Clear counters for "${productName}"?\n\n` +
+            `Reserved: ${reserved} → 0\n` +
+            `Backordered: ${backordered} → 0\n\n` +
+            `This will release all reservations for this product. Continue?`
+        )) {
+            document.getElementById('clearProductId').value = productId;
+            document.getElementById('clearForm').submit();
+        }
+    }
+    
+    // Select all functionality for bulk actions
+    document.getElementById('selectAll')?.addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.product-checkbox');
+        checkboxes.forEach(cb => cb.checked = this.checked);
+    });
+</script>
+{% endblock %}

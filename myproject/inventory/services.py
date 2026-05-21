@@ -1,11 +1,20 @@
 """
 Backorder / Stock Reservation Service
 ======================================
-All four public functions run inside ``transaction.atomic()`` and use
+All public functions run inside ``transaction.atomic()`` and use
 ``select_for_update()`` to prevent race conditions on concurrent requests.
 
+Public API:
+    allocate_order(order)                     — Reserve stock when a store order is confirmed
+    restock_product(product, qty)             — Fill backorders FIFO when new stock arrives
+    ship_order_item(item)                     — Deduct stock + release reservation on shipment
+    cancel_order_item(item)                   — Roll back reservation on cancellation
+    clear_reservation_on_dispatch(product, q) — Clear counters when dashboard dispatches stock
+    release_order_reservations(dashboard_order) — Release all reservations for a cancelled order
+    reset_stale_counters()                    — Maintenance: recalculate all counters from DB
+
 Usage:
-    from inventory.services import allocate_order, restock_product, ship_order_item, cancel_order_item
+    from inventory.services import allocate_order, restock_product
 """
 import logging
 from django.db import transaction
@@ -99,9 +108,8 @@ def allocate_order(order):
             backorder = item.quantity - can_reserve
 
             if backorder > 0 and not product.backorders_allowed:
-                # If backorders are not allowed, cap to what's available
+                # If backorders are not allowed, just drop the backorder
                 backorder = 0
-                can_reserve = min(item.quantity, max(available, 0))
 
             # Update OrderItem
             item.reserved_qty = can_reserve
@@ -258,7 +266,8 @@ def clear_reservation_on_dispatch(product, quantity):
     Called by the dashboard dispatch view when stock is deducted on dispatch.
 
     The dispatch view already handles the stock deduction itself, so this
-    function only decrements reserved_qty to keep the counter accurate.
+    function only decrements reserved_qty and backordered_qty to keep the
+    counters accurate.
 
     Args:
         product: dashboard.models.Product instance
@@ -268,5 +277,188 @@ def clear_reservation_on_dispatch(product, quantity):
 
     with transaction.atomic():
         product = Product.objects.select_for_update().get(pk=product.pk)
-        product.reserved_qty = max(0, product.reserved_qty - quantity)
-        product.save(update_fields=['reserved_qty'])
+
+        # First, clear reserved_qty (these are filled units)
+        reserved_to_clear = min(product.reserved_qty, quantity)
+        product.reserved_qty = max(0, product.reserved_qty - reserved_to_clear)
+
+        # If quantity exceeds what was reserved, also clear backordered_qty
+        # (handles edge cases where items were dispatched while still backordered)
+        remaining = quantity - reserved_to_clear
+        if remaining > 0 and product.backordered_qty > 0:
+            backorder_to_clear = min(product.backordered_qty, remaining)
+            product.backordered_qty = max(0, product.backordered_qty - backorder_to_clear)
+
+        product.save(update_fields=['reserved_qty', 'backordered_qty'])
+
+        # Also clean up store OrderItem records for this product
+        # that belong to dispatched/delivered orders
+        _cleanup_store_order_items_for_product(product)
+
+
+def _cleanup_store_order_items_for_product(product):
+    """
+    Zero out reserved_qty and backordered_qty on store.OrderItem records
+    for orders that have been dispatched or delivered, since these
+    counters are no longer relevant once the order is fulfilled.
+    """
+    from store.models import OrderItem
+    from django.db.models import Q
+
+    try:
+        stale_items = (
+            OrderItem.objects
+            .filter(
+                product=product,
+                order__status__in=('delivered', 'shipped', 'cancelled'),
+            )
+            .filter(
+                Q(reserved_qty__gt=0) | Q(backordered_qty__gt=0)
+            )
+        )
+
+        stale_items.update(reserved_qty=0, backordered_qty=0)
+    except Exception as e:
+        logger.warning(f"_cleanup_store_order_items_for_product: {e}")
+
+
+def release_order_reservations(dashboard_order):
+    """
+    Called when a dashboard Order is cancelled.
+
+    Finds the matching store.Order by order_number and releases all
+    reserved_qty and backordered_qty on each OrderItem back to the
+    product. Also directly decrements product-level counters.
+
+    Args:
+        dashboard_order: dashboard.models.Order instance
+    """
+    from dashboard.models import Product
+    from store.models import Order as StoreOrder
+
+    try:
+        # Try to find matching store order by order_number
+        store_order = StoreOrder.objects.filter(
+            order_number=dashboard_order.order_number
+        ).first()
+
+        if store_order:
+            for item in store_order.items.select_related('product').all():
+                if item.product is None:
+                    continue
+                if item.reserved_qty == 0 and item.backordered_qty == 0:
+                    continue
+
+                cancel_order_item(item)  # each call is already atomic
+
+            logger.info(
+                f"release_order_reservations: released all reservations for "
+                f"store order {store_order.order_number}"
+            )
+        else:
+            # No matching store order — release directly from dashboard order items
+            # This handles orders created from the dashboard (not the store)
+            _release_product_counters_from_dashboard_order(dashboard_order)
+
+    except Exception as e:
+        logger.error(
+            f"release_order_reservations: error releasing reservations for "
+            f"order {dashboard_order.order_number}: {e}"
+        )
+
+
+def _release_product_counters_from_dashboard_order(dashboard_order):
+    """
+    Fallback: For orders that don't have a matching store.Order,
+    release product-level reserved_qty/backordered_qty based on
+    the dashboard order items quantities.
+
+    This is a best-effort approach since dashboard OrderItems
+    don't track reserved/backordered individually.
+    """
+    from dashboard.models import Product
+
+    with transaction.atomic():
+        for item in dashboard_order.items.select_related('product').all():
+            if item.product is None:
+                continue
+
+            try:
+                product = Product.objects.select_for_update().get(pk=item.product.pk)
+
+                # Release reserved units (up to what's tracked)
+                release_qty = min(item.quantity, product.reserved_qty)
+                if release_qty > 0:
+                    product.reserved_qty = max(0, product.reserved_qty - release_qty)
+
+                # If there's remaining quantity beyond reserved, release from backordered
+                remaining = item.quantity - release_qty
+                if remaining > 0 and product.backordered_qty > 0:
+                    backorder_release = min(remaining, product.backordered_qty)
+                    product.backordered_qty = max(0, product.backordered_qty - backorder_release)
+
+                product.save(update_fields=['reserved_qty', 'backordered_qty'])
+
+                logger.info(
+                    f"_release_product_counters: order={dashboard_order.order_number} "
+                    f"product={product.name} released_reserved={release_qty}"
+                )
+            except Product.DoesNotExist:
+                continue
+
+
+def reset_stale_counters():
+    """
+    Maintenance utility: Recalculates reserved_qty and backordered_qty
+    on all products from the actual store.OrderItem records.
+
+    Call this periodically or after discovering counter drift.
+    Safe to run at any time — uses atomic transactions.
+
+    Usage:
+        from inventory.services import reset_stale_counters
+        reset_stale_counters()
+    """
+    from dashboard.models import Product
+    from store.models import OrderItem
+    from django.db.models import Sum, Q
+
+    with transaction.atomic():
+        products = Product.objects.select_for_update().filter(
+            Q(reserved_qty__gt=0) | Q(backordered_qty__gt=0)
+        )
+
+        fixed_count = 0
+        for product in products:
+            # Only count items from active (non-cancelled, non-delivered) orders
+            active_items = OrderItem.objects.filter(
+                product=product,
+                order__status__in=['pending', 'confirmed']
+            )
+
+            actual_reserved = active_items.aggregate(
+                total=Sum('reserved_qty')
+            )['total'] or 0
+
+            actual_backordered = active_items.aggregate(
+                total=Sum('backordered_qty')
+            )['total'] or 0
+
+            if (product.reserved_qty != actual_reserved or
+                    product.backordered_qty != actual_backordered):
+                old_reserved = product.reserved_qty
+                old_backordered = product.backordered_qty
+
+                product.reserved_qty = actual_reserved
+                product.backordered_qty = actual_backordered
+                product.save(update_fields=['reserved_qty', 'backordered_qty'])
+
+                fixed_count += 1
+                logger.info(
+                    f"reset_stale_counters: {product.name} "
+                    f"reserved {old_reserved}->{actual_reserved} "
+                    f"backordered {old_backordered}->{actual_backordered}"
+                )
+
+        logger.info(f"reset_stale_counters: fixed {fixed_count} products")
+        return fixed_count

@@ -173,6 +173,9 @@ urlpatterns = [
     path('inventory/low-stock-settings/save/', views.save_low_stock_thresholds, name='save_low_stock_thresholds'),
     path('inventory/low-stock-alerts/', views.low_stock_alerts, name='low_stock_alerts'),
 
+    # Backorder Management
+    path('inventory/backorders/', views.backorder_management, name='backorder_management'),
+
 
      # City Management URLs
     path('cities/', views.city_management, name='city_management'),

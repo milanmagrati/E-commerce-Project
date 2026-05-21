@@ -52,6 +52,7 @@ EXTERNAL_APPS = [
     "hrm",
     "todo",
     "store",
+    "inventory",
     "rest_framework",
     "rest_framework.authtoken",
     "integrations",
