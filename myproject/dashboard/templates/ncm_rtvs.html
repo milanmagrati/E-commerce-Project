@@ -1549,6 +1549,140 @@
         color: #3730a3;
         font-weight: 600;
     }
+
+    /* ---- Status Filter Dropdown ---- */
+    .rtv-status-filter {
+        position: relative;
+    }
+
+    .rtv-status-filter-btn {
+        height: 38px;
+        padding: 0 1rem;
+        border: 2px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        color: #64748b;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.18s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        white-space: nowrap;
+        font-family: inherit;
+        outline: none;
+    }
+
+    .rtv-status-filter-btn:hover {
+        border-color: #667eea;
+        color: #667eea;
+        background: #f5f3ff;
+    }
+
+    .rtv-status-filter-btn.has-filter {
+        border-color: #667eea;
+        color: #fff;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        box-shadow: 0 3px 10px rgba(102, 126, 234, 0.28);
+    }
+
+    .rtv-status-filter-btn .filter-arrow {
+        font-size: 0.65rem;
+        margin-left: 0.1rem;
+        transition: transform 0.2s;
+    }
+
+    .rtv-status-filter-btn.has-filter .filter-clear {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.3);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.6rem;
+        margin-left: 0.25rem;
+        transition: background 0.15s;
+    }
+
+    .rtv-status-filter-btn.has-filter .filter-clear:hover {
+        background: rgba(255,255,255,0.5);
+    }
+
+    .status-filter-dropdown {
+        position: fixed;
+        min-width: 200px;
+        max-height: 320px;
+        overflow-y: auto;
+        background: #fff;
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.14);
+        padding: 0.5rem;
+        z-index: 9999;
+        display: none;
+        animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .status-filter-dropdown.show {
+        display: block;
+    }
+
+    .status-filter-dropdown .sfd-item {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.5rem 0.85rem;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: #475569;
+        transition: all 0.15s ease;
+        margin-bottom: 2px;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: left;
+        font-family: inherit;
+    }
+
+    .status-filter-dropdown .sfd-item:hover {
+        background: #f1f5f9;
+        color: #1e293b;
+    }
+
+    .status-filter-dropdown .sfd-item.active {
+        background: #e0e7ff;
+        color: #3730a3;
+        font-weight: 700;
+    }
+
+    .status-filter-dropdown .sfd-item .sfd-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .status-filter-dropdown .sfd-item .sfd-check {
+        margin-left: auto;
+        font-size: 0.72rem;
+        color: #667eea;
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+
+    .status-filter-dropdown .sfd-item.active .sfd-check {
+        opacity: 1;
+    }
+
+    .status-filter-dropdown .sfd-divider {
+        height: 1px;
+        background: #e2e8f0;
+        margin: 0.35rem 0;
+    }
 </style>
 <style>
     /* Order Detail Modal - responsive grid overrides via JS inline styles
@@ -1665,6 +1799,48 @@
             <button class="rtv-filter-btn" data-filter="pnr">
                 <i class="fas fa-ban"></i> PNR/PUR/PSO
             </button>
+        </div>
+
+        <div class="toolbar-divider"></div>
+
+        <!-- Status Filter Dropdown -->
+        <div class="rtv-status-filter" id="statusFilterWrap">
+            <button type="button" class="rtv-status-filter-btn {% if selected_rtv_status_id %}has-filter{% endif %}" id="statusFilterBtn" onclick="toggleStatusFilterDropdown(event)">
+                <i class="fas fa-filter"></i>
+                {% if selected_rtv_status_id %}
+                    {% if selected_rtv_status_id == 'not_set' %}
+                        Not Set
+                    {% else %}
+                        {% for st in rtv_statuses %}
+                            {% if st.id|stringformat:'s' == selected_rtv_status_id %}{{ st.name }}{% endif %}
+                        {% endfor %}
+                    {% endif %}
+                    <span class="filter-clear" onclick="clearStatusFilter(event)" title="Clear filter"><i class="fas fa-times"></i></span>
+                {% else %}
+                    Status
+                    <i class="fas fa-chevron-down filter-arrow"></i>
+                {% endif %}
+            </button>
+            <div class="status-filter-dropdown" id="statusFilterDropdown">
+                <button type="button" class="sfd-item {% if not selected_rtv_status_id %}active{% endif %}" onclick="selectStatusFilter('')">
+                    <span class="sfd-dot" style="background:#94a3b8;"></span>
+                    All Statuses
+                    <i class="fas fa-check sfd-check"></i>
+                </button>
+                <button type="button" class="sfd-item {% if selected_rtv_status_id == 'not_set' %}active{% endif %}" onclick="selectStatusFilter('not_set')">
+                    <span class="sfd-dot" style="background:#6b7280;"></span>
+                    Not Set
+                    <i class="fas fa-check sfd-check"></i>
+                </button>
+                <div class="sfd-divider"></div>
+                {% for st in rtv_statuses %}
+                <button type="button" class="sfd-item {% if selected_rtv_status_id == st.id|stringformat:'s' %}active{% endif %}" onclick="selectStatusFilter('{{ st.id }}')">
+                    <span class="sfd-dot" style="background:{{ st.color }};"></span>
+                    {{ st.name }}
+                    <i class="fas fa-check sfd-check"></i>
+                </button>
+                {% endfor %}
+            </div>
         </div>
 
         <div class="rtv-toolbar-right">
@@ -1878,7 +2054,7 @@
             </span>
             <div class="rtv-pagination">
                 {% if has_prev %}
-                <a href="?page={{ current_page|add:'-1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}"
+                <a href="?page={{ current_page|add:'-1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}"
                     class="page-btn" title="Previous">
                     <i class="fas fa-chevron-left"></i>
                 </a>
@@ -1887,14 +2063,14 @@
                 {% if p == current_page %}
                 <span class="page-btn active">{{ p }}</span>
                 {% elif p == 1 or p == total_pages or p >= current_page|add:'-2' and p <= current_page|add:'2' %} <a
-                    href="?page={{ p }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}"
+                    href="?page={{ p }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}"
                     class="page-btn">{{ p }}</a>
                     {% elif p == current_page|add:'-3' or p == current_page|add:'3' %}
                     <span class="page-btn dots">…</span>
                     {% endif %}
                     {% endfor %}
                     {% if has_next %}
-                    <a href="?page={{ current_page|add:'1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}"
+                    <a href="?page={{ current_page|add:'1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}"
                         class="page-btn" title="Next">
                         <i class="fas fa-chevron-right"></i>
                     </a>
@@ -3098,6 +3274,50 @@
         }
         window.location.href = url.toString();
     };
+
+    // ==================== STATUS FILTER ====================
+    window.toggleStatusFilterDropdown = function (e) {
+        e.stopPropagation();
+        var dd = document.getElementById('statusFilterDropdown');
+        var btn = document.getElementById('statusFilterBtn');
+        if (!dd || !btn) return;
+        var isOpen = dd.classList.contains('show');
+        if (isOpen) {
+            dd.classList.remove('show');
+        } else {
+            // Position the fixed dropdown below the button
+            var rect = btn.getBoundingClientRect();
+            dd.style.top = (rect.bottom + 4) + 'px';
+            dd.style.left = rect.left + 'px';
+            dd.classList.add('show');
+        }
+    };
+
+    window.selectStatusFilter = function (statusId) {
+        var url = new URL(window.location.href);
+        url.searchParams.delete('page');
+        if (statusId) {
+            url.searchParams.set('rtv_status_id', statusId);
+        } else {
+            url.searchParams.delete('rtv_status_id');
+        }
+        window.location.href = url.toString();
+    };
+
+    window.clearStatusFilter = function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        selectStatusFilter('');
+    };
+
+    // Close status dropdown when clicking outside
+    document.addEventListener('click', function (e) {
+        var wrap = document.getElementById('statusFilterWrap');
+        var dd = document.getElementById('statusFilterDropdown');
+        if (wrap && dd && !wrap.contains(e.target)) {
+            dd.classList.remove('show');
+        }
+    });
 
     // ==================== FULL SYNC (manual trigger) ====================
     var _defaultBtnHTML = '<i class="fas fa-cloud-download-alt"></i> <span>Fetch RTVs</span>';

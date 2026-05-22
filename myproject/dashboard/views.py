@@ -19151,6 +19151,7 @@ def ncm_rtvs_list(request):
     # ---------- GET: serve from local DB (instant) ----------
     search = request.GET.get('search', '').strip()
     api_config_id = request.GET.get('api_config_id', '').strip()
+    rtv_status_id = request.GET.get('rtv_status_id', '').strip()
 
     # Resolve selected config object for display
     selected_config = None
@@ -19169,6 +19170,15 @@ def ncm_rtvs_list(request):
     if api_config_id:
         qs = qs.filter(api_config_id=int(api_config_id))
     # else: show all (no filter)
+
+    # Filter by RTV status
+    if rtv_status_id == 'not_set':
+        qs = qs.filter(rtv_status__isnull=True)
+    elif rtv_status_id:
+        try:
+            qs = qs.filter(rtv_status_id=int(rtv_status_id))
+        except (ValueError, TypeError):
+            rtv_status_id = ''
 
     if search:
         from django.db.models.functions import Cast
@@ -19278,6 +19288,7 @@ def ncm_rtvs_list(request):
         'selected_api_config_id': api_config_id,
         'selected_config': selected_config,
         'rtv_statuses': rtv_statuses,
+        'selected_rtv_status_id': rtv_status_id,
     }
     return render(request, 'ncm_rtvs.html', context)
 
