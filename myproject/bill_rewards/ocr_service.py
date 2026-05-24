@@ -49,6 +49,16 @@ def _parse_date(val):
     return None
 
 
+def _extract_last_number(pattern, text):
+    """Finds the line matching the pattern, extracts all numbers, and returns the last one."""
+    for line in text.split('\n'):
+        if re.search(pattern, line, re.IGNORECASE):
+            numbers = re.findall(r'\d+(?:[\.,]\d+)*', line)
+            if numbers:
+                return _parse_decimal(numbers[-1])
+    return None
+
+
 # ─────────────────────────────────────────────────────────
 # Abstract base
 # ─────────────────────────────────────────────────────────
@@ -263,6 +273,120 @@ class GoogleDocAIExtractor(BaseOCRExtractor):
 
 
 # ─────────────────────────────────────────────────────────
+# OCR.space
+# ─────────────────────────────────────────────────────────
+
+class OCRSpaceExtractor(BaseOCRExtractor):
+    provider_name = 'ocr_space'
+
+    def __init__(self):
+        self.api_key = getattr(settings, 'OCR_SPACE_API_KEY', '')
+        if not self.api_key:
+            raise ValueError("OCR_SPACE_API_KEY is not set in settings")
+
+    def extract(self, file_obj):
+        import requests
+        
+        file_bytes = file_obj.read()
+        file_obj.seek(0)
+        
+        url = 'https://api.ocr.space/parse/image'
+        
+        payload = {
+            'apikey': self.api_key,
+            'isOverlayRequired': False,
+            'language': 'eng',
+            'isTable': True,
+            'scale': True
+        }
+        
+        import os
+        filename = getattr(file_obj, 'name', 'image.jpg')
+        filename = os.path.basename(filename)
+        if not os.path.splitext(filename)[1]:
+            filename += '.jpg'
+            
+        files = {'file': (filename, file_bytes)}
+        
+        try:
+            response = requests.post(url, data=payload, files=files, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+        except Exception as e:
+            logger.error(f"OCR.space API request failed: {e}")
+            raise e
+            
+        if data.get('IsErroredOnProcessing'):
+            err = data.get('ErrorMessage', 'Unknown error')
+            if isinstance(err, list):
+                err = err[0]
+            logger.error(f"OCR.space processing error: {err}")
+            raise Exception(f"OCR.space error: {err}")
+            
+        parsed_results = data.get('ParsedResults', [])
+        if not parsed_results:
+            full_text = ""
+        else:
+            full_text = parsed_results[0].get('ParsedText', '')
+            
+        raw_text_lines = full_text
+        
+        shop_name = ''
+        for line in full_text.split('\n'):
+            line = line.strip()
+            if not line: continue
+            # Skip lines that only contain common UI words like 'print', 'close', 'x'
+            only_skip_words = re.sub(r'(?i)\b(e|print|close|x|invoice|receipt)\b|\s+', '', line)
+            if not only_skip_words:
+                continue
+            # Remove those words to get the real shop name
+            clean_line = re.sub(r'(?i)\b(e|print|close|x|invoice|receipt)\b', '', line).strip()
+            if clean_line:
+                shop_name = clean_line
+                break
+                
+        invoice_number = ''
+        inv_match = re.search(r'(?:INVOICE|INV|RECEIPT)[ \t]*(?:#|NO\.?)[ \t]*([A-Z0-9\-]+)', full_text, re.IGNORECASE)
+        if not inv_match:
+            inv_match = re.search(r'^[^\w]*(?:INVOICE|INV)[ \t]+([A-Z0-9\-]+)', full_text, re.IGNORECASE | re.MULTILINE)
+        if inv_match:
+            invoice_number = inv_match.group(1)
+            if invoice_number.upper() in ['OICE', 'ICE', 'CE']:
+                invoice_number = ''
+                
+        bill_date = None
+        date_match = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,}\s+\d{4})', full_text)
+        if date_match:
+            bill_date = _parse_date(date_match.group(1))
+            
+        subtotal = _extract_last_number(r'^[^\w]*(?:SUBTOTAL|SUB\s*TOTAL)', full_text)
+        tax_amount = _extract_last_number(r'^[^\w]*(?:TAX|VAT)', full_text)
+        total_amount = _extract_last_number(r'^[^\w]*(?:GRAND TOTAL|TOTAL AMOUNT|NET TOTAL|TOTAL\b)', full_text)
+            
+        return {
+            'raw_json': data,
+            'raw_text': raw_text_lines,
+            'customer_name': '',
+            'confidence_customer_name': 0,
+            'shop_name': shop_name,
+            'confidence_shop_name': 70 if shop_name else 0,
+            'invoice_number': invoice_number,
+            'confidence_invoice_number': 80 if invoice_number else 0,
+            'bill_date': bill_date,
+            'confidence_bill_date': 80 if bill_date else 0,
+            'subtotal': subtotal,
+            'confidence_subtotal': 80 if subtotal else 0,
+            'tax_amount': tax_amount,
+            'confidence_tax': 80 if tax_amount else 0,
+            'total_amount': total_amount,
+            'confidence_total': 80 if total_amount else 0,
+            'overall_confidence': 75,
+            'line_items': [],
+        }
+
+
+
+# ─────────────────────────────────────────────────────────
 # Mock extractor (fallback when no cloud SDK)
 # ─────────────────────────────────────────────────────────
 
@@ -277,25 +401,45 @@ class MockExtractor(BaseOCRExtractor):
         file_bytes = file_obj.read()
         file_obj.seek(0)
         h = hashlib.md5(file_bytes).hexdigest()[:8]
+        
+        import random
+        # Seed random with hash so same image yields same mock data
+        random.seed(h)
+        
+        random_subtotal = Decimal(str(random.randint(100, 5000)) + '.00')
+        random_tax = random_subtotal * Decimal('0.13')
+        random_total = random_subtotal + random_tax
+        
+        shop_names = ['SuperMart', 'Trendy Shopping', 'Tech Gadgets', 'Local Grocery', 'MegaStore']
+        customer_names = ['Violet Daniel', 'John Doe', 'Jane Smith', 'Alice Johnson']
+        
         return {
             'raw_json': {'mock': True, 'hash': h},
-            'raw_text': f'[Mock OCR] file hash {h}',
-            'customer_name': '',
-            'confidence_customer_name': 50,
-            'shop_name': '',
-            'confidence_shop_name': 50,
+            'raw_text': f'[Mock OCR] file hash {h}\nSimulated dynamic extraction.',
+            'customer_name': random.choice(customer_names),
+            'confidence_customer_name': random.randint(80, 99),
+            'shop_name': random.choice(shop_names),
+            'confidence_shop_name': random.randint(80, 99),
             'invoice_number': f'INV-{h.upper()}',
-            'confidence_invoice_number': 60,
-            'bill_date': timezone.now().date(),
-            'confidence_bill_date': 70,
-            'subtotal': Decimal('0'),
-            'confidence_subtotal': 50,
-            'tax_amount': Decimal('0'),
-            'confidence_tax': 50,
-            'total_amount': Decimal('0'),
-            'confidence_total': 50,
-            'overall_confidence': 55,
-            'line_items': [],
+            'confidence_invoice_number': random.randint(80, 99),
+            'bill_date': timezone.now().date() - __import__('datetime').timedelta(days=random.randint(0, 30)),
+            'confidence_bill_date': random.randint(80, 99),
+            'subtotal': random_subtotal,
+            'confidence_subtotal': random.randint(80, 99),
+            'tax_amount': random_tax,
+            'confidence_tax': random.randint(80, 99),
+            'total_amount': random_total,
+            'confidence_total': random.randint(80, 99),
+            'overall_confidence': random.randint(80, 99),
+            'line_items': [
+                {
+                    'description': f'Sample Item {h[:4]}',
+                    'quantity': Decimal('1'),
+                    'unit_price': random_subtotal,
+                    'line_amount': random_subtotal,
+                    'confidence': random.randint(80, 99)
+                }
+            ],
         }
 
 
@@ -319,6 +463,12 @@ def get_extractor():
         except Exception as e:
             logger.warning(f'Google Document AI init failed: {e}; falling back to mock')
 
+    elif provider == 'ocr_space':
+        try:
+            return OCRSpaceExtractor()
+        except Exception as e:
+            logger.warning(f'OCR.space init failed: {e}; falling back to mock')
+
     elif provider == 'auto':
         # Try AWS if keys exist
         aws_key = getattr(settings, 'AWS_ACCESS_KEY_ID', '')
@@ -333,6 +483,14 @@ def get_extractor():
         if google_proj:
             try:
                 return GoogleDocAIExtractor()
+            except Exception:
+                pass
+
+        # Try OCR.space if key exists
+        ocr_space_key = getattr(settings, 'OCR_SPACE_API_KEY', '')
+        if ocr_space_key:
+            try:
+                return OCRSpaceExtractor()
             except Exception:
                 pass
 

@@ -73,8 +73,18 @@ def bill_rewards_dashboard(request):
         count=Count('id')
     ).order_by('day')
 
-    chart_labels = [item['day'].strftime('%b %d') for item in bills_per_day]
-    chart_data = [item['count'] for item in bills_per_day]
+    chart_labels = []
+    chart_data = []
+    for item in bills_per_day:
+        day = item.get('day')
+        if day:
+            try:
+                chart_labels.append(day.strftime('%b %d'))
+            except AttributeError:
+                chart_labels.append(str(day)[:10])
+        else:
+            chart_labels.append('Unknown')
+        chart_data.append(item['count'])
 
     # Reward config
     reward_config = RewardConfig.get_config()

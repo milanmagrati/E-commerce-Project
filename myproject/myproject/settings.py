@@ -337,6 +337,8 @@ AWS_REGION = config('AWS_REGION', default='us-east-1')
 GOOGLE_DOCAI_PROJECT = config('GOOGLE_DOCAI_PROJECT', default='')
 GOOGLE_DOCAI_LOCATION = config('GOOGLE_DOCAI_LOCATION', default='us')
 GOOGLE_DOCAI_PROCESSOR_ID = config('GOOGLE_DOCAI_PROCESSOR_ID', default='')
+# OCR.space API Key (if using)
+OCR_SPACE_API_KEY = config('OCR_SPACE_API_KEY', default='')
 
 # ===================== Celery Configuration =====================
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
