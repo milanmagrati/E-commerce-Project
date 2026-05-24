@@ -1,0 +1,428 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Upload Bill{% endblock %}
+
+{% block extra_css %}
+<style>
+    .br-upload-zone {
+        border: 2.5px dashed rgba(102,126,234,0.35);
+        border-radius: 20px;
+        padding: 3rem 2rem;
+        text-align: center;
+        background: linear-gradient(135deg, rgba(102,126,234,0.03) 0%, rgba(118,75,162,0.03) 100%);
+        transition: all 0.3s ease;
+        cursor: pointer;
+        position: relative;
+    }
+    .br-upload-zone:hover, .br-upload-zone.drag-over {
+        border-color: #667eea;
+        background: rgba(102,126,234,0.06);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102,126,234,0.12);
+    }
+    .br-upload-zone .upload-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        margin-bottom: 1.25rem;
+    }
+    .br-upload-zone h4 {
+        color: #1e1b4b;
+        font-weight: 700;
+        font-size: 1.2rem;
+        margin-bottom: 0.5rem;
+    }
+    .br-upload-zone p {
+        color: #64748b;
+        font-size: 0.9rem;
+        margin-bottom: 0;
+    }
+    .br-file-list {
+        list-style: none;
+        padding: 0;
+        margin: 1.5rem 0 0;
+    }
+    .br-file-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background: #f8f9fe;
+        border-radius: 12px;
+        margin-bottom: 0.5rem;
+        font-size: 0.88rem;
+        animation: slideInUp 0.3s ease;
+    }
+    .br-file-item i { color: #667eea; }
+    .br-file-item .file-name { flex: 1; font-weight: 500; color: #334155; }
+    .br-file-item .file-size { color: #94a3b8; font-size: 0.8rem; }
+    .br-file-item .file-remove {
+        color: #ef4444;
+        cursor: pointer;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+    }
+    .br-file-item .file-remove:hover { opacity: 1; }
+
+    @keyframes slideInUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .br-progress-bar {
+        height: 6px;
+        border-radius: 3px;
+        background: #e2e8f0;
+        overflow: hidden;
+        margin-top: 1rem;
+        display: none;
+    }
+    .br-progress-bar .bar {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        border-radius: 3px;
+        width: 0%;
+        transition: width 0.3s ease;
+        animation: progressPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes progressPulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+
+    .br-page-header {
+        background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4c1d95 100%);
+        border-radius: 18px;
+        padding: 2rem 2.5rem;
+        color: #fff;
+        margin-bottom: 1.75rem;
+    }
+    .br-page-header h2 { font-weight: 800; font-size: 1.75rem; margin-bottom: 0.25rem; }
+    .br-page-header p { opacity: 0.7; font-size: 0.9rem; margin-bottom: 0; }
+
+    .br-card {
+        background: #fff;
+        border-radius: 16px;
+        border: 1px solid rgba(0,0,0,0.06);
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+        overflow: hidden;
+    }
+    .br-card-header {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+    }
+    .br-card-header h5 {
+        font-size: 1rem;
+        font-weight: 700;
+        margin: 0;
+        color: #1e1b4b;
+    }
+    .br-card-body { padding: 1.5rem; }
+    .br-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.6rem 1.5rem;
+        border-radius: 10px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.25s ease;
+    }
+    .br-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+    .br-btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+    .br-btn-primary:hover { color: #fff; }
+    .br-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="br-page-header">
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+            <div>
+                <h2><i class="fas fa-cloud-upload-alt me-2"></i>Upload Bill</h2>
+                <p>Upload bill images or PDFs to extract data and earn reward points</p>
+            </div>
+            <a href="{% url 'bill_rewards:dashboard' %}" class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border-radius:8px;">
+                <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-file-upload me-2 text-primary"></i>Bill Files</h5>
+                </div>
+                <div class="br-card-body">
+                    <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'bill_rewards:bill_upload' %}">
+                        {% csrf_token %}
+
+                        <!-- Drop Zone -->
+                        <div class="br-upload-zone" id="dropZone">
+                            <input type="file" id="fileInput" name="bill_files" multiple accept="image/*,.pdf"
+                                   style="position:absolute;inset:0;opacity:0;cursor:pointer;">
+                            <div class="upload-icon">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                            </div>
+                            <h4>Drag & drop bill files here</h4>
+                            <p>or click to browse • Images (JPG, PNG) and PDFs • Max 10MB each</p>
+                        </div>
+
+                        <!-- File List -->
+                        <ul class="br-file-list" id="fileList"></ul>
+
+                        <!-- Progress -->
+                        <div class="br-progress-bar" id="progressBar">
+                            <div class="bar" id="progressFill"></div>
+                        </div>
+
+                        <!-- Customer Selection -->
+                        <div class="mt-3">
+                            <label class="form-label fw-semibold" style="font-size:0.88rem;">
+                                <i class="fas fa-user me-1 text-primary"></i> Link to Customer (Optional)
+                            </label>
+                            <select name="customer_id" class="form-select" id="customerSelect">
+                                <option value="">— Select Customer —</option>
+                                {% for c in customers %}
+                                <option value="{{ c.id }}">{{ c.name }} ({{ c.phone }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Submit -->
+                        <div class="mt-4 d-flex gap-2">
+                            <button type="submit" class="br-btn br-btn-primary" id="uploadBtn" disabled>
+                                <i class="fas fa-upload"></i> Upload & Process
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions Panel -->
+        <div class="col-lg-4">
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-info-circle me-2" style="color:#3b82f6;"></i>How It Works</h5>
+                </div>
+                <div class="br-card-body">
+                    <div class="d-flex gap-3 mb-3">
+                        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0;">1</div>
+                        <div>
+                            <strong style="font-size:0.88rem;">Upload Bill</strong>
+                            <p class="text-muted mb-0" style="font-size:0.82rem;">Upload an image or PDF of your bill/invoice/receipt</p>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-3 mb-3">
+                        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#f093fb,#f5576c);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0;">2</div>
+                        <div>
+                            <strong style="font-size:0.88rem;">OCR Extraction</strong>
+                            <p class="text-muted mb-0" style="font-size:0.82rem;">AI extracts customer name, items, prices, totals, and more</p>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-3 mb-3">
+                        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#4facfe,#00f2fe);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0;">3</div>
+                        <div>
+                            <strong style="font-size:0.88rem;">Review & Approve</strong>
+                            <p class="text-muted mb-0" style="font-size:0.82rem;">Admin reviews extracted data, matches products, and approves</p>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-3">
+                        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#43e97b,#38f9d7);color:#065f46;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0;">4</div>
+                        <div>
+                            <strong style="font-size:0.88rem;">Earn Rewards</strong>
+                            <p class="text-muted mb-0" style="font-size:0.82rem;">Customer earns reward points based on the bill total</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="br-card mt-3">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-camera me-2" style="color:#10b981;"></i>Capture Bill</h5>
+                </div>
+                <div class="br-card-body text-center">
+                    <button type="button" id="cameraBtn" class="br-btn br-btn-primary w-100 mb-2">
+                        <i class="fas fa-camera"></i> Open Camera
+                    </button>
+                    <video id="cameraPreview" style="width:100%;border-radius:12px;display:none;" autoplay playsinline></video>
+                    <canvas id="cameraCanvas" style="display:none;"></canvas>
+                    <button type="button" id="captureBtn" class="br-btn br-btn-primary w-100 mt-2" style="display:none;">
+                        <i class="fas fa-circle"></i> Capture Photo
+                    </button>
+                    <p class="text-muted mt-2 mb-0" style="font-size:0.8rem;">Use your device camera to capture a bill directly</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadForm = document.getElementById('uploadForm');
+    const progressBar = document.getElementById('progressBar');
+    const progressFill = document.getElementById('progressFill');
+
+    let selectedFiles = new DataTransfer();
+
+    // Drag & Drop
+    ['dragenter', 'dragover'].forEach(e => {
+        dropZone.addEventListener(e, (ev) => { ev.preventDefault(); dropZone.classList.add('drag-over'); });
+    });
+    ['dragleave', 'drop'].forEach(e => {
+        dropZone.addEventListener(e, (ev) => { ev.preventDefault(); dropZone.classList.remove('drag-over'); });
+    });
+    dropZone.addEventListener('drop', (e) => {
+        const files = e.dataTransfer.files;
+        addFiles(files);
+    });
+
+    fileInput.addEventListener('change', () => addFiles(fileInput.files));
+
+    function addFiles(files) {
+        for (let f of files) {
+            if (f.size > 10 * 1024 * 1024) { alert(`${f.name} exceeds 10MB limit`); continue; }
+            selectedFiles.items.add(f);
+        }
+        fileInput.files = selectedFiles.files;
+        renderFileList();
+    }
+
+    function renderFileList() {
+        fileList.innerHTML = '';
+        const files = selectedFiles.files;
+        uploadBtn.disabled = files.length === 0;
+
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i];
+            const li = document.createElement('li');
+            li.className = 'br-file-item';
+            const icon = f.type.includes('pdf') ? 'fa-file-pdf' : 'fa-file-image';
+            const size = (f.size / 1024).toFixed(1) + ' KB';
+            li.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <span class="file-name">${f.name}</span>
+                <span class="file-size">${size}</span>
+                <i class="fas fa-times file-remove" data-idx="${i}"></i>
+            `;
+            fileList.appendChild(li);
+        }
+
+        // Remove handlers
+        fileList.querySelectorAll('.file-remove').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const idx = parseInt(this.dataset.idx);
+                const newDt = new DataTransfer();
+                for (let i = 0; i < selectedFiles.files.length; i++) {
+                    if (i !== idx) newDt.items.add(selectedFiles.files[i]);
+                }
+                selectedFiles = newDt;
+                fileInput.files = selectedFiles.files;
+                renderFileList();
+            });
+        });
+    }
+
+    // Form submit with progress
+    uploadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (selectedFiles.files.length === 0) return;
+
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        progressBar.style.display = 'block';
+        progressFill.style.width = '30%';
+
+        const formData = new FormData(uploadForm);
+
+        fetch(uploadForm.action, {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        })
+        .then(r => r.json())
+        .then(data => {
+            progressFill.style.width = '100%';
+            if (data.success) {
+                setTimeout(() => { window.location.href = "{% url 'bill_rewards:bill_list' %}"; }, 500);
+            } else {
+                alert(data.error || 'Upload failed');
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload & Process';
+                progressBar.style.display = 'none';
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert('Upload failed. Please try again.');
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload & Process';
+            progressBar.style.display = 'none';
+        });
+    });
+
+    // Camera capture
+    const cameraBtn = document.getElementById('cameraBtn');
+    const cameraPreview = document.getElementById('cameraPreview');
+    const captureBtn = document.getElementById('captureBtn');
+    const cameraCanvas = document.getElementById('cameraCanvas');
+    let cameraStream = null;
+
+    cameraBtn.addEventListener('click', async function() {
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+            });
+            cameraPreview.srcObject = cameraStream;
+            cameraPreview.style.display = 'block';
+            captureBtn.style.display = 'block';
+            cameraBtn.style.display = 'none';
+        } catch (err) {
+            alert('Camera access denied or not available');
+        }
+    });
+
+    captureBtn.addEventListener('click', function() {
+        const video = cameraPreview;
+        cameraCanvas.width = video.videoWidth;
+        cameraCanvas.height = video.videoHeight;
+        const ctx = cameraCanvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        cameraCanvas.toBlob(function(blob) {
+            const file = new File([blob], `bill_capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
+            selectedFiles.items.add(file);
+            fileInput.files = selectedFiles.files;
+            renderFileList();
+
+            // Stop camera
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(t => t.stop());
+            }
+            cameraPreview.style.display = 'none';
+            captureBtn.style.display = 'none';
+            cameraBtn.style.display = 'block';
+        }, 'image/jpeg', 0.92);
+    });
+});
+</script>
+{% endblock %}

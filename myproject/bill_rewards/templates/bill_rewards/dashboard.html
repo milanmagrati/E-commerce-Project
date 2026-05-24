@@ -1,0 +1,521 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Bill Rewards Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ==================== BILL REWARDS THEME ==================== */
+    .br-gradient-1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .br-gradient-2 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .br-gradient-3 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+    .br-gradient-4 { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+    .br-gradient-5 { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+    .br-gradient-6 { background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); }
+
+    .br-stat-card {
+        border-radius: 16px;
+        padding: 1.5rem;
+        color: #fff;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        min-height: 130px;
+    }
+    .br-stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+    }
+    .br-stat-card::after {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -30%;
+        width: 200px;
+        height: 200px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 50%;
+    }
+    .br-stat-icon {
+        width: 52px;
+        height: 52px;
+        background: rgba(255,255,255,0.2);
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        margin-bottom: 0.75rem;
+    }
+    .br-stat-value {
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+    .br-stat-label {
+        font-size: 0.82rem;
+        opacity: 0.85;
+        font-weight: 500;
+        margin-top: 0.25rem;
+    }
+
+    /* Page header */
+    .br-page-header {
+        background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4c1d95 100%);
+        border-radius: 18px;
+        padding: 2rem 2.5rem;
+        color: #fff;
+        margin-bottom: 1.75rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .br-page-header::before {
+        content: '';
+        position: absolute;
+        top: -80px;
+        right: -80px;
+        width: 250px;
+        height: 250px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.04);
+    }
+    .br-page-header h2 {
+        font-weight: 800;
+        font-size: 1.75rem;
+        margin-bottom: 0.25rem;
+    }
+    .br-page-header p {
+        opacity: 0.7;
+        font-size: 0.9rem;
+        margin-bottom: 0;
+    }
+
+    /* Cards */
+    .br-card {
+        background: #fff;
+        border-radius: 16px;
+        border: 1px solid rgba(0,0,0,0.06);
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+        overflow: hidden;
+    }
+    .br-card-header {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .br-card-header h5 {
+        font-size: 1rem;
+        font-weight: 700;
+        margin: 0;
+        color: #1e1b4b;
+    }
+    .br-card-body { padding: 1.25rem 1.5rem; }
+
+    /* Table */
+    .br-table {
+        width: 100%;
+        font-size: 0.88rem;
+    }
+    .br-table th {
+        background: #f8f9fe;
+        color: #64748b;
+        font-weight: 600;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.75rem 1rem;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    .br-table td {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+    }
+    .br-table tbody tr:hover {
+        background: rgba(102,126,234,0.04);
+    }
+
+    /* Status pills */
+    .br-status {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        gap: 0.3rem;
+    }
+    .br-status-pending { background: #fef3c7; color: #92400e; }
+    .br-status-processing { background: #dbeafe; color: #1e40af; }
+    .br-status-completed { background: #d1fae5; color: #065f46; }
+    .br-status-review { background: #fce7f3; color: #9d174d; }
+    .br-status-approved { background: #d1fae5; color: #065f46; }
+    .br-status-rejected { background: #fee2e2; color: #991b1b; }
+    .br-status-failed { background: #fee2e2; color: #991b1b; }
+
+    /* Action buttons */
+    .br-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 1.25rem;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.25s ease;
+    }
+    .br-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+    .br-btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+    .br-btn-primary:hover { color: #fff; }
+    .br-btn-success { background: linear-gradient(135deg, #43e97b, #38f9d7); color: #065f46; }
+    .br-btn-danger { background: linear-gradient(135deg, #f5576c, #ff6b6b); color: #fff; }
+    .br-btn-outline {
+        background: transparent;
+        border: 1.5px solid #667eea;
+        color: #667eea;
+    }
+
+    /* Trending bar chart */
+    .br-trend-bar {
+        height: 8px;
+        border-radius: 4px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        transition: width 0.6s ease;
+    }
+    .br-trend-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+    .br-trend-name {
+        min-width: 140px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: #334155;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .br-trend-bar-wrap { flex: 1; background: #f1f5f9; border-radius: 4px; height: 8px; }
+    .br-trend-value {
+        min-width: 50px;
+        text-align: right;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #667eea;
+    }
+
+    /* Quick links */
+    .br-quick-link {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.85rem 1rem;
+        border-radius: 12px;
+        text-decoration: none;
+        color: #334155;
+        transition: all 0.2s ease;
+        border: 1px solid transparent;
+    }
+    .br-quick-link:hover {
+        background: rgba(102,126,234,0.06);
+        border-color: rgba(102,126,234,0.15);
+        color: #667eea;
+        transform: translateX(4px);
+    }
+    .br-quick-link i {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.95rem;
+    }
+
+    @media (max-width: 768px) {
+        .br-page-header { padding: 1.5rem; }
+        .br-stat-value { font-size: 1.5rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="br-page-header">
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+            <div>
+                <h2><i class="fas fa-receipt me-2"></i>Bill Rewards</h2>
+                <p>Upload bills, extract data with OCR, and earn reward points</p>
+            </div>
+            <div class="d-flex gap-2 mt-2 mt-md-0">
+                <a href="{% url 'bill_rewards:bill_upload' %}" class="br-btn br-btn-primary">
+                    <i class="fas fa-cloud-upload-alt"></i> Upload Bill
+                </a>
+                <a href="{% url 'bill_rewards:bill_list' %}" class="br-btn br-btn-outline">
+                    <i class="fas fa-list"></i> All Bills
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="br-stat-card br-gradient-1">
+                <div class="br-stat-icon"><i class="fas fa-file-invoice"></i></div>
+                <div class="br-stat-value">{{ total_bills|intcomma }}</div>
+                <div class="br-stat-label">Total Bills</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="br-stat-card br-gradient-2">
+                <div class="br-stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                <div class="br-stat-value">{{ pending_review }}</div>
+                <div class="br-stat-label">Needs Review</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="br-stat-card br-gradient-4">
+                <div class="br-stat-icon"><i class="fas fa-coins"></i></div>
+                <div class="br-stat-value">{{ total_points_earned|intcomma }}</div>
+                <div class="br-stat-label">Points Earned</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="br-stat-card br-gradient-5">
+                <div class="br-stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="br-stat-value">{{ processed_today }}</div>
+                <div class="br-stat-label">Processed Today</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Bills Over Time Chart -->
+        <div class="col-lg-8">
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-chart-area me-2 text-primary"></i>Bills Over Time</h5>
+                    <span class="text-muted" style="font-size:0.8rem;">Last 30 Days</span>
+                </div>
+                <div class="br-card-body">
+                    <canvas id="billsChart" height="260"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="col-lg-4">
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-bolt me-2" style="color:#fbbf24;"></i>Quick Actions</h5>
+                </div>
+                <div class="br-card-body p-2">
+                    <a href="{% url 'bill_rewards:bill_upload' %}" class="br-quick-link">
+                        <i class="fas fa-cloud-upload-alt" style="background:rgba(102,126,234,0.1);color:#667eea;"></i>
+                        <div>
+                            <strong style="font-size:0.88rem;">Upload Bill</strong>
+                            <small class="d-block text-muted">Upload or capture a bill image</small>
+                        </div>
+                    </a>
+                    <a href="{% url 'bill_rewards:bill_list' %}?status=review" class="br-quick-link">
+                        <i class="fas fa-search" style="background:rgba(245,87,108,0.1);color:#f5576c;"></i>
+                        <div>
+                            <strong style="font-size:0.88rem;">Review Bills</strong>
+                            <small class="d-block text-muted">{{ pending_review }} bill(s) need review</small>
+                        </div>
+                    </a>
+                    <a href="{% url 'bill_rewards:reward_transactions' %}" class="br-quick-link">
+                        <i class="fas fa-coins" style="background:rgba(67,233,123,0.1);color:#059669;"></i>
+                        <div>
+                            <strong style="font-size:0.88rem;">Reward Points</strong>
+                            <small class="d-block text-muted">View transactions & balances</small>
+                        </div>
+                    </a>
+                    <a href="{% url 'bill_rewards:trending_analytics' %}" class="br-quick-link">
+                        <i class="fas fa-chart-line" style="background:rgba(251,191,36,0.1);color:#d97706;"></i>
+                        <div>
+                            <strong style="font-size:0.88rem;">Trending Products</strong>
+                            <small class="d-block text-muted">Analytics from bill data</small>
+                        </div>
+                    </a>
+                    <a href="{% url 'bill_rewards:alias_list' %}" class="br-quick-link">
+                        <i class="fas fa-link" style="background:rgba(161,140,209,0.1);color:#7c3aed;"></i>
+                        <div>
+                            <strong style="font-size:0.88rem;">Product Aliases</strong>
+                            <small class="d-block text-muted">Manage OCR name mappings</small>
+                        </div>
+                    </a>
+                    <a href="{% url 'bill_rewards:reward_config' %}" class="br-quick-link">
+                        <i class="fas fa-cog" style="background:rgba(100,116,139,0.1);color:#64748b;"></i>
+                        <div>
+                            <strong style="font-size:0.88rem;">Reward Config</strong>
+                            <small class="d-block text-muted">Points per currency, expiry, etc.</small>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mt-1">
+        <!-- Recent Bills -->
+        <div class="col-lg-8">
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-clock me-2 text-info"></i>Recent Bills</h5>
+                    <a href="{% url 'bill_rewards:bill_list' %}" class="text-primary text-decoration-none" style="font-size:0.82rem;font-weight:600;">
+                        View All <i class="fas fa-arrow-right ms-1"></i>
+                    </a>
+                </div>
+                <div class="table-responsive">
+                    <table class="br-table">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Customer</th>
+                                <th>Status</th>
+                                <th>Confidence</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bill in recent_bills %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'bill_rewards:bill_detail' bill.pk %}" class="text-decoration-none fw-semibold" style="color:#667eea;">
+                                        {{ bill.file_name|truncatechars:35 }}
+                                    </a>
+                                </td>
+                                <td>{{ bill.customer.name|default:"—" }}</td>
+                                <td>
+                                    <span class="br-status br-status-{{ bill.status }}">
+                                        {{ bill.get_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if bill.ocr_confidence %}
+                                        <span class="fw-semibold {% if bill.ocr_confidence >= 80 %}text-success{% elif bill.ocr_confidence >= 50 %}text-warning{% else %}text-danger{% endif %}">
+                                            {{ bill.ocr_confidence|floatformat:0 }}%
+                                        </span>
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted" style="font-size:0.82rem;">{{ bill.created_at|date:"M d, H:i" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    <i class="fas fa-inbox fa-2x mb-2 d-block" style="opacity:0.3;"></i>
+                                    No bills uploaded yet
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trending Products -->
+        <div class="col-lg-4">
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-fire me-2" style="color:#f97316;"></i>Trending Products</h5>
+                    <a href="{% url 'bill_rewards:trending_analytics' %}" class="text-primary text-decoration-none" style="font-size:0.82rem;font-weight:600;">
+                        Analytics <i class="fas fa-arrow-right ms-1"></i>
+                    </a>
+                </div>
+                <div class="br-card-body">
+                    {% for item in trending_products %}
+                    <div class="br-trend-row">
+                        <span class="br-trend-name" title="{{ item.product__name }}">{{ item.product__name }}</span>
+                        <div class="br-trend-bar-wrap">
+                            {% widthratio item.total_qty trending_products.0.total_qty 100 as pct %}
+                            <div class="br-trend-bar" style="width:{% widthratio item.total_qty trending_products.0.total_qty 100 %}%;"></div>
+                        </div>
+                        <span class="br-trend-value">{{ item.total_qty|floatformat:0 }}</span>
+                    </div>
+                    {% empty %}
+                    <div class="text-center text-muted py-3">
+                        <i class="fas fa-chart-bar fa-2x mb-2 d-block" style="opacity:0.3;"></i>
+                        <small>No trending data yet</small>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('billsChart');
+    if (!ctx) return;
+
+    const labels = {{ chart_labels|safe }};
+    const data = {{ chart_data|safe }};
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Bills Processed',
+                data: data,
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102,126,234,0.1)',
+                borderWidth: 2.5,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 3,
+                pointBackgroundColor: '#667eea',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointHoverRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1e1b4b',
+                    titleFont: { size: 13, weight: '600' },
+                    bodyFont: { size: 12 },
+                    padding: 12,
+                    cornerRadius: 8,
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { font: { size: 11 }, color: '#94a3b8' }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(0,0,0,0.04)' },
+                    ticks: {
+                        font: { size: 11 }, color: '#94a3b8',
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

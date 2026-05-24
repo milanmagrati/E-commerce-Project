@@ -1,0 +1,90 @@
+{% extends 'base.html' %}{% load humanize %}
+{% block title %}Trending Products{% endblock %}
+{% block extra_css %}<style>.br-page-header{background:linear-gradient(135deg,#1e1b4b 0%,#312e81 40%,#4c1d95 100%);border-radius:18px;padding:2rem 2.5rem;color:#fff;margin-bottom:1.75rem}.br-page-header h2{font-weight:800;font-size:1.75rem;margin-bottom:.25rem}.br-page-header p{opacity:.7;font-size:.9rem;margin-bottom:0}.br-card{background:#fff;border-radius:16px;border:1px solid rgba(0,0,0,.06);box-shadow:0 2px 12px rgba(0,0,0,.04);overflow:hidden;margin-bottom:1.25rem}.br-card-header{padding:1.25rem 1.5rem;border-bottom:1px solid rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between}.br-card-header h5{font-size:1rem;font-weight:700;margin:0;color:#1e1b4b}.br-card-body{padding:1.25rem 1.5rem}.br-table{width:100%;font-size:.88rem}.br-table th{background:#f8f9fe;color:#64748b;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;padding:.75rem 1rem;border-bottom:2px solid #e2e8f0}.br-table td{padding:.75rem 1rem;border-bottom:1px solid #f1f5f9;vertical-align:middle}.br-table tbody tr:hover{background:rgba(102,126,234,.04)}.br-period-tabs{display:flex;gap:.5rem}.br-period-tab{padding:.35rem .85rem;border-radius:20px;font-size:.78rem;font-weight:600;text-decoration:none;border:1.5px solid #e2e8f0;color:#64748b;background:#fff;transition:all .2s}.br-period-tab:hover{border-color:#667eea;color:#667eea}.br-period-tab.active{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-color:transparent}</style>{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="br-page-header">
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+            <div><h2><i class="fas fa-chart-line me-2"></i>Trending Analytics</h2><p>Product trends and insights from bill data</p></div>
+            <div class="d-flex gap-2">
+                <div class="br-period-tabs">
+                    <a href="?days=7" class="br-period-tab {% if days == 7 %}active{% endif %}">7 Days</a>
+                    <a href="?days=30" class="br-period-tab {% if days == 30 %}active{% endif %}">30 Days</a>
+                    <a href="?days=90" class="br-period-tab {% if days == 90 %}active{% endif %}">90 Days</a>
+                </div>
+                <a href="{% url 'bill_rewards:dashboard' %}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-radius:8px;"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
+            </div>
+        </div>
+    </div>
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="br-card">
+                <div class="br-card-header"><h5><i class="fas fa-fire me-2" style="color:#f97316"></i>Top Products from Bills</h5></div>
+                <div class="table-responsive">
+                    <table class="br-table">
+                        <thead><tr><th>#</th><th>Product</th><th>Qty Sold</th><th>Revenue</th><th>Bills</th><th>Avg Price</th></tr></thead>
+                        <tbody>
+                            {% for p in top_products %}
+                            <tr>
+                                <td class="fw-bold text-muted">{{ forloop.counter }}</td>
+                                <td class="fw-semibold" style="color:#667eea;">{{ p.matched_product__name|truncatechars:35 }}</td>
+                                <td>{{ p.total_qty|default:"0"|floatformat:0 }}</td>
+                                <td>{% if p.total_amount %}Rs. {{ p.total_amount|intcomma }}{% else %}—{% endif %}</td>
+                                <td>{{ p.bill_count }}</td>
+                                <td>{% if p.avg_price %}Rs. {{ p.avg_price|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="6" class="text-center text-muted py-4">No product data yet</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="br-card">
+                <div class="br-card-header"><h5><i class="fas fa-store me-2" style="color:#8b5cf6"></i>Top Shops</h5></div>
+                <div class="table-responsive">
+                    <table class="br-table">
+                        <thead><tr><th>#</th><th>Shop Name</th><th>Bills</th><th>Total Amount</th></tr></thead>
+                        <tbody>
+                            {% for s in top_shops %}
+                            <tr>
+                                <td class="fw-bold text-muted">{{ forloop.counter }}</td>
+                                <td class="fw-semibold">{{ s.shop_name|truncatechars:40 }}</td>
+                                <td>{{ s.bill_count }}</td>
+                                <td>{% if s.total_amount %}Rs. {{ s.total_amount|intcomma }}{% else %}—{% endif %}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-4">No shop data yet</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="br-card">
+                <div class="br-card-header"><h5><i class="fas fa-question-circle me-2" style="color:#ef4444"></i>Unmatched Items</h5></div>
+                <div class="br-card-body">
+                    <p class="text-muted mb-3" style="font-size:.82rem;">These items from bills could not be matched to any catalog product. Consider adding them as products or creating aliases.</p>
+                    <div class="table-responsive">
+                        <table class="br-table">
+                            <thead><tr><th>Description</th><th>Count</th><th>Amount</th></tr></thead>
+                            <tbody>
+                                {% for u in unmatched_items %}
+                                <tr>
+                                    <td><code style="background:#f8f9fe;padding:.15rem .4rem;border-radius:4px;font-size:.8rem;">{{ u.raw_description|truncatechars:35 }}</code></td>
+                                    <td class="fw-bold">{{ u.count }}</td>
+                                    <td>{% if u.total_amount %}Rs. {{ u.total_amount|intcomma }}{% else %}—{% endif %}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="3" class="text-center text-muted py-3">All items matched!</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1285,6 +1285,15 @@
                 </li>
                 {% endif %}
 
+                <!-- ==================== BILL REWARDS ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="bill-rewards-menu {% if '/bill-rewards/' in request.path %}active{% endif %}">
+                    <a href="{% url 'bill_rewards:dashboard' %}">
+                        <i class="fas fa-receipt"></i> Bill Rewards<span class="purchase-badge" style="background:linear-gradient(135deg,#667eea,#764ba2);">OCR</span>
+                    </a>
+                </li>
+                {% endif %}
+
                 <!-- ==================== TEAM MEMBERS (Admin Only) ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' %}
                 <li

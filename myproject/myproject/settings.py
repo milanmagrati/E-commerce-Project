@@ -56,6 +56,7 @@ EXTERNAL_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "integrations",
+    "bill_rewards",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 
@@ -322,3 +323,28 @@ LOGGING = {
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
+
+# ===================== Bill OCR & Rewards Configuration =====================
+# OCR Provider: 'auto', 'aws_textract', 'google_docai', or 'manual'
+BILL_OCR_PROVIDER = config('BILL_OCR_PROVIDER', default='auto')
+# Confidence threshold below which bills are flagged for admin review
+BILL_OCR_REVIEW_THRESHOLD = config('BILL_OCR_REVIEW_THRESHOLD', default=70, cast=int)
+# AWS credentials (if using Textract)
+AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='')
+AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='')
+AWS_REGION = config('AWS_REGION', default='us-east-1')
+# Google Document AI (if using)
+GOOGLE_DOCAI_PROJECT = config('GOOGLE_DOCAI_PROJECT', default='')
+GOOGLE_DOCAI_LOCATION = config('GOOGLE_DOCAI_LOCATION', default='us')
+GOOGLE_DOCAI_PROCESSOR_ID = config('GOOGLE_DOCAI_PROCESSOR_ID', default='')
+
+# ===================== Celery Configuration =====================
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+# Run synchronously for local dev unless redis is available and explicit
+CELERY_TASK_ALWAYS_EAGER = config('CELERY_TASK_ALWAYS_EAGER', default=True, cast=bool)

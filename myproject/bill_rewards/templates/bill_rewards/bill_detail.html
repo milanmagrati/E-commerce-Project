@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Bill Detail{% endblock %}
+{% block extra_css %}
+<style>
+.br-page-header{background:linear-gradient(135deg,#1e1b4b 0%,#312e81 40%,#4c1d95 100%);border-radius:18px;padding:2rem 2.5rem;color:#fff;margin-bottom:1.75rem}
+.br-page-header h2{font-weight:800;font-size:1.75rem;margin-bottom:.25rem}
+.br-page-header p{opacity:.7;font-size:.9rem;margin-bottom:0}
+.br-card{background:#fff;border-radius:16px;border:1px solid rgba(0,0,0,.06);box-shadow:0 2px 12px rgba(0,0,0,.04);overflow:hidden;margin-bottom:1.25rem}
+.br-card-header{padding:1.25rem 1.5rem;border-bottom:1px solid rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between}
+.br-card-header h5{font-size:1rem;font-weight:700;margin:0;color:#1e1b4b}
+.br-card-body{padding:1.25rem 1.5rem}
+.br-field-row{display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid #f1f5f9;font-size:.88rem}
+.br-field-label{color:#64748b;font-weight:500}
+.br-field-value{font-weight:600;color:#1e1b4b}
+.br-confidence{display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:600;padding:.15rem .5rem;border-radius:6px}
+.br-conf-high{background:#d1fae5;color:#065f46}
+.br-conf-med{background:#fef3c7;color:#92400e}
+.br-conf-low{background:#fee2e2;color:#991b1b}
+.br-status{display:inline-flex;align-items:center;padding:.25rem .75rem;border-radius:20px;font-size:.75rem;font-weight:600}
+.br-status-pending{background:#fef3c7;color:#92400e}
+.br-status-processing{background:#dbeafe;color:#1e40af}
+.br-status-completed{background:#d1fae5;color:#065f46}
+.br-status-review{background:#fce7f3;color:#9d174d}
+.br-status-approved{background:#d1fae5;color:#065f46}
+.br-status-rejected{background:#fee2e2;color:#991b1b}
+.br-status-failed{background:#fee2e2;color:#991b1b}
+.br-table{width:100%;font-size:.85rem}
+.br-table th{background:#f8f9fe;color:#64748b;font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;padding:.65rem .75rem;border-bottom:2px solid #e2e8f0}
+.br-table td{padding:.65rem .75rem;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.br-table tbody tr:hover{background:rgba(102,126,234,.04)}
+.br-btn{display:inline-flex;align-items:center;gap:.4rem;padding:.5rem 1.25rem;border-radius:10px;font-size:.85rem;font-weight:600;border:none;cursor:pointer;text-decoration:none;transition:all .25s ease}
+.br-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.12)}
+.br-btn-success{background:linear-gradient(135deg,#43e97b,#38f9d7);color:#065f46}
+.br-btn-danger{background:linear-gradient(135deg,#f5576c,#ff6b6b);color:#fff}
+.br-btn-danger:hover{color:#fff}
+.br-btn-warning{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#78350f}
+.br-btn-primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff}
+.br-btn-primary:hover{color:#fff}
+.br-bill-preview{border-radius:12px;max-width:100%;max-height:400px;object-fit:contain;background:#f8f9fe;padding:1rem}
+.br-match-badge{font-size:.7rem;font-weight:600;padding:.15rem .45rem;border-radius:6px;display:inline-block}
+.br-match-exact{background:#d1fae5;color:#065f46}
+.br-match-alias{background:#dbeafe;color:#1e40af}
+.br-match-fuzzy{background:#fef3c7;color:#92400e}
+.br-match-manual{background:#ede9fe;color:#6d28d9}
+.br-dup-alert{background:linear-gradient(135deg,#fef3c7,#fde68a);border:1px solid #fcd34d;border-radius:12px;padding:1rem 1.25rem;display:flex;align-items:center;gap:.75rem;margin-bottom:1rem}
+.br-points-card{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:16px;padding:1.5rem;color:#fff;text-align:center}
+.br-points-value{font-size:2.5rem;font-weight:800;line-height:1}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="br-page-header">
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+            <div>
+                <h2><i class="fas fa-file-invoice me-2"></i>Bill Detail</h2>
+                <p>{{ upload.file_name }} — {{ upload.get_status_display }}</p>
+            </div>
+            <div class="d-flex gap-2 mt-2 mt-md-0">
+                {% if upload.status == 'completed' or upload.status == 'review' %}
+                <form method="post" action="{% url 'bill_rewards:bill_approve' upload.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="br-btn br-btn-success"><i class="fas fa-check"></i> Approve</button>
+                </form>
+                <form method="post" action="{% url 'bill_rewards:bill_reject' upload.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="br-btn br-btn-danger"><i class="fas fa-times"></i> Reject</button>
+                </form>
+                {% endif %}
+                {% if upload.status == 'failed' %}
+                <form method="post" action="{% url 'bill_rewards:bill_reprocess' upload.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="br-btn br-btn-warning"><i class="fas fa-redo"></i> Reprocess</button>
+                </form>
+                {% endif %}
+                <a href="{% url 'bill_rewards:bill_list' %}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-radius:8px;">
+                    <i class="fas fa-arrow-left me-1"></i> Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% if upload.is_duplicate %}
+    <div class="br-dup-alert">
+        <i class="fas fa-exclamation-triangle fa-lg" style="color:#f59e0b"></i>
+        <div>
+            <strong style="color:#92400e">Possible Duplicate</strong>
+            <p class="mb-0 text-muted" style="font-size:.85rem">This bill may be a duplicate. Please review carefully before approving.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row g-4">
+        <!-- Left: Extracted Data -->
+        <div class="col-lg-7">
+            {% if extracted %}
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-receipt me-2 text-primary"></i>Extracted Data</h5>
+                    <span class="br-status br-status-{{ upload.status }}">{{ upload.get_status_display }}</span>
+                </div>
+                <div class="br-card-body">
+                    <div class="br-field-row">
+                        <span class="br-field-label">Customer Name</span>
+                        <span class="br-field-value">{{ extracted.customer_name|default:"—" }}
+                            {% if extracted.confidence_customer_name %}<span class="br-confidence {% if extracted.confidence_customer_name >= 80 %}br-conf-high{% elif extracted.confidence_customer_name >= 50 %}br-conf-med{% else %}br-conf-low{% endif %} ms-1">{{ extracted.confidence_customer_name|floatformat:0 }}%</span>{% endif %}
+                        </span>
+                    </div>
+                    <div class="br-field-row">
+                        <span class="br-field-label">Shop Name</span>
+                        <span class="br-field-value">{{ extracted.shop_name|default:"—" }}
+                            {% if extracted.confidence_shop_name %}<span class="br-confidence {% if extracted.confidence_shop_name >= 80 %}br-conf-high{% elif extracted.confidence_shop_name >= 50 %}br-conf-med{% else %}br-conf-low{% endif %} ms-1">{{ extracted.confidence_shop_name|floatformat:0 }}%</span>{% endif %}
+                        </span>
+                    </div>
+                    <div class="br-field-row">
+                        <span class="br-field-label">Invoice Number</span>
+                        <span class="br-field-value">{{ extracted.invoice_number|default:"—" }}</span>
+                    </div>
+                    <div class="br-field-row">
+                        <span class="br-field-label">Bill Date</span>
+                        <span class="br-field-value">{{ extracted.bill_date|date:"M d, Y"|default:"—" }}</span>
+                    </div>
+                    <div class="br-field-row">
+                        <span class="br-field-label">Subtotal</span>
+                        <span class="br-field-value">{% if extracted.subtotal %}Rs. {{ extracted.subtotal|intcomma }}{% else %}—{% endif %}</span>
+                    </div>
+                    <div class="br-field-row">
+                        <span class="br-field-label">Tax</span>
+                        <span class="br-field-value">{% if extracted.tax_amount %}Rs. {{ extracted.tax_amount|intcomma }}{% else %}—{% endif %}</span>
+                    </div>
+                    <div class="br-field-row" style="border-bottom:none;">
+                        <span class="br-field-label fw-bold">Total Amount</span>
+                        <span class="br-field-value" style="font-size:1.1rem;color:#667eea;">{% if extracted.total_amount %}Rs. {{ extracted.total_amount|intcomma }}{% else %}—{% endif %}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Line Items -->
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-list me-2" style="color:#f97316"></i>Line Items ({{ line_items|length }})</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="br-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Description</th>
+                                <th>Qty</th>
+                                <th>Unit Price</th>
+                                <th>Amount</th>
+                                <th>Matched Product</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in line_items %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>{{ item.raw_description|truncatechars:40 }}</td>
+                                <td>{{ item.quantity|default:"—" }}</td>
+                                <td>{% if item.unit_price %}Rs. {{ item.unit_price|intcomma }}{% else %}—{% endif %}</td>
+                                <td>{% if item.line_amount %}Rs. {{ item.line_amount|intcomma }}{% else %}—{% endif %}</td>
+                                <td>
+                                    {% if item.matched_product %}
+                                        <span class="fw-semibold" style="color:#667eea;">{{ item.matched_product.name|truncatechars:25 }}</span>
+                                        <span class="br-match-badge br-match-{{ item.match_method }}">{{ item.match_method }}</span>
+                                    {% elif item.predicted_category %}
+                                        <span class="text-muted">Cat: {{ item.predicted_category.name }}</span>
+                                    {% else %}
+                                        <span class="text-muted">No match</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="6" class="text-center text-muted py-3">No line items extracted</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% else %}
+            <div class="br-card">
+                <div class="br-card-body text-center py-5">
+                    {% if upload.status == 'processing' %}
+                    <i class="fas fa-spinner fa-spin fa-3x mb-3" style="color:#667eea;"></i>
+                    <h5>Processing...</h5>
+                    <p class="text-muted">OCR extraction is in progress. This page will update automatically.</p>
+                    {% elif upload.status == 'failed' %}
+                    <i class="fas fa-exclamation-circle fa-3x mb-3 text-danger"></i>
+                    <h5>Processing Failed</h5>
+                    <p class="text-muted">{{ upload.error_message|default:"Unknown error occurred" }}</p>
+                    {% else %}
+                    <i class="fas fa-hourglass-half fa-3x mb-3" style="color:#fbbf24;"></i>
+                    <h5>Pending Processing</h5>
+                    <p class="text-muted">This bill is queued for OCR processing.</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Right: Preview + Points + Meta -->
+        <div class="col-lg-5">
+            <!-- Bill Preview -->
+            <div class="br-card">
+                <div class="br-card-header">
+                    <h5><i class="fas fa-image me-2" style="color:#3b82f6"></i>Bill Preview</h5>
+                </div>
+                <div class="br-card-body text-center">
+                    {% if upload.file %}
+                        {% if '.pdf' in upload.file_name %}
+                        <div style="padding:2rem;background:#f8f9fe;border-radius:12px;">
+                            <i class="fas fa-file-pdf fa-4x mb-2" style="color:#ef4444;"></i>
+                            <p class="mb-2 fw-semibold">{{ upload.file_name }}</p>
+                            <a href="{{ upload.file.url }}" target="_blank" class="br-btn br-btn-primary btn-sm">
+                                <i class="fas fa-external-link-alt"></i> Open PDF
+                            </a>
+                        </div>
+                        {% else %}
+                        <img src="{{ upload.file.url }}" alt="Bill" class="br-bill-preview">
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Reward Points -->
+            {% if potential_points > 0 %}
+            <div class="br-points-card mt-3">
+                <i class="fas fa-coins fa-2x mb-2" style="opacity:.7;"></i>
+                <div class="br-points-value">{{ potential_points|intcomma }}</div>
+                <div style="opacity:.8;font-size:.85rem;margin-top:.25rem;">Reward Points {% if upload.status == 'approved' %}Earned{% else %}(Potential){% endif %}</div>
+            </div>
+            {% endif %}
+
+            <!-- Metadata -->
+            <div class="br-card mt-3">
+                <div class="br-card-header"><h5><i class="fas fa-info-circle me-2 text-muted"></i>Metadata</h5></div>
+                <div class="br-card-body">
+                    <div class="br-field-row"><span class="br-field-label">Uploaded By</span><span class="br-field-value">{{ upload.uploaded_by.username|default:"—" }}</span></div>
+                    <div class="br-field-row"><span class="br-field-label">Customer</span><span class="br-field-value">{{ upload.customer.name|default:"Not linked" }}</span></div>
+                    <div class="br-field-row"><span class="br-field-label">OCR Provider</span><span class="br-field-value">{{ upload.get_ocr_provider_display|default:"—" }}</span></div>
+                    <div class="br-field-row"><span class="br-field-label">Overall Confidence</span><span class="br-field-value">{% if upload.ocr_confidence %}{{ upload.ocr_confidence|floatformat:1 }}%{% else %}—{% endif %}</span></div>
+                    <div class="br-field-row"><span class="br-field-label">Created</span><span class="br-field-value">{{ upload.created_at|date:"M d, Y H:i" }}</span></div>
+                    {% if upload.reviewed_by %}
+                    <div class="br-field-row"><span class="br-field-label">Reviewed By</span><span class="br-field-value">{{ upload.reviewed_by.username }}</span></div>
+                    <div class="br-field-row"><span class="br-field-label">Reviewed At</span><span class="br-field-value">{{ upload.reviewed_at|date:"M d, Y H:i" }}</span></div>
+                    {% endif %}
+                    {% if upload.review_notes %}
+                    <div class="br-field-row" style="border:none;"><span class="br-field-label">Notes</span><span class="br-field-value">{{ upload.review_notes }}</span></div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if upload.status == 'processing' %}
+<script>
+(function poll() {
+    setTimeout(function() {
+        fetch("{% url 'bill_rewards:api_bill_status' upload.pk %}")
+        .then(r => r.json())
+        .then(d => { if (d.status !== 'processing') location.reload(); else poll(); })
+        .catch(() => poll());
+    }, 3000);
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends 'base.html' %}{% load humanize %}
+{% block title %}Product Aliases{% endblock %}
+{% block extra_css %}<style>.br-page-header{background:linear-gradient(135deg,#1e1b4b 0%,#312e81 40%,#4c1d95 100%);border-radius:18px;padding:2rem 2.5rem;color:#fff;margin-bottom:1.75rem}.br-page-header h2{font-weight:800;font-size:1.75rem;margin-bottom:.25rem}.br-page-header p{opacity:.7;font-size:.9rem;margin-bottom:0}.br-card{background:#fff;border-radius:16px;border:1px solid rgba(0,0,0,.06);box-shadow:0 2px 12px rgba(0,0,0,.04);overflow:hidden}.br-card-header{padding:1.25rem 1.5rem;border-bottom:1px solid rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem}.br-card-header h5{font-size:1rem;font-weight:700;margin:0;color:#1e1b4b}.br-table{width:100%;font-size:.88rem}.br-table th{background:#f8f9fe;color:#64748b;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;padding:.75rem 1rem;border-bottom:2px solid #e2e8f0}.br-table td{padding:.75rem 1rem;border-bottom:1px solid #f1f5f9;vertical-align:middle}.br-table tbody tr:hover{background:rgba(102,126,234,.04)}</style>{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="br-page-header">
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+            <div><h2><i class="fas fa-link me-2"></i>Product Aliases</h2><p>Map OCR-extracted names to your catalog products</p></div>
+            <a href="{% url 'bill_rewards:dashboard' %}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-radius:8px;"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
+        </div>
+    </div>
+    <div class="br-card">
+        <div class="br-card-header">
+            <h5>Aliases ({{ aliases.paginator.count }})</h5>
+            <form method="get" style="max-width:260px;"><div class="input-group input-group-sm"><span class="input-group-text"><i class="fas fa-search"></i></span><input type="text" name="search" class="form-control" placeholder="Search..." value="{{ search }}"></div></form>
+        </div>
+        <div class="table-responsive">
+            <table class="br-table">
+                <thead><tr><th>Alias Name (from OCR)</th><th>→ Mapped Product</th><th>Created By</th><th>Date</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for a in aliases %}
+                    <tr>
+                        <td><code style="background:#f8f9fe;padding:.2rem .5rem;border-radius:4px;font-size:.82rem;">{{ a.alias_name }}</code></td>
+                        <td class="fw-semibold" style="color:#667eea;">{{ a.product.name }}</td>
+                        <td>{{ a.created_by.username|default:"System" }}</td>
+                        <td class="text-muted" style="font-size:.82rem;">{{ a.created_at|date:"M d, Y" }}</td>
+                        <td><form method="post" action="{% url 'bill_rewards:alias_delete' a.id %}" class="d-inline" onsubmit="return confirm('Delete this alias?')">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger" style="border-radius:8px;font-size:.75rem;"><i class="fas fa-trash"></i></button></form></td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center text-muted py-4">No aliases created yet</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

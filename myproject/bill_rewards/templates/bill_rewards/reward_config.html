@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Reward Configuration{% endblock %}
+{% block extra_css %}<style>.br-page-header{background:linear-gradient(135deg,#1e1b4b 0%,#312e81 40%,#4c1d95 100%);border-radius:18px;padding:2rem 2.5rem;color:#fff;margin-bottom:1.75rem}.br-page-header h2{font-weight:800;font-size:1.75rem;margin-bottom:.25rem}.br-page-header p{opacity:.7;font-size:.9rem;margin-bottom:0}.br-card{background:#fff;border-radius:16px;border:1px solid rgba(0,0,0,.06);box-shadow:0 2px 12px rgba(0,0,0,.04);overflow:hidden}.br-card-header{padding:1.25rem 1.5rem;border-bottom:1px solid rgba(0,0,0,.06)}.br-card-header h5{font-size:1rem;font-weight:700;margin:0;color:#1e1b4b}.br-card-body{padding:1.5rem}.br-btn{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1.5rem;border-radius:10px;font-size:.88rem;font-weight:600;border:none;cursor:pointer;text-decoration:none;transition:all .25s ease}.br-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.12)}.br-btn-primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff}.br-btn-primary:hover{color:#fff}</style>{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="br-page-header">
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+            <div><h2><i class="fas fa-cog me-2"></i>Reward Configuration</h2><p>Configure how reward points are calculated and managed</p></div>
+            <a href="{% url 'bill_rewards:dashboard' %}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-radius:8px;"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
+        </div>
+    </div>
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="br-card">
+                <div class="br-card-header"><h5><i class="fas fa-sliders-h me-2 text-primary"></i>Settings</h5></div>
+                <div class="br-card-body">
+                    <form method="post" action="{% url 'bill_rewards:reward_config' %}">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" style="font-size:.85rem;">Points per Currency Unit</label>
+                                <input type="number" step="0.01" name="points_per_currency_unit" class="form-control" value="{{ config.points_per_currency_unit }}">
+                                <small class="text-muted">How many points per Rs. 1 spent</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" style="font-size:.85rem;">Minimum Bill Total</label>
+                                <input type="number" step="0.01" name="min_bill_total" class="form-control" value="{{ config.min_bill_total_for_reward }}">
+                                <small class="text-muted">Bills below this amount earn no points</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" style="font-size:.85rem;">Max Points per Bill</label>
+                                <input type="number" name="max_points_per_bill" class="form-control" value="{{ config.max_points_per_bill }}">
+                                <small class="text-muted">Cap on points from a single bill</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" style="font-size:.85rem;">Points Expiry (days)</label>
+                                <input type="number" name="points_expiry_days" class="form-control" value="{{ config.points_expiry_days }}">
+                                <small class="text-muted">0 = never expire</small>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" name="is_active" value="1" id="isActive" {% if config.is_active %}checked{% endif %}>
+                                    <label class="form-check-label fw-semibold" for="isActive">Reward System Active</label>
+                                </div>
+                            </div>
+                            <div class="col-12 mt-3">
+                                <button type="submit" class="br-btn br-btn-primary"><i class="fas fa-save"></i> Save Configuration</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="br-card">
+                <div class="br-card-header"><h5><i class="fas fa-info-circle me-2 text-info"></i>How It Works</h5></div>
+                <div class="br-card-body" style="font-size:.85rem;color:#64748b;line-height:1.7;">
+                    <p><strong>Points per Currency Unit:</strong> For every Rs. 1 on an approved bill, the customer earns this many points.</p>
+                    <p><strong>Minimum Bill Total:</strong> Bills with totals below this threshold will not earn any reward points.</p>
+                    <p><strong>Max Points per Bill:</strong> Prevents excessive points from a single very large bill.</p>
+                    <p><strong>Points Expiry:</strong> Points expire after this many days. Set to 0 if points should never expire.</p>
+                    <p class="mb-0"><strong>Active Toggle:</strong> Disable the entire reward system without deleting data.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

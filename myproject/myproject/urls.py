@@ -31,6 +31,7 @@ urlpatterns = [
     path('todo/', include('todo.urls')),
     path('store/', include('store.urls')),
     path('api/integrations/', include('integrations.urls')),
+    path('bill-rewards/', include('bill_rewards.urls')),
 
     # ZKTeco ADMS endpoints at root level (device pushes to /iclock/...)
     path('iclock/cdata', iclock_cdata, name='iclock_cdata_root'),
