@@ -1847,7 +1847,7 @@
                 {% for s in staff_order_summary %}
                 <div class="sp-staff-summary-chip">
                     <div class="sp-chip-avatar">
-                        {% if s.created_by__first_name %}{{ s.created_by__first_name|first|upper }}{% else %}{{ s.created_by__username|first|upper }}{% endif %}
+                        {% if s.created_by__first_name %}{{ s.created_by__first_name|default:""|first|upper }}{% else %}{{ s.created_by__username|default:""|first|upper }}{% endif %}
                     </div>
                     <div class="sp-chip-info">
                         <span class="sp-chip-name">
@@ -1907,7 +1907,7 @@
                             <td>
                                 <div class="sp-staff-info">
                                     <span class="sp-staff-avatar" style="width: 30px; height: 30px; font-size: 0.8rem; margin-right: 0.5rem;">
-                                        {% if order.created_by %}{{ order.created_by.first_name|default:order.created_by.username|first|upper }}{% else %}?{% endif %}
+                                        {% if order.created_by %}{{ order.created_by.first_name|default:order.created_by.username|default:""|first|upper }}{% else %}?{% endif %}
                                     </span>
                                     <div class="sp-staff-details">
                                         <span class="sp-staff-name" style="font-size: 0.88rem;">
