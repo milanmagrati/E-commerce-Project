@@ -4485,19 +4485,27 @@ def possible_redirection_list(request):
 
     # ── Product-name normalisation & matching helpers ──
     _RE_QTY_PREFIX = re.compile(r'^\s*(\d+)\s*[xX×*]\s*')
+    _RE_QTY_SUFFIX = re.compile(r'\s*[xX×*]\s*(\d+)\s*$')
     _RE_NON_ALNUM = re.compile(r'[^a-z0-9\s]')
     _RE_MULTI_SPACE = re.compile(r'\s+')
 
     def _normalize_product_name(raw):
-        """Lowercase, strip quantity prefix, remove punctuation, collapse whitespace."""
+        """Lowercase, strip quantity prefix/suffix, remove punctuation, collapse whitespace."""
         if not raw:
             return '', 0
         s = raw.lower().strip()
         qty = 0
-        m = _RE_QTY_PREFIX.match(s)
-        if m:
-            qty = int(m.group(1))
-            s = s[m.end():]
+        
+        m_pref = _RE_QTY_PREFIX.match(s)
+        if m_pref:
+            qty = int(m_pref.group(1))
+            s = s[m_pref.end():]
+        else:
+            m_suff = _RE_QTY_SUFFIX.search(s)
+            if m_suff:
+                qty = int(m_suff.group(1))
+                s = s[:m_suff.start()]
+
         s = _RE_NON_ALNUM.sub(' ', s)
         s = _RE_MULTI_SPACE.sub(' ', s).strip()
         return s, qty
@@ -4763,21 +4771,22 @@ def possible_redirection_list(request):
         _bk = (entry['rtv'].to_branch or '').upper()
         _branch_candidates = _confirmed_branch_map.get(_bk, [])
         _ncm_id = entry['ncm_order_id']
-        # Use RTV's product_description for matching (what's actually being returned)
-        # Do NOT use linked local order items for matching — they're only for display
+        # Use RTV's product_description for matching, fallback to linked local order names if empty
         _desc = (entry['rtv'].product_description or '').strip()
-        # Store local order product names for display in the template
-        entry['local_order_product_names'] = _rtv_local_item_names.get(_ncm_id, [])
+        _local_names = _rtv_local_item_names.get(_ncm_id, [])
+        entry['local_order_product_names'] = _local_names
 
-        if not _desc:
-            # No product info — all confirmed orders at this branch match.
+        _match_sources = [_desc] if _desc else _local_names
+
+        if not _match_sources:
+            # No product info anywhere — all confirmed orders at this branch match.
             # Mark as branch-only so the template can warn the user.
             _matched = list(_branch_candidates)
             entry['is_branch_only_match'] = True
         else:
             _matched = []
             for _o in _branch_candidates:
-                if _product_matches(_desc, _o.items.all()):
+                if any(_product_matches(src, _o.items.all()) for src in _match_sources):
                     _matched.append(_o)
             entry['is_branch_only_match'] = False
         entry['matching_orders'] = _matched
