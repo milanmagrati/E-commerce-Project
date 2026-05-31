@@ -132,8 +132,7 @@ urlpatterns = [
 
 
        # Gallery uploads/deletes
-    path('products/<int:product_id>/gallery/upload/', views.product_gallery_upload, name='product_gallery_upload'),
-    path('product-image/<int:image_id>/delete/', views.delete_product_image, name='delete_product_image'),
+    path('products/<int:product_id>/gallery/upload/', views.upload_product_images, name='product_gallery_upload'),
 
     # Variations CRUD
     path('products/<int:product_id>/variations/create/', views.variation_create, name='variation_create'),
