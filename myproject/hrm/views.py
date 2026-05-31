@@ -2760,6 +2760,17 @@ def _sync_biometric_to_attendance():
         last_punch = group['last_punch']
         punch_count = group['punch_count']
 
+        # Guard: skip records where the device sent a NULL timestamp (ZKTeco sync issue)
+        if punch_date is None or first_punch is None:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "[biometric_sync] Skipping PIN=%s — punch_date=%r or first_punch=%r is None. "
+                "Check for NULL timestamps in BiometricAttendance table.",
+                pin, punch_date, first_punch,
+            )
+            continue
+
         employee = emp_map.get(pin)
         if not employee:
             continue
@@ -2813,6 +2824,7 @@ def _sync_biometric_to_attendance():
             late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
             early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
 
+            # punch_date is guaranteed non-None here (checked above), but guard defensively
             shift_start = datetime.combine(punch_date, shift.start_time)
             cin_full = datetime.combine(punch_date, clock_in_time)
             cout_full = datetime.combine(punch_date, clock_out_time)
