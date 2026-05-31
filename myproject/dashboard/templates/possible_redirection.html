@@ -207,9 +207,30 @@
                             {% endif %}
                         </td>
                         <td class="hide-md">
-                            <span class="small text-muted text-truncate d-inline-block" style="max-width: 200px;" title="{{ entry.comment }}">
-                                {{ entry.comment|default:"—"|truncatechars:50 }}
-                            </span>
+                            {% with comment=entry.comment|default:"—" %}
+                            {% if 'Exchange' in comment or 'Double Order' in comment %}
+                            <span class="comment-tag exchange"><i class="fas fa-exchange-alt"></i> {{ comment }}</span>
+                            {% elif 'Late Delivery' in comment or 'Late Process' in comment %}
+                            <span class="comment-tag late-delivery"><i class="fas fa-clock"></i> {{ comment }}</span>
+                            {% elif 'PNR' in comment or 'PUR' in comment or 'PSO' in comment %}
+                            <span class="comment-tag pnr-pur-pso"><i class="fas fa-ban"></i> {{ comment }}</span>
+                            {% elif 'Ignorance' in comment or 'Rejection' in comment or 'not ordered' in comment %}
+                            <span class="comment-tag ignorance"><i class="fas fa-user-times"></i> {{ comment }}</span>
+                            {% elif 'Product Issue' in comment or 'Size' in comment or 'Quality' in comment or 'Price' in comment %}
+                            <span class="comment-tag product-issue"><i class="fas fa-box-open"></i> {{ comment }}</span>
+                            {% elif 'Wrong Location' in comment or 'Coverage' in comment %}
+                            <span class="comment-tag location"><i class="fas fa-map-marker-alt"></i> {{ comment }}</span>
+                            {% elif 'Wrong Number' in comment or 'Unable to contact' in comment %}
+                            <span class="comment-tag contact"><i class="fas fa-phone-slash"></i> {{ comment }}</span>
+                            {% elif 'vendor request' in comment or 'vendor' in comment and 'return' in comment %}
+                            <span class="comment-tag vendor-req"><i class="fas fa-store"></i> {{ comment }}</span>
+                            {% elif comment == "—" %}
+                            <span class="comment-tag default" style="opacity:0.5;"><i class="fas fa-minus-circle"></i>
+                                No comment</span>
+                            {% else %}
+                            <span class="comment-tag default"><i class="fas fa-comment-dots"></i> {{ comment }}</span>
+                            {% endif %}
+                            {% endwith %}
                         </td>
                         <td class="hide-sm">
                             <span class="small text-muted">{{ entry.rtv_date|date:"M d, Y" }}</span>
@@ -286,7 +307,7 @@
                                                 <td class="hide-md"><span class="badge bg-secondary">{{ match.branch_city }}</span></td>
                                                 <td class="hide-sm">
                                                     {% for item in match.items.all %}
-                                                        <div class="text-truncate" style="max-width:150px;" title="{{ item.product_name }}">{{ item.product_name }} &times;{{ item.quantity }}</div>
+                                                        <div class="text-truncate" style="max-width:220px;" title="{{ item.product_name }} ×{{ item.quantity }}">{{ item.product_name }} &times;{{ item.quantity }}</div>
                                                     {% endfor %}
                                                 </td>
                                                 {% if entry.local_order_product_names or entry.rtv.product_description %}
@@ -300,7 +321,7 @@
                                                     {% endif %}
                                                 </td>
                                                 {% endif %}
-                                                <td class="hide-sm"><span class="badge bg-warning text-dark">{{ match.order_status }}</span></td>
+                                                <td class="hide-sm"><span class="badge bg-success">{{ match.order_status }}</span></td>
                                                 <td class="text-end fw-bold">Rs.{{ match.total_amount }}</td>
                                                 <td class="text-center">
                                                     <button type="button" class="btn btn-success btn-sm py-0"
@@ -966,6 +987,83 @@
         display: flex; align-items: center; justify-content: center;
     }
     .redirect-loading-box { text-align: center; }
+
+    /* --- Empty state ------------------------------------------------ */
+    .rtv-empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 5rem 2rem;
+        text-align: center;
+    }
+
+    /* Comment tags */
+    .comment-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.38rem 0.85rem;
+        border-radius: 9px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        max-width: 100%;
+        min-width: 0;
+        word-break: break-word;
+        white-space: normal;
+        overflow-wrap: break-word;
+        line-height: 1.4;
+    }
+
+    .comment-tag.exchange {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .comment-tag.late-delivery {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .comment-tag.pnr-pur-pso {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .comment-tag.ignorance {
+        background: #fce7f3;
+        color: #9d174d;
+    }
+
+    .comment-tag.product-issue {
+        background: #fef9c3;
+        color: #854d0e;
+    }
+
+    .comment-tag.location {
+        background: #e0e7ff;
+        color: #3730a3;
+    }
+
+    .comment-tag.contact {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .comment-tag.vendor-req {
+        background: #ecfdf5;
+        color: #065f46;
+    }
+
+    .comment-tag.default {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .comment-tag i {
+        flex-shrink: 0;
+    }
 
     @media (max-width: 768px) {
         .stat-value { font-size: 1.2rem; }
@@ -1812,6 +1910,33 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('rf_pnd_weight').value = this.value;
         });
     }
+
+    // Background comment sync
+    function commentSync() {
+        // Use localStorage (shared across tabs) to prevent multiple tabs from firing simultaneously
+        var lastCommentSync = parseInt(localStorage.getItem('rtv_last_comment_sync') || '0', 10);
+        if (Date.now() - lastCommentSync < 60000) { // 60-second cooldown
+            return;
+        }
+        var syncUrl = '{% url "ncm_rtvs_sync" %}?mode=comments';
+        localStorage.setItem('rtv_last_comment_sync', String(Date.now())); // mark before fetch to avoid double-trigger
+        fetch(syncUrl, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.success && data.comments_updated > 0) {
+                showToast(data.comments_updated + ' comment(s) fetched from NCM', 'text-bg-success');
+                setTimeout(function () { location.reload(); }, 1500);
+            }
+        })
+        .catch(function () { /* silent fail */ });
+    }
+
+    // Check once on load, then every 30 minutes
+    commentSync();
+    setInterval(commentSync, 1800000);
 });
 </script>
 {% endblock %}

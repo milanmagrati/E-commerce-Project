@@ -4483,6 +4483,70 @@ def possible_redirection_list(request):
     from django.db import models as db_models
     import re
 
+    # ── Product-name normalisation & matching helpers ──
+    _RE_QTY_PREFIX = re.compile(r'^\s*(\d+)\s*[xX×*]\s*')
+    _RE_NON_ALNUM = re.compile(r'[^a-z0-9\s]')
+    _RE_MULTI_SPACE = re.compile(r'\s+')
+
+    def _normalize_product_name(raw):
+        """Lowercase, strip quantity prefix, remove punctuation, collapse whitespace."""
+        if not raw:
+            return '', 0
+        s = raw.lower().strip()
+        qty = 0
+        m = _RE_QTY_PREFIX.match(s)
+        if m:
+            qty = int(m.group(1))
+            s = s[m.end():]
+        s = _RE_NON_ALNUM.sub(' ', s)
+        s = _RE_MULTI_SPACE.sub(' ', s).strip()
+        return s, qty
+
+    def _product_matches(rtv_desc_raw, order_items):
+        """Return True if the RTV product_description matches at least one order item
+        by normalised product name AND quantity.
+
+        Matching rules (in order of strictness):
+        1. Exact normalised name match + quantity match (if both have qty info)
+        2. Exact normalised name match (qty not available on RTV side)
+        3. Containment match: RTV desc contains order item name or vice-versa,
+           with quantity check when available
+        """
+        rtv_norm, rtv_qty = _normalize_product_name(rtv_desc_raw)
+        if not rtv_norm:
+            return False  # empty description → caller handles branch-only
+
+        for item in order_items:
+            if not item.product_name:
+                continue
+            item_norm, item_qty_from_name = _normalize_product_name(item.product_name)
+            if not item_norm:
+                continue
+            item_qty = item.quantity or 1  # actual order item quantity
+
+            # Name comparison: exact normalised OR containment
+            exact_name = (rtv_norm == item_norm)
+            contained = (rtv_norm in item_norm) or (item_norm in rtv_norm)
+
+            if not (exact_name or contained):
+                # Also try splitting RTV description by common separators
+                # in case it concatenates multiple product names
+                continue
+
+            # Quantity comparison (only when RTV description has explicit qty)
+            if rtv_qty > 0:
+                if rtv_qty == item_qty:
+                    return True
+                # Qty mismatch — still allow if names are an exact match
+                # (different qty may be intentional by staff)
+                if exact_name:
+                    return True
+            else:
+                # No qty in RTV description — name match is sufficient
+                return True
+
+        return False
+
     # Base queryset: all active RTV records, ordered like ncm_rtvs page
     rtvs = RTVOrder.objects.filter(vendor_return=True).select_related('api_config').order_by(
         db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
@@ -4549,12 +4613,15 @@ def possible_redirection_list(request):
             is_deleted=False,
             ncm_order_id__in=_all_ncm_ids_for_prefetch,
         ).prefetch_related(
-            _Pf('items', queryset=OrderItem.objects.only('order_id', 'product_name'))
+            _Pf('items', queryset=OrderItem.objects.only('order_id', 'product_name', 'quantity'))
         ).only('id', 'ncm_order_id'):
             _names = []
             for _it in _lo.items.all():
                 if _it.product_name:
-                    _names.append(_it.product_name.strip())
+                    _label = _it.product_name.strip()
+                    if _it.quantity and _it.quantity > 1:
+                        _label += f' ×{_it.quantity}'
+                    _names.append(_label)
             if _names:
                 _rtv_local_item_names[_lo.ncm_order_id] = _names
 
@@ -4577,13 +4644,13 @@ def possible_redirection_list(request):
                 )
                 .prefetch_related(
                     _Pf('items', queryset=OrderItem.objects.only(
-                        'order_id', 'product_name', 'quantity', 'price', 'total',
+                        'id', 'order_id', 'product_name', 'quantity', 'price', 'total',
                     ))
                 )
                 .only(
                     'id', 'order_number', 'customer_name', 'customer_phone',
                     'customer_email', 'shipping_address', 'landmark', 'branch_city',
-                    'ncm_destination_branch', 'order_status', 'total_amount',
+                    'ncm_destination_branch', 'order_status', 'status', 'total_amount',
                 )
         )
         for _o in _confirmed_orders:
@@ -4592,30 +4659,24 @@ def possible_redirection_list(request):
         # Determine which RTVs have at least one matching confirmed order.
         # Matching rules:
         #   - Branch must match (rtv.to_branch == order.branch_city, case-insensitive)
-        #   - RTV's product_description MUST match the order item name EXACTLY
-        #   - If RTV has no product_description, branch match alone is sufficient
+        #   - RTV's product_description is matched against order item names using
+        #     normalised comparison (case-insensitive, stripped punctuation, collapsed
+        #     whitespace, quantity-prefix aware, containment matching).
+        #   - If RTV has no product_description, branch match alone is sufficient.
         _has_match_ids = set()
         for _oid, _tbranch, _pdesc in _all_rtv_tuples:
             _bk = (_tbranch or '').upper()
             _branch_orders = _confirmed_branch_map.get(_bk, [])
             if not _branch_orders:
                 continue
-            # Use RTV's product_description for matching, NOT linked local order items
-            _desc = (_pdesc or '').lower().strip()
+            _desc = (_pdesc or '').strip()
             if not _desc:
                 # No product info at all — branch match alone qualifies this RTV.
                 _has_match_ids.add(_oid)
             else:
                 for _o in _branch_orders:
-                    for _item in _o.items.all():
-                        if _item.product_name:
-                            _pn = _item.product_name.lower().strip()
-                            if _pn:
-                                # Match candidate order's products against RTV's product_description exactly
-                                if _desc == _pn:
-                                    _has_match_ids.add(_oid)
-                                    break
-                    if _oid in _has_match_ids:
+                    if _product_matches(_desc, _o.items.all()):
+                        _has_match_ids.add(_oid)
                         break
         rtvs = rtvs.filter(order_id__in=_has_match_ids) if _has_match_ids else rtvs.none()
     else:
@@ -4704,7 +4765,7 @@ def possible_redirection_list(request):
         _ncm_id = entry['ncm_order_id']
         # Use RTV's product_description for matching (what's actually being returned)
         # Do NOT use linked local order items for matching — they're only for display
-        _desc = (entry['rtv'].product_description or '').lower().strip()
+        _desc = (entry['rtv'].product_description or '').strip()
         # Store local order product names for display in the template
         entry['local_order_product_names'] = _rtv_local_item_names.get(_ncm_id, [])
 
@@ -4716,14 +4777,8 @@ def possible_redirection_list(request):
         else:
             _matched = []
             for _o in _branch_candidates:
-                for _item in _o.items.all():
-                    if _item.product_name:
-                        _pn = _item.product_name.lower().strip()
-                        if _pn:
-                            # Match candidate order's products against RTV's product_description exactly
-                            if _desc == _pn:
-                                _matched.append(_o)
-                                break
+                if _product_matches(_desc, _o.items.all()):
+                    _matched.append(_o)
             entry['is_branch_only_match'] = False
         entry['matching_orders'] = _matched
         entry['matching_count'] = len(_matched)
