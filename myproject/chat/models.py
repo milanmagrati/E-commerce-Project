@@ -66,6 +66,9 @@ class ChatMessage(models.Model):
     )
     content = models.TextField()
     is_read = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
+    is_edited = models.BooleanField(default=False)
+    edited_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -15,11 +15,11 @@
         <div class="card stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Total Products</p>
-                        <h3 class="mb-0">{{ total_products }}</h3>
+                    <div style="min-width: 0;">
+                        <p class="text-muted mb-1 text-truncate">Total Products</p>
+                        <h4 class="mb-0 fw-bold text-truncate" style="font-size: clamp(0.75rem, 1vw + 0.25rem, 1.15rem);" title="{{ total_products }}">{{ total_products }}</h4>
                     </div>
-                    <div class="stat-icon bg-primary">
+                    <div class="stat-icon bg-primary flex-shrink-0 ms-2">
                         <i class="fas fa-box"></i>
                     </div>
                 </div>
@@ -31,11 +31,11 @@
         <div class="card stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Total Orders</p>
-                        <h3 class="mb-0">{{ total_orders }}</h3>
+                    <div style="min-width: 0;">
+                        <p class="text-muted mb-1 text-truncate">Total Orders</p>
+                        <h4 class="mb-0 fw-bold text-truncate" style="font-size: clamp(0.75rem, 1vw + 0.25rem, 1.15rem);" title="{{ total_orders }}">{{ total_orders }}</h4>
                     </div>
-                    <div class="stat-icon bg-success">
+                    <div class="stat-icon bg-success flex-shrink-0 ms-2">
                         <i class="fas fa-shopping-cart"></i>
                     </div>
                 </div>
@@ -47,11 +47,11 @@
         <div class="card stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Pending Orders</p>
-                        <h3 class="mb-0">{{ pending_orders }}</h3>
+                    <div style="min-width: 0;">
+                        <p class="text-muted mb-1 text-truncate">Pending Orders</p>
+                        <h4 class="mb-0 fw-bold text-truncate" style="font-size: clamp(0.75rem, 1vw + 0.25rem, 1.15rem);" title="{{ pending_orders }}">{{ pending_orders }}</h4>
                     </div>
-                    <div class="stat-icon bg-warning">
+                    <div class="stat-icon bg-warning flex-shrink-0 ms-2">
                         <i class="fas fa-clock"></i>
                     </div>
                 </div>
@@ -64,11 +64,11 @@
         <div class="card stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Total Revenue</p>
-                        <h3 class="mb-0">रू {{ total_revenue|floatformat:2 }}</h3>
+                    <div style="min-width: 0;">
+                        <p class="text-muted mb-1 text-truncate">Total Revenue</p>
+                        <h4 class="mb-0 fw-bold text-truncate" style="font-size: clamp(0.75rem, 1vw + 0.25rem, 1.15rem);" title="रू {{ total_revenue|floatformat:2 }}">रू&nbsp;{{ total_revenue|floatformat:2 }}</h4>
                     </div>
-                    <div class="stat-icon bg-info">
+                    <div class="stat-icon bg-info flex-shrink-0 ms-2">
                         <i class="fas fa-dollar-sign"></i>
                     </div>
                 </div>

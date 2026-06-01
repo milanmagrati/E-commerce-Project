@@ -781,7 +781,7 @@
             var checked = document.querySelectorAll('.group-member-checkbox:checked').length;
             if (selectedCountEl) selectedCountEl.textContent = checked;
             if (createGroupBtn) {
-                createGroupBtn.disabled = checked === 0 || !groupNameInput.value.trim();
+                createGroupBtn.disabled = checked === 0;
             }
         }
 
@@ -814,7 +814,7 @@
                     memberIds.push(parseInt(cb.value));
                 });
 
-                if (!groupName || memberIds.length === 0) return;
+                if (memberIds.length === 0) return;
 
                 createGroupBtn.disabled = true;
                 createGroupBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Creating...';
