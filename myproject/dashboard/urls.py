@@ -43,6 +43,7 @@ urlpatterns = [
     path('variations/<int:variation_id>/delete/', views.variation_delete, name='variation_delete'),
 
         # Product Images (NEW - Add these lines)
+    path('products/<int:product_id>/delete-main-image/', views.delete_main_product_image, name='delete_main_product_image'),
     path('products/<int:product_id>/upload-images/', views.upload_product_images, name='upload_product_images'),
     path('product-images/<int:image_id>/delete/', views.delete_product_image, name='delete_product_image'),
     path('product-images/<int:image_id>/set-featured/', views.set_featured_image, name='set_featured_image'),

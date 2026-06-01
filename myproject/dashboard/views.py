@@ -1807,8 +1807,19 @@ def delete_product_image(request, image_id):
     image.delete()
 
     messages.success(request, f'Image deleted from "{product_name}" gallery successfully!')
-    return redirect('product_detail', product_id=product_id)
+    return redirect(request.META.get('HTTP_REFERER', 'product_detail'), product_id=product_id)
 
+@login_required
+@permission_required('can_edit_products')
+def delete_main_product_image(request, product_id):
+    """Delete the main product image"""
+    product = get_object_or_404(Product, id=product_id, user=request.user)
+    if product.image:
+        product.image.delete(save=False)
+        product.image = None
+        product.save(update_fields=['image'])
+        messages.success(request, f'Main image deleted for "{product.name}"!')
+    return redirect(request.META.get('HTTP_REFERER', 'product_detail'), product_id=product.id)
 
 @login_required
 @permission_required('can_edit_products')
@@ -1823,8 +1834,12 @@ def set_featured_image(request, image_id):
     image.is_featured = True
     image.save()
 
-    messages.success(request, f'Featured image updated for "{image.product.name}"!')
-    return redirect('product_detail', product_id=image.product.id)
+    # Also make it the default main product image
+    image.product.image = image.image
+    image.product.save(update_fields=['image'])
+
+    messages.success(request, f'Default image updated for "{image.product.name}"!')
+    return redirect(request.META.get('HTTP_REFERER', 'product_detail'), product_id=image.product.id)
 
 
 @login_required
