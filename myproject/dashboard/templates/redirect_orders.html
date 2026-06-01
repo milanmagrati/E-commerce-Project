@@ -830,6 +830,9 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
 <!-- ===================== JAVASCRIPT ===================== -->
 <script>
     function changePerPage(value) {
@@ -849,21 +852,24 @@
 
         // Fetch order details
         fetch(`/api/orders/${orderId}/get-redirect-details/`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok: ' + response.status);
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
                     populateOrderDetails(data.order);
                     odLoading.style.display = 'none';
                     odContent.style.display = 'block';
                 } else {
-                    alert('Error loading order details');
-                    modal.hide();
+                    odLoading.innerHTML = '<div class="text-center py-5"><i class="fas fa-exclamation-triangle fa-2x text-danger mb-3"></i><p class="text-danger">Error loading order details: ' + (data.error || 'Unknown error') + '</p></div>';
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Error loading order details');
-                modal.hide();
+                odLoading.innerHTML = '<div class="text-center py-5"><i class="fas fa-exclamation-triangle fa-2x text-danger mb-3"></i><p class="text-danger">Failed to load order details. Please try again.</p></div>';
             });
     }
 
@@ -874,8 +880,8 @@
         document.getElementById('od_order_status').textContent = order.order_status || '—';
         document.getElementById('od_total_amount').textContent = 'Rs.' + (order.total_amount || '0');
         document.getElementById('od_total_amount_2').textContent = 'Rs.' + (order.total_amount || '0');
-        document.getElementById('od_created_at').textContent = formatDateTime(order.created_at);
-        document.getElementById('od_updated_at').textContent = formatDateTime(order.updated_at);
+        document.getElementById('od_created_at').textContent = order.created_at || '—';
+        document.getElementById('od_updated_at').textContent = order.updated_at || '—';
         document.getElementById('od_items_count').textContent = (order.items || []).length + ' items';
         document.getElementById('od_items_count_badge').textContent = (order.items || []).length;
 
@@ -884,13 +890,13 @@
         document.getElementById('od_status_badge').textContent = order.ncm_status || 'Processing';
         document.getElementById('od_redirected_badge').textContent = 'Redirected';
 
-        // Old Customer (from metadata)
+        // Old Customer (from metadata — keys are old_customer_name, old_customer_phone, etc.)
         const oldCustomer = order.old_customer_info || {};
-        document.getElementById('od_old_customer_name').textContent = oldCustomer.name || '—';
-        document.getElementById('od_old_customer_phone').textContent = oldCustomer.phone || '—';
-        document.getElementById('od_old_customer_email').textContent = oldCustomer.email || '—';
-        document.getElementById('od_old_branch_city').textContent = oldCustomer.branch || '—';
-        document.getElementById('od_old_shipping_address').textContent = oldCustomer.address || '—';
+        document.getElementById('od_old_customer_name').textContent = oldCustomer.old_customer_name || oldCustomer.name || '—';
+        document.getElementById('od_old_customer_phone').textContent = oldCustomer.old_customer_phone || oldCustomer.phone || '—';
+        document.getElementById('od_old_customer_email').textContent = oldCustomer.old_customer_email || oldCustomer.email || '—';
+        document.getElementById('od_old_branch_city').textContent = oldCustomer.old_branch_city || oldCustomer.branch || '—';
+        document.getElementById('od_old_shipping_address').textContent = oldCustomer.old_shipping_address || oldCustomer.address || '—';
 
         // New Customer (current)
         document.getElementById('od_new_customer_name').textContent = order.customer_name || '—';
@@ -900,33 +906,41 @@
         document.getElementById('od_new_shipping_address').textContent = order.shipping_address || '—';
 
         // Redirection History
-        if (order.redirect_history) {
+        const historyContainer = document.getElementById('od_redirect_history');
+        if (order.redirect_history && order.redirect_history.length > 0) {
             const historyHTML = order.redirect_history.map(log => `
             <div class="alert alert-light border mb-2">
                 <div class="d-flex align-items-start gap-3">
                     <i class="fas fa-arrow-right text-success mt-1"></i>
                     <div class="flex-grow-1">
-                        <div class="fw-bold">Redirected by <strong>${log.redirect_user}</strong></div>
-                        <div class="small text-muted">${formatDateTime(log.redirect_timestamp)}</div>
+                        <div class="fw-bold">Redirected by <strong>${log.redirect_user || 'Unknown'}</strong></div>
+                        <div class="small text-muted">${log.redirect_timestamp || '—'}</div>
                         ${log.redirect_reason ? `<div class="mt-2 text-dark"><strong>Reason:</strong> ${log.redirect_reason}</div>` : ''}
                     </div>
                 </div>
             </div>
         `).join('');
-            document.getElementById('od_redirect_history').innerHTML = historyHTML;
+            historyContainer.innerHTML = historyHTML;
+        } else {
+            historyContainer.innerHTML = '<div class="alert alert-secondary mb-0"><i class="fas fa-info-circle me-2"></i>No redirection history found for this order.</div>';
         }
 
         // Items
-        const itemsHTML = (order.items || []).map((item, idx) => `
-        <tr>
-            <td class="ps-3">${idx + 1}</td>
-            <td>${item.product_name || '—'}</td>
-            <td class="text-center">${item.quantity}</td>
-            <td class="text-end">Rs.${parseFloat(item.price).toFixed(2)}</td>
-            <td class="text-end pe-3">Rs.${parseFloat(item.total).toFixed(2)}</td>
-        </tr>
-    `).join('');
-        document.getElementById('odItemsBody').innerHTML = itemsHTML;
+        const items = order.items || [];
+        if (items.length > 0) {
+            const itemsHTML = items.map((item, idx) => `
+            <tr>
+                <td class="ps-3">${idx + 1}</td>
+                <td>${item.product_name || '—'}</td>
+                <td class="text-center">${item.quantity || 0}</td>
+                <td class="text-end">Rs.${parseFloat(item.price || 0).toFixed(2)}</td>
+                <td class="text-end pe-3">Rs.${parseFloat(item.total || 0).toFixed(2)}</td>
+            </tr>
+        `).join('');
+            document.getElementById('odItemsBody').innerHTML = itemsHTML;
+        } else {
+            document.getElementById('odItemsBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No items found</td></tr>';
+        }
 
         // Financial Details
         document.getElementById('od_discount_amount').textContent = 'Rs.' + (order.discount_amount || '0');
@@ -939,8 +953,13 @@
 
     function formatDateTime(dateStr) {
         if (!dateStr) return '—';
-        const date = new Date(dateStr);
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return dateStr;
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        } catch (e) {
+            return dateStr;
+        }
     }
 
     // Initialize

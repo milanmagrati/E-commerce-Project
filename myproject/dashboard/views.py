@@ -4532,13 +4532,13 @@ def possible_redirection_list(request):
                 continue
             item_qty = item.quantity or 1  # actual order item quantity
 
-            # Name comparison: exact normalised OR containment
+            # Name comparison: exact normalised OR containment (min 4 chars to avoid false positives)
             exact_name = (rtv_norm == item_norm)
-            contained = (rtv_norm in item_norm) or (item_norm in rtv_norm)
+            contained = False
+            if len(rtv_norm) >= 4 and len(item_norm) >= 4:
+                contained = (rtv_norm in item_norm) or (item_norm in rtv_norm)
 
             if not (exact_name or contained):
-                # Also try splitting RTV description by common separators
-                # in case it concatenates multiple product names
                 continue
 
             # Quantity comparison (only when RTV description has explicit qty)
@@ -4612,10 +4612,10 @@ def possible_redirection_list(request):
             .exclude(to_branch='')
             .values_list('order_id', 'to_branch', 'product_description')
     )
-    # Pre-fetch local order item names for DISPLAY ONLY (not for matching).
-    # Product matching is done exclusively via RTV's product_description.
+    # Pre-fetch local order item names (used for display AND as matching fallback
+    # when the RTV's product_description is empty).
     _all_ncm_ids_for_prefetch = {row[0] for row in _all_rtv_tuples}
-    _rtv_local_item_names = {}  # ncm_order_id → list of product name strings (for display)
+    _rtv_local_item_names = {}  # ncm_order_id → list of product name strings
     if _all_ncm_ids_for_prefetch:
         for _lo in Order.objects.filter(
             is_deleted=False,
@@ -4678,12 +4678,14 @@ def possible_redirection_list(request):
             if not _branch_orders:
                 continue
             _desc = (_pdesc or '').strip()
-            if not _desc:
-                # No product info at all — branch match alone qualifies this RTV.
+            # Build match sources: prefer RTV product_description, fallback to local order names
+            _match_srcs = [_desc] if _desc else _rtv_local_item_names.get(_oid, [])
+            if not _match_srcs:
+                # No product info anywhere — branch match alone qualifies this RTV.
                 _has_match_ids.add(_oid)
             else:
                 for _o in _branch_orders:
-                    if _product_matches(_desc, _o.items.all()):
+                    if any(_product_matches(src, _o.items.all()) for src in _match_srcs):
                         _has_match_ids.add(_oid)
                         break
         rtvs = rtvs.filter(order_id__in=_has_match_ids) if _has_match_ids else rtvs.none()
@@ -4969,7 +4971,7 @@ def redirect_orders_list(request):
             'order_status': order.order_status,
             'ncm_status': order.ncm_status,
             'is_pending': order.ncm_status != 'redirected',
-            'items_count': order.items.count(),
+            'items_count': len(order.items.all()),
             'updated_at': order.updated_at,
         }
         redirect_entries.append(entry)
@@ -20420,7 +20422,14 @@ def get_redirect_order_details(request, order_id):
         redirect_history = []
 
         if redirection_log:
-            old_customer_info = redirection_log.metadata or {}
+            raw_meta = redirection_log.metadata or {}
+            # Normalize: ensure both prefixed keys (old_customer_name) and short keys (name) exist
+            old_customer_info = dict(raw_meta)  # copy
+            old_customer_info.setdefault('name', raw_meta.get('old_customer_name', ''))
+            old_customer_info.setdefault('phone', raw_meta.get('old_customer_phone', ''))
+            old_customer_info.setdefault('email', raw_meta.get('old_customer_email', ''))
+            old_customer_info.setdefault('branch', raw_meta.get('old_branch_city', ''))
+            old_customer_info.setdefault('address', raw_meta.get('old_shipping_address', ''))
 
             # Get all redirection logs for history
             for log in order.activity_logs.filter(action_type='redirected').order_by('-created_at'):
