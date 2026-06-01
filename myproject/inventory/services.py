@@ -147,16 +147,28 @@ def restock_product(product, qty):
 
         remaining = qty
 
-        # Find all backordered line-items for this product, oldest first
-        backordered_items = (
+        from dashboard.models import OrderItem as DashboardOrderItem
+
+        # Find all backordered line-items for this product
+        store_backordered = list(
             OrderItem.objects
             .filter(product=product, backordered_qty__gt=0)
             .select_related('order')
-            .order_by('order__created_at', 'pk')
+            .select_for_update()
+        )
+        
+        dash_backordered = list(
+            DashboardOrderItem.objects
+            .filter(product=product, backordered_qty__gt=0)
+            .select_related('order')
             .select_for_update()
         )
 
-        for item in backordered_items:
+        # Combine and sort oldest first (FIFO by order created_at)
+        all_backordered = store_backordered + dash_backordered
+        all_backordered.sort(key=lambda x: (x.order.created_at, x.pk))
+
+        for item in all_backordered:
             if remaining <= 0:
                 break
 
@@ -291,23 +303,25 @@ def clear_reservation_on_dispatch(product, quantity):
 
         product.save(update_fields=['reserved_qty', 'backordered_qty'])
 
-        # Also clean up store OrderItem records for this product
+        # Also clean up store and dashboard OrderItem records for this product
         # that belong to dispatched/delivered orders
-        _cleanup_store_order_items_for_product(product)
+        _cleanup_order_items_for_product(product)
 
 
-def _cleanup_store_order_items_for_product(product):
+def _cleanup_order_items_for_product(product):
     """
-    Zero out reserved_qty and backordered_qty on store.OrderItem records
-    for orders that have been dispatched or delivered, since these
-    counters are no longer relevant once the order is fulfilled.
+    Zero out reserved_qty and backordered_qty on both store and dashboard 
+    OrderItem records for orders that have been dispatched or delivered, 
+    since these counters are no longer relevant once the order is fulfilled.
     """
-    from store.models import OrderItem
+    from store.models import OrderItem as StoreOrderItem
+    from dashboard.models import OrderItem as DashboardOrderItem
     from django.db.models import Q
 
     try:
-        stale_items = (
-            OrderItem.objects
+        # Cleanup Store Orders
+        stale_store_items = (
+            StoreOrderItem.objects
             .filter(
                 product=product,
                 order__status__in=('delivered', 'shipped', 'cancelled'),
@@ -316,10 +330,23 @@ def _cleanup_store_order_items_for_product(product):
                 Q(reserved_qty__gt=0) | Q(backordered_qty__gt=0)
             )
         )
+        stale_store_items.update(reserved_qty=0, backordered_qty=0)
 
-        stale_items.update(reserved_qty=0, backordered_qty=0)
+        # Cleanup Dashboard Orders
+        stale_dash_items = (
+            DashboardOrderItem.objects
+            .filter(
+                product=product,
+                order__order_status__in=('delivered', 'cancelled'),
+            )
+            .filter(
+                Q(reserved_qty__gt=0) | Q(backordered_qty__gt=0)
+            )
+        )
+        stale_dash_items.update(reserved_qty=0, backordered_qty=0)
+
     except Exception as e:
-        logger.warning(f"_cleanup_store_order_items_for_product: {e}")
+        logger.warning(f"_cleanup_order_items_for_product: {e}")
 
 
 def release_order_reservations(dashboard_order):
@@ -430,19 +457,25 @@ def reset_stale_counters():
 
         fixed_count = 0
         for product in products:
-            # Only count items from active (non-cancelled, non-delivered) orders
-            active_items = OrderItem.objects.filter(
+            # Sum from store.OrderItem
+            store_active_items = OrderItem.objects.filter(
                 product=product,
                 order__status__in=['pending', 'confirmed']
             )
+            store_reserved = store_active_items.aggregate(total=Sum('reserved_qty'))['total'] or 0
+            store_backordered = store_active_items.aggregate(total=Sum('backordered_qty'))['total'] or 0
 
-            actual_reserved = active_items.aggregate(
-                total=Sum('reserved_qty')
-            )['total'] or 0
+            # Sum from dashboard.models.OrderItem
+            from dashboard.models import OrderItem as DashboardOrderItem
+            dash_active_items = DashboardOrderItem.objects.filter(
+                product=product,
+                order__order_status__in=['pending', 'processing', 'confirmed', 'dispatched']
+            )
+            dash_reserved = dash_active_items.aggregate(total=Sum('reserved_qty'))['total'] or 0
+            dash_backordered = dash_active_items.aggregate(total=Sum('backordered_qty'))['total'] or 0
 
-            actual_backordered = active_items.aggregate(
-                total=Sum('backordered_qty')
-            )['total'] or 0
+            actual_reserved = store_reserved + dash_reserved
+            actual_backordered = store_backordered + dash_backordered
 
             if (product.reserved_qty != actual_reserved or
                     product.backordered_qty != actual_backordered):

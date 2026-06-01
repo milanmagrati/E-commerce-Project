@@ -467,6 +467,10 @@ class OrderItem(models.Model):
     price = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=18, decimal_places=2, default=0)
 
+    # Added for inventory reservation and backorder tracking
+    reserved_qty = models.IntegerField(default=0, help_text="Units filled from real stock")
+    backordered_qty = models.IntegerField(default=0, help_text="Units waiting on new stock")
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

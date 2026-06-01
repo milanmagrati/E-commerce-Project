@@ -394,6 +394,152 @@
       </div>
     </div>
 
+    <!-- ==================== BACKORDER & RESERVATION STATUS ==================== -->
+    <div class="card mb-3 shadow-sm" id="backorderStatusCard">
+      <div class="card-header d-flex justify-content-between align-items-center"
+           style="background: linear-gradient(135deg, #0f172a, #1e293b); color: white;">
+        <h5 class="mb-0">
+          <i class="bi bi-arrow-repeat"></i> Backorder &amp; Reservation Status
+        </h5>
+        <a href="{% url 'backorder_management' %}?search={{ product.name|urlencode }}"
+           class="btn btn-sm btn-outline-light" title="View in Backorder Management">
+          <i class="bi bi-box-arrow-up-right"></i> Full View
+        </a>
+      </div>
+      <div class="card-body">
+
+        <!-- Stats Row -->
+        <div class="row g-3 mb-3">
+          <!-- Reserved -->
+          <div class="col-6 col-md-3">
+            <div class="p-3 rounded text-center"
+                 style="background: linear-gradient(135deg,#fff 0%,#e0f2fe 100%); border-left: 3px solid #0ea5e9;">
+              <div style="font-size: 0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#0ea5e9;">
+                Reserved
+              </div>
+              <div style="font-size: 1.6rem; font-weight: 800; color: #0c4a6e; line-height:1.1;">
+                {{ product.reserved_qty }}
+              </div>
+              <div style="font-size:0.68rem; color:#64748b;">Locked by orders</div>
+            </div>
+          </div>
+
+          <!-- Backordered -->
+          <div class="col-6 col-md-3">
+            <div class="p-3 rounded text-center"
+                 style="background: linear-gradient(135deg,#fff 0%,#fef3c7 100%); border-left: 3px solid #f59e0b;">
+              <div style="font-size: 0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#d97706;">
+                Backordered
+              </div>
+              <div style="font-size: 1.6rem; font-weight: 800; color: #78350f; line-height:1.1;">
+                {{ product.backordered_qty }}
+              </div>
+              <div style="font-size:0.68rem; color:#64748b;">Awaiting stock</div>
+            </div>
+          </div>
+
+          <!-- Available -->
+          <div class="col-6 col-md-3">
+            {% with avail=product.available_stock %}
+            <div class="p-3 rounded text-center"
+                 style="background: linear-gradient(135deg,#fff 0%,{% if avail <= 0 %}#fee2e2{% elif avail <= 10 %}#fef3c7{% else %}#d1fae5{% endif %} 100%);
+                        border-left: 3px solid {% if avail <= 0 %}#ef4444{% elif avail <= 10 %}#f59e0b{% else %}#10b981{% endif %};">
+              <div style="font-size: 0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+                           color: {% if avail <= 0 %}#ef4444{% elif avail <= 10 %}#f59e0b{% else %}#10b981{% endif %};">
+                Available
+              </div>
+              <div style="font-size: 1.6rem; font-weight: 800; line-height:1.1;
+                           color: {% if avail <= 0 %}#7f1d1d{% elif avail <= 10 %}#78350f{% else %}#064e3b{% endif %};">
+                {{ avail }}
+              </div>
+              <div style="font-size:0.68rem; color:#64748b;">Stock - Reserved</div>
+            </div>
+            {% endwith %}
+          </div>
+
+          <!-- Raw Stock -->
+          <div class="col-6 col-md-3">
+            <div class="p-3 rounded text-center"
+                 style="background: linear-gradient(135deg,#fff 0%,#ede9fe 100%); border-left: 3px solid #8b5cf6;">
+              <div style="font-size: 0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#8b5cf6;">
+                Physical Stock
+              </div>
+              <div style="font-size: 1.6rem; font-weight: 800; color: #4c1d95; line-height:1.1;">
+                {% if product.product_type == 'bundle' %}{{ product.available_stock }}{% else %}{{ product.stock }}{% endif %}
+              </div>
+              <div style="font-size:0.68rem; color:#64748b;">
+                {% if product.product_type == 'bundle' %}Bundle stock{% else %}Total in warehouse{% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Backorders Toggle Row -->
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 p-3 rounded"
+             style="background: #f8fafc; border: 1px solid #e2e8f0;">
+          <div>
+            <div class="fw-bold mb-1" style="font-size: 0.9rem;">
+              <i class="bi bi-toggle-on text-success"></i> Allow Backorders
+            </div>
+            <div class="text-muted" style="font-size: 0.78rem;">
+              {% if product.backorders_allowed %}
+                <span class="badge" style="background:linear-gradient(135deg,#10b981,#059669); color:white; padding:4px 10px; border-radius:6px;">
+                  <i class="bi bi-check-circle-fill"></i> Enabled — customers can order even when out of stock
+                </span>
+              {% else %}
+                <span class="badge" style="background:#f1f5f9; color:#64748b; border:1px solid #e2e8f0; padding:4px 10px; border-radius:6px;">
+                  <i class="bi bi-x-circle"></i> Disabled — orders blocked when out of stock
+                </span>
+              {% endif %}
+            </div>
+          </div>
+          <form method="post"
+                action="{% url 'backorder_management' %}"
+                id="productDetailBackorderToggle"
+                class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle_backorders">
+            <input type="hidden" name="product_id" value="{{ product.id }}">
+            <input type="hidden" name="return_to_product" value="1">
+            <button type="submit"
+                    class="btn btn-sm {% if product.backorders_allowed %}btn-outline-danger{% else %}btn-outline-success{% endif %}"
+                    onclick="return confirm('{% if product.backorders_allowed %}Disable backorders for &quot;{{ product.name|escapejs }}&quot;?{% else %}Enable backorders for &quot;{{ product.name|escapejs }}&quot;?{% endif %}')">
+              {% if product.backorders_allowed %}
+                <i class="bi bi-toggle-on"></i> Disable Backorders
+              {% else %}
+                <i class="bi bi-toggle-off"></i> Enable Backorders
+              {% endif %}
+            </button>
+          </form>
+        </div>
+
+        <!-- Advisory Messages -->
+        {% if product.backordered_qty > 0 %}
+        <div class="alert alert-warning border-0 mt-3 mb-0 d-flex align-items-start gap-2" style="border-left: 4px solid #f59e0b !important;">
+          <i class="bi bi-hourglass-split mt-1 flex-shrink-0"></i>
+          <div>
+            <strong>{{ product.backordered_qty }} unit{{ product.backordered_qty|pluralize }} on backorder.</strong>
+            These will be fulfilled automatically when stock is restocked via Stock-In.
+            <a href="{% url 'backorder_management' %}?search={{ product.name|urlencode }}&filter=backordered"
+               class="alert-link ms-1">View backorder details →</a>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if product.reserved_qty > 0 %}
+        <div class="alert alert-info border-0 mt-2 mb-0 d-flex align-items-start gap-2" style="border-left: 4px solid #0ea5e9 !important;">
+          <i class="bi bi-lock-fill mt-1 flex-shrink-0"></i>
+          <div>
+            <strong>{{ product.reserved_qty }} unit{{ product.reserved_qty|pluralize }} reserved</strong> for pending/confirmed orders.
+            These are locked from new orders until shipped or cancelled.
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+    <!-- ==================== END BACKORDER & RESERVATION STATUS ==================== -->
+
     <!-- Product Variations -->
     {% if product.product_type == 'variable' %}
     <div class="card mb-3 shadow-sm">

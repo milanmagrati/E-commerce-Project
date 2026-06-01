@@ -8312,13 +8312,13 @@ def dispatch_management(request):
                                         variation.status = 'inactive'  # low-stock flag for variations
                                     variation.save()
 
-                                    # Clear reservation counters on parent product
-                                    if product:
-                                        try:
-                                            from inventory.services import clear_reservation_on_dispatch
-                                            clear_reservation_on_dispatch(product, quantity)
-                                        except Exception:
-                                            pass
+                                    # Variation oversold logic
+                                    if product and oversold and product.backorders_allowed:
+                                        backorder_qty = quantity - old_stock
+                                        item.backordered_qty = backorder_qty
+                                        item.save(update_fields=['backordered_qty'])
+                                        product.backordered_qty += backorder_qty
+                                        product.save(update_fields=['backordered_qty'])
 
                                     # Record deduction detail
                                     product_name = product.name if product else 'Unknown'
@@ -8379,12 +8379,14 @@ def dispatch_management(request):
                                                     comp_product.stock_status = 'in_stock'
                                                 comp_product.save(update_fields=['stock', 'stock_status'])
 
-                                                # Clear reservation counters on component
-                                                try:
-                                                    from inventory.services import clear_reservation_on_dispatch
-                                                    clear_reservation_on_dispatch(comp_product, required)
-                                                except Exception:
-                                                    pass
+                                                # Bundle component oversold logic (backorders track on parent bundle)
+                                                if oversold and product.backorders_allowed:
+                                                    # Just track backorder on the item and bundle product, not component
+                                                    backorder_qty = required - old_stock
+                                                    item.backordered_qty = backorder_qty
+                                                    item.save(update_fields=['backordered_qty'])
+                                                    product.backordered_qty += backorder_qty
+                                                    product.save(update_fields=['backordered_qty'])
 
                                                 # Record deduction detail for each component
                                                 stock_deductions.append({
@@ -8423,12 +8425,15 @@ def dispatch_management(request):
                                                 product.stock_status = 'in_stock'
                                             product.save(update_fields=['stock', 'stock_status'])
 
-                                            # Clear reservation counters
-                                            try:
-                                                from inventory.services import clear_reservation_on_dispatch
-                                                clear_reservation_on_dispatch(product, quantity)
-                                            except Exception:
-                                                pass
+                                            # Generate backorder at dispatch if oversold
+                                            if oversold and product.backorders_allowed:
+                                                backorder_qty = quantity - old_stock
+                                                item.backordered_qty = backorder_qty
+                                                item.save(update_fields=['backordered_qty'])
+                                                product.backordered_qty += backorder_qty
+                                                product.save(update_fields=['stock', 'stock_status', 'backordered_qty'])
+                                            else:
+                                                product.save(update_fields=['stock', 'stock_status'])
 
                                             # Record deduction detail
                                             stock_deductions.append({
@@ -8946,12 +8951,17 @@ def backorder_management(request):
 
         elif action == 'toggle_backorders':
             product_id = request.POST.get('product_id')
+            return_to_product = request.POST.get('return_to_product', '')
             try:
                 product = Product.objects.get(id=product_id)
                 product.backorders_allowed = not product.backorders_allowed
                 product.save(update_fields=['backorders_allowed'])
                 status = 'enabled' if product.backorders_allowed else 'disabled'
                 messages.success(request, f'✅ Backorders {status} for "{product.name}"')
+                # If toggled from product detail page, redirect back there
+                if return_to_product == '1' and product_id:
+                    from django.urls import reverse as url_reverse
+                    return HttpResponseRedirect(url_reverse('product_detail', args=[product_id]) + '#backorderStatusCard')
             except Product.DoesNotExist:
                 messages.error(request, '❌ Product not found.')
             return HttpResponseRedirect(_build_redirect_url())
@@ -8997,7 +9007,9 @@ def backorder_management(request):
     filter_type = request.GET.get('filter', 'all')
 
     # Products with backorder-related data
-    products_qs = Product.objects.filter(is_deleted=False).order_by('name')
+    products_qs = Product.objects.filter(is_deleted=False).prefetch_related(
+        'bundle_components__component_product'
+    ).order_by('name')
 
     if search:
         products_qs = products_qs.filter(
