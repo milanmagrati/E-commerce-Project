@@ -126,13 +126,13 @@
         overflow: hidden;
     }
     
-    .order-compact-card.partial-return-alert {
+    .order-compact-card.quantity-alert {
         background-color: #ffe5b4 !important; /* Distinct light orange/yellow */
         border-left-color: #fd7e14 !important;
     }
     
-    .order-compact-card.partial-return-alert:hover,
-    .order-compact-card.partial-return-alert .order-header:hover {
+    .order-compact-card.quantity-alert:hover,
+    .order-compact-card.quantity-alert .order-header:hover {
         background-color: #ffd89b !important;
         border-left-color: #fd7e14 !important;
     }
@@ -147,7 +147,7 @@
         box-shadow: 0 6px 20px rgba(13, 110, 253, 0.15);
     }
     
-    .order-compact-card.partial-return-alert.expanded {
+    .order-compact-card.quantity-alert.expanded {
         border-left-color: #fd7e14 !important;
         box-shadow: 0 6px 20px rgba(253, 126, 20, 0.2);
     }
@@ -680,15 +680,17 @@
             if (draftData) {
                 const orders = JSON.parse(draftData);
                 orders.forEach(item => {
-                    let isPartial = false;
+                    let needsAlert = false;
+                    let totalQty = 0;
                     if (item.order && item.order.items) {
                         item.order.items.forEach(i => {
-                            if (i.returnable_qty !== i.quantity) {
-                                isPartial = true;
-                            }
+                            totalQty += parseInt(i.quantity) || 0;
                         });
+                        if (totalQty >= 2) {
+                            needsAlert = true;
+                        }
                     }
-                    addScannedOrder(item.order, isPartial);
+                    addScannedOrder(item.order, needsAlert);
                 });
                 // Show draft indicator
                 const draftIndicator = document.getElementById('draftIndicator');
@@ -885,19 +887,21 @@
                 if (data.success) {
                     console.log('✅ Order found:', data.order.order_number);
                     
-                    let isPartial = false;
+                    let needsAlert = false;
+                    let totalQty = 0;
                     if (data.order && data.order.items) {
                         data.order.items.forEach(item => {
-                            if (item.returnable_qty !== item.quantity) {
-                                isPartial = true;
-                            }
+                            totalQty += parseInt(item.quantity) || 0;
                         });
+                        if (totalQty >= 2) {
+                            needsAlert = true;
+                        }
                     }
                     
-                    addScannedOrder(data.order, isPartial);
+                    addScannedOrder(data.order, needsAlert);
                     updateScanStatus('success', `<i class="fas fa-check-circle"></i> Added!`);
                     
-                    if (isPartial) {
+                    if (needsAlert) {
                         playAlertBeep();
                     } else {
                         playSuccessBeep();
@@ -947,11 +951,11 @@
 
  
     // Create Order Card with Accordion
-    function createOrderCard(orderData, isPartialReturn = false) {
+    function createOrderCard(orderData, needsAlert = false) {
         const cardDiv = document.createElement('div');
         cardDiv.className = 'order-compact-card';
-        if (isPartialReturn) {
-            cardDiv.classList.add('partial-return-alert');
+        if (needsAlert) {
+            cardDiv.classList.add('quantity-alert');
         }
         cardDiv.setAttribute('data-order-number', orderData.order_number);
         
@@ -1352,7 +1356,7 @@
     };
 
     // Add Scanned Order
-    function addScannedOrder(orderData, isPartialReturn = false) {
+    function addScannedOrder(orderData, needsAlert = false) {
         // Store order data
         scannedOrders.set(orderData.order_number, orderData);
         
@@ -1362,7 +1366,7 @@
         }
         
         // Create and add order card at the top
-        const cardDiv = createOrderCard(orderData, isPartialReturn);
+        const cardDiv = createOrderCard(orderData, needsAlert);
         scannedOrdersList.prepend(cardDiv);
         
         // Update count
