@@ -1925,10 +1925,10 @@
                                     {% endif %}
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-sm">
-                                    <li><a class="dropdown-item {% if not rtv.status %}active{% endif %}" href="#" onclick="changeRtvStatus({{ rtv.rtv_id }}, ''); return false;">
+                                    <li><a class="dropdown-item {% if not rtv.status %}active{% endif %}" href="#" onclick="changeRtvStatus(event, {{ rtv.rtv_id }}, '', 'Not Set', '#6b7280');">
                                         <span class="status-dot bg-secondary me-2"></span>Not Set</a></li>
                                     {% for st in rtv_statuses %}
-                                    <li><a class="dropdown-item {% if rtv.status and rtv.status.id == st.id %}active{% endif %}" href="#" onclick="changeRtvStatus({{ rtv.rtv_id }}, '{{ st.id }}'); return false;">
+                                    <li><a class="dropdown-item {% if rtv.status and rtv.status.id == st.id %}active{% endif %}" href="#" onclick="changeRtvStatus(event, {{ rtv.rtv_id }}, '{{ st.id }}', '{{ st.name|escapejs }}', '{{ st.color }}');">
                                         <span class="status-dot me-2" style="background-color: {{ st.color }};"></span>{{ st.name }}</a></li>
                                     {% endfor %}
                                 </ul>
@@ -2228,7 +2228,9 @@
         'use strict';
 
         // ==================== SET STATUS SYSTEM ====================
-        window.changeRtvStatus = function(rtvId, statusId) {
+        window.changeRtvStatus = function(event, rtvId, statusId, statusName, statusColor) {
+            if (event) event.preventDefault();
+            
             fetch(`/api/rtv/${rtvId}/set-status/`, {
                 method: 'POST',
                 headers: {
@@ -2241,7 +2243,20 @@
             .then(data => {
                 if (data.success) {
                     showToast('Status updated successfully.', 'success');
-                    setTimeout(() => location.reload(), 600);
+                    
+                    var td = document.getElementById('status-col-' + rtvId);
+                    if (td) {
+                        var btn = td.querySelector('.dropdown-toggle');
+                        if (btn) {
+                            btn.style.background = statusColor || '#6b7280';
+                            btn.innerHTML = (statusId ? `<span class="pill-dot" style="width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.7); flex-shrink:0;"></span> ` : '') + statusName;
+                        }
+                        var items = td.querySelectorAll('.dropdown-item');
+                        items.forEach(i => i.classList.remove('active'));
+                        if (event && event.currentTarget) {
+                            event.currentTarget.classList.add('active');
+                        }
+                    }
                 } else {
                     showToast(data.error || 'Failed to update status.', 'error');
                 }
@@ -2252,14 +2267,30 @@
         };
 
         // Reposition fixed dropdowns so they appear next to the badge button
+        let activeDropdownMenu = null;
+        let activeDropdownBtn = null;
+        
+        function updateDropdownPosition() {
+            if (activeDropdownMenu && activeDropdownBtn && activeDropdownMenu.classList.contains('show')) {
+                var rect = activeDropdownBtn.getBoundingClientRect();
+                activeDropdownMenu.style.top = (rect.bottom + 2) + 'px';
+                activeDropdownMenu.style.left = rect.left + 'px';
+                requestAnimationFrame(updateDropdownPosition);
+            }
+        }
+
         document.querySelectorAll('.dropdown').forEach(function(dd) {
             dd.addEventListener('shown.bs.dropdown', function() {
                 var btn = dd.querySelector('.dropdown-toggle');
                 var menu = dd.querySelector('.dropdown-menu');
                 if (!btn || !menu) return;
-                var rect = btn.getBoundingClientRect();
-                menu.style.top = (rect.bottom + 2) + 'px';
-                menu.style.left = rect.left + 'px';
+                activeDropdownBtn = btn;
+                activeDropdownMenu = menu;
+                updateDropdownPosition();
+            });
+            dd.addEventListener('hidden.bs.dropdown', function() {
+                activeDropdownBtn = null;
+                activeDropdownMenu = null;
             });
         });
 
