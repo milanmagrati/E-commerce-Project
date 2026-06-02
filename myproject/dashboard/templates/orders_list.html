@@ -1847,7 +1847,9 @@ function clearSelection() {
 }
 
 function confirmBulkAction() {
-    const action = document.querySelector('select[name="bulk_action"]').value;
+    const selectElement = document.querySelector('select[name="bulk_action"]');
+    const action = selectElement.value;
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
     const count = document.querySelectorAll('.order-checkbox:checked').length;
     
     if (!action) {
@@ -1866,7 +1868,13 @@ function confirmBulkAction() {
         return false; // Prevent form submission
     }
     
-    return confirm(`Are you sure you want to ${action.replace(/_/g, ' ')} ${count} order(s)?`);
+    // Extract action text without emojis
+    let actionText = selectedOption.text.replace(/[^\x20-\x7E]/g, '').trim();
+    if (!actionText) {
+        actionText = action.replace(/_/g, ' ');
+    }
+    
+    return confirm(`Are you sure you want to apply "${actionText}" to ${count} order(s)?`);
 }
 
 function exportSelectedOrders() {
