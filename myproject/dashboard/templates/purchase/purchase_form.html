@@ -4,6 +4,152 @@
 
 {% block extra_css %}
 <style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #4f46e5, #3b82f6);
+        --danger-gradient: linear-gradient(135deg, #ef4444, #f43f5e);
+        --surface-color: #ffffff;
+        --background-color: #f8fafc;
+        --text-primary: #1e293b;
+        --text-secondary: #64748b;
+        --border-color: #e2e8f0;
+        --input-focus-ring: rgba(59, 130, 246, 0.25);
+    }
+
+    body {
+        background-color: var(--background-color);
+        color: var(--text-primary);
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    /* Modern Cards */
+    .card {
+        background: var(--surface-color);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        overflow: hidden;
+    }
+    .card:hover {
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+        transform: translateY(-2px);
+    }
+    .card-header {
+        background: rgba(255,255,255,0.9);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border-color);
+        padding: 1.25rem 1.5rem;
+    }
+    .card-header h6 {
+        font-size: 1.05rem;
+        color: var(--text-primary);
+    }
+
+    /* Inputs & Selects */
+    .form-control, .form-select {
+        border-radius: 10px;
+        border: 1px solid var(--border-color);
+        padding: 0.65rem 1rem;
+        font-size: 0.95rem;
+        transition: all 0.25s ease;
+        background-color: #fcfcfc;
+        color: var(--text-primary);
+    }
+    .form-control:focus, .form-select:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 4px var(--input-focus-ring);
+        background-color: #fff;
+    }
+    .form-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        margin-bottom: 0.5rem;
+    }
+
+    /* Buttons */
+    .btn-primary {
+        background: var(--primary-gradient);
+        border: none;
+        border-radius: 10px;
+        font-weight: 600;
+        padding: 0.6rem 1.2rem;
+        transition: all 0.3s ease;
+        color: white;
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    }
+    .btn-primary:hover {
+        transform: translateY(-1.5px);
+        box-shadow: 0 6px 12px rgba(59, 130, 246, 0.35);
+        background: linear-gradient(135deg, #4338ca, #2563eb);
+    }
+    .btn-outline-danger {
+        border-radius: 8px;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .btn-outline-danger:hover {
+        background: var(--danger-gradient);
+        border-color: transparent;
+        color: white;
+        transform: scale(1.08) rotate(5deg);
+        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
+    }
+
+    /* Table Design */
+    .table {
+        margin-bottom: 0;
+    }
+    .table th {
+        background-color: #f8fafc;
+        color: var(--text-secondary);
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        border-bottom: 2px solid var(--border-color);
+        padding: 1rem 0.75rem;
+    }
+    .table td {
+        padding: 1rem 0.75rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .table-hover tbody tr:hover {
+        background-color: #f1f5f9;
+    }
+    .item-row {
+        transition: background-color 0.2s ease;
+    }
+
+    /* Typography & Headers */
+    h4 {
+        font-weight: 800;
+        color: var(--text-primary);
+        letter-spacing: -0.03em;
+        font-size: 1.75rem;
+    }
+    .text-primary {
+        color: #3b82f6 !important;
+    }
+
+    /* Summary Section */
+    #grandTotal, #summaryTotal {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #3b82f6;
+        text-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
+    }
+    .bg-primary {
+        background: var(--primary-gradient) !important;
+    }
+
+    /* Toast Notifications */
     .toast-error-container {
         position: fixed;
         top: 20px;
@@ -12,11 +158,11 @@
         max-width: 420px;
     }
     .toast-error {
-        background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+        background: linear-gradient(135deg, #ef4444, #f43f5e);
         color: #fff;
         border-radius: 12px;
         padding: 16px 20px;
-        box-shadow: 0 8px 32px rgba(238, 90, 36, 0.35);
+        box-shadow: 0 8px 32px rgba(244, 63, 94, 0.35);
         display: flex;
         align-items: flex-start;
         gap: 12px;
@@ -30,7 +176,7 @@
     }
     .toast-error .toast-body {
         flex: 1;
-        font-size: 0.92rem;
+        font-size: 0.95rem;
         font-weight: 500;
         line-height: 1.4;
     }
@@ -38,14 +184,17 @@
         background: none;
         border: none;
         color: rgba(255,255,255,0.8);
-        font-size: 1.1rem;
+        font-size: 1.2rem;
         cursor: pointer;
         padding: 0;
         line-height: 1;
         flex-shrink: 0;
-        transition: color 0.2s;
+        transition: all 0.2s ease;
     }
-    .toast-error .toast-close:hover { color: #fff; }
+    .toast-error .toast-close:hover { 
+        color: #fff; 
+        transform: scale(1.1);
+    }
     @keyframes slideInRight {
         from { transform: translateX(100%); opacity: 0; }
         to { transform: translateX(0); opacity: 1; }
@@ -57,29 +206,23 @@
     .toast-error.hiding {
         animation: fadeOutRight 0.3s ease forwards;
     }
-    .field-error {
-        border-color: #e74c3c !important;
-        box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.15) !important;
-    }
-    .messages-container { display: none !important; }
 
     /* Purchase items table responsive fixes */
     #itemsTable {
-        min-width: 600px;
-        table-layout: fixed;
         width: 100%;
+        border-collapse: collapse;
+        table-layout: auto;
+    }
+    #itemsTable th {
+        white-space: nowrap;
+        font-size: 0.75rem;
+        padding: 0.75rem 0.5rem;
     }
     #itemsTable th,
     #itemsTable td {
         vertical-align: middle;
-        overflow: hidden;
+        padding: 0.5rem;
     }
-    #itemsTable th:nth-child(1), #itemsTable td:nth-child(1) { width: 28%; }
-    #itemsTable th:nth-child(2), #itemsTable td:nth-child(2) { width: 20%; }
-    #itemsTable th:nth-child(3), #itemsTable td:nth-child(3) { width: 14%; }
-    #itemsTable th:nth-child(4), #itemsTable td:nth-child(4) { width: 18%; }
-    #itemsTable th:nth-child(5), #itemsTable td:nth-child(5) { width: 14%; }
-    #itemsTable th:nth-child(6), #itemsTable td:nth-child(6) { width: 6%; }
     #itemsTable .row-total,
     #itemsTable #grandTotal {
         white-space: nowrap;
@@ -88,14 +231,20 @@
     #itemsTable select {
         width: 100%;
         box-sizing: border-box;
+        min-width: 60px; /* Small enough to not force scroll on normal screens */
+        padding: 0.35rem 0.5rem;
+        font-size: 0.85rem;
+    }
+    #itemsTable select.form-select {
+        padding-right: 1.75rem; /* Make room for the dropdown arrow */
     }
     @media (max-width: 768px) {
         #itemsTable .row-total,
         #itemsTable #grandTotal {
-            font-size: 0.92rem;
+            font-size: 0.95rem;
         }
         #itemsTable tfoot td {
-            font-size: 0.92rem;
+            font-size: 0.95rem;
         }
     }
 </style>
@@ -119,7 +268,7 @@
     {% endif %}
 
     <div class="mb-4">
-        <h4 class="mb-1"><i class="fas fa-file-invoice me-2 text-primary"></i>Create New Purchase</h4>
+        <h4 class="mb-1"><i class="fas fa-file-invoice me-2 text-primary"></i>{% if purchase %}Edit Purchase #{{ purchase.invoice_number }}{% else %}Create New Purchase{% endif %}</h4>
     </div>
 
     <form method="POST" id="purchaseForm">
@@ -185,12 +334,12 @@
                             <table class="table table-hover mb-0" id="itemsTable">
                                 <thead class="table-light">
                                     <tr>
-                                        <th style="min-width:130px">Product</th>
-                                        <th style="min-width:110px">Variant</th>
-                                        <th style="min-width:80px" class="text-center">Quantity</th>
-                                        <th style="min-width:100px" class="text-end">Rate (Rs.)</th>
-                                        <th style="min-width:110px" class="text-end">Total (Rs.)</th>
-                                        <th style="min-width:40px"></th>
+                                        <th>Product</th>
+                                        <th>Variant</th>
+                                        <th class="text-center">Quantity</th>
+                                        <th class="text-end">Rate (Rs.)</th>
+                                        <th class="text-end">Total (Rs.)</th>
+                                        <th></th>
                                     </tr>
                                 </thead>
                                 <tbody id="itemsBody">
@@ -206,11 +355,11 @@
                                                 </select>
                                             </td>
                                             <td>
-                                                <select name="variation_id[]" class="form-select form-select-sm variation-select" style="display:none;">
+                                                <select name="variation_id[]" class="form-select form-select-sm variation-select" style="{% if not item.variation_id %}display:none;{% endif %}" data-selected="{{ item.variation_id|default:'' }}">
                                                     <option value="">-- Select Variant --</option>
                                                 </select>
                                                 <div class="bundle-info" style="display:none; font-size:.75rem;"></div>
-                                                <span class="text-muted variation-na" style="font-size:.8rem;">N/A</span>
+                                                <span class="text-muted variation-na" style="font-size:.8rem; {% if item.variation_id %}display:none;{% endif %}">N/A</span>
                                             </td>
                                             <td><input type="number" name="quantity[]" class="form-control form-control-sm text-center qty-input" value="{{ item.quantity }}" min="1" placeholder="Qty" required></td>
                                             <td><input type="number" step="0.01" name="rate[]" class="form-control form-control-sm text-end rate-input" value="{{ item.rate }}" min="0" placeholder="0.00" required></td>
@@ -286,7 +435,7 @@
                     </div>
                     <div class="card-footer bg-white">
                         <button type="submit" class="btn btn-primary w-100">
-                            <i class="fas fa-save me-1"></i> Save Purchase
+                            <i class="fas fa-save me-1"></i> {% if purchase %}Update Purchase{% else %}Save Purchase{% endif %}
                         </button>
                         <a href="{% url 'purchase_dashboard' %}" class="btn btn-outline-secondary w-100 mt-2">Cancel</a>
                     </div>
@@ -430,6 +579,12 @@ function handleProductChangeForRow(row) {
         });
         varSelect.style.display = '';
         if (varNa) varNa.style.display = 'none';
+        
+        var preSelected = varSelect.getAttribute('data-selected');
+        if (preSelected) {
+            varSelect.value = preSelected;
+            varSelect.removeAttribute('data-selected');
+        }
     } else if (productType === 'bundle' && productId && BUNDLE_COMPONENTS[productId]) {
         var components = BUNDLE_COMPONENTS[productId];
         if (components.length > 0 && bundleInfo) {

@@ -228,6 +228,9 @@
                                 <a href="{% url 'purchase_detail' purchase_id=p.id %}" class="btn btn-sm btn-outline-primary" title="View">
                                     <i class="fas fa-eye"></i>
                                 </a>
+                                <a href="{% url 'purchase_edit' purchase_id=p.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
                             </td>
                         </tr>
                         {% empty %}

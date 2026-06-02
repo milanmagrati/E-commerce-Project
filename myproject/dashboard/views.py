@@ -20557,3 +20557,221 @@ def get_redirect_order_details(request, order_id):
     except Exception as e:
         logger.error(f"Error fetching redirect order details: {str(e)}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@login_required
+def purchase_edit(request, purchase_id):
+    """Edit an existing purchase, excluding item modifications for stock integrity"""
+    if not (request.user.is_superuser or request.user.role == 'administrator' or getattr(request.user, 'can_create_purchases', False)):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    purchase = get_object_or_404(Purchase, id=purchase_id)
+    suppliers = Supplier.objects.filter(is_active=True)
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
+    if request.method == 'POST':
+        supplier_id = request.POST.get('supplier')
+        purchase_date = request.POST.get('purchase_date', '')
+        invoice_number = request.POST.get('invoice_number', '').strip()
+        payment_method = request.POST.get('payment_method', '').strip()
+        notes = request.POST.get('notes', '').strip()
+
+        # Check duplicate invoice number
+        if Purchase.objects.filter(invoice_number=invoice_number).exclude(id=purchase.id).exists():
+            messages.error(request, f"Invoice number '{invoice_number}' already exists.")
+            return redirect('purchase_edit', purchase_id=purchase.id)
+
+        try:
+            p_date = datetime.strptime(purchase_date, '%Y-%m-%d').date() if purchase_date else timezone.now().date()
+        except ValueError:
+            p_date = purchase.purchase_date
+
+        supplier = get_object_or_404(Supplier, id=supplier_id)
+
+        with transaction.atomic():
+            purchase.supplier = supplier
+            purchase.purchase_date = p_date
+            purchase.invoice_number = invoice_number
+            purchase.payment_method = payment_method
+            purchase.notes = notes
+            purchase.save()
+
+            # REVERT old items
+            for item in purchase.purchase_items.all():
+                if item.product.product_type == 'bundle':
+                    components = item.product.bundle_components.select_related('component_product').all()
+                    for comp in components:
+                        comp_product = comp.component_product
+                        sub_qty = comp.quantity_required * item.quantity
+                        comp_product.stock -= sub_qty
+                        if comp_product.stock <= 0:
+                            comp_product.stock_status = 'out_of_stock'
+                        comp_product.save(update_fields=['stock', 'stock_status'])
+                        
+                        if item.rate > 0 and components.count() > 0:
+                            comp_rate = item.rate / Decimal(str(components.count()))
+                            pp = ProductPurchase.objects.filter(product=comp_product, cost_price=comp_rate, quantity=sub_qty).first()
+                            if pp:
+                                pp.delete()
+                            if comp_product.cost_price_type == 'variable':
+                                comp_product.refresh_from_db()
+                                comp_product.cost_price = comp_product.average_cost
+                                comp_product.save(update_fields=['cost_price'])
+                else:
+                    if item.product_variation:
+                        item.product_variation.stock -= item.quantity
+                        if item.product_variation.stock <= 0:
+                            item.product_variation.status = 'out_of_stock'
+                        item.product_variation.save(update_fields=['stock', 'status'])
+                    item.product.stock -= item.quantity
+                    if item.product.stock <= 0:
+                        item.product.stock_status = 'out_of_stock'
+                    item.product.save(update_fields=['stock', 'stock_status'])
+
+                    if item.rate > 0:
+                        pp = ProductPurchase.objects.filter(product=item.product, cost_price=item.rate, quantity=item.quantity).first()
+                        if pp:
+                            pp.delete()
+                        if item.product.cost_price_type == 'variable':
+                            item.product.refresh_from_db()
+                            item.product.cost_price = item.product.average_cost
+                            item.product.save(update_fields=['cost_price'])
+
+            # Delete old items
+            purchase.purchase_items.all().delete()
+            
+            # ADD NEW ITEMS
+            product_ids = request.POST.getlist('product_id[]')
+            quantities = request.POST.getlist('quantity[]')
+            rates = request.POST.getlist('rate[]')
+            variation_ids = request.POST.getlist('variation_id[]')
+
+            total_amount = Decimal('0')
+            for i in range(len(product_ids)):
+                if not product_ids[i]:
+                    continue
+                try:
+                    product = Product.objects.get(id=product_ids[i])
+                    qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 1
+                    rate = Decimal(rates[i]) if i < len(rates) and rates[i] else Decimal('0')
+
+                    variation = None
+                    variation_id_val = variation_ids[i] if i < len(variation_ids) else ''
+                    if variation_id_val and product.product_type == 'variable':
+                        try:
+                            variation = ProductVariation.objects.get(id=int(variation_id_val), product=product)
+                        except (ProductVariation.DoesNotExist, ValueError):
+                            pass
+
+                    item = PurchaseItem.objects.create(
+                        purchase=purchase,
+                        product=product,
+                        product_variation=variation,
+                        quantity=qty,
+                        rate=rate,
+                    )
+                    total_amount += item.total
+
+                    if product.product_type == 'bundle':
+                        components = product.bundle_components.select_related('component_product').all()
+                        if components.exists():
+                            for comp in components:
+                                comp_product = comp.component_product
+                                add_qty = comp.quantity_required * qty
+                                comp_product.stock += add_qty
+                                if comp_product.stock > 0:
+                                    comp_product.stock_status = 'in_stock'
+                                comp_product.save(update_fields=['stock', 'stock_status'])
+                                
+                                if rate > 0:
+                                    comp_rate = rate / Decimal(str(components.count()))
+                                    ProductPurchase.objects.create(
+                                        product=comp_product,
+                                        cost_price=comp_rate,
+                                        quantity=add_qty,
+                                    )
+                                    if comp_product.cost_price_type == 'variable':
+                                        comp_product.refresh_from_db()
+                                        comp_product.cost_price = comp_product.average_cost
+                                        comp_product.save(update_fields=['cost_price'])
+                    else:
+                        if variation:
+                            variation.stock += qty
+                            if variation.stock > 0:
+                                variation.status = 'active'
+                            variation.save(update_fields=['stock', 'status'])
+                        product.stock += qty
+                        if product.stock > 0:
+                            product.stock_status = 'in_stock'
+                        product.save(update_fields=['stock', 'stock_status'])
+                        
+                        if rate > 0:
+                            ProductPurchase.objects.create(
+                                product=product,
+                                cost_price=rate,
+                                quantity=qty,
+                            )
+                            if product.cost_price_type == 'variable':
+                                product.refresh_from_db()
+                                product.cost_price = product.average_cost
+                                product.save(update_fields=['cost_price'])
+                except Exception as e:
+                    logger.error(f"Error updating item: {e}")
+
+            purchase.total_amount = total_amount
+            purchase.save()
+            purchase.update_payment_status()
+        return redirect('purchase_dashboard')
+
+    # Build context for GET
+    form_data = {
+        'supplier_id': str(purchase.supplier.id),
+        'invoice_number': purchase.invoice_number,
+        'purchase_date': purchase.purchase_date.isoformat() if hasattr(purchase.purchase_date, 'isoformat') else purchase.purchase_date,
+        'payment_method': purchase.payment_method,
+        'notes': purchase.notes,
+        'item_rows': [
+            {
+                'product_id': str(item.product.id) if item.product else '',
+                'variation_id': str(item.product_variation.id) if getattr(item, 'product_variation', None) else '',
+                'quantity': str(item.quantity),
+                'rate': str(item.rate),
+            } for item in purchase.purchase_items.all()
+        ]
+    }
+
+    # Build product variations map for JS
+    variable_products = products.filter(product_type='variable').prefetch_related('variations')
+    product_variations_map = {}
+    for vp in variable_products:
+        product_variations_map[vp.id] = [
+            {'id': v.id, 'name': v.variation_name or v.sku, 'sku': v.sku, 'stock': v.stock}
+            for v in vp.variations.filter(is_active=True).order_by('variation_name')
+        ]
+
+    # Build bundle components map for JS
+    bundle_products = products.filter(product_type='bundle').prefetch_related(
+        'bundle_components__component_product'
+    )
+    bundle_components_map = {}
+    for bp in bundle_products:
+        bundle_components_map[bp.id] = [
+            {
+                'name': comp.component_product.name,
+                'qty': comp.quantity_required,
+                'stock': comp.component_product.stock,
+            }
+            for comp in bp.bundle_components.select_related('component_product').all()
+        ]
+
+    context = {
+        'purchase': purchase,
+        'suppliers': suppliers,
+        'products': products,
+        'today': timezone.now().date().isoformat(),
+        'form_data': form_data,
+        'product_variations_json': json.dumps(product_variations_map),
+        'bundle_components_json': json.dumps(bundle_components_map),
+    }
+    return render(request, 'purchase/purchase_form.html', context)
+

@@ -291,6 +291,7 @@ urlpatterns = [
     path('purchases/dashboard/', views.purchase_dashboard, name='purchase_dashboard'),
     path('purchases/create/', views.purchase_create, name='purchase_create'),
     path('purchases/<int:purchase_id>/', views.purchase_detail, name='purchase_detail'),
+    path('purchases/<int:purchase_id>/edit/', views.purchase_edit, name='purchase_edit'),
 
     # Suppliers
     path('suppliers/', views.supplier_list, name='supplier_list'),
