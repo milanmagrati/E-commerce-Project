@@ -2882,7 +2882,7 @@ def attendance_list(request):
     except (ValueError, TypeError):
         per_page = 9
 
-    qs = AttendanceRecord.objects.select_related('employee', 'shift').all()
+    qs = AttendanceRecord.objects.select_related('employee', 'shift').order_by('-date', 'employee__full_name')
     if search:
         qs = qs.filter(
             Q(employee__full_name__icontains=search) |
@@ -2955,8 +2955,8 @@ def attendance_create(request):
         is_early = False
 
         if clock_in and clock_out:
-            cin = datetime.strptime(clock_in, '%H:%M')
-            cout = datetime.strptime(clock_out, '%H:%M')
+            cin = datetime.strptime(clock_in[:5], '%H:%M')
+            cout = datetime.strptime(clock_out[:5], '%H:%M')
             diff = (cout - cin).total_seconds() / 3600
             if diff < 0:
                 diff += 24
@@ -2972,8 +2972,8 @@ def attendance_create(request):
                     overtime_hours = round(working_hours - shift_hours, 2)
 
                 shift_start = datetime.combine(datetime.today(), shift.start_time)
-                cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in, '%H:%M').time())
-                cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out, '%H:%M').time())
+                cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in[:5], '%H:%M').time())
+                cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out[:5], '%H:%M').time())
 
                 # Use AttendancePolicy grace values if available, else shift.grace_period
                 late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
@@ -3042,8 +3042,8 @@ def attendance_update(request, pk):
         is_early = False
 
         if clock_in and clock_out:
-            cin = datetime.strptime(clock_in, '%H:%M')
-            cout = datetime.strptime(clock_out, '%H:%M')
+            cin = datetime.strptime(clock_in[:5], '%H:%M')
+            cout = datetime.strptime(clock_out[:5], '%H:%M')
             diff = (cout - cin).total_seconds() / 3600
             if diff < 0:
                 diff += 24
@@ -3059,8 +3059,8 @@ def attendance_update(request, pk):
                     overtime_hours = round(working_hours - shift_hours, 2)
 
                 shift_start = datetime.combine(datetime.today(), shift.start_time)
-                cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in, '%H:%M').time())
-                cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out, '%H:%M').time())
+                cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in[:5], '%H:%M').time())
+                cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out[:5], '%H:%M').time())
 
                 # Use AttendancePolicy grace values if available, else shift.grace_period
                 late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)

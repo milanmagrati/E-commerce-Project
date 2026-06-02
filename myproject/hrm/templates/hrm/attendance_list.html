@@ -24,6 +24,9 @@
             <small class="text-muted">Track employee attendance and working hours</small>
         </div>
         <div class="d-flex gap-2">
+            <button class="btn btn-primary px-3" style="border-radius:8px;" onclick="syncAttendance()" id="btnSyncAttendance">
+                <i class="fas fa-sync-alt me-1" id="syncIcon"></i> Sync Data
+            </button>
             <button class="btn btn-outline-secondary px-3" style="border-radius:8px;">
                 <i class="fas fa-download me-1"></i> Export
             </button>
@@ -594,6 +597,40 @@
     var draftFields = ['recordEmployee','recordDate','recordClockIn','recordClockOut','recordShift','recordStatus','recordNotes'];
     var DRAFT_CHECKBOX_FIELDS = ['recordHoliday'];
 
+    /* ── Sync Device Data ── */
+    function syncAttendance() {
+        var btn = document.getElementById('btnSyncAttendance');
+        var icon = document.getElementById('syncIcon');
+        btn.disabled = true;
+        icon.classList.add('fa-spin');
+        
+        fetch("{% url 'hrm:biometric_sync_all' %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': CSRF,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.success) {
+                sessionStorage.setItem('attToast', JSON.stringify({
+                    type: 'success', title: 'Sync Successful', msg: data.message
+                }));
+                window.location.reload();
+            } else {
+                showPageToast('danger', 'Sync Failed', data.error || 'An error occurred while syncing.');
+                btn.disabled = false;
+                icon.classList.remove('fa-spin');
+            }
+        })
+        .catch(err => {
+            showPageToast('danger', 'Sync Failed', 'Network or server error.');
+            btn.disabled = false;
+            icon.classList.remove('fa-spin');
+        });
+    }
+
     /* ── Modal singleton ── */
     function getModal(elId) {
         var el = document.getElementById(elId);
@@ -852,9 +889,7 @@
             markField('recordDate', true, 'Date is required.'); hasError = true;
         }
         var clockIn = document.getElementById('recordClockIn').value;
-        if (!clockIn) { markField('recordClockIn', true, 'Clock in time is required.'); hasError = true; }
         var clockOut = document.getElementById('recordClockOut').value;
-        if (!clockOut) { markField('recordClockOut', true, 'Clock out time is required.'); hasError = true; }
 
         if (hasError) {
             showFormAlert('danger', 'Validation Error', 'Please fill in all required fields.');
