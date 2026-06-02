@@ -19529,8 +19529,19 @@ def ncm_rtvs_sync(request):
                                 update_fields['vendor_return'] = vendor_return_status
 
                             if update_fields:
-                                RTVOrder.objects.filter(order_id=oid).update(**update_fields)
-                                comments_updated += 1
+                                existing_rtv = RTVOrder.objects.filter(order_id=oid).first()
+                                if existing_rtv:
+                                    changed = False
+                                    if 'comment' in update_fields and existing_rtv.comment != update_fields['comment']:
+                                        changed = True
+                                    if 'rtv_marked_at' in update_fields and existing_rtv.rtv_marked_at != update_fields['rtv_marked_at']:
+                                        changed = True
+                                    if 'vendor_return' in update_fields and existing_rtv.vendor_return != update_fields['vendor_return']:
+                                        changed = True
+                                    
+                                    if changed:
+                                        RTVOrder.objects.filter(order_id=oid).update(**update_fields)
+                                        comments_updated += 1
                     except Exception:
                         pass
             except Exception:
@@ -19763,7 +19774,18 @@ def ncm_rtvs_sync(request):
                                 upd['vendor_return'] = vendor_return_status
 
                             if upd:
-                                RTVOrder.objects.filter(order_id=oid).update(**upd)
+                                existing_rtv = RTVOrder.objects.filter(order_id=oid).first()
+                                if existing_rtv:
+                                    changed = False
+                                    if 'comment' in upd and existing_rtv.comment != upd['comment']:
+                                        changed = True
+                                    if 'rtv_marked_at' in upd and existing_rtv.rtv_marked_at != upd['rtv_marked_at']:
+                                        changed = True
+                                    if 'vendor_return' in upd and existing_rtv.vendor_return != upd['vendor_return']:
+                                        changed = True
+                                    
+                                    if changed:
+                                        RTVOrder.objects.filter(order_id=oid).update(**upd)
                     except Exception:
                         pass
 
