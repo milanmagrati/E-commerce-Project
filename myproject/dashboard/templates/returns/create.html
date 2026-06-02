@@ -14,14 +14,14 @@
     .scanner-container {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 15px;
-        padding: 40px;
+        padding: 15px 25px;
         color: white;
-        margin-bottom: 30px;
+        margin-bottom: 15px;
     }
     
     .barcode-icon {
-        font-size: 4rem;
-        margin-bottom: 20px;
+        font-size: 2.5rem;
+        margin-bottom: 10px;
         animation: pulse 2s infinite;
     }
     
@@ -31,8 +31,8 @@
     }
     
     #barcodeInput {
-        font-size: 1.8rem;
-        padding: 20px;
+        font-size: 1.25rem;
+        padding: 10px;
         border: 3px dashed #fff;
         border-radius: 12px;
         text-align: center;
@@ -52,10 +52,10 @@
         background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         border: none;
         color: white;
-        padding: 15px 40px;
+        padding: 10px 20px;
         border-radius: 30px;
         font-weight: 600;
-        font-size: 1.1rem;
+        font-size: 1rem;
         transition: all 0.3s ease;
     }
     
@@ -66,12 +66,12 @@
     }
     
     .scan-status {
-        padding: 15px;
+        padding: 10px;
         border-radius: 10px;
-        margin-top: 20px;
+        margin-top: 15px;
         font-weight: 600;
         text-align: center;
-        font-size: 1.1rem;
+        font-size: 1rem;
     }
     
     .scan-status.waiting {
@@ -101,7 +101,7 @@
     /* Scanned Orders List - Compact Design */
     .scanned-orders-section {
         display: none;
-        margin-top: 30px;
+        margin-top: 15px;
     }
     
     .scanned-orders-section.active {
@@ -126,6 +126,17 @@
         overflow: hidden;
     }
     
+    .order-compact-card.partial-return-alert {
+        background-color: #ffe5b4 !important; /* Distinct light orange/yellow */
+        border-left-color: #fd7e14 !important;
+    }
+    
+    .order-compact-card.partial-return-alert:hover,
+    .order-compact-card.partial-return-alert .order-header:hover {
+        background-color: #ffd89b !important;
+        border-left-color: #fd7e14 !important;
+    }
+    
     .order-compact-card:hover {
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         border-left-color: #0d6efd;
@@ -134,6 +145,11 @@
     .order-compact-card.expanded {
         border-left-color: #0d6efd;
         box-shadow: 0 6px 20px rgba(13, 110, 253, 0.15);
+    }
+    
+    .order-compact-card.partial-return-alert.expanded {
+        border-left-color: #fd7e14 !important;
+        box-shadow: 0 6px 20px rgba(253, 126, 20, 0.2);
     }
     
     .order-header {
@@ -375,7 +391,7 @@
     </div>
 
     <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h2 class="mb-1">
                 <i class="fas fa-undo-alt text-primary"></i> Create Return Request
@@ -393,16 +409,16 @@
         <div class="col-lg-8">
             <!-- Barcode Scanner Section -->
             <div class="scanner-container">
-                <div class="text-center">
+                <div class="text-center mb-2">
                     <i class="fas fa-barcode barcode-icon"></i>
-                    <h3 class="mb-2">Scan Order Barcode</h3>
-                    <p class="mb-4 opacity-75">Scan or enter order number to start return process</p>
+                    <h4 class="mb-1">Scan Order Barcode</h4>
+                    <p class="mb-2 opacity-75">Scan or enter order number to start return process</p>
                 </div>
                 
-                <div class="bg-white rounded p-4">
+                <div class="bg-white rounded p-3 shadow-sm">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-8">
-                            <label class="form-label text-dark fw-bold">
+                            <label class="form-label text-dark fw-bold mb-1">
                                 <i class="fas fa-keyboard text-primary"></i> Order Barcode / Order Number
                             </label>
                             <input type="text" 
@@ -427,8 +443,8 @@
                     </div>
                 </div>
                 
-                <div class="text-center mt-3">
-                    <button type="button" class="btn btn-link text-white text-decoration-none" id="toggleManualMode">
+                <div class="text-center mt-2">
+                    <button type="button" class="btn btn-link text-white text-decoration-none py-0" id="toggleManualMode">
                         <i class="fas fa-list me-2"></i> Or select from list manually
                     </button>
                 </div>
@@ -664,7 +680,15 @@
             if (draftData) {
                 const orders = JSON.parse(draftData);
                 orders.forEach(item => {
-                    addScannedOrder(item.order);
+                    let isPartial = false;
+                    if (item.order && item.order.items) {
+                        item.order.items.forEach(i => {
+                            if (i.returnable_qty !== i.quantity) {
+                                isPartial = true;
+                            }
+                        });
+                    }
+                    addScannedOrder(item.order, isPartial);
                 });
                 // Show draft indicator
                 const draftIndicator = document.getElementById('draftIndicator');
@@ -860,9 +884,24 @@
                 pendingBarcodes.delete(barcode);
                 if (data.success) {
                     console.log('✅ Order found:', data.order.order_number);
-                    addScannedOrder(data.order);
+                    
+                    let isPartial = false;
+                    if (data.order && data.order.items) {
+                        data.order.items.forEach(item => {
+                            if (item.returnable_qty !== item.quantity) {
+                                isPartial = true;
+                            }
+                        });
+                    }
+                    
+                    addScannedOrder(data.order, isPartial);
                     updateScanStatus('success', `<i class="fas fa-check-circle"></i> Added!`);
-                    playSuccessBeep();
+                    
+                    if (isPartial) {
+                        playAlertBeep();
+                    } else {
+                        playSuccessBeep();
+                    }
                     
                     // Clear input immediately
                     barcodeInput.value = '';
@@ -908,9 +947,12 @@
 
  
     // Create Order Card with Accordion
-    function createOrderCard(orderData) {
+    function createOrderCard(orderData, isPartialReturn = false) {
         const cardDiv = document.createElement('div');
         cardDiv.className = 'order-compact-card';
+        if (isPartialReturn) {
+            cardDiv.classList.add('partial-return-alert');
+        }
         cardDiv.setAttribute('data-order-number', orderData.order_number);
         
         cardDiv.innerHTML = `
@@ -965,11 +1007,6 @@
             loadOrderDetails(orderNumber, orderData, detailsPanel);
             detailsPanel.classList.add('show');
             expandedOrderId = orderNumber;
-            
-            // Scroll to the card
-            setTimeout(() => {
-                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }, 100);
         }
     };
 
@@ -1315,7 +1352,7 @@
     };
 
     // Add Scanned Order
-    function addScannedOrder(orderData) {
+    function addScannedOrder(orderData, isPartialReturn = false) {
         // Store order data
         scannedOrders.set(orderData.order_number, orderData);
         
@@ -1325,7 +1362,7 @@
         }
         
         // Create and add order card at the top
-        const cardDiv = createOrderCard(orderData);
+        const cardDiv = createOrderCard(orderData, isPartialReturn);
         scannedOrdersList.prepend(cardDiv);
         
         // Update count
@@ -1336,11 +1373,6 @@
 
         // Update bulk return button
         updateBulkButton();
-
-        // Scroll to the new card at the top
-        setTimeout(() => {
-            cardDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
     }
 
     // Remove Order
@@ -1411,6 +1443,27 @@
             gain.gain.setValueAtTime(0.2, context.currentTime);
             oscillator.start(context.currentTime);
             oscillator.stop(context.currentTime + 0.15);
+        } catch(e) {}
+    }
+
+    function playAlertBeep() {
+        try {
+            const context = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.type = 'square';
+            oscillator.frequency.value = 600;
+            
+            // Quick double beep
+            gain.gain.setValueAtTime(0.3, context.currentTime);
+            gain.gain.setValueAtTime(0, context.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, context.currentTime + 0.15);
+            gain.gain.setValueAtTime(0, context.currentTime + 0.25);
+            
+            oscillator.start(context.currentTime);
+            oscillator.stop(context.currentTime + 0.3);
         } catch(e) {}
     }
 
