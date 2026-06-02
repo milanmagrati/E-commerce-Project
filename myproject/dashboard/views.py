@@ -8316,9 +8316,15 @@ def dispatch_management(request):
                                     if product and oversold and product.backorders_allowed:
                                         backorder_qty = quantity - old_stock
                                         item.backordered_qty = backorder_qty
-                                        item.save(update_fields=['backordered_qty'])
+                                        try:
+                                            item.save(update_fields=['backordered_qty'])
+                                        except ValueError:
+                                            item.save()
                                         product.backordered_qty += backorder_qty
-                                        product.save(update_fields=['backordered_qty'])
+                                        try:
+                                            product.save(update_fields=['backordered_qty'])
+                                        except ValueError:
+                                            product.save()
 
                                     # Record deduction detail
                                     product_name = product.name if product else 'Unknown'
@@ -8384,9 +8390,15 @@ def dispatch_management(request):
                                                     # Just track backorder on the item and bundle product, not component
                                                     backorder_qty = required - old_stock
                                                     item.backordered_qty = backorder_qty
-                                                    item.save(update_fields=['backordered_qty'])
+                                                    try:
+                                                        item.save(update_fields=['backordered_qty'])
+                                                    except ValueError:
+                                                        item.save()
                                                     product.backordered_qty += backorder_qty
-                                                    product.save(update_fields=['backordered_qty'])
+                                                    try:
+                                                        product.save(update_fields=['backordered_qty'])
+                                                    except ValueError:
+                                                        product.save()
 
                                                 # Record deduction detail for each component
                                                 stock_deductions.append({
@@ -8429,9 +8441,15 @@ def dispatch_management(request):
                                             if oversold and product.backorders_allowed:
                                                 backorder_qty = quantity - old_stock
                                                 item.backordered_qty = backorder_qty
-                                                item.save(update_fields=['backordered_qty'])
+                                                try:
+                                                    item.save(update_fields=['backordered_qty'])
+                                                except ValueError:
+                                                    item.save()
                                                 product.backordered_qty += backorder_qty
-                                                product.save(update_fields=['stock', 'stock_status', 'backordered_qty'])
+                                                try:
+                                                    product.save(update_fields=['stock', 'stock_status', 'backordered_qty'])
+                                                except ValueError:
+                                                    product.save(update_fields=['stock', 'stock_status'])
                                             else:
                                                 product.save(update_fields=['stock', 'stock_status'])
 
@@ -8974,7 +8992,10 @@ def backorder_management(request):
                 old_backordered = product.backordered_qty
                 product.reserved_qty = 0
                 product.backordered_qty = 0
-                product.save(update_fields=['reserved_qty', 'backordered_qty'])
+                try:
+                    product.save(update_fields=['reserved_qty', 'backordered_qty'])
+                except ValueError:
+                    product.save(update_fields=['reserved_qty'])
                 messages.success(
                     request,
                     f'✅ Cleared counters for "{product.name}" '
