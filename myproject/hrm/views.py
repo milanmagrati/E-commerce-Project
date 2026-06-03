@@ -2736,15 +2736,26 @@ def _sync_biometric_to_attendance():
     emp_map = {}
     for emp in Employee.objects.select_related('shift', 'attendance_policy').all():
         if emp.employee_code:
-            emp_map[emp.employee_code] = emp
+            code = str(emp.employee_code)
+            emp_map[code] = emp
+            emp_map[code.lstrip('0')] = emp
 
     if not emp_map:
         return
 
     # Aggregate biometric punches by (pin, date)
+    # Subtract 6 hours so punches between midnight and 6 AM group with the previous day
+    from django.db.models import F, ExpressionWrapper, DateTimeField
+    from datetime import timedelta
     punch_groups = (
         BiometricAttendance.objects
-        .annotate(punch_date=TruncDate('timestamp'))
+        .annotate(
+            adjusted_timestamp=ExpressionWrapper(
+                F('timestamp') - timedelta(hours=6),
+                output_field=DateTimeField()
+            )
+        )
+        .annotate(punch_date=TruncDate('adjusted_timestamp'))
         .values('pin', 'punch_date')
         .annotate(
             first_punch=Min('timestamp'),
@@ -2771,7 +2782,8 @@ def _sync_biometric_to_attendance():
             )
             continue
 
-        employee = emp_map.get(pin)
+        pin_str = str(pin)
+        employee = emp_map.get(pin_str) or emp_map.get(pin_str.lstrip('0'))
         if not employee:
             continue
 
@@ -4052,9 +4064,10 @@ def biometric_sync_single(request, pin, date_str):
         return JsonResponse({'success': False, 'error': 'Invalid date format.'})
 
     count = BiometricAttendance.objects.filter(pin=pin, timestamp__date=punch_date).count()
+    _sync_biometric_to_attendance()
     return JsonResponse({
         'success': True,
-        'message': f'Found {count} raw punches for PIN {pin} on {date_str}. Data is up to date.',
+        'message': f'Found {count} raw punches for PIN {pin} on {date_str}. Data synced.',
     })
 
 
