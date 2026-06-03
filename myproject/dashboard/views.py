@@ -4571,7 +4571,16 @@ def possible_redirection_list(request):
         return False
 
     # Base queryset: all active RTV records, ordered like ncm_rtvs page
-    rtvs = RTVOrder.objects.filter(vendor_return=True).select_related('api_config').order_by(
+    # Exclude RTVs whose NCM last_status shows the package has already been
+    # returned to vendor warehouse or delivered — redirection is impossible
+    # for those orders since the physical package is no longer at the branch.
+    _NON_REDIRECTABLE_STATUSES = [
+        'returned', 'delivered', 'sent to vendor',
+    ]
+    rtvs = RTVOrder.objects.filter(vendor_return=True).select_related('api_config')
+    for _nrs in _NON_REDIRECTABLE_STATUSES:
+        rtvs = rtvs.exclude(last_status__iexact=_nrs)
+    rtvs = rtvs.order_by(
         db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
     )
 
@@ -4696,13 +4705,13 @@ def possible_redirection_list(request):
             # Build match sources: prefer RTV product_description, fallback to local order names
             _match_srcs = [_desc] if _desc else _rtv_local_item_names.get(_oid, [])
             if not _match_srcs:
-                # No product info anywhere — branch match alone qualifies this RTV.
-                _has_match_ids.add(_oid)
-            else:
-                for _o in _branch_orders:
-                    if any(_product_matches(src, _o.items.all()) for src in _match_srcs):
-                        _has_match_ids.add(_oid)
-                        break
+                # No product info anywhere — branch-only match is NOT sufficient.
+                # Both branch AND product must match for redirection to make sense.
+                continue
+            for _o in _branch_orders:
+                if any(_product_matches(src, _o.items.all()) for src in _match_srcs):
+                    _has_match_ids.add(_oid)
+                    break
         rtvs = rtvs.filter(order_id__in=_has_match_ids) if _has_match_ids else rtvs.none()
     else:
         # No RTVs have to_branch set — nothing can match.
@@ -4780,6 +4789,7 @@ def possible_redirection_list(request):
             'total_amount': local_order.total_amount if local_order else None,
             'ncm_status': 'redirected' if _is_redirected(rtv.order_id, rtv) else ((local_order.ncm_status or '') if local_order else ''),
             'local_order_id': local_order.id if local_order else None,
+            'last_status': rtv.last_status or '',
         }
         rtv_entries.append(entry)
 
@@ -4796,16 +4806,15 @@ def possible_redirection_list(request):
         _match_sources = [_desc] if _desc else _local_names
 
         if not _match_sources:
-            # No product info anywhere — all confirmed orders at this branch match.
-            # Mark as branch-only so the template can warn the user.
-            _matched = list(_branch_candidates)
-            entry['is_branch_only_match'] = True
+            # No product info anywhere — branch-only match is NOT sufficient.
+            # Both branch AND product must match, so no matching orders.
+            _matched = []
         else:
             _matched = []
             for _o in _branch_candidates:
                 if any(_product_matches(src, _o.items.all()) for src in _match_sources):
                     _matched.append(_o)
-            entry['is_branch_only_match'] = False
+        entry['is_branch_only_match'] = False
         entry['matching_orders'] = _matched
         entry['matching_count'] = len(_matched)
 
@@ -4946,10 +4955,15 @@ def redirect_orders_list(request):
     # Build enriched entries with redirection history
     redirect_entries = []
     for order in orders_page.object_list:
-        # Get redirection activity logs
-        redirection_logs = order.activity_logs.all()[:1]  # Get latest redirection log
+        # Get latest redirection activity log
+        redirection_logs = order.activity_logs.filter(action_type='redirected').order_by('-created_at')[:1]
 
-        old_customer_info = {}
+        old_customer_info = {
+            'name': '—',
+            'phone': '—',
+            'address': '—',
+            'branch': '—',
+        }
         redirect_timestamp = None
         redirect_user = None
         redirect_reason = ''
@@ -4960,13 +4974,13 @@ def redirect_orders_list(request):
             redirect_user = log.user.username if log.user else 'System'
             redirect_reason = log.description or ''
 
-            # Extract old customer info from metadata
+            # Extract old customer info from metadata (supports both new and old metadata keys)
             if log.metadata:
                 old_customer_info = {
-                    'name': log.metadata.get('old_customer_name', '—'),
-                    'phone': log.metadata.get('old_customer_phone', '—'),
-                    'address': log.metadata.get('old_shipping_address', '—'),
-                    'branch': log.metadata.get('old_branch_city', '—'),
+                    'name': log.metadata.get('customer_name') or log.metadata.get('old_customer_name') or '—',
+                    'phone': log.metadata.get('customer_phone') or log.metadata.get('old_customer_phone') or '—',
+                    'address': log.metadata.get('shipping_address') or log.metadata.get('old_shipping_address') or '—',
+                    'branch': log.metadata.get('branch_city') or log.metadata.get('old_branch_city') or '—',
                 }
 
         entry = {
