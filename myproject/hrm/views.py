@@ -2721,16 +2721,19 @@ def document_list(request):
 def _sync_biometric_to_attendance():
     """
     Aggregate raw BiometricAttendance punches into AttendanceRecord entries.
-    For each unique (pin, date) group, finds the matching Employee by employee_code,
-    computes clock_in (earliest punch) and clock_out (latest punch), calculates
-    working hours, and creates or updates the AttendanceRecord.
+    For each unique (pin, date) group (grouped in Nepal Standard Time), finds the
+    matching Employee by employee_code, computes clock_in (earliest punch) and
+    clock_out (latest punch), calculates working hours, and creates or updates
+    the AttendanceRecord.
+
+    Uses pure-Python timezone grouping to avoid MySQL CONVERT_TZ which requires
+    timezone tables that may not be installed on shared hosting servers.
     """
     from .models import BiometricAttendance, AttendanceRecord, Employee, Shift
-    from django.db.models import Min, Max, Count
-    from django.db.models.functions import TruncDate
+    from collections import defaultdict
     import pytz
 
-    nst = pytz.timezone('Asia/Kathmandu')
+    NPT = pytz.timezone('Asia/Kathmandu')
 
     # Build PIN → Employee lookup (prefetch shift and attendance_policy)
     emp_map = {}
@@ -2743,33 +2746,25 @@ def _sync_biometric_to_attendance():
     if not emp_map:
         return
 
-    # Aggregate biometric punches by (pin, date)
-    # Subtract 6 hours so punches between midnight and 6 AM group with the previous day
-    from django.db.models import F, ExpressionWrapper, DateTimeField
-    from datetime import timedelta
-    punch_groups = (
-        BiometricAttendance.objects
-        .annotate(
-            adjusted_timestamp=ExpressionWrapper(
-                F('timestamp') - timedelta(hours=6),
-                output_field=DateTimeField()
-            )
-        )
-        .annotate(punch_date=TruncDate('adjusted_timestamp'))
-        .values('pin', 'punch_date')
-        .annotate(
-            first_punch=Min('timestamp'),
-            last_punch=Max('timestamp'),
-            punch_count=Count('id'),
-        )
-    )
+    # Fetch all raw punches and group them in Python using Nepal timezone.
+    # This bypasses MySQL CONVERT_TZ entirely — no timezone tables needed.
+    raw_punches = BiometricAttendance.objects.values('pin', 'timestamp').order_by('pin', 'timestamp')
 
-    for group in punch_groups:
-        pin = group['pin']
-        punch_date = group['punch_date']
-        first_punch = group['first_punch']
-        last_punch = group['last_punch']
-        punch_count = group['punch_count']
+    # grouped[(pin, nepal_date)] = [utc_timestamp, ...]
+    grouped = defaultdict(list)
+    for rp in raw_punches:
+        ts = rp['timestamp']
+        if ts is None:
+            continue
+        # Convert UTC → Nepal Standard Time (UTC+5:45) to get the correct local date
+        local_ts = ts.astimezone(NPT)
+        punch_date = local_ts.date()
+        grouped[(rp['pin'], punch_date)].append(ts)
+
+    for (pin, punch_date), timestamps in grouped.items():
+        first_punch = min(timestamps)
+        last_punch = max(timestamps)
+        punch_count = len(timestamps)
 
         # Guard: skip records where the device sent a NULL timestamp (ZKTeco sync issue)
         if punch_date is None or first_punch is None:
@@ -2788,8 +2783,8 @@ def _sync_biometric_to_attendance():
             continue
 
         # Convert UTC-stored timestamps to Nepal time
-        clock_in_time = first_punch.astimezone(nst).time() if first_punch else None
-        clock_out_time = last_punch.astimezone(nst).time() if last_punch and punch_count > 1 else None
+        clock_in_time = first_punch.astimezone(NPT).time() if first_punch else None
+        clock_out_time = last_punch.astimezone(NPT).time() if last_punch and punch_count > 1 else None
 
         # Calculate working hours
         working_hours = 0
@@ -2884,8 +2879,9 @@ def attendance_list(request):
     from django.db.models import Q, Count, Sum
     from datetime import date as dt_date
 
-    # Sync biometric punches into attendance records before loading
-    _sync_biometric_to_attendance()
+    # NOTE: Auto-sync on page load is disabled — it caused HTTP request timeouts
+    # on large datasets. Use the "Sync Data" button (biometric_sync_all view) instead.
+    # _sync_biometric_to_attendance()
 
     search = request.GET.get('search', '')
     per_page = request.GET.get('per_page', 9)
@@ -3867,6 +3863,9 @@ def biometric_attendance(request):
     from django.db.models import Min, Max, Count, Subquery, OuterRef
     from django.db.models.functions import TruncDate
     from django.utils import timezone as tz
+    import pytz
+
+    local_tz = pytz.timezone('Asia/Kathmandu')
 
     # Parse query params early
     search_q = request.GET.get('q', '').strip()
@@ -3925,10 +3924,6 @@ def biometric_attendance(request):
         total_entries=Count('id'),
         device_sn=Subquery(first_device_sq),
     ).order_by('-punch_date', 'pin')
-
-    # Convert to Nepal Standard Time (UTC+5:45) for display
-    import pytz
-    local_tz = pytz.timezone('Asia/Kathmandu')
 
     # Build records list
     records = []
