@@ -4033,6 +4033,68 @@ def biometric_sync_all(request):
     })
 
 
+# In-memory sync state (lightweight; resets on server restart which is fine)
+import threading as _threading
+_SYNC_LOCK = _threading.Lock()
+_sync_running = False
+_sync_last_ts = None   # datetime of last completed auto-sync
+
+
+@login_required
+def biometric_sync_bg(request):
+    """
+    Trigger an auto-sync in a background daemon thread.
+    Returns immediately so the page load is never blocked.
+    """
+    global _sync_running, _sync_last_ts
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'})
+
+    with _SYNC_LOCK:
+        if _sync_running:
+            return JsonResponse({'success': True, 'status': 'already_running'})
+        # Set the flag HERE (in the main thread) before spawning, to close the
+        # race window where two requests could both pass the check.
+        _sync_running = True
+
+    def _run():
+        global _sync_running, _sync_last_ts
+        try:
+            _sync_biometric_to_attendance()
+            from datetime import datetime
+            _sync_last_ts = datetime.now()
+        except Exception:
+            pass
+        finally:
+            # Close the DB connection that was opened in this thread.
+            # Django does not do this automatically for non-request threads;
+            # forgetting it causes connection leaks (and SQLite lock errors).
+            try:
+                from django.db import close_old_connections
+                close_old_connections()
+            except Exception:
+                pass
+            with _SYNC_LOCK:
+                _sync_running = False
+
+    t = _threading.Thread(target=_run, daemon=True)
+    t.start()
+    return JsonResponse({'success': True, 'status': 'started'})
+
+
+@login_required
+def biometric_sync_status(request):
+    """Return whether a background sync is currently in progress."""
+    global _sync_running, _sync_last_ts
+    with _SYNC_LOCK:
+        running = _sync_running
+    return JsonResponse({
+        'running': running,
+        'last_sync': _sync_last_ts.isoformat() if _sync_last_ts else None,
+    })
+
+
 @login_required
 def biometric_sync_single(request, pin, date_str):
     """Re-aggregate a single employee's raw logs for a date — no API call needed."""

@@ -21,7 +21,15 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="fw-bold mb-0" style="color:#1a1a2e;">Attendance Records</h4>
-            <small class="text-muted">Track employee attendance and working hours</small>
+            <div class="d-flex align-items-center gap-2 mt-1">
+                <small class="text-muted">Track employee attendance and working hours</small>
+                <span id="autoSyncPill" style="display:none;font-size:.72rem;font-weight:600;color:#6366f1;background:#eef2ff;border-radius:20px;padding:2px 10px;letter-spacing:.02em;">
+                    <i class="fas fa-sync-alt fa-spin me-1" style="font-size:.65rem;"></i>Auto-syncing…
+                </span>
+                <span id="autoSyncDonePill" style="display:none;font-size:.72rem;font-weight:600;color:#059669;background:#ecfdf5;border-radius:20px;padding:2px 10px;letter-spacing:.02em;">
+                    <i class="fas fa-check-circle me-1" style="font-size:.65rem;"></i>Synced
+                </span>
+            </div>
         </div>
         <div class="d-flex gap-2">
             <button class="btn btn-primary px-3" style="border-radius:8px;" onclick="syncAttendance()" id="btnSyncAttendance">
@@ -597,7 +605,7 @@
     var draftFields = ['recordEmployee','recordDate','recordClockIn','recordClockOut','recordShift','recordStatus','recordNotes'];
     var DRAFT_CHECKBOX_FIELDS = ['recordHoliday'];
 
-    /* ── Sync Device Data ── */
+    /* ── Manual Sync (Sync Data button) ── */
     function syncAttendance() {
         var btn = document.getElementById('btnSyncAttendance');
         var icon = document.getElementById('syncIcon');
@@ -630,6 +638,100 @@
             icon.classList.remove('fa-spin');
         });
     }
+
+    /* ── Auto-sync on page load (background, non-blocking) ── */
+    (function autoSyncOnLoad() {
+        // Skip auto-sync if a manual "Sync Data" click just reloaded this page.
+        // NOTE: autoSyncOnLoad runs BEFORE the attToast consumption IIFE below,
+        // so attToast is still in sessionStorage here when a manual sync just happened.
+        var skipAutoSync = sessionStorage.getItem('attToast');
+        if (skipAutoSync) return;
+
+        var pill     = document.getElementById('autoSyncPill');
+        var donePill = document.getElementById('autoSyncDonePill');
+        var syncBtn  = document.getElementById('btnSyncAttendance');
+        var pollInterval = null;
+        var userLeft = false;
+
+        // Cancel ONLY when the user truly navigates away (not on tab switch).
+        // visibilitychange fires on tab switch too, which would wrongly kill the
+        // sync if the user briefly checks another tab and comes back.
+        function cancelPolling() {
+            userLeft = true;
+            if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+            if (syncBtn) syncBtn.disabled = false;
+            if (pill) pill.style.display = 'none';
+        }
+        window.addEventListener('beforeunload', cancelPolling);
+
+        function showSyncing() {
+            pill.style.display = 'inline-flex';
+            donePill.style.display = 'none';
+            if (syncBtn) syncBtn.disabled = true;
+        }
+        function showDone() {
+            pill.style.display = 'none';
+            donePill.style.display = 'inline-flex';
+            if (syncBtn) syncBtn.disabled = false;
+            setTimeout(function() { donePill.style.display = 'none'; }, 3000);
+        }
+
+        function pollSyncStatus(reloadOnDone) {
+            if (userLeft) return;
+            fetch("{% url 'hrm:biometric_sync_status' %}")
+                .then(function(r){ return r.json(); })
+                .then(function(d){
+                    if (userLeft) return;
+                    if (!d.running) {
+                        clearInterval(pollInterval); pollInterval = null;
+                        if (reloadOnDone) {
+                            sessionStorage.setItem('attAutoSynced', '1');
+                            window.location.reload();
+                        } else {
+                            showDone();
+                        }
+                    }
+                })
+                .catch(function(){
+                    clearInterval(pollInterval); pollInterval = null;
+                    if (syncBtn) syncBtn.disabled = false;
+                });
+        }
+
+        // Page came back from an auto-sync reload — show the "Synced" tick briefly
+        var justSynced = sessionStorage.getItem('attAutoSynced');
+        if (justSynced) {
+            sessionStorage.removeItem('attAutoSynced');
+            showDone();
+            if (syncBtn) syncBtn.disabled = false;
+            return;
+        }
+
+        // Fire the background sync
+        showSyncing();
+        fetch("{% url 'hrm:biometric_sync_bg' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/json' }
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (userLeft) return;
+            if (d.status === 'already_running') {
+                // Another tab/request already started it; just poll until it finishes
+                pollInterval = setInterval(function(){ pollSyncStatus(false); }, 2000);
+            } else if (d.status === 'started') {
+                // We started it; poll and reload page when done
+                pollInterval = setInterval(function(){ pollSyncStatus(true); }, 2000);
+            } else {
+                if (syncBtn) syncBtn.disabled = false;
+                pill.style.display = 'none';
+            }
+        })
+        .catch(function(){
+            pill.style.display = 'none';
+            if (syncBtn) syncBtn.disabled = false;
+        });
+    })();
 
     /* ── Modal singleton ── */
     function getModal(elId) {
