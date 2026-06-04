@@ -642,20 +642,58 @@
     /* ── Auto-sync on page load (background, non-blocking) ── */
     (function autoSyncOnLoad() {
         // Skip auto-sync if a manual "Sync Data" click just reloaded this page.
-        // NOTE: autoSyncOnLoad runs BEFORE the attToast consumption IIFE below,
-        // so attToast is still in sessionStorage here when a manual sync just happened.
         var skipAutoSync = sessionStorage.getItem('attToast');
         if (skipAutoSync) return;
 
-        var pill     = document.getElementById('autoSyncPill');
-        var donePill = document.getElementById('autoSyncDonePill');
+        var justSynced = sessionStorage.getItem('attAutoSynced');
         var syncBtn  = document.getElementById('btnSyncAttendance');
+        var donePill = document.getElementById('autoSyncDonePill');
+        var pill     = document.getElementById('autoSyncPill');
+
+        function showDone() {
+            if (pill) pill.style.display = 'none';
+            if (donePill) donePill.style.display = 'inline-flex';
+            if (syncBtn) syncBtn.disabled = false;
+            setTimeout(function() { if (donePill) donePill.style.display = 'none'; }, 3000);
+        }
+
+        if (justSynced) {
+            sessionStorage.removeItem('attAutoSynced');
+            sessionStorage.setItem('lastAutoSync', Date.now().toString());
+            showDone();
+            return;
+        }
+
+        // Determine if we should sync
+        var isReload = false;
+        if (window.performance && window.performance.getEntriesByType) {
+            var navEntries = window.performance.getEntriesByType('navigation');
+            if (navEntries.length > 0 && navEntries[0].type === 'reload') {
+                isReload = true;
+            }
+        }
+        
+        var cameFromSamePage = document.referrer && document.referrer.indexOf(window.location.pathname) !== -1;
+        var lastSync = sessionStorage.getItem('lastAutoSync');
+        var shouldSync = false;
+        
+        if (isReload) {
+            shouldSync = true;
+        } else if (!cameFromSamePage) {
+            shouldSync = true;
+        } else if (!lastSync) {
+            shouldSync = true;
+        } else if (Date.now() - parseInt(lastSync) > 5 * 60 * 1000) { // 5 minutes
+            shouldSync = true;
+        }
+
+        if (!shouldSync) {
+            return;
+        }
+
         var pollInterval = null;
         var userLeft = false;
 
-        // Cancel ONLY when the user truly navigates away (not on tab switch).
-        // visibilitychange fires on tab switch too, which would wrongly kill the
-        // sync if the user briefly checks another tab and comes back.
         function cancelPolling() {
             userLeft = true;
             if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
@@ -665,15 +703,9 @@
         window.addEventListener('beforeunload', cancelPolling);
 
         function showSyncing() {
-            pill.style.display = 'inline-flex';
-            donePill.style.display = 'none';
+            if (pill) pill.style.display = 'inline-flex';
+            if (donePill) donePill.style.display = 'none';
             if (syncBtn) syncBtn.disabled = true;
-        }
-        function showDone() {
-            pill.style.display = 'none';
-            donePill.style.display = 'inline-flex';
-            if (syncBtn) syncBtn.disabled = false;
-            setTimeout(function() { donePill.style.display = 'none'; }, 3000);
         }
 
         function pollSyncStatus(reloadOnDone) {
@@ -688,6 +720,7 @@
                             sessionStorage.setItem('attAutoSynced', '1');
                             window.location.reload();
                         } else {
+                            sessionStorage.setItem('lastAutoSync', Date.now().toString());
                             showDone();
                         }
                     }
@@ -696,15 +729,6 @@
                     clearInterval(pollInterval); pollInterval = null;
                     if (syncBtn) syncBtn.disabled = false;
                 });
-        }
-
-        // Page came back from an auto-sync reload — show the "Synced" tick briefly
-        var justSynced = sessionStorage.getItem('attAutoSynced');
-        if (justSynced) {
-            sessionStorage.removeItem('attAutoSynced');
-            showDone();
-            if (syncBtn) syncBtn.disabled = false;
-            return;
         }
 
         // Fire the background sync
@@ -717,18 +741,16 @@
         .then(function(d){
             if (userLeft) return;
             if (d.status === 'already_running') {
-                // Another tab/request already started it; just poll until it finishes
                 pollInterval = setInterval(function(){ pollSyncStatus(false); }, 2000);
             } else if (d.status === 'started') {
-                // We started it; poll and reload page when done
                 pollInterval = setInterval(function(){ pollSyncStatus(true); }, 2000);
             } else {
                 if (syncBtn) syncBtn.disabled = false;
-                pill.style.display = 'none';
+                if (pill) pill.style.display = 'none';
             }
         })
         .catch(function(){
-            pill.style.display = 'none';
+            if (pill) pill.style.display = 'none';
             if (syncBtn) syncBtn.disabled = false;
         });
     })();
