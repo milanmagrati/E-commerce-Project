@@ -2766,17 +2766,6 @@ def _sync_biometric_to_attendance():
         last_punch = max(timestamps)
         punch_count = len(timestamps)
 
-        # Guard: skip records where the device sent a NULL timestamp (ZKTeco sync issue)
-        if punch_date is None or first_punch is None:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                "[biometric_sync] Skipping PIN=%s — punch_date=%r or first_punch=%r is None. "
-                "Check for NULL timestamps in BiometricAttendance table.",
-                pin, punch_date, first_punch,
-            )
-            continue
-
         pin_str = str(pin)
         employee = emp_map.get(pin_str) or emp_map.get(pin_str.lstrip('0'))
         if not employee:
@@ -3718,10 +3707,9 @@ def iclock_cdata(request):
     if request.method == 'GET':
         # ZKTeco ADMS handshake response.
         # Date= forces the device to sync its clock to Nepal Standard Time on every handshake.
-        import pytz as _pytz
-        _nst = _pytz.timezone('Asia/Kathmandu')
-        # Line 3475 — +45 min added (device runs UTC+5, Nepal is UTC+5:45 = 45 min ahead)
-        _now_nst = (timezone.now() + timedelta(minutes=45)).astimezone(_nst)
+        import pytz
+        _nst = pytz.timezone('Asia/Kathmandu')
+        _now_nst = timezone.now().astimezone(_nst)
         _date_str = _now_nst.strftime('%Y-%m-%d %H:%M:%S')
         options = (
             "GET OPTION FROM: {sn}\r\n"
@@ -3741,6 +3729,8 @@ def iclock_cdata(request):
         return HttpResponse(options, content_type='text/plain')
 
     if request.method == 'POST':
+        import pytz
+        _nst = pytz.timezone('Asia/Kathmandu')
         table = request.GET.get('table', '').strip()
         try:
             body = request.body.decode('utf-8', errors='ignore').strip()
@@ -3766,8 +3756,6 @@ def iclock_cdata(request):
                     # Device sends local Nepal time (NST, UTC+5:45). Explicitly wrap as NST.
                     naive_dt = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S')
                     from django.utils.timezone import is_aware
-                    import pytz
-                    _nst = pytz.timezone('Asia/Kathmandu')
                     punch_dt = naive_dt if is_aware(naive_dt) else _nst.localize(naive_dt)
 
                     BiometricAttendance.objects.get_or_create(
@@ -3981,6 +3969,9 @@ def biometric_attendance_view(request, pin, date_str):
     """Return all raw punches for a given employee PIN on a specific date."""
     from .models import BiometricAttendance, Employee
     from django.utils import timezone as tz
+    import pytz
+
+    local_tz = pytz.timezone('Asia/Kathmandu')
 
     try:
         punch_date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -3994,9 +3985,6 @@ def biometric_attendance_view(request, pin, date_str):
 
     emp = Employee.objects.filter(employee_code=pin).first()
     emp_name = emp.full_name if emp else f'Employee {pin}'
-
-    import pytz
-    local_tz = pytz.timezone('Asia/Kathmandu')
 
     punch_list = []
     for p in punches:
