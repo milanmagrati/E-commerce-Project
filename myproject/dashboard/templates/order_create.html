@@ -2505,6 +2505,9 @@
                 Create Order - POS
             </h4>
             <div class="d-flex gap-2">
+                <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#ourProductsModal">
+                    <i class="fas fa-box"></i> Our products
+                </button>
                 <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#searchOrdersModal">
                     <i class="fas fa-search"></i> Search Orders
                 </button>
@@ -3128,6 +3131,55 @@
     </div>
 </div>
 
+<!-- ✨ OUR PRODUCTS MODAL -->
+<div class="modal fade" id="ourProductsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+                <h5 class="modal-title" style="color: white; font-weight: 700;">
+                    <i class="fas fa-box"></i> Our Products
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter: invert(1);"></button>
+            </div>
+            <div class="modal-body" style="background: #f8f9fa;">
+                <!-- Search Input -->
+                <div class="mb-3">
+                    <input type="text" id="ourProductsSearchInput" class="form-control" style="border: 2px solid #10b981; border-radius: 8px; padding: 12px 15px; font-size: 0.95rem; transition: all 0.3s ease;" 
+                           placeholder="Search products by name or SKU..." autocomplete="off">
+                </div>
+
+                <!-- Stats -->
+                <div class="d-flex justify-content-between mb-3 px-2">
+                    <div style="font-weight: 600; color: #4b5563;">
+                        <i class="fas fa-list"></i> <span id="ourProductsResultCount">0</span> products found
+                    </div>
+                </div>
+
+                <!-- Products Table -->
+                <div class="table-responsive" style="border: 1px solid #e2e8f0; border-radius: 8px; background: white;">
+                    <table class="table table-hover mb-0" style="width: 100%;">
+                        <thead style="background: #f1f5f9; position: sticky; top: 0; z-index: 10;">
+                            <tr>
+                                <th style="width: 25%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569;">Product Name</th>
+                                <th style="width: 60%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569;">Product Description</th>
+                                <th style="width: 15%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569; text-align: right;">Price</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ourProductsListContainer">
+                            <tr>
+                                <td colspan="3" class="text-center py-4" style="color: #64748b;">
+                                    <i class="fas fa-spinner fa-spin mb-2" style="font-size: 1.5rem;"></i>
+                                    <p class="mb-0">Loading products...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ✨ SEARCH ORDERS MODAL -->
 <div class="modal fade" id="searchOrdersModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -3322,6 +3374,137 @@
             // Fallback if audio context not supported
             console.log('Audio context not available');
         }
+    }
+
+    // ✨ OUR PRODUCTS FUNCTIONALITY
+    function initializeOurProducts() {
+        const searchInput = document.getElementById('ourProductsSearchInput');
+        const listContainer = document.getElementById('ourProductsListContainer');
+        const resultCount = document.getElementById('ourProductsResultCount');
+        let searchTimeout = null;
+        let isLoading = false;
+
+        function fetchProducts() {
+            if (isLoading) return;
+            isLoading = true;
+
+            const query = searchInput.value.trim();
+            const params = new URLSearchParams();
+            if (query) params.set('q', query);
+
+            listContainer.innerHTML = '<tr><td colspan="3" class="text-center py-4" style="color: #64748b;"><i class="fas fa-spinner fa-spin mb-2" style="font-size: 1.5rem;"></i><p class="mb-0">Searching products...</p></td></tr>';
+
+            fetch('{% url "api_search_products" %}?' + params.toString(), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(r => r.json())
+            .then(data => {
+                isLoading = false;
+                if (!data.success) {
+                    listContainer.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-danger"><i class="fas fa-exclamation-circle mb-2" style="font-size: 1.5rem;"></i><p class="mb-0">Error loading products</p></td></tr>';
+                    return;
+                }
+
+                resultCount.textContent = data.count;
+
+                if (data.products.length === 0) {
+                    listContainer.innerHTML = '<tr><td colspan="3" class="text-center py-4" style="color: #64748b;"><i class="fas fa-box-open mb-2" style="font-size: 1.5rem; opacity: 0.5;"></i><p class="mb-0">No products found</p></td></tr>';
+                    return;
+                }
+
+                function highlightTerm(text, term) {
+                    if (!term || !text) return text || '';
+                    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp('(' + escaped + ')', 'gi');
+                    return String(text).replace(regex, '<mark style="background:#fef08a;color:#1a1a2e;padding:0 2px;border-radius:2px;font-weight:700;">$1</mark>');
+                }
+
+                listContainer.innerHTML = '';
+                const searchTerm = searchInput.value.trim();
+
+                data.products.forEach(p => {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = p.description || '';
+                    const textDesc = tempDiv.textContent || tempDiv.innerText || '';
+                    const safeDesc = textDesc.replace(/"/g, '&quot;');
+
+                    const highlightedName = highlightTerm(p.name, searchTerm);
+                    const highlightedSku = highlightTerm(p.sku, searchTerm);
+                    const highlightedDesc = highlightTerm(textDesc, searchTerm);
+
+                    const tr = document.createElement('tr');
+                    tr.style.cursor = 'pointer';
+                    tr.innerHTML = `
+                        <td style="vertical-align: middle;">
+                            <div class="d-flex align-items-center gap-2">
+                                ${p.image ? `<img src="${p.image}" alt="${p.name}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid #e2e8f0;">` : `<div style="width: 40px; height: 40px; background: #e2e8f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #94a3b8;"><i class="fas fa-image"></i></div>`}
+                                <div>
+                                    <div style="font-weight: 600; color: #1e293b;">${highlightedName}</div>
+                                    ${p.sku ? `<div style="font-size: 0.75rem; color: #64748b;"><i class="fas fa-barcode"></i> ${highlightedSku}</div>` : ''}
+                                </div>
+                            </div>
+                        </td>
+                        <td style="vertical-align: middle;">
+                            <div class="product-desc-wrapper" style="position: relative;">
+                                <div class="product-desc-text" style="font-size: 0.85rem; color: #475569; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5;" title="${safeDesc || 'No description available.'}">${highlightedDesc || '<em style="color: #cbd5e1;">No description available.</em>'}</div>
+                                ${textDesc.length > 120 ? `<button type="button" class="btn btn-link p-0 text-decoration-none read-more-btn" style="font-size: 0.75rem; font-weight: 600; color: #10b981; margin-top: 4px;">Read more <i class="fas fa-chevron-down ms-1" style="font-size: 0.65rem;"></i></button>` : ''}
+                            </div>
+                        </td>
+                        <td style="vertical-align: middle; text-align: right; font-weight: 600; color: #10b981; font-size: 0.95rem;">
+                            रू ${parseFloat(p.price).toFixed(2)}
+                        </td>
+                    `;
+                    tr.addEventListener('click', () => {
+                        addToCart(p.id, p.name, p.price, null, p.sku, 1, false);
+                        showToastNotification('✅ ' + p.name + ' added to cart!', 'success');
+                        if (typeof ourProductsModal !== 'undefined') {
+                            ourProductsModal.hide();
+                        }
+                    });
+
+                    const readMoreBtn = tr.querySelector('.read-more-btn');
+                    if (readMoreBtn) {
+                        readMoreBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const descText = tr.querySelector('.product-desc-text');
+                            if (descText.style.webkitLineClamp === '3') {
+                                descText.style.webkitLineClamp = 'unset';
+                                readMoreBtn.innerHTML = 'Show less <i class="fas fa-chevron-up ms-1" style="font-size: 0.65rem;"></i>';
+                            } else {
+                                descText.style.webkitLineClamp = '3';
+                                readMoreBtn.innerHTML = 'Read more <i class="fas fa-chevron-down ms-1" style="font-size: 0.65rem;"></i>';
+                            }
+                        });
+                    }
+
+                    tr.addEventListener('mouseenter', () => tr.style.background = '#f1f5f9');
+                    tr.addEventListener('mouseleave', () => tr.style.background = 'transparent');
+                    listContainer.appendChild(tr);
+                });
+            })
+            .catch(err => {
+                isLoading = false;
+                console.error('Products error:', err);
+                listContainer.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-danger"><i class="fas fa-exclamation-triangle mb-2" style="font-size: 1.5rem;"></i><p class="mb-0">Failed to fetch products</p></td></tr>';
+            });
+        }
+
+        document.getElementById('ourProductsModal').addEventListener('show.bs.modal', function () {
+            if (searchInput.value === '') {
+                fetchProducts();
+            }
+            setTimeout(() => searchInput.focus(), 500);
+        });
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(fetchProducts, 400);
+        });
     }
 
     // ✨ SEARCH ORDERS FUNCTIONALITY
@@ -5355,9 +5538,13 @@
             if (input) { input.focus(); input.select(); }
         });
         searchOrdersModal = new bootstrap.Modal(document.getElementById('searchOrdersModal'));
+        ourProductsModal = new bootstrap.Modal(document.getElementById('ourProductsModal'));
 
         // ✨ Initialize Search Orders
         initializeSearchOrders();
+
+        // ✨ Initialize Our Products
+        initializeOurProducts();
 
         // ✨ Initialize NCM Branches Search
         initializeNcmBranchesSearch();

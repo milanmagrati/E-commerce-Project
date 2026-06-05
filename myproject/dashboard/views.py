@@ -6567,6 +6567,7 @@ def api_search_products(request):
                 "product_type": p.product_type,
                 "image": p.image.url if p.image else None,
                 "sku": sku,
+                "description": p.description if hasattr(p, 'description') and p.description else "",
             })
 
         return JsonResponse({
