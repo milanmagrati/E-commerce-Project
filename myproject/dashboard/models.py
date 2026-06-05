@@ -1803,3 +1803,17 @@ class MaintenanceLog(models.Model):
 
     def __str__(self):
         return f"Maintenance {self.action} by {self.performed_by} at {self.timestamp}"
+
+class GlobalNotice(models.Model):
+    content = models.TextField(help_text="Rich text content for the notice")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    display_from = models.DateTimeField(null=True, blank=True, help_text="When to start showing the notice")
+    display_until = models.DateTimeField(null=True, blank=True, help_text="When to stop showing the notice")
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Notice {self.id} created at {self.created_at}"

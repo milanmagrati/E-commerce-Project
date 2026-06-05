@@ -327,4 +327,11 @@ urlpatterns = [
     # ==================== MAINTENANCE MODE ====================
     path('settings/maintenance/toggle/', views.maintenance_toggle, name='maintenance_toggle'),
     path('settings/maintenance/logs/', views.maintenance_logs, name='maintenance_logs'),
+
+    # ==================== GLOBAL NOTICE ====================
+    # Global Notice API
+    path('api/active-notice/', views.get_active_notice, name='active_notice'),
+    path('api/create-notice/', views.create_notice, name='create_notice'),
+    path('api/notice-history/', views.get_notice_history, name='notice_history'),
+    path('api/notice/<int:notice_id>/stop/', views.stop_notice, name='stop_notice'),
 ]

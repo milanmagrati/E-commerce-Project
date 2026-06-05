@@ -2378,6 +2378,25 @@
         });
     </script>
 
+    <!-- Global Notice Modal (For displaying notices to all users) -->
+    <div class="modal fade" id="globalNoticeDisplayModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+                <div class="modal-header border-0 py-3" style="background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); color: #fff;">
+                    <h5 class="modal-title fw-bold"><i class="fas fa-bullhorn me-2"></i> Important Notice</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" id="closeGlobalNoticeBtn"></button>
+                </div>
+                <div class="modal-body p-4" style="font-size: 1.1rem; line-height: 1.6;">
+                    <div id="globalNoticeContent"></div>
+                </div>
+                <div class="modal-footer border-0 bg-light d-flex justify-content-between align-items-center">
+                    <small class="text-muted" id="globalNoticeSender"></small>
+                    <button type="button" class="btn btn-secondary rounded-pill px-4 fw-bold" data-bs-dismiss="modal" id="closeGlobalNoticeBtnFooter">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ✅ Alertify.js for Real-time Notifications -->
     <script src="https://cdn.jsdelivr.net/npm/alertifyjs@1.13.1/build/alertify.min.js"></script>
     <script>
@@ -2388,9 +2407,10 @@
 
     {% block extra_js %}{% endblock %}
 
-    <!-- Chat Instant Notification via SSE -->
+    <!-- Chat Instant Notification & Global Notice Poller via JS -->
     {% if user.is_authenticated %}
     <script>
+        // --- CHAT UNREAD POLLER ---
         var _prevUnreadCount = {{ unread_chat_count|default:"0" }};
 
         function playChatNotifSound() {
@@ -2430,7 +2450,6 @@
             _prevUnreadCount = newCount;
         }
 
-        // Poll for unread count updates every 3 seconds
         function pollUnreadCount() {
             fetch('{% url "chat:api_unread_count" %}')
                 .then(function (r) { return r.json(); })
@@ -2440,6 +2459,61 @@
                 .catch(function () { });
         }
         setInterval(pollUnreadCount, 3000);
+
+
+        // --- GLOBAL NOTICE POLLER ---
+        // Notice will show exactly once per page load/refresh
+        var _lastShownNoticeId = null;
+        var globalNoticeModalInstance = null;
+
+        function checkGlobalNotice() {
+            fetch('/api/active-notice/?_t=' + new Date().getTime(), { cache: 'no-store' })
+            .then(res => {
+                if (!res.ok) throw new Error('Network error');
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    return res.json();
+                } else {
+                    throw new Error('Not JSON (probably logged out)');
+                }
+            })
+            .then(data => {
+                if (data.status === 'success' && data.notice) {
+                    const notice = data.notice;
+                    // If notice changed or we haven't seen it yet ON THIS PAGE
+                    if (notice.id.toString() !== _lastShownNoticeId) {
+                        document.getElementById('globalNoticeContent').innerHTML = notice.content;
+                        document.getElementById('globalNoticeSender').innerHTML = 'Sent by: <strong>' + notice.created_by + '</strong>';
+                        
+                        if (!globalNoticeModalInstance) {
+                            globalNoticeModalInstance = new bootstrap.Modal(document.getElementById('globalNoticeDisplayModal'), {
+                                backdrop: 'static',
+                                keyboard: false
+                            });
+                        }
+                        
+                        // Set tracking ID so we don't show it repeatedly on this view
+                        _lastShownNoticeId = notice.id.toString();
+                        
+                        // Play sound if available
+                        try {
+                            if (typeof playChatNotifSound === 'function') {
+                                playChatNotifSound();
+                            }
+                        } catch(e) {}
+                        
+                        globalNoticeModalInstance.show();
+                    }
+                }
+            })
+            .catch(err => {
+                console.warn('Notice check failed', err);
+            });
+        }
+        
+        // Check on load, then every 10 seconds
+        setTimeout(checkGlobalNotice, 1500);
+        setInterval(checkGlobalNotice, 10000);
     </script>
     {% endif %}
 </body>

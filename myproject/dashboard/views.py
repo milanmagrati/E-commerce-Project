@@ -20836,3 +20836,138 @@ def purchase_edit(request, purchase_id):
     }
     return render(request, 'purchase/purchase_form.html', context)
 
+
+# ==================== GLOBAL NOTICE API ====================
+
+@login_required
+def get_active_notice(request):
+    from .models import GlobalNotice
+    from django.utils import timezone
+    
+    # Do not show notice to admin/superusers as requested
+    if request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator':
+        return JsonResponse({'status': 'no_notice'})
+        
+    now = timezone.now()
+    # Get the latest active notice that has started and hasn't expired
+    # If display_from is null, we assume it starts immediately
+    from django.db.models import Q
+    notice = GlobalNotice.objects.filter(
+        is_active=True,
+        display_until__gt=now
+    ).filter(
+        Q(display_from__isnull=True) | Q(display_from__lte=now)
+    ).order_by('-created_at').first()
+    
+    if notice:
+        return JsonResponse({
+            'status': 'success',
+            'notice': {
+                'id': notice.id,
+                'content': notice.content,
+                'created_by': notice.created_by.get_full_name() or notice.created_by.username if notice.created_by else 'Admin'
+            }
+        })
+    return JsonResponse({'status': 'no_notice'})
+
+
+@login_required
+def create_notice(request):
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
+        
+    if request.method == 'POST':
+        import json
+        from .models import GlobalNotice
+        from django.utils import timezone
+        import dateutil.parser
+        
+        try:
+            data = json.loads(request.body)
+            content = data.get('content')
+            display_from_str = data.get('display_from')
+            display_until_str = data.get('display_until')
+            
+            if not content:
+                return JsonResponse({'status': 'error', 'message': 'Content is required'})
+            if not display_until_str:
+                return JsonResponse({'status': 'error', 'message': 'End time is required'})
+                
+            display_until = dateutil.parser.isoparse(display_until_str)
+            display_from = dateutil.parser.isoparse(display_from_str) if display_from_str else timezone.now()
+            
+            # Deactivate all previous notices
+            GlobalNotice.objects.filter(is_active=True).update(is_active=False)
+            
+            notice = GlobalNotice.objects.create(
+                content=content,
+                created_by=request.user,
+                display_from=display_from,
+                display_until=display_until,
+                is_active=True
+            )
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Notice created successfully',
+                'notice_id': notice.id
+            })
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+            
+    return JsonResponse({'status': 'error', 'message': 'Invalid method'})
+
+
+@login_required
+def get_notice_history(request):
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
+        
+    from .models import GlobalNotice
+    from django.utils import timezone
+    
+    now = timezone.now()
+    notices = GlobalNotice.objects.all().order_by('-created_at')[:20]
+    
+    data = []
+    for n in notices:
+        if not n.is_active:
+            status = 'Stopped'
+        elif n.display_until and n.display_until < now:
+            status = 'Expired'
+        elif n.display_from and n.display_from > now:
+            status = 'Scheduled'
+        else:
+            status = 'Active'
+            
+        from django.utils.html import strip_tags
+        snippet = strip_tags(n.content)[:50] + ('...' if len(strip_tags(n.content)) > 50 else '')
+        
+        data.append({
+            'id': n.id,
+            'snippet': snippet,
+            'status': status,
+            'display_from': timezone.localtime(n.display_from).strftime('%b %d, %Y %I:%M %p') if n.display_from else 'Immediate',
+            'display_until': timezone.localtime(n.display_until).strftime('%b %d, %Y %I:%M %p') if n.display_until else 'Never',
+            'created_by': n.created_by.get_full_name() or n.created_by.username if n.created_by else 'Admin'
+        })
+        
+    return JsonResponse({'status': 'success', 'notices': data})
+
+
+@login_required
+def stop_notice(request, notice_id):
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
+        
+    if request.method == 'POST':
+        from .models import GlobalNotice
+        try:
+            notice = GlobalNotice.objects.get(id=notice_id)
+            notice.is_active = False
+            notice.save()
+            return JsonResponse({'status': 'success'})
+        except GlobalNotice.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Notice not found'})
+            
+    return JsonResponse({'status': 'error', 'message': 'Invalid method'}, status=405)

@@ -497,6 +497,11 @@
             <p>Internal team messaging &mdash; stay connected with your team</p>
         </div>
         <div class="d-flex gap-2 flex-wrap" style="position:relative;z-index:1;">
+            {% if request.user.is_superuser or request.user.role == 'administrator' %}
+            <button class="chat-header-btn" data-bs-toggle="modal" data-bs-target="#throwNoticeModal" style="background: linear-gradient(135deg, #ef4444, #b91c1c); color: white;">
+                <i class="fas fa-bullhorn me-2"></i> Throw Notice
+            </button>
+            {% endif %}
             {% if request.user.is_superuser or request.user.role == 'administrator' or request.user.can_access_todo %}
             <a href="{% url 'todo:board' %}" class="chat-header-btn" style="text-decoration:none;">
                 <i class="fas fa-tasks me-2"></i> Todo
@@ -729,6 +734,300 @@
         </div>
     </div>
 </div>
+{% endif %}
+
+<!-- Throw Notice Modal (Admin only) -->
+{% if request.user.is_superuser or request.user.role == 'administrator' %}
+<div class="modal fade" id="throwNoticeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+            <div class="modal-header border-0 py-3" style="background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); color: #fff;">
+                <h5 class="modal-title fw-bold"><i class="fas fa-bullhorn me-2"></i> Global Notice Management</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            
+            <div class="modal-header border-bottom p-0" style="background: #f8fafc;">
+                <ul class="nav nav-tabs w-100 border-0" id="noticeTabs" role="tablist">
+                    <li class="nav-item flex-fill text-center" role="presentation">
+                        <button class="nav-link active w-100 py-3 fw-bold text-dark border-0 border-bottom border-3 border-danger" id="create-notice-tab" data-bs-toggle="tab" data-bs-target="#create-notice" type="button" role="tab" style="background: transparent;">
+                            <i class="fas fa-edit me-2"></i> Create Notice
+                        </button>
+                    </li>
+                    <li class="nav-item flex-fill text-center" role="presentation">
+                        <button class="nav-link w-100 py-3 fw-bold text-muted border-0" id="notice-history-tab" data-bs-toggle="tab" data-bs-target="#notice-history" type="button" role="tab" style="background: transparent;" onclick="loadNoticeHistory()">
+                            <i class="fas fa-history me-2"></i> Notice History
+                        </button>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="modal-body p-4 bg-light">
+                <div class="tab-content" id="noticeTabsContent">
+                    <!-- CREATE NOTICE TAB -->
+                    <div class="tab-pane fade show active" id="create-notice" role="tabpanel">
+                        <form id="throwNoticeForm">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold text-muted">Notice Content</label>
+                                <div id="noticeEditor" style="height:250px; background: white;"></div>
+                            </div>
+                            <div class="row mb-4">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold text-muted">Start Showing From</label>
+                                    <input type="datetime-local" class="form-control" id="noticeDisplayFrom" style="border-radius:10px; border:2px solid #e2e8f0; padding:10px;">
+                                    <small class="text-muted">Leave empty to show immediately</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold text-muted">Stop Showing At</label>
+                                    <input type="datetime-local" class="form-control" id="noticeDisplayUntil" style="border-radius:10px; border:2px solid #e2e8f0; padding:10px;" required>
+                                </div>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn text-white" style="background: linear-gradient(135deg, #ef4444, #b91c1c); border-radius:12px; padding:12px; font-weight:600; font-size:1.1rem;" id="btnSubmitNotice">
+                                    <i class="fas fa-paper-plane me-2"></i> Throw Notice Now
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- HISTORY TAB -->
+                    <div class="tab-pane fade" id="notice-history" role="tabpanel">
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-hover align-middle bg-white rounded shadow-sm">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th style="width: 35%">Notice Snippet</th>
+                                        <th style="width: 20%">Start Time</th>
+                                        <th style="width: 20%">End Time</th>
+                                        <th style="width: 15%">Status</th>
+                                        <th style="width: 10%">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="noticeHistoryTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-4 text-muted">
+                                            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>Loading history...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    #noticeTabs .nav-link { transition: all 0.3s; }
+    #noticeTabs .nav-link.active { color: #b91c1c !important; }
+    #noticeTabs .nav-link:not(.active):hover { color: #ef4444 !important; border-bottom: 3px solid #fca5a5 !important; }
+</style>
+
+<!-- Quill Editor CSS & JS -->
+<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var toolbarOptions = [
+            ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
+            ['blockquote', 'code-block'],
+            [{ 'header': 1 }, { 'header': 2 }],               // custom button values
+            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+            [{ 'script': 'sub'}, { 'script': 'super' }],      // superscript/subscript
+            [{ 'indent': '-1'}, { 'indent': '+1' }],          // outdent/indent
+            [{ 'direction': 'rtl' }],                         // text direction
+            [{ 'size': ['small', false, 'large', 'huge'] }],  // custom dropdown
+            [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+            [{ 'color': [] }, { 'background': [] }],          // dropdown with defaults from theme
+            [{ 'align': [] }],
+            ['clean'],                                         // remove formatting button
+            ['link', 'image']                                  // link and image
+        ];
+
+        var quill = new Quill('#noticeEditor', {
+            modules: {
+                toolbar: toolbarOptions
+            },
+            theme: 'snow',
+            placeholder: 'Write your global notice here...'
+        });
+
+        const throwNoticeForm = document.getElementById('throwNoticeForm');
+        if (throwNoticeForm) {
+            throwNoticeForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const content = quill.root.innerHTML.trim();
+                const displayFrom = document.getElementById('noticeDisplayFrom').value;
+                const displayUntil = document.getElementById('noticeDisplayUntil').value;
+
+                if (content === '<p><br></p>' || content === '') {
+                    alertify.error('Notice content cannot be empty');
+                    return;
+                }
+                
+                if (!displayUntil) {
+                    alertify.error('Stop Showing At is required');
+                    return;
+                }
+
+                const btn = document.getElementById('btnSubmitNotice');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Sending...';
+
+                function getCookie(name) {
+                    var cookieValue = null;
+                    if (document.cookie && document.cookie !== '') {
+                        var cookies = document.cookie.split(';');
+                        for (var i = 0; i < cookies.length; i++) {
+                            var cookie = cookies[i].trim();
+                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                    }
+                    return cookieValue;
+                }
+
+                fetch('/api/create-notice/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        content: content,
+                        display_from: displayFrom,
+                        display_until: displayUntil
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alertify.success('Notice thrown globally successfully!');
+                        var modal = bootstrap.Modal.getInstance(document.getElementById('throwNoticeModal'));
+                        if (modal) modal.hide();
+                        quill.setContents([]);
+                    } else {
+                        alertify.error(data.message || 'Error creating notice');
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    alertify.error('An error occurred');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
+                });
+            });
+        }
+        
+        // Tab switching style
+        const tabLinks = document.querySelectorAll('#noticeTabs .nav-link');
+        tabLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                tabLinks.forEach(l => {
+                    l.classList.remove('text-dark', 'border-bottom', 'border-3', 'border-danger');
+                    l.classList.add('text-muted');
+                });
+                this.classList.remove('text-muted');
+                this.classList.add('text-dark', 'border-bottom', 'border-3', 'border-danger');
+            });
+        });
+    });
+
+    function getCookie(name) {
+        var cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            var cookies = document.cookie.split(';');
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    function loadNoticeHistory() {
+        const tbody = document.getElementById('noticeHistoryTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>Loading history...</td></tr>';
+        
+        fetch('/api/notice-history/')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                tbody.innerHTML = '';
+                if (data.notices.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No notices found.</td></tr>';
+                    return;
+                }
+                
+                data.notices.forEach(n => {
+                    let badgeClass = 'bg-secondary';
+                    if (n.status === 'Active') badgeClass = 'bg-success';
+                    if (n.status === 'Scheduled') badgeClass = 'bg-info';
+                    if (n.status === 'Expired') badgeClass = 'bg-warning text-dark';
+                    
+                    let actionBtn = '';
+                    if (n.status === 'Active' || n.status === 'Scheduled') {
+                        actionBtn = `<button class="btn btn-sm btn-danger" onclick="stopNotice(${n.id}, this)">Stop</button>`;
+                    } else {
+                        actionBtn = `<span class="text-muted"><i class="fas fa-ban"></i></span>`;
+                    }
+                    
+                    tbody.innerHTML += `
+                        <tr>
+                            <td class="text-muted small">${n.snippet}</td>
+                            <td class="small fw-semibold">${n.display_from}</td>
+                            <td class="small fw-semibold">${n.display_until}</td>
+                            <td><span class="badge ${badgeClass}">${n.status}</span></td>
+                            <td>${actionBtn}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error: ${data.message}</td></tr>`;
+            }
+        })
+        .catch(err => {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-danger">Failed to load history</td></tr>';
+        });
+    }
+
+    function stopNotice(id, btnElement) {
+        if (!confirm("Are you sure you want to stop this notice?")) return;
+        
+        const originalText = btnElement.innerHTML;
+        btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btnElement.disabled = true;
+        
+        fetch(`/api/notice/${id}/stop/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alertify.success('Notice stopped successfully');
+                loadNoticeHistory(); // reload table
+            } else {
+                alertify.error('Error: ' + data.message);
+                btnElement.innerHTML = originalText;
+                btnElement.disabled = false;
+            }
+        })
+        .catch(err => {
+            alertify.error('Network error');
+            btnElement.innerHTML = originalText;
+            btnElement.disabled = false;
+        });
+    }
+</script>
 {% endif %}
 {% endblock %}
 
