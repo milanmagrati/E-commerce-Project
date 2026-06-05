@@ -20843,21 +20843,47 @@ def purchase_edit(request, purchase_id):
 def get_active_notice(request):
     from .models import GlobalNotice
     from django.utils import timezone
+    from django.db.models import Q
     
     # Do not show notice to admin/superusers as requested
     if request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator':
         return JsonResponse({'status': 'no_notice'})
         
     now = timezone.now()
-    # Get the latest active notice that has started and hasn't expired
-    # If display_from is null, we assume it starts immediately
-    from django.db.models import Q
-    notice = GlobalNotice.objects.filter(
-        is_active=True,
-        display_until__gt=now
-    ).filter(
-        Q(display_from__isnull=True) | Q(display_from__lte=now)
-    ).order_by('-created_at').first()
+    
+    try:
+        # Get the latest active notice that has started and hasn't expired
+        # If display_from is null, we assume it starts immediately
+        notice = GlobalNotice.objects.filter(
+            is_active=True,
+            display_until__gt=now
+        ).filter(
+            Q(display_from__isnull=True) | Q(display_from__lte=now)
+        ).order_by('-created_at').first()
+    except Exception as e:
+        if 'Unknown column' in str(e):
+            try:
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    try:
+                        cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_from datetime(6) NULL;")
+                    except Exception:
+                        pass
+                    try:
+                        cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_until datetime(6) NULL;")
+                    except Exception:
+                        pass
+                        
+                notice = GlobalNotice.objects.filter(
+                    is_active=True,
+                    display_until__gt=now
+                ).filter(
+                    Q(display_from__isnull=True) | Q(display_from__lte=now)
+                ).order_by('-created_at').first()
+            except Exception:
+                return JsonResponse({'status': 'no_notice'})
+        else:
+            return JsonResponse({'status': 'no_notice'})
     
     if notice:
         return JsonResponse({
@@ -20880,7 +20906,7 @@ def create_notice(request):
         import json
         from .models import GlobalNotice
         from django.utils import timezone
-        import dateutil.parser
+        from django.utils.dateparse import parse_datetime
         
         try:
             data = json.loads(request.body)
@@ -20890,22 +20916,73 @@ def create_notice(request):
             
             if not content:
                 return JsonResponse({'status': 'error', 'message': 'Content is required'})
+            from datetime import datetime
+            
+            def flexible_parse(dt_str):
+                if not dt_str: return None
+                parsed = parse_datetime(dt_str)
+                if parsed: return parsed
+                # Try common formats
+                for fmt in ('%m/%d/%Y %I:%M %p', '%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M'):
+                    try:
+                        return datetime.strptime(dt_str, fmt)
+                    except ValueError:
+                        pass
+                return None
+
             if not display_until_str:
                 return JsonResponse({'status': 'error', 'message': 'End time is required'})
                 
-            display_until = dateutil.parser.isoparse(display_until_str)
-            display_from = dateutil.parser.isoparse(display_from_str) if display_from_str else timezone.now()
+            display_until = flexible_parse(display_until_str)
+            if not display_until:
+                return JsonResponse({'status': 'error', 'message': f'Invalid end date format: {display_until_str}'})
+                
+            if display_until and timezone.is_naive(display_until):
+                display_until = timezone.make_aware(display_until)
+
+            display_from = flexible_parse(display_from_str) if display_from_str else timezone.now()
+            if display_from and timezone.is_naive(display_from):
+                display_from = timezone.make_aware(display_from)
             
             # Deactivate all previous notices
             GlobalNotice.objects.filter(is_active=True).update(is_active=False)
             
-            notice = GlobalNotice.objects.create(
-                content=content,
-                created_by=request.user,
-                display_from=display_from,
-                display_until=display_until,
-                is_active=True
-            )
+            try:
+                notice = GlobalNotice.objects.create(
+                    content=content,
+                    created_by=request.user,
+                    display_from=display_from,
+                    display_until=display_until,
+                    is_active=True
+                )
+            except Exception as e:
+                if 'Unknown column' in str(e):
+                    try:
+                        # Fallback: force add the columns using raw SQL in case migrations are out of sync
+                        from django.db import connection
+                        with connection.cursor() as cursor:
+                            try:
+                                cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_from datetime(6) NULL;")
+                            except Exception:
+                                pass
+                            try:
+                                cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_until datetime(6) NULL;")
+                            except Exception:
+                                pass
+                                
+                        # Retry creation
+                        notice = GlobalNotice.objects.create(
+                            content=content,
+                            created_by=request.user,
+                            display_from=display_from,
+                            display_until=display_until,
+                            is_active=True
+                        )
+                    except Exception as inner_e:
+                        return JsonResponse({'status': 'error', 'message': f'Auto-migration failed: {str(inner_e)}'})
+                else:
+                    import traceback
+                    return JsonResponse({'status': 'error', 'message': f'Error creating notice: {str(e)}', 'traceback': traceback.format_exc()})
             
             return JsonResponse({
                 'status': 'success',
@@ -20919,6 +20996,66 @@ def create_notice(request):
 
 
 @login_required
+def update_notice(request, notice_id):
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
+        
+    if request.method == 'POST':
+        import json
+        from .models import GlobalNotice
+        from django.utils.dateparse import parse_datetime
+        from django.utils import timezone
+        
+        try:
+            notice = GlobalNotice.objects.get(id=notice_id)
+            data = json.loads(request.body)
+            content = data.get('content')
+            display_from_str = data.get('display_from')
+            display_until_str = data.get('display_until')
+            
+            if not content:
+                return JsonResponse({'status': 'error', 'message': 'Content is required'})
+            if not display_until_str:
+                return JsonResponse({'status': 'error', 'message': 'End time is required'})
+                
+            def flexible_parse(dt_str):
+                if not dt_str: return None
+                parsed = parse_datetime(dt_str)
+                if parsed: return parsed
+                from datetime import datetime
+                for fmt in ('%m/%d/%Y %I:%M %p', '%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M'):
+                    try:
+                        return datetime.strptime(dt_str, fmt)
+                    except ValueError:
+                        pass
+                return None
+                
+            display_until = flexible_parse(display_until_str)
+            if not display_until:
+                return JsonResponse({'status': 'error', 'message': f'Invalid end date format: {display_until_str}'})
+                
+            if display_until and timezone.is_naive(display_until):
+                display_until = timezone.make_aware(display_until)
+
+            display_from = flexible_parse(display_from_str) if display_from_str else timezone.now()
+            if display_from and timezone.is_naive(display_from):
+                display_from = timezone.make_aware(display_from)
+                
+            notice.content = content
+            notice.display_from = display_from
+            notice.display_until = display_until
+            notice.save()
+            
+            return JsonResponse({'status': 'success', 'message': 'Notice updated successfully'})
+        except GlobalNotice.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Notice not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+            
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+
+@login_required
 def get_notice_history(request):
     if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
         return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
@@ -20927,32 +21064,56 @@ def get_notice_history(request):
     from django.utils import timezone
     
     now = timezone.now()
-    notices = GlobalNotice.objects.all().order_by('-created_at')[:20]
     
-    data = []
-    for n in notices:
-        if not n.is_active:
-            status = 'Stopped'
-        elif n.display_until and n.display_until < now:
-            status = 'Expired'
-        elif n.display_from and n.display_from > now:
-            status = 'Scheduled'
-        else:
-            status = 'Active'
+    try:
+        notices = list(GlobalNotice.objects.all().order_by('-created_at')[:20])
+        data = []
+        for n in notices:
+            if not n.is_active:
+                status = 'Stopped'
+            elif n.display_until and n.display_until < now:
+                status = 'Expired'
+            elif getattr(n, 'display_from', None) and n.display_from > now:
+                status = 'Scheduled'
+            else:
+                status = 'Active'
+                
+            from django.utils.html import strip_tags
+            snippet = strip_tags(n.content)[:50] + ('...' if len(strip_tags(n.content)) > 50 else '')
             
-        from django.utils.html import strip_tags
-        snippet = strip_tags(n.content)[:50] + ('...' if len(strip_tags(n.content)) > 50 else '')
+            display_from_val = getattr(n, 'display_from', None)
+            
+            try:
+                display_from_str = timezone.localtime(display_from_val).strftime('%b %d, %Y %I:%M %p') if display_from_val else 'Immediate'
+                raw_display_from = timezone.localtime(display_from_val).strftime('%Y-%m-%dT%H:%M') if display_from_val else ''
+                display_until_str = timezone.localtime(n.display_until).strftime('%b %d, %Y %I:%M %p') if n.display_until else 'Never'
+                raw_display_until = timezone.localtime(n.display_until).strftime('%Y-%m-%dT%H:%M') if n.display_until else ''
+            except Exception:
+                display_from_str = n.display_from.strftime('%b %d, %Y %I:%M %p') if display_from_val else 'Immediate'
+                raw_display_from = n.display_from.strftime('%Y-%m-%dT%H:%M') if display_from_val else ''
+                display_until_str = n.display_until.strftime('%b %d, %Y %I:%M %p') if n.display_until else 'Never'
+                raw_display_until = n.display_until.strftime('%Y-%m-%dT%H:%M') if n.display_until else ''
+                
+            data.append({
+                'id': n.id,
+                'snippet': snippet,
+                'raw_content': n.content,
+                'status': status,
+                'display_from': display_from_str,
+                'raw_display_from': raw_display_from,
+                'display_until': display_until_str,
+                'raw_display_until': raw_display_until,
+                'created_by': n.created_by.get_full_name() or n.created_by.username if n.created_by else 'Admin'
+            })
+            
+        return JsonResponse({'status': 'success', 'notices': data})
         
-        data.append({
-            'id': n.id,
-            'snippet': snippet,
-            'status': status,
-            'display_from': timezone.localtime(n.display_from).strftime('%b %d, %Y %I:%M %p') if n.display_from else 'Immediate',
-            'display_until': timezone.localtime(n.display_until).strftime('%b %d, %Y %I:%M %p') if n.display_until else 'Never',
-            'created_by': n.created_by.get_full_name() or n.created_by.username if n.created_by else 'Admin'
-        })
-        
-    return JsonResponse({'status': 'success', 'notices': data})
+    except Exception as e:
+        import traceback
+        if 'Unknown column' in str(e) or 'no such column' in str(e).lower() or 'does not exist' in str(e).lower():
+            return JsonResponse({'status': 'success', 'notices': []})
+        else:
+            return JsonResponse({'status': 'error', 'message': str(e), 'traceback': traceback.format_exc()})
 
 
 @login_required

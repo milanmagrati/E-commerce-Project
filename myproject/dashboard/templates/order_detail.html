@@ -235,7 +235,7 @@
                 <small class="text-muted d-block mb-1">Created By</small>
                 <strong class="creator-text">
                     <i class="fas fa-user-circle"></i>
-                    {{ order.created_by.get_full_name|default:order.created_by.username }}
+                    {% if order.created_by %}{{ order.created_by.get_full_name|default:order.created_by.username }}{% else %}Unknown{% endif %}
                 </strong>
             </div>
         </div>

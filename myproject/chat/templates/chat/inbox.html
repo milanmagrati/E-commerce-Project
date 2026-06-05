@@ -2,6 +2,9 @@
 {% block title %}Messages - Admin Panel{% endblock %}
 
 {% block extra_css %}
+<!-- Flatpickr CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.min.css">
 <style>
     /* ==================== CHAT INBOX - PREMIUM DESIGN ==================== */
     .chat-page-header {
@@ -761,24 +764,35 @@
                 </ul>
             </div>
             
-            <div class="modal-body p-4 bg-light">
+            <div class="modal-body p-3 bg-light">
                 <div class="tab-content" id="noticeTabsContent">
                     <!-- CREATE NOTICE TAB -->
                     <div class="tab-pane fade show active" id="create-notice" role="tabpanel">
                         <form id="throwNoticeForm">
                             <div class="mb-3">
-                                <label class="form-label fw-bold text-muted">Notice Content</label>
-                                <div id="noticeEditor" style="height:250px; background: white;"></div>
+                                <label class="form-label fw-bold text-muted mb-1">Notice Content</label>
+                                <div id="noticeEditor" style="height:140px; background: white;"></div>
                             </div>
-                            <div class="row mb-4">
+                            <div class="row mb-3">
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold text-muted">Start Showing From</label>
-                                    <input type="datetime-local" class="form-control" id="noticeDisplayFrom" style="border-radius:10px; border:2px solid #e2e8f0; padding:10px;">
+                                    <input type="text" class="form-control" id="noticeDisplayFrom" style="border-radius:10px; border:2px solid #e2e8f0; padding:10px; background-color: white;" placeholder="mm/dd/yyyy --:-- --">
                                     <small class="text-muted">Leave empty to show immediately</small>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold text-muted">Stop Showing At</label>
-                                    <input type="datetime-local" class="form-control" id="noticeDisplayUntil" style="border-radius:10px; border:2px solid #e2e8f0; padding:10px;" required>
+                                    <input type="text" class="form-control" id="noticeDisplayUntil" style="border-radius:10px; border:2px solid #e2e8f0; padding:10px; background-color: white;" placeholder="mm/dd/yyyy --:-- --" required>
+                                </div>
+                                <div class="col-12 mt-2">
+                                    <div class="input-group" style="border-radius:10px; overflow:hidden; border:2px solid #e2e8f0; width: 100%; max-width: 400px;">
+                                        <input type="number" min="1" class="form-control border-0" id="noticeDurationValue" placeholder="type here" style="padding:10px; box-shadow:none;">
+                                        <select class="form-select border-0 bg-light" id="noticeDurationUnit" style="max-width: 120px; box-shadow:none; border-left: 2px solid #e2e8f0 !important;">
+                                            <option value="minutes">minutes</option>
+                                            <option value="hours">hours</option>
+                                            <option value="days">days</option>
+                                        </select>
+                                    </div>
+                                    <small class="text-muted">Automatically sets the Stop Showing At time</small>
                                 </div>
                             </div>
                             <div class="d-grid">
@@ -890,7 +904,12 @@
                     return cookieValue;
                 }
 
-                fetch('/api/create-notice/', {
+                let url = '/api/create-notice/';
+                if (window.editingNoticeId) {
+                    url = '/api/update-notice/' + window.editingNoticeId + '/';
+                }
+
+                fetch(url, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -905,19 +924,22 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        alertify.success('Notice thrown globally successfully!');
+                        alertify.success(window.editingNoticeId ? 'Notice updated successfully!' : 'Notice thrown globally successfully!');
                         var modal = bootstrap.Modal.getInstance(document.getElementById('throwNoticeModal'));
                         if (modal) modal.hide();
                         quill.setContents([]);
+                        if (window.cancelEditNotice) window.cancelEditNotice();
                     } else {
-                        alertify.error(data.message || 'Error creating notice');
+                        alertify.error(data.message || 'Error saving notice');
                     }
+                    btn.disabled = false;
+                    btn.innerHTML = window.editingNoticeId ? '<i class="fas fa-save me-2"></i> Update Notice' : '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
                 })
                 .catch(err => {
                     console.error(err);
                     alertify.error('An error occurred');
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
+                    btn.innerHTML = window.editingNoticeId ? '<i class="fas fa-save me-2"></i> Update Notice' : '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
                 });
             });
         }
@@ -978,13 +1000,20 @@
                         actionBtn = `<span class="text-muted"><i class="fas fa-ban"></i></span>`;
                     }
                     
+                    let editBtn = `<button class="btn btn-sm btn-outline-primary ms-1" onclick="editNotice(${n.id}, \`${encodeURIComponent(n.raw_content)}\`, '${n.raw_display_from}', '${n.raw_display_until}')"><i class="fas fa-edit"></i></button>`;
+                    
                     tbody.innerHTML += `
                         <tr>
                             <td class="text-muted small">${n.snippet}</td>
                             <td class="small fw-semibold">${n.display_from}</td>
                             <td class="small fw-semibold">${n.display_until}</td>
                             <td><span class="badge ${badgeClass}">${n.status}</span></td>
-                            <td>${actionBtn}</td>
+                            <td>
+                                <div class="d-flex">
+                                    ${actionBtn}
+                                    ${editBtn}
+                                </div>
+                            </td>
                         </tr>
                     `;
                 });
@@ -1162,5 +1191,137 @@
             });
         }
     });
+
+    window.editingNoticeId = null;
+    window.editNotice = function(id, encodedContent, displayFrom, displayUntil) {
+        window.editingNoticeId = id;
+        
+        // Switch tab
+        document.getElementById('create-notice-tab').click();
+        
+        // Populate form
+        let content = decodeURIComponent(encodedContent);
+        // If quill is global, use it. Otherwise, we can assign to a global variable.
+        if (typeof quill !== 'undefined') {
+            quill.root.innerHTML = content;
+        } else {
+            document.querySelector('#quill-editor .ql-editor').innerHTML = content;
+        }
+        
+        if (fpFrom) fpFrom.setDate(displayFrom);
+        if (fpUntil) fpUntil.setDate(displayUntil);
+        
+        // Update button text
+        const submitBtn = document.getElementById('btnSubmitNotice');
+        if (submitBtn) {
+            submitBtn.innerHTML = '<i class="fas fa-save me-2"></i> Update Notice';
+        }
+        
+        // Show cancel button
+        let cancelBtn = document.getElementById('cancelEditNotice');
+        if (!cancelBtn) {
+            cancelBtn = document.createElement('button');
+            cancelBtn.id = 'cancelEditNotice';
+            cancelBtn.className = 'btn btn-secondary ms-2';
+            cancelBtn.innerText = 'Cancel';
+            cancelBtn.onclick = function(e) {
+                e.preventDefault();
+                window.cancelEditNotice();
+            };
+            if (submitBtn && submitBtn.parentNode) {
+                submitBtn.parentNode.insertBefore(cancelBtn, submitBtn.nextSibling);
+            }
+        }
+        if (cancelBtn) cancelBtn.style.display = 'inline-block';
+    };
+
+    window.cancelEditNotice = function() {
+        window.editingNoticeId = null;
+        if (typeof quill !== 'undefined') {
+            quill.setContents([]);
+        } else {
+            let qe = document.querySelector('#quill-editor .ql-editor');
+            if (qe) qe.innerHTML = '';
+        }
+        
+        // Clear flatpickr inputs safely
+        if (fpFrom) fpFrom.clear();
+        if (fpUntil) fpUntil.clear();
+        
+        const durationVal = document.getElementById('noticeDurationValue');
+        if (durationVal) durationVal.value = '';
+        
+        const submitBtn = document.getElementById('btnSubmitNotice');
+        if (submitBtn) {
+            submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
+        }
+        
+        const cancelBtn = document.getElementById('cancelEditNotice');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+    };
+
+    // Initialize Flatpickr for Date Inputs
+    let fpFrom = null;
+    let fpUntil = null;
+    
+    function calculateUntilDate() {
+        const durationVal = document.getElementById('noticeDurationValue');
+        const durationUnit = document.getElementById('noticeDurationUnit');
+        if (!durationVal || !durationVal.value) return;
+        
+        const val = parseInt(durationVal.value);
+        if (isNaN(val) || val <= 0) return;
+        
+        const unit = durationUnit.value;
+        
+        let baseTime = fpFrom && fpFrom.selectedDates && fpFrom.selectedDates[0] ? fpFrom.selectedDates[0] : new Date();
+        let newTime = new Date(baseTime.getTime());
+        
+        if (unit === 'minutes') {
+            newTime.setMinutes(newTime.getMinutes() + val);
+        } else if (unit === 'hours') {
+            newTime.setHours(newTime.getHours() + val);
+        } else if (unit === 'days') {
+            newTime.setDate(newTime.getDate() + val);
+        }
+        
+        if (fpUntil) {
+            fpUntil.setDate(newTime, true);
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        if (typeof flatpickr !== 'undefined') {
+            const getPlugin = () => new confirmDatePlugin({
+                confirmIcon: "<i class='fas fa-check me-1'></i> ",
+                confirmText: "Choose",
+                showAlways: true,
+                theme: "light"
+            });
+            
+            fpUntil = flatpickr("#noticeDisplayUntil", {
+                enableTime: true,
+                dateFormat: "m/d/Y h:i K",
+                plugins: [getPlugin()]
+            });
+            
+            fpFrom = flatpickr("#noticeDisplayFrom", {
+                enableTime: true,
+                dateFormat: "m/d/Y h:i K",
+                plugins: [getPlugin()],
+                onChange: function(selectedDates, dateStr, instance) {
+                    calculateUntilDate();
+                }
+            });
+            
+            const durationVal = document.getElementById('noticeDurationValue');
+            const durationUnit = document.getElementById('noticeDurationUnit');
+            if (durationVal) durationVal.addEventListener('input', calculateUntilDate);
+            if (durationUnit) durationUnit.addEventListener('change', calculateUntilDate);
+        }
+    });
 </script>
+<!-- Flatpickr JS -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.js"></script>
 {% endblock %}
