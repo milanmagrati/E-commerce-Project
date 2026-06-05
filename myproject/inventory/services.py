@@ -206,7 +206,8 @@ def ship_order_item(item):
     Called when an order item is shipped / dispatched.
 
     Decreases both product.stock and product.reserved_qty by item.reserved_qty.
-    Resets the item's reserved_qty to 0.
+    Resets the item's reserved_qty to 0. Also deducts stock from ProductBatches
+    in FIFO order (oldest expiry first) if they exist.
 
     Args:
         item: store.models.OrderItem instance
@@ -220,6 +221,11 @@ def ship_order_item(item):
         product = Product.objects.select_for_update().get(pk=item.product.pk)
 
         shipped = item.reserved_qty
+        
+        # 1. Deduct from batches (FIFO)
+        _deduct_from_batches_fifo(product, shipped)
+        
+        # 2. Update product counters
         product.stock = max(0, product.stock - shipped)
         product.reserved_qty = max(0, product.reserved_qty - shipped)
         product.save(update_fields=['stock', 'reserved_qty'])
@@ -231,6 +237,40 @@ def ship_order_item(item):
         logger.info(
             f"ship_order_item: order={item.order.order_number} product={product.name} "
             f"shipped={shipped} stock_now={product.stock}"
+        )
+
+
+def _deduct_from_batches_fifo(product, qty_to_deduct):
+    """
+    Helper to deduct quantity from ProductBatches in FIFO order
+    (oldest expiry date first, then oldest created_at).
+    """
+    if qty_to_deduct <= 0:
+        return
+        
+    from django.db.models import F
+        
+    # Get batches with available stock, ordered by FIFO rules
+    batches = list(product.batches.filter(quantity__gt=0).order_by(
+        F('expiry_date').asc(nulls_last=True),
+        'created_at'
+    ).select_for_update())
+    
+    remaining_to_deduct = qty_to_deduct
+    
+    for batch in batches:
+        if remaining_to_deduct <= 0:
+            break
+            
+        deduct_from_batch = min(batch.quantity, remaining_to_deduct)
+        batch.quantity -= deduct_from_batch
+        batch.save(update_fields=['quantity'])
+        
+        remaining_to_deduct -= deduct_from_batch
+        
+        logger.info(
+            f"FIFO batch deduction: product={product.name} batch={batch.batch_number} "
+            f"deducted={deduct_from_batch} remaining_in_batch={batch.quantity}"
         )
 
 
@@ -277,9 +317,9 @@ def clear_reservation_on_dispatch(product, quantity):
     """
     Called by the dashboard dispatch view when stock is deducted on dispatch.
 
-    The dispatch view already handles the stock deduction itself, so this
-    function only decrements reserved_qty and backordered_qty to keep the
-    counters accurate.
+    The dispatch view already handles the main stock deduction itself, so this
+    function decrements reserved_qty and backordered_qty to keep the
+    counters accurate. Also deducts from FIFO batches.
 
     Args:
         product: dashboard.models.Product instance
@@ -290,7 +330,10 @@ def clear_reservation_on_dispatch(product, quantity):
     with transaction.atomic():
         product = Product.objects.select_for_update().get(pk=product.pk)
 
-        # First, clear reserved_qty (these are filled units)
+        # 1. Deduct from FIFO batches
+        _deduct_from_batches_fifo(product, quantity)
+
+        # 2. Clear reserved_qty (these are filled units)
         reserved_to_clear = min(product.reserved_qty, quantity)
         product.reserved_qty = max(0, product.reserved_qty - reserved_to_clear)
 

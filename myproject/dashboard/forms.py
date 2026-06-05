@@ -27,7 +27,8 @@ class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
         fields = ['name', 'slug', 'description', 'category', 'product_type',
-                  'price', 'cost_price', 'cost_price_type', 'stock', 'stock_status', 'image', 'is_active']
+                  'price', 'cost_price', 'cost_price_type', 'stock', 'stock_status',
+                  'manufactured_date', 'expiry_date', 'image', 'is_active']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'slug': forms.TextInput(attrs={'class': 'form-control'}),
@@ -41,6 +42,8 @@ class ProductForm(forms.ModelForm):
             'stock_status': forms.Select(attrs={'class': 'form-select'}),
             'image': forms.FileInput(attrs={'class': 'form-control'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'manufactured_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
         }
 class ProductVariationForm(forms.ModelForm):
     class Meta:
@@ -95,7 +98,8 @@ class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
         fields = ['name', 'slug', 'description', 'category', 'product_type',
-                  'price', 'cost_price', 'cost_price_type', 'stock', 'stock_status', 'image', 'is_active']
+                  'price', 'cost_price', 'cost_price_type', 'stock', 'stock_status',
+                  'manufactured_date', 'expiry_date', 'image', 'is_active']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'slug': forms.TextInput(attrs={'class': 'form-control'}),
@@ -109,6 +113,8 @@ class ProductForm(forms.ModelForm):
             'stock_status': forms.Select(attrs={'class': 'form-select'}),
             'image': forms.FileInput(attrs={'class': 'form-control'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'manufactured_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
         }
 
 

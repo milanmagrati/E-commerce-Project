@@ -200,6 +200,259 @@
                 opacity: 1
             }
         }
+
+        /* ==================== EXPIRY NOTIFICATIONS ==================== */
+        .expiry-alert-bar {
+            background: linear-gradient(135deg, #fef3c7 0%, #ffedd5 100%);
+            border-left: 4px solid #f59e0b;
+            border-bottom: 1px solid #fed7aa;
+            padding: 0.6rem 1rem;
+            position: relative;
+            z-index: 900;
+            display: flex;
+            justify-content: center;
+        }
+
+        .expiry-content {
+            display: flex;
+            align-items: center;
+            max-width: 1200px;
+            width: 100%;
+            gap: 1rem;
+        }
+
+        .expiry-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .expiry-details {
+            flex-grow: 1;
+            min-width: 0; /* for truncation */
+        }
+
+        .expiry-title {
+            margin: 0 0 0.2rem 0;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            color: #b45309;
+            display: flex;
+            align-items: center;
+        }
+
+        .expiry-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+        }
+
+        .expiry-item {
+            background: rgba(255, 255, 255, 0.7);
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #78350f;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            white-space: nowrap;
+        }
+
+        .expiry-item.expired-text {
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #991b1b;
+        }
+
+        .expiry-badge {
+            font-size: 0.65rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            font-weight: 700;
+        }
+
+        .expiry-more {
+            font-weight: 600;
+            color: #b45309;
+            align-self: center;
+            padding-left: 0.25rem;
+        }
+
+        .expiry-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .expiry-view-btn {
+            background: #f59e0b;
+            color: #fff;
+            border: none;
+            padding: 0.3rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .expiry-view-btn:hover {
+            background: #d97706;
+            color: #fff;
+        }
+
+        .expiry-close {
+            background: none;
+            border: none;
+            color: #9ca3af;
+            font-size: 1.1rem;
+            padding: 0;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .expiry-close:hover {
+            color: #4b5563;
+        }
+
+        .pulse-alert i {
+            animation: pulse-danger 2s infinite;
+        }
+
+        @keyframes pulse-danger {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.15); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Expiry Modal Premium Styling */
+        .expiry-modal-content {
+            border: none;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+        .expiry-modal-header {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+        .expiry-modal-title {
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        .expiry-modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .expiry-modal-header .btn-close:hover {
+            opacity: 1;
+        }
+        .expiry-modal-body {
+            padding: 0;
+            background: #fafafa;
+        }
+        .expiry-table {
+            margin: 0;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        .expiry-table th {
+            background: #f1f5f9;
+            color: #475569;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.5px;
+            padding: 1rem 1.25rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .expiry-table td {
+            padding: 1rem 1.25rem;
+            vertical-align: middle;
+            border-bottom: 1px solid #e2e8f0;
+            background: white;
+            transition: background 0.2s;
+        }
+        .expiry-table tr:last-child td {
+            border-bottom: none;
+        }
+        .expiry-table tr:hover td {
+            background: #f8fafc;
+        }
+        .expiry-status-badge {
+            padding: 0.4rem 0.8rem;
+            border-radius: 50rem;
+            font-weight: 700;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .status-expired {
+            background: #fee2e2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }
+        .status-critical {
+            background: #ffedd5;
+            color: #c2410c;
+            border: 1px solid #fed7aa;
+        }
+        .status-warning {
+            background: #fef3c7;
+            color: #b45309;
+            border: 1px solid #fde68a;
+        }
+        .expiry-action-btn {
+            background: white;
+            color: #4f46e5;
+            border: 1px solid #e0e7ff;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+        .expiry-action-btn:hover {
+            background: #4f46e5;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+        }
+        .expiry-modal-footer {
+            background: white;
+            border-top: 1px solid #e2e8f0;
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .view-all-link {
+            color: #64748b;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: color 0.2s;
+        }
+        .view-all-link:hover {
+            color: #3b82f6;
+        }
     </style>
     <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
     <style>
@@ -1673,6 +1926,104 @@
                 </div>
                 {% endif %}
 
+                <!-- Expiry Date Notification Banner -->
+                {% if expiry_notification_count > 0 %}
+                <div id="expiryNotification" class="expiry-alert-bar">
+                    <div class="expiry-content">
+                        <div class="expiry-icon {% if has_expired_items %}pulse-alert{% endif %}">
+                            <i class="fas {% if has_expired_items %}fa-exclamation-triangle text-danger{% else %}fa-exclamation-circle text-warning{% endif %}"></i>
+                        </div>
+                        <div class="expiry-details">
+                            <h6 class="expiry-title">
+                                {% if has_expired_items %}
+                                <span class="text-danger fw-bold">EXPIRED PRODUCTS ALERT</span>
+                                {% else %}
+                                <span>EXPIRING PRODUCTS WARNING</span>
+                                {% endif %}
+                                <span class="badge bg-light text-dark ms-2">{{ expiry_notification_count }}</span>
+                            </h6>
+                            <div class="expiry-list">
+                                {% for item in expiry_notification_items|slice:":5" %}
+                                <span class="expiry-item {% if item.status == 'expired' %}expired-text{% endif %}">
+                                    {{ item.name|truncatechars:25 }} 
+                                    <span class="expiry-badge {% if item.status == 'expired' %}bg-danger{% elif item.status == 'critical' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                        {% if item.status == 'expired' %}EXPIRED{% else %}{{ item.days }}d left{% endif %}
+                                    </span>
+                                </span>
+                                {% endfor %}
+                                {% if expiry_notification_count > 5 %}
+                                <span class="expiry-more">+{{ expiry_notification_count|add:"-5" }} more</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="expiry-actions">
+                            <button type="button" class="expiry-view-btn" data-bs-toggle="modal" data-bs-target="#expiryReviewModal">Review Stock</button>
+                            <button class="expiry-close" onclick="dismissExpiryNotification()" title="Dismiss">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Expiry Review Modal -->
+                {% if expiry_notification_items %}
+                <div class="modal fade" id="expiryReviewModal" tabindex="-1" aria-labelledby="expiryReviewModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered modal-lg">
+                        <div class="modal-content expiry-modal-content">
+                            <div class="modal-header expiry-modal-header">
+                                <h5 class="modal-title expiry-modal-title" id="expiryReviewModalLabel">
+                                    <i class="fas fa-exclamation-triangle"></i> Expiry Review & Action Needed
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body expiry-modal-body">
+                                <div class="table-responsive">
+                                    <table class="table expiry-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Product Name</th>
+                                                <th>Expiry Date</th>
+                                                <th>Status</th>
+                                                <th class="text-end">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in expiry_notification_items %}
+                                            <tr>
+                                                <td class="fw-bold text-dark">
+                                                    {{ item.name|truncatechars:40 }}
+                                                </td>
+                                                <td class="text-secondary fw-semibold">
+                                                    {{ item.date|date:"M d, Y" }}
+                                                </td>
+                                                <td>
+                                                    {% if item.status == 'expired' %}
+                                                        <span class="expiry-status-badge status-expired"><i class="fas fa-times-circle"></i> Expired {{ item.days|stringformat:"d"|slice:"1:" }} days ago</span>
+                                                    {% elif item.status == 'critical' %}
+                                                        <span class="expiry-status-badge status-critical"><i class="fas fa-exclamation-circle"></i> {{ item.days }} days left</span>
+                                                    {% else %}
+                                                        <span class="expiry-status-badge status-warning"><i class="fas fa-exclamation-circle"></i> {{ item.days }} days left</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-end">
+                                                    <a href="{% url 'product_edit' item.id %}" class="expiry-action-btn">Manage <i class="fas fa-arrow-right ms-1"></i></a>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="modal-footer expiry-modal-footer">
+                                <span class="text-muted small"><i class="fas fa-info-circle me-1"></i> Displaying top {{ expiry_notification_count }} urgent items.</span>
+                                <a href="{% url 'products' %}?filter=expiring" class="view-all-link">View all in inventory <i class="fas fa-external-link-alt"></i></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% block content %}{% endblock %}
             </div>
 
@@ -1933,6 +2284,17 @@
             }
         }
 
+        function dismissExpiryNotification() {
+            var el = document.getElementById('expiryNotification');
+            if (el) {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(-10px)';
+                el.style.transition = 'all 0.3s ease';
+                setTimeout(function () { el.remove(); }, 300);
+                sessionStorage.setItem('expiry_dismissed', '1');
+            }
+        }
+
         function playLowStockSound() {
             try {
                 var ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1967,12 +2329,51 @@
             } catch (e) { }
         }
 
+        function playExpirySound() {
+            try {
+                var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                var t = ctx.currentTime;
+
+                // Warning/Alert pattern (Beep-Beep-BEEEEEP)
+                var pattern = [
+                    { freq: 600, start: 0, dur: 0.15 },
+                    { freq: 600, start: 0.3, dur: 0.15 },
+                    { freq: 800, start: 0.6, dur: 0.5 },
+                ];
+
+                pattern.forEach(function (note) {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = 'square'; // harsher sound for expiry alert
+                    osc.frequency.value = note.freq;
+                    // Smooth fade in and out
+                    gain.gain.setValueAtTime(0, t + note.start);
+                    gain.gain.linearRampToValueAtTime(0.08, t + note.start + 0.03);
+                    gain.gain.setValueAtTime(0.08, t + note.start + note.dur - 0.05);
+                    gain.gain.linearRampToValueAtTime(0, t + note.start + note.dur);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(t + note.start);
+                    osc.stop(t + note.start + note.dur + 0.05);
+                });
+            } catch (e) { }
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
+            // Low Stock
             if (sessionStorage.getItem('lsn_dismissed') === '1') {
                 var el = document.getElementById('lowStockNotification');
                 if (el) el.remove();
             } else if (document.getElementById('lowStockNotification')) {
                 setTimeout(playLowStockSound, 500);
+            }
+
+            // Expiry
+            if (sessionStorage.getItem('expiry_dismissed') === '1') {
+                var el = document.getElementById('expiryNotification');
+                if (el) el.remove();
+            } else if (document.getElementById('expiryNotification')) {
+                setTimeout(playExpirySound, 1000); // Wait 1s so it doesn't overlap with low stock
             }
         });
     </script>

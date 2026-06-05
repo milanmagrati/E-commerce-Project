@@ -98,6 +98,7 @@ TEMPLATES = [
                 'chat.context_processors.unread_message_count',
                 'store.context_processors.store_context',
                 'dashboard.context_processors.maintenance_mode',
+                'dashboard.context_processors.expiry_notifications',
             ],
         },
     },

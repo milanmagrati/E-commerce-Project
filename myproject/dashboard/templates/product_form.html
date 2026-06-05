@@ -196,6 +196,46 @@
                 </div>
             </div>
         </div>
+        <!-- Dates & Expiry -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header text-white" style="background: linear-gradient(135deg, #e65100, #ff6d00);">
+                <h5 class="mb-0"><i class="fas fa-calendar-alt"></i> Dates & Expiry</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info border-0 mb-3" style="font-size: 0.85rem;">
+                    <i class="fas fa-info-circle"></i>
+                    Optional fields. Set expiry date to enable automatic expiry alerts and FIFO batch tracking.
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-industry text-primary"></i> Manufactured Date
+                        </label>
+                        {{ form.manufactured_date }}
+                        <small class="text-muted">When the product was manufactured</small>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-hourglass-end text-danger"></i> Expiry Date
+                        </label>
+                        {{ form.expiry_date }}
+                        <small class="text-muted">When the product expires</small>
+                    </div>
+                </div>
+                <!-- Dynamic shelf-life info -->
+                <div id="shelfLifeInfo" class="mt-2" style="display: none;">
+                    <div class="d-flex align-items-center gap-3 p-3 rounded" id="shelfLifeContainer">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="fas fa-clock fa-lg" id="shelfLifeIcon"></i>
+                            <div>
+                                <div class="fw-bold" id="shelfLifeTitle"></div>
+                                <small class="text-muted" id="shelfLifeSubtext"></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Product Images -->
         <div class="card shadow-sm mb-4">
@@ -1660,6 +1700,94 @@
 <!-- Provide simple product options to JS for dynamic component rows -->
 <script>
 window._simpleProductOptions = `{% for p in simple_products %}<option value="{{ p.id }}">{{ p.name }} (Stock: {{ p.stock }})</option>{% endfor %}`;
+</script>
+
+<script>
+// Shelf-life calculator for Dates & Expiry section
+(function() {
+    function updateShelfLife() {
+        var mfgInput = document.getElementById('id_manufactured_date');
+        var expInput = document.getElementById('id_expiry_date');
+        var infoDiv = document.getElementById('shelfLifeInfo');
+        var container = document.getElementById('shelfLifeContainer');
+        var icon = document.getElementById('shelfLifeIcon');
+        var title = document.getElementById('shelfLifeTitle');
+        var subtext = document.getElementById('shelfLifeSubtext');
+
+        if (!expInput || !infoDiv) return;
+
+        var expVal = expInput.value;
+        if (!expVal) {
+            infoDiv.style.display = 'none';
+            return;
+        }
+
+        var today = new Date();
+        today.setHours(0,0,0,0);
+        var expDate = new Date(expVal + 'T00:00:00');
+        var diffMs = expDate - today;
+        var diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+        infoDiv.style.display = 'block';
+
+        if (diffDays < 0) {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #fee2e2 100%)';
+            container.style.borderLeft = '4px solid #ef4444';
+            icon.style.color = '#ef4444';
+            icon.className = 'fas fa-exclamation-triangle fa-lg';
+            title.innerHTML = '<span style="color:#dc2626;">⚠ EXPIRED ' + Math.abs(diffDays) + ' day(s) ago</span>';
+            subtext.textContent = 'This product has passed its expiry date!';
+        } else if (diffDays === 0) {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #fee2e2 100%)';
+            container.style.borderLeft = '4px solid #ef4444';
+            icon.style.color = '#ef4444';
+            icon.className = 'fas fa-exclamation-circle fa-lg';
+            title.innerHTML = '<span style="color:#dc2626;">⚠ EXPIRES TODAY</span>';
+            subtext.textContent = 'This product expires today!';
+        } else if (diffDays <= 7) {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #fef3c7 100%)';
+            container.style.borderLeft = '4px solid #f59e0b';
+            icon.style.color = '#f59e0b';
+            icon.className = 'fas fa-exclamation-circle fa-lg';
+            title.innerHTML = '<span style="color:#d97706;">⚠ Expires in ' + diffDays + ' day(s) — CRITICAL</span>';
+            subtext.textContent = 'Product is expiring very soon.';
+        } else if (diffDays <= 30) {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #fff7ed 100%)';
+            container.style.borderLeft = '4px solid #fb923c';
+            icon.style.color = '#fb923c';
+            icon.className = 'fas fa-clock fa-lg';
+            title.innerHTML = '<span style="color:#ea580c;">Expires in ' + diffDays + ' day(s)</span>';
+            subtext.textContent = 'Consider planning for stock rotation.';
+        } else {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #d1fae5 100%)';
+            container.style.borderLeft = '4px solid #10b981';
+            icon.style.color = '#10b981';
+            icon.className = 'fas fa-check-circle fa-lg';
+            title.innerHTML = '<span style="color:#059669;">✓ ' + diffDays + ' day(s) until expiry</span>';
+
+            // Show shelf life if manufactured date is set
+            var mfgVal = mfgInput ? mfgInput.value : '';
+            if (mfgVal) {
+                var mfgDate = new Date(mfgVal + 'T00:00:00');
+                var shelfDays = Math.ceil((expDate - mfgDate) / (1000 * 60 * 60 * 24));
+                var elapsedDays = Math.ceil((today - mfgDate) / (1000 * 60 * 60 * 24));
+                var pct = shelfDays > 0 ? Math.round((elapsedDays / shelfDays) * 100) : 0;
+                subtext.textContent = 'Total shelf life: ' + shelfDays + ' days | ' + pct + '% elapsed';
+            } else {
+                subtext.textContent = 'Product has good shelf life remaining.';
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var mfg = document.getElementById('id_manufactured_date');
+        var exp = document.getElementById('id_expiry_date');
+        if (mfg) mfg.addEventListener('change', updateShelfLife);
+        if (exp) exp.addEventListener('change', updateShelfLife);
+        // Run on load for edit mode
+        setTimeout(updateShelfLife, 200);
+    });
+})();
 </script>
 
 {% endblock %}

@@ -18,7 +18,7 @@ from .models import (Product, Order, OrderItem, Category, Customer,
                      OrderActivityLog, StockIn, City, StockInItem, Setup,
                      Supplier, Purchase, PurchaseItem, SupplierPayment,
                      BundleComponent, ProductPurchase, LogisticsAPIConfig,
-                     Branch, RTVOrder)
+                     Branch, RTVOrder, ProductBatch)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
@@ -558,6 +558,15 @@ def products_view(request):
                 products = products.filter(created_at__date__lte=end_date_obj)
             except ValueError:
                 pass
+
+    # Expiry filter
+    general_filter = request.GET.get("filter", "")
+    if general_filter == "expiring":
+        thirty_days_from_now = today + timedelta(days=30)
+        products = products.filter(
+            expiry_date__isnull=False,
+            expiry_date__lte=thirty_days_from_now
+        ).order_by('expiry_date')
 
     # Sort filter
     sort_filter = request.GET.get("sort", "")
@@ -1250,6 +1259,19 @@ def product_add(request):
             if product.product_type == 'bundle':
                 _save_bundle_components(request, product)
 
+            # Auto-create initial batch for FIFO tracking if dates are provided and stock > 0
+            if product.stock > 0 and product.expiry_date and not product.batches.exists():
+                ProductBatch.objects.create(
+                    product=product,
+                    batch_number=f"INIT-{product.pk}",
+                    quantity=product.stock,
+                    initial_quantity=product.stock,
+                    manufactured_date=product.manufactured_date,
+                    expiry_date=product.expiry_date,
+                    cost_price=product.cost_price or 0,
+                    notes="Auto-created initial batch"
+                )
+
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
@@ -1431,6 +1453,19 @@ def product_edit(request, product_id):
             # Handle bundle components
             if product.product_type == 'bundle':
                 _save_bundle_components(request, product)
+
+            # Auto-create initial batch for FIFO tracking if dates are provided and stock > 0
+            if product.stock > 0 and product.expiry_date and not product.batches.exists():
+                ProductBatch.objects.create(
+                    product=product,
+                    batch_number=f"INIT-{product.pk}",
+                    quantity=product.stock,
+                    initial_quantity=product.stock,
+                    manufactured_date=product.manufactured_date,
+                    expiry_date=product.expiry_date,
+                    cost_price=product.cost_price or 0,
+                    notes="Auto-created initial batch"
+                )
 
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
@@ -1625,6 +1660,16 @@ def product_detail(request, product_id):
     if product.is_bundle:
         bundle_components = product.bundle_components.select_related('component_product').all()
 
+    # Shelf-life percentage for expiry progress bar
+    shelf_life_pct = 50  # default fallback
+    if product.manufactured_date and product.expiry_date:
+        from django.utils import timezone
+        today = timezone.now().date()
+        total_days = (product.expiry_date - product.manufactured_date).days
+        elapsed_days = (today - product.manufactured_date).days
+        if total_days > 0:
+            shelf_life_pct = min(100, max(0, round((elapsed_days / total_days) * 100)))
+
     context = {
         'product': product,
         'variations': variations,  # ADDED: Explicitly pass variations
@@ -1634,6 +1679,7 @@ def product_detail(request, product_id):
         'profit_margin': profit_margin,
         'user_permissions': user_permissions,  # ADDED: Pass user permissions
         'bundle_components': bundle_components,
+        'shelf_life_pct': shelf_life_pct,
     }
 
     return render(request, 'product_detail.html', context)

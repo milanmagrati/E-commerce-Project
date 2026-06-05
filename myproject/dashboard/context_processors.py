@@ -175,3 +175,59 @@ def maintenance_mode(request):
             'MAINTENANCE_MESSAGE': '',
             'IS_ADMIN_USER': False,
         }
+
+def expiry_notifications(request):
+    """
+    Provide global expiry notifications for products expiring within 30 days.
+    """
+    if not request.user.is_authenticated:
+        return {}
+
+    # Only show to users with permission to view products/inventory
+    user = request.user
+    if not (getattr(user, 'is_superuser', False) or 
+            getattr(user, 'role', '') in ['administrator', 'warehouse']):
+        return {}
+
+    from dashboard.models import Product
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    today = timezone.now().date()
+    warning_date = today + timedelta(days=30)
+    
+    items = []
+    
+    # 1. Check direct product expiry dates
+    expiring_products = Product.objects.filter(
+        is_deleted=False,
+        expiry_date__isnull=False,
+        expiry_date__lte=warning_date
+    ).order_by('expiry_date')[:15]
+    
+    for p in expiring_products:
+        days = (p.expiry_date - today).days
+        status = 'expired' if days < 0 else ('critical' if days <= 7 else 'warning')
+        items.append({
+            'id': p.id,
+            'name': p.name,
+            'days': days,
+            'date': p.expiry_date,
+            'status': status,
+            'type': 'product'
+        })
+        
+    # In the future, we could also check ProductBatch here,
+    # but to avoid too many DB queries on every page load,
+    # we'll stick to the main product expiry for the global notification
+    
+    # Sort: expired first, then ascending by days left
+    items.sort(key=lambda x: x['days'])
+    items = items[:10]  # Limit to top 10 most urgent
+    
+    return {
+        'expiry_notification_items': items,
+        'expiry_notification_count': len(items),
+        'has_expired_items': any(item['status'] == 'expired' for item in items),
+        'has_critical_items': any(item['status'] in ['expired', 'critical'] for item in items)
+    }

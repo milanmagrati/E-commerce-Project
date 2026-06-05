@@ -394,6 +394,200 @@
       </div>
     </div>
 
+    <!-- ==================== DATES & EXPIRY / FIFO ==================== -->
+    {% if product.manufactured_date or product.expiry_date or product.batches.exists %}
+    <div class="card mb-3 shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center text-white"
+           style="background: linear-gradient(135deg, #e65100, #ff6d00);">
+        <h5 class="mb-0"><i class="fas fa-calendar-alt"></i> Dates & Expiry</h5>
+        {% if product.expiry_status == 'expired' %}
+        <span class="badge bg-danger fs-6 pulse-badge"><i class="fas fa-exclamation-triangle"></i> EXPIRED</span>
+        {% elif product.expiry_status == 'critical' %}
+        <span class="badge bg-warning text-dark fs-6 pulse-badge"><i class="fas fa-exclamation-circle"></i> EXPIRING SOON</span>
+        {% elif product.expiry_status == 'warning' %}
+        <span class="badge bg-warning text-dark fs-6"><i class="fas fa-clock"></i> Expiring Within 30 Days</span>
+        {% elif product.expiry_status == 'ok' %}
+        <span class="badge bg-success fs-6"><i class="fas fa-check-circle"></i> Good</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <!-- Date Info Row -->
+        <div class="row g-3 mb-3">
+          {% if product.manufactured_date %}
+          <div class="col-md-4">
+            <div class="p-3 rounded text-center"
+                 style="background: linear-gradient(135deg, #fff 0%, #e0f2fe 100%); border-left: 3px solid #0ea5e9;">
+              <div style="font-size: 0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#0ea5e9;">
+                Manufactured Date
+              </div>
+              <div style="font-size: 1.2rem; font-weight: 800; color: #0c4a6e; line-height:1.3;">
+                {{ product.manufactured_date|date:"M d, Y" }}
+              </div>
+              <div style="font-size:0.68rem; color:#64748b;">
+                <i class="fas fa-industry"></i> Production date
+              </div>
+            </div>
+          </div>
+          {% endif %}
+
+          {% if product.expiry_date %}
+          <div class="col-md-4">
+            <div class="p-3 rounded text-center"
+                 style="background: linear-gradient(135deg, #fff 0%, {% if product.expiry_status == 'expired' %}#fee2e2{% elif product.expiry_status == 'critical' %}#fef3c7{% elif product.expiry_status == 'warning' %}#fff7ed{% else %}#d1fae5{% endif %} 100%);
+                        border-left: 3px solid {% if product.expiry_status == 'expired' %}#ef4444{% elif product.expiry_status == 'critical' %}#f59e0b{% elif product.expiry_status == 'warning' %}#fb923c{% else %}#10b981{% endif %};">
+              <div style="font-size: 0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+                           color: {% if product.expiry_status == 'expired' %}#ef4444{% elif product.expiry_status == 'critical' %}#f59e0b{% elif product.expiry_status == 'warning' %}#fb923c{% else %}#10b981{% endif %};">
+                Expiry Date
+              </div>
+              <div style="font-size: 1.2rem; font-weight: 800; line-height:1.3;
+                           color: {% if product.expiry_status == 'expired' %}#dc2626{% elif product.expiry_status == 'critical' %}#d97706{% elif product.expiry_status == 'warning' %}#ea580c{% else %}#059669{% endif %};">
+                {{ product.expiry_date|date:"M d, Y" }}
+              </div>
+              <div style="font-size:0.68rem; color:#64748b;">
+                <i class="fas fa-hourglass-end"></i> Best before
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <div class="p-3 rounded text-center"
+                 style="background: linear-gradient(135deg, #fff 0%, {% if product.expiry_status == 'expired' %}#fee2e2{% elif product.expiry_status == 'critical' %}#fef3c7{% elif product.expiry_status == 'warning' %}#fff7ed{% else %}#d1fae5{% endif %} 100%);
+                        border-left: 3px solid {% if product.expiry_status == 'expired' %}#ef4444{% elif product.expiry_status == 'critical' %}#f59e0b{% elif product.expiry_status == 'warning' %}#fb923c{% else %}#10b981{% endif %};">
+              <div style="font-size: 0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+                           color: {% if product.expiry_status == 'expired' %}#ef4444{% elif product.expiry_status == 'critical' %}#f59e0b{% elif product.expiry_status == 'warning' %}#fb923c{% else %}#10b981{% endif %};">
+                {% if product.days_until_expiry < 0 %}Expired{% else %}Days Until Expiry{% endif %}
+              </div>
+              <div style="font-size: 1.6rem; font-weight: 800; line-height:1.1;
+                           color: {% if product.expiry_status == 'expired' %}#dc2626{% elif product.expiry_status == 'critical' %}#d97706{% elif product.expiry_status == 'warning' %}#ea580c{% else %}#059669{% endif %};">
+                {% if product.days_until_expiry < 0 %}{{ product.days_until_expiry|cut:"-" }}{% else %}{{ product.days_until_expiry }}{% endif %}
+              </div>
+              <div style="font-size:0.68rem; color:#64748b;">
+                {% if product.days_until_expiry < 0 %}days ago{% elif product.days_until_expiry == 0 %}Expires today!{% else %}days remaining{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Shelf Life Progress Bar -->
+        {% if product.manufactured_date and product.expiry_date %}
+        <div class="mb-3">
+          <label class="text-muted small fw-bold mb-1 d-block">
+            <i class="fas fa-battery-half"></i> Shelf Life Progress
+          </label>
+          {% with total_days=product.manufactured_date|timesince:product.expiry_date %}
+          <div class="progress" style="height: 22px; border-radius: 11px; background: #e2e8f0;">
+            {% if product.days_until_expiry != None %}
+            {% if product.days_until_expiry < 0 %}
+            <div class="progress-bar bg-danger" role="progressbar" style="width: 100%; border-radius: 11px;"
+                 aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+              <span style="font-size: 0.75rem; font-weight: 700;">EXPIRED</span>
+            </div>
+            {% else %}
+            <div class="progress-bar {% if product.expiry_status == 'critical' %}bg-danger{% elif product.expiry_status == 'warning' %}bg-warning{% else %}bg-success{% endif %}"
+                 role="progressbar" style="width: {{ shelf_life_pct|default:'50' }}%; border-radius: 11px; min-width: 2rem;"
+                 aria-valuenow="{{ shelf_life_pct|default:'50' }}" aria-valuemin="0" aria-valuemax="100">
+              <span style="font-size: 0.75rem; font-weight: 700;">{{ shelf_life_pct|default:'50' }}%</span>
+            </div>
+            {% endif %}
+            {% endif %}
+          </div>
+          {% endwith %}
+        </div>
+        {% endif %}
+
+        <!-- Expiry Warning Alerts -->
+        {% if product.expiry_status == 'expired' %}
+        <div class="alert alert-danger border-0 d-flex align-items-start gap-2 mb-0" style="border-left: 4px solid #dc2626 !important;">
+          <i class="fas fa-exclamation-triangle mt-1 flex-shrink-0"></i>
+          <div>
+            <strong>⚠ This product has EXPIRED!</strong>
+            It expired {{ product.days_until_expiry|cut:"-" }} day(s) ago on {{ product.expiry_date|date:"M d, Y" }}.
+            Consider removing it from active inventory.
+          </div>
+        </div>
+        {% elif product.expiry_status == 'critical' %}
+        <div class="alert alert-warning border-0 d-flex align-items-start gap-2 mb-0" style="border-left: 4px solid #f59e0b !important;">
+          <i class="fas fa-exclamation-circle mt-1 flex-shrink-0"></i>
+          <div>
+            <strong>⚠ Expiring in {{ product.days_until_expiry }} day(s)!</strong>
+            This product expires on {{ product.expiry_date|date:"M d, Y" }}. Plan for FIFO stock rotation immediately.
+          </div>
+        </div>
+        {% elif product.expiry_status == 'warning' %}
+        <div class="alert border-0 d-flex align-items-start gap-2 mb-0" style="background: #fff7ed; border-left: 4px solid #fb923c !important;">
+          <i class="fas fa-clock mt-1 flex-shrink-0" style="color:#fb923c;"></i>
+          <div>
+            <strong>Expires in {{ product.days_until_expiry }} day(s)</strong> on {{ product.expiry_date|date:"M d, Y" }}.
+            Consider planning stock rotation.
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- FIFO Batch Table -->
+        {% if product.batches.exists %}
+        <div class="mt-3">
+          <h6 class="fw-bold mb-2"><i class="fas fa-layer-group" style="color:#e65100;"></i> FIFO Inventory Batches</h6>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>BATCH #</th>
+                  <th class="text-center">QTY</th>
+                  <th>MFG DATE</th>
+                  <th>EXPIRY</th>
+                  <th class="text-center">DAYS LEFT</th>
+                  <th class="text-center">STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for batch in product.batches.all %}
+                <tr {% if batch.is_expired %}style="opacity: 0.6; text-decoration: line-through;"{% endif %}>
+                  <td><code>{{ batch.batch_number|default:"—" }}</code></td>
+                  <td class="text-center">
+                    <span class="badge bg-{% if batch.quantity > 0 %}info{% else %}secondary{% endif %}">
+                      {{ batch.quantity }} / {{ batch.initial_quantity }}
+                    </span>
+                  </td>
+                  <td>{{ batch.manufactured_date|date:"M d, Y"|default:"—" }}</td>
+                  <td>{{ batch.expiry_date|date:"M d, Y"|default:"—" }}</td>
+                  <td class="text-center">
+                    {% if batch.days_until_expiry != None %}
+                    <span class="badge bg-{% if batch.days_until_expiry < 0 %}danger{% elif batch.days_until_expiry <= 7 %}warning text-dark{% elif batch.days_until_expiry <= 30 %}warning text-dark{% else %}success{% endif %}">
+                      {% if batch.days_until_expiry < 0 %}Expired{% else %}{{ batch.days_until_expiry }}d{% endif %}
+                    </span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-center">
+                    {% if batch.expiry_status == 'expired' %}
+                    <span class="badge bg-danger"><i class="fas fa-times-circle"></i> Expired</span>
+                    {% elif batch.expiry_status == 'critical' %}
+                    <span class="badge bg-warning text-dark"><i class="fas fa-exclamation-circle"></i> Critical</span>
+                    {% elif batch.expiry_status == 'warning' %}
+                    <span class="badge" style="background:#fb923c;"><i class="fas fa-clock"></i> Warning</span>
+                    {% elif batch.expiry_status == 'ok' %}
+                    <span class="badge bg-success"><i class="fas fa-check"></i> Good</span>
+                    {% else %}
+                    <span class="badge bg-secondary">N/A</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="alert alert-info mt-2 mb-0 d-flex align-items-center" style="border-left: 4px solid #e65100; font-size: 0.85rem;">
+            <i class="fas fa-info-circle me-2"></i>
+            <span>FIFO mode: Oldest-expiry batches are consumed first during order fulfillment.</span>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- ==================== BACKORDER & RESERVATION STATUS ==================== -->
     <div class="card mb-3 shadow-sm" id="backorderStatusCard">
       <div class="card-header d-flex justify-content-between align-items-center"

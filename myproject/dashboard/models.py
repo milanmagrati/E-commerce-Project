@@ -102,6 +102,10 @@ class Product(models.Model):
     # ✅ NEW: Custom Product Flag (for quick sales)
     is_custom_product = models.BooleanField(default=False, help_text="Mark as custom/quick sale product")
 
+    # Dates & Expiry
+    manufactured_date = models.DateField(null=True, blank=True, help_text="Date the product was manufactured")
+    expiry_date = models.DateField(null=True, blank=True, help_text="Date the product expires")
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -152,10 +156,93 @@ class Product(models.Model):
             )
         return self.stock - self.reserved_qty
 
+    @property
+    def is_expired(self):
+        """Check if this product has passed its expiry date."""
+        if not self.expiry_date:
+            return False
+        return self.expiry_date <= timezone.now().date()
+
+    @property
+    def days_until_expiry(self):
+        """Return the number of days until this product expires (negative if expired)."""
+        if not self.expiry_date:
+            return None
+        delta = self.expiry_date - timezone.now().date()
+        return delta.days
+
+    @property
+    def expiry_status(self):
+        """Return 'expired', 'critical' (<=7 days), 'warning' (<=30 days), 'ok', or 'no_expiry'."""
+        days = self.days_until_expiry
+        if days is None:
+            return 'no_expiry'
+        if days < 0:
+            return 'expired'
+        if days <= 7:
+            return 'critical'
+        if days <= 30:
+            return 'warning'
+        return 'ok'
+
+    @property
+    def earliest_expiry_batch(self):
+        """Return the batch with the earliest expiry date (FIFO order)."""
+        return self.batches.filter(
+            quantity__gt=0, expiry_date__isnull=False
+        ).order_by('expiry_date').first()
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Product'
         verbose_name_plural = 'Products'
+
+
+class ProductBatch(models.Model):
+    """Track individual stock batches for FIFO (First-In First-Out) inventory."""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='batches')
+    batch_number = models.CharField(max_length=50, blank=True)
+    quantity = models.IntegerField(default=0, help_text="Remaining units in this batch")
+    initial_quantity = models.IntegerField(default=0, help_text="Original units when batch was created")
+    manufactured_date = models.DateField(null=True, blank=True)
+    expiry_date = models.DateField(null=True, blank=True)
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    notes = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['expiry_date', 'created_at']  # FIFO: oldest expiry first
+        verbose_name = 'Product Batch'
+        verbose_name_plural = 'Product Batches'
+
+    def __str__(self):
+        return f"{self.product.name} - Batch {self.batch_number or self.pk}"
+
+    @property
+    def is_expired(self):
+        if not self.expiry_date:
+            return False
+        return self.expiry_date <= timezone.now().date()
+
+    @property
+    def days_until_expiry(self):
+        if not self.expiry_date:
+            return None
+        delta = self.expiry_date - timezone.now().date()
+        return delta.days
+
+    @property
+    def expiry_status(self):
+        days = self.days_until_expiry
+        if days is None:
+            return 'no_expiry'
+        if days < 0:
+            return 'expired'
+        if days <= 7:
+            return 'critical'
+        if days <= 30:
+            return 'warning'
+        return 'ok'
 
 
 class BundleComponent(models.Model):
