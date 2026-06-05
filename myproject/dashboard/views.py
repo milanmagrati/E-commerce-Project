@@ -4623,7 +4623,7 @@ def possible_redirection_list(request):
     _NON_REDIRECTABLE_STATUSES = [
         'returned', 'delivered', 'sent to vendor',
     ]
-    rtvs = RTVOrder.objects.filter(vendor_return=True).select_related('api_config')
+    rtvs = RTVOrder.objects.filter(vendor_return=True, rtv_status__isnull=True).select_related('api_config')
     for _nrs in _NON_REDIRECTABLE_STATUSES:
         rtvs = rtvs.exclude(last_status__iexact=_nrs)
     rtvs = rtvs.order_by(
