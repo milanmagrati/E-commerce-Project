@@ -8204,7 +8204,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 try:
                     # Import ncm_service here to avoid circular imports
                     from services.ncm_service import NCMService
-                    ncm_service = NCMService()
+                    ncm_service = NCMService(api_config_id=order.api_config_id if order.api_config_id else None)
                     details_result = ncm_service.get_order_details(order.ncm_order_id)
 
                     logger.info(f"NCM API response details: {details_result}")
@@ -12484,27 +12484,12 @@ def ncm_sync_all_statuses(request):
 
         for order in ncm_orders:
             try:
-                # Call tracking for each order
-                base_url = getattr(settings, 'NCM_API_BASE_URL', None)
-                api_key = getattr(settings, 'NCM_API_KEY', None)
-
-                if not base_url or not api_key:
-                    continue
-
-                api_url = f"{base_url.rstrip('/')}/order/status"
-
-                response = requests.get(
-                    api_url,
-                    params={'id': order.ncm_order_id},
-                    headers={
-                        'Authorization': f'Token {api_key}',
-                        'Content-Type': 'application/json'
-                    },
-                    timeout=10
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
+                svc = NCMService(api_config_id=order.api_config_id if order.api_config_id else None)
+                
+                # Fetch order status
+                status_result = svc.get_order_status(order.ncm_order_id)
+                if status_result.get('success'):
+                    data = status_result.get('data')
                     if data and isinstance(data, list) and len(data) > 0:
                         latest_status = data[0]
                         new_status = latest_status.get('status', '')
@@ -12517,7 +12502,7 @@ def ncm_sync_all_statuses(request):
                 # ✅ Fetch and update delivery charge from NCM
                 if not order.delivery_charge or order.delivery_charge == 0:
                     try:
-                        details_result = ncm_service.get_order_details(order.ncm_order_id, timeout=5)
+                        details_result = svc.get_order_details(order.ncm_order_id, timeout=5)
                         if details_result.get('success'):
                             details_data = details_result.get('data', {})
                             # Try multiple possible field names for delivery charge
@@ -14811,10 +14796,10 @@ def financial_report_data(request):
                 needs_sync = True
                 try:
                     from services.ncm_service import NCMService
-                    ncm_service = NCMService()
                     for item in ncm_orders_to_sync:
                         try:
-                            result = ncm_service.get_order_details(item.ncm_order_id, timeout=5)
+                            svc = NCMService(api_config_id=item.api_config_id if item.api_config_id else None)
+                            result = svc.get_order_details(item.ncm_order_id, timeout=5)
                             if result.get('success') and result.get('data'):
                                 ncm_data = result['data']
                                 update_fields = []

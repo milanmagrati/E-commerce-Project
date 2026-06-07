@@ -69,7 +69,8 @@ def verify_ncm_order(request, order_id):
             return redirect('order_detail', order_id=order_id)
         
         # Try to fetch status from NCM
-        result = ncm_service.get_order_status(order.ncm_order_id)
+        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
+        result = svc.get_order_status(order.ncm_order_id)
         
         if result['success'] and result['data']:
             # Order found and has status
@@ -77,7 +78,7 @@ def verify_ncm_order(request, order_id):
             old_status = order.ncm_status
             
             order.ncm_status = latest_status
-            order.status = ncm_service.map_ncm_status_to_system(latest_status)
+            order.status = svc.map_ncm_status_to_system(latest_status)
             order.save()
             
             OrderActivityLog.objects.create(

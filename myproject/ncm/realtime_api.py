@@ -99,8 +99,10 @@ def api_get_order_status(request, order_id):
                 'timestamp': timezone.now().isoformat()
             })
         
+        # Use order-specific NCM API account
+        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
         # Try to fetch latest status from NCM
-        ncm_status_result = ncm_service.get_order_status(order.ncm_order_id)
+        ncm_status_result = svc.get_order_status(order.ncm_order_id)
         
         status_data = {
             'success': True,
@@ -150,8 +152,11 @@ def api_sync_order_status(request, order_id):
                 'message': 'Order not in NCM system yet'
             })
         
+        # Use order-specific NCM API account
+        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
+
         # Fetch latest status from NCM
-        result = ncm_service.get_order_status(order.ncm_order_id)
+        result = svc.get_order_status(order.ncm_order_id)
 
         if not result['success']:
             return JsonResponse({
@@ -179,9 +184,9 @@ def api_sync_order_status(request, order_id):
         old_payment_status = order.payment_status
 
         if latest_entry:
-            system_status, payment_status = ncm_service.resolve_delivered_status(latest_entry)
+            system_status, payment_status = svc.resolve_delivered_status(latest_entry)
         else:
-            system_status = ncm_service.map_ncm_status_to_system(latest_status)
+            system_status = svc.map_ncm_status_to_system(latest_status)
             payment_status = None
 
         # Check if any status field needs updating.
@@ -204,7 +209,7 @@ def api_sync_order_status(request, order_id):
             order.ncm_status = latest_status
 
             # Update all status-related fields (status, order_status, status_setup FK, payment fields)
-            update_fields = ncm_service.sync_order_status_fields(order, system_status, payment_status)
+            update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
             update_fields.append('ncm_status')
             update_fields.append('updated_at')
 

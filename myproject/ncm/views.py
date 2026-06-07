@@ -323,7 +323,10 @@ def sync_ncm_status(request, order_id):
         
         logger.info(f"Syncing NCM Order ID: {order.ncm_order_id}")
         
-        result = ncm_service.get_order_status(order.ncm_order_id)
+        # Use order-specific NCM API account
+        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
+        
+        result = svc.get_order_status(order.ncm_order_id)
         
         if result['success'] and result['data']:
             latest_status_data = result['data'][0]
@@ -334,12 +337,12 @@ def sync_ncm_status(request, order_id):
             old_payment_status = order.payment_status
 
             # Use resolve_delivered_status to handle vendor_return flag
-            system_status, payment_status = ncm_service.resolve_delivered_status(latest_status_data)
+            system_status, payment_status = svc.resolve_delivered_status(latest_status_data)
 
             order.ncm_status = latest_status
 
             # Update all status-related fields (status, order_status, status_setup FK, payment fields)
-            update_fields = ncm_service.sync_order_status_fields(order, system_status, payment_status)
+            update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
             update_fields.append('ncm_status')
             update_fields.append('updated_at')
 
@@ -490,8 +493,11 @@ def track_ncm_order(request, order_id):
             messages.error(request, 'Order not in NCM yet')
             return redirect('order_detail', order_id=order_id)
         
-        details_result = ncm_service.get_order_details(order.ncm_order_id)
-        status_result = ncm_service.get_order_status(order.ncm_order_id)
+        # Use order-specific NCM API account
+        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
+        
+        details_result = svc.get_order_details(order.ncm_order_id)
+        status_result = svc.get_order_status(order.ncm_order_id)
         
         context = {
             'order': order,
@@ -534,73 +540,91 @@ def bulk_sync_ncm_orders(request):
             messages.info(request, 'No NCM orders to sync')
             return redirect('orders_list')
         
-        ncm_order_ids = list(ncm_orders.values_list('ncm_order_id', flat=True))
-        
-        result = ncm_service.get_bulk_order_statuses(ncm_order_ids)
-        
-        if result['success']:
-            status_data = result['data'].get('result', {})
-            updated_count = 0
+        # Group orders by api_config_id to ensure correct credentials are used for each batch
+        orders_by_config = {}
+        for order in ncm_orders:
+            config_id = order.api_config_id
+            if config_id not in orders_by_config:
+                orders_by_config[config_id] = []
+            orders_by_config[config_id].append(order)
 
-            for order in ncm_orders:
-                if str(order.ncm_order_id) in status_data:
-                    new_status_raw = status_data[str(order.ncm_order_id)]
-                    old_status = order.ncm_status
-                    old_system_status = order.status
-                    old_payment_status = order.payment_status
+        updated_count = 0
+        total_orders = 0
+        errors = []
 
-                    # Bulk API returns only status string. For 'Delivered' orders,
-                    # fetch individual status to get the vendor_return flag.
-                    if isinstance(new_status_raw, str) and new_status_raw == 'Delivered':
-                        detail_result = ncm_service.get_order_status(order.ncm_order_id)
-                        if detail_result['success'] and detail_result['data']:
-                            entry = detail_result['data'][0] if isinstance(detail_result['data'], list) else detail_result['data']
-                            system_status, payment_status = ncm_service.resolve_delivered_status(entry)
-                            new_status = entry.get('status') or entry.get('Status', new_status_raw)
+        for config_id, group_orders in orders_by_config.items():
+            svc = NCMService(api_config_id=config_id) if config_id else ncm_service
+            group_ncm_ids = [str(o.ncm_order_id) for o in group_orders]
+            total_orders += len(group_orders)
+
+            result = svc.get_bulk_order_statuses(group_ncm_ids)
+
+            if result['success']:
+                status_data = result['data'].get('result', {})
+                for order in group_orders:
+                    if str(order.ncm_order_id) in status_data:
+                        new_status_raw = status_data[str(order.ncm_order_id)]
+                        old_status = order.ncm_status
+                        old_system_status = order.status
+                        old_payment_status = order.payment_status
+
+                        # Bulk API returns only status string. For 'Delivered' orders,
+                        # fetch individual status to get the vendor_return flag.
+                        if isinstance(new_status_raw, str) and new_status_raw == 'Delivered':
+                            detail_result = svc.get_order_status(order.ncm_order_id)
+                            if detail_result['success'] and detail_result['data']:
+                                entry = detail_result['data'][0] if isinstance(detail_result['data'], list) else detail_result['data']
+                                system_status, payment_status = svc.resolve_delivered_status(entry)
+                                new_status = entry.get('status') or entry.get('Status', new_status_raw)
+                            else:
+                                system_status = svc.map_ncm_status_to_system(new_status_raw)
+                                payment_status = None
+                                new_status = new_status_raw
+                        elif isinstance(new_status_raw, dict):
+                            system_status, payment_status = svc.resolve_delivered_status(new_status_raw)
+                            new_status = new_status_raw.get('status') or new_status_raw.get('Status', '')
                         else:
-                            system_status = ncm_service.map_ncm_status_to_system(new_status_raw)
-                            payment_status = None
                             new_status = new_status_raw
-                    elif isinstance(new_status_raw, dict):
-                        system_status, payment_status = ncm_service.resolve_delivered_status(new_status_raw)
-                        new_status = new_status_raw.get('status') or new_status_raw.get('Status', '')
-                    else:
-                        new_status = new_status_raw
-                        system_status = ncm_service.map_ncm_status_to_system(new_status)
-                        payment_status = None
+                            system_status = svc.map_ncm_status_to_system(new_status)
+                            payment_status = None
 
-                    order.ncm_status = new_status
+                        order.ncm_status = new_status
 
-                    # Update all status-related fields (status, order_status, status_setup FK, payment fields)
-                    update_fields = ncm_service.sync_order_status_fields(order, system_status, payment_status)
-                    update_fields.append('ncm_status')
-                    update_fields.append('updated_at')
+                        # Update all status-related fields (status, order_status, status_setup FK, payment fields)
+                        update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
+                        update_fields.append('ncm_status')
+                        update_fields.append('updated_at')
 
-                    if system_status == 'delivered' and not order.delivered_at:
-                        order.delivered_at = timezone.now()
-                        update_fields.append('delivered_at')
+                        if system_status == 'delivered' and not order.delivered_at:
+                            order.delivered_at = timezone.now()
+                            update_fields.append('delivered_at')
 
-                    # Deduplicate
-                    update_fields = list(dict.fromkeys(update_fields))
-                    order.save(update_fields=update_fields)
+                        # Deduplicate
+                        update_fields = list(dict.fromkeys(update_fields))
+                        order.save(update_fields=update_fields)
 
-                    OrderActivityLog.objects.create(
-                        order=order,
-                        action_type='status_changed',
-                        user=request.user,
-                        field_name='ncm_status',
-                        old_value=old_status,
-                        new_value=new_status,
-                        description=f'Bulk sync: {old_system_status} → {system_status}'
-                                    + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
-                    )
-                    
-                    updated_count += 1
-            
-            messages.success(request, f'✓ Synced {updated_count} orders')
-            logger.info(f"Bulk sync: {updated_count} orders")
-        else:
-            messages.error(request, f'Failed: {result.get("error")}')
+                        OrderActivityLog.objects.create(
+                            order=order,
+                            action_type='status_changed',
+                            user=request.user,
+                            field_name='ncm_status',
+                            old_value=old_status,
+                            new_value=new_status,
+                            description=f'Bulk sync: {old_system_status} → {system_status}'
+                                        + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
+                        )
+                        
+                        updated_count += 1
+            else:
+                errors.append(f"Failed config {config_id or 'default'}: {result.get('error')}")
+
+        if updated_count > 0:
+            messages.success(request, f'✓ Synced {updated_count} out of {total_orders} orders')
+            logger.info(f"Bulk sync: {updated_count}/{total_orders} orders")
+        if errors:
+            messages.warning(request, "Some batches failed: " + "; ".join(errors))
+        elif updated_count == 0 and not errors:
+            messages.info(request, "No orders were updated.")
         
         return redirect('orders_list')
         
