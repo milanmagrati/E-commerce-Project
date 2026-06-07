@@ -2830,7 +2830,7 @@ def orders_list(request):
     # Pagination
     from django.core.paginator import Paginator
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
@@ -4489,7 +4489,7 @@ def return_orders_list(request):
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
@@ -4806,7 +4806,7 @@ def possible_redirection_list(request):
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(rtvs, int(per_page))
     page_number = request.GET.get('page')
@@ -4992,7 +4992,7 @@ def redirect_orders_list(request):
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
@@ -6039,7 +6039,7 @@ def on_hold_orders_list(request):
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
