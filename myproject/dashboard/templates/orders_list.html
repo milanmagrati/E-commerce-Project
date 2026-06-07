@@ -498,9 +498,29 @@
                 {% endif %}
 
                 {% for num in orders.paginator.page_range %}
-                <li class="page-item {% if orders.number == num %}active{% endif %}">
-                    <a class="page-link" href="?page={{ num }}&per_page={{ per_page }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">{{ num }}</a>
-                </li>
+                    {% if orders.number == num %}
+                        <li class="page-item active">
+                            <span class="page-link">{{ num }}</span>
+                        </li>
+                    {% elif num > orders.number|add:'-3' and num < orders.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}&per_page={{ per_page }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">{{ num }}</a>
+                        </li>
+                    {% elif num == 1 %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1&per_page={{ per_page }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">1</a>
+                        </li>
+                        {% if orders.number > 4 %}
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        {% endif %}
+                    {% elif num == orders.paginator.num_pages %}
+                        {% if orders.number < orders.paginator.num_pages|add:'-3' %}
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        {% endif %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}&per_page={{ per_page }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payment_filter %}&payment={{ payment_filter }}{% endif %}{% if date_filter %}&date_range={{ date_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if logistics_filter %}&logistics_status={{ logistics_filter }}{% endif %}">{{ num }}</a>
+                        </li>
+                    {% endif %}
                 {% endfor %}
 
                 {% if orders.has_next %}
