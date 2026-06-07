@@ -479,9 +479,14 @@
                                 <h5 class="mb-0">
                                     <i class="fas fa-check-circle me-2"></i> Scanned Orders
                                 </h5>
-                                <small id="draftIndicator" class="text-success-light" style="display:none;">
-                                    <i class="fas fa-history me-1"></i> Draft (Auto-saved)
-                                </small>
+                                <div id="draftIndicator" style="display:none;" class="mt-1">
+                                    <small class="text-success-light" style="color: rgba(255,255,255,0.85);">
+                                        <i class="fas fa-history me-1"></i> Draft (Auto-saved)
+                                    </small>
+                                    <button type="button" class="btn btn-sm btn-link text-white py-0 px-1 ms-2 text-decoration-none" onclick="resetDraftManually()" title="Clear Draft">
+                                        <i class="fas fa-trash-alt text-danger"></i> <small>Reset</small>
+                                    </button>
+                                </div>
                             </div>
                             <div class="d-flex align-items-center gap-3">
                                 <span class="badge bg-white text-success" id="scannedCount">0 Orders</span>
@@ -662,12 +667,15 @@
     // ✅ Save draft to localStorage
     function saveDraft() {
         try {
-            const draftData = Array.from(scannedOrders.entries()).map(([key, value]) => ({
-                order_number: key,
-                order: value
-            }));
-            localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
-            console.log('💾 Draft saved:', draftData.length, 'order(s)');
+            const draftPayload = {
+                timestamp: new Date().getTime(),
+                orders: Array.from(scannedOrders.entries()).map(([key, value]) => ({
+                    order_number: key,
+                    order: value
+                }))
+            };
+            localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftPayload));
+            console.log('💾 Draft saved:', draftPayload.orders.length, 'order(s)');
         } catch (e) {
             console.error('Failed to save draft:', e);
         }
@@ -676,9 +684,28 @@
     // ✅ Load draft from localStorage
     function loadDraft() {
         try {
-            const draftData = localStorage.getItem(DRAFT_STORAGE_KEY);
-            if (draftData) {
-                const orders = JSON.parse(draftData);
+            const rawData = localStorage.getItem(DRAFT_STORAGE_KEY);
+            if (rawData) {
+                const parsed = JSON.parse(rawData);
+                let orders = [];
+                let timestamp = 0;
+                
+                if (Array.isArray(parsed)) {
+                    // Backwards compatibility with old array-based format
+                    orders = parsed;
+                } else if (parsed && parsed.orders) {
+                    orders = parsed.orders;
+                    timestamp = parsed.timestamp;
+                }
+                
+                // Expiry check: 6 hours
+                const SIX_HOURS = 6 * 60 * 60 * 1000;
+                if (timestamp && (new Date().getTime() - timestamp > SIX_HOURS)) {
+                    console.log('⏳ Draft expired (older than 6 hours), clearing...');
+                    clearDraft();
+                    return false;
+                }
+
                 orders.forEach(item => {
                     let needsAlert = false;
                     let totalQty = 0;
@@ -692,9 +719,10 @@
                     }
                     addScannedOrder(item.order, needsAlert);
                 });
+                
                 // Show draft indicator
                 const draftIndicator = document.getElementById('draftIndicator');
-                if (draftIndicator) {
+                if (draftIndicator && orders.length > 0) {
                     draftIndicator.style.display = 'block';
                 }
                 console.log('📂 Draft loaded:', orders.length, 'order(s)');
@@ -720,6 +748,18 @@
             console.error('Failed to clear draft:', e);
         }
     }
+
+    // ✅ Reset draft manually
+    window.resetDraftManually = function() {
+        if (confirm('Are you sure you want to clear the draft? This will remove all scanned orders.')) {
+            clearDraft();
+            scannedOrders.clear();
+            scannedOrdersList.innerHTML = '';
+            scannedOrdersSection.classList.remove('active');
+            scannedCount.textContent = '0 Orders';
+            updateBulkButton();
+        }
+    };
 
     // Manual Mode Toggle
     document.getElementById('toggleManualMode').addEventListener('click', function() {
@@ -1008,7 +1048,9 @@
             // Expand this card
             card.classList.add('expanded');
             const orderData = scannedOrders.get(orderNumber);
-            loadOrderDetails(orderNumber, orderData, detailsPanel);
+            if (!detailsPanel.querySelector('form')) {
+                loadOrderDetails(orderNumber, orderData, detailsPanel);
+            }
             detailsPanel.classList.add('show');
             expandedOrderId = orderNumber;
         }
