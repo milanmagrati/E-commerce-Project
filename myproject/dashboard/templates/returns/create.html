@@ -1383,9 +1383,28 @@
         })
         .then(response => {
             if (response.ok) {
-                // ✅ Clear draft after successful submission
-                clearDraft();
-                window.location.href = '{% url "returns_list" %}';
+                // ✅ Update draft after successful submission
+                scannedOrders.delete(orderNumber);
+                
+                if (scannedOrders.size === 0) {
+                    clearDraft();
+                    window.location.href = '{% url "returns_list" %}';
+                } else {
+                    saveDraft();
+                    loadingOverlay.classList.remove('active');
+                    alert(`Return for ${orderNumber} processed successfully!`);
+                    
+                    // Remove the card element
+                    const card = document.querySelector(`[data-order-number="${orderNumber}"]`);
+                    if (card) {
+                        card.style.animation = 'slideOut 0.3s ease';
+                        setTimeout(() => card.remove(), 300);
+                    }
+                    
+                    // Update count
+                    scannedCount.textContent = `${scannedOrders.size} Order${scannedOrders.size !== 1 ? 's' : ''}`;
+                    updateBulkButton();
+                }
             } else {
                 throw new Error('Submission failed');
             }
