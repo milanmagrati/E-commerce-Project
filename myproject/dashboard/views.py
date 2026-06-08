@@ -4969,23 +4969,27 @@ def redirect_orders_list(request):
 
     # Apply status filter
     if redirection_status == 'redirected':
-        orders = orders.filter(ncm_status='redirected')
+        orders = orders.filter(
+            Q(ncm_status__iexact='redirected') | 
+            Q(order_status__iexact='redirected') |
+            Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$')
+        )
     elif redirection_status == 'pending':
-        orders = orders.exclude(ncm_status='redirected')
+        orders = orders.exclude(
+            Q(ncm_status__iexact='redirected') | 
+            Q(order_status__iexact='redirected') |
+            Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$')
+        )
 
     # Stats
     total_redirected = Order.objects.filter(is_deleted=False, ncm_status='redirected').count()
 
-    # Count pending redirections (orders with redirection activity log but not yet completed)
-    pending_redirection_ids = set(
-        OrderActivityLog.objects.filter(
-            action_type='redirected',
-            order__is_deleted=False
-        ).exclude(
-            order__ncm_status='redirected'
-        ).values_list('order_id', flat=True)
-    )
-    pending_redirection_count = len(pending_redirection_ids)
+    # Count pending redirections
+    pending_redirection_count = orders.exclude(
+        Q(ncm_status__iexact='redirected') | 
+        Q(order_status__iexact='redirected') |
+        Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$')
+    ).count()
 
     # Calculate Total Value for the current filtered view
     total_value = orders.aggregate(total=Sum('total_amount'))['total'] or 0
@@ -5045,7 +5049,11 @@ def redirect_orders_list(request):
             'total_amount': order.total_amount,
             'order_status': order.order_status,
             'ncm_status': order.ncm_status,
-            'is_pending': order.ncm_status != 'redirected',
+            'is_pending': not (
+                (order.ncm_status and order.ncm_status.lower() in ['redirected', 'delivered', 'in_transit', 'in transit', 'completed', 'returned', 'rto']) or
+                (order.order_status and order.order_status.lower() == 'redirected') or
+                redirect_timestamp is not None
+            ),
             'items_count': len(order.items.all()),
             'updated_at': order.updated_at,
         }
