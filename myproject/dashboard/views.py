@@ -8363,19 +8363,17 @@ def dispatch_management(request):
                                     # ── Variation stock ──────────────────────────────
                                     old_stock = variation.stock
                                     oversold = variation.stock < quantity
-                                    if not oversold:
-                                        variation.stock -= quantity
-                                    else:
+                                    variation.stock -= quantity
+                                    if oversold:
                                         warn_msg = (
                                             f"⚠️ {variation.sku}: Need {quantity}, "
-                                            f"Available {variation.stock} (oversold)"
+                                            f"Available {old_stock} (oversold)"
                                         )
                                         stock_warnings.append(warn_msg)
-                                        variation.stock = max(0, variation.stock - quantity)
 
                                     # Update variation status based on its own threshold
                                     threshold = variation.low_stock_threshold or 0
-                                    if variation.stock == 0:
+                                    if variation.stock <= 0:
                                         variation.status = 'out_of_stock'
                                     elif threshold > 0 and variation.stock <= threshold:
                                         variation.status = 'inactive'  # low-stock flag for variations
@@ -8383,7 +8381,7 @@ def dispatch_management(request):
 
                                     # Variation oversold logic
                                     if product and oversold and product.backorders_allowed:
-                                        backorder_qty = quantity - old_stock
+                                        backorder_qty = quantity - max(0, old_stock)
                                         item.backordered_qty = backorder_qty
                                         try:
                                             item.save(update_fields=['backordered_qty'])
@@ -8414,7 +8412,7 @@ def dispatch_management(request):
                                             total=Sum('stock')
                                         )['total'] or 0
                                         p_threshold = product.low_stock_threshold or 0
-                                        if total_var_stock == 0:
+                                        if total_var_stock <= 0:
                                             product.stock_status = 'out_of_stock'
                                         elif p_threshold > 0 and total_var_stock <= p_threshold:
                                             product.stock_status = 'low_stock'
@@ -8432,19 +8430,17 @@ def dispatch_management(request):
                                                 required = comp.quantity_required * quantity
                                                 old_stock = comp_product.stock
                                                 oversold = comp_product.stock < required
-                                                if not oversold:
-                                                    comp_product.stock -= required
-                                                else:
+                                                comp_product.stock -= required
+                                                if oversold:
                                                     warn_msg = (
                                                         f"⚠️ {comp_product.name} (bundle component of {product.name}): "
-                                                        f"Need {required}, Available {comp_product.stock} (oversold)"
+                                                        f"Need {required}, Available {old_stock} (oversold)"
                                                     )
                                                     stock_warnings.append(warn_msg)
-                                                    comp_product.stock = max(0, comp_product.stock - required)
 
                                                 # Update component stock_status
                                                 threshold = comp_product.low_stock_threshold or 0
-                                                if comp_product.stock == 0:
+                                                if comp_product.stock <= 0:
                                                     comp_product.stock_status = 'out_of_stock'
                                                 elif threshold > 0 and comp_product.stock <= threshold:
                                                     comp_product.stock_status = 'low_stock'
@@ -8457,7 +8453,7 @@ def dispatch_management(request):
                                                 # Bundle component oversold logic (backorders track on parent bundle)
                                                 if oversold and product.backorders_allowed:
                                                     # Just track backorder on the item and bundle product, not component
-                                                    backorder_qty = required - old_stock
+                                                    backorder_qty = required - max(0, old_stock)
                                                     item.backordered_qty = backorder_qty
                                                     try:
                                                         item.save(update_fields=['backordered_qty'])
@@ -8484,19 +8480,17 @@ def dispatch_management(request):
                                             # ── Simple product stock ──────────────────────────
                                             old_stock = product.stock
                                             oversold = product.stock < quantity
-                                            if not oversold:
-                                                product.stock -= quantity
-                                            else:
+                                            product.stock -= quantity
+                                            if oversold:
                                                 warn_msg = (
                                                     f"⚠️ {product.name}: Need {quantity}, "
-                                                    f"Available {product.stock} (oversold)"
+                                                    f"Available {old_stock} (oversold)"
                                                 )
                                                 stock_warnings.append(warn_msg)
-                                                product.stock = max(0, product.stock - quantity)
 
                                             # Update stock_status using configured threshold
                                             threshold = product.low_stock_threshold or 0
-                                            if product.stock == 0:
+                                            if product.stock <= 0:
                                                 product.stock_status = 'out_of_stock'
                                             elif threshold > 0 and product.stock <= threshold:
                                                 product.stock_status = 'low_stock'
@@ -8508,7 +8502,7 @@ def dispatch_management(request):
 
                                             # Generate backorder at dispatch if oversold
                                             if oversold and product.backorders_allowed:
-                                                backorder_qty = quantity - old_stock
+                                                backorder_qty = quantity - max(0, old_stock)
                                                 item.backordered_qty = backorder_qty
                                                 try:
                                                     item.save(update_fields=['backordered_qty'])
