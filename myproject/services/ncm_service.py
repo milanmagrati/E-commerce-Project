@@ -52,14 +52,21 @@ class NCMService:
             return {'success': False, 'error': 'Request timeout'}
         
         except requests.exceptions.RequestException as e:
-            logger.error(f"NCM API error: {str(e)}")
+            status_code = getattr(getattr(e, 'response', None), 'status_code', None)
+            
+            # Log 404s as a debug/warning instead of a full error, since they are expected for missing orders
+            if status_code == 404:
+                logger.warning(f"NCM API 404 Not Found: {url}")
+            else:
+                logger.error(f"NCM API error: {str(e)}")
+                
             error_msg = str(e)
             if hasattr(e, 'response') and e.response is not None:
                 try:
                     error_msg = e.response.json()
                 except (ValueError, AttributeError):
                     error_msg = e.response.text if hasattr(e.response, 'text') else str(e)
-            return {'success': False, 'error': error_msg}
+            return {'success': False, 'error': error_msg, 'status_code': status_code}
 
     def _fetch_comments(self, ncm_order_id: int):
         """Fetch comments for an NCM order, trying v2 then v1.
