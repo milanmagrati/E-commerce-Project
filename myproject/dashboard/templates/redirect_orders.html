@@ -915,7 +915,7 @@
                     <i class="fas fa-arrow-right text-success mt-1"></i>
                     <div class="flex-grow-1">
                         <div class="fw-bold">Redirected by <strong>${log.redirect_user || 'Unknown'}</strong></div>
-                        <div class="small text-muted">${log.redirect_timestamp || '—'}</div>
+                        <div class="small text-muted">${formatDateTime(log.redirect_timestamp) || '—'}</div>
                         ${log.redirect_reason ? `<div class="mt-2 text-dark"><strong>Reason:</strong> ${log.redirect_reason}</div>` : ''}
                     </div>
                 </div>

@@ -4908,14 +4908,17 @@ def redirect_orders_list(request):
     from django.db import models as db_models
 
     # Base queryset: orders that are either redirected OR have a redirected activity log
-    redirect_log_order_ids = OrderActivityLog.objects.filter(
-        action_type='redirected'
-    ).values_list('order_id', flat=True)
-    
+    # Evaluate to a list early to avoid repeated subquery evaluations
+    redirect_log_order_ids = list(
+        OrderActivityLog.objects.filter(
+            action_type='redirected'
+        ).values_list('order_id', flat=True).distinct()
+    )
+
     orders = Order.objects.filter(
         is_deleted=False
     ).filter(
-        Q(ncm_status='redirected') | Q(id__in=redirect_log_order_ids)
+        Q(ncm_status='redirected') | Q(order_status__iexact='redirected') | Q(id__in=redirect_log_order_ids)
     ).select_related(
         'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
     ).prefetch_related(
@@ -4970,25 +4973,30 @@ def redirect_orders_list(request):
     # Apply status filter
     if redirection_status == 'redirected':
         orders = orders.filter(
-            Q(ncm_status__iexact='redirected') | 
+            Q(ncm_status__iexact='redirected') |
             Q(order_status__iexact='redirected') |
-            Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$')
+            Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$') |
+            Q(id__in=redirect_log_order_ids)
         )
     elif redirection_status == 'pending':
         orders = orders.exclude(
-            Q(ncm_status__iexact='redirected') | 
+            Q(ncm_status__iexact='redirected') |
             Q(order_status__iexact='redirected') |
-            Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$')
+            Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$') |
+            Q(id__in=redirect_log_order_ids)
         )
 
-    # Stats
-    total_redirected = Order.objects.filter(is_deleted=False, ncm_status='redirected').count()
+    # Stats — count all confirmed redirected orders (any signal)
+    total_redirected = Order.objects.filter(is_deleted=False).filter(
+        Q(ncm_status='redirected') | Q(order_status__iexact='redirected') | Q(id__in=redirect_log_order_ids)
+    ).count()
 
-    # Count pending redirections
+    # Count pending redirections (orders in the list that haven't been confirmed redirected)
     pending_redirection_count = orders.exclude(
-        Q(ncm_status__iexact='redirected') | 
+        Q(ncm_status__iexact='redirected') |
         Q(order_status__iexact='redirected') |
-        Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$')
+        Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$') |
+        Q(id__in=redirect_log_order_ids)
     ).count()
 
     # Calculate Total Value for the current filtered view
@@ -5005,8 +5013,9 @@ def redirect_orders_list(request):
     # Build enriched entries with redirection history
     redirect_entries = []
     for order in orders_page.object_list:
-        # Get latest redirection activity log
-        redirection_logs = order.activity_logs.filter(action_type='redirected').order_by('-created_at')[:1]
+        # Use prefetched activity_logs directly — avoids N+1 DB queries.
+        # The prefetch loaded only action_type='redirected' logs ordered by -created_at.
+        prefetched_logs = list(order.activity_logs.all())  # reads from cache
 
         old_customer_info = {
             'name': '—',
@@ -5018,8 +5027,8 @@ def redirect_orders_list(request):
         redirect_user = None
         redirect_reason = ''
 
-        if redirection_logs:
-            log = redirection_logs[0]
+        if prefetched_logs:
+            log = prefetched_logs[0]  # already sorted -created_at by prefetch
             redirect_timestamp = log.created_at
             redirect_user = log.user.username if log.user else 'System'
             redirect_reason = log.description or ''
@@ -5052,9 +5061,10 @@ def redirect_orders_list(request):
             'is_pending': not (
                 (order.ncm_status and order.ncm_status.lower() in ['redirected', 'delivered', 'in_transit', 'in transit', 'completed', 'returned', 'rto']) or
                 (order.order_status and order.order_status.lower() == 'redirected') or
-                redirect_timestamp is not None
+                redirect_timestamp is not None or
+                order.id in redirect_log_order_ids
             ),
-            'items_count': len(order.items.all()),
+            'items_count': len(list(order.items.all())),  # uses prefetch cache, no extra DB query
             'updated_at': order.updated_at,
         }
         redirect_entries.append(entry)
@@ -5177,8 +5187,8 @@ def redirect_order_save(request, order_id):
             order.customer_phone = request.POST.get('customer_phone', order.customer_phone).strip()
             order.customer_email = request.POST.get('customer_email', order.customer_email).strip()
             order.shipping_address = request.POST.get('shipping_address', order.shipping_address).strip()
-            order.landmark = request.POST.get('landmark', order.landmark).strip()
-            order.notes = request.POST.get('notes', order.notes).strip()
+            order.landmark = request.POST.get('landmark', order.landmark or '').strip()
+            order.notes = request.POST.get('notes', order.notes or '').strip()
             order.in_out = request.POST.get('in_out', order.in_out)
 
             new_branch_city = request.POST.get('branch_city', '').strip()
@@ -5347,11 +5357,20 @@ def redirect_order_save(request, order_id):
                             'branch_city': _matched_order.branch_city,
                         }
 
-                        _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
-                        _matched_order.status_setup = _redir_st
-                        _matched_order.order_status = _redir_st.name.lower()
-                        _matched_order.save(update_fields=['status_setup', 'order_status'])
-                        # Log redirect on the matched order's activity log
+                        # Try to apply 'Redirected' status from Setup Management
+                        # (kept separate so Setup.DoesNotExist doesn't block activity log)
+                        _lo_update_fields_matched = ['order_status']
+                        _matched_order.order_status = 'redirected'
+                        try:
+                            _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
+                            _matched_order.status_setup = _redir_st
+                            _matched_order.order_status = _redir_st.name.lower()
+                            _lo_update_fields_matched.append('status_setup')
+                        except Setup.DoesNotExist:
+                            pass
+                        _matched_order.save(update_fields=_lo_update_fields_matched)
+
+                        # Always log the redirect on the matched order's activity log
                         try:
                             OrderActivityLog.objects.create(
                                 order=_matched_order,
@@ -5371,7 +5390,7 @@ def redirect_order_save(request, order_id):
                             )
                         except Exception:
                             pass
-                    except (Order.DoesNotExist, Setup.DoesNotExist, ValueError, TypeError):
+                    except (Order.DoesNotExist, ValueError, TypeError):
                         pass
 
         response_data = {'status': 'success', 'message': 'Order updated successfully.'}
@@ -5711,11 +5730,20 @@ def redirect_rtv_save(request, ncm_order_id):
                         'branch_city': _matched_order.branch_city,
                     }
 
-                    _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
-                    _matched_order.status_setup = _redir_st
-                    _matched_order.order_status = _redir_st.name.lower()
-                    _matched_order.save(update_fields=['status_setup', 'order_status'])
-                    # Log the redirect on the matched (confirmed) order
+                    # Try to apply 'Redirected' status from Setup Management
+                    # (kept separate so Setup.DoesNotExist doesn't block activity log)
+                    _lo_update_fields_rtv = ['order_status']
+                    _matched_order.order_status = 'redirected'
+                    try:
+                        _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
+                        _matched_order.status_setup = _redir_st
+                        _matched_order.order_status = _redir_st.name.lower()
+                        _lo_update_fields_rtv.append('status_setup')
+                    except Setup.DoesNotExist:
+                        pass
+                    _matched_order.save(update_fields=_lo_update_fields_rtv)
+
+                    # Always log the redirect on the matched (confirmed) order
                     try:
                         OrderActivityLog.objects.create(
                             order=_matched_order,
@@ -5734,7 +5762,7 @@ def redirect_rtv_save(request, ncm_order_id):
                         )
                     except Exception:
                         pass
-                except (Order.DoesNotExist, Setup.DoesNotExist, ValueError, TypeError):
+                except (Order.DoesNotExist, ValueError, TypeError):
                     pass
 
             # Log the redirect on the linked local order (if it exists)
@@ -20531,10 +20559,17 @@ def get_redirect_order_details(request, order_id):
     try:
         order = Order.objects.select_related(
             'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
-        ).prefetch_related('items', 'activity_logs').get(id=order_id, is_deleted=False)
+        ).prefetch_related(
+            'items',
+            'activity_logs__user',
+        ).get(id=order_id, is_deleted=False)
+
+        # Get all redirected activity logs from prefetch cache (sorted -created_at by model Meta)
+        all_activity_logs = list(order.activity_logs.all())
+        redirection_logs = [lg for lg in all_activity_logs if lg.action_type == 'redirected']
 
         # Get the latest redirection activity log
-        redirection_log = order.activity_logs.filter(action_type='redirected').first()
+        redirection_log = redirection_logs[0] if redirection_logs else None
 
         old_customer_info = {}
         redirect_history = []
@@ -20549,8 +20584,8 @@ def get_redirect_order_details(request, order_id):
             old_customer_info.setdefault('branch', raw_meta.get('old_branch_city', ''))
             old_customer_info.setdefault('address', raw_meta.get('old_shipping_address', ''))
 
-            # Get all redirection logs for history
-            for log in order.activity_logs.filter(action_type='redirected').order_by('-created_at'):
+            # Build redirect history from in-memory list (no extra DB query)
+            for log in redirection_logs:
                 redirect_history.append({
                     'redirect_user': log.user.username if log.user else 'System',
                     'redirect_timestamp': log.created_at.isoformat(),

@@ -12,8 +12,8 @@
     background: #fff;
     border-radius: 16px;
     box-shadow: 0 4px 24px rgba(0,0,0,.07);
-    overflow: visible;
-    min-height: calc(100vh - 180px);
+    overflow: hidden;
+    height: calc(100vh - 180px);
   }
 
   /* ---- Left nav panel ---- */
@@ -25,9 +25,8 @@
     border-radius: 16px 0 0 16px;
     display: flex;
     flex-direction: column;
-    align-self: flex-start;
-    position: sticky;
-    top: 80px;
+    height: 100%;
+    overflow-y: auto;
   }
 
   .sh-nav-header {
@@ -104,9 +103,11 @@
   /* ---- Right content panel ---- */
   .sh-content {
     flex: 1;
-    overflow-y: visible;
+    overflow-y: auto;
     padding: 2rem 2.5rem 50vh;
     min-width: 0;
+    height: 100%;
+    position: relative;
   }
 
   /* ---- Section anchor blocks ---- */
@@ -1179,24 +1180,30 @@ function shScrollTo(id) {
   if (!el) return;
   // Immediately highlight the clicked nav item
   shSetActive(id);
-  var offset = 90;
-  var top = el.getBoundingClientRect().top + window.pageYOffset - offset;
-  window.scrollTo({ top: top, behavior: 'smooth' });
+  var scrollContainer = document.querySelector('.sh-content');
+  if (scrollContainer) {
+    var offset = 20;
+    var top = el.offsetTop - offset;
+    scrollContainer.scrollTo({ top: top, behavior: 'smooth' });
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
   _shSections = Array.from(document.querySelectorAll('.sh-section'));
   _shNavLinks = Array.from(document.querySelectorAll('.sh-nav-link[data-target]'));
 
-  window.addEventListener('scroll', function() {
-    if (!_shSections.length) return;
-    var scrollPos = window.pageYOffset + 150;
-    var current = _shSections[0].id;
-    _shSections.forEach(function(sec) {
-      if (sec.offsetTop <= scrollPos) current = sec.id;
+  var scrollContainer = document.querySelector('.sh-content');
+  if (scrollContainer) {
+    scrollContainer.addEventListener('scroll', function() {
+      if (!_shSections.length) return;
+      var scrollPos = scrollContainer.scrollTop + 150;
+      var current = _shSections[0].id;
+      _shSections.forEach(function(sec) {
+        if (sec.offsetTop <= scrollPos) current = sec.id;
+      });
+      shSetActive(current);
     });
-    shSetActive(current);
-  });
+  }
 });
 
 /* ===================== COMPANY SETUP JS ===================== */
