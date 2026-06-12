@@ -1,4 +1,3 @@
-from urllib import request
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout, get_user_model
@@ -176,8 +175,6 @@ def sync_order_status_setup(order):
             order.save()
         except Exception:
             pass
-
-    return order
 
     return order
 
@@ -468,14 +465,15 @@ def dashboard_view(request):
         'can_view_total_revenue': request.user.can_view_total_revenue or request.user.role == 'administrator',
     }
     return render(request, 'dashboard.html', context)
+
 @login_required
 @permission_required('can_view_products')
 def products_view(request):
+    """Products list with search, filters, and date range"""
     # Check for a flag set by product_add to clear any client-side product drafts
     clear_product_draft = request.session.pop('clear_product_draft', False)
     # attach to request for template access
     request.clear_product_draft = clear_product_draft
-    """Products list with search, filters, and date range"""
     products = Product.objects.filter(
         is_deleted=False
     ).select_related('category').prefetch_related(
