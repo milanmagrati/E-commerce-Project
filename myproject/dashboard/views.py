@@ -8234,6 +8234,24 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 order.logistics = 'ncm' # Ensure logistics is set
                 if matched_api_config:
                     order.api_config = matched_api_config
+
+                # Update order status to "Pickup Created" from Setup Management
+                try:
+                    from dashboard.models import Setup
+                    pickup_setup = Setup.objects.filter(setup_type='status', name__iexact='Pickup Created').first()
+                    if not pickup_setup:
+                        pickup_setup = Setup.objects.filter(setup_type='status', name__icontains='Pickup Created').first()
+                    
+                    if pickup_setup:
+                        order.status_setup = pickup_setup
+                        order.order_status = pickup_setup.name
+                        order.status = pickup_setup.name
+                    else:
+                        order.order_status = 'Pickup Created'
+                        order.status = 'Pickup Created'
+                except Exception:
+                    pass
+
                 order.save()
 
                 # ✅ FETCH DELIVERY CHARGE FROM NCM API
@@ -13118,6 +13136,24 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 order.ncm_destination_branch = destination_branch
                 if matched_api_config:
                     order.api_config = matched_api_config
+
+                # Update order status to "Pickup Created" from Setup Management
+                try:
+                    from dashboard.models import Setup
+                    pickup_setup = Setup.objects.filter(setup_type='status', name__iexact='Pickup Created').first()
+                    if not pickup_setup:
+                        pickup_setup = Setup.objects.filter(setup_type='status', name__icontains='Pickup Created').first()
+                    
+                    if pickup_setup:
+                        order.status_setup = pickup_setup
+                        order.order_status = pickup_setup.name
+                        order.status = pickup_setup.name
+                    else:
+                        order.order_status = 'Pickup Created'
+                        order.status = 'Pickup Created'
+                except Exception:
+                    pass
+
                 order.save()
 
 
@@ -17818,6 +17854,24 @@ def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=N
                         ).order_by('id').first()
                 if matched_api_config:
                     order.api_config = matched_api_config
+
+                # Update order status to "Pickup Created" from Setup Management
+                try:
+                    from dashboard.models import Setup
+                    pickup_setup = Setup.objects.filter(setup_type='status', name__iexact='Pickup Created').first()
+                    if not pickup_setup:
+                        pickup_setup = Setup.objects.filter(setup_type='status', name__icontains='Pickup Created').first()
+                    
+                    if pickup_setup:
+                        order.status_setup = pickup_setup
+                        order.order_status = pickup_setup.name
+                        order.status = pickup_setup.name
+                    else:
+                        order.order_status = 'Pickup Created'
+                        order.status = 'Pickup Created'
+                except Exception:
+                    pass
+
                 order.save()
 
                 # Log activity

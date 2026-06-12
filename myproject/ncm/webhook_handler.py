@@ -34,8 +34,8 @@ class NCMWebhookHandler:
     # Unified status mapping: NCM status -> system status
     # This is the single source of truth for all webhook and sync operations
     STATUS_MAPPING = {
-        'Pickup Order Created': 'processing',
-        'Drop off Order Created': 'processing',
+        'Pickup Order Created': 'Pickup Created',
+        'Drop off Order Created': 'Pickup Created',
         'Pickup Complete': 'in_transit',
         'Drop off Order Collected': 'in_transit',
         'Dispatched': 'in_transit',

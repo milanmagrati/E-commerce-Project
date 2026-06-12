@@ -540,8 +540,8 @@ class NCMService:
         consistent behavior between webhook updates and manual sync operations.
         """
         mapping = {
-            'Pickup Order Created': 'processing',
-            'Drop off Order Created': 'processing',
+            'Pickup Order Created': 'Pickup Created',
+            'Drop off Order Created': 'Pickup Created',
             'Pickup Complete': 'in_transit',
             'Drop off Order Collected': 'in_transit',
             'Dispatched': 'in_transit',
@@ -611,11 +611,10 @@ class NCMService:
 
         # Try to find matching Setup FK for order status
         try:
-            # Match by converting Setup name to the same format as system_status
-            # e.g. Setup name "Delivered" -> "delivered", "In Transit" -> "in_transit"
             status_setup = None
+            sys_stat_norm = system_status.lower().replace(' ', '_')
             for s in Setup.objects.filter(setup_type='status', is_active=True):
-                if s.name.lower().replace(' ', '_') == system_status:
+                if s.name.lower().replace(' ', '_') == sys_stat_norm:
                     status_setup = s
                     break
             if status_setup:
@@ -632,8 +631,9 @@ class NCMService:
             # Try to find matching Setup FK for payment status
             try:
                 ps_setup = None
+                pay_stat_norm = payment_status.lower().replace(' ', '_')
                 for s in Setup.objects.filter(setup_type='payment_status', is_active=True):
-                    if s.name.lower().replace(' ', '_') == payment_status:
+                    if s.name.lower().replace(' ', '_') == pay_stat_norm:
                         ps_setup = s
                         break
                 if ps_setup:
