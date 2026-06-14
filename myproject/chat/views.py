@@ -269,10 +269,12 @@ def api_get_messages(request, thread_id):
     })
 
 
-@login_required
 @require_http_methods(["GET"])
 def api_unread_count(request):
     """AJAX endpoint to get total unread message count for navbar badge"""
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=401)
+
     count = ChatMessage.objects.filter(
         thread__participants=request.user,
         is_read=False

@@ -2450,15 +2450,27 @@
             _prevUnreadCount = newCount;
         }
 
+        var chatPollInterval;
         function pollUnreadCount() {
-            fetch('{% url "chat:api_unread_count" %}')
-                .then(function (r) { return r.json(); })
+            fetch('{% url "chat:api_unread_count" %}', {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest' // Helps middleware identify AJAX
+                }
+            })
+                .then(function (r) {
+                    // Stop polling if the session expired or user logged out
+                    if (r.status === 401 || r.status === 403 || r.redirected) {
+                        clearInterval(chatPollInterval);
+                        return null;
+                    }
+                    return r.json();
+                })
                 .then(function (data) {
-                    if (data.success) handleUnreadUpdate(data.unread_count);
+                    if (data && data.success) handleUnreadUpdate(data.unread_count);
                 })
                 .catch(function () { });
         }
-        setInterval(pollUnreadCount, 3000);
+        chatPollInterval = setInterval(pollUnreadCount, 3000);
 
 
         // --- GLOBAL NOTICE POLLER ---
