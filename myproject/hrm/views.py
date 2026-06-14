@@ -9,7 +9,11 @@ from django.db.models import Q, Sum, Count
 from django.core.paginator import Paginator
 from django.contrib import messages
 
-from .models import Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, AwardType, Award, Promotion, Resignation, Termination, Warning, Complaint, AssetType, Asset
+from .models import (
+    Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, 
+    AwardType, Award, Promotion, Resignation, Termination, Warning, Complaint, 
+    AssetType, Asset, Payslip, PayslipAdjustment, PayslipAuditLog
+)
 from .forms import EmployeeForm, EmployeeDocumentForm
 
 
@@ -5572,8 +5576,7 @@ def payslip_download(request, pk):
         total_earnings_comp += _b.amount
 
     # -> ADD ADJUSTMENTS HERE <-
-    from .models import PayslipAdjustment as _Adj
-    for _adj in _Adj.objects.filter(payslip=slip):
+    for _adj in PayslipAdjustment.objects.filter(payslip=slip):
         if _adj.adjustment_type == 'earning':
             earnings_list.append({'name': f"Adjustment ({_adj.description})", 'amount': _adj.amount})
             total_earnings_comp += _adj.amount
@@ -5987,16 +5990,14 @@ def payroll_calculation(request, pk):
         total_earnings_components += _b.amount
 
     # -> ADD ADJUSTMENTS HERE <-
-    from .models import Payslip as _Payslip
-    _existing_slip_for_adj = _Payslip.objects.filter(
+    _existing_slip_for_adj = Payslip.objects.filter(
         employee=employee,
         payroll_run__pay_period_start__lte=last_day,
         payroll_run__pay_period_end__gte=first_day,
     ).order_by('-payroll_run__pay_date').first()
     
     if _existing_slip_for_adj:
-        from .models import PayslipAdjustment as _Adj
-        for _adj in _Adj.objects.filter(payslip=_existing_slip_for_adj):
+        for _adj in PayslipAdjustment.objects.filter(payslip=_existing_slip_for_adj):
             if _adj.adjustment_type == 'earning':
                 earnings.append({'name': f"Adjustment ({_adj.description})", 'amount': _adj.amount})
                 total_earnings_components += _adj.amount
@@ -8759,7 +8760,7 @@ def bonus_update_status(request, pk):
 
 @login_required
 def payslip_adjust(request, pk):
-    from .models import Payslip, PayslipAdjustment, PayslipAuditLog
+
     from decimal import Decimal
 
     slip = get_object_or_404(
@@ -8858,7 +8859,7 @@ def payslip_adjust(request, pk):
 
 def _recalculate_payslip(slip):
     """Recalculate gross_salary, total_deductions, net_salary based on manual adjustments."""
-    from .models import PayslipAdjustment
+
     from decimal import Decimal
 
     adjustments = PayslipAdjustment.objects.filter(payslip=slip)
@@ -8940,7 +8941,6 @@ def payslip_finalize(request, pk):
 @login_required
 def payslip_unfinalize(request, pk):
     """Allow HR to unlock a finalized payslip (with caution)."""
-    from .models import Payslip, PayslipAuditLog
     slip = get_object_or_404(Payslip, pk=pk)
 
     if request.method != 'POST':
@@ -8967,7 +8967,6 @@ def payslip_unfinalize(request, pk):
 
 @login_required
 def payslip_delete(request, pk):
-    from .models import Payslip
     slip = get_object_or_404(Payslip, pk=pk)
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
