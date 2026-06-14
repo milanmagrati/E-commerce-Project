@@ -5519,6 +5519,10 @@ def payslip_download(request, pk):
         if comp.component_type == 'earning':
             if comp.calculation_type == 'fixed':
                 pre_gross += comp.amount
+            elif comp.calculation_type == 'variable':
+                if total_days > 0:
+                    _var_amt = (comp.amount / Decimal(str(total_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    pre_gross += min(_var_amt, comp.amount)
             elif comp.calculation_type == 'percentage_of_basic':
                 pre_gross += (earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
@@ -5530,6 +5534,12 @@ def payslip_download(request, pk):
     for comp in components:
         if comp.calculation_type == 'fixed':
             calc_amount = comp.amount
+        elif comp.calculation_type == 'variable':
+            if total_days > 0:
+                calc_amount = (comp.amount / Decimal(str(total_days)) * payable_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                calc_amount = min(calc_amount, comp.amount)
+            else:
+                calc_amount = Decimal('0')
         elif comp.calculation_type == 'percentage_of_basic':
             calc_amount = (earned_basic * comp.amount / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         elif comp.calculation_type in ('percentage_of_gross', 'percentage_of_ctc'):
@@ -5537,12 +5547,39 @@ def payslip_download(request, pk):
         else:
             calc_amount = comp.amount
 
+        # Build display name — show days breakdown for variable components
+        display_name = comp.name
+        if comp.calculation_type == 'variable':
+            display_name = f"{comp.name} ({payable_days}/{total_days} days)"
+
         if comp.component_type == 'earning':
-            earnings_list.append({'name': comp.name, 'amount': calc_amount})
+            earnings_list.append({'name': display_name, 'amount': calc_amount})
             total_earnings_comp += calc_amount
         else:
-            deductions_list.append({'name': comp.name, 'amount': calc_amount})
+            deductions_list.append({'name': display_name, 'amount': calc_amount})
             total_deductions_comp += calc_amount
+
+    # -> ADD BONUS HERE <-
+    from .models import Bonus as _Bonus
+    _bonus_qs = _Bonus.objects.filter(
+        employee=employee,
+        month=month,
+        year=year,
+        status__in=['approved', 'paid']
+    )
+    for _b in _bonus_qs:
+        earnings_list.append({'name': f"Bonus ({_b.get_bonus_type_display()})", 'amount': _b.amount})
+        total_earnings_comp += _b.amount
+
+    # -> ADD ADJUSTMENTS HERE <-
+    from .models import PayslipAdjustment as _Adj
+    for _adj in _Adj.objects.filter(payslip=slip):
+        if _adj.adjustment_type == 'earning':
+            earnings_list.append({'name': f"Adjustment ({_adj.description})", 'amount': _adj.amount})
+            total_earnings_comp += _adj.amount
+        elif _adj.adjustment_type == 'deduction':
+            deductions_list.append({'name': f"Adjustment ({_adj.description})", 'amount': _adj.amount})
+            total_deductions_comp += _adj.amount
 
     total_earnings = earned_basic + total_earnings_comp
 
@@ -5936,6 +5973,36 @@ def payroll_calculation(request, pk):
         else:
             deductions.append({'name': display_name, 'amount': calc_amount})
             total_deductions_amount += calc_amount
+
+    # -> ADD BONUS HERE <-
+    from .models import Bonus as _Bonus
+    _bonus_qs = _Bonus.objects.filter(
+        employee=employee,
+        month=month,
+        year=year,
+        status__in=['approved', 'paid']
+    )
+    for _b in _bonus_qs:
+        earnings.append({'name': f"Bonus ({_b.get_bonus_type_display()})", 'amount': _b.amount})
+        total_earnings_components += _b.amount
+
+    # -> ADD ADJUSTMENTS HERE <-
+    from .models import Payslip as _Payslip
+    _existing_slip_for_adj = _Payslip.objects.filter(
+        employee=employee,
+        payroll_run__pay_period_start__lte=last_day,
+        payroll_run__pay_period_end__gte=first_day,
+    ).order_by('-payroll_run__pay_date').first()
+    
+    if _existing_slip_for_adj:
+        from .models import PayslipAdjustment as _Adj
+        for _adj in _Adj.objects.filter(payslip=_existing_slip_for_adj):
+            if _adj.adjustment_type == 'earning':
+                earnings.append({'name': f"Adjustment ({_adj.description})", 'amount': _adj.amount})
+                total_earnings_components += _adj.amount
+            elif _adj.adjustment_type == 'deduction':
+                deductions.append({'name': f"Adjustment ({_adj.description})", 'amount': _adj.amount})
+                total_deductions_amount += _adj.amount
 
     total_earnings = earned_basic + total_earnings_components
 
