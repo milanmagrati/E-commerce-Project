@@ -2480,8 +2480,43 @@
             .then(data => {
                 if (data.status === 'success' && data.notice) {
                     const notice = data.notice;
-                    // If notice changed or we haven't seen it yet ON THIS PAGE
-                    if (notice.id.toString() !== _lastShownNoticeId) {
+                    const freq = notice.display_frequency || 'every_refresh';
+                    const noticeIdStr = notice.id.toString();
+                    
+                    let shouldShow = false;
+
+                    // Never show the same notice twice on the SAME page load
+                    if (noticeIdStr !== _lastShownNoticeId) {
+                        if (freq === 'once_only') {
+                            if (!localStorage.getItem('notice_seen_' + noticeIdStr)) {
+                                shouldShow = true;
+                            }
+                        } else if (freq === 'once_per_session') {
+                            if (!sessionStorage.getItem('notice_seen_' + noticeIdStr)) {
+                                shouldShow = true;
+                            }
+                        } else if (freq === 'once_per_hour' || freq === 'once_per_day' || freq === 'once_per_week') {
+                            const lastSeenStr = localStorage.getItem('notice_seen_time_' + noticeIdStr);
+                            if (!lastSeenStr) {
+                                shouldShow = true;
+                            } else {
+                                const lastSeen = parseInt(lastSeenStr, 10);
+                                const now = Date.now();
+                                if (freq === 'once_per_hour' && (now - lastSeen > 60 * 60 * 1000)) {
+                                    shouldShow = true;
+                                } else if (freq === 'once_per_day' && (now - lastSeen > 24 * 60 * 60 * 1000)) {
+                                    shouldShow = true;
+                                } else if (freq === 'once_per_week' && (now - lastSeen > 7 * 24 * 60 * 60 * 1000)) {
+                                    shouldShow = true;
+                                }
+                            }
+                        } else {
+                            // every_refresh
+                            shouldShow = true;
+                        }
+                    }
+
+                    if (shouldShow) {
                         document.getElementById('globalNoticeContent').innerHTML = notice.content;
                         document.getElementById('globalNoticeSender').innerHTML = 'Sent by: <strong>' + notice.created_by + '</strong>';
                         
@@ -2493,7 +2528,12 @@
                         }
                         
                         // Set tracking ID so we don't show it repeatedly on this view
-                        _lastShownNoticeId = notice.id.toString();
+                        _lastShownNoticeId = noticeIdStr;
+                        if (freq === 'once_only') localStorage.setItem('notice_seen_' + noticeIdStr, '1');
+                        if (freq === 'once_per_session') sessionStorage.setItem('notice_seen_' + noticeIdStr, '1');
+                        if (['once_per_hour', 'once_per_day', 'once_per_week'].includes(freq)) {
+                            localStorage.setItem('notice_seen_time_' + noticeIdStr, Date.now().toString());
+                        }
                         
                         // Play sound if available
                         try {

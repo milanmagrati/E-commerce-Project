@@ -1812,6 +1812,16 @@ class GlobalNotice(models.Model):
     display_from = models.DateTimeField(null=True, blank=True, help_text="When to start showing the notice")
     display_until = models.DateTimeField(null=True, blank=True, help_text="When to stop showing the notice")
 
+    DISPLAY_FREQ_CHOICES = [
+        ('every_refresh', 'Every Refresh'),
+        ('once_per_session', 'Once Per Session'),
+        ('once_per_hour', 'Once Per Hour'),
+        ('once_per_day', 'Once Per Day'),
+        ('once_per_week', 'Once Per Week'),
+        ('once_only', 'Once Only'),
+    ]
+    display_frequency = models.CharField(max_length=20, choices=DISPLAY_FREQ_CHOICES, default='every_refresh', help_text="How often to show the notice to a user")
+
     class Meta:
         ordering = ['-created_at']
 

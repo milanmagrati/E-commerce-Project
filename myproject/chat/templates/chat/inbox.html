@@ -769,30 +769,42 @@
                     <!-- CREATE NOTICE TAB -->
                     <div class="tab-pane fade show active" id="create-notice" role="tabpanel">
                         <form id="throwNoticeForm">
-                            <div class="mb-3">
+                            <div class="mb-2">
                                 <label class="form-label fw-bold text-muted mb-1">Notice Content</label>
-                                <div id="noticeEditor" style="height:140px; background: white;"></div>
+                                <div id="noticeEditor" style="height:200px; background: white;"></div>
                             </div>
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label fw-bold text-muted">Start Showing From</label>
-                                    <input type="text" class="form-control" id="noticeDisplayFrom" style="border-radius:10px; border:2px solid #e2e8f0; padding:10px; background-color: white;" placeholder="mm/dd/yyyy --:-- --">
-                                    <small class="text-muted">Leave empty to show immediately</small>
+                            <div class="row mb-1">
+                                <div class="col-md-6 mb-1">
+                                    <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Start Showing From</label>
+                                    <input type="text" class="form-control" id="noticeDisplayFrom" style="border-radius:8px; border:2px solid #e2e8f0; padding:6px 10px; background-color: white; font-size: 0.9rem;" placeholder="mm/dd/yyyy --:-- --">
+                                    <small class="text-muted" style="font-size: 0.7rem; line-height: 1;">Leave empty to show immediately</small>
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label fw-bold text-muted">Stop Showing At</label>
-                                    <input type="text" class="form-control" id="noticeDisplayUntil" style="border-radius:10px; border:2px solid #e2e8f0; padding:10px; background-color: white;" placeholder="mm/dd/yyyy --:-- --" required>
+                                <div class="col-md-6 mb-1">
+                                    <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Stop Showing At</label>
+                                    <input type="text" class="form-control" id="noticeDisplayUntil" style="border-radius:8px; border:2px solid #e2e8f0; padding:6px 10px; background-color: white; font-size: 0.9rem;" placeholder="mm/dd/yyyy --:-- --" required>
                                 </div>
-                                <div class="col-12 mt-2">
-                                    <div class="input-group" style="border-radius:10px; overflow:hidden; border:2px solid #e2e8f0; width: 100%; max-width: 400px;">
-                                        <input type="number" min="1" class="form-control border-0" id="noticeDurationValue" placeholder="type here" style="padding:10px; box-shadow:none;">
-                                        <select class="form-select border-0 bg-light" id="noticeDurationUnit" style="max-width: 120px; box-shadow:none; border-left: 2px solid #e2e8f0 !important;">
+                                <div class="col-md-6 mb-1">
+                                    <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Auto-Set Duration</label>
+                                    <div class="input-group" style="border-radius:8px; overflow:hidden; border:2px solid #e2e8f0; width: 100%;">
+                                        <input type="number" min="1" class="form-control border-0" id="noticeDurationValue" placeholder="amount" style="padding:6px 10px; box-shadow:none; font-size: 0.9rem;">
+                                        <select class="form-select border-0 bg-light" id="noticeDurationUnit" style="max-width: 100px; padding:6px 10px; box-shadow:none; border-left: 2px solid #e2e8f0 !important; font-size: 0.9rem;">
                                             <option value="minutes">minutes</option>
                                             <option value="hours">hours</option>
                                             <option value="days">days</option>
                                         </select>
                                     </div>
-                                    <small class="text-muted">Automatically sets the Stop Showing At time</small>
+                                    <small class="text-muted" style="font-size: 0.7rem; line-height: 1;">Updates "Stop Showing At" field</small>
+                                </div>
+                                <div class="col-md-6 mb-1">
+                                    <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Display Frequency</label>
+                                    <select class="form-select" id="noticeDisplayFrequency" style="border-radius:8px; border:2px solid #e2e8f0; padding:6px 10px; background-color: white; font-size: 0.9rem;">
+                                        <option value="every_refresh">Every Refresh</option>
+                                        <option value="once_per_session">Once Per Session</option>
+                                        <option value="once_per_hour">Once Per Hour</option>
+                                        <option value="once_per_day">Once Per Day</option>
+                                        <option value="once_per_week">Once Per Week</option>
+                                        <option value="once_only">Show Only Once</option>
+                                    </select>
                                 </div>
                             </div>
                             <div class="d-grid">
@@ -874,6 +886,7 @@
                 const content = quill.root.innerHTML.trim();
                 const displayFrom = document.getElementById('noticeDisplayFrom').value;
                 const displayUntil = document.getElementById('noticeDisplayUntil').value;
+                const displayFrequency = document.getElementById('noticeDisplayFrequency').value;
 
                 if (content === '<p><br></p>' || content === '') {
                     alertify.error('Notice content cannot be empty');
@@ -918,7 +931,8 @@
                     body: JSON.stringify({
                         content: content,
                         display_from: displayFrom,
-                        display_until: displayUntil
+                        display_until: displayUntil,
+                        display_frequency: displayFrequency
                     })
                 })
                 .then(r => r.json())
@@ -1000,7 +1014,7 @@
                         actionBtn = `<span class="text-muted"><i class="fas fa-ban"></i></span>`;
                     }
                     
-                    let editBtn = `<button class="btn btn-sm btn-outline-primary ms-1" onclick="editNotice(${n.id}, \`${encodeURIComponent(n.raw_content)}\`, '${n.raw_display_from}', '${n.raw_display_until}')"><i class="fas fa-edit"></i></button>`;
+                    let editBtn = `<button class="btn btn-sm btn-outline-primary ms-1" onclick="editNotice(${n.id}, \`${encodeURIComponent(n.raw_content)}\`, '${n.raw_display_from}', '${n.raw_display_until}', '${n.display_frequency || 'every_refresh'}')"><i class="fas fa-edit"></i></button>`;
                     
                     tbody.innerHTML += `
                         <tr>
@@ -1193,7 +1207,7 @@
     });
 
     window.editingNoticeId = null;
-    window.editNotice = function(id, encodedContent, displayFrom, displayUntil) {
+    window.editNotice = function(id, encodedContent, displayFrom, displayUntil, displayFrequency) {
         window.editingNoticeId = id;
         
         // Switch tab
@@ -1210,6 +1224,10 @@
         
         if (fpFrom) fpFrom.setDate(displayFrom);
         if (fpUntil) fpUntil.setDate(displayUntil);
+        const freqEl = document.getElementById('noticeDisplayFrequency');
+        if (freqEl && displayFrequency) {
+            freqEl.value = displayFrequency;
+        }
         
         // Update button text
         const submitBtn = document.getElementById('btnSubmitNotice');

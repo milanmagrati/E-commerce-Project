@@ -20960,6 +20960,10 @@ def get_active_notice(request):
                         cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_until datetime(6) NULL;")
                     except Exception:
                         pass
+                    try:
+                        cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_frequency varchar(20) DEFAULT 'every_refresh';")
+                    except Exception:
+                        pass
                         
                 notice = GlobalNotice.objects.filter(
                     is_active=True,
@@ -20978,6 +20982,7 @@ def get_active_notice(request):
             'notice': {
                 'id': notice.id,
                 'content': notice.content,
+                'display_frequency': getattr(notice, 'display_frequency', 'every_refresh'),
                 'created_by': notice.created_by.get_full_name() or notice.created_by.username if notice.created_by else 'Admin'
             }
         })
@@ -21000,6 +21005,7 @@ def create_notice(request):
             content = data.get('content')
             display_from_str = data.get('display_from')
             display_until_str = data.get('display_until')
+            display_frequency = data.get('display_frequency', 'every_refresh')
             
             if not content:
                 return JsonResponse({'status': 'error', 'message': 'Content is required'})
@@ -21030,6 +21036,9 @@ def create_notice(request):
             display_from = flexible_parse(display_from_str) if display_from_str else timezone.now()
             if display_from and timezone.is_naive(display_from):
                 display_from = timezone.make_aware(display_from)
+                
+            if display_until < display_from:
+                return JsonResponse({'status': 'error', 'message': 'End time must be after start time'})
             
             # Deactivate all previous notices
             GlobalNotice.objects.filter(is_active=True).update(is_active=False)
@@ -21040,6 +21049,7 @@ def create_notice(request):
                     created_by=request.user,
                     display_from=display_from,
                     display_until=display_until,
+                    display_frequency=display_frequency,
                     is_active=True
                 )
             except Exception as e:
@@ -21056,6 +21066,10 @@ def create_notice(request):
                                 cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_until datetime(6) NULL;")
                             except Exception:
                                 pass
+                            try:
+                                cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_frequency varchar(20) DEFAULT 'every_refresh';")
+                            except Exception:
+                                pass
                                 
                         # Retry creation
                         notice = GlobalNotice.objects.create(
@@ -21063,13 +21077,16 @@ def create_notice(request):
                             created_by=request.user,
                             display_from=display_from,
                             display_until=display_until,
+                            display_frequency=display_frequency,
                             is_active=True
                         )
                     except Exception as inner_e:
                         return JsonResponse({'status': 'error', 'message': f'Auto-migration failed: {str(inner_e)}'})
                 else:
-                    import traceback
-                    return JsonResponse({'status': 'error', 'message': f'Error creating notice: {str(e)}', 'traceback': traceback.format_exc()})
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error creating notice: {str(e)}", exc_info=True)
+                    return JsonResponse({'status': 'error', 'message': f'Error creating notice: {str(e)}'})
             
             return JsonResponse({
                 'status': 'success',
@@ -21099,6 +21116,7 @@ def update_notice(request, notice_id):
             content = data.get('content')
             display_from_str = data.get('display_from')
             display_until_str = data.get('display_until')
+            display_frequency = data.get('display_frequency', 'every_refresh')
             
             if not content:
                 return JsonResponse({'status': 'error', 'message': 'Content is required'})
@@ -21128,10 +21146,18 @@ def update_notice(request, notice_id):
             if display_from and timezone.is_naive(display_from):
                 display_from = timezone.make_aware(display_from)
                 
+            if display_until < display_from:
+                return JsonResponse({'status': 'error', 'message': 'End time must be after start time'})
+                
             notice.content = content
             notice.display_from = display_from
             notice.display_until = display_until
+            notice.display_frequency = display_frequency
+            notice.is_active = True
             notice.save()
+            
+            # Deactivate all other notices
+            GlobalNotice.objects.exclude(id=notice_id).filter(is_active=True).update(is_active=False)
             
             return JsonResponse({'status': 'success', 'message': 'Notice updated successfully'})
         except GlobalNotice.DoesNotExist:
@@ -21196,11 +21222,13 @@ def get_notice_history(request):
         return JsonResponse({'status': 'success', 'notices': data})
         
     except Exception as e:
-        import traceback
         if 'Unknown column' in str(e) or 'no such column' in str(e).lower() or 'does not exist' in str(e).lower():
             return JsonResponse({'status': 'success', 'notices': []})
         else:
-            return JsonResponse({'status': 'error', 'message': str(e), 'traceback': traceback.format_exc()})
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting notice history: {str(e)}", exc_info=True)
+            return JsonResponse({'status': 'error', 'message': 'An internal error occurred'})
 
 
 @login_required
