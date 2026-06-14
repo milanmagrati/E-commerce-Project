@@ -894,7 +894,7 @@
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="leaveForm" enctype="multipart/form-data" novalidate>
+            <form id="leaveForm" enctype="multipart/form-data">
                 {% csrf_token %}
                 <input type="hidden" id="leaveId" name="leave_id" value="">
                 <div class="modal-body">
@@ -1040,12 +1040,22 @@
     const CSRF = '{{ csrf_token }}';
     const URLS = {
         create: '{% url "hrm:leave_application_create" %}',
-        detail: (pk) => `/hrm/leave/applications/${pk}/detail/`,
-        update: (pk) => `/hrm/leave/applications/${pk}/update/`,
-        delete: (pk) => `/hrm/leave/applications/${pk}/delete/`,
-        status: (pk) => `/hrm/leave/applications/${pk}/status/`,
+        detail: (pk) => `{% url 'hrm:leave_application_detail' 999999 %}`.replace('999999', pk),
+        update: (pk) => `{% url 'hrm:leave_application_update' 999999 %}`.replace('999999', pk),
+        delete: (pk) => `{% url 'hrm:leave_application_delete' 999999 %}`.replace('999999', pk),
+        status: (pk) => `{% url 'hrm:leave_application_update_status' 999999 %}`.replace('999999', pk),
     };
     let deletePk = null;
+
+    function escapeHtml(unsafe) {
+        if (unsafe === null || unsafe === undefined) return '';
+        return unsafe.toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
 
     // ── Toast ────────────────────────────────────────────────────────────────
     function showToast(msg, isError = false) {
@@ -1053,7 +1063,7 @@
         const msgEl = document.getElementById('lmToastMsg');
         msgEl.textContent = msg;
         el.classList.toggle('error', isError);
-        el.querySelector('.fa').className = isError ? 'fas fa-times-circle' : 'fas fa-check-circle';
+        el.querySelector('i').className = isError ? 'fas fa-times-circle' : 'fas fa-check-circle';
         el.classList.add('show');
         setTimeout(() => el.classList.remove('show'), 4000);
     }
@@ -1170,16 +1180,16 @@
                     'rejected': 'status-rejected', 'cancelled': 'status-cancelled'
                 }[a.status] || '';
                 body.innerHTML = `
-                    <div class="view-detail-row"><span class="view-detail-label">Employee</span><span class="view-detail-value"><strong>${a.employee_name}</strong> (${a.employee_code})</span></div>
-                    <div class="view-detail-row"><span class="view-detail-label">Email</span><span class="view-detail-value">${a.employee_email}</span></div>
-                    <div class="view-detail-row"><span class="view-detail-label">Leave Type</span><span class="view-detail-value">${a.leave_type_name || '—'}</span></div>
-                    <div class="view-detail-row"><span class="view-detail-label">Period</span><span class="view-detail-value">${a.start_date} → ${a.end_date} <strong>(${a.days} day${a.days !== 1 ? 's' : ''})</strong></span></div>
-                    <div class="view-detail-row"><span class="view-detail-label">Status</span><span class="view-detail-value"><span class="status-badge ${statusClass}">${a.status_display}</span></span></div>
-                    <div class="view-detail-row"><span class="view-detail-label">Reason</span><span class="view-detail-value">${a.reason}</span></div>
-                    ${a.rejection_reason ? `<div class="view-detail-row"><span class="view-detail-label">Rejection</span><span class="view-detail-value text-danger">${a.rejection_reason}</span></div>` : ''}
-                    <div class="view-detail-row"><span class="view-detail-label">Approved By</span><span class="view-detail-value">${a.approved_by || '—'}</span></div>
-                    <div class="view-detail-row"><span class="view-detail-label">Applied On</span><span class="view-detail-value">${a.applied_on}</span></div>
-                    ${a.attachment_url ? `<div class="view-detail-row"><span class="view-detail-label">Attachment</span><span class="view-detail-value"><a href="${a.attachment_url}" target="_blank"><i class="fas fa-paperclip me-1"></i>View Attachment</a></span></div>` : ''}
+                    <div class="view-detail-row"><span class="view-detail-label">Employee</span><span class="view-detail-value"><strong>${escapeHtml(a.employee_name)}</strong> (${escapeHtml(a.employee_code)})</span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Email</span><span class="view-detail-value">${escapeHtml(a.employee_email)}</span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Leave Type</span><span class="view-detail-value">${escapeHtml(a.leave_type_name || '—')}</span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Period</span><span class="view-detail-value">${escapeHtml(a.start_date)} → ${escapeHtml(a.end_date)} <strong>(${escapeHtml(a.days)} day${a.days !== 1 ? 's' : ''})</strong></span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Status</span><span class="view-detail-value"><span class="status-badge ${escapeHtml(statusClass)}">${escapeHtml(a.status_display)}</span></span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Reason</span><span class="view-detail-value">${escapeHtml(a.reason)}</span></div>
+                    ${a.rejection_reason ? `<div class="view-detail-row"><span class="view-detail-label">Rejection</span><span class="view-detail-value text-danger">${escapeHtml(a.rejection_reason)}</span></div>` : ''}
+                    <div class="view-detail-row"><span class="view-detail-label">Approved By</span><span class="view-detail-value">${escapeHtml(a.approved_by || '—')}</span></div>
+                    <div class="view-detail-row"><span class="view-detail-label">Applied On</span><span class="view-detail-value">${escapeHtml(a.applied_on)}</span></div>
+                    ${a.attachment_url ? `<div class="view-detail-row"><span class="view-detail-label">Attachment</span><span class="view-detail-value"><a href="${escapeHtml(a.attachment_url)}" target="_blank"><i class="fas fa-paperclip me-1"></i>View Attachment</a></span></div>` : ''}
                     <hr style="margin:.75rem 0;">
                     <div class="d-flex gap-2 flex-wrap mt-2">
                         ${a.status !== 'approved' ? `<button class="btn-save-modal btn-sm" style="font-size:.8rem;padding:.35rem .8rem;" onclick="updateStatus(${a.id},'approve')"><i class="fas fa-check me-1"></i>Approve</button>` : ''}
@@ -1222,16 +1232,51 @@
 
     document.getElementById('confirmDeleteBtn').addEventListener('click', function () {
         if (!deletePk) return;
+        const btn = this;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Deleting...';
+        btn.disabled = true;
+
         fetch(URLS.delete(deletePk), { method: 'POST', headers: { 'X-CSRFToken': CSRF } })
             .then(r => r.json())
             .then(data => {
-                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                const modalEl = document.getElementById('deleteModal');
+                const modal = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.hide();
+                
+                // Cleanup any stubborn backdrops just in case
+                setTimeout(() => {
+                    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    document.body.style.paddingRight = '';
+                }, 400);
+
                 if (data.success) {
                     showToast(data.message);
-                    setTimeout(() => location.reload(), 900);
+                    const row = document.querySelector(`tr[data-id="${deletePk}"]`);
+                    if (row) {
+                        row.style.transition = "all 0.3s ease";
+                        row.style.opacity = "0";
+                        row.style.transform = "translateX(-20px)";
+                        setTimeout(() => {
+                            row.remove();
+                            if (document.querySelectorAll('tr[data-id]').length === 0) {
+                                location.reload();
+                            }
+                        }, 300);
+                    } else {
+                        setTimeout(() => location.reload(), 900);
+                    }
                 } else { showToast(data.error, true); }
             })
-            .catch(() => showToast('Network error.', true));
+            .catch(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                showToast('Network error.', true);
+            });
     });
 </script>
 {% endblock %}
