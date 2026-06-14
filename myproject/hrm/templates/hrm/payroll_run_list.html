@@ -1105,15 +1105,36 @@ document.getElementById('confirmGenerateBtn').addEventListener('click', function
     const payload = {};
     if (employeeIds) payload.employee_ids = employeeIds;
 
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
     fetch("{% url 'hrm:payroll_run_list' %}" + generateRunId + "/generate-payslips/", {
         method: 'POST',
         headers: {
-            'X-CSRFToken': '{{ csrf_token }}',
+            'X-CSRFToken': getCookie('csrftoken') || '{{ csrf_token }}',
             'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
     })
-    .then(r => r.json())
+    .then(async r => {
+        if (!r.ok) {
+            const errText = await r.text();
+            throw new Error(`HTTP ${r.status}: ${errText.substring(0, 100)}`);
+        }
+        return r.json();
+    })
     .then(data => {
         bootstrap.Modal.getOrCreateInstance(document.getElementById('generatePayslipsModal')).hide();
         btn.disabled = false;
@@ -1125,11 +1146,12 @@ document.getElementById('confirmGenerateBtn').addEventListener('click', function
             alertify.error('<i class="fas fa-exclamation-circle me-1"></i> ' + (data.error || 'Failed to generate payslips.'));
         }
     })
-    .catch(() => {
+    .catch((error) => {
         bootstrap.Modal.getOrCreateInstance(document.getElementById('generatePayslipsModal')).hide();
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-bolt me-1"></i> Generate';
-        alertify.error('<i class="fas fa-exclamation-circle me-1"></i> Network error. Please try again.');
+        console.error(error);
+        alertify.error('<i class="fas fa-exclamation-circle me-1"></i> Server error. Check console for details.');
     });
 });
 
@@ -1148,14 +1170,35 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', function()
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Deleting...';
 
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
     fetch("{% url 'hrm:payroll_run_list' %}" + deleteRunId + "/delete/", {
         method: 'POST',
         headers: {
-            'X-CSRFToken': '{{ csrf_token }}',
+            'X-CSRFToken': getCookie('csrftoken') || '{{ csrf_token }}',
             'Content-Type': 'application/json',
         }
     })
-    .then(r => r.json())
+    .then(async r => {
+        if (!r.ok) {
+            const errText = await r.text();
+            throw new Error(`HTTP ${r.status}: ${errText.substring(0, 100)}`);
+        }
+        return r.json();
+    })
     .then(data => {
         if (data.success) {
             location.reload();
@@ -1165,10 +1208,11 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', function()
             window.alert(data.error || 'Failed to delete.');
         }
     })
-    .catch(() => {
+    .catch((error) => {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-trash-alt me-1"></i> Delete';
-        window.alert('Network error. Please try again.');
+        console.error(error);
+        window.alert('Server error. Check console for details.');
     });
 });
 </script>
