@@ -4628,6 +4628,19 @@ def possible_redirection_list(request):
         db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
     )
 
+    # Also exclude RTVs where the linked local Order is already marked delivered
+    # PERFORMANCE FIX: Use a subquery restricted to active RTVs rather than loading all history into memory
+    _delivered_ncm_ids = Order.objects.filter(
+        ncm_order_id__isnull=False,
+        ncm_order_id__in=rtvs.values('order_id')
+    ).filter(
+        Q(status__iexact='delivered') | 
+        Q(order_status__iexact='delivered') | 
+        Q(ncm_status__iexact='Delivered')
+    ).values('ncm_order_id')
+    
+    rtvs = rtvs.exclude(order_id__in=_delivered_ncm_ids)
+
     # GET FILTER PARAMETERS
     search_query = request.GET.get('search', '')
     start_date = request.GET.get('start_date', '')

@@ -312,6 +312,8 @@
     background: #eff6ff;
 }
 .ps-act-view:hover { background: #dbeafe; border-color: #93c5fd; }
+.ps-act-delete { color: #ef4444; border-color: #fee2e2; background: #fef2f2; }
+.ps-act-delete:hover { color: #b91c1c; border-color: #fca5a5; background: #fee2e2; }
 
 /* ── Empty state ───────────────────────────────────────── */
 .ps-empty {
@@ -717,17 +719,17 @@
                 <thead>
                     <tr>
                         <th style="width:46px">#</th>
-                        <th>Payslip No.</th>
+                        <th class="d-none d-sm-table-cell">Payslip No.</th>
                         <th>Employee</th>
-                        <th>Pay Period</th>
-                        <th>Pay Date</th>
+                        <th class="d-none d-xl-table-cell">Pay Period</th>
+                        <th class="d-none d-lg-table-cell">Pay Date</th>
                         <th style="color:#1d4ed8">Gross Pay</th>
                         <th style="color:#b91c1c">Deductions</th>
-                        <th style="color:#b45309">Advance Deduction</th>
-                        <th style="color:#dc2626">Absent Deduction</th>
+                        <th class="d-none d-xl-table-cell" style="color:#b45309">Advance Deduction</th>
+                        <th class="d-none d-xl-table-cell" style="color:#dc2626">Absent Deduction</th>
                         <th style="color:#059669">Net Pay</th>
                         <th>Status</th>
-                        <th>Generated</th>
+                        <th class="d-none d-xxl-table-cell">Generated</th>
                         <th class="text-center">Actions</th>
                     </tr>
                 </thead>
@@ -735,13 +737,13 @@
                     {% for slip in payslips %}
                     <tr>
                         <td><span class="ps-row-num">{{ page_obj.start_index|add:forloop.counter0 }}</span></td>
-                        <td>
+                        <td class="d-none d-sm-table-cell">
                             <a class="ps-slip-num" href="javascript:void(0)" onclick="viewPayslipDetail({{ slip.pk }})">
                                 {{ slip.payslip_number|default:"-" }}
                             </a>
                         </td>
                         <td>{{ slip.employee.full_name }}</td>
-                        <td>
+                        <td class="d-none d-xl-table-cell">
                             <div class="ps-pay-period">
                                 {% if slip.payroll_run.pay_period_start and slip.payroll_run.pay_period_end %}
                                     {{ slip.payroll_run.pay_period_start|date:"Y-m-d" }}
@@ -751,36 +753,31 @@
                                 {% endif %}
                             </div>
                         </td>
-                        <td>{{ slip.payroll_run.pay_date|date:"Y-m-d"|default:"-" }}</td>
+                        <td class="d-none d-lg-table-cell">{{ slip.payroll_run.pay_date|date:"Y-m-d"|default:"-" }}</td>
                         <td><span class="ps-cell-gross">रू {{ slip.gross_salary|floatformat:2 }}</span></td>
                         <td><span class="ps-cell-deduct">− रू {{ slip.total_deductions|floatformat:2 }}</span></td>
-                        <td>
+                        <td class="d-none d-xl-table-cell">
                             {% if slip.has_rejected_advance %}
-                                {# Advance was rejected — no deduction applied regardless of stored value #}
                                 <span class="adv-badge adv-badge-rejected" title="Advance payment was rejected — no deduction applied">
                                     <i class="fas fa-times-circle" style="font-size:10px"></i>
                                     Rejected
                                 </span>
                             {% elif slip.advance_deduction > 0 %}
-                                {# Stored value is non-zero — show it in red #}
                                 <span class="adv-badge adv-badge-active">
                                     <i class="fas fa-hand-holding-usd" style="font-size:10px"></i>
                                     − रू {{ slip.advance_deduction|floatformat:2 }}
                                 </span>
                             {% elif slip.live_advance_deduction > 0 %}
-                                {# Live advances exist but payslip hasn't been synced yet #}
                                 <span class="adv-badge adv-badge-stale" title="Active advance exists but payslip not synced. Click Sync Advance Data.">
                                     <i class="fas fa-exclamation-circle" style="font-size:10px"></i>
                                     Needs Sync
                                 </span>
                             {% elif slip.has_cleared_advance %}
-                                {# Advance is fully repaid / cleared #}
                                 <span class="adv-badge adv-badge-cleared" title="Advance fully repaid">
                                     <i class="fas fa-check-circle" style="font-size:10px"></i>
                                     Repaid
                                 </span>
                             {% elif slip.has_pending_advance %}
-                                {# Advance is pending/approved but not yet disbursed #}
                                 <span class="adv-badge adv-badge-pending" title="Advance pending — {{ slip.advance_status }}">
                                     <i class="fas fa-clock" style="font-size:10px"></i>
                                     {% if slip.advance_status == 'approved' %}Approved{% else %}Pending{% endif %}
@@ -789,7 +786,7 @@
                                 <span class="adv-badge-none">&mdash;</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="d-none d-xl-table-cell">
                             {% if slip.absent_deduction > 0 %}
                                 <span class="ps-cell-deduct">- रू {{ slip.absent_deduction|floatformat:2 }}</span>
                             {% else %}
@@ -797,13 +794,25 @@
                             {% endif %}
                         </td>
                         <td><span class="ps-cell-net">रू {{ slip.net_salary|floatformat:2 }}</span></td>
-                        <td><span class="ps-badge ps-badge-{{ slip.status }}">{{ slip.get_status_display }}</span></td>
-                        <td>{{ slip.generated_on|date:"Y-m-d"|default:"-" }}</td>
+                        <td>
+                            <span class="ps-badge ps-badge-{{ slip.status }}">{{ slip.get_status_display }}</span>
+                            {% if slip.is_finalized %}
+                            <span class="ps-badge" style="background:#d1fae5;color:#065f46;margin-left:4px;" title="Finalized — protected from auto-regeneration"><i class="fas fa-lock" style="font-size:9px"></i> Locked</span>
+                            {% endif %}
+                        </td>
+                        <td class="d-none d-xxl-table-cell">{{ slip.generated_on|date:"Y-m-d"|default:"-" }}</td>
                         <td>
                             <div class="ps-actions">
+                                <a class="ps-act" href="{% url 'hrm:payslip_adjust' slip.pk %}" title="Adjust Payslip"
+                                   style="color:#7c3aed;border-color:#ede9fe;background:#f5f3ff;" >
+                                    <i class="fas fa-sliders-h"></i>
+                                </a>
                                 <a class="ps-act ps-act-download" href="{% url 'hrm:payslip_download' slip.pk %}" target="_blank" title="Download Payslip" onclick="setTimeout(()=>location.reload(),1500)">
                                     <i class="fas fa-download"></i>
                                 </a>
+                                <button type="button" class="ps-act ps-act-delete" onclick="deletePayslip({{ slip.pk }})" title="Delete Payslip" {% if slip.is_finalized %}disabled style="opacity:0.5;cursor:not-allowed;" title="Unlock first to delete"{% endif %}>
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -995,6 +1004,25 @@ function viewPayslipDetail(pk) {
         .catch(() => {
             body.innerHTML = '<div style="text-align:center;padding:20px;color:#dc2626;"><i class="fas fa-exclamation-circle"></i> Network error.</div>';
         });
+}
+
+function deletePayslip(id) {
+    if (!confirm('Are you sure you want to delete this payslip? This action cannot be undone.')) return;
+    fetch(`{% url 'hrm:payslip_list' %}${id}/delete/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.error || 'Error deleting payslip.');
+        }
+    })
+    .catch(err => alert('Network error while deleting payslip.'));
 }
 </script>
 {% endblock %}

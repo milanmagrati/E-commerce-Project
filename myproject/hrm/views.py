@@ -4871,10 +4871,17 @@ def generate_payslips(request, pk):
     }
 
     for employee in employees:
-        # Skip if payslip already exists for this run + employee
-        if Payslip.objects.filter(payroll_run=run, employee=employee).exists():
-            skipped_count += 1
-            continue
+        # Skip if payslip already exists AND is finalized for this run + employee
+        _existing_slip = Payslip.objects.filter(payroll_run=run, employee=employee).first()
+        if _existing_slip:
+            if _existing_slip.is_finalized:
+                # Finalized slips are protected — skip entirely
+                skipped_count += 1
+                continue
+            else:
+                # Non-finalized existing slip — skip (already generated)
+                skipped_count += 1
+                continue
 
         # Get latest active salary record for this employee
         salary_record = (
@@ -5025,6 +5032,18 @@ def generate_payslips(request, pk):
         gross_salary = (_earned_basic + earnings).quantize(Decimal('0.01'))
         total_deductions_val = deductions.quantize(Decimal('0.01'))
 
+        # ── Approved Bonuses for this employee/month/year ──
+        from .models import Bonus as _Bonus
+        _bonus_qs = _Bonus.objects.filter(
+            employee=employee,
+            month=_month,
+            year=_year,
+            status='approved',
+        )
+        _bonus_total = sum(b.amount for b in _bonus_qs) or Decimal('0')
+        _bonus_total = Decimal(str(_bonus_total)).quantize(Decimal('0.01'))
+        gross_salary = (gross_salary + _bonus_total).quantize(Decimal('0.01'))
+
         # Absent deduction is no longer needed — salary is already pro-rated based on present days
         _absent_deduction = Decimal('0')
 
@@ -5082,6 +5101,9 @@ def generate_payslips(request, pk):
             generated_on=today,
         )
         created_count += 1
+
+        # ── Mark approved bonuses as paid ──
+        _bonus_qs.update(status='paid')
 
         # ── Update advance records: apply this period's deductions ──
         from django.db.models import F as _F
@@ -8192,3 +8214,663 @@ def leave_policy_toggle_status(request, pk):
 # Import LeaveBalance and LeavePolicy for use in views above
 from .models import LeaveBalance, LeavePolicy
 
+
+# ==================== Holiday Management Views ====================
+
+@login_required
+def holiday_list(request):
+    from .models import Holiday
+    search_query = request.GET.get('search', '')
+    type_filter = request.GET.get('holiday_type', '')
+    status_filter = request.GET.get('status', '')
+    per_page = request.GET.get('per_page', '10')
+
+    holidays = Holiday.objects.all()
+
+    if search_query:
+        holidays = holidays.filter(
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+    if type_filter:
+        holidays = holidays.filter(holiday_type=type_filter)
+    if status_filter == 'active':
+        holidays = holidays.filter(is_active=True)
+    elif status_filter == 'inactive':
+        holidays = holidays.filter(is_active=False)
+
+    paginator = Paginator(holidays, int(per_page))
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    context = {
+        'page_title': 'Holiday Setup',
+        'holidays': page_obj,
+        'search_query': search_query,
+        'type_filter': type_filter,
+        'status_filter': status_filter,
+        'per_page': per_page,
+        'total_holidays': paginator.count,
+        'holiday_type_choices': Holiday.HOLIDAY_TYPE_CHOICES,
+    }
+    return render(request, 'hrm/holiday_list.html', context)
+
+
+@login_required
+def holiday_create(request):
+    from .models import Holiday
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+
+    name = request.POST.get('name', '').strip()
+    start_date = request.POST.get('start_date', '').strip()
+    end_date = request.POST.get('end_date', '').strip()
+
+    if not name:
+        return JsonResponse({'success': False, 'error': 'Holiday name is required.'})
+    if not start_date or not end_date:
+        return JsonResponse({'success': False, 'error': 'Start and end dates are required.'})
+
+    try:
+        from datetime import date as _date
+        import datetime
+        sd = datetime.date.fromisoformat(start_date)
+        ed = datetime.date.fromisoformat(end_date)
+        if ed < sd:
+            return JsonResponse({'success': False, 'error': 'End date cannot be before start date.'})
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid date format.'})
+
+    holiday = Holiday.objects.create(
+        name=name,
+        holiday_type=request.POST.get('holiday_type', 'public'),
+        start_date=sd,
+        end_date=ed,
+        description=request.POST.get('description', '').strip(),
+        apply_for_all=request.POST.get('apply_for_all') == 'on',
+        is_paid=request.POST.get('is_paid') == 'on',
+        is_active=True,
+        created_by=request.user,
+    )
+    return JsonResponse({'success': True, 'message': f'Holiday "{holiday.name}" created successfully!'})
+
+
+@login_required
+def holiday_detail(request, pk):
+    from .models import Holiday
+    holiday = get_object_or_404(Holiday, pk=pk)
+    return JsonResponse({
+        'success': True,
+        'holiday': {
+            'id': holiday.id,
+            'name': holiday.name,
+            'holiday_type': holiday.holiday_type,
+            'holiday_type_display': holiday.get_holiday_type_display(),
+            'start_date': holiday.start_date.strftime('%Y-%m-%d'),
+            'end_date': holiday.end_date.strftime('%Y-%m-%d'),
+            'description': holiday.description,
+            'apply_for_all': holiday.apply_for_all,
+            'is_paid': holiday.is_paid,
+            'is_active': holiday.is_active,
+            'total_days': holiday.total_days,
+        }
+    })
+
+
+@login_required
+def holiday_update(request, pk):
+    from .models import Holiday
+    holiday = get_object_or_404(Holiday, pk=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+
+    name = request.POST.get('name', '').strip()
+    start_date = request.POST.get('start_date', '').strip()
+    end_date = request.POST.get('end_date', '').strip()
+
+    if not name:
+        return JsonResponse({'success': False, 'error': 'Holiday name is required.'})
+    try:
+        import datetime
+        sd = datetime.date.fromisoformat(start_date)
+        ed = datetime.date.fromisoformat(end_date)
+        if ed < sd:
+            return JsonResponse({'success': False, 'error': 'End date cannot be before start date.'})
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid date format.'})
+
+    holiday.name = name
+    holiday.holiday_type = request.POST.get('holiday_type', holiday.holiday_type)
+    holiday.start_date = sd
+    holiday.end_date = ed
+    holiday.description = request.POST.get('description', '').strip()
+    holiday.apply_for_all = request.POST.get('apply_for_all') == 'on'
+    holiday.is_paid = request.POST.get('is_paid') == 'on'
+    holiday.save()
+    return JsonResponse({'success': True, 'message': f'Holiday "{holiday.name}" updated successfully!'})
+
+
+@login_required
+def holiday_delete(request, pk):
+    from .models import Holiday, AttendanceRecord
+    holiday = get_object_or_404(Holiday, pk=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    name = holiday.name
+    
+    # Revert is_holiday flag if this holiday was applied
+    if holiday.apply_for_all:
+        import datetime
+        current = holiday.start_date
+        while current <= holiday.end_date:
+            records = AttendanceRecord.objects.filter(date=current, is_holiday=True)
+            for r in records:
+                r.is_holiday = False
+                if r.notes and f'Holiday: {name}' in r.notes:
+                    r.notes = r.notes.replace(f'Holiday: {name}', '').strip()
+                r.save(update_fields=['is_holiday', 'notes', 'updated_at'])
+            current += datetime.timedelta(days=1)
+
+    holiday.delete()
+    return JsonResponse({'success': True, 'message': f'Holiday "{name}" deleted and reverted from attendance successfully!'})
+
+
+@login_required
+def holiday_toggle_status(request, pk):
+    from .models import Holiday
+    holiday = get_object_or_404(Holiday, pk=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    holiday.is_active = not holiday.is_active
+    holiday.save()
+    status_text = 'Active' if holiday.is_active else 'Inactive'
+    return JsonResponse({'success': True, 'message': f'"{holiday.name}" is now {status_text}.'})
+
+
+@login_required
+def holiday_apply(request, pk):
+    """Apply a holiday to all active employees by creating/updating AttendanceRecord rows."""
+    from .models import Holiday, AttendanceRecord, Employee
+    import datetime
+
+    holiday = get_object_or_404(Holiday, pk=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+
+    if not holiday.apply_for_all:
+        return JsonResponse({'success': False, 'error': 'This holiday does not have apply-for-all enabled.'})
+
+    employees = Employee.objects.filter(employee_status='active')
+    if not employees.exists():
+        return JsonResponse({'success': False, 'error': 'No active employees found.'})
+
+    created = 0
+    updated = 0
+    current = holiday.start_date
+    while current <= holiday.end_date:
+        for emp in employees:
+            record, was_created = AttendanceRecord.objects.get_or_create(
+                employee=emp,
+                date=current,
+                defaults={
+                    'status': 'on_leave',
+                    'is_holiday': True,
+                    'notes': f'Holiday: {holiday.name}',
+                }
+            )
+            if was_created:
+                created += 1
+            elif not record.is_holiday:
+                record.is_holiday = True
+                record.notes = (record.notes + f'\nHoliday: {holiday.name}').strip()
+                record.save(update_fields=['is_holiday', 'notes', 'updated_at'])
+                updated += 1
+        current += datetime.timedelta(days=1)
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Holiday applied! {created} records created, {updated} updated.',
+        'created': created,
+        'updated': updated,
+    })
+
+
+# ==================== Bonus Management Views ====================
+
+@login_required
+def bonus_list(request):
+    from .models import Bonus
+    import calendar as _cal
+
+    search_query = request.GET.get('search', '')
+    status_filter = request.GET.get('status', '')
+    type_filter = request.GET.get('bonus_type', '')
+    month_filter = request.GET.get('month', '')
+    year_filter = request.GET.get('year', '')
+    per_page = request.GET.get('per_page', '10')
+
+    bonuses = Bonus.objects.select_related('employee', 'approved_by', 'created_by')
+
+    if search_query:
+        bonuses = bonuses.filter(
+            Q(employee__full_name__icontains=search_query) |
+            Q(employee__employee_id__icontains=search_query) |
+            Q(remarks__icontains=search_query)
+        )
+    if status_filter:
+        bonuses = bonuses.filter(status=status_filter)
+    if type_filter:
+        bonuses = bonuses.filter(bonus_type=type_filter)
+    if month_filter:
+        bonuses = bonuses.filter(month=int(month_filter))
+    if year_filter:
+        bonuses = bonuses.filter(year=int(year_filter))
+
+    paginator = Paginator(bonuses, int(per_page))
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    now = timezone.now()
+    years = list(range(now.year - 2, now.year + 2))
+
+    context = {
+        'page_title': 'Bonus Management',
+        'bonuses': page_obj,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'type_filter': type_filter,
+        'month_filter': month_filter,
+        'year_filter': year_filter,
+        'per_page': per_page,
+        'total_bonuses': paginator.count,
+        'bonus_type_choices': Bonus.BONUS_TYPE_CHOICES,
+        'status_choices': Bonus.STATUS_CHOICES,
+        'months': [(i, _cal.month_name[i]) for i in range(1, 13)],
+        'years': years,
+        'current_year': now.year,
+        'current_month': now.month,
+        'employees': Employee.objects.filter(employee_status='active').order_by('full_name'),
+    }
+    return render(request, 'hrm/bonus_list.html', context)
+
+
+@login_required
+def bonus_create(request):
+    from .models import Bonus
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+
+    apply_for_all = request.POST.get('apply_for_all') == 'on'
+    employee_id = request.POST.get('employee', '').strip()
+    amount = request.POST.get('amount', '').strip()
+    month = request.POST.get('month', '').strip()
+    year = request.POST.get('year', '').strip()
+
+    if not apply_for_all and not employee_id:
+        return JsonResponse({'success': False, 'error': 'Employee is required.'})
+    if not amount:
+        return JsonResponse({'success': False, 'error': 'Amount is required.'})
+    if not month or not year:
+        return JsonResponse({'success': False, 'error': 'Month and year are required.'})
+
+    emp = None
+    if not apply_for_all:
+        emp = get_object_or_404(Employee, pk=employee_id)
+
+    try:
+        from decimal import Decimal
+        amt = Decimal(amount)
+        if amt <= 0:
+            return JsonResponse({'success': False, 'error': 'Amount must be positive.'})
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid amount.'})
+
+    bonus_type = request.POST.get('bonus_type', 'other')
+    remarks = request.POST.get('remarks', '').strip()
+
+    if apply_for_all:
+        # Create bonus for all active employees
+        active_employees = Employee.objects.filter(employee_status='active')
+        count = 0
+        for e in active_employees:
+            Bonus.objects.create(
+                employee=e,
+                bonus_type=bonus_type,
+                amount=amt,
+                month=int(month),
+                year=int(year),
+                remarks=remarks,
+                apply_for_all=True,
+                created_by=request.user,
+            )
+            count += 1
+        return JsonResponse({'success': True, 'message': f'Bonus created for {count} active employees!'})
+    else:
+        bonus = Bonus.objects.create(
+            employee=emp,
+            bonus_type=bonus_type,
+            amount=amt,
+            month=int(month),
+            year=int(year),
+            remarks=remarks,
+            apply_for_all=False,
+            created_by=request.user,
+        )
+        return JsonResponse({'success': True, 'message': f'Bonus created for {emp.full_name}!'})
+
+
+@login_required
+def bonus_detail(request, pk):
+    from .models import Bonus
+    import calendar as _cal
+    bonus = get_object_or_404(Bonus.objects.select_related('employee', 'approved_by', 'created_by'), pk=pk)
+    month_name = _cal.month_name[bonus.month] if 1 <= bonus.month <= 12 else str(bonus.month)
+    return JsonResponse({
+        'success': True,
+        'bonus': {
+            'id': bonus.id,
+            'employee_id': bonus.employee.id,
+            'employee_name': bonus.employee.full_name,
+            'employee_emp_id': bonus.employee.employee_id,
+            'bonus_type': bonus.bonus_type,
+            'bonus_type_display': bonus.get_bonus_type_display(),
+            'amount': str(bonus.amount),
+            'month': bonus.month,
+            'month_name': month_name,
+            'year': bonus.year,
+            'remarks': bonus.remarks,
+            'status': bonus.status,
+            'status_display': bonus.get_status_display(),
+            'apply_for_all': bonus.apply_for_all,
+            'approved_by': bonus.approved_by.get_full_name() if bonus.approved_by else '',
+            'approved_at': bonus.approved_at.strftime('%Y-%m-%d %H:%M') if bonus.approved_at else '',
+            'created_at': bonus.created_at.strftime('%Y-%m-%d'),
+        }
+    })
+
+
+@login_required
+def bonus_update(request, pk):
+    from .models import Bonus
+    bonus = get_object_or_404(Bonus, pk=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    if bonus.status in ('approved', 'paid'):
+        return JsonResponse({'success': False, 'error': 'Cannot edit an approved or paid bonus.'})
+
+    amount = request.POST.get('amount', '').strip()
+    month = request.POST.get('month', '').strip()
+    year = request.POST.get('year', '').strip()
+
+    try:
+        from decimal import Decimal
+        amt = Decimal(amount)
+        if amt <= 0:
+            return JsonResponse({'success': False, 'error': 'Amount must be positive.'})
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid amount.'})
+
+    bonus.bonus_type = request.POST.get('bonus_type', bonus.bonus_type)
+    bonus.amount = amt
+    bonus.month = int(month)
+    bonus.year = int(year)
+    bonus.remarks = request.POST.get('remarks', '').strip()
+    bonus.save()
+    return JsonResponse({'success': True, 'message': f'Bonus updated successfully!'})
+
+
+@login_required
+def bonus_delete(request, pk):
+    from .models import Bonus
+    bonus = get_object_or_404(Bonus, pk=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    if bonus.status in ('approved', 'paid'):
+        return JsonResponse({'success': False, 'error': 'Cannot delete an approved or paid bonus.'})
+    bonus.delete()
+    return JsonResponse({'success': True, 'message': 'Bonus deleted successfully!'})
+
+
+@login_required
+def bonus_update_status(request, pk):
+    from .models import Bonus
+    bonus = get_object_or_404(Bonus, pk=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+
+    new_status = request.POST.get('status', '').strip()
+    valid_statuses = [s[0] for s in Bonus.STATUS_CHOICES]
+    if new_status not in valid_statuses:
+        return JsonResponse({'success': False, 'error': 'Invalid status.'})
+
+    if bonus.status == 'paid' and new_status != 'paid':
+        return JsonResponse({'success': False, 'error': 'Cannot change status of a paid bonus.'})
+
+    bonus.status = new_status
+    if new_status == 'approved':
+        bonus.approved_by = request.user
+        bonus.approved_at = timezone.now()
+    bonus.save()
+    return JsonResponse({'success': True, 'message': f'Bonus status updated to {bonus.get_status_display()}.'})
+
+
+# ==================== Payslip Adjustment & Finalization Views ====================
+
+@login_required
+def payslip_adjust(request, pk):
+    from .models import Payslip, PayslipAdjustment, PayslipAuditLog
+    from decimal import Decimal
+
+    slip = get_object_or_404(
+        Payslip.objects.select_related('employee', 'payroll_run', 'finalized_by')
+                       .prefetch_related('adjustments', 'audit_logs__performed_by'),
+        pk=pk
+    )
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+
+        if slip.is_finalized:
+            return JsonResponse({'success': False, 'error': 'This payslip is finalized and cannot be modified.'})
+
+        if action == 'add_adjustment':
+            adj_type = request.POST.get('adjustment_type', '').strip()
+            category = request.POST.get('category', '').strip()
+            description = request.POST.get('description', '').strip()
+            amount_str = request.POST.get('amount', '').strip()
+            reason = request.POST.get('reason', '').strip()
+
+            if not description:
+                return JsonResponse({'success': False, 'error': 'Description is required.'})
+            if not amount_str:
+                return JsonResponse({'success': False, 'error': 'Amount is required.'})
+
+            try:
+                amount = Decimal(amount_str)
+                if amount <= 0:
+                    return JsonResponse({'success': False, 'error': 'Amount must be positive.'})
+            except Exception:
+                return JsonResponse({'success': False, 'error': 'Invalid amount.'})
+
+            adj = PayslipAdjustment.objects.create(
+                payslip=slip,
+                adjustment_type=adj_type,
+                category=category,
+                description=description,
+                amount=amount,
+                reason=reason,
+                created_by=request.user,
+            )
+
+            # Recalculate payslip totals
+            _recalculate_payslip(slip)
+
+            PayslipAuditLog.objects.create(
+                payslip=slip,
+                action=f'Added {adj.get_adjustment_type_display()}: {description}',
+                detail=f'Category: {adj.get_category_display()}, Amount: Rs.{amount}, Reason: {reason}',
+                performed_by=request.user,
+            )
+            return JsonResponse({'success': True, 'message': f'Adjustment added successfully!'})
+
+        elif action == 'remove_adjustment':
+            adj_id = request.POST.get('adjustment_id', '').strip()
+            try:
+                adj = PayslipAdjustment.objects.get(pk=adj_id, payslip=slip)
+            except PayslipAdjustment.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Adjustment not found.'})
+
+            detail = f'{adj.get_adjustment_type_display()}: {adj.description} (Rs.{adj.amount})'
+            adj.delete()
+            _recalculate_payslip(slip)
+
+            PayslipAuditLog.objects.create(
+                payslip=slip,
+                action='Removed adjustment',
+                detail=detail,
+                performed_by=request.user,
+            )
+            return JsonResponse({'success': True, 'message': 'Adjustment removed.'})
+
+        return JsonResponse({'success': False, 'error': 'Unknown action.'})
+
+    # GET — render adjustment page
+    import calendar as _cal
+    month_name = _cal.month_name[slip.payroll_run.month] if slip.payroll_run.month else ''
+    
+    total_earnings = sum(a.amount for a in slip.adjustments.all() if a.adjustment_type == 'earning')
+    total_deductions = sum(a.amount for a in slip.adjustments.all() if a.adjustment_type == 'deduction')
+
+    context = {
+        'total_earnings': total_earnings,
+        'total_deductions': total_deductions,
+        'page_title': f'Adjust Payslip — {slip.employee.full_name}',
+        'slip': slip,
+        'month_name': month_name,
+        'adjustments': slip.adjustments.all(),
+        'audit_logs': slip.audit_logs.all()[:30],
+        'adjustment_type_choices': PayslipAdjustment.ADJUSTMENT_TYPE_CHOICES,
+        'category_choices': PayslipAdjustment.CATEGORY_CHOICES,
+    }
+    return render(request, 'hrm/payslip_adjust.html', context)
+
+
+def _recalculate_payslip(slip):
+    """Recalculate gross_salary, total_deductions, net_salary based on manual adjustments."""
+    from .models import PayslipAdjustment
+    from decimal import Decimal
+
+    adjustments = PayslipAdjustment.objects.filter(payslip=slip)
+    extra_earnings = sum(a.amount for a in adjustments if a.adjustment_type == 'earning') or Decimal('0')
+    extra_deductions = sum(a.amount for a in adjustments if a.adjustment_type == 'deduction') or Decimal('0')
+
+    # Base gross is stored; we rebuild from base (stored before adjustments)
+    # To avoid double-counting, store base values if not yet done
+    if not hasattr(slip, '_base_gross'):
+        # Use current values minus previous adjustments total as base
+        prev_earnings = sum(
+            a.amount for a in adjustments if a.adjustment_type == 'earning'
+        ) or Decimal('0')
+        prev_deductions = sum(
+            a.amount for a in adjustments if a.adjustment_type == 'deduction'
+        ) or Decimal('0')
+
+    # The strategy: keep original auto-computed values in notes as base
+    # We store base in payslip notes field on first adjustment
+    import json
+    base_data = {}
+    try:
+        if slip.notes and slip.notes.startswith('__base__'):
+            base_data = json.loads(slip.notes[8:])
+    except Exception:
+        pass
+
+    if not base_data:
+        # First time: save current values as base
+        base_data = {
+            'gross': str(slip.gross_salary),
+            'deductions': str(slip.total_deductions),
+            'net': str(slip.net_salary),
+        }
+        slip.notes = '__base__' + json.dumps(base_data)
+
+    base_gross = Decimal(base_data['gross'])
+    base_deductions = Decimal(base_data['deductions'])
+    base_net = Decimal(base_data['net'])
+
+    new_gross = (base_gross + Decimal(str(extra_earnings))).quantize(Decimal('0.01'))
+    new_deductions = (base_deductions + Decimal(str(extra_deductions))).quantize(Decimal('0.01'))
+    new_net = max(base_net + Decimal(str(extra_earnings)) - Decimal(str(extra_deductions)), Decimal('0')).quantize(Decimal('0.01'))
+
+    slip.gross_salary = new_gross
+    slip.total_deductions = new_deductions
+    slip.net_salary = new_net
+    slip.save(update_fields=['gross_salary', 'total_deductions', 'net_salary', 'notes', 'updated_at'])
+
+
+@login_required
+def payslip_finalize(request, pk):
+    from .models import Payslip, PayslipAuditLog
+    slip = get_object_or_404(Payslip, pk=pk)
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+
+    if slip.is_finalized:
+        return JsonResponse({'success': False, 'error': 'Payslip is already finalized.'})
+
+    slip.is_finalized = True
+    slip.finalized_by = request.user
+    slip.finalized_at = timezone.now()
+    slip.status = 'generated'
+    slip.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'status', 'updated_at'])
+
+    PayslipAuditLog.objects.create(
+        payslip=slip,
+        action='Payslip Finalized',
+        detail=f'Finalized by {request.user.get_full_name() or request.user.username}. '
+               f'Net Salary: Rs.{slip.net_salary}. Protected from auto-regeneration.',
+        performed_by=request.user,
+    )
+
+    return JsonResponse({'success': True, 'message': f'Payslip for {slip.employee.full_name} has been finalized and locked.'})
+
+
+@login_required
+def payslip_unfinalize(request, pk):
+    """Allow HR to unlock a finalized payslip (with caution)."""
+    from .models import Payslip, PayslipAuditLog
+    slip = get_object_or_404(Payslip, pk=pk)
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+
+    if not slip.is_finalized:
+        return JsonResponse({'success': False, 'error': 'Payslip is not finalized.'})
+
+    slip.is_finalized = False
+    slip.finalized_by = None
+    slip.finalized_at = None
+    slip.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'updated_at'])
+
+    PayslipAuditLog.objects.create(
+        payslip=slip,
+        action='Payslip Un-finalized',
+        detail=f'Lock removed by {request.user.get_full_name() or request.user.username}.',
+        performed_by=request.user,
+    )
+    return JsonResponse({'success': True, 'message': 'Payslip unlocked and returned to draft.'})
+
+
+
+
+@login_required
+def payslip_delete(request, pk):
+    from .models import Payslip
+    slip = get_object_or_404(Payslip, pk=pk)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    
+    if slip.is_finalized:
+        return JsonResponse({'success': False, 'error': 'Cannot delete a finalized payslip. Unlock it first.'})
+        
+    slip.delete()
+    return JsonResponse({'success': True, 'message': 'Payslip deleted successfully!'})

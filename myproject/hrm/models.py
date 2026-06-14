@@ -695,6 +695,47 @@ class BiometricAttendance(models.Model):
         return f"PIN {self.pin} @ {self.timestamp}"
 
 
+# ==================== Holiday Management ====================
+
+class Holiday(models.Model):
+    HOLIDAY_TYPE_CHOICES = [
+        ('public', 'Public Holiday'),
+        ('national', 'National Holiday'),
+        ('religious', 'Religious Holiday'),
+        ('company', 'Company Holiday'),
+        ('other', 'Other'),
+    ]
+
+    name = models.CharField(max_length=200)
+    holiday_type = models.CharField(max_length=20, choices=HOLIDAY_TYPE_CHOICES, default='public')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    description = models.TextField(blank=True, default='')
+    apply_for_all = models.BooleanField(default=True, help_text='Auto-apply this holiday to all active employees')
+    is_paid = models.BooleanField(default=True, help_text='Whether this holiday is a paid day')
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='created_holidays'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-start_date']
+        verbose_name = 'Holiday'
+        verbose_name_plural = 'Holidays'
+
+    def __str__(self):
+        return f"{self.name} ({self.start_date} to {self.end_date})"
+
+    @property
+    def total_days(self):
+        if self.start_date and self.end_date:
+            return (self.end_date - self.start_date).days + 1
+        return 0
+
+
 # ==================== Payroll Models ====================
 
 class SalaryComponent(models.Model):
@@ -807,6 +848,13 @@ class Payslip(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     paid_date = models.DateField(null=True, blank=True)
     generated_on = models.DateField(null=True, blank=True)
+    # Manual adjustment / finalization
+    is_finalized = models.BooleanField(default=False, help_text='Finalized slips are protected from auto-regeneration')
+    finalized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='finalized_payslips'
+    )
+    finalized_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1019,6 +1067,112 @@ class AdvancePayment(models.Model):
             next_id = (last.id + 1) if last else 1
             self.advance_number = f"ADV-{tz.now().year}-{next_id:04d}"
         super().save(*args, **kwargs)
+
+
+# ==================== Bonus Management ====================
+
+class Bonus(models.Model):
+    BONUS_TYPE_CHOICES = [
+        ('performance', 'Performance Bonus'),
+        ('festival', 'Festival Bonus'),
+        ('monthly', 'Monthly Bonus'),
+        ('incentive', 'Incentive'),
+        ('target', 'Target Bonus'),
+        ('other', 'Other'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('paid', 'Paid'),
+    ]
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='bonuses')
+    bonus_type = models.CharField(max_length=20, choices=BONUS_TYPE_CHOICES, default='other')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    month = models.PositiveSmallIntegerField(help_text='Payroll month (1-12)')
+    year = models.PositiveSmallIntegerField(help_text='Payroll year')
+    remarks = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='pending')
+    apply_for_all = models.BooleanField(default=False, help_text='Apply this bonus to all active employees')
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='approved_bonuses'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='created_bonuses'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-year', '-month', 'employee__full_name']
+        verbose_name = 'Bonus'
+        verbose_name_plural = 'Bonuses'
+
+    def __str__(self):
+        import calendar
+        month_name = calendar.month_name[self.month] if 1 <= self.month <= 12 else str(self.month)
+        return f"{self.employee.full_name} — {self.get_bonus_type_display()} ({month_name} {self.year}) Rs.{self.amount}"
+
+
+# ==================== Payslip Manual Adjustments ====================
+
+class PayslipAdjustment(models.Model):
+    ADJUSTMENT_TYPE_CHOICES = [
+        ('earning', 'Earning'),
+        ('deduction', 'Deduction'),
+    ]
+    CATEGORY_CHOICES = [
+        ('bonus', 'Bonus'),
+        ('incentive', 'Incentive'),
+        ('arrears', 'Arrears'),
+        ('penalty', 'Penalty'),
+        ('adjustment', 'Adjustment'),
+        ('other', 'Other'),
+    ]
+
+    payslip = models.ForeignKey('Payslip', on_delete=models.CASCADE, related_name='adjustments')
+    adjustment_type = models.CharField(max_length=15, choices=ADJUSTMENT_TYPE_CHOICES)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='adjustment')
+    description = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    reason = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='payslip_adjustments'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['adjustment_type', 'created_at']
+        verbose_name = 'Payslip Adjustment'
+        verbose_name_plural = 'Payslip Adjustments'
+
+    def __str__(self):
+        return f"{self.get_adjustment_type_display()} — {self.description} (Rs.{self.amount})"
+
+
+class PayslipAuditLog(models.Model):
+    payslip = models.ForeignKey('Payslip', on_delete=models.CASCADE, related_name='audit_logs')
+    action = models.CharField(max_length=150)
+    detail = models.TextField(blank=True, default='')
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='payslip_audit_logs'
+    )
+    performed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-performed_at']
+        verbose_name = 'Payslip Audit Log'
+        verbose_name_plural = 'Payslip Audit Logs'
+
+    def __str__(self):
+        return f"{self.payslip} — {self.action}"
 
 
 from django.db.models.signals import post_save, post_delete

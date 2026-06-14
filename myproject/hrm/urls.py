@@ -223,4 +223,28 @@ urlpatterns = [
     path('leave/policies/<int:pk>/update/', views.leave_policy_update, name='leave_policy_update'),
     path('leave/policies/<int:pk>/delete/', views.leave_policy_delete, name='leave_policy_delete'),
     path('leave/policies/<int:pk>/toggle-status/', views.leave_policy_toggle_status, name='leave_policy_toggle_status'),
+
+    # Holiday Setup
+    path('holidays/', views.holiday_list, name='holiday_list'),
+    path('holidays/create/', views.holiday_create, name='holiday_create'),
+    path('holidays/<int:pk>/', views.holiday_detail, name='holiday_detail'),
+    path('holidays/<int:pk>/update/', views.holiday_update, name='holiday_update'),
+    path('holidays/<int:pk>/delete/', views.holiday_delete, name='holiday_delete'),
+    path('holidays/<int:pk>/toggle-status/', views.holiday_toggle_status, name='holiday_toggle_status'),
+    path('holidays/<int:pk>/apply/', views.holiday_apply, name='holiday_apply'),
+
+    # Bonus Management
+    path('payroll/bonuses/', views.bonus_list, name='bonus_list'),
+    path('payroll/bonuses/create/', views.bonus_create, name='bonus_create'),
+    path('payroll/bonuses/<int:pk>/', views.bonus_detail, name='bonus_detail'),
+    path('payroll/bonuses/<int:pk>/update/', views.bonus_update, name='bonus_update'),
+    path('payroll/bonuses/<int:pk>/delete/', views.bonus_delete, name='bonus_delete'),
+    path('payroll/bonuses/<int:pk>/status/', views.bonus_update_status, name='bonus_update_status'),
+
+    # Payslip Adjustments & Finalization
+    path('payroll/payslips/<int:pk>/adjust/', views.payslip_adjust, name='payslip_adjust'),
+    path('payroll/payslips/<int:pk>/finalize/', views.payslip_finalize, name='payslip_finalize'),
+    path('payroll/payslips/<int:pk>/unfinalize/', views.payslip_unfinalize, name='payslip_unfinalize'),
+    path('payroll/payslips/<int:pk>/delete/', views.payslip_delete, name='payslip_delete'),
 ]
+
