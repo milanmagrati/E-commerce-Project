@@ -777,7 +777,7 @@
                                 <div class="col-md-6 mb-1">
                                     <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Start Showing From</label>
                                     <input type="text" class="form-control" id="noticeDisplayFrom" style="border-radius:8px; border:2px solid #e2e8f0; padding:6px 10px; background-color: white; font-size: 0.9rem;" placeholder="mm/dd/yyyy --:-- --">
-                                    <small class="text-muted" style="font-size: 0.7rem; line-height: 1;">Leave empty to show immediately</small>
+                                    <small class="text-muted" style="font-size: 0.7rem; line-height: 1;">Leave empty to show immediately <a href="#" onclick="if(fpFrom) { fpFrom.clear(); } return false;" style="color:#ef4444;text-decoration:none;margin-left:5px;"><i class="fas fa-times"></i> Clear</a></small>
                                 </div>
                                 <div class="col-md-6 mb-1">
                                     <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Stop Showing At</label>
@@ -878,6 +878,7 @@
             theme: 'snow',
             placeholder: 'Write your global notice here...'
         });
+        window.quill = quill;
 
         const throwNoticeForm = document.getElementById('throwNoticeForm');
         if (throwNoticeForm) {
@@ -1216,10 +1217,11 @@
         // Populate form
         let content = decodeURIComponent(encodedContent);
         // If quill is global, use it. Otherwise, we can assign to a global variable.
-        if (typeof quill !== 'undefined') {
-            quill.root.innerHTML = content;
+        if (typeof window.quill !== 'undefined') {
+            window.quill.root.innerHTML = content;
         } else {
-            document.querySelector('#quill-editor .ql-editor').innerHTML = content;
+            let qe = document.querySelector('#noticeEditor .ql-editor');
+            if (qe) qe.innerHTML = content;
         }
         
         if (fpFrom) fpFrom.setDate(displayFrom);
@@ -1255,11 +1257,11 @@
 
     window.cancelEditNotice = function() {
         window.editingNoticeId = null;
-        if (typeof quill !== 'undefined') {
-            quill.setContents([]);
+        if (typeof window.quill !== 'undefined') {
+            window.quill.setContents([]);
         } else {
-            let qe = document.querySelector('#quill-editor .ql-editor');
-            if (qe) qe.innerHTML = '';
+            let qe = document.querySelector('#noticeEditor .ql-editor');
+            if (qe) qe.innerHTML = '<p><br></p>';
         }
         
         // Clear flatpickr inputs safely
@@ -1319,12 +1321,16 @@
             
             fpUntil = flatpickr("#noticeDisplayUntil", {
                 enableTime: true,
+                allowInput: true,
+                minuteIncrement: 1,
                 dateFormat: "m/d/Y h:i K",
                 plugins: [getPlugin()]
             });
             
             fpFrom = flatpickr("#noticeDisplayFrom", {
                 enableTime: true,
+                allowInput: true,
+                minuteIncrement: 1,
                 dateFormat: "m/d/Y h:i K",
                 plugins: [getPlugin()],
                 onChange: function(selectedDates, dateStr, instance) {

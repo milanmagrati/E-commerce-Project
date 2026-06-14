@@ -21033,11 +21033,11 @@ def create_notice(request):
             if display_until and timezone.is_naive(display_until):
                 display_until = timezone.make_aware(display_until)
 
-            display_from = flexible_parse(display_from_str) if display_from_str else timezone.now()
+            display_from = flexible_parse(display_from_str) if display_from_str else None
             if display_from and timezone.is_naive(display_from):
                 display_from = timezone.make_aware(display_from)
                 
-            if display_until < display_from:
+            if display_until < (display_from or timezone.now()):
                 return JsonResponse({'status': 'error', 'message': 'End time must be after start time'})
             
             # Deactivate all previous notices
@@ -21142,11 +21142,11 @@ def update_notice(request, notice_id):
             if display_until and timezone.is_naive(display_until):
                 display_until = timezone.make_aware(display_until)
 
-            display_from = flexible_parse(display_from_str) if display_from_str else timezone.now()
+            display_from = flexible_parse(display_from_str) if display_from_str else None
             if display_from and timezone.is_naive(display_from):
                 display_from = timezone.make_aware(display_from)
                 
-            if display_until < display_from:
+            if display_until < (display_from or timezone.now()):
                 return JsonResponse({'status': 'error', 'message': 'End time must be after start time'})
                 
             notice.content = content

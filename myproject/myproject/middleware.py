@@ -1,22 +1,19 @@
 from django.contrib.sessions.exceptions import SessionInterrupted
 from django.http import HttpResponseRedirect, JsonResponse
 from django.conf import settings
+from django.contrib.sessions.middleware import SessionMiddleware
 
-class GracefulSessionInterruptionMiddleware:
+class GracefulSessionInterruptionMiddleware(SessionMiddleware):
     """
-    Catches the SessionInterrupted exception raised by SessionMiddleware
+    Overrides SessionMiddleware to gracefully handle SessionInterrupted exceptions
     when SESSION_SAVE_EVERY_REQUEST is True and a session is deleted concurrently.
     """
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
+    def process_response(self, request, response):
         try:
-            response = self.get_response(request)
-            return response
+            return super().process_response(request, response)
         except SessionInterrupted:
             # If the request is an API call or AJAX, return JSON
-            if request.path.startswith('/api/') or request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            if request.path.startswith('/api/') or request.path.startswith('/chat/api/') or request.headers.get('x-requested-with') == 'XMLHttpRequest':
                 response = JsonResponse({'error': 'Session interrupted. Please log in again.'}, status=401)
             else:
                 # Otherwise redirect to login
