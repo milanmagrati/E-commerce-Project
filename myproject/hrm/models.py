@@ -1187,19 +1187,23 @@ def update_leave_balance_used_days(sender, instance, **kwargs):
     
     # Also ensure a balance exists for the current request's year and leave type
     if instance.leave_type and instance.start_date:
+        allocated = instance.leave_type.max_days_per_year if instance.leave_type.max_days_per_year and instance.leave_type.max_days_per_year > 0 else 0
         LeaveBalance.objects.get_or_create(
             employee=instance.employee,
             leave_type=instance.leave_type,
-            year=instance.start_date.year
+            year=instance.start_date.year,
+            defaults={'allocated_days': allocated, 'used_days': 0, 'carry_forward_days': 0}
         )
 
     # Recalculate for all balances of this employee to handle changes in year/type
+    from django.utils import timezone
     for balance in LeaveBalance.objects.filter(employee=instance.employee):
         used = LeaveRequest.objects.filter(
             employee=balance.employee,
             leave_type=balance.leave_type,
             start_date__year=balance.year,
-            status='approved'
+            start_date__lte=timezone.now().date(),
+            status__in=['approved', 'pending']
         ).aggregate(total=Sum('days'))['total'] or 0
         
         if balance.used_days != used:

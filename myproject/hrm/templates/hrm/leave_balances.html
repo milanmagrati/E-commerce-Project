@@ -319,7 +319,7 @@
         color: #ef4444;
     }
 
-    .btn-row-history {
+    .btn-row-delete {
         width: 26px;
         height: 26px;
         border-radius: 6px;
@@ -334,10 +334,10 @@
         transition: all .15s;
     }
 
-    .btn-row-history:hover {
-        border-color: #22c55e;
-        color: #22c55e;
-        background: #f0fdf4;
+    .btn-row-delete:hover {
+        border-color: #ef4444;
+        color: #ef4444;
+        background: #fef2f2;
     }
 
     /* Empty state */
@@ -663,8 +663,8 @@
                         {{ bal.remaining_days|floatformat:0 }}
                     </td>
                     <td style="text-align:center;">
-                        <button class="btn-row-history" title="Delete balance"
-                            onclick="deleteBalance({{ bal.pk }}, this)"><i class="fas fa-clock"></i></button>
+                        <button class="btn-row-delete" title="Delete balance"
+                            onclick="deleteBalance({{ bal.pk }}, this)"><i class="fas fa-trash-alt"></i></button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -834,7 +834,7 @@
     // Re-sync
     async function doResync() {
         const btn = document.getElementById('resyncBtn');
-        if (!confirm(`Re-sync will create missing leave balance records for all active employees × all active leave types for ${CURRENT_YEAR}. Continue?`)) return;
+        if (!confirm(`Re-sync will recalculate used leave days and create missing balances ONLY for employees with existing leave applications in ${CURRENT_YEAR}. Continue?`)) return;
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Syncing...';
         try {
@@ -915,7 +915,7 @@
                 <td class="td-used" style="text-align:right;">${Math.round(b.used_days)}</td>
                 <td style="text-align:right;" class="td-avail ${availClass}">${Math.round(avail)}</td>
                 <td style="text-align:center;">
-                    <button class="btn-row-history" title="Delete balance" onclick="deleteBalance(${b.pk}, this)"><i class="fas fa-clock"></i></button>
+                    <button class="btn-row-delete" title="Delete balance" onclick="deleteBalance(${b.pk}, this)"><i class="fas fa-trash-alt"></i></button>
                 </td>
             </tr>`;
 

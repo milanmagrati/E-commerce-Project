@@ -7783,7 +7783,19 @@ def leave_balance_create(request):
         if not created:
             lb.allocated_days = allocated_days
             lb.carry_forward_days = carry_forward_days
-            lb.save()
+            
+        from django.db.models import Sum
+        from .models import LeaveRequest
+        used = LeaveRequest.objects.filter(
+            employee=employee,
+            leave_type=leave_type,
+            start_date__year=int(year),
+            start_date__lte=timezone.now().date(),
+            status__in=['approved', 'pending']
+        ).aggregate(total=Sum('days'))['total'] or 0
+        
+        lb.used_days = used
+        lb.save()
 
         remaining = max(float(lb.allocated_days) + float(lb.carry_forward_days) - float(lb.used_days), 0)
         return JsonResponse({
@@ -7822,24 +7834,48 @@ def leave_balance_delete(request, pk):
 @login_required
 def leave_balance_resync(request):
     """Auto-create/initialize leave balances for all active employees x all active leave types for the given year."""
-    from .models import LeaveBalance, LeaveType, Employee
+    from .models import LeaveBalance, LeaveType, Employee, LeaveRequest
+    from django.db.models import Sum
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
     try:
         year = int(request.POST.get('year', timezone.now().year))
         employees = Employee.objects.filter(employee_status='active')
         leave_types = LeaveType.objects.filter(is_active=True)
+        
         created_count = 0
+        updated_count = 0
+        
         for emp in employees:
             for lt in leave_types:
-                allocated = lt.max_days_per_year if lt.max_days_per_year and lt.max_days_per_year > 0 else 0
-                lb, created = LeaveBalance.objects.get_or_create(
-                    employee=emp, leave_type=lt, year=year,
-                    defaults={'allocated_days': allocated, 'used_days': 0, 'carry_forward_days': 0}
-                )
-                if created:
-                    created_count += 1
-        return JsonResponse({'success': True, 'message': f'Re-sync complete. {created_count} new balance records created for {year}.', 'created': created_count})
+                # Calculate used days for this employee and leave type
+                used = LeaveRequest.objects.filter(
+                    employee=emp,
+                    leave_type=lt,
+                    start_date__year=year,
+                    start_date__lte=timezone.now().date(),
+                    status__in=['approved', 'pending']
+                ).aggregate(total=Sum('days'))['total'] or 0
+                
+                lb = LeaveBalance.objects.filter(employee=emp, leave_type=lt, year=year).first()
+                
+                if not lb:
+                    # Only auto-create if they have some leave applications
+                    has_requests = LeaveRequest.objects.filter(employee=emp, leave_type=lt, start_date__year=year).exists()
+                    if has_requests:
+                        allocated = lt.max_days_per_year if lt.max_days_per_year and lt.max_days_per_year > 0 else 0
+                        LeaveBalance.objects.create(
+                            employee=emp, leave_type=lt, year=year,
+                            allocated_days=allocated, used_days=used, carry_forward_days=0
+                        )
+                        created_count += 1
+                else:
+                    if lb.used_days != used:
+                        lb.used_days = used
+                        lb.save()
+                        updated_count += 1
+                        
+        return JsonResponse({'success': True, 'message': f'Re-sync complete. {created_count} new balances created, {updated_count} balances updated for {year}.', 'created': created_count})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
