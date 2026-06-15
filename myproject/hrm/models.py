@@ -849,6 +849,7 @@ class Payslip(models.Model):
     paid_date = models.DateField(null=True, blank=True)
     generated_on = models.DateField(null=True, blank=True)
     # Manual adjustment / finalization
+    notes = models.TextField(blank=True, null=True, help_text='Notes and internal calculation data')
     is_finalized = models.BooleanField(default=False, help_text='Finalized slips are protected from auto-regeneration')
     finalized_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,

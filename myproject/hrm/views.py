@@ -8776,6 +8776,8 @@ def payslip_adjust(request, pk):
             return JsonResponse({'success': False, 'error': 'This payslip is finalized and cannot be modified.'})
 
         if action == 'add_adjustment':
+            from django.db import transaction
+            
             adj_type = request.POST.get('adjustment_type', '').strip()
             category = request.POST.get('category', '').strip()
             description = request.POST.get('description', '').strip()
@@ -8794,44 +8796,48 @@ def payslip_adjust(request, pk):
             except Exception:
                 return JsonResponse({'success': False, 'error': 'Invalid amount.'})
 
-            adj = PayslipAdjustment.objects.create(
-                payslip=slip,
-                adjustment_type=adj_type,
-                category=category,
-                description=description,
-                amount=amount,
-                reason=reason,
-                created_by=request.user,
-            )
+            with transaction.atomic():
+                adj = PayslipAdjustment.objects.create(
+                    payslip=slip,
+                    adjustment_type=adj_type,
+                    category=category,
+                    description=description,
+                    amount=amount,
+                    reason=reason,
+                    created_by=request.user,
+                )
 
-            # Recalculate payslip totals
-            _recalculate_payslip(slip)
+                # Recalculate payslip totals
+                _recalculate_payslip(slip)
 
-            PayslipAuditLog.objects.create(
-                payslip=slip,
-                action=f'Added {adj.get_adjustment_type_display()}: {description}',
-                detail=f'Category: {adj.get_category_display()}, Amount: Rs.{amount}, Reason: {reason}',
-                performed_by=request.user,
-            )
+                PayslipAuditLog.objects.create(
+                    payslip=slip,
+                    action=f'Added {adj.get_adjustment_type_display()}: {description}',
+                    detail=f'Category: {adj.get_category_display()}, Amount: Rs.{amount}, Reason: {reason}',
+                    performed_by=request.user,
+                )
             return JsonResponse({'success': True, 'message': f'Adjustment added successfully!'})
 
         elif action == 'remove_adjustment':
+            from django.db import transaction
+            
             adj_id = request.POST.get('adjustment_id', '').strip()
             try:
                 adj = PayslipAdjustment.objects.get(pk=adj_id, payslip=slip)
             except PayslipAdjustment.DoesNotExist:
                 return JsonResponse({'success': False, 'error': 'Adjustment not found.'})
 
-            detail = f'{adj.get_adjustment_type_display()}: {adj.description} (Rs.{adj.amount})'
-            adj.delete()
-            _recalculate_payslip(slip)
+            with transaction.atomic():
+                detail = f'{adj.get_adjustment_type_display()}: {adj.description} (Rs.{adj.amount})'
+                adj.delete()
+                _recalculate_payslip(slip)
 
-            PayslipAuditLog.objects.create(
-                payslip=slip,
-                action='Removed adjustment',
-                detail=detail,
-                performed_by=request.user,
-            )
+                PayslipAuditLog.objects.create(
+                    payslip=slip,
+                    action='Removed adjustment',
+                    detail=detail,
+                    performed_by=request.user,
+                )
             return JsonResponse({'success': True, 'message': 'Adjustment removed.'})
 
         return JsonResponse({'success': False, 'error': 'Unknown action.'})
