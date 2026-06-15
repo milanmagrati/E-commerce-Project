@@ -4621,25 +4621,25 @@ def possible_redirection_list(request):
     _NON_REDIRECTABLE_STATUSES = [
         'returned', 'delivered', 'sent to vendor',
     ]
-    _terminal_ncm_ids = Order.objects.filter(
-        ncm_order_id__isnull=False,
-        ncm_status__iregex=r'delivered|returned|sent to vendor',
-    ).values_list('ncm_order_id', flat=True)
 
     rtvs = RTVOrder.objects.filter(
         vendor_return=True
-    ).exclude(
-        order_id__in=_terminal_ncm_ids
     ).select_related('api_config')
 
     for _nrs in _NON_REDIRECTABLE_STATUSES:
         rtvs = rtvs.exclude(last_status__iexact=_nrs)
-    rtvs = rtvs.order_by(
-        db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
-    )
+
+    # Exclude terminal orders using live Order.ncm_status
+    # PERFORMANCE FIX: Use a subquery restricted to active RTVs rather than loading all history
+    _terminal_ncm_ids = Order.objects.filter(
+        ncm_order_id__isnull=False,
+        ncm_order_id__in=rtvs.values('order_id'),
+        ncm_status__iregex=r'delivered|returned|sent to vendor',
+    ).values('ncm_order_id')
+
+    rtvs = rtvs.exclude(order_id__in=_terminal_ncm_ids)
 
     # Also exclude RTVs where the linked local Order is already marked delivered
-    # PERFORMANCE FIX: Use a subquery restricted to active RTVs rather than loading all history into memory
     _delivered_ncm_ids = Order.objects.filter(
         ncm_order_id__isnull=False,
         ncm_order_id__in=rtvs.values('order_id')
@@ -4650,6 +4650,10 @@ def possible_redirection_list(request):
     ).values('ncm_order_id')
     
     rtvs = rtvs.exclude(order_id__in=_delivered_ncm_ids)
+
+    rtvs = rtvs.order_by(
+        db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
+    )
 
     # GET FILTER PARAMETERS
     search_query = request.GET.get('search', '')
