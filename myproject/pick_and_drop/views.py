@@ -156,7 +156,24 @@ def create_pnd_shipment(request, order_id):
             order.pnd_created_at = timezone.now()
             order.pnd_destination_branch = destination_branch
             order.pnd_tracking_url = tracking_url or ''
-            order.status = 'processing'
+            
+            # Update order status to "Pickup Created" from Setup Management
+            try:
+                from dashboard.models import Setup
+                pickup_setup = Setup.objects.filter(setup_type='status', name__iexact='Pickup Created').first()
+                if not pickup_setup:
+                    pickup_setup = Setup.objects.filter(setup_type='status', name__icontains='Pickup Created').first()
+                
+                if pickup_setup:
+                    order.status_setup = pickup_setup
+                    order.order_status = pickup_setup.name
+                    order.status = pickup_setup.name
+                else:
+                    order.order_status = 'Pickup Created'
+                    order.status = 'Pickup Created'
+            except Exception:
+                order.status = 'processing'
+            
             # Save delivery charge from PnD API response
             if delivery_charge:
                 try:

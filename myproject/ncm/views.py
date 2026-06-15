@@ -278,6 +278,23 @@ def create_ncm_shipment(request, order_id):
             order.status = 'processing'
             order.save()
             
+            # Immediately fetch the actual status from NCM so it shows "Pickup Created"
+            status_result = active_service.get_order_status(ncm_order_id)
+            if status_result['success'] and status_result['data']:
+                latest_status_data = status_result['data'][0]
+                latest_status = latest_status_data.get('status') or latest_status_data.get('Status', '')
+                system_status, payment_status = active_service.resolve_delivered_status(latest_status_data)
+                
+                order.ncm_status = latest_status
+                update_fields = active_service.sync_order_status_fields(order, system_status, payment_status)
+                update_fields.extend(['ncm_status', 'updated_at'])
+                
+                if system_status == 'delivered' and not order.delivered_at:
+                    order.delivered_at = timezone.now()
+                    update_fields.append('delivered_at')
+                
+                order.save(update_fields=list(dict.fromkeys(update_fields)))
+            
             OrderActivityLog.objects.create(
                 order=order,
                 action_type='updated',
@@ -288,7 +305,7 @@ def create_ncm_shipment(request, order_id):
             )
             
             logger.info(f"NCM Order created: {order.order_number} -> NCM ID: {ncm_order_id}")
-            messages.success(request, f'✓ Order created in NCM! ID: {ncm_order_id}')
+            messages.success(request, f'[SUCCESS] Order created in NCM! ID: {ncm_order_id}')
         else:
             error_msg = result.get('error', 'Unknown error')
             logger.error(f"Failed to create NCM order: {error_msg}")
@@ -366,7 +383,7 @@ def sync_ncm_status(request, order_id):
             )
 
             logger.info(f"Status synced: {order.order_number} -> {system_status} (NCM: {latest_status})")
-            messages.success(request, f'✓ Synced! NCM: {latest_status} | System: {system_status}'
+            messages.success(request, f'[SUCCESS] Synced! NCM: {latest_status} | System: {system_status}'
                            + (f' | Payment: {payment_status}' if payment_status else ''))
         else:
             error_msg = result.get('error', 'Unable to fetch')
@@ -628,7 +645,7 @@ def bulk_sync_ncm_orders(request):
                     errors.append(f"Failed config {config_id or 'default'} (chunk {i//chunk_size + 1}): {result.get('error')}")
 
         if updated_count > 0:
-            messages.success(request, f'✓ Synced {updated_count} out of {total_orders} active orders')
+            messages.success(request, f'[SUCCESS] Synced {updated_count} out of {total_orders} active orders')
             logger.info(f"Bulk sync: {updated_count}/{total_orders} active orders updated")
         if errors:
             messages.warning(request, "Some batches failed: " + "; ".join(errors))

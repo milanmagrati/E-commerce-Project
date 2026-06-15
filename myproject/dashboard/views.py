@@ -12568,8 +12568,17 @@ def ncm_sync_all_statuses(request):
                         new_status = latest_status.get('status', '')
 
                         if new_status and new_status != order.ncm_status:
+                            system_status, payment_status = svc.resolve_delivered_status(latest_status)
+                            
                             order.ncm_status = new_status
-                            order.save(update_fields=['ncm_status', 'updated_at'])
+                            update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
+                            update_fields.extend(['ncm_status', 'updated_at'])
+                            
+                            if system_status == 'delivered' and not order.delivered_at:
+                                order.delivered_at = timezone.now()
+                                update_fields.append('delivered_at')
+                                
+                            order.save(update_fields=list(dict.fromkeys(update_fields)))
                             updated += 1
 
                 # ✅ Fetch and update delivery charge from NCM

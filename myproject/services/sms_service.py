@@ -102,7 +102,7 @@ class SMSService:
                 to=phone_number
             )
             
-            logger.info(f"✓ SMS sent via Twilio: {call.sid} to {phone_number} for order {order_number}")
+            logger.info(f"[SUCCESS] SMS sent via Twilio: {call.sid} to {phone_number} for order {order_number}")
             return {
                 'success': True,
                 'message': 'SMS sent successfully',
@@ -132,7 +132,7 @@ class SMSService:
             result = response.json()
             
             if result.get('status_code') == 200:
-                logger.info(f"✓ SMS sent via Sparrow: {order_number} to {phone_number}")
+                logger.info(f"[SUCCESS] SMS sent via Sparrow: {order_number} to {phone_number}")
                 return {
                     'success': True,
                     'message': 'SMS sent successfully',
@@ -165,7 +165,7 @@ class SMSService:
             response = requests.get(atuha_url, params=params, timeout=10)
             
             if response.status_code == 200:
-                logger.info(f"✓ SMS sent via Atuha: {order_number} to {phone_number}")
+                logger.info(f"[SUCCESS] SMS sent via Atuha: {order_number} to {phone_number}")
                 return {
                     'success': True,
                     'message': 'SMS sent successfully',

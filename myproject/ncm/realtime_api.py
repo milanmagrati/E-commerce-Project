@@ -233,7 +233,7 @@ def api_sync_order_status(request, order_id):
                             + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
             )
 
-            logger.info(f"✓ API Sync: {order.order_number} -> {system_status}" + (f", payment: {payment_status}" if payment_status else ""))
+            logger.info(f"[SUCCESS] API Sync: {order.order_number} -> {system_status}" + (f", payment: {payment_status}" if payment_status else ""))
 
             return JsonResponse({
                 'success': True,

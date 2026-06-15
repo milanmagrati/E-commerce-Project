@@ -164,9 +164,9 @@ class NCMService:
         result = self._make_request('POST', url, data=order_data)
         
         if result['success']:
-            logger.info(f"✓ NCM Order created successfully: {result['data']}")
+            logger.info(f"[SUCCESS] NCM Order created successfully: {result['data']}")
         else:
-            logger.error(f"✗ NCM Order creation failed")
+            logger.error(f"[FAILED] NCM Order creation failed")
             logger.error(f"  Error: {result.get('error')}")
             logger.error(f"  URL: {url}")
             logger.error(f"  Data sent: {order_data}")
@@ -508,9 +508,9 @@ class NCMService:
         logger.info(f"Creating NCM exchange order for NCM ID: {ncm_order_id}")
         result = self._make_request('POST', url, data=data)
         if result['success']:
-            logger.info(f"✓ NCM Exchange order created: cust_order={result['data'].get('cust_order')}, ven_order={result['data'].get('ven_order')}")
+            logger.info(f"[SUCCESS] NCM Exchange order created: cust_order={result['data'].get('cust_order')}, ven_order={result['data'].get('ven_order')}")
         else:
-            logger.error(f"✗ NCM Exchange order creation failed for NCM ID {ncm_order_id}: {result.get('error')}")
+            logger.error(f"[FAILED] NCM Exchange order creation failed for NCM ID {ncm_order_id}: {result.get('error')}")
         return result
     
     def set_webhook_url(self, webhook_url: str):
