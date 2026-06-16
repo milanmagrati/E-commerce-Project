@@ -448,6 +448,12 @@
                 <div class="pc-att-value green">{{ present_days }}</div>
                 <div class="pc-att-label">Present</div>
             </div>
+            {% if present_on_weekend %}
+            <div class="pc-att-item">
+                <div class="pc-att-value green">{{ present_on_weekend }}</div>
+                <div class="pc-att-label">Present on<br>Weekend</div>
+            </div>
+            {% endif %}
             <div class="pc-att-item">
                 <div class="pc-att-value blue">{{ paid_leave_days }}</div>
                 <div class="pc-att-label">Paid Leave</div>

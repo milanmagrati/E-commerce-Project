@@ -367,39 +367,45 @@
     <div class="sec-head">Attendance Summary</div>
     <table class="att-tbl">
         <tr>
-            <td style="width:11%">
+            <td style="width:10%">
                 <div class="av">{{ total_days }}</div>
                 <div class="al">Total Days</div>
             </td>
-            <td style="width:11%">
+            <td style="width:10%">
                 <div class="av">{{ weekend_days }}</div>
                 <div class="al">Weekend</div>
             </td>
-            <td style="width:11%">
+            <td style="width:10%">
                 <div class="av">{{ holiday_days }}</div>
                 <div class="al">Holidays</div>
             </td>
-            <td style="width:11%; font-weight:800;">
+            <td style="width:10%; font-weight:800;">
                 <div class="av">{{ duty_days }}</div>
                 <div class="al">Working Days</div>
             </td>
-            <td style="width:11%">
+            <td style="width:10%">
                 <div class="av">{{ present_days }}</div>
                 <div class="al">Present</div>
             </td>
-            <td style="width:11%">
+            {% if present_on_weekend %}
+            <td style="width:10%">
+                <div class="av">{{ present_on_weekend }}</div>
+                <div class="al">Present on Weekend</div>
+            </td>
+            {% endif %}
+            <td style="width:10%">
                 <div class="av">{{ paid_leave_days }}</div>
                 <div class="al">Paid Leave</div>
             </td>
-            <td style="width:11%">
+            <td style="width:10%">
                 <div class="av">{{ absent_days }}</div>
                 <div class="al">Absent</div>
             </td>
-            <td style="width:11%">
+            <td style="width:10%">
                 <div class="av">{{ half_days }}</div>
                 <div class="al">Half Days</div>
             </td>
-            <td style="width:12%">
+            <td style="width:10%">
                 <div class="av">{{ ot_hours }}h</div>
                 <div class="al">Overtime</div>
             </td>
