@@ -410,6 +410,7 @@
     }
     @keyframes fadeInPop { from{opacity:0;transform:scale(0.9)} to{opacity:1;transform:scale(1)} }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/nepali-date-converter/dist/nepali-date-converter.umd.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -1262,11 +1263,18 @@ function renderWeekView(data) {
         const isWknd = jsWeekendDays.has(jsDay);
         const isHol = holidayDates.has(iso);
         const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+        let nepDate = "";
+        try { 
+            const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
+            nepDate = new ND(d).getDate(); 
+        } catch(e) { console.error('NepaliDate conversion error:', e); }
+        const dayNumHtml = (color) => `<div style="display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0;"><span style="font-size:1.4rem;font-weight:bold;color:${color};">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d.getDate()}</span></div>`;
+
         if (rec) {
             const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.bg};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
                 <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${esc(rec.status_display)}</span>
                 <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
                 <div style="font-size:0.68rem;font-weight:700;color:${sc.color};margin-top:2px;">${rec.working_hours ? rec.working_hours + 'h' : ''}</div>
@@ -1275,27 +1283,27 @@ function renderWeekView(data) {
             const sc = STATUS_COLORS.weekend;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
                 <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Weekend</span>
             </div>`;
         } else if (isHol) {
             const sc = STATUS_COLORS.holiday;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
                 <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Holiday</span>
             </div>`;
         } else if (isPast) {
             const sc = STATUS_COLORS.absent;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
                 <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Absent</span>
             </div>`;
         } else {
             cards += `<div class="pv-week-day no-record${isTd ? ' today' : ''}">
                 <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num">${d.getDate()}</div>
+                ${dayNumHtml('#1e293b')}
                 <span class="day-status" style="background:#f1f5f9;color:#94a3b8;">—</span>
             </div>`;
         }
@@ -1341,6 +1349,13 @@ function renderMonthView(data) {
         const isWknd = jsWeekendDays.has(jsDay);
         const isHol = holidayDates.has(iso);
         const isPast = iso < today;
+        let nepDate = "";
+        try { 
+            const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
+            nepDate = new ND(new Date(year, month - 1, d)).getDate(); 
+        } catch(e) { console.error('NepaliDate conversion error:', e); }
+        const numHtml = (color) => `<div style="display:flex;justify-content:space-between;width:100%;margin-bottom:4px;"><span class="cal-num" style="font-size:1.25rem;font-weight:900;line-height:1;color:${color};margin:0;">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d}</span></div>`;
+
         if (rec) {
             const ci  = rec.clock_in  || '–';
             const wh  = rec.working_hours ? rec.working_hours + 'h' : '';
@@ -1356,32 +1371,44 @@ function renderMonthView(data) {
                           data-is-holiday="${rec.is_holiday?'1':'0'}"
                           data-notes="${esc(rec.notes||'')}"
                           onclick="pvShowCalPopup(event,this)">
-                <span class="cal-num">${d}</span>
+                ${numHtml('inherit')}
                 <span class="cal-status-chip cal-chip-${rec.status}">${lbl}</span>
                 <span class="cal-time"><i class="fas fa-sign-in-alt fa-xs me-1"></i>${ci}</span>
                 ${wh ? `<span class="cal-hours">${wh}</span>` : ''}
             </div>`;
         } else if (isWknd) {
             cells += `<div class="pv-cal-cell pv-status-weekend wknd-cell${isTd?' today':''}">
-                <span class="cal-num" style="color:#9d174d;">${d}</span>
+                ${numHtml('#9d174d')}
                 <span class="cal-status-chip cal-chip-weekend">Weekend</span>
             </div>`;
         } else if (isHol) {
             cells += `<div class="pv-cal-cell pv-status-holiday${isTd?' today':''}">
-                <span class="cal-num" style="color:#854d0e;">${d}</span>
+                ${numHtml('#854d0e')}
                 <span class="cal-status-chip cal-chip-holiday">Holiday</span>
             </div>`;
         } else if (isPast) {
             cells += `<div class="pv-cal-cell pv-status-absent${isTd?' today':''}">
-                <span class="cal-num">${d}</span>
+                ${numHtml('inherit')}
                 <span class="cal-status-chip cal-chip-absent">Absent</span>
             </div>`;
         } else {
             cells += `<div class="pv-cal-cell pv-status-no_record${isTd?' today':''}">
-                <span class="cal-num">${d}</span>
+                ${numHtml('inherit')}
             </div>`;
         }
     }
+
+    // Nepali Month Header
+    let nepMonthName = "";
+    let nepYear = "";
+    try {
+        const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
+        const firstDayNd = new ND(new Date(year, month - 1, 1));
+        const monthNames = ["Baisakh", "Jestha", "Asar", "Shrawan", "Bhadra", "Ashoj", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"];
+        nepMonthName = monthNames[firstDayNd.getMonth()];
+        nepYear = firstDayNd.getYear();
+    } catch(e) { console.error('NepaliDate header error:', e); }
+    const titleHtml = nepMonthName ? `${nepMonthName} ${nepYear} | ${data.month_name} ${year}` : `${data.month_name} ${year}`;
 
     // Legend
     const legendItems = [
@@ -1399,7 +1426,7 @@ function renderMonthView(data) {
                 <i class="fas fa-chevron-left fa-xs"></i>
             </button>
             <span class="pv-cal-month-title">
-                <i class="fas fa-calendar-alt"></i>${data.month_name} ${year}
+                <i class="fas fa-calendar-alt"></i>${titleHtml}
             </span>
             <button class="pv-cal-nav-btn" onclick="pvNavMonth('${nextMonth}')" title="Next month">
                 <i class="fas fa-chevron-right fa-xs"></i>
