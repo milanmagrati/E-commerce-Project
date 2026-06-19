@@ -21270,3 +21270,52 @@ def stop_notice(request, notice_id):
             return JsonResponse({'status': 'error', 'message': 'Notice not found'})
             
     return JsonResponse({'status': 'error', 'message': 'Invalid method'}, status=405)
+
+@login_required
+def woocommerce_orders_list(request):
+    """View to list WooCommerce orders received via webhook."""
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        from django.contrib import messages
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        from django.shortcuts import redirect
+        return redirect('dashboard')
+        
+    from integrations.models import WooCommerceOrder
+    # Ordering by created_at descending
+    orders = WooCommerceOrder.objects.all().order_by('-created_at')
+    
+    context = {
+        'orders': orders,
+    }
+    return render(request, 'woocommerce_orders.html', context)
+
+@login_required
+@require_POST
+def api_update_product_price(request, product_id):
+    try:
+        user = request.user
+        has_access = (
+            user.is_superuser
+            or getattr(user, 'role', None) == 'administrator'
+            or getattr(user, 'can_access_offer_price', False)
+        )
+        if not has_access:
+            return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+            
+        new_price = request.POST.get('price')
+        if new_price is None:
+            return JsonResponse({'success': False, 'error': 'Price is required.'}, status=400)
+            
+        new_price = Decimal(new_price)
+        if new_price < 0:
+            return JsonResponse({'success': False, 'error': 'Price cannot be negative.'}, status=400)
+            
+        product = get_object_or_404(Product, id=product_id)
+        product.price = new_price
+        product.save()
+        
+        return JsonResponse({'success': True, 'message': 'Price updated successfully.', 'new_price': float(product.price)})
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid price format.'}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

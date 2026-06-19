@@ -57,6 +57,7 @@ EXTERNAL_APPS = [
     "rest_framework.authtoken",
     "integrations",
     "bill_rewards",
+    "google_sheets",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 
@@ -203,6 +204,7 @@ NCM_API_BASE_URL_V2 = config('NCM_API_BASE_URL_V2')
 # ===================== Webhook Configuration =====================
 # Webhook Security: Set this in your .env file
 NCM_WEBHOOK_SECRET = config('NCM_WEBHOOK_SECRET', default=None)
+WOOCOMMERCE_WEBHOOK_SECRET = config('WOOCOMMERCE_WEBHOOK_SECRET', default='')
 
 # ===================== Pick and Drop API Configuration =====================
 PND_API_KEY = config('PND_API_KEY', default='adfe61efa5c52c6')
@@ -351,3 +353,6 @@ CELERY_TIMEZONE = TIME_ZONE
 
 # Run synchronously for local dev unless redis is available and explicit
 CELERY_TASK_ALWAYS_EAGER = config('CELERY_TASK_ALWAYS_EAGER', default=True, cast=bool)
+
+# ===================== Google Sheets Integration =====================
+GOOGLE_SHEETS_CREDENTIALS_PATH = BASE_DIR / 'google_service_account.json'

@@ -60,6 +60,7 @@ urlpatterns = [
 
     # Orders
     path('orders/', views.orders_list, name='orders_list'),
+    path('orders/woocommerce/', views.woocommerce_orders_list, name='woocommerce_orders'),
     path('orders/create/', views.order_create, name='order_create'),
     path('orders/<int:order_id>/', views.order_detail, name='order_detail'),
     path('orders/<int:order_id>/edit/', views.order_edit, name='order_edit'),
@@ -123,6 +124,7 @@ urlpatterns = [
     path('api/customer/<int:customer_id>/', views.api_get_customer, name='api_get_customer'),
     path('api/search-products/', views.api_search_products, name='api_search_products'),
     path('api/product/<int:product_id>/', views.api_get_product, name='api_get_product'),
+    path('api/product/<int:product_id>/update-price/', views.api_update_product_price, name='api_update_product_price'),
     path('api/product/<int:product_id>/variations/', views.api_get_product_variations, name='api_get_product_variations'),
     path('api/bestselling-products/', views.api_bestselling_products, name='api_bestselling_products'),
     path('api/search-orders/', views.api_search_orders, name='api_search_orders'),

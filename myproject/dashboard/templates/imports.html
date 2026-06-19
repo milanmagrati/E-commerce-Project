@@ -1,0 +1,1453 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Imports — Google Sheets Sync{% endblock %}
+
+{% block content %}
+<style>
+/* ==================== IMPORTS PAGE — PREMIUM STYLES ==================== */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --gs-green: #1a9c3e;
+  --gs-light-green: #34a853;
+  --gs-dark: #137333;
+  --gs-bg: #f0fdf4;
+  --card-radius: 16px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.10);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,.12);
+}
+
+.imports-page { font-family: 'Inter', sans-serif; }
+
+/* ── Hero Header ── */
+.imports-hero {
+  background: linear-gradient(135deg, #1a9c3e 0%, #0f7030 40%, #083d1a 100%);
+  border-radius: 20px;
+  padding: 2rem 2.5rem;
+  margin-bottom: 2rem;
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+}
+.imports-hero::before {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 300px; height: 300px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.05);
+}
+.imports-hero::after {
+  content: '';
+  position: absolute;
+  bottom: -80px; left: -40px;
+  width: 250px; height: 250px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.04);
+}
+.imports-hero .hero-content { position: relative; z-index: 1; }
+.imports-hero h1 {
+  font-size: 1.9rem; font-weight: 800; margin: 0 0 .4rem;
+  letter-spacing: -.02em;
+}
+.imports-hero p { opacity: .8; margin: 0; font-size: .95rem; }
+.sheets-icon-large {
+  width: 56px; height: 56px;
+  background: rgba(255,255,255,.15);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.8rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,.2);
+}
+.hero-stats {
+  display: flex; gap: 1.5rem; margin-top: 1.25rem; flex-wrap: wrap;
+}
+.hero-stat {
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 10px;
+  padding: .5rem 1rem;
+  backdrop-filter: blur(8px);
+}
+.hero-stat .stat-val { font-size: 1.4rem; font-weight: 700; display: block; }
+.hero-stat .stat-lbl { font-size: .72rem; opacity: .75; text-transform: uppercase; letter-spacing: .5px; }
+.btn-add-connection {
+  background: #fff;
+  color: #1a9c3e;
+  border: none;
+  padding: .65rem 1.4rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: .9rem;
+  display: flex; align-items: center; gap: .5rem;
+  transition: all .2s;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15);
+}
+.btn-add-connection:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,.2);
+  background: #f8f8f8;
+}
+
+/* ── Setup Banner ── */
+.setup-banner {
+  background: linear-gradient(135deg, #fff7ed, #ffedd5);
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #f59e0b;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex; align-items: flex-start; gap: 1rem;
+}
+.setup-banner .setup-icon { font-size: 1.5rem; margin-top: .1rem; }
+.setup-banner h6 { font-weight: 700; color: #92400e; margin: 0 0 .25rem; }
+.setup-banner p { margin: 0; font-size: .85rem; color: #78350f; }
+.setup-banner code {
+  background: #fde68a; border-radius: 4px;
+  padding: .1rem .4rem; font-size: .82rem; color: #78350f;
+}
+
+/* ── Connection Cards ── */
+.connection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+.connection-card {
+  background: #fff;
+  border-radius: var(--card-radius);
+  border: 1px solid #e5e7eb;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: all .25s ease;
+  position: relative;
+}
+.connection-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: #34a85340;
+}
+.connection-card-header {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  padding: 1.25rem 1.25rem 1rem;
+  border-bottom: 1px solid #bbf7d0;
+  display: flex; align-items: flex-start; gap: .9rem;
+}
+.sheet-avatar {
+  width: 44px; height: 44px;
+  background: linear-gradient(135deg, #34a853, #1a9c3e);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.connection-name { font-weight: 700; font-size: 1rem; color: #111827; margin: 0; }
+.connection-sheet { font-size: .8rem; color: #6b7280; margin: .15rem 0 0; }
+.status-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: .35rem;
+}
+.status-dot.success { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.2); animation: pulse-green 2s infinite; }
+.status-dot.failed  { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.2); }
+.status-dot.partial { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.2); }
+.status-dot.pending { background: #6b7280; }
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
+  50%       { box-shadow: 0 0 0 6px rgba(34,197,94,.1); }
+}
+.sync-status-badge {
+  font-size: .72rem; font-weight: 600; padding: .2rem .6rem;
+  border-radius: 20px; display: inline-flex; align-items: center;
+}
+.sync-status-badge.success { background: #dcfce7; color: #15803d; }
+.sync-status-badge.failed  { background: #fee2e2; color: #b91c1c; }
+.sync-status-badge.partial { background: #fef3c7; color: #b45309; }
+.sync-status-badge.pending { background: #f3f4f6; color: #6b7280; }
+
+.connection-card-body { padding: 1rem 1.25rem; }
+.card-meta-row {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .8rem; color: #6b7280; margin-bottom: .45rem;
+}
+.card-meta-row i { width: 14px; text-align: center; color: #9ca3af; }
+.card-meta-row strong { color: #374151; }
+
+.connection-card-footer {
+  padding: .75rem 1.25rem;
+  border-top: 1px solid #f3f4f6;
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+}
+.btn-sync {
+  background: linear-gradient(135deg, #34a853, #1a9c3e);
+  color: #fff; border: none;
+  padding: .45rem .9rem;
+  border-radius: 8px;
+  font-size: .8rem; font-weight: 600;
+  display: inline-flex; align-items: center; gap: .35rem;
+  cursor: pointer; transition: all .2s;
+}
+.btn-sync:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(26,156,62,.3); }
+.btn-sync.sync-to   { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+.btn-sync.sync-from { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+.btn-sync.sync-both { background: linear-gradient(135deg, #34a853, #1a9c3e); }
+.btn-icon-sm {
+  width: 32px; height: 32px;
+  border-radius: 7px; border: 1px solid #e5e7eb;
+  background: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: .8rem; color: #6b7280;
+  transition: all .2s; margin-left: auto;
+}
+.btn-icon-sm:hover { background: #f3f4f6; color: #374151; }
+.btn-icon-sm.danger:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+
+/* Sync Progress Bar */
+.sync-progress {
+  height: 3px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: .6rem;
+  display: none;
+}
+.sync-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #34a853, #1a9c3e);
+  border-radius: 2px;
+  width: 0%;
+  transition: width .4s ease;
+}
+.sync-progress.active { display: block; }
+.syncing-spinner {
+  width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  display: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Empty State ── */
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: #fff;
+  border-radius: var(--card-radius);
+  border: 2px dashed #d1fae5;
+}
+.empty-icon {
+  width: 80px; height: 80px;
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.2rem; margin: 0 auto 1.25rem;
+}
+.empty-state h4 { font-weight: 700; color: #111827; margin: 0 0 .5rem; }
+.empty-state p { color: #6b7280; font-size: .9rem; max-width: 380px; margin: 0 auto 1.5rem; }
+
+/* ── Inline Data Table Section ── */
+.data-section {
+  background: #fff;
+  border-radius: var(--card-radius);
+  border: 1px solid #e5e7eb;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+}
+.data-section-header {
+  padding: 1rem 1.25rem;
+  background: #fafafa;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex; align-items: center; gap: .75rem;
+  cursor: pointer;
+}
+.data-section-header:hover { background: #f3f4f6; }
+.data-section-header .section-title { font-weight: 600; font-size: .95rem; color: #111827; }
+.data-section-header .toggle-icon { margin-left: auto; color: #9ca3af; transition: transform .25s; }
+.data-section-header.open .toggle-icon { transform: rotate(180deg); }
+.data-section-body { display: none; }
+.data-section-body.show { display: block; }
+
+.sheet-table-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+.sheet-table {
+  width: 100%; border-collapse: collapse; font-size: .82rem;
+}
+.sheet-table th {
+  background: #f9fafb; color: #374151; font-weight: 600;
+  text-transform: uppercase; font-size: .7rem; letter-spacing: .5px;
+  padding: .65rem 1rem; border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap; position: sticky; top: 0; z-index: 1;
+}
+.sheet-table td {
+  padding: .55rem 1rem; border-bottom: 1px solid #f3f4f6;
+  color: #374151; white-space: nowrap; max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.sheet-table tr:hover td { background: #f0fdf4; }
+.editable-cell {
+  cursor: pointer; border-radius: 4px; padding: .25rem .5rem;
+  transition: background .15s;
+}
+.editable-cell:hover { background: #dcfce7; }
+.editable-cell.editing {
+  background: #fff;
+  outline: 2px solid #34a853;
+  border-radius: 4px;
+}
+.cell-input {
+  border: none; outline: none; background: transparent;
+  font-size: .82rem; width: 100%; min-width: 100px;
+  font-family: inherit; color: #111827;
+}
+.table-loading {
+  text-align: center; padding: 2.5rem;
+  color: #9ca3af; font-size: .9rem;
+}
+
+/* ── Modals ── */
+.modal-content { border: none; border-radius: 18px; box-shadow: var(--shadow-lg); overflow: hidden; }
+.modal-header {
+  background: linear-gradient(135deg, #1a9c3e, #0f7030);
+  color: #fff; border: none; padding: 1.5rem 1.75rem;
+}
+.modal-title { font-weight: 700; font-size: 1.1rem; }
+.modal-header .btn-close { filter: brightness(0) invert(1) opacity(.8); }
+.modal-body { padding: 1.75rem; }
+.modal-footer { border-top: 1px solid #e5e7eb; padding: 1rem 1.75rem; }
+
+/* Wizard Steps */
+.wizard-steps {
+  display: flex; gap: 0; margin-bottom: 2rem;
+  border-radius: 10px; overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+.wizard-step {
+  flex: 1; text-align: center; padding: .65rem .5rem;
+  font-size: .75rem; font-weight: 600; color: #9ca3af;
+  background: #f9fafb; border-right: 1px solid #e5e7eb;
+  cursor: pointer; transition: all .2s; position: relative;
+}
+.wizard-step:last-child { border-right: none; }
+.wizard-step.active { background: #1a9c3e; color: #fff; }
+.wizard-step.completed { background: #dcfce7; color: #15803d; }
+.wizard-step .step-num {
+  display: block; font-size: 1.1rem; font-weight: 800; margin-bottom: .1rem;
+}
+.wizard-panel { display: none; }
+.wizard-panel.active { display: block; }
+
+/* Column Mapping Grid */
+.mapping-grid {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: .75rem;
+  align-items: center; margin-bottom: .5rem;
+}
+.mapping-arrow { color: #9ca3af; font-size: .9rem; text-align: center; }
+
+/* Sheet Preview */
+.sheet-preview-wrap { overflow-x: auto; }
+.preview-table { border-collapse: collapse; width: 100%; font-size: .78rem; }
+.preview-table th {
+  background: #1a9c3e; color: #fff; padding: .45rem .75rem;
+  font-weight: 600; text-align: center; white-space: nowrap;
+}
+.preview-table td {
+  border: 1px solid #e5e7eb; padding: .4rem .75rem;
+  color: #374151; white-space: nowrap;
+}
+.preview-table tr:nth-child(even) td { background: #f9fafb; }
+
+/* Log Drawer */
+.log-drawer {
+  position: fixed; top: 0; right: -420px;
+  width: 420px; height: 100vh;
+  background: #fff;
+  box-shadow: -8px 0 40px rgba(0,0,0,.12);
+  z-index: 9999;
+  transition: right .35s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column;
+}
+.log-drawer.open { right: 0; }
+.log-drawer-header {
+  background: linear-gradient(135deg, #1a9c3e, #0f7030);
+  color: #fff; padding: 1.25rem 1.5rem;
+  display: flex; align-items: center; gap: .75rem;
+  flex-shrink: 0;
+}
+.log-drawer-header h6 { font-weight: 700; margin: 0; font-size: 1rem; }
+.btn-close-drawer {
+  margin-left: auto; background: rgba(255,255,255,.15);
+  border: none; color: #fff; width: 32px; height: 32px;
+  border-radius: 8px; cursor: pointer; font-size: 1rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s;
+}
+.btn-close-drawer:hover { background: rgba(255,255,255,.25); }
+.log-drawer-body { flex: 1; overflow-y: auto; padding: 1.25rem; }
+.log-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.3);
+  z-index: 9998; display: none;
+  backdrop-filter: blur(2px);
+}
+.log-overlay.show { display: block; }
+
+/* Log Timeline */
+.log-timeline { list-style: none; margin: 0; padding: 0; }
+.log-item {
+  display: flex; gap: .75rem; padding: .9rem 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+.log-item:last-child { border-bottom: none; }
+.log-dot {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .75rem; flex-shrink: 0; margin-top: .1rem;
+}
+.log-dot.success { background: #dcfce7; color: #15803d; }
+.log-dot.failed  { background: #fee2e2; color: #b91c1c; }
+.log-dot.partial { background: #fef3c7; color: #b45309; }
+.log-info .log-dir { font-weight: 600; font-size: .85rem; color: #111827; margin: 0 0 .2rem; }
+.log-info .log-meta { font-size: .75rem; color: #6b7280; }
+.log-info .log-err  { font-size: .72rem; color: #dc2626; margin-top: .2rem; font-style: italic; }
+.log-badge {
+  font-size: .7rem; padding: .15rem .5rem; border-radius: 10px; font-weight: 600;
+}
+.log-badge.success { background: #dcfce7; color: #15803d; }
+.log-badge.failed  { background: #fee2e2; color: #b91c1c; }
+.log-badge.partial { background: #fef3c7; color: #b45309; }
+
+/* Toast notifications */
+.gs-toast {
+  position: fixed; bottom: 1.5rem; right: 1.5rem;
+  min-width: 280px; max-width: 380px;
+  background: #fff; border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.15);
+  padding: 1rem 1.25rem;
+  display: flex; align-items: center; gap: .75rem;
+  z-index: 99999; transform: translateY(100px); opacity: 0;
+  transition: all .35s cubic-bezier(.4,0,.2,1);
+  border-left: 4px solid #34a853;
+}
+.gs-toast.show { transform: translateY(0); opacity: 1; }
+.gs-toast.error { border-left-color: #ef4444; }
+.gs-toast.warning { border-left-color: #f59e0b; }
+.gs-toast-icon { font-size: 1.3rem; flex-shrink: 0; }
+.gs-toast-msg { font-size: .87rem; color: #374151; font-weight: 500; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .connection-grid { grid-template-columns: 1fr; }
+  .log-drawer { width: 100%; right: -100%; }
+  .imports-hero { padding: 1.5rem; }
+  .imports-hero h1 { font-size: 1.4rem; }
+}
+</style>
+
+<div class="container-fluid py-4 imports-page">
+
+  <!-- ── Hero Header ── -->
+  <div class="imports-hero">
+    <div class="hero-content">
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <div class="sheets-icon-large">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="4" fill="#34a853"/>
+            <rect x="3" y="3" width="18" height="18" rx="3" fill="white" opacity=".15"/>
+            <path d="M7 8h10M7 12h10M7 16h6" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="14" y="11" width="4" height="5" rx="1" fill="white" opacity=".7"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="mb-0">Imports</h1>
+          <p>Two-way sync between your data and Google Sheets</p>
+        </div>
+        <div class="ms-auto">
+          <button class="btn-add-connection" id="btnAddConnection" data-bs-toggle="modal" data-bs-target="#connectionWizardModal">
+            <i class="fas fa-plus"></i> Add Connection
+          </button>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <span class="stat-val" id="heroTotalConnections">{{ connections|length }}</span>
+          <span class="stat-lbl">Connections</span>
+        </div>
+        <div class="hero-stat">
+          <span class="stat-val" id="heroActiveConnections">{{ connections|length }}</span>
+          <span class="stat-lbl">Active</span>
+        </div>
+        <div class="hero-stat">
+          <span class="stat-val" id="heroTotalSyncs">–</span>
+          <span class="stat-lbl">Total Syncs</span>
+        </div>
+        <div class="hero-stat">
+          <span class="stat-val" id="heroLastSync">–</span>
+          <span class="stat-lbl">Last Sync</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Credentials Warning Banner ── -->
+  {% if not creds_ok %}
+  <div class="setup-banner" id="setupBanner">
+    <div class="setup-icon">⚠️</div>
+    <div>
+      <h6>Google Service Account Not Configured</h6>
+      <p>
+        To enable syncing, you need a Google Service Account JSON key.<br>
+        1. Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>
+        and create a Service Account.<br>
+        2. Enable <strong>Google Sheets API</strong> &amp; <strong>Google Drive API</strong>.<br>
+        3. Download the JSON key and save it as
+        <code>myproject/google_service_account.json</code>.<br>
+        4. Share your Google Sheet with the service account's <code>client_email</code>.
+      </p>
+    </div>
+    <button onclick="document.getElementById('setupBanner').style.display='none'"
+      style="background:none;border:none;color:#b45309;font-size:1.1rem;cursor:pointer;margin-left:auto;align-self:flex-start;">✕</button>
+  </div>
+  {% endif %}
+
+  <!-- ── Connection Cards Grid ── -->
+  {% if connections %}
+  <div class="connection-grid" id="connectionGrid">
+    {% for conn in connections %}
+    <div class="connection-card" id="card-{{ conn.id }}">
+      <div class="connection-card-header">
+        <div class="sheet-avatar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="3" fill="white" opacity=".9"/>
+            <path d="M5 8h14M5 12h14M5 16h8" stroke="#34a853" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <p class="connection-name">{{ conn.name }}</p>
+            {% if conn.last_sync_status %}
+            <span class="sync-status-badge {{ conn.last_sync_status }}">
+              <span class="status-dot {{ conn.last_sync_status }}"></span>
+              {{ conn.last_sync_status|title }}
+            </span>
+            {% else %}
+            <span class="sync-status-badge pending">
+              <span class="status-dot pending"></span>Never synced
+            </span>
+            {% endif %}
+          </div>
+          <p class="connection-sheet">
+            <i class="fas fa-table me-1" style="color:#34a853;"></i>
+            {{ conn.sheet_name }}
+            <span class="ms-2 text-muted">·</span>
+            <span class="ms-2">{{ conn.get_sync_model_display }}</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="connection-card-body">
+        <div class="card-meta-row">
+          <i class="fas fa-link"></i>
+          <a href="{{ conn.spreadsheet_link }}" target="_blank" rel="noopener"
+            style="color:#34a853;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;">
+            {{ conn.spreadsheet_id|truncatechars:40 }}
+          </a>
+        </div>
+        <div class="card-meta-row">
+          <i class="fas fa-clock"></i>
+          <span>Last sync: <strong id="last-sync-{{ conn.id }}">{{ conn.get_last_sync_ago }}</strong></span>
+        </div>
+        {% if conn.last_log %}
+        <div class="card-meta-row">
+          <i class="fas fa-exchange-alt"></i>
+          <span>
+            <strong>{{ conn.last_log.rows_synced }}</strong> rows synced
+            {% if conn.last_log.rows_failed > 0 %},
+            <span style="color:#dc2626;"><strong>{{ conn.last_log.rows_failed }}</strong> failed</span>
+            {% endif %}
+          </span>
+        </div>
+        {% endif %}
+        <div class="card-meta-row">
+          <i class="fas fa-database"></i>
+          <span>Model: <strong>{{ conn.sync_model|title }}</strong></span>
+          {% if conn.field_mapping %}
+          · <span style="color:#34a853;">{{ conn.field_mapping|length }} fields mapped</span>
+          {% else %}
+          · <span style="color:#f59e0b;">Not configured</span>
+          {% endif %}
+        </div>
+
+        <!-- Sync progress bar -->
+        <div class="sync-progress" id="progress-{{ conn.id }}">
+          <div class="sync-progress-bar" id="progress-bar-{{ conn.id }}"></div>
+        </div>
+      </div>
+
+      <div class="connection-card-footer">
+        <!-- Sync buttons -->
+        <button class="btn-sync sync-to" onclick="triggerSync({{ conn.id }}, 'to_sheet')" title="Push Django → Sheet">
+          <span class="syncing-spinner" id="spinner-to-{{ conn.id }}"></span>
+          <i class="fas fa-upload"></i> To Sheet
+        </button>
+        <button class="btn-sync sync-from" onclick="triggerSync({{ conn.id }}, 'from_sheet')" title="Pull Sheet → Django">
+          <span class="syncing-spinner" id="spinner-from-{{ conn.id }}"></span>
+          <i class="fas fa-download"></i> From Sheet
+        </button>
+        <button class="btn-sync sync-both" onclick="triggerSync({{ conn.id }}, 'both')" title="Two-way sync">
+          <span class="syncing-spinner" id="spinner-both-{{ conn.id }}"></span>
+          <i class="fas fa-sync-alt"></i> Sync Both
+        </button>
+
+        <!-- Icon actions -->
+        <button class="btn-icon-sm ms-auto" title="View data" onclick="toggleDataSection({{ conn.id }})">
+          <i class="fas fa-table"></i>
+        </button>
+        <button class="btn-icon-sm" title="Sync logs" onclick="openLogs({{ conn.id }}, '{{ conn.name }}')">
+          <i class="fas fa-history"></i>
+        </button>
+        <button class="btn-icon-sm" title="Edit connection" onclick="openEditModal({{ conn.id }})">
+          <i class="fas fa-edit"></i>
+        </button>
+        <button class="btn-icon-sm danger" title="Delete connection" onclick="confirmDelete({{ conn.id }}, '{{ conn.name }}')">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>
+
+      <!-- Inline data table (collapsible) -->
+      <div class="data-section" id="dataSection-{{ conn.id }}" style="display:none;margin:0;border-radius:0;border:none;border-top:1px solid #e5e7eb;">
+        <div class="data-section-header" id="dataSectionHeader-{{ conn.id }}" onclick="loadDataTable({{ conn.id }})">
+          <i class="fas fa-table" style="color:#34a853;"></i>
+          <span class="section-title">Inline Sheet Data</span>
+          <span style="font-size:.78rem;color:#9ca3af;margin-left:.5rem;">(click to load)</span>
+          <i class="fas fa-chevron-up toggle-icon ms-auto"></i>
+        </div>
+        <div class="data-section-body show" id="dataSectionBody-{{ conn.id }}">
+          <div class="table-loading" id="tableLoading-{{ conn.id }}">
+            <i class="fas fa-spinner fa-spin me-2"></i>Loading sheet data...
+          </div>
+          <div class="sheet-table-wrap" id="tableWrap-{{ conn.id }}" style="display:none;">
+            <table class="sheet-table" id="sheetTable-{{ conn.id }}">
+              <thead id="tableHead-{{ conn.id }}"></thead>
+              <tbody id="tableBody-{{ conn.id }}"></tbody>
+            </table>
+            <div class="d-flex align-items-center gap-2 p-3 border-top" style="background:#f9fafb;">
+              <button class="btn btn-sm btn-outline-success" onclick="refreshDataTable({{ conn.id }})">
+                <i class="fas fa-sync-alt me-1"></i>Refresh
+              </button>
+              <span class="text-muted ms-auto" style="font-size:.78rem;" id="tableRowCount-{{ conn.id }}"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <!-- ── Empty State ── -->
+  <div class="empty-state" id="emptyState">
+    <div class="empty-icon">📊</div>
+    <h4>No Google Sheet Connections Yet</h4>
+    <p>Connect a Google Sheet to start syncing your data in real-time. Two-way sync keeps everything up to date automatically.</p>
+    <button class="btn btn-success px-4 py-2 fw-bold" data-bs-toggle="modal" data-bs-target="#connectionWizardModal">
+      <i class="fas fa-plus me-2"></i>Add Your First Connection
+    </button>
+  </div>
+  {% endif %}
+
+</div><!-- /container -->
+
+
+<!-- ═══════════════════ CONNECTION WIZARD MODAL ═══════════════════ -->
+<div class="modal fade" id="connectionWizardModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-file-import me-2"></i>Add Google Sheet Connection</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Wizard Steps -->
+        <div class="wizard-steps mb-4">
+          <div class="wizard-step active" data-step="1">
+            <span class="step-num">1</span>Sheet URL
+          </div>
+          <div class="wizard-step" data-step="2">
+            <span class="step-num">2</span>Preview
+          </div>
+          <div class="wizard-step" data-step="3">
+            <span class="step-num">3</span>Map Fields
+          </div>
+          <div class="wizard-step" data-step="4">
+            <span class="step-num">4</span>Save
+          </div>
+        </div>
+
+        <!-- Step 1: URL Input -->
+        <div class="wizard-panel active" id="wizardStep1">
+          <div class="mb-3">
+            <label class="form-label fw-600">Connection Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="wConnName" placeholder="e.g. Followup Sheet, Orders Export...">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Connection Type <span class="text-danger">*</span></label>
+            <select class="form-select" id="wConnType" onchange="toggleConnType()">
+              <option value="csv">Published CSV URL (Read Only)</option>
+              <option value="apps_script">Apps Script Web App (Two-Way Sync)</option>
+            </select>
+          </div>
+          <div class="mb-3" id="wrapCsvUrl">
+            <label class="form-label fw-600">Published CSV URL <span class="text-danger">*</span></label>
+            <input type="url" class="form-control" id="wCsvUrl" placeholder="https://docs.google.com/spreadsheets/d/.../export?format=csv&amp;gid=0">
+            <div class="form-text">File -> Share -> Publish to web -> Select CSV.</div>
+          </div>
+          <div class="mb-3" id="wrapAppsScriptUrl" style="display:none;">
+            <label class="form-label fw-600">Apps Script Web App URL <span class="text-danger">*</span></label>
+            <input type="url" class="form-control" id="wAppsScriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
+            <div class="form-text">Paste the Apps Script code in your sheet and deploy as Web App. <a href="#" onclick="showAppsScriptCode(event)">Show Code</a></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Sheet URL (optional)</label>
+            <input type="url" class="form-control" id="wSheetUrl" placeholder="Link to view the sheet">
+          </div>
+          <div class="mt-3">
+            <label class="form-label fw-600">Data Model to Sync</label>
+            <select class="form-select" id="wSyncModel">
+              <option value="orders">Orders</option>
+              <option value="products">Products</option>
+              <option value="customers">Customers</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Step 2: Preview -->
+        <div class="wizard-panel" id="wizardStep2">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <i class="fas fa-eye" style="color:#34a853;"></i>
+            <strong>Sheet Preview</strong>
+            <span class="text-muted ms-2" style="font-size:.82rem;">First 5 rows of your sheet</span>
+            <button class="btn btn-sm btn-outline-success ms-auto" onclick="fetchSheetPreview()">
+              <i class="fas fa-sync-alt me-1"></i>Refresh
+            </button>
+          </div>
+          <div id="previewLoading" class="text-center py-4" style="display:none;">
+            <div class="spinner-border text-success" style="width:2rem;height:2rem;"></div>
+            <div class="mt-2 text-muted">Loading sheet data...</div>
+          </div>
+          <div id="previewError" class="alert alert-danger" style="display:none;"></div>
+          <div class="sheet-preview-wrap">
+            <table class="preview-table" id="previewTable">
+              <thead id="previewHead"></thead>
+              <tbody id="previewBody"></tbody>
+            </table>
+          </div>
+          <div id="previewEmpty" class="text-center text-muted py-3" style="display:none;">
+            Click "Load Preview" to see your sheet data.
+          </div>
+        </div>
+
+        <!-- Step 3: Field Mapping -->
+        <div class="wizard-panel" id="wizardStep3">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <i class="fas fa-arrows-alt-h" style="color:#34a853;"></i>
+            <strong>Map Sheet Columns → Django Fields</strong>
+          </div>
+          <p class="text-muted" style="font-size:.85rem;">
+            For each column in your sheet, choose which Django field it corresponds to.
+            Leave unmapped columns as "— Skip —".
+          </p>
+          <div id="mappingRows"></div>
+        </div>
+
+        <!-- Step 4: Save / Confirm -->
+        <div class="wizard-panel" id="wizardStep4">
+          <div class="text-center py-2">
+            <div style="width:60px;height:60px;background:#dcfce7;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.8rem;margin:0 auto 1rem;">✅</div>
+            <h5 class="fw-bold">Review & Save</h5>
+            <p class="text-muted" style="font-size:.9rem;">Your connection is configured and ready to use.</p>
+          </div>
+          <div id="reviewSummary" class="p-3 rounded-3" style="background:#f0fdf4;border:1px solid #bbf7d0;font-size:.87rem;"></div>
+          <div class="mt-3">
+            <label class="form-label fw-600">Notes (optional)</label>
+            <textarea class="form-control" id="wNotes" rows="2" placeholder="Any notes about this connection..."></textarea>
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="wizBtnBack" style="display:none;" onclick="wizardBack()">
+          <i class="fas fa-arrow-left me-1"></i>Back
+        </button>
+        <button class="btn btn-success" id="wizBtnNext" onclick="wizardNext()">
+          Next <i class="fas fa-arrow-right ms-1"></i>
+        </button>
+        <button class="btn btn-success" id="wizBtnSave" style="display:none;" onclick="saveConnection()">
+          <i class="fas fa-save me-1"></i>Save Connection
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ EDIT CONNECTION MODAL ═══════════════════ -->
+<div class="modal fade" id="editConnectionModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Edit Connection</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editConnId">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold">Connection Name</label>
+            <input type="text" class="form-control" id="editConnName">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Connection Type</label>
+            <select class="form-select" id="editConnType" onchange="toggleEditConnType()">
+              <option value="csv">Published CSV URL (Read Only)</option>
+              <option value="apps_script">Apps Script Web App (Two-Way Sync)</option>
+            </select>
+          </div>
+          <div class="col-12" id="editWrapCsvUrl">
+            <label class="form-label fw-semibold">CSV URL</label>
+            <input type="url" class="form-control" id="editCsvUrl">
+          </div>
+          <div class="col-12" id="editWrapAppsScriptUrl" style="display:none;">
+            <label class="form-label fw-semibold">Apps Script Web App URL</label>
+            <input type="url" class="form-control" id="editAppsScriptUrl">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Google Sheet URL</label>
+            <input type="url" class="form-control" id="editSheetUrl">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label fw-semibold">Sync Model</label>
+            <select class="form-select" id="editSyncModel">
+              <option value="orders">Orders</option>
+              <option value="products">Products</option>
+              <option value="customers">Customers</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Notes</label>
+            <textarea class="form-control" id="editNotes" rows="2"></textarea>
+          </div>
+          <div class="col-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="editIsActive" role="switch">
+              <label class="form-check-label fw-semibold" for="editIsActive">Active</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success" onclick="saveEditConnection()">
+          <i class="fas fa-save me-1"></i>Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ DELETE CONFIRM MODAL ═══════════════════ -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:380px;">
+    <div class="modal-content">
+      <div class="modal-header" style="background:linear-gradient(135deg,#dc2626,#b91c1c);">
+        <h5 class="modal-title text-white"><i class="fas fa-trash me-2"></i>Delete Connection</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center py-4">
+        <div style="font-size:2.5rem;margin-bottom:.75rem;">🗑️</div>
+        <p>Are you sure you want to delete <strong id="deleteConnName"></strong>?</p>
+        <p class="text-muted" style="font-size:.83rem;">This will not affect the Google Sheet itself.</p>
+        <input type="hidden" id="deleteConnId">
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger" onclick="executeDelete()">
+          <i class="fas fa-trash me-1"></i>Delete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SYNC LOG DRAWER ═══════════════════ -->
+<div class="log-overlay" id="logOverlay" onclick="closeLogs()"></div>
+<div class="log-drawer" id="logDrawer">
+  <div class="log-drawer-header">
+    <i class="fas fa-history"></i>
+    <h6 id="logDrawerTitle">Sync Logs</h6>
+    <button class="btn-close-drawer" onclick="closeLogs()">✕</button>
+  </div>
+  <div class="log-drawer-body">
+    <div id="logLoading" class="text-center py-4" style="display:none;">
+      <div class="spinner-border text-success" style="width:1.5rem;height:1.5rem;"></div>
+      <div class="mt-2 text-muted small">Loading logs...</div>
+    </div>
+    <ul class="log-timeline" id="logTimeline"></ul>
+    <div id="logEmpty" class="text-center text-muted py-4" style="display:none;">
+      <div style="font-size:2rem;margin-bottom:.5rem;">📋</div>
+      <p>No sync logs yet. Run a sync to see history here.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ TOAST ═══════════════════ -->
+<div class="gs-toast" id="gsToast">
+  <div class="gs-toast-icon" id="gsToastIcon">✅</div>
+  <div class="gs-toast-msg" id="gsToastMsg">Sync completed successfully!</div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────────────────
+//  CSRF Helper
+// ──────────────────────────────────────────────────────────
+function getCsrf() {
+  return document.cookie.split(';').map(c => c.trim())
+    .find(c => c.startsWith('csrftoken='))?.split('=')[1] || '';
+}
+
+// ──────────────────────────────────────────────────────────
+//  Toast
+// ──────────────────────────────────────────────────────────
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('gsToast');
+  const icon = document.getElementById('gsToastIcon');
+  const msgEl = document.getElementById('gsToastMsg');
+  icon.textContent = type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️';
+  msgEl.textContent = msg;
+  t.className = `gs-toast show ${type === 'error' ? 'error' : type === 'warning' ? 'warning' : ''}`;
+  setTimeout(() => t.className = 'gs-toast', 3500);
+}
+
+// ──────────────────────────────────────────────────────────
+//  Sync Functions
+// ──────────────────────────────────────────────────────────
+async function triggerSync(connId, direction) {
+  const labels = { to_sheet: 'To Sheet', from_sheet: 'From Sheet', both: 'Both Ways' };
+  const progress = document.getElementById(`progress-${connId}`);
+  const bar = document.getElementById(`progress-bar-${connId}`);
+
+  // Show progress animation
+  progress.classList.add('active');
+  bar.style.width = '0%';
+  setTimeout(() => bar.style.width = '70%', 100);
+
+  // Show spinner on clicked button
+  const spinners = document.querySelectorAll(`[id^="spinner-"][id$="${connId}"]`);
+
+  try {
+    const resp = await fetch(`/imports/connections/${connId}/sync/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+      body: JSON.stringify({ direction })
+    });
+    const data = await resp.json();
+
+    bar.style.width = '100%';
+    setTimeout(() => { progress.classList.remove('active'); bar.style.width = '0'; }, 600);
+
+    if (data.success) {
+      const r = data.result;
+      showToast(`✨ Sync (${labels[direction]}) complete — ${r.rows_synced} rows synced${r.rows_failed > 0 ? `, ${r.rows_failed} failed` : ''}.`);
+      // Update last-sync display
+      const lastSyncEl = document.getElementById(`last-sync-${connId}`);
+      if (lastSyncEl && data.last_synced_ago) lastSyncEl.textContent = data.last_synced_ago;
+    } else {
+      showToast('Sync failed: ' + (data.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    bar.style.width = '0';
+    progress.classList.remove('active');
+    showToast('Network error during sync.', 'error');
+  }
+}
+
+// ──────────────────────────────────────────────────────────
+//  Inline Data Table
+// ──────────────────────────────────────────────────────────
+const loadedTables = {};
+
+function toggleDataSection(connId) {
+  const section = document.getElementById(`dataSection-${connId}`);
+  const isVisible = section.style.display !== 'none';
+  section.style.display = isVisible ? 'none' : 'block';
+  if (!isVisible && !loadedTables[connId]) {
+    loadDataTable(connId);
+  }
+}
+
+async function loadDataTable(connId) {
+  const loading = document.getElementById(`tableLoading-${connId}`);
+  const wrap = document.getElementById(`tableWrap-${connId}`);
+  const thead = document.getElementById(`tableHead-${connId}`);
+  const tbody = document.getElementById(`tableBody-${connId}`);
+  const rowCount = document.getElementById(`tableRowCount-${connId}`);
+
+  loading.style.display = 'block';
+  wrap.style.display = 'none';
+
+  try {
+    const resp = await fetch(`/imports/connections/${connId}/data/?per_page=50`);
+    const data = await resp.json();
+
+    if (!data.success) {
+      loading.innerHTML = `<span style="color:#dc2626;">❌ ${data.error || 'Failed to load data'}</span>`;
+      return;
+    }
+
+    // Build headers
+    const headers = data.headers || [];
+    thead.innerHTML = '<tr>' + headers.map((h, i) => `<th>${h}</th>`).join('') + '</tr>';
+
+    // Build rows
+    const rows = data.rows || [];
+    tbody.innerHTML = rows.map((row, ri) =>
+      '<tr>' + headers.map((h, ci) =>
+        `<td><span class="editable-cell" data-conn="${connId}" data-row="${ri+2}" data-col="${ci+1}"
+          data-field="${h}" data-uid="${row[headers[0]] || ''}"
+          onclick="makeEditable(this)">${row[h] !== undefined ? row[h] : ''}</span></td>`
+      ).join('') + '</tr>'
+    ).join('');
+
+    rowCount.textContent = `${rows.length} of ${data.total} rows`;
+    loadedTables[connId] = true;
+    loading.style.display = 'none';
+    wrap.style.display = 'block';
+  } catch (e) {
+    loading.innerHTML = '<span style="color:#dc2626;">❌ Network error loading data.</span>';
+  }
+}
+
+function refreshDataTable(connId) {
+  delete loadedTables[connId];
+  loadDataTable(connId);
+}
+
+// ── Inline Cell Editing ──
+function makeEditable(cell) {
+  if (cell.querySelector('input')) return;
+  const original = cell.textContent.trim();
+  cell.classList.add('editing');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = original;
+  input.className = 'cell-input';
+  cell.textContent = '';
+  cell.appendChild(input);
+  input.focus();
+
+  async function save() {
+    const newVal = input.value.trim();
+    cell.classList.remove('editing');
+    cell.textContent = newVal;
+
+    if (newVal !== original) {
+      try {
+        await fetch(`/imports/connections/${cell.dataset.conn}/update-cell/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({
+            row: parseInt(cell.dataset.row),
+            col: parseInt(cell.dataset.col),
+            value: newVal,
+            update_db: true,
+            unique_id: cell.dataset.uid,
+            field_name: cell.dataset.field,
+          })
+        });
+        cell.style.background = '#dcfce7';
+        setTimeout(() => cell.style.background = '', 1500);
+        showToast('Cell updated in Sheet & DB ✓');
+      } catch (e) {
+        showToast('Failed to save cell', 'error');
+        cell.textContent = original;
+      }
+    }
+  }
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { cell.classList.remove('editing'); cell.textContent = original; }
+  });
+}
+
+// ──────────────────────────────────────────────────────────
+//  Sync Log Drawer
+// ──────────────────────────────────────────────────────────
+async function openLogs(connId, name) {
+  document.getElementById('logDrawerTitle').textContent = `Sync Logs — ${name}`;
+  document.getElementById('logOverlay').classList.add('show');
+  document.getElementById('logDrawer').classList.add('open');
+
+  const loading = document.getElementById('logLoading');
+  const timeline = document.getElementById('logTimeline');
+  const empty = document.getElementById('logEmpty');
+
+  loading.style.display = 'block';
+  timeline.innerHTML = '';
+  empty.style.display = 'none';
+
+  try {
+    const resp = await fetch(`/imports/connections/${connId}/logs/`);
+    const data = await resp.json();
+    loading.style.display = 'none';
+
+    if (!data.success || !data.logs.length) {
+      empty.style.display = 'block';
+      return;
+    }
+
+    const icons = { 'Django → Sheet': '⬆️', 'Sheet → Django': '⬇️', 'Two-Way Merge': '🔄' };
+    timeline.innerHTML = data.logs.map(log => `
+      <li class="log-item">
+        <div class="log-dot ${log.status}">
+          <i class="fas fa-${log.status === 'success' ? 'check' : log.status === 'failed' ? 'times' : 'exclamation'}"></i>
+        </div>
+        <div class="log-info flex-grow-1">
+          <div class="d-flex align-items-center gap-2">
+            <p class="log-dir">${icons[log.direction] || '↔️'} ${log.direction}</p>
+            <span class="log-badge ${log.status}">${log.status}</span>
+          </div>
+          <div class="log-meta">
+            ${log.rows_synced} synced · ${log.rows_failed} failed · ${log.rows_skipped} skipped
+            <br>${log.synced_at} · by ${log.triggered_by}
+          </div>
+          ${log.error_message ? `<div class="log-err">⚠️ ${log.error_message}</div>` : ''}
+        </div>
+      </li>
+    `).join('');
+  } catch (e) {
+    loading.innerHTML = '<span class="text-danger">Failed to load logs.</span>';
+  }
+}
+
+function closeLogs() {
+  document.getElementById('logOverlay').classList.remove('show');
+  document.getElementById('logDrawer').classList.remove('open');
+}
+
+// ──────────────────────────────────────────────────────────
+//  Delete Connection
+// ──────────────────────────────────────────────────────────
+function confirmDelete(connId, name) {
+  document.getElementById('deleteConnId').value = connId;
+  document.getElementById('deleteConnName').textContent = name;
+  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+
+async function executeDelete() {
+  const connId = document.getElementById('deleteConnId').value;
+  try {
+    const resp = await fetch(`/imports/connections/${connId}/delete/`, {
+      method: 'POST', headers: { 'X-CSRFToken': getCsrf() }
+    });
+    const data = await resp.json();
+    if (data.success) {
+      const card = document.getElementById(`card-${connId}`);
+      if (card) { card.style.opacity = '0'; card.style.transform = 'scale(.9)'; setTimeout(() => card.remove(), 300); }
+      bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+      showToast('Connection deleted.');
+    }
+  } catch (e) {
+    showToast('Failed to delete.', 'error');
+  }
+}
+
+// ──────────────────────────────────────────────────────────
+//  Edit Connection Modal
+// ──────────────────────────────────────────────────────────
+
+
+
+
+// ──────────────────────────────────────────────────────────
+//  Connection Wizard
+// ──────────────────────────────────────────────────────────
+let currentStep = 1;
+const totalSteps = 4;
+let previewData = { rows: [], headers: [], spreadsheetId: '' };
+let fieldMapping = {};
+
+function updateWizardUI() {
+  document.querySelectorAll('.wizard-step').forEach(el => {
+    const s = parseInt(el.dataset.step);
+    el.classList.toggle('active', s === currentStep);
+    el.classList.toggle('completed', s < currentStep);
+  });
+  document.querySelectorAll('.wizard-panel').forEach((el, i) => {
+    el.classList.toggle('active', (i + 1) === currentStep);
+  });
+  document.getElementById('wizBtnBack').style.display = currentStep > 1 ? 'inline-flex' : 'none';
+  document.getElementById('wizBtnNext').style.display = currentStep < totalSteps ? 'inline-flex' : 'none';
+  document.getElementById('wizBtnSave').style.display = currentStep === totalSteps ? 'inline-flex' : 'none';
+  if (currentStep === totalSteps) buildReviewSummary();
+}
+
+async function wizardNext() {
+  if (currentStep === 1) {
+    const name = document.getElementById('wConnName').value.trim();
+    const url = document.getElementById('wSheetUrl').value.trim();
+    if (!name) { showToast('Please enter a connection name.', 'warning'); return; }
+    if (!url) { showToast('Please enter the Google Sheet URL.', 'warning'); return; }
+    currentStep = 2;
+    updateWizardUI();
+    await fetchSheetPreview();
+  } else if (currentStep === 2) {
+    if (!previewData.rows.length) { showToast('Please load a preview first.', 'warning'); return; }
+    currentStep = 3;
+    updateWizardUI();
+    buildMappingRows();
+  } else if (currentStep === 3) {
+    collectFieldMapping();
+    currentStep = 4;
+    updateWizardUI();
+  }
+}
+
+function wizardBack() {
+  if (currentStep > 1) { currentStep--; updateWizardUI(); }
+}
+
+async function fetchSheetPreview() {
+  const type = document.getElementById('wConnType').value;
+  const url = type === 'csv' ? document.getElementById('wCsvUrl').value.trim() : document.getElementById('wAppsScriptUrl').value.trim();
+  
+  const loading = document.getElementById('previewLoading');
+  const errorEl = document.getElementById('previewError');
+  const emptyEl = document.getElementById('previewEmpty');
+
+  loading.style.display = 'block';
+  errorEl.style.display = 'none';
+  emptyEl.style.display = 'none';
+
+  try {
+    const resp = await fetch(/imports/preview-by-url/?connection_type=&url=);
+    const data = await resp.json();
+    loading.style.display = 'none';
+
+    if (!data.success) {
+      errorEl.textContent = '? ' + (data.error || 'Failed to fetch preview.');
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    previewData = { rows: data.rows || [], headers: data.rows[0] || [] };
+    buildPreviewTable(previewData.rows);
+  } catch (e) {
+    loading.style.display = 'none';
+    errorEl.textContent = '? Network error.';
+    errorEl.style.display = 'block';
+  }
+}
+
+function buildPreviewTable(rows) {
+  const head = document.getElementById('previewHead');
+  const body = document.getElementById('previewBody');
+  if (!rows.length) {
+    head.innerHTML = ''; body.innerHTML = '';
+    document.getElementById('previewEmpty').style.display = 'block';
+    return;
+  }
+  const colCount = Math.max(...rows.map(r => r.length));
+  const colLabels = Array.from({length: colCount}, (_, i) => String.fromCharCode(65 + i));
+  head.innerHTML = '<tr>' + colLabels.map(l => `<th>${l}</th>`).join('') + '</tr>';
+  body.innerHTML = rows.map((row, ri) =>
+    '<tr>' + colLabels.map((_, ci) => `<td>${row[ci] !== undefined ? row[ci] : ''}</td>`).join('') + '</tr>'
+  ).join('');
+}
+
+const MODEL_FIELDS = {{ model_field_defs|safe }};
+
+function buildMappingRows() {
+  const model = document.getElementById('wSyncModel').value;
+  const rows = previewData.rows;
+  const container = document.getElementById('mappingRows');
+
+  const headers = rows[0] || [];
+  const colCount = headers.length;
+  const colLabels = Array.from({length: colCount}, (_, i) => String.fromCharCode(65 + i));
+  const djangoFields = MODEL_FIELDS[model] || [];
+
+  const fieldOptions = `<option value="">— Skip —</option>` +
+    djangoFields.map(f => `<option value="${f.key}">${f.label}</option>`).join('');
+
+  // Auto-guess mapping
+  const autoGuess = {};
+  colLabels.forEach((lbl, i) => {
+    const header = (headers[i] || '').toLowerCase().replace(/\s+/g, '_');
+    const match = djangoFields.find(f => f.key === header || f.label.toLowerCase() === headers[i]?.toLowerCase());
+    if (match) autoGuess[lbl] = match.key;
+  });
+
+  container.innerHTML = `
+    <div class="d-flex gap-2 mb-2 text-muted" style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">
+      <div style="flex:1;">Sheet Column (${colCount})</div>
+      <div style="width:24px;"></div>
+      <div style="flex:1;">Django Field</div>
+    </div>
+    ${colLabels.map((lbl, i) => `
+      <div class="mapping-grid mb-2">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text" style="background:#f0fdf4;font-weight:700;color:#1a9c3e;">${lbl}</span>
+          <input class="form-control form-control-sm" value="${headers[i] || ''}" readonly style="background:#f9fafb;color:#6b7280;">
+        </div>
+        <div class="mapping-arrow"><i class="fas fa-arrow-right"></i></div>
+        <select class="form-select form-select-sm" id="mapCol${lbl}" data-col="${lbl}">
+          ${fieldOptions}
+        </select>
+      </div>
+    `).join('')}
+  `;
+
+  // Apply auto-guesses
+  Object.entries(autoGuess).forEach(([lbl, key]) => {
+    const sel = document.getElementById(`mapCol${lbl}`);
+    if (sel) sel.value = key;
+  });
+}
+
+function collectFieldMapping() {
+  const rows = previewData.rows;
+  const headers = rows[0] || [];
+  const colCount = headers.length;
+  const colLabels = Array.from({length: colCount}, (_, i) => String.fromCharCode(65 + i));
+  fieldMapping = {};
+  colLabels.forEach(lbl => {
+    const sel = document.getElementById(`mapCol${lbl}`);
+    if (sel && sel.value) fieldMapping[lbl] = sel.value;
+  });
+}
+
+
+// Add Apps Script Code Modal to body
+document.body.insertAdjacentHTML('beforeend', 
+<div class="modal fade" id="appsScriptModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title">Apps Script Code</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <pre><code style="font-size:0.8rem;">{{ apps_script_code|safe }}</code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+);
+
+function showAppsScriptCode(e) {
+  e.preventDefault();
+  new bootstrap.Modal(document.getElementById('appsScriptModal')).show();
+}
+
+function toggleConnType() {
+  const t = document.getElementById('wConnType');
+  if (!t) return;
+  const val = t.value;
+  const wrapCsv = document.getElementById('wrapCsvUrl');
+  const wrapApps = document.getElementById('wrapAppsScriptUrl');
+  if (wrapCsv) wrapCsv.style.display = val === 'csv' ? 'block' : 'none';
+  if (wrapApps) wrapApps.style.display = val === 'apps_script' ? 'block' : 'none';
+}
+
+function toggleEditConnType() {
+  const t = document.getElementById('editConnType');
+  if (!t) return;
+  const val = t.value;
+  const wrapCsv = document.getElementById('editWrapCsvUrl');
+  const wrapApps = document.getElementById('editWrapAppsScriptUrl');
+  if (wrapCsv) wrapCsv.style.display = val === 'csv' ? 'block' : 'none';
+  if (wrapApps) wrapApps.style.display = val === 'apps_script' ? 'block' : 'none';
+}
+
+function buildReviewSummary() {
+  const name = document.getElementById('wConnName').value;
+  const type = document.getElementById('wConnType').value;
+  const model = document.getElementById('wSyncModel').value;
+  const mapped = Object.keys(fieldMapping).length;
+
+  document.getElementById('reviewSummary').innerHTML = 
+    <div class="row g-2">
+      <div class="col-6"><strong>Name:</strong> </div>
+      <div class="col-6"><strong>Model:</strong> </div>
+      <div class="col-6"><strong>Type:</strong> </div>
+      <div class="col-6"><strong>Fields Mapped:</strong> </div>
+    </div>
+  ;
+}
+
+async function saveConnection() {
+  collectFieldMapping();
+  const payload = {
+    name: document.getElementById('wConnName').value.trim(),
+    connection_type: document.getElementById('wConnType').value,
+    csv_url: document.getElementById('wCsvUrl').value.trim(),
+    apps_script_url: document.getElementById('wAppsScriptUrl').value.trim(),
+    spreadsheet_url: document.getElementById('wSheetUrl').value.trim(),
+    sync_model: document.getElementById('wSyncModel').value,
+    field_mapping: fieldMapping,
+    notes: document.getElementById('wNotes').value.trim(),
+  };
+
+  if (!payload.name) { showToast('Please enter a name.', 'warning'); return; }
+
+  try {
+    const resp = await fetch('/imports/connections/add/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (data.success) {
+      bootstrap.Modal.getInstance(document.getElementById('connectionWizardModal')).hide();
+      showToast('? Connection saved! Reloading...');
+      setTimeout(() => location.reload(), 1200);
+    } else {
+      showToast(data.error || 'Failed to save.', 'error');
+    }
+  } catch (e) {
+    showToast('Network error.', 'error');
+  }
+}
+
+// Reset wizard on modal open
+document.getElementById('connectionWizardModal').addEventListener('show.bs.modal', () => {
+  currentStep = 1;
+  previewData = { rows: [], headers: [], spreadsheetId: '' };
+  fieldMapping = {};
+  updateWizardUI();
+  ['wConnName','wCsvUrl','wAppsScriptUrl','wSheetUrl','wNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('wConnType').value = 'csv';
+  toggleConnType();
+  document.getElementById('wSyncModel').value = 'orders';
+  document.getElementById('previewHead').innerHTML = '';
+  document.getElementById('previewBody').innerHTML = '';
+  document.getElementById('previewError').style.display = 'none';
+  document.getElementById('previewEmpty').style.display = 'none';
+});
+</script>
+{% endblock %}

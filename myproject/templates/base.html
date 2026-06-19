@@ -1063,6 +1063,14 @@
                             </a>
                         </li>
                         {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' %}
+                        <li class="{% if request.resolver_match.url_name == 'woocommerce_orders' %}active{% endif %}">
+                            <a href="{% url 'woocommerce_orders' %}">
+                                <i class="fab fa-wordpress me-1"></i> WooCommerce 
+                                <span class="badge bg-info ms-1" style="font-size: 0.6rem;">SYNC</span>
+                            </a>
+                        </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}
@@ -1541,6 +1549,16 @@
                         </li>
                         {% endif %}
                     </ul>
+                </li>
+                {% endif %}
+
+                <!-- ==================== IMPORTS (Google Sheets Sync) ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="{% if '/imports/' in request.path %}active{% endif %}">
+                    <a href="/imports/">
+                        <i class="fas fa-file-import"></i> Imports
+                        <span class="ncm-badge" style="background:linear-gradient(135deg,#1a9c3e,#0f7030);">SHEETS</span>
+                    </a>
                 </li>
                 {% endif %}
 

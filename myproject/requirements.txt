@@ -14,6 +14,10 @@ urllib3==2.6.3
 djangorestframework==3.17.1
 mysqlclient==2.2.8
 celery
+gspread>=6.0
+google-auth>=2.0
+google-auth-httplib2
+google-api-python-client
 
 # Optional: SMS Service Providers (install as needed)
 # For Twilio SMS:

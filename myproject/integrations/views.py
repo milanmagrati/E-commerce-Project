@@ -1,11 +1,13 @@
 import logging
+import hmac
+import hashlib
+import base64
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
 
 from store.models import Order
 from .models import WooCommerceOrder
@@ -26,10 +28,36 @@ WOO_STATUS_MAP = {
 
 
 class WooCommerceOrderReceiveView(APIView):
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    # We remove TokenAuthentication because WooCommerce uses HMAC signatures
+    authentication_classes = []
+    permission_classes = []
+
+    def verify_webhook_signature(self, request):
+        secret = getattr(settings, 'WOOCOMMERCE_WEBHOOK_SECRET', '')
+        if not secret:
+            logger.error("WOOCOMMERCE_WEBHOOK_SECRET is not set in settings")
+            return False
+
+        header_signature = request.headers.get('x-wc-webhook-signature')
+        if not header_signature:
+            logger.warning("Missing x-wc-webhook-signature header")
+            return False
+
+        payload = request.body
+        expected_signature = base64.b64encode(
+            hmac.new(secret.encode('utf-8'), payload, hashlib.sha256).digest()
+        ).decode('utf-8')
+
+        if not hmac.compare_digest(expected_signature, header_signature):
+            logger.warning("Invalid WooCommerce webhook signature")
+            return False
+
+        return True
 
     def post(self, request):
+        if not self.verify_webhook_signature(request):
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+
         try:
             serializer = WooCommerceOrderSerializer(data=request.data)
             if not serializer.is_valid():

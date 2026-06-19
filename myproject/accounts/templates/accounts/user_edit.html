@@ -173,6 +173,10 @@
                                                 <input type="checkbox" class="form-check-input" name="can_view_orders_list" id="can_view_orders_list" {% if edit_user.can_view_orders_list %}checked{% endif %}>
                                                 <label for="can_view_orders_list">View All Orders List</label>
                                             </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_access_offer_price" id="can_access_offer_price" {% if edit_user.can_access_offer_price %}checked{% endif %}>
+                                                <label for="can_access_offer_price">Access to Offer Price</label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

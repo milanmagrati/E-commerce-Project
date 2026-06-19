@@ -59,6 +59,7 @@ class CustomUser(AbstractUser):
     can_cancel_orders = models.BooleanField(default=False)
     can_view_on_hold_orders = models.BooleanField(default=False)
     can_export_orders = models.BooleanField(default=False, verbose_name="Can Export Orders to Excel")
+    can_access_offer_price = models.BooleanField(default=False, verbose_name="Can Access Offer Price")
     
     # PRODUCT PERMISSIONS
     can_view_products = models.BooleanField(default=True)

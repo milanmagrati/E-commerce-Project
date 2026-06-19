@@ -236,6 +236,7 @@ def user_create(request):
                 # Grant all permissions
                 user.can_view_orders = True
                 user.can_view_orders_list = True
+                user.can_access_offer_price = True
                 user.can_create_orders = True
                 user.can_edit_orders = True
                 user.can_delete_orders = True
@@ -335,6 +336,7 @@ def user_create(request):
                 # Orders Module
                 user.can_view_orders = request.POST.get('can_view_orders') == 'on'
                 user.can_view_orders_list = request.POST.get('can_view_orders_list') == 'on'
+                user.can_access_offer_price = request.POST.get('can_access_offer_price') == 'on'
                 user.can_create_orders = request.POST.get('can_create_orders') == 'on'
                 user.can_edit_orders = request.POST.get('can_edit_orders') == 'on'
                 user.can_delete_orders = request.POST.get('can_delete_orders') == 'on'
@@ -497,6 +499,7 @@ def user_edit(request, user_id):
             # Grant all permissions
             edit_user.can_view_orders = True
             edit_user.can_view_orders_list = True
+            edit_user.can_access_offer_price = True
             edit_user.can_create_orders = True
             edit_user.can_edit_orders = True
             edit_user.can_delete_orders = True
@@ -608,6 +611,7 @@ def user_edit(request, user_id):
             # Orders Module
             edit_user.can_view_orders = request.POST.get('can_view_orders') == 'on'
             edit_user.can_view_orders_list = request.POST.get('can_view_orders_list') == 'on'
+            edit_user.can_access_offer_price = request.POST.get('can_access_offer_price') == 'on'
             edit_user.can_create_orders = request.POST.get('can_create_orders') == 'on'
             edit_user.can_edit_orders = request.POST.get('can_edit_orders') == 'on'
             edit_user.can_delete_orders = request.POST.get('can_delete_orders') == 'on'

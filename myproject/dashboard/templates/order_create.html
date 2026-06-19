@@ -3160,9 +3160,11 @@
                     <table class="table table-hover mb-0" style="width: 100%;">
                         <thead style="background: #f1f5f9; position: sticky; top: 0; z-index: 10;">
                             <tr>
-                                <th style="width: 25%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569;">Product Name</th>
-                                <th style="width: 60%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569;">Product Description</th>
-                                <th style="width: 15%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569; text-align: right;">Price</th>
+                                <th style="width: 20%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569;">Product Name</th>
+                                <th style="width: 25%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569;">Product Description</th>
+                                <th style="width: 30%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569; text-align: left;">Times</th>
+                                <th style="width: 10%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569; text-align: right;">Price</th>
+                                <th style="width: 15%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569; text-align: right;">Offer Price</th>
                             </tr>
                         </thead>
                         <tbody id="ourProductsListContainer">
@@ -3438,6 +3440,7 @@
 
                     const tr = document.createElement('tr');
                     tr.style.cursor = 'pointer';
+                    const canEditPrice = ('{{ request.user.role }}' === 'administrator' || {{ request.user.is_superuser|yesno:"true,false" }} || {{ request.user.can_access_offer_price|yesno:"true,false" }});
                     tr.innerHTML = `
                         <td style="vertical-align: middle;">
                             <div class="d-flex align-items-center gap-2">
@@ -3454,16 +3457,117 @@
                                 ${textDesc.length > 120 ? `<button type="button" class="btn btn-link p-0 text-decoration-none read-more-btn" style="font-size: 0.75rem; font-weight: 600; color: #10b981; margin-top: 4px;">Read more <i class="fas fa-chevron-down ms-1" style="font-size: 0.65rem;"></i></button>` : ''}
                             </div>
                         </td>
-                        <td style="vertical-align: middle; text-align: right; font-weight: 600; color: #10b981; font-size: 0.95rem;">
+                        <td style="vertical-align: middle; text-align: left;">
+                            <textarea class="form-control form-control-sm times-input" placeholder="Write here..." style="width: 100%; min-height: 50px; resize: vertical;" onclick="event.stopPropagation()"></textarea>
+                        </td>
+                        <td style="vertical-align: middle; text-align: right; font-weight: 600; color: #475569; font-size: 0.95rem;">
                             रू ${parseFloat(p.price).toFixed(2)}
                         </td>
+                        <td style="vertical-align: middle; text-align: right;">
+                            <div class="d-flex align-items-center justify-content-end gap-1" onclick="event.stopPropagation()">
+                                <input type="number" class="form-control form-control-sm offer-price-input" value="${parseFloat(p.price).toFixed(2)}" min="0" step="0.01" style="width: 80px; text-align: right; font-weight: 600; color: #10b981;" ${canEditPrice ? '' : 'readonly'}>
+                                ${canEditPrice ? `<button type="button" class="btn btn-success btn-sm save-offer-price-btn" title="Save price" data-product-id="${p.id}" style="padding: 2px 7px; font-size: 0.7rem; white-space: nowrap;">
+                                    <i class="fas fa-save"></i>
+                                </button>` : ''}
+                            </div>
+                        </td>
                     `;
-                    tr.addEventListener('click', () => {
-                        addToCart(p.id, p.name, p.price, null, p.sku, 1, false);
-                        showToastNotification('✅ ' + p.name + ' added to cart!', 'success');
+                    
+                    const addAction = () => {
+                        const timesInput = tr.querySelector('.times-input');
+                        const offerPriceInput = tr.querySelector('.offer-price-input');
+                        const timesValue = timesInput ? timesInput.value.trim() : '';
+                        const qty = 1; // Quantity defaults to 1 since times is now a text field
+                        let offerPrice = p.price;
+                        if (offerPriceInput && !isNaN(parseFloat(offerPriceInput.value))) {
+                            offerPrice = parseFloat(offerPriceInput.value);
+                        }
+                        
+                        let finalName = p.name;
+                        if (timesValue) {
+                            finalName = finalName + ' (' + timesValue + ')';
+                        }
+                        
+                        addToCart(p.id, finalName, offerPrice, null, p.sku, qty, false);
+                        showToastNotification('✅ ' + finalName + ' added to cart!', 'success');
                         if (typeof ourProductsModal !== 'undefined') {
                             ourProductsModal.hide();
                         }
+                    };
+
+                    tr.addEventListener('click', addAction);
+
+                    // Save offer price button
+                    const saveBtn = tr.querySelector('.save-offer-price-btn');
+                    if (saveBtn) {
+                        saveBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const offerInput = tr.querySelector('.offer-price-input');
+                            const newPrice = offerInput ? offerInput.value : null;
+                            if (!newPrice || isNaN(parseFloat(newPrice)) || parseFloat(newPrice) < 0) {
+                                saveBtn.innerHTML = '<i class="fas fa-times"></i>';
+                                saveBtn.classList.replace('btn-success', 'btn-danger');
+                                setTimeout(() => {
+                                    saveBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                    saveBtn.classList.replace('btn-danger', 'btn-success');
+                                }, 1500);
+                                return;
+                            }
+                            // Show spinner
+                            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                            saveBtn.disabled = true;
+                            const productId = saveBtn.dataset.productId;
+                            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                            fetch(`/api/product/${productId}/update-price/`, {
+                                method: 'POST',
+                                headers: {
+                                    'X-CSRFToken': csrfToken,
+                                    'Content-Type': 'application/x-www-form-urlencoded',
+                                },
+                                body: `price=${encodeURIComponent(newPrice)}`
+                            })
+                            .then(r => r.json())
+                            .then(data => {
+                                saveBtn.disabled = false;
+                                if (data.success) {
+                                    // Update in-memory price so next add-to-cart uses new price
+                                    p.price = parseFloat(data.new_price);
+                                    saveBtn.innerHTML = '<i class="fas fa-check"></i>';
+                                    saveBtn.classList.replace('btn-success', 'btn-success');
+                                    showToastNotification('✅ Price updated to रू ' + parseFloat(data.new_price).toFixed(2), 'success');
+                                    setTimeout(() => { saveBtn.innerHTML = '<i class="fas fa-save"></i>'; }, 2000);
+                                } else {
+                                    saveBtn.innerHTML = '<i class="fas fa-times"></i>';
+                                    saveBtn.classList.replace('btn-success', 'btn-danger');
+                                    showToastNotification('❌ ' + (data.error || 'Failed to save price'), 'danger');
+                                    setTimeout(() => {
+                                        saveBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                        saveBtn.classList.replace('btn-danger', 'btn-success');
+                                    }, 2000);
+                                }
+                            })
+                            .catch(() => {
+                                saveBtn.disabled = false;
+                                saveBtn.innerHTML = '<i class="fas fa-times"></i>';
+                                saveBtn.classList.replace('btn-success', 'btn-danger');
+                                showToastNotification('❌ Network error. Please try again.', 'danger');
+                                setTimeout(() => {
+                                    saveBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                    saveBtn.classList.replace('btn-danger', 'btn-success');
+                                }, 2000);
+                            });
+                        });
+                    }
+
+                    const inputs = tr.querySelectorAll('input');
+                    inputs.forEach(input => {
+                        input.addEventListener('keypress', (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                addAction();
+                            }
+                        });
                     });
 
                     const readMoreBtn = tr.querySelector('.read-more-btn');
