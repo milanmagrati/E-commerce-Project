@@ -1241,7 +1241,7 @@ async function fetchSheetPreview() {
   emptyEl.style.display = 'none';
 
   try {
-    const resp = await fetch(/imports/preview-by-url/?connection_type=&url=);
+    const resp = await fetch(`/imports/preview-by-url/?connection_type=${type}&url=${encodeURIComponent(url)}`);
     const data = await resp.json();
     loading.style.display = 'none';
 
@@ -1340,8 +1340,8 @@ function collectFieldMapping() {
 
 
 // Add Apps Script Code Modal to body
-document.body.insertAdjacentHTML('beforeend', 
-<div class="modal fade" id="appsScriptModal" tabindex="-1">
+document.body.insertAdjacentHTML('beforeend', `
+<div class=\"modal fade\" id=\"appsScriptModal\" tabindex=\"-1\">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header bg-dark text-white">
@@ -1354,7 +1354,7 @@ document.body.insertAdjacentHTML('beforeend',
     </div>
   </div>
 </div>
-);
+`);
 
 function showAppsScriptCode(e) {
   e.preventDefault();
@@ -1387,14 +1387,14 @@ function buildReviewSummary() {
   const model = document.getElementById('wSyncModel').value;
   const mapped = Object.keys(fieldMapping).length;
 
-  document.getElementById('reviewSummary').innerHTML = 
+  document.getElementById('reviewSummary').innerHTML = `
     <div class="row g-2">
-      <div class="col-6"><strong>Name:</strong> </div>
-      <div class="col-6"><strong>Model:</strong> </div>
-      <div class="col-6"><strong>Type:</strong> </div>
-      <div class="col-6"><strong>Fields Mapped:</strong> </div>
+      <div class="col-6"><strong>Name:</strong> ${name}</div>
+      <div class="col-6"><strong>Model:</strong> ${model}</div>
+      <div class="col-6"><strong>Type:</strong> ${type}</div>
+      <div class="col-6"><strong>Fields Mapped:</strong> ${mapped}</div>
     </div>
-  ;
+  `;
 }
 
 async function saveConnection() {
