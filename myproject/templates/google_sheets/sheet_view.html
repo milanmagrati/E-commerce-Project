@@ -1,0 +1,243 @@
+{% extends 'base.html' %}
+{% block title %}{{ conn.name }} - Spreadsheet{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4><i class="fas fa-table text-success me-2"></i> {{ conn.name }}</h4>
+    <div>
+      <button onclick="addColumn()" class="btn btn-outline-success me-2">
+        <i class="fas fa-plus me-1"></i> Add Column
+      </button>
+      <button onclick="addRow()" class="btn btn-outline-success me-2">
+        <i class="fas fa-plus me-1"></i> Add Row
+      </button>
+      <button onclick="loadSheetData()" class="btn btn-outline-primary me-2">
+        <i class="fas fa-sync-alt me-1"></i> Reload Data
+      </button>
+      <a href="{% url 'google_sheets:google_imports_page' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i> Back
+      </a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+      <div id="syncStatus" class="text-muted small">
+        <i class="fas fa-cloud me-1"></i> Data loaded. Ready.
+      </div>
+    </div>
+    <div class="card-body p-0 position-relative">
+      <div id="loadingOverlay" class="position-absolute w-100 h-100 d-flex flex-column justify-content-center align-items-center" style="background:rgba(255,255,255,0.9); z-index:10; top:0; left:0; min-height: 400px;">
+        <div class="spinner-border text-success mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+        <h5 class="text-muted">Loading sheet data...</h5>
+      </div>
+      <div id="spreadsheet-container" class="w-100"></div>
+    </div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4/dist/jsuites.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4/dist/jspreadsheet.css" />
+<script src="https://cdn.jsdelivr.net/npm/jsuites@4/dist/jsuites.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4/dist/index.min.js"></script>
+
+<script>
+  let sheetInstance = null;
+  const isEditable = "{{ conn.connection_type }}" === "apps_script";
+  const connId = {{ conn.id }};
+  const CSRF = "{{ csrf_token }}";
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadSheetData();
+  });
+
+  async function loadSheetData() {
+    document.getElementById('loadingOverlay').classList.remove('d-none');
+    try {
+      const response = await fetch(`/imports/connections/${connId}/data/?per_page=1000`);
+      const data = await response.json();
+      
+      if (!data.success) {
+        showStatus(`<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Error: ${data.error}</span>`);
+        document.getElementById('loadingOverlay').classList.add('d-none');
+        return;
+      }
+
+      const headers = data.headers || [];
+      const rows = data.rows || [];
+      const colWidths = data.col_widths || [];
+      const rowHeights = data.row_heights || [];
+
+      let data2D = rows.map(row => headers.map(h => row[h] || ''));
+      if (headers.length > 0) data2D.unshift(headers);
+
+      let finalCols = headers.map((_, idx) => {
+        let temp = idx;
+        let letter = '';
+        while (temp >= 0) {
+            letter = String.fromCharCode((temp % 26) + 65) + letter;
+            temp = Math.floor(temp / 26) - 1;
+        }
+        return { title: letter, type: 'text', width: colWidths[idx] || 150 };
+      });
+
+      let finalRows = {};
+      rowHeights.forEach((height, idx) => {
+          if (height) finalRows[idx] = { height: height + 'px' };
+      });
+
+      if (data2D.length === 0) data2D.push(['']);
+      if (finalCols.length === 0) finalCols = [{ title: 'A', width: 150 }];
+
+      if (sheetInstance) {
+        try { jspreadsheet.destroy(document.getElementById('spreadsheet-container'), false); } catch(e){}
+        document.getElementById('spreadsheet-container').innerHTML = '';
+        sheetInstance = null;
+      }
+
+      sheetInstance = jspreadsheet(document.getElementById('spreadsheet-container'), {
+        data: data2D,
+        columns: finalCols,
+        rows: finalRows,
+        search: true,
+        pagination: 50,
+        editable: isEditable,
+        defaultColWidth: 150,
+        tableOverflow: true,
+        tableHeight: "calc(100vh - 250px)",
+        tableWidth: "100%",
+        onchange: function(instance, cell, c, r, value) {
+          if (!isEditable) return;
+          const sheetCol = parseInt(c) + 1;
+          const sheetRow = parseInt(r) + 1; 
+          saveCell(sheetRow, sheetCol, value);
+        },
+        onresizecolumn: function(el, column, width) {
+          if (!isEditable) return;
+          const sheetCol = parseInt(column) + 1;
+          saveDimension('column', sheetCol, width);
+        },
+        onresizerow: function(el, row, height) {
+          if (!isEditable) return;
+          const sheetRow = parseInt(row) + 1;
+          saveDimension('row', sheetRow, height);
+        },
+        oninsertrow: function(instance, rowNumber, numOfRows, rowRecords, insertBefore) {
+          if (!isEditable) return;
+          const sheetRow = parseInt(rowNumber) + 1 + (insertBefore ? 0 : 1);
+          saveStructure('insert_row', sheetRow);
+        },
+        ondeleterow: function(instance, rowNumber, numOfRows) {
+          if (!isEditable) return;
+          const sheetRow = parseInt(rowNumber) + 1;
+          for (let i = 0; i < numOfRows; i++) {
+            saveStructure('delete_row', sheetRow);
+          }
+        },
+        oninsertcolumn: function(instance, columnNumber, numOfColumns, insertBefore) {
+          if (!isEditable) return;
+          const sheetCol = parseInt(columnNumber) + 1 + (insertBefore ? 0 : 1);
+          for (let i = 0; i < numOfColumns; i++) {
+            saveStructure('insert_column', sheetCol);
+          }
+        },
+        ondeletecolumn: function(instance, columnNumber, numOfColumns) {
+          if (!isEditable) return;
+          const sheetCol = parseInt(columnNumber) + 1;
+          for (let i = 0; i < numOfColumns; i++) {
+            saveStructure('delete_column', sheetCol);
+          }
+        }
+      });
+      
+      document.getElementById('loadingOverlay').classList.add('d-none');
+      if(isEditable) {
+        showStatus(`<i class="fas fa-cloud text-success"></i> Connected to Google Sheets.`);
+      } else {
+        showStatus(`<i class="fas fa-eye text-secondary"></i> Read-only mode.`);
+      }
+
+    } catch (err) {
+      showStatus(`<span class="text-danger"><i class="fas fa-times"></i> Failed to load data: ${err.message}</span>`);
+      document.getElementById('loadingOverlay').classList.add('d-none');
+    }
+  }
+
+  function addRow() {
+    if (sheetInstance && isEditable) {
+      sheetInstance.insertRow();
+    }
+  }
+
+  function addColumn() {
+    if (sheetInstance && isEditable) {
+      sheetInstance.insertColumn();
+    }
+  }
+
+  async function saveCell(row, col, value) {
+    showStatus(`<span class="text-primary"><i class="fas fa-spinner fa-spin"></i> Saving...</span>`);
+    try {
+      const resp = await fetch(`/imports/connections/${connId}/update-cell/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({ row, col, value })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        showStatus(`<span class="text-success"><i class="fas fa-check-circle"></i> Saved</span>`);
+        setTimeout(() => showStatus(`<i class="fas fa-cloud text-success"></i> Connected`), 2000);
+      } else {
+        showStatus(`<span class="text-danger"><i class="fas fa-exclamation-circle"></i> Save failed</span>`);
+      }
+    } catch (err) {
+      showStatus(`<span class="text-danger"><i class="fas fa-times"></i> ${err.message}</span>`);
+    }
+  }
+
+  async function saveDimension(dimension, index, size) {
+    showStatus(`<span class="text-primary"><i class="fas fa-spinner fa-spin"></i> Saving dimension...</span>`);
+    try {
+      const resp = await fetch(`/imports/connections/${connId}/update-dimension/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({ dimension, index, size })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        showStatus(`<span class="text-success"><i class="fas fa-check-circle"></i> Saved</span>`);
+        setTimeout(() => showStatus(`<i class="fas fa-cloud text-success"></i> Connected`), 2000);
+      } else {
+        showStatus(`<span class="text-danger"><i class="fas fa-exclamation-circle"></i> Save failed</span>`);
+      }
+    } catch (err) {
+      showStatus(`<span class="text-danger"><i class="fas fa-times"></i> ${err.message}</span>`);
+    }
+  }
+
+  async function saveStructure(action, index) {
+    showStatus(`<span class="text-primary"><i class="fas fa-spinner fa-spin"></i> Updating structure...</span>`);
+    try {
+      const resp = await fetch(`/imports/connections/${connId}/update-structure/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({ action, index })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        showStatus(`<span class="text-success"><i class="fas fa-check-circle"></i> Structure updated</span>`);
+        setTimeout(() => showStatus(`<i class="fas fa-cloud text-success"></i> Connected`), 2000);
+      } else {
+        showStatus(`<span class="text-danger"><i class="fas fa-exclamation-circle"></i> Structure update failed</span>`);
+      }
+    } catch (err) {
+      showStatus(`<span class="text-danger"><i class="fas fa-times"></i> ${err.message}</span>`);
+    }
+  }
+
+  function showStatus(html) {
+    document.getElementById('syncStatus').innerHTML = html;
+  }
+</script>
+{% endblock %}

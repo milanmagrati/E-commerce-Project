@@ -64,10 +64,16 @@ APPS_SCRIPT_CODE = '''// Google Apps Script — Paste this in your Sheet's Scrip
 // Copy the Web App URL and paste it into Django Imports page.
 
 function doGet(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0];
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = e.parameter.sheet;
+  var sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  var dataRange = sheet.getDataRange();
+  var data = dataRange.getValues();
+  var headers = data.length > 0 ? data[0] : [];
   var rows = [];
+
   for (var i = 1; i < data.length; i++) {
     var row = {};
     for (var j = 0; j < headers.length; j++) {
@@ -75,18 +81,34 @@ function doGet(e) {
     }
     rows.push(row);
   }
+  
+  var colWidths = [];
+  for (var c = 1; c <= headers.length; c++) {
+    colWidths.push(sheet.getColumnWidth(c));
+  }
+  var rowHeights = [];
+  for (var r = 1; r <= data.length; r++) {
+    rowHeights.push(sheet.getRowHeight(r));
+  }
+
   return ContentService.createTextOutput(JSON.stringify({
     success: true,
     headers: headers,
     rows: rows,
-    total: rows.length
+    raw_data: data,
+    col_widths: colWidths,
+    row_heights: rowHeights
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var payload = JSON.parse(e.postData.contents);
   var action = payload.action;
+  
+  var sheetName = payload.sheet;
+  var sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
+  if (!sheet) sheet = ss.getActiveSheet();
 
   if (action === 'write_all') {
     var headers = payload.headers;
@@ -103,6 +125,42 @@ function doPost(e) {
   if (action === 'update_cell') {
     var cell = sheet.getRange(payload.row, payload.col);
     cell.setValue(payload.value);
+    return ContentService.createTextOutput(JSON.stringify({success: true}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'resize_column') {
+    sheet.setColumnWidth(payload.col, payload.width);
+    return ContentService.createTextOutput(JSON.stringify({success: true}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'resize_row') {
+    sheet.setRowHeight(payload.row, payload.height);
+    return ContentService.createTextOutput(JSON.stringify({success: true}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'insert_row') {
+    sheet.insertRowBefore(payload.index);
+    return ContentService.createTextOutput(JSON.stringify({success: true}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'delete_row') {
+    sheet.deleteRow(payload.index);
+    return ContentService.createTextOutput(JSON.stringify({success: true}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'insert_column') {
+    sheet.insertColumnBefore(payload.index);
+    return ContentService.createTextOutput(JSON.stringify({success: true}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'delete_column') {
+    sheet.deleteColumn(payload.index);
     return ContentService.createTextOutput(JSON.stringify({success: true}))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -177,14 +235,35 @@ def preview_csv_url(csv_url, num_rows=5):
 
 # ─── Apps Script Web App ──────────────────────────────────────────────────────
 
-def apps_script_read(web_app_url, timeout=20):
-    """Read all rows from a Google Sheet via Apps Script Web App (GET)."""
-    resp = requests.get(web_app_url, timeout=timeout)
-    resp.raise_for_status()
+def apps_script_read(web_app_url, sheet_name=None, timeout=30):
+    """Fetch all rows and metadata from the active Apps Script sheet or specific tab."""
+    payload = {'action': 'read'}
+    if sheet_name:
+        payload['sheet'] = sheet_name
+        
+    try:
+        # Apps Script doGet doesn't strictly need a payload, but we use requests.get
+        # If we need to pass parameters to doGet, we append them to the URL
+        url = web_app_url
+        if sheet_name:
+            import urllib.parse
+            url += f"?sheet={urllib.parse.quote(sheet_name)}"
+            
+        resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"Failed to connect to Apps Script: {e}")
+
     data = resp.json()
     if not data.get('success'):
         raise ValueError(data.get('error', 'Apps Script returned an error'))
-    return data.get('rows', []), data.get('headers', [])
+    return {
+        'rows': data.get('rows', []), 
+        'headers': data.get('headers', []), 
+        'raw_data': data.get('raw_data'),
+        'col_widths': data.get('col_widths', []),
+        'row_heights': data.get('row_heights', [])
+    }
 
 
 def apps_script_write_all(web_app_url, headers, rows, timeout=30):
@@ -206,8 +285,32 @@ def apps_script_update_cell(web_app_url, row, col, value, timeout=10):
     """Update a single cell via Apps Script."""
     payload = {'action': 'update_cell', 'row': row, 'col': col, 'value': value}
     resp = requests.post(web_app_url, json=payload, timeout=timeout)
+    return resp.json().get('success', False)
+
+
+def apps_script_update_dimension(web_app_url, dimension, index, size, timeout=10):
+    """Resize a row or column via Apps Script."""
+    action = 'resize_row' if dimension == 'row' else 'resize_column'
+    payload = {'action': action}
+    if dimension == 'row':
+        payload['row'] = index
+        payload['height'] = size
+    else:
+        payload['col'] = index
+        payload['width'] = size
+    
+    resp = requests.post(web_app_url, json=payload, timeout=timeout)
     resp.raise_for_status()
     return resp.json().get('success', False)
+
+def apps_script_structure_action(web_app_url, action, index, timeout=10):
+    """Insert or delete a row or column."""
+    payload = {'action': action, 'index': index}
+    resp = requests.post(web_app_url, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json().get('success', False)
+
+
 
 
 # ─── Django Model Helpers ─────────────────────────────────────────────────────
@@ -248,9 +351,18 @@ def sync_django_to_sheet(connection):
     result = {'rows_synced': 0, 'rows_failed': 0, 'error_message': '', 'status': 'success'}
 
     try:
+        # Custom model has no Django queryset to push — skip silently
+        if connection.sync_model == 'custom':
+            result['rows_synced'] = 0
+            result['duration_seconds'] = round(time.time() - start, 2)
+            return result
+
         field_mapping = connection.field_mapping  # {header_label: django_field}
         if not field_mapping:
-            raise ValueError("No field mapping configured. Please edit the connection and map columns.")
+            raise ValueError(
+                "No column mapping configured. Click Edit on this connection, "
+                "enter the URL, click Test, map your columns, then Save."
+            )
 
         qs = _get_queryset(connection.sync_model)
         headers = list(field_mapping.keys())
@@ -279,24 +391,36 @@ def sync_sheet_to_django(connection):
     result = {'rows_synced': 0, 'rows_failed': 0, 'rows_skipped': 0, 'error_message': '', 'status': 'success'}
 
     try:
-        from dashboard.models import Order, Product, Customer
-        field_mapping = connection.field_mapping  # {sheet_header: django_field}
-
-        if not field_mapping:
-            raise ValueError("No field mapping configured.")
-
-        # Fetch data
+        # ── Fetch raw rows from the sheet ──────────────────────────────
         if connection.connection_type == 'apps_script' and connection.apps_script_url:
-            raw_rows, _ = apps_script_read(connection.apps_script_url)
+            apps_data = apps_script_read(connection.apps_script_url)
+            raw_rows = apps_data['rows']
         elif connection.connection_type == 'csv' and connection.csv_url:
             raw_rows = fetch_csv_from_url(connection.csv_url)
         else:
             raise ValueError("No valid URL configured for this connection.")
 
-        MODEL_MAP = {'orders': Order, 'products': Product, 'customers': Customer}
+        # ── Custom model: just verify connectivity, report row count ───
+        if connection.sync_model == 'custom':
+            result['rows_synced'] = len(raw_rows)
+            result['status'] = 'success'
+            result['duration_seconds'] = round(time.time() - start, 2)
+            return result
+
+        # ── Require field mapping for named models ─────────────────────
+        from dashboard.models import Order, Product, Customer
+        field_mapping = connection.field_mapping  # {sheet_header: django_field}
+
+        if not field_mapping:
+            raise ValueError(
+                "No column mapping configured. Click Edit on this connection, "
+                "enter the URL, click Test, map your columns, then Save."
+            )
+
+        MODEL_MAP    = {'orders': Order, 'products': Product, 'customers': Customer}
         UNIQUE_FIELD = {'orders': 'order_number', 'products': 'name', 'customers': 'phone'}
 
-        model_cls = MODEL_MAP.get(connection.sync_model)
+        model_cls    = MODEL_MAP.get(connection.sync_model)
         unique_field = UNIQUE_FIELD.get(connection.sync_model)
 
         if not model_cls:
@@ -307,7 +431,7 @@ def sync_sheet_to_django(connection):
                 # Map sheet headers → django fields
                 obj_data = {}
                 for sheet_header, django_field in field_mapping.items():
-                    val = raw_row.get(sheet_header, '').strip()
+                    val = str(raw_row.get(sheet_header, '') or '').strip()
                     obj_data[django_field] = val
 
                 if not obj_data:

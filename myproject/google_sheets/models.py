@@ -37,6 +37,7 @@ class GoogleSheetConnection(models.Model):
     auto_sync_enabled = models.BooleanField(default=False, help_text="Enable periodic auto-sync")
     auto_sync_interval_minutes = models.PositiveIntegerField(default=60)
 
+
     last_synced_at = models.DateTimeField(null=True, blank=True)
     last_sync_direction = models.CharField(
         max_length=20, blank=True,
@@ -128,3 +129,6 @@ class GoogleSheetSyncLog(models.Model):
 
     def __str__(self):
         return f"{self.connection.name} - {self.get_direction_display()} - {self.synced_at.strftime('%Y-%m-%d %H:%M')}"
+
+
+
