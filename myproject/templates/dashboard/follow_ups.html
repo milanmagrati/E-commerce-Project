@@ -1,0 +1,770 @@
+{% extends 'base.html' %}
+
+{% block title %}Follow-ups{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0"><i class="fas fa-list-alt text-primary me-2"></i> Follow-ups</h4>
+        <div class="d-flex gap-2">
+            <a href="{% url 'follow_ups_trash' %}" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i> Trash
+            </a>
+            <!-- Optional Filters -->
+            <select class="form-select form-select-sm w-auto" id="filterStatus" onchange="filterTable()">
+                <option value="">All Statuses</option>
+                {% for status in statuses %}
+                <option value="{{ status.name }}">{{ status.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered mb-0 align-middle follow-ups-table" id="followUpsTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">S.n.</th>
+                            <th>Name</th>
+                            <th>Phone Number</th>
+                            <th>Lead Source</th>
+                            <th>Product</th>
+                            <th style="max-width: 200px;">Followup 1</th>
+                            <th style="max-width: 200px;">Followup 2</th>
+                            <th>Status</th>
+                            <th style="max-width: 200px;">Remarks</th>
+                            <th style="width: 80px;" class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="followUpsTbody">
+                        <!-- Data Entry Row (Always at the top) -->
+                        <tr class="entry-row-bg" id="entryRow">
+                            <td class="text-center fw-bold text-success" style="font-size: 1.2rem;">+</td>
+                            <td><input type="text" class="form-control form-control-sm" id="newName" placeholder="Name"></td>
+                            <td>
+                                <input type="text" class="form-control form-control-sm" id="newPhone" placeholder="Phone (10 digits)" maxlength="10" inputmode="numeric"
+                                    oninput="this.value=this.value.replace(/[^0-9]/g,''); validatePhone(this,'newPhoneErr')">
+                                <div id="newPhoneErr" style="color:#dc3545;font-size:0.72rem;display:none;">Must be exactly 10 digits</div>
+                            </td>
+                            <td><input type="text" class="form-control form-control-sm" id="newLeadSource" placeholder="Lead Source"></td>
+                            <td>
+                                <button type="button" class="btn btn-outline-primary btn-sm w-100 mb-1" onclick="openProductModal('new')">
+                                    <i class="fas fa-plus"></i> Add Product
+                                </button>
+                                <div id="newProductChips" class="d-flex flex-wrap gap-1"></div>
+                                <input type="hidden" id="newProductsData" value="[]">
+                            </td>
+                            <td><input type="text" class="form-control form-control-sm" id="newFollowup1" placeholder="Followup 1"></td>
+                            <td><input type="text" class="form-control form-control-sm" id="newFollowup2" placeholder="Followup 2"></td>
+                            <td>
+                                <select class="form-select form-select-sm" id="newStatus">
+                                    {% for status in statuses %}
+                                    <option value="{{ status.name }}">{{ status.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="text" class="form-control form-control-sm" id="newRemarks" placeholder="Remarks"></td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-success action-btn text-white" onclick="saveFollowUp()" title="Save Entry">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </td>
+                        </tr>
+
+                        <!-- Existing Records (Latest First) -->
+                        {% for item in follow_ups %}
+                        {% with all_products=item.get_all_products %}
+                        <tr data-id="{{ item.id }}" data-status="{{ item.status }}" 
+                            data-name="{{ item.name|default:'' }}" 
+                            data-phone="{{ item.phone }}" 
+                            data-lead="{{ item.lead_source|default:'' }}" 
+                            data-products='[{% for p in all_products %}{"id":{{ p.id }},"name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                            data-f1="{{ item.followup_1|default:'' }}" 
+                            data-f2="{{ item.followup_2|default:'' }}" 
+                            data-remarks="{{ item.remarks|default:'' }}">
+                            <td class="text-center sn-column">{{ forloop.counter }}</td>
+                            <td>{{ item.name|default:"-" }}</td>
+                            <td>{{ item.phone }}</td>
+                            <td>{{ item.lead_source|default:"-" }}</td>
+                            <td>
+                                {% if all_products %}
+                                    <div class="d-flex flex-wrap">
+                                    {% for p in all_products %}
+                                        <span class="chip-badge me-1">{{ p.name }}</span>
+                                    {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-break" style="max-width: 200px;">{{ item.followup_1|default:"-" }}</td>
+                            <td class="text-break" style="max-width: 200px;">{{ item.followup_2|default:"-" }}</td>
+                            <td>
+                                <span class="badge bg-secondary rounded-pill px-2 py-1">{{ item.status|title|default:"-" }}</span>
+                            </td>
+                            <td class="text-break" style="max-width: 200px;">{{ item.remarks|default:"-" }}</td>
+                            <td class="text-center" style="white-space: nowrap;">
+                                <a href="{% url 'order_create' %}?followup_id={{ item.id }}" class="action-btn border text-success me-1" title="Create Order">
+                                    <i class="fas fa-shopping-cart"></i>
+                                </a>
+                                <button class="action-btn border text-primary me-1" onclick="openEditModal({{ item.id }})" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="action-btn border text-danger" onclick="deleteFollowUp({{ item.id }}, this)" title="Delete">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endwith %}
+                        {% empty %}
+                        <tr id="emptyRow">
+                            <td colspan="10" class="text-center text-muted py-4">No follow-ups found. Create one above!</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Follow-Up Modal -->
+<div class="modal fade" id="editFollowUpModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Follow-up</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="editName">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editPhone" maxlength="10" inputmode="numeric"
+                            oninput="this.value=this.value.replace(/[^0-9]/g,''); this.classList.remove('is-invalid');"
+                            placeholder="10-digit phone number">
+                        <div class="invalid-feedback">Must be exactly 10 digits.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Lead Source</label>
+                        <input type="text" class="form-control" id="editLeadSource">
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Products</label>
+                        <button type="button" class="btn btn-outline-primary btn-sm mb-2" onclick="openProductModal('edit')">
+                            <i class="fas fa-plus"></i> Add Product
+                        </button>
+                        <div id="editProductChips" class="d-flex flex-wrap gap-2 mb-1"></div>
+                        <input type="hidden" id="editProductsData" value="[]">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Followup 1</label>
+                        <input type="text" class="form-control" id="editFollowup1">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Followup 2</label>
+                        <input type="text" class="form-control" id="editFollowup2">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="editStatus">
+                            {% for status in statuses %}
+                            <option value="{{ status.name }}">{{ status.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Remarks</label>
+                        <input type="text" class="form-control" id="editRemarks">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveEditBtn" onclick="saveEditFollowUp()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Product Modal -->
+<div class="modal fade" id="productModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h5 class="modal-title"><i class="fas fa-box"></i> Select Products</h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="searchProduct" class="form-control mb-3" placeholder="🔍 Search products...">
+                <div id="productGrid" class="row g-3" style="min-height: 200px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .product-card {
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        height: 100%;
+    }
+    .product-card:hover {
+        border-color: var(--primary);
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    .product-img {
+        height: 140px;
+        object-fit: cover;
+        width: 100%;
+    }
+    .product-card-body {
+        padding: 0.75rem;
+        background: white;
+    }
+    
+    /* Follow-ups Table Polish */
+    .follow-ups-table {
+        min-width: 1200px; /* Ensure no squishing on small screens */
+        font-size: 0.9rem;
+    }
+    .follow-ups-table th {
+        white-space: nowrap;
+        background-color: #f8fafc !important;
+        color: #475569;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.5px;
+        padding: 1rem 0.75rem;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    .follow-ups-table td {
+        vertical-align: middle;
+        padding: 0.75rem;
+    }
+    .entry-row-bg > td {
+        background-color: #f0fdf4 !important; /* very light green/blue for new entry */
+        border-bottom: 2px solid #bbf7d0;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    .chip-badge {
+        font-size: 0.75rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 6px;
+        background: white;
+        border: 1px solid #cbd5e1;
+        color: #334155;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-bottom: 0.25rem;
+    }
+    .chip-badge i {
+        opacity: 0.5;
+        transition: opacity 0.2s;
+    }
+    .chip-badge i:hover {
+        opacity: 1;
+    }
+    .action-btn {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+        background: white;
+    }
+    .action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .form-control-sm, .form-select-sm, .btn-sm {
+        border-radius: 6px;
+    }
+</style>
+
+<script>
+    // Modal state for editing
+    let currentEditId = null;
+    let editModal = null;
+    let productModalTarget = null;
+    let productModal = null;
+    let searchTimeout = null;
+
+    document.addEventListener("DOMContentLoaded", function() {
+        if (typeof bootstrap !== 'undefined') {
+            editModal = new bootstrap.Modal(document.getElementById('editFollowUpModal'));
+            productModal = new bootstrap.Modal(document.getElementById('productModal'));
+        }
+
+        const searchInput = document.getElementById('searchProduct');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    loadProducts(e.target.value.trim());
+                }, 300);
+            });
+        }
+    });
+
+    function escapeHtml(unsafe) {
+        if (!unsafe) return '';
+        return unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    function validatePhone(input, errId) {
+        const digits = input.value.replace(/[^0-9]/g, '');
+        const errEl = document.getElementById(errId);
+        if (input.value.length > 0 && digits.length !== 10) {
+            input.style.borderColor = '#dc3545';
+            if (errEl) errEl.style.display = 'block';
+        } else {
+            input.style.borderColor = '';
+            if (errEl) errEl.style.display = 'none';
+        }
+    }
+
+    function openProductModal(target) {
+        productModalTarget = target;
+        document.getElementById('searchProduct').value = '';
+        loadProducts('');
+        if (productModal) productModal.show();
+    }
+
+    function selectProduct(id, name, price) {
+        const targetInputId = productModalTarget === 'new' ? 'newProductsData' : 'editProductsData';
+        const input = document.getElementById(targetInputId);
+        let products = [];
+        try {
+            products = JSON.parse(input.value || '[]');
+        } catch (e) {}
+
+        // Check if already added
+        if (!products.some(p => p.id == id)) {
+            products.push({id: id, name: name, price: price});
+            input.value = JSON.stringify(products);
+            renderChips(productModalTarget);
+        }
+        
+        if (productModal) productModal.hide();
+    }
+
+    function removeProduct(target, id) {
+        const inputId = target === 'new' ? 'newProductsData' : 'editProductsData';
+        const input = document.getElementById(inputId);
+        let products = [];
+        try { products = JSON.parse(input.value || '[]'); } catch (e) {}
+        
+        products = products.filter(p => p.id != id);
+        input.value = JSON.stringify(products);
+        renderChips(target);
+    }
+
+    function renderChips(target) {
+        const inputId = target === 'new' ? 'newProductsData' : 'editProductsData';
+        const chipsContainerId = target === 'new' ? 'newProductChips' : 'editProductChips';
+        
+        const input = document.getElementById(inputId);
+        const container = document.getElementById(chipsContainerId);
+        let products = [];
+        try { products = JSON.parse(input.value || '[]'); } catch (e) {}
+
+        container.innerHTML = products.map(p => `
+            <span class="chip-badge">
+                ${escapeHtml(p.name)}
+                <i class="fas fa-times text-danger ms-1" style="cursor:pointer;" onclick="removeProduct('${target}', ${p.id})" title="Remove"></i>
+            </span>
+        `).join('');
+    }
+
+    function loadProducts(q) {
+        const grid = document.getElementById('productGrid');
+        grid.innerHTML = `<div class="col-12 text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">Loading products...</p></div>`;
+
+        fetch(`/api/search-products/?q=${encodeURIComponent(q || '')}`)
+            .then(r => r.json())
+            .then(data => {
+                const products = data.products || [];
+                if (!products.length) {
+                    grid.innerHTML = `<div class="col-12 text-center text-muted py-4"><i class="fas fa-box-open fa-3x mb-3" style="opacity: 0.3;"></i><p>No products found</p></div>`;
+                    return;
+                }
+                grid.innerHTML = products.map(p => renderProductCard(p)).join('');
+            })
+            .catch(err => {
+                console.error(err);
+                grid.innerHTML = `<div class="col-12 text-center py-4 text-danger">Failed to load products.</div>`;
+            });
+    }
+
+    function renderProductCard(p) {
+        window.getRandomProductSVG = function() {
+            const colors = ["#667eea", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#a855f7", "#f472b6", "#22d3ee"];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' rx='16' fill='${color}'/%3E%3Cpath d='M30 40v20a10 10 0 0 0 10 10h20a10 10 0 0 0 10-10V40' fill='white'/%3E%3Crect x='35' y='40' width='30' height='30' rx='6' fill='white'/%3E%3Cpath d='M50 40v-8a8 8 0 0 1 16 0v8' stroke='${color}' stroke-width='2' fill='none'/%3E%3Ccircle cx='50' cy='40' r='3' fill='${color}'/%3E%3C/svg%3E`;
+        };
+        const img = p.image ? `<img src="${p.image}" class="product-img" onerror="this.src=window.getRandomProductSVG()">` : `<img src="${window.getRandomProductSVG()}" class="product-img">`;
+
+        return `
+        <div class="col-md-3 col-sm-4 product-item">
+          <div class="product-card" onclick="selectProduct(${p.id}, '${escapeHtml(p.name).replace(/'/g, "\\'")}', ${p.price})">
+            ${img}
+            <div class="product-card-body text-center">
+              <h6 class="mb-1 small fw-bold text-truncate">${escapeHtml(p.name)}</h6>
+              <p class="text-muted mb-0" style="font-size: 0.7rem;">${escapeHtml(p.sku || '')}</p>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function filterTable() {
+        const filterVal = document.getElementById('filterStatus').value.toLowerCase();
+        const rows = document.querySelectorAll('#followUpsTbody tr[data-status]');
+        
+        rows.forEach(row => {
+            const rowStatus = (row.dataset.status || '').toLowerCase();
+            if (filterVal === '' || rowStatus === filterVal) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+
+    function saveFollowUp() {
+        const btn = event.currentTarget;
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+
+        const productInput = document.getElementById('newProductsData');
+        let productIds = [];
+        try { 
+            const products = JSON.parse(productInput.value || '[]');
+            productIds = products.map(p => p.id);
+        } catch(e) {}
+
+        const data = {
+            name: document.getElementById('newName').value.trim(),
+            phone: document.getElementById('newPhone').value.trim(),
+            lead_source: document.getElementById('newLeadSource').value.trim(),
+            product_ids: productIds,
+            followup_1: document.getElementById('newFollowup1').value.trim(),
+            followup_2: document.getElementById('newFollowup2').value.trim(),
+            status: document.getElementById('newStatus').value,
+            remarks: document.getElementById('newRemarks').value.trim(),
+        };
+
+        if (!data.phone) {
+            alert('Phone number is required!');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+            return;
+        }
+
+        const phoneDigits = data.phone.replace(/\D/g, '');
+        if (phoneDigits.length !== 10) {
+            alert('Phone number must be exactly 10 digits!');
+            document.getElementById('newPhone').focus();
+            document.getElementById('newPhone').style.borderColor = '#dc3545';
+            document.getElementById('newPhoneErr').style.display = 'block';
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+            return;
+        }
+
+        fetch("{% url 'add_follow_up' %}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                // Clear inputs
+                document.getElementById('newName').value = '';
+                document.getElementById('newPhone').value = '';
+                document.getElementById('newLeadSource').value = '';
+                
+                if(typeof jQuery !== 'undefined' && typeof jQuery.fn.select2 !== 'undefined') {
+                    $('#newProduct').val('').trigger('change');
+                } else {
+                    document.getElementById('newProduct').value = '';
+                }
+                document.getElementById('newFollowup1').value = '';
+                document.getElementById('newFollowup2').value = '';
+                document.getElementById('newRemarks').value = '';
+                // Reset product chips
+                document.getElementById('newProductsData').value = '[]';
+                renderChips('new');
+
+                // Reset status to the first available option
+                const newStatusEl = document.getElementById('newStatus');
+                if (newStatusEl && newStatusEl.options.length > 0) newStatusEl.selectedIndex = 0;
+
+                // Add row below the entry row
+                appendNewRow(result.data);
+                
+                // Remove empty message if exists
+                const emptyRow = document.getElementById('emptyRow');
+                if (emptyRow) emptyRow.remove();
+
+                // Show success toast/alert
+                alert('Follow-up added successfully!');
+            } else {
+                alert('Error: ' + result.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while saving.');
+        })
+        .finally(() => {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        });
+    }
+
+    function appendNewRow(data) {
+        const tbody = document.getElementById('followUpsTbody');
+        const entryRow = document.getElementById('entryRow');
+
+        // Dynamic status badge — just show the status name from the server
+        const statusBadge = `<span class="badge bg-secondary">${data.status || '-'}</span>`;
+
+        const orderCreateUrl = "{% url 'order_create' %}";
+
+        const newTr = document.createElement('tr');
+        newTr.setAttribute('data-id', data.id);
+        newTr.setAttribute('data-status', data.status || '');
+        newTr.setAttribute('data-name', data.name || '');
+        newTr.setAttribute('data-phone', data.phone || '');
+        newTr.setAttribute('data-lead', data.lead_source || '');
+        newTr.setAttribute('data-products', JSON.stringify(data.products || []));
+        newTr.setAttribute('data-f1', data.followup_1 || '');
+        newTr.setAttribute('data-f2', data.followup_2 || '');
+        newTr.setAttribute('data-remarks', data.remarks || '');
+        
+        let productsHtml = '<span class="text-muted">-</span>';
+        if (data.products && data.products.length > 0) {
+            productsHtml = '<div class="d-flex flex-wrap">' + data.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>';
+        }
+
+        newTr.innerHTML = `
+            <td class="text-center sn-column">1</td>
+            <td>${escapeHtml(data.name) || '-'}</td>
+            <td>${escapeHtml(data.phone)}</td>
+            <td>${escapeHtml(data.lead_source) || '-'}</td>
+            <td>${productsHtml}</td>
+            <td class="text-break" style="max-width: 200px;">${escapeHtml(data.followup_1) || '-'}</td>
+            <td class="text-break" style="max-width: 200px;">${escapeHtml(data.followup_2) || '-'}</td>
+            <td><span class="badge bg-secondary rounded-pill px-2 py-1">${data.status || '-'}</span></td>
+            <td class="text-break" style="max-width: 200px;">${escapeHtml(data.remarks) || '-'}</td>
+            <td class="text-center" style="white-space: nowrap;">
+                <a href="${orderCreateUrl}?followup_id=${data.id}" class="action-btn border text-success me-1" title="Create Order">
+                    <i class="fas fa-shopping-cart"></i>
+                </a>
+                <button class="action-btn border text-primary me-1" onclick="openEditModal(${data.id})" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="action-btn border text-danger" onclick="deleteFollowUp(${data.id}, this)" title="Delete">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </td>
+        `;
+        
+        // Insert right after entry row
+        entryRow.after(newTr);
+        
+        // Update all serial numbers
+        const snCells = tbody.querySelectorAll('tr:not(#entryRow):not(#emptyRow) td.sn-column');
+        snCells.forEach((cell, index) => {
+            cell.textContent = index + 1;
+        });
+    }
+
+
+
+    function openEditModal(id) {
+        currentEditId = id;
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (!row) return;
+
+        document.getElementById('editName').value = row.getAttribute('data-name');
+        document.getElementById('editPhone').value = row.getAttribute('data-phone');
+        document.getElementById('editLeadSource').value = row.getAttribute('data-lead');
+        
+        const productsStr = row.getAttribute('data-products') || '[]';
+        document.getElementById('editProductsData').value = productsStr;
+        renderChips('edit');
+
+        document.getElementById('editFollowup1').value = row.getAttribute('data-f1');
+        document.getElementById('editFollowup2').value = row.getAttribute('data-f2');
+        document.getElementById('editStatus').value = row.getAttribute('data-status');
+        document.getElementById('editRemarks').value = row.getAttribute('data-remarks');
+
+        if (editModal) editModal.show();
+    }
+
+    function saveEditFollowUp() {
+        if (!currentEditId) return;
+        
+        const btn = document.getElementById('saveEditBtn');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+
+        const productInput = document.getElementById('editProductsData');
+        let productIds = [];
+        try { 
+            const products = JSON.parse(productInput.value || '[]');
+            productIds = products.map(p => p.id);
+        } catch(e) {}
+
+        const data = {
+            name: document.getElementById('editName').value.trim(),
+            phone: document.getElementById('editPhone').value.trim(),
+            lead_source: document.getElementById('editLeadSource').value.trim(),
+            product_ids: productIds,
+            followup_1: document.getElementById('editFollowup1').value.trim(),
+            followup_2: document.getElementById('editFollowup2').value.trim(),
+            status: document.getElementById('editStatus').value,
+            remarks: document.getElementById('editRemarks').value.trim(),
+        };
+
+        if (!data.phone) {
+            alert('Phone number is required!');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+            return;
+        }
+
+        const editPhoneDigits = data.phone.replace(/\D/g, '');
+        if (editPhoneDigits.length !== 10) {
+            alert('Phone number must be exactly 10 digits!');
+            document.getElementById('editPhone').focus();
+            document.getElementById('editPhone').classList.add('is-invalid');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+            return;
+        }
+
+        fetch(`/api/orders/follow-ups/${currentEditId}/edit/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                // Update row in DOM
+                const row = document.querySelector(`tr[data-id="${currentEditId}"]`);
+                if (row) {
+                    row.setAttribute('data-status', result.data.status);
+                    row.setAttribute('data-name', result.data.name || '');
+                    row.setAttribute('data-phone', result.data.phone || '');
+                    row.setAttribute('data-lead', result.data.lead_source || '');
+                    row.setAttribute('data-products', JSON.stringify(result.data.products || []));
+                    row.setAttribute('data-f1', result.data.followup_1 || '');
+                    row.setAttribute('data-f2', result.data.followup_2 || '');
+                    row.setAttribute('data-remarks', result.data.remarks || '');
+
+                    let statusBadge = `<span class="badge bg-secondary rounded-pill px-2 py-1">${result.data.status || '-'}</span>`;
+                    
+                    let productsHtml = '<span class="text-muted">-</span>';
+                    if (result.data.products && result.data.products.length > 0) {
+                        productsHtml = '<div class="d-flex flex-wrap">' + result.data.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>';
+                    }
+
+                    const cells = row.querySelectorAll('td');
+                    cells[1].textContent = result.data.name || '-';
+                    cells[2].textContent = result.data.phone || '-';
+                    cells[3].textContent = result.data.lead_source || '-';
+                    cells[4].innerHTML = productsHtml;
+                    cells[5].textContent = result.data.followup_1 || '-';
+                    cells[6].textContent = result.data.followup_2 || '-';
+                    cells[7].innerHTML = statusBadge;
+                    cells[8].textContent = result.data.remarks || '-';
+                }
+                
+                if (editModal) editModal.hide();
+            } else {
+                alert('Error: ' + result.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while saving.');
+        })
+        .finally(() => {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        });
+    }
+
+    function deleteFollowUp(id, btn) {
+        if (!confirm('Are you sure you want to delete this follow-up?')) return;
+        
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+
+        fetch(`/api/orders/follow-ups/${id}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                const row = document.querySelector(`tr[data-id="${id}"]`);
+                if (row) {
+                    row.remove();
+                    // Update remaining SNs
+                    const tbody = document.getElementById('followUpsTbody');
+                    const snCells = tbody.querySelectorAll('tr:not(#entryRow):not(#emptyRow) td.sn-column');
+                    snCells.forEach((cell, index) => {
+                        cell.textContent = index + 1;
+                    });
+                }
+            } else {
+                alert('Error deleting: ' + result.error);
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while deleting.');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        });
+    }
+</script>
+{% endblock %}

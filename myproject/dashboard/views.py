@@ -2962,6 +2962,9 @@ def order_create(request):
                 payment_setup_id = request.POST.get("payment_setup")
                 status_setup_id = request.POST.get("status_setup")
                 payment_status_setup_id = request.POST.get("payment_status_setup")
+                
+                # Check for followup conversion
+                followup_id_post = request.POST.get("followup_id")
                 payment_setup = None
                 status_setup = None
                 payment_status_setup = None
@@ -3236,6 +3239,17 @@ def order_create(request):
                     description=f'City "{branch_city_name}" detected as {valley_status}. IN/OUT set to {in_out.upper()}'
                 )
 
+                if followup_id_post:
+                    try:
+                        from .models import FollowUp
+                        follow_up = FollowUp.objects.get(id=followup_id_post)
+                        follow_up.status = 'Converted'
+                        follow_up.save()
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Error converting follow_up {followup_id_post}: {e}")
+
                 success_msg = f"Order {order.order_number} created successfully!"
                 if is_partial_payment:
                     success_msg += f" | Partial payment: रू {partial_amount_paid} paid"
@@ -3284,11 +3298,19 @@ def order_create(request):
     categories = Category.objects.all().order_by('name')
 
     # NEW: GET PAYMENT AND STATUS SETUPS
-    from .models import Setup
+    from .models import Setup, FollowUp
     payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
     payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
     order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
+
+    followup_id = request.GET.get('followup_id')
+    follow_up_data = None
+    if followup_id:
+        try:
+            follow_up_data = FollowUp.objects.prefetch_related('products').select_related('product').get(id=followup_id, is_deleted=False)
+        except FollowUp.DoesNotExist:
+            pass
 
     return render(
         request,
@@ -3302,6 +3324,7 @@ def order_create(request):
             "status_setups": status_setups,
             "payment_status_setups": payment_status_setups,
             "order_source_setups": order_source_setups,
+            "follow_up_data": follow_up_data,
         },
     )
 @login_required
@@ -21319,3 +21342,185 @@ def api_update_product_price(request, product_id):
         return JsonResponse({'success': False, 'error': 'Invalid price format.'}, status=400)
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@login_required
+def follow_ups_list(request):
+    """View to display and manage follow-ups."""
+    from .models import FollowUp, Product, Setup
+    
+    follow_ups = FollowUp.objects.prefetch_related('products').select_related('product').filter(is_deleted=False).order_by('-created_at')
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    statuses = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    
+    context = {
+        'follow_ups': follow_ups,
+        'products': products,
+        'statuses': statuses,
+    }
+    return render(request, 'dashboard/follow_ups.html', context)
+
+
+@login_required
+@require_POST
+def add_follow_up(request):
+    """AJAX endpoint to add a new follow-up entry."""
+    from .models import FollowUp, Product
+    try:
+        data = json.loads(request.body)
+        
+        name = data.get('name', '').strip()
+        phone = data.get('phone', '').strip()
+        lead_source = data.get('lead_source', '').strip()
+        product_ids = data.get('product_ids', [])  # list of IDs (new M2M)
+        followup_1 = data.get('followup_1', '').strip()
+        followup_2 = data.get('followup_2', '').strip()
+        status = data.get('status', '').strip()
+        remarks = data.get('remarks', '').strip()
+        
+        if not phone:
+            return JsonResponse({'success': False, 'error': 'Phone number is required.'})
+            
+        new_follow_up = FollowUp.objects.create(
+            name=name,
+            phone=phone,
+            lead_source=lead_source,
+            followup_1=followup_1,
+            followup_2=followup_2,
+            status=status,
+            remarks=remarks
+        )
+        
+        # Set multiple products via M2M
+        if product_ids:
+            valid_products = Product.objects.filter(id__in=product_ids, is_deleted=False)
+            new_follow_up.products.set(valid_products)
+        
+        products_data = [
+            {'id': p.id, 'name': p.name, 'price': float(p.price)}
+            for p in new_follow_up.products.all()
+        ]
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'id': new_follow_up.id,
+                'name': new_follow_up.name,
+                'phone': new_follow_up.phone,
+                'lead_source': new_follow_up.lead_source,
+                'products': products_data,
+                'products_display': ', '.join(p['name'] for p in products_data) or '-',
+                'followup_1': new_follow_up.followup_1,
+                'followup_2': new_follow_up.followup_2,
+                'status': new_follow_up.status,
+                'remarks': new_follow_up.remarks,
+                'created_at': new_follow_up.created_at.strftime('%Y-%m-%d %H:%M')
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+@require_POST
+def edit_follow_up(request, pk):
+    from .models import FollowUp, Product
+    try:
+        follow_up = get_object_or_404(FollowUp, pk=pk)
+        data = json.loads(request.body)
+        
+        follow_up.name = data.get('name', follow_up.name).strip()
+        follow_up.phone = data.get('phone', follow_up.phone).strip()
+        follow_up.lead_source = data.get('lead_source', follow_up.lead_source).strip()
+        follow_up.followup_1 = data.get('followup_1', follow_up.followup_1).strip()
+        follow_up.followup_2 = data.get('followup_2', follow_up.followup_2).strip()
+        follow_up.status = data.get('status', follow_up.status).strip()
+        follow_up.remarks = data.get('remarks', follow_up.remarks).strip()
+        follow_up.save()
+        
+        # Handle multiple products (M2M)
+        product_ids = data.get('product_ids')
+        if product_ids is not None:  # explicit list sent (even if empty = clear all)
+            valid_products = Product.objects.filter(id__in=product_ids, is_deleted=False) if product_ids else []
+            follow_up.products.set(valid_products)
+        
+        products_data = [
+            {'id': p.id, 'name': p.name, 'price': float(p.price)}
+            for p in follow_up.products.all()
+        ]
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'id': follow_up.id,
+                'name': follow_up.name,
+                'phone': follow_up.phone,
+                'lead_source': follow_up.lead_source,
+                'products': products_data,
+                'products_display': ', '.join(p['name'] for p in products_data) or '-',
+                'followup_1': follow_up.followup_1,
+                'followup_2': follow_up.followup_2,
+                'status': follow_up.status,
+                'remarks': follow_up.remarks,
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+@require_POST
+def delete_follow_up(request, pk):
+    from .models import FollowUp
+    try:
+        follow_up = get_object_or_404(FollowUp, pk=pk)
+        follow_up.is_deleted = True
+        follow_up.save()
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def follow_ups_trash(request):
+    """View to display soft-deleted follow-ups."""
+    from .models import FollowUp
+    
+    deleted_follow_ups = FollowUp.objects.prefetch_related('products').select_related('product').filter(is_deleted=True).order_by('-created_at')
+    
+    context = {
+        'deleted_follow_ups': deleted_follow_ups,
+    }
+    return render(request, 'dashboard/follow_ups_trash.html', context)
+
+
+@login_required
+@require_POST
+def restore_follow_up(request, pk):
+    """Restore a soft-deleted follow-up."""
+    from .models import FollowUp
+    try:
+        follow_up = get_object_or_404(FollowUp, pk=pk, is_deleted=True)
+        follow_up.is_deleted = False
+        follow_up.save()
+        messages.success(request, 'Follow-up restored successfully.')
+    except Exception as e:
+        messages.error(request, f'Error restoring follow-up: {str(e)}')
+    
+    return redirect('follow_ups_trash')
+
+
+@login_required
+@require_POST
+def hard_delete_follow_up(request, pk):
+    """Permanently delete a follow-up."""
+    from .models import FollowUp
+    try:
+        follow_up = get_object_or_404(FollowUp, pk=pk, is_deleted=True)
+        follow_up.delete()
+        messages.success(request, 'Follow-up permanently deleted.')
+    except Exception as e:
+        messages.error(request, f'Error deleting follow-up: {str(e)}')
+        
+    return redirect('follow_ups_trash')

@@ -1037,6 +1037,9 @@
                             <a href="{% url 'orders_list' %}">All Orders</a>
                         </li>
                         {% endif %}
+                        <li class="{% if request.resolver_match.url_name == 'follow_ups_list' %}active{% endif %}">
+                            <a href="{% url 'follow_ups_list' %}">Follow-ups</a>
+                        </li>
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_on_hold_orders %}
                         <li class="{% if request.resolver_match.url_name == 'on_hold_orders_list' %}active{% endif %}">
                             <a href="{% url 'on_hold_orders_list' %}">On Hold Orders</a>

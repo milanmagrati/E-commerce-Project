@@ -114,6 +114,13 @@ urlpatterns = [
     path('orders/on-hold/', views.on_hold_orders_list, name='on_hold_orders_list'),
 
     # Order Follow-Up System
+    path('orders/follow-ups/', views.follow_ups_list, name='follow_ups_list'),
+    path('api/orders/follow-ups/add/', views.add_follow_up, name='add_follow_up'),
+    path('api/orders/follow-ups/<int:pk>/edit/', views.edit_follow_up, name='edit_follow_up'),
+    path('api/orders/follow-ups/<int:pk>/delete/', views.delete_follow_up, name='delete_follow_up'),
+    path('orders/follow-ups/trash/', views.follow_ups_trash, name='follow_ups_trash'),
+    path('api/orders/follow-ups/<int:pk>/restore/', views.restore_follow_up, name='restore_follow_up'),
+    path('api/orders/follow-ups/<int:pk>/hard-delete/', views.hard_delete_follow_up, name='hard_delete_follow_up'),
     path('orders/<int:order_id>/followup/add/', views.add_order_followup, name='add_order_followup'),
     path('orders/<int:order_id>/followups/', views.get_order_followups, name='get_order_followups'),
     path('orders/<int:order_id>/next-followup/', views.update_order_next_followup, name='update_order_next_followup'),

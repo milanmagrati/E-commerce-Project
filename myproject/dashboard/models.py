@@ -1827,3 +1827,35 @@ class GlobalNotice(models.Model):
 
     def __str__(self):
         return f"Notice {self.id} created at {self.created_at}"
+
+
+class FollowUp(models.Model):
+    """Model to store Follow-ups data"""
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=50)
+    lead_source = models.CharField(max_length=100, blank=True)
+    # Legacy single-product FK (kept for backward compat, use products M2M instead)
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name='follow_ups_single')
+    # Multiple products (preferred)
+    products = models.ManyToManyField(Product, blank=True, related_name='follow_ups_multi')
+    followup_1 = models.CharField(max_length=255, blank=True)
+    followup_2 = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=100, blank=True)
+    remarks = models.TextField(blank=True)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} - {self.phone}"
+
+    def get_all_products(self):
+        """Return M2M products if any, else fall back to the legacy FK product."""
+        m2m = list(self.products.all())
+        if m2m:
+            return m2m
+        if self.product:
+            return [self.product]
+        return []

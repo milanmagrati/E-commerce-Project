@@ -7097,4 +7097,121 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
     });
 </script>
 
+{% if follow_up_data %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Wait for POS UI components and loadFormData() to complete first
+        setTimeout(function() {
+
+            // ─── STEP 0: Clear stale localStorage draft so previous cart/customer
+            //            data doesn't bleed into this follow-up order ───────────────
+            if (typeof clearFormData === 'function') clearFormData();
+            if (typeof hideFloatingButton === 'function') hideFloatingButton();
+            // Also wipe the in-memory cart so the restored draft items are gone
+            cart = [];
+            if (typeof updateCart === 'function') updateCart();
+
+            // ─── 1. Customer Name ────────────────────────────────────────────────
+            const customerName = document.getElementById('customerName');
+            if (customerName) {
+                customerName.value = "{{ follow_up_data.name|escapejs }}";
+                customerName.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            // ─── 2. Customer Phone ───────────────────────────────────────────────
+            const customerPhone = document.getElementById('customerPhone');
+            if (customerPhone) {
+                customerPhone.value = "{{ follow_up_data.phone|escapejs }}";
+                customerPhone.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            // ─── 3. Remarks → Order Notes ────────────────────────────────────────
+            {% if follow_up_data.remarks %}
+            const orderNotes = document.getElementById('orderNotes');
+            if (orderNotes) {
+                orderNotes.value = "{{ follow_up_data.remarks|escapejs }}";
+            }
+            {% endif %}
+
+            // ─── 4. Hidden followup_id ───────────────────────────────────────────
+            const form = document.getElementById('orderForm');
+            if (form && !form.querySelector('input[name="followup_id"]')) {
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'followup_id';
+                hiddenInput.value = '{{ follow_up_data.id }}';
+                form.appendChild(hiddenInput);
+            }
+
+            // ─── 5. Order Source (lead_source → order_from) ──────────────────────
+            {% if follow_up_data.lead_source %}
+            const orderFromSelect = document.querySelector('select[name="order_from"]');
+            if (orderFromSelect) {
+                const searchLower = "{{ follow_up_data.lead_source|escapejs }}".toLowerCase();
+                let matchedFrom = false;
+                for (let opt of orderFromSelect.options) {
+                    if (opt.text.toLowerCase() === searchLower || opt.value.toLowerCase() === searchLower) {
+                        orderFromSelect.value = opt.value;
+                        matchedFrom = true;
+                        break;
+                    }
+                }
+                if (matchedFrom) {
+                    orderFromSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (typeof syncSearchableSelectUI === 'function') {
+                        syncSearchableSelectUI('select[name="order_from"]', orderFromSelect.value);
+                    }
+                }
+            }
+            {% endif %}
+
+            // ─── 6. Status → statusSetup select (match by option text name) ──────
+            {% if follow_up_data.status %}
+            const statusSetupEl = document.getElementById('statusSetup');
+            if (statusSetupEl) {
+                const followUpStatus = "{{ follow_up_data.status|escapejs }}".toLowerCase().trim();
+                let statusMatched = false;
+                for (let opt of statusSetupEl.options) {
+                    if (opt.text.toLowerCase().trim() === followUpStatus) {
+                        statusSetupEl.value = opt.value;
+                        statusMatched = true;
+                        // Mark as user-changed so draft doesn't overwrite it
+                        if (typeof userChangedSetups !== 'undefined') {
+                            userChangedSetups.statusSetup = true;
+                        }
+                        break;
+                    }
+                }
+                // If no exact match found, keep the default selected
+            }
+            {% endif %}
+
+            // ─── 7. Product → Cart (clean slate — old cart already cleared) ──────
+            {% with all_products=follow_up_data.get_all_products %}
+                {% if all_products %}
+                    if (typeof addToCart === 'function') {
+                        {% for prod in all_products %}
+                            var productPrice_{{ forloop.counter }} = parseFloat("{{ prod.price|default:'0' }}") || 0;
+                            addToCart(
+                                {{ prod.id }},
+                                "{{ prod.name|escapejs }}",
+                                productPrice_{{ forloop.counter }},
+                                null,   // varId
+                                '',     // sku
+                                1,      // qty
+                                false,  // isCustom
+                                '',     // variantName
+                                '{{ prod.product_type|default:"simple" }}'
+                            );
+                        {% endfor %}
+                    }
+                {% endif %}
+            {% endwith %}
+
+        }, 900); // after loadFormData() finishes
+    });
+</script>
+{% endif %}
+
 {% endblock %}
+
