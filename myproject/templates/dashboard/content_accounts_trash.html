@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Trash - Content Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0 text-danger"><i class="fas fa-trash-alt me-2"></i> Trash - Content Management</h4>
+        <div class="d-flex gap-2">
+            <a href="{% url 'content_accounts_list' %}" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-arrow-left"></i> Back to Active
+            </a>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered align-middle content-table mb-0" id="contentTable">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 50px;" class="text-center">S.N.</th>
+                            <th>ACCOUNT ID</th>
+                            <th>USER NAME</th>
+                            <th>GMAIL</th>
+                            <th>PHONE</th>
+                            <th>PASSWORD</th>
+                            <th>MANAGED BY</th>
+                            <th>ACCOUNT TYPE</th>
+                            <th>STATUS</th>
+                            <th class="text-center" style="width: 120px;">ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountsTableBody">
+                        {% for account in accounts %}
+                        <tr id="account-row-{{ account.id }}">
+                            <td class="text-center sn-column">{{ forloop.counter }}</td>
+                            <td>{{ account.account_id }}</td>
+                            <td>{{ account.user_name }}</td>
+                            <td>{{ account.gmail }}</td>
+                            <td>{{ account.phone }}</td>
+                            <td>{{ account.password }}</td>
+                            <td>{{ account.managed_by }}</td>
+                            <td>{{ account.account_type }}</td>
+                            <td>
+                                <span class="badge {% if account.status == 'Active' %}bg-success{% elif account.status == 'new' %}bg-info{% elif account.status == 'Blocked' %}bg-danger{% else %}bg-secondary{% endif %} rounded-pill px-2 py-1">
+                                    {{ account.status }}
+                                </span>
+                            </td>
+                            <td class="text-center" style="white-space: nowrap;">
+                                <button class="btn btn-sm btn-outline-success me-1" onclick="restoreAccount({{ account.id }})" title="Restore">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="hardDeleteAccount({{ account.id }})" title="Permanently Delete">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr id="emptyRow">
+                            <td colspan="10" class="text-center text-muted py-4">No accounts in trash.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .content-table {
+        min-width: 1200px;
+        font-size: 0.9rem;
+        border-collapse: collapse;
+    }
+    
+    .content-table thead th {
+        white-space: nowrap;
+        background: #f8fafc !important;
+        color: #475569;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid #cbd5e1;
+    }
+    
+    .content-table tbody tr {
+        transition: background-color 0.15s ease;
+    }
+    
+    .content-table tbody tr:hover {
+        background-color: #f1f5f9;
+    }
+
+    .content-table td {
+        padding: 0.5rem 1rem;
+        vertical-align: middle;
+        color: #334155;
+        font-weight: 400;
+        border: 1px solid #e2e8f0;
+    }
+</style>
+
+<script>
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const csrftoken = getCookie('csrftoken');
+
+    function updateSerialNumbers() {
+        const rows = document.querySelectorAll('#accountsTableBody tr:not(#emptyRow)');
+        rows.forEach((row, index) => {
+            const snCell = row.querySelector('.sn-column');
+            if (snCell) {
+                snCell.textContent = index + 1;
+            }
+        });
+        
+        if (rows.length === 0) {
+            document.getElementById('accountsTableBody').innerHTML = '<tr id="emptyRow"><td colspan="10" class="text-center text-muted py-4">No accounts in trash.</td></tr>';
+        }
+    }
+
+    async function restoreAccount(id) {
+        if (!confirm('Are you sure you want to restore this account?')) return;
+        
+        try {
+            const response = await fetch(`/api/content-management/${id}/restore/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                }
+            });
+            const res = await response.json();
+            
+            if (res.success) {
+                document.getElementById(`account-row-${id}`).remove();
+                updateSerialNumbers();
+                alert('Account has been restored successfully.');
+            } else {
+                alert(res.error || 'Failed to restore account');
+            }
+        } catch (error) {
+            alert(error.toString());
+        }
+    }
+
+    async function hardDeleteAccount(id) {
+        if (!confirm("Are you absolutely sure? This will permanently delete the account. This action cannot be undone!")) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/content-management/${id}/hard-delete/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                }
+            });
+            const res = await response.json();
+            
+            if (res.success) {
+                document.getElementById(`account-row-${id}`).remove();
+                updateSerialNumbers();
+                alert('Account has been permanently deleted.');
+            } else {
+                alert(res.error || 'Failed to delete account');
+            }
+        } catch (error) {
+            alert(error.toString());
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,457 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Content Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0"><i class="fas fa-file-alt text-primary me-2"></i> Content Management</h4>
+        <div class="d-flex gap-2">
+            <a href="{% url 'staff_reports_list' %}" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-file-excel"></i> Staff Report
+            </a>
+            <a href="{% url 'content_accounts_trash' %}" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i> Trash
+            </a>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered align-middle content-table mb-0" id="contentTable">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 50px;" class="text-center">S.N.</th>
+                            <th>ACCOUNT ID</th>
+                            <th>USER NAME</th>
+                            <th>GMAIL</th>
+                            <th>PHONE</th>
+                            <th>PASSWORD</th>
+                            <th>MANAGED BY</th>
+                            <th>ACCOUNT TYPE</th>
+                            <th>STATUS</th>
+                            <th class="text-center" style="width: 80px;">ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountsTableBody">
+                        <!-- Data Entry Row (Always at the top) -->
+                        <tr class="content-entry-bg" id="entryRow">
+                            <td class="text-center fw-bold text-primary" style="font-size: 1.2rem;">+</td>
+                            <td><input type="text" class="form-control form-control-sm" id="newAccountId" placeholder="Account ID"></td>
+                            <td><input type="text" class="form-control form-control-sm" id="newUserName" placeholder="User Name"></td>
+                            <td><input type="email" class="form-control form-control-sm" id="newGmail" placeholder="Gmail"></td>
+                            <td><input type="text" class="form-control form-control-sm" id="newPhone" placeholder="Phone"></td>
+                            <td><input type="text" class="form-control form-control-sm" id="newPassword" placeholder="Password"></td>
+                            <td>
+                                <select class="form-select form-select-sm" id="newManagedBy">
+                                    <option value="">Select User...</option>
+                                    {% for u in users %}
+                                    <option value="{{ u.get_full_name|default:u.username }}" {% if request.user == u %}selected{% endif %}>{{ u.get_full_name|default:u.username }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="text" class="form-control form-control-sm" id="newAccountType" placeholder="Account Type"></td>
+                            <td>
+                                <select class="form-select form-select-sm" id="newStatus">
+                                    <option value="new">new</option>
+                                    <option value="Active">Active</option>
+                                    <option value="inactive">inactive</option>
+                                    <option value="Blocked">Blocked</option>
+                                    <option value="deleted">deleted</option>
+                                </select>
+                            </td>
+                            <td class="text-center" style="white-space: nowrap;">
+                                <button class="btn btn-sm btn-primary" style="padding: 0.25rem 0.5rem;" onclick="addAccount()" title="Save Entry">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </td>
+                        </tr>
+
+                        {% for account in accounts %}
+                        <tr id="account-row-{{ account.id }}">
+                            <td class="text-center sn-column">{{ forloop.counter }}</td>
+                            <td>{{ account.account_id }}</td>
+                            <td>{{ account.user_name }}</td>
+                            <td>{{ account.gmail }}</td>
+                            <td>{{ account.phone }}</td>
+                            <td>{{ account.password }}</td>
+                            <td>{{ account.managed_by }}</td>
+                            <td>{{ account.account_type }}</td>
+                            <td>
+                                <span class="badge {% if account.status == 'Active' %}bg-success{% elif account.status == 'new' %}bg-info{% elif account.status == 'Blocked' %}bg-danger{% else %}bg-secondary{% endif %} rounded-pill px-2 py-1">
+                                    {{ account.status }}
+                                </span>
+                            </td>
+                            <td class="text-center" style="white-space: nowrap;">
+                                <button class="action-btn border text-primary me-1" onclick="openEditModal({{ account.id }}, '{{ account.account_id|escapejs }}', '{{ account.user_name|escapejs }}', '{{ account.gmail|escapejs }}', '{{ account.phone|escapejs }}', '{{ account.password|escapejs }}', '{{ account.managed_by|escapejs }}', '{{ account.account_type|escapejs }}', '{{ account.status|escapejs }}')" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="action-btn border text-danger" onclick="deleteAccount({{ account.id }})" title="Move to Trash">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editId">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Account ID</label>
+                        <input type="text" class="form-control" id="editAccountId">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">User Name</label>
+                        <input type="text" class="form-control" id="editUserName">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Gmail</label>
+                        <input type="email" class="form-control" id="editGmail">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Phone</label>
+                        <input type="text" class="form-control" id="editPhone">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Password</label>
+                        <input type="text" class="form-control" id="editPassword">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Managed By</label>
+                        <select class="form-select" id="editManagedBy">
+                            <option value="">Select User...</option>
+                            {% for u in users %}
+                            <option value="{{ u.get_full_name|default:u.username }}">{{ u.get_full_name|default:u.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Account Type</label>
+                        <input type="text" class="form-control" id="editAccountType">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="editStatus">
+                            <option value="new">new</option>
+                            <option value="Active">Active</option>
+                            <option value="inactive">inactive</option>
+                            <option value="Blocked">Blocked</option>
+                            <option value="deleted">deleted</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .content-table {
+        min-width: 1200px;
+        font-size: 0.9rem;
+        border-collapse: collapse;
+    }
+    
+    .content-table thead th {
+        white-space: nowrap;
+        background: #f8fafc !important;
+        color: #475569;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid #cbd5e1;
+    }
+    
+    .content-table tbody tr {
+        transition: background-color 0.15s ease;
+    }
+    
+    .content-table tbody tr:hover:not(.content-entry-bg) {
+        background-color: #f1f5f9;
+    }
+
+    .content-table td {
+        padding: 0.5rem 1rem;
+        vertical-align: middle;
+        color: #334155;
+        font-weight: 400;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .content-entry-bg > td {
+        background: linear-gradient(to right, #eef2ff, #f5f3ff) !important;
+        border-bottom: 3px solid #c7d2fe;
+        padding-top: 1.2rem;
+        padding-bottom: 1.2rem;
+        position: relative;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+    }
+    
+    /* Modern form inputs within the entry row */
+    .content-entry-bg .form-control, .content-entry-bg .form-select {
+        border-radius: 8px;
+        border: 1px solid #c7d2fe;
+        background-color: #ffffff;
+        box-shadow: 0 2px 4px rgba(79, 70, 229, 0.05);
+        transition: all 0.2s;
+    }
+    .content-entry-bg .form-control:focus, .content-entry-bg .form-select:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+    
+    .action-btn {
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        background: white;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .action-btn:hover {
+        background-color: #f8fafc;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+</style>
+
+<script>
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const csrftoken = getCookie('csrftoken');
+
+    function getStatusBadge(status) {
+        let badgeClass = 'bg-secondary';
+        if (status === 'Active') badgeClass = 'bg-success';
+        else if (status === 'new') badgeClass = 'bg-info';
+        else if (status === 'Blocked') badgeClass = 'bg-danger';
+        return `<span class="badge ${badgeClass} rounded-pill px-2 py-1">${status}</span>`;
+    }
+    
+    // Auto-update S.N. column
+    function updateSerialNumbers() {
+        const rows = document.querySelectorAll('#accountsTableBody tr:not(.content-entry-bg)');
+        rows.forEach((row, index) => {
+            const snCell = row.querySelector('.sn-column');
+            if (snCell) {
+                snCell.textContent = index + 1;
+            }
+        });
+    }
+
+    async function addAccount() {
+        const data = {
+            account_id: document.getElementById('newAccountId').value.trim(),
+            user_name: document.getElementById('newUserName').value.trim(),
+            gmail: document.getElementById('newGmail').value.trim(),
+            phone: document.getElementById('newPhone').value.trim(),
+            password: document.getElementById('newPassword').value.trim(),
+            managed_by: document.getElementById('newManagedBy').value,
+            account_type: document.getElementById('newAccountType').value,
+            status: document.getElementById('newStatus').value,
+        };
+
+        if (!data.account_id || !data.user_name || !data.gmail || !data.phone || !data.password || !data.account_type) {
+            alert('Please fill in all the required fields before saving.');
+            return;
+        }
+
+        try {
+            const response = await fetch('{% url "add_content_account" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                // Insert directly after the entryRow
+                const newRow = `
+                    <tr id="account-row-${result.data.id}">
+                        <td class="text-center sn-column">1</td>
+                        <td>${result.data.account_id}</td>
+                        <td>${result.data.user_name}</td>
+                        <td>${result.data.gmail}</td>
+                        <td>${result.data.phone}</td>
+                        <td>${result.data.password}</td>
+                        <td>${result.data.managed_by}</td>
+                        <td>${result.data.account_type}</td>
+                        <td>${getStatusBadge(result.data.status)}</td>
+                        <td class="text-center" style="white-space: nowrap;">
+                            <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${result.data.account_id}', '${result.data.user_name}', '${result.data.gmail}', '${result.data.phone}', '${result.data.password}', '${result.data.managed_by}', '${result.data.account_type}', '${result.data.status}')" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="action-btn border text-danger" onclick="deleteAccount(${result.data.id})" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('entryRow').insertAdjacentHTML('afterend', newRow);
+                updateSerialNumbers();
+                
+                // Clear inputs
+                document.getElementById('newAccountId').value = '';
+                document.getElementById('newUserName').value = '';
+                document.getElementById('newGmail').value = '';
+                document.getElementById('newPhone').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('newAccountType').value = '';
+                // managed_by and status keep defaults
+                
+                // Show simple alert instead of Swal
+                alert('Account added successfully');
+            } else {
+                alert(result.error || 'Failed to add account');
+            }
+        } catch (error) {
+            alert(error.toString());
+        }
+    }
+
+    let editModalInstance = null;
+    document.addEventListener("DOMContentLoaded", function() {
+        editModalInstance = new bootstrap.Modal(document.getElementById('editModal'));
+    });
+
+    function openEditModal(id, account_id, user_name, gmail, phone, password, managed_by, account_type, status) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editAccountId').value = account_id;
+        document.getElementById('editUserName').value = user_name;
+        document.getElementById('editGmail').value = gmail;
+        document.getElementById('editPhone').value = phone;
+        document.getElementById('editPassword').value = password;
+        document.getElementById('editManagedBy').value = managed_by;
+        document.getElementById('editAccountType').value = account_type;
+        document.getElementById('editStatus').value = status;
+        
+        editModalInstance.show();
+    }
+
+    async function saveEdit() {
+        const id = document.getElementById('editId').value;
+        const data = {
+            account_id: document.getElementById('editAccountId').value,
+            user_name: document.getElementById('editUserName').value,
+            gmail: document.getElementById('editGmail').value,
+            phone: document.getElementById('editPhone').value,
+            password: document.getElementById('editPassword').value,
+            managed_by: document.getElementById('editManagedBy').value,
+            account_type: document.getElementById('editAccountType').value,
+            status: document.getElementById('editStatus').value,
+        };
+
+        try {
+            const response = await fetch(`/api/content-management/${id}/edit/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                // Update row
+                const row = document.getElementById(`account-row-${id}`);
+                if (row) {
+                    const sn = row.querySelector('.sn-column').textContent; // Keep SN
+                    row.innerHTML = `
+                        <td class="text-center sn-column">${sn}</td>
+                        <td>${result.data.account_id}</td>
+                        <td>${result.data.user_name}</td>
+                        <td>${result.data.gmail}</td>
+                        <td>${result.data.phone}</td>
+                        <td>${result.data.password}</td>
+                        <td>${result.data.managed_by}</td>
+                        <td>${result.data.account_type}</td>
+                        <td>${getStatusBadge(result.data.status)}</td>
+                        <td class="text-center" style="white-space: nowrap;">
+                            <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${result.data.account_id}', '${result.data.user_name}', '${result.data.gmail}', '${result.data.phone}', '${result.data.password}', '${result.data.managed_by}', '${result.data.account_type}', '${result.data.status}')" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="action-btn border text-danger" onclick="deleteAccount(${result.data.id})" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    `;
+                }
+                editModalInstance.hide();
+                alert('Account updated successfully');
+            } else {
+                alert(result.error || 'Failed to update account');
+            }
+        } catch (error) {
+            alert(error.toString());
+        }
+    }
+
+    async function deleteAccount(id) {
+        if (!confirm('Are you sure you want to move this account to the trash?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/content-management/${id}/delete/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                }
+            });
+            const res = await response.json();
+            
+            if (res.success) {
+                document.getElementById(`account-row-${id}`).remove();
+                updateSerialNumbers();
+            } else {
+                alert(res.error || 'Failed to move account to trash');
+            }
+        } catch (error) {
+            alert(error.toString());
+        }
+    }
+</script>
+{% endblock %}

@@ -127,6 +127,15 @@ urlpatterns = [
 
 
 
+    # Content Management
+    path('content-management/', views.content_accounts_list, name='content_accounts_list'),
+    path('content-management/trash/', views.content_accounts_trash, name='content_accounts_trash'),
+    path('api/content-management/add/', views.add_content_account, name='add_content_account'),
+    path('api/content-management/<int:pk>/edit/', views.edit_content_account, name='edit_content_account'),
+    path('api/content-management/<int:pk>/delete/', views.delete_content_account, name='delete_content_account'),
+    path('api/content-management/<int:pk>/restore/', views.restore_content_account, name='restore_content_account'),
+    path('api/content-management/<int:pk>/hard-delete/', views.hard_delete_content_account, name='hard_delete_content_account'),
+
     # API Endpoints
     path('api/customer/<int:customer_id>/', views.api_get_customer, name='api_get_customer'),
     path('api/search-products/', views.api_search_products, name='api_search_products'),
@@ -332,6 +341,12 @@ urlpatterns = [
     path('api-integration/<int:config_id>/delete/', views.api_integration_delete, name='api_integration_delete'),
     path('api-integration/<int:config_id>/toggle/', views.api_integration_toggle, name='api_integration_toggle'),
     path('api-integration/<int:config_id>/get/', views.api_integration_get, name='api_integration_get'),
+
+    # ==================== STAFF REPORTS ====================
+    path('staff-reports/', views.staff_reports_list, name='staff_reports_list'),
+    path('api/staff-reports/add/', views.add_staff_report, name='add_staff_report'),
+    path('api/staff-reports/<int:pk>/edit/', views.edit_staff_report, name='edit_staff_report'),
+    path('api/staff-reports/<int:pk>/delete/', views.delete_staff_report, name='delete_staff_report'),
 
     # ==================== MAINTENANCE MODE ====================
     path('api/maintenance/toggle/', views.maintenance_toggle, name='maintenance_toggle'),

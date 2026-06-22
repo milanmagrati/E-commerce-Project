@@ -1859,3 +1859,49 @@ class FollowUp(models.Model):
         if self.product:
             return [self.product]
         return []
+
+
+class ContentAccount(models.Model):
+    account_id = models.CharField(max_length=100, blank=True, null=True, verbose_name='Id')
+    user_name = models.CharField(max_length=100, blank=True, null=True)
+    gmail = models.CharField(max_length=255, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    password = models.CharField(max_length=100, blank=True, null=True)
+    managed_by = models.CharField(max_length=100, blank=True, null=True)
+    status = models.CharField(max_length=50, blank=True, null=True)
+    account_type = models.CharField(max_length=100, blank=True, null=True, verbose_name='Type')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.account_id} - {self.user_name}"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name_plural = 'Content Accounts'
+class StaffReport(models.Model):
+    staff_name = models.CharField(max_length=255)
+    report_date = models.CharField(max_length=255)
+    platform = models.CharField(max_length=255, blank=True, null=True)
+    no_of_posts = models.TextField(blank=True, null=True)
+    views = models.TextField(blank=True, null=True)
+    likes = models.TextField(blank=True, null=True)
+    comments = models.TextField(blank=True, null=True)
+    follower_growth = models.TextField(blank=True, null=True)
+    punctuality = models.TextField(blank=True, null=True)
+    behaviour = models.TextField(blank=True, null=True)
+    leave_and_wfh = models.TextField(blank=True, null=True)
+    notes_remarks = models.TextField(blank=True, null=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.staff_name} - {self.report_date}"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name_plural = 'Staff Reports'

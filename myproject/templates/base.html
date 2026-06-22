@@ -1263,6 +1263,15 @@
                 </li>
                 {% endif %}
 
+                <!-- ==================== CONTENT MANAGEMENT ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="{% if request.resolver_match.url_name == 'content_accounts_list' %}active{% endif %}">
+                    <a href="{% url 'content_accounts_list' %}">
+                        <i class="fas fa-file-alt"></i> Content Management
+                    </a>
+                </li>
+                {% endif %}
+
                 <!-- ==================== HRM ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm %}
                 <li class="hrm-menu {% if '/hrm/' in request.path %}active{% endif %}">

@@ -21524,3 +21524,201 @@ def hard_delete_follow_up(request, pk):
         messages.error(request, f'Error deleting follow-up: {str(e)}')
         
     return redirect('follow_ups_trash')
+
+# ==================== CONTENT MANAGEMENT ====================
+import json
+from django.http import JsonResponse
+from .models import ContentAccount
+
+@login_required
+def content_accounts_list(request):
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    users = User.objects.all().order_by('username')
+    accounts = ContentAccount.objects.filter(is_deleted=False).order_by('-id')
+    statuses = [{'name': s} for s in ['Active', 'new', 'inactive', 'deleted', 'Blocked']]
+    return render(request, 'dashboard/content_accounts.html', {
+        'accounts': accounts,
+        'statuses': statuses,
+        'users': users
+    })
+
+@login_required
+def add_content_account(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            account = ContentAccount.objects.create(
+                account_id=data.get('account_id', ''),
+                user_name=data.get('user_name', ''),
+                gmail=data.get('gmail', ''),
+                phone=data.get('phone', ''),
+                password=data.get('password', ''),
+                managed_by=data.get('managed_by', ''),
+                status=data.get('status', ''),
+                account_type=data.get('account_type', '')
+            )
+            return JsonResponse({'success': True, 'data': {
+                'id': account.id,
+                'account_id': account.account_id,
+                'user_name': account.user_name,
+                'gmail': account.gmail,
+                'phone': account.phone,
+                'password': account.password,
+                'managed_by': account.managed_by,
+                'status': account.status,
+                'account_type': account.account_type,
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+def edit_content_account(request, pk):
+    if request.method == 'POST':
+        try:
+            account = ContentAccount.objects.get(pk=pk)
+            data = json.loads(request.body)
+            account.account_id = data.get('account_id', account.account_id)
+            account.user_name = data.get('user_name', account.user_name)
+            account.gmail = data.get('gmail', account.gmail)
+            account.phone = data.get('phone', account.phone)
+            account.password = data.get('password', account.password)
+            account.managed_by = data.get('managed_by', account.managed_by)
+            account.status = data.get('status', account.status)
+            account.account_type = data.get('account_type', account.account_type)
+            account.save()
+            return JsonResponse({'success': True, 'data': {
+                'id': account.id,
+                'account_id': account.account_id,
+                'user_name': account.user_name,
+                'gmail': account.gmail,
+                'phone': account.phone,
+                'password': account.password,
+                'managed_by': account.managed_by,
+                'status': account.status,
+                'account_type': account.account_type,
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+def delete_content_account(request, pk):
+    if request.method == 'POST':
+        try:
+            account = ContentAccount.objects.get(pk=pk)
+            account.is_deleted = True
+            account.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+def content_accounts_trash(request):
+    accounts = ContentAccount.objects.filter(is_deleted=True).order_by('-id')
+    return render(request, 'dashboard/content_accounts_trash.html', {
+        'accounts': accounts,
+    })
+
+@login_required
+def restore_content_account(request, pk):
+    if request.method == 'POST':
+        try:
+            account = ContentAccount.objects.get(pk=pk, is_deleted=True)
+            account.is_deleted = False
+            account.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+def hard_delete_content_account(request, pk):
+    if request.method == 'POST':
+        try:
+            account = ContentAccount.objects.get(pk=pk, is_deleted=True)
+            account.delete()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+# ==================== STAFF REPORTS ====================
+from .models import StaffReport
+
+@login_required
+def staff_reports_list(request):
+    reports = StaffReport.objects.filter(is_deleted=False).order_by('-id')
+    return render(request, 'dashboard/staff_reports.html', {
+        'reports': reports,
+    })
+
+@login_required
+def add_staff_report(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            report = StaffReport.objects.create(
+                staff_name=data.get('staff_name', ''),
+                report_date=data.get('report_date', ''),
+                platform=data.get('platform', ''),
+                no_of_posts=data.get('no_of_posts', ''),
+                views=data.get('views', ''),
+                likes=data.get('likes', ''),
+                comments=data.get('comments', ''),
+                follower_growth=data.get('follower_growth', ''),
+                punctuality=data.get('punctuality', ''),
+                behaviour=data.get('behaviour', ''),
+                leave_and_wfh=data.get('leave_and_wfh', ''),
+                notes_remarks=data.get('notes_remarks', '')
+            )
+            return JsonResponse({'success': True, 'data': {
+                'id': report.id,
+                'staff_name': report.staff_name,
+                'report_date': report.report_date
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+def edit_staff_report(request, pk):
+    if request.method == 'POST':
+        try:
+            report = StaffReport.objects.get(pk=pk, is_deleted=False)
+            data = json.loads(request.body)
+            report.staff_name = data.get('staff_name', report.staff_name)
+            report.report_date = data.get('report_date', report.report_date)
+            report.platform = data.get('platform', report.platform)
+            report.no_of_posts = data.get('no_of_posts', report.no_of_posts)
+            report.views = data.get('views', report.views)
+            report.likes = data.get('likes', report.likes)
+            report.comments = data.get('comments', report.comments)
+            report.follower_growth = data.get('follower_growth', report.follower_growth)
+            report.punctuality = data.get('punctuality', report.punctuality)
+            report.behaviour = data.get('behaviour', report.behaviour)
+            report.leave_and_wfh = data.get('leave_and_wfh', report.leave_and_wfh)
+            report.notes_remarks = data.get('notes_remarks', report.notes_remarks)
+            report.save()
+            return JsonResponse({'success': True, 'data': {
+                'id': report.id,
+                'staff_name': report.staff_name,
+                'report_date': report.report_date
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+def delete_staff_report(request, pk):
+    if request.method == 'POST':
+        try:
+            report = StaffReport.objects.get(pk=pk)
+            report.is_deleted = True
+            report.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
