@@ -63,110 +63,316 @@ APPS_SCRIPT_CODE = '''// Google Apps Script — Paste this in your Sheet's Scrip
 // Then click Deploy → New Deployment → Web App → Execute as: Me → Who has access: Anyone
 // Copy the Web App URL and paste it into Django Imports page.
 
-function doGet(e) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetName = e.parameter.sheet;
+function jsonOutput(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getSheetByNameOrActive_(ss, sheetName) {
   var sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
-  if (!sheet) sheet = ss.getActiveSheet();
+  if (!sheet) {
+    sheet = ss.getActiveSheet();
+  }
+  return sheet;
+}
 
-  var dataRange = sheet.getDataRange();
-  var data = dataRange.getValues();
-  var headers = data.length > 0 ? data[0] : [];
+function normalizeValue_(value) {
+  if (value === null || value === undefined) return '';
+  return value;
+}
+
+function buildRowObjects_(headers, values) {
   var rows = [];
-
-  for (var i = 1; i < data.length; i++) {
-    var row = {};
+  for (var i = 1; i < values.length; i++) {
+    var obj = {};
     for (var j = 0; j < headers.length; j++) {
-      row[headers[j]] = data[i][j];
+      obj[headers[j]] = j < values[i].length ? values[i][j] : '';
     }
-    rows.push(row);
+    rows.push(obj);
   }
-  
-  var colWidths = [];
-  for (var c = 1; c <= headers.length; c++) {
-    colWidths.push(sheet.getColumnWidth(c));
-  }
-  var rowHeights = [];
-  for (var r = 1; r <= data.length; r++) {
-    rowHeights.push(sheet.getRowHeight(r));
-  }
+  return rows;
+}
 
-  return ContentService.createTextOutput(JSON.stringify({
-    success: true,
-    headers: headers,
-    rows: rows,
-    raw_data: data,
-    col_widths: colWidths,
-    row_heights: rowHeights
-  })).setMimeType(ContentService.MimeType.JSON);
+function doGet(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var params = e && e.parameter ? e.parameter : {};
+    var action = params.action || 'read';
+    var sheet = getSheetByNameOrActive_(ss, params.sheet);
+
+    if (action === 'ping' || action === 'health') {
+      return jsonOutput({
+        success: true,
+        message: 'Apps Script web app is working',
+        spreadsheet_id: ss.getId(),
+        spreadsheet_name: ss.getName(),
+        sheet_name: sheet.getName(),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    var dataRange = sheet.getDataRange();
+    var values = dataRange.getValues();
+    var headers = values.length > 0 ? values[0] : [];
+    var rows = buildRowObjects_(headers, values);
+
+    return jsonOutput({
+      success: true,
+      spreadsheet_id: ss.getId(),
+      spreadsheet_name: ss.getName(),
+      sheet_name: sheet.getName(),
+      total_rows: Math.max(values.length - 1, 0),
+      total_columns: headers.length,
+      headers: headers,
+      rows: rows
+    });
+
+  } catch (err) {
+    return jsonOutput({
+      success: false,
+      error: String(err),
+      stack: err && err.stack ? String(err.stack) : ''
+    });
+  }
 }
 
 function doPost(e) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var payload = JSON.parse(e.postData.contents);
-  var action = payload.action;
-  
-  var sheetName = payload.sheet;
-  var sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
-  if (!sheet) sheet = ss.getActiveSheet();
+  var lock = LockService.getScriptLock();
 
-  if (action === 'write_all') {
-    var headers = payload.headers;
-    var rows = payload.rows;
-    sheet.clearContents();
-    sheet.appendRow(headers);
-    rows.forEach(function(row) {
-      sheet.appendRow(headers.map(function(h) { return row[h] || ''; }));
+  try {
+    lock.waitLock(30000);
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var raw = e && e.postData && e.postData.contents ? e.postData.contents : '{}';
+    var payload = JSON.parse(raw);
+
+    var action = payload.action || '';
+    var sheet = getSheetByNameOrActive_(ss, payload.sheet);
+
+    if (action === 'ping' || action === 'health') {
+      return jsonOutput({
+        success: true,
+        message: 'Apps Script POST is working',
+        spreadsheet_id: ss.getId(),
+        spreadsheet_name: ss.getName(),
+        sheet_name: sheet.getName(),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (action === 'read_all') {
+      var readValues = sheet.getDataRange().getValues();
+      var readHeaders = readValues.length > 0 ? readValues[0] : [];
+      var readRows = buildRowObjects_(readHeaders, readValues);
+
+      return jsonOutput({
+        success: true,
+        spreadsheet_id: ss.getId(),
+        spreadsheet_name: ss.getName(),
+        sheet_name: sheet.getName(),
+        total_rows: Math.max(readValues.length - 1, 0),
+        total_columns: readHeaders.length,
+        headers: readHeaders,
+        rows: readRows
+      });
+    }
+
+    if (action === 'write_all') {
+      var headers = Array.isArray(payload.headers) ? payload.headers : [];
+      var rows = Array.isArray(payload.rows) ? payload.rows : [];
+
+      if (!headers.length) {
+        return jsonOutput({
+          success: false,
+          error: 'Missing headers for write_all'
+        });
+      }
+
+      var values = [headers];
+      for (var i = 0; i < rows.length; i++) {
+        var rowObj = rows[i] || {};
+        var rowValues = [];
+        for (var j = 0; j < headers.length; j++) {
+          rowValues.push(normalizeValue_(rowObj[headers[j]]));
+        }
+        values.push(rowValues);
+      }
+
+      sheet.clearContents();
+
+      if (sheet.getMaxRows() < values.length) {
+        sheet.insertRowsAfter(sheet.getMaxRows(), values.length - sheet.getMaxRows());
+      }
+      if (sheet.getMaxColumns() < headers.length) {
+        sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+      }
+
+      sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+      SpreadsheetApp.flush();
+
+      return jsonOutput({
+        success: true,
+        action: 'write_all',
+        rows_written: rows.length,
+        total_columns: headers.length,
+        sheet_name: sheet.getName()
+      });
+    }
+
+    if (action === 'update_cell') {
+      var row = Number(payload.row);
+      var col = Number(payload.col);
+      var value = normalizeValue_(payload.value);
+
+      if (!row || !col) {
+        return jsonOutput({
+          success: false,
+          error: 'Missing row or col for update_cell'
+        });
+      }
+
+      sheet.getRange(row, col).setValue(value);
+      SpreadsheetApp.flush();
+
+      return jsonOutput({
+        success: true,
+        action: 'update_cell',
+        row: row,
+        col: col
+      });
+    }
+
+    if (action === 'resize_column') {
+      var resizeCol = Number(payload.col);
+      var resizeWidth = Number(payload.width);
+
+      if (!resizeCol || !resizeWidth) {
+        return jsonOutput({
+          success: false,
+          error: 'Missing col or width for resize_column'
+        });
+      }
+
+      sheet.setColumnWidth(resizeCol, resizeWidth);
+
+      return jsonOutput({
+        success: true,
+        action: 'resize_column',
+        col: resizeCol,
+        width: resizeWidth
+      });
+    }
+
+    if (action === 'resize_row') {
+      var resizeRow = Number(payload.row);
+      var resizeHeight = Number(payload.height);
+
+      if (!resizeRow || !resizeHeight) {
+        return jsonOutput({
+          success: false,
+          error: 'Missing row or height for resize_row'
+        });
+      }
+
+      sheet.setRowHeight(resizeRow, resizeHeight);
+
+      return jsonOutput({
+        success: true,
+        action: 'resize_row',
+        row: resizeRow,
+        height: resizeHeight
+      });
+    }
+
+    if (action === 'insert_row') {
+      var insertRowIndex = Number(payload.index);
+      if (!insertRowIndex) {
+        return jsonOutput({
+          success: false,
+          error: 'Missing index for insert_row'
+        });
+      }
+
+      sheet.insertRowBefore(insertRowIndex);
+
+      return jsonOutput({
+        success: true,
+        action: 'insert_row',
+        index: insertRowIndex
+      });
+    }
+
+    if (action === 'delete_row') {
+      var deleteRowIndex = Number(payload.index);
+      if (!deleteRowIndex) {
+        return jsonOutput({
+          success: false,
+          error: 'Missing index for delete_row'
+        });
+      }
+
+      sheet.deleteRow(deleteRowIndex);
+
+      return jsonOutput({
+        success: true,
+        action: 'delete_row',
+        index: deleteRowIndex
+      });
+    }
+
+    if (action === 'insert_column') {
+      var insertColIndex = Number(payload.index);
+      if (!insertColIndex) {
+        return jsonOutput({
+          success: false,
+          error: 'Missing index for insert_column'
+        });
+      }
+
+      sheet.insertColumnBefore(insertColIndex);
+
+      return jsonOutput({
+        success: true,
+        action: 'insert_column',
+        index: insertColIndex
+      });
+    }
+
+    if (action === 'delete_column') {
+      var deleteColIndex = Number(payload.index);
+      if (!deleteColIndex) {
+        return jsonOutput({
+          success: false,
+          error: 'Missing index for delete_column'
+        });
+      }
+
+      sheet.deleteColumn(deleteColIndex);
+
+      return jsonOutput({
+        success: true,
+        action: 'delete_column',
+        index: deleteColIndex
+      });
+    }
+
+    return jsonOutput({
+      success: false,
+      error: 'Unknown action'
     });
-    return ContentService.createTextOutput(JSON.stringify({success: true, rows_written: rows.length}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
 
-  if (action === 'update_cell') {
-    var cell = sheet.getRange(payload.row, payload.col);
-    cell.setValue(payload.value);
-    return ContentService.createTextOutput(JSON.stringify({success: true}))
-      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return jsonOutput({
+      success: false,
+      error: String(err),
+      stack: err && err.stack ? String(err.stack) : ''
+    });
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (e2) {}
   }
-
-  if (action === 'resize_column') {
-    sheet.setColumnWidth(payload.col, payload.width);
-    return ContentService.createTextOutput(JSON.stringify({success: true}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  if (action === 'resize_row') {
-    sheet.setRowHeight(payload.row, payload.height);
-    return ContentService.createTextOutput(JSON.stringify({success: true}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  if (action === 'insert_row') {
-    sheet.insertRowBefore(payload.index);
-    return ContentService.createTextOutput(JSON.stringify({success: true}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  if (action === 'delete_row') {
-    sheet.deleteRow(payload.index);
-    return ContentService.createTextOutput(JSON.stringify({success: true}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  if (action === 'insert_column') {
-    sheet.insertColumnBefore(payload.index);
-    return ContentService.createTextOutput(JSON.stringify({success: true}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  if (action === 'delete_column') {
-    sheet.deleteColumn(payload.index);
-    return ContentService.createTextOutput(JSON.stringify({success: true}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  return ContentService.createTextOutput(JSON.stringify({success: false, error: 'Unknown action'}))
-    .setMimeType(ContentService.MimeType.JSON);
 }
 '''
 

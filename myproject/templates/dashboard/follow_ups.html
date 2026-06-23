@@ -67,7 +67,7 @@
                             </td>
                             <td><input type="text" class="form-control form-control-sm" id="newRemarks" placeholder="Remarks"></td>
                             <td class="text-center">
-                                <button class="btn btn-sm btn-success action-btn text-white" onclick="saveFollowUp()" title="Save Entry">
+                                <button class="action-btn border text-success" onclick="saveFollowUp()" title="Save Entry">
                                     <i class="fas fa-save"></i>
                                 </button>
                             </td>
@@ -99,10 +99,10 @@
                                     <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
-                            <td class="text-break" style="max-width: 200px;">{{ item.followup_1|default:"-" }}</td>
-                            <td class="text-break" style="max-width: 200px;">{{ item.followup_2|default:"-" }}</td>
-                            <td>
-                                <span class="badge bg-secondary rounded-pill px-2 py-1">{{ item.status|title|default:"-" }}</span>
+                            <td class="text-break inline-editable position-relative" style="max-width: 200px;" onclick="makeInlineEditable(this, 'f1', {{ item.id }})">{{ item.followup_1|default:"-" }}</td>
+                            <td class="text-break inline-editable position-relative" style="max-width: 200px;" onclick="makeInlineEditable(this, 'f2', {{ item.id }})">{{ item.followup_2|default:"-" }}</td>
+                            <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, {{ item.id }})">
+                                <span class="badge status-badge rounded-pill px-2 py-1" data-status-val="{{ item.status|default:''|lower }}">{{ item.status|title|default:"-" }}</span>
                             </td>
                             <td class="text-break" style="max-width: 200px;">{{ item.remarks|default:"-" }}</td>
                             <td class="text-center" style="white-space: nowrap;">
@@ -129,6 +129,7 @@
         </div>
     </div>
 </div>
+{% csrf_token %}
 
 <!-- Edit Follow-Up Modal -->
 <div class="modal fade" id="editFollowUpModal" tabindex="-1" aria-hidden="true">
@@ -299,6 +300,41 @@
     .form-control-sm, .form-select-sm, .btn-sm {
         border-radius: 6px;
     }
+    
+    /* Inline Editing Styling */
+    .inline-editable {
+        cursor: pointer;
+        transition: background-color 0.2s;
+        padding-right: 20px !important; /* Space for the icon */
+    }
+    .inline-editable:hover {
+        background-color: #f1f5f9 !important;
+    }
+    .inline-editable::after {
+        content: '\f044'; /* fa-edit */
+        font-family: 'Font Awesome 5 Free';
+        font-weight: 900;
+        position: absolute;
+        right: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.75rem;
+        opacity: 0;
+        color: #94a3b8;
+        transition: opacity 0.2s;
+    }
+    .inline-editable:hover::after {
+        opacity: 1;
+    }
+    .inline-editing {
+        padding: 0.25rem !important;
+    }
+    .inline-editing::after {
+        display: none !important;
+    }
+    .inline-editing:hover {
+        background-color: transparent !important;
+    }
 </style>
 
 <script>
@@ -324,7 +360,26 @@
                 }, 300);
             });
         }
+        
+        applyStatusBadgeColors();
     });
+
+    function getStatusBadgeClass(status) {
+        if (!status) return 'bg-secondary';
+        const s = status.toLowerCase();
+        if (['pending', 'processing', 'on hold', 'waiting'].some(k => s.includes(k))) return 'bg-warning text-dark';
+        if (['success', 'delivered', 'completed', 'paid', 'confirmed', 'approved'].some(k => s.includes(k))) return 'bg-success';
+        if (['cancelled', 'returned', 'failed', 'trash', 'rejected'].some(k => s.includes(k))) return 'bg-danger';
+        if (['shipped', 'dispatched', 'in transit'].some(k => s.includes(k))) return 'bg-info text-dark';
+        return 'bg-secondary';
+    }
+
+    function applyStatusBadgeColors() {
+        document.querySelectorAll('.status-badge').forEach(badge => {
+            const status = badge.getAttribute('data-status-val') || badge.textContent;
+            badge.className = `badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(status)}`;
+        });
+    }
 
     function escapeHtml(unsafe) {
         if (!unsafe) return '';
@@ -336,7 +391,10 @@
         const errEl = document.getElementById(errId);
         if (input.value.length > 0 && digits.length !== 10) {
             input.style.borderColor = '#dc3545';
-            if (errEl) errEl.style.display = 'block';
+            if (errEl) {
+                errEl.textContent = 'Must be exactly 10 digits';
+                errEl.style.display = 'block';
+            }
         } else {
             input.style.borderColor = '';
             if (errEl) errEl.style.display = 'none';
@@ -475,7 +533,12 @@
         };
 
         if (!data.phone) {
-            alert('Phone number is required!');
+            const phoneInput = document.getElementById('newPhone');
+            const errEl = document.getElementById('newPhoneErr');
+            phoneInput.focus();
+            phoneInput.style.borderColor = '#dc3545';
+            errEl.textContent = 'Phone number is required';
+            errEl.style.display = 'block';
             btn.innerHTML = originalHtml;
             btn.disabled = false;
             return;
@@ -483,20 +546,24 @@
 
         const phoneDigits = data.phone.replace(/\D/g, '');
         if (phoneDigits.length !== 10) {
-            alert('Phone number must be exactly 10 digits!');
-            document.getElementById('newPhone').focus();
-            document.getElementById('newPhone').style.borderColor = '#dc3545';
-            document.getElementById('newPhoneErr').style.display = 'block';
+            const phoneInput = document.getElementById('newPhone');
+            const errEl = document.getElementById('newPhoneErr');
+            phoneInput.focus();
+            phoneInput.style.borderColor = '#dc3545';
+            errEl.textContent = 'Must be exactly 10 digits';
+            errEl.style.display = 'block';
             btn.innerHTML = originalHtml;
             btn.disabled = false;
             return;
         }
 
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
         fetch("{% url 'add_follow_up' %}", {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token }}'
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify(data)
         })
@@ -508,11 +575,6 @@
                 document.getElementById('newPhone').value = '';
                 document.getElementById('newLeadSource').value = '';
                 
-                if(typeof jQuery !== 'undefined' && typeof jQuery.fn.select2 !== 'undefined') {
-                    $('#newProduct').val('').trigger('change');
-                } else {
-                    document.getElementById('newProduct').value = '';
-                }
                 document.getElementById('newFollowup1').value = '';
                 document.getElementById('newFollowup2').value = '';
                 document.getElementById('newRemarks').value = '';
@@ -551,9 +613,6 @@
         const tbody = document.getElementById('followUpsTbody');
         const entryRow = document.getElementById('entryRow');
 
-        // Dynamic status badge — just show the status name from the server
-        const statusBadge = `<span class="badge bg-secondary">${data.status || '-'}</span>`;
-
         const orderCreateUrl = "{% url 'order_create' %}";
 
         const newTr = document.createElement('tr');
@@ -578,9 +637,9 @@
             <td>${escapeHtml(data.phone)}</td>
             <td>${escapeHtml(data.lead_source) || '-'}</td>
             <td>${productsHtml}</td>
-            <td class="text-break" style="max-width: 200px;">${escapeHtml(data.followup_1) || '-'}</td>
-            <td class="text-break" style="max-width: 200px;">${escapeHtml(data.followup_2) || '-'}</td>
-            <td><span class="badge bg-secondary rounded-pill px-2 py-1">${data.status || '-'}</span></td>
+            <td class="text-break inline-editable position-relative" style="max-width: 200px;" onclick="makeInlineEditable(this, 'f1', ${data.id})">${escapeHtml(data.followup_1) || '-'}</td>
+            <td class="text-break inline-editable position-relative" style="max-width: 200px;" onclick="makeInlineEditable(this, 'f2', ${data.id})">${escapeHtml(data.followup_2) || '-'}</td>
+            <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, ${data.id})"><span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(data.status)}" data-status-val="${(data.status || '').toLowerCase()}">${data.status || '-'}</span></td>
             <td class="text-break" style="max-width: 200px;">${escapeHtml(data.remarks) || '-'}</td>
             <td class="text-center" style="white-space: nowrap;">
                 <a href="${orderCreateUrl}?followup_id=${data.id}" class="action-btn border text-success me-1" title="Create Order">
@@ -655,7 +714,11 @@
         };
 
         if (!data.phone) {
-            alert('Phone number is required!');
+            const phoneInput = document.getElementById('editPhone');
+            const errEl = phoneInput.nextElementSibling;
+            errEl.textContent = 'Phone number is required';
+            phoneInput.focus();
+            phoneInput.classList.add('is-invalid');
             btn.innerHTML = originalHtml;
             btn.disabled = false;
             return;
@@ -663,19 +726,23 @@
 
         const editPhoneDigits = data.phone.replace(/\D/g, '');
         if (editPhoneDigits.length !== 10) {
-            alert('Phone number must be exactly 10 digits!');
-            document.getElementById('editPhone').focus();
-            document.getElementById('editPhone').classList.add('is-invalid');
+            const phoneInput = document.getElementById('editPhone');
+            const errEl = phoneInput.nextElementSibling;
+            errEl.textContent = 'Must be exactly 10 digits';
+            phoneInput.focus();
+            phoneInput.classList.add('is-invalid');
             btn.innerHTML = originalHtml;
             btn.disabled = false;
             return;
         }
 
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
         fetch(`/api/orders/follow-ups/${currentEditId}/edit/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token }}'
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify(data)
         })
@@ -694,7 +761,7 @@
                     row.setAttribute('data-f2', result.data.followup_2 || '');
                     row.setAttribute('data-remarks', result.data.remarks || '');
 
-                    let statusBadge = `<span class="badge bg-secondary rounded-pill px-2 py-1">${result.data.status || '-'}</span>`;
+                    let statusBadge = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(result.data.status)}" data-status-val="${(result.data.status || '').toLowerCase()}">${result.data.status || '-'}</span>`;
                     
                     let productsHtml = '<span class="text-muted">-</span>';
                     if (result.data.products && result.data.products.length > 0) {
@@ -734,10 +801,12 @@
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         btn.disabled = true;
 
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
         fetch(`/api/orders/follow-ups/${id}/delete/`, {
             method: 'POST',
             headers: {
-                'X-CSRFToken': '{{ csrf_token }}'
+                'X-CSRFToken': csrfToken
             }
         })
         .then(response => response.json())
@@ -764,6 +833,130 @@
             alert('An error occurred while deleting.');
             btn.innerHTML = originalHtml;
             btn.disabled = false;
+        });
+    }
+
+    // --- INLINE EDITING LOGIC ---
+    function makeInlineEditable(cell, field, id) {
+        if (cell.classList.contains('inline-editing')) return;
+        
+        const row = cell.closest('tr');
+        const currentValue = row.getAttribute(`data-${field}`) || '';
+        
+        cell.classList.add('inline-editing');
+        const escValue = escapeHtml(currentValue).replace(/"/g, '&quot;');
+        
+        cell.innerHTML = `<input type="text" class="form-control form-control-sm" value="${escValue}" onblur="saveInline(this, '${field}', ${id})" onkeydown="if(event.key === 'Enter') this.blur(); if(event.key === 'Escape') cancelInline(this, '${field}', '${escValue}')">`;
+        
+        const input = cell.querySelector('input');
+        input.focus();
+        
+        // Put cursor at end
+        const val = input.value;
+        input.value = '';
+        input.value = val;
+    }
+
+    function makeInlineStatusEditable(cell, id) {
+        if (cell.classList.contains('inline-editing')) return;
+        
+        const row = cell.closest('tr');
+        const currentStatus = row.getAttribute('data-status') || '';
+        
+        cell.classList.add('inline-editing');
+        
+        // Grab options from the new status select
+        const optionsHtml = document.getElementById('newStatus').innerHTML;
+        const escValue = escapeHtml(currentStatus).replace(/"/g, '&quot;');
+        
+        cell.innerHTML = `<select class="form-select form-select-sm" onchange="saveInline(this, 'status', ${id})" onblur="cancelInlineStatus(this, '${escValue}')" onkeydown="if(event.key === 'Escape') cancelInlineStatus(this, '${escValue}')">${optionsHtml}</select>`;
+        
+        const select = cell.querySelector('select');
+        select.value = currentStatus;
+        select.focus();
+    }
+
+    function cancelInline(input, field, originalValue) {
+        const cell = input.closest('td');
+        cell.classList.remove('inline-editing');
+        cell.textContent = originalValue || '-';
+    }
+
+    function cancelInlineStatus(select, originalValue) {
+        // If we are already saving, don't trigger cancel
+        if (select.disabled) return;
+        
+        const cell = select.closest('td');
+        cell.classList.remove('inline-editing');
+        cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue || '').toLowerCase()}">${originalValue || '-'}</span>`;
+    }
+
+    function saveInline(element, field, id) {
+        element.disabled = true; // Prevent blur handler from firing while saving
+        const newValue = element.value.trim();
+        const cell = element.closest('td');
+        const row = element.closest('tr');
+        const originalValue = field === 'status' ? row.getAttribute('data-status') : row.getAttribute(`data-${field}`);
+        
+        if (newValue === originalValue) {
+            if (field === 'status') cancelInlineStatus(element, originalValue);
+            else cancelInline(element, field, originalValue);
+            return;
+        }
+
+        cell.innerHTML = '<div class="d-flex justify-content-center"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></div>';
+        
+        // Build payload
+        const productStr = row.getAttribute('data-products') || '[]';
+        let productIds = [];
+        try { productIds = JSON.parse(productStr).map(p => p.id); } catch(e) {}
+
+        const data = {
+            name: row.getAttribute('data-name') || '',
+            phone: row.getAttribute('data-phone') || '',
+            lead_source: row.getAttribute('data-lead') || '',
+            product_ids: productIds,
+            followup_1: field === 'f1' ? newValue : (row.getAttribute('data-f1') || ''),
+            followup_2: field === 'f2' ? newValue : (row.getAttribute('data-f2') || ''),
+            status: field === 'status' ? newValue : (row.getAttribute('data-status') || ''),
+            remarks: row.getAttribute('data-remarks') || ''
+        };
+
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+        fetch(`/api/orders/follow-ups/${id}/edit/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            cell.classList.remove('inline-editing');
+            if (result.success) {
+                // Update row attributes with the server returned value in case it was sanitized
+                const finalValue = result.data[field === 'f1' ? 'followup_1' : (field === 'f2' ? 'followup_2' : 'status')];
+                row.setAttribute(field === 'status' ? 'data-status' : `data-${field}`, finalValue || '');
+                
+                if (field === 'status') {
+                    cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalValue)}" data-status-val="${(finalValue || '').toLowerCase()}">${finalValue || '-'}</span>`;
+                } else {
+                    cell.textContent = finalValue || '-';
+                }
+            } else {
+                alert('Error: ' + result.error);
+                if (field === 'status') cancelInlineStatus(element, originalValue);
+                else cancelInline(element, field, originalValue);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            cell.classList.remove('inline-editing');
+            alert('An error occurred while saving.');
+            if (field === 'status') cancelInlineStatus(element, originalValue);
+            else cancelInline(element, field, originalValue);
         });
     }
 </script>
