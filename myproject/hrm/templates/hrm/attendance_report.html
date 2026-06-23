@@ -667,12 +667,20 @@
                         <button type="button" class="btn flex-fill active" id="pvBtnDay" onclick="setPeriod('day')">Day</button>
                         <button type="button" class="btn flex-fill" id="pvBtnWeek" onclick="setPeriod('week')">Week</button>
                         <button type="button" class="btn flex-fill" id="pvBtnMonth" onclick="setPeriod('month')">Month</button>
+                        <button type="button" class="btn flex-fill" id="pvBtnCustom" onclick="setPeriod('custom')">Custom</button>
                     </div>
                 </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label text-muted small mb-1" id="pvDateLabel"><i class="fas fa-calendar-alt me-1"></i>Select Date</label>
-                    <input type="date" class="form-control form-control-sm" id="pvDateInput" value="">
-                    <input type="month" class="form-control form-control-sm d-none" id="pvMonthInput" value="">
+                    <div id="pvSingleDateWrap">
+                        <input type="date" class="form-control form-control-sm" id="pvDateInput" value="">
+                        <input type="month" class="form-control form-control-sm d-none" id="pvMonthInput" value="">
+                    </div>
+                    <div id="pvCustomDateWrap" class="d-flex align-items-center gap-1 d-none">
+                        <input type="date" class="form-control form-control-sm" id="pvCustomFrom" value="">
+                        <span class="text-muted" style="font-size:0.8rem;">–</span>
+                        <input type="date" class="form-control form-control-sm" id="pvCustomTo" value="">
+                    </div>
                 </div>
                 <div class="col-12 col-md-2">
                     <button type="button" class="btn btn-primary btn-sm w-100" onclick="generatePeriodView()"
@@ -698,7 +706,12 @@
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-white"><i class="fas fa-search text-muted fa-xs"></i></span>
                     <input type="text" class="form-control border-start-0 ps-1" name="search"
-                           placeholder="Name or Employee ID..." value="{{ search }}">
+                           placeholder="Name or Employee ID..." value="{{ search }}" list="employeeSearchList" autocomplete="off">
+                    <datalist id="employeeSearchList">
+                        {% for emp in employees %}
+                        <option value="{{ emp.full_name }} ({{ emp.employee_id }})"></option>
+                        {% endfor %}
+                    </datalist>
                 </div>
             </div>
             <div class="col-6 col-md-2">
@@ -988,22 +1001,33 @@ function togglePeriodPanel() {
 // ── Period toggle ─────────────────────────────────────────────────────────────
 function setPeriod(p) {
     pvCurrentPeriod = p;
-    ['day','week','month'].forEach(x => {
-        document.getElementById('pvBtn' + x.charAt(0).toUpperCase() + x.slice(1)).classList.toggle('active', x === p);
+    ['day','week','month','custom'].forEach(x => {
+        const btn = document.getElementById('pvBtn' + x.charAt(0).toUpperCase() + x.slice(1));
+        if (btn) btn.classList.toggle('active', x === p);
     });
+    const singleWrap = document.getElementById('pvSingleDateWrap');
+    const customWrap = document.getElementById('pvCustomDateWrap');
     const dateInp  = document.getElementById('pvDateInput');
     const monthInp = document.getElementById('pvMonthInput');
     const lbl      = document.getElementById('pvDateLabel');
-    if (p === 'month') {
-        dateInp.classList.add('d-none');
-        monthInp.classList.remove('d-none');
-        lbl.innerHTML = '<i class="fas fa-calendar-alt me-1"></i>Select Month';
+    if (p === 'custom') {
+        singleWrap.classList.add('d-none');
+        customWrap.classList.remove('d-none');
+        lbl.innerHTML = '<i class="fas fa-calendar-alt me-1"></i>Select Range';
     } else {
-        dateInp.classList.remove('d-none');
-        monthInp.classList.add('d-none');
-        lbl.innerHTML = p === 'week'
-            ? '<i class="fas fa-calendar-alt me-1"></i>Any Date in Week'
-            : '<i class="fas fa-calendar-alt me-1"></i>Select Date';
+        singleWrap.classList.remove('d-none');
+        customWrap.classList.add('d-none');
+        if (p === 'month') {
+            dateInp.classList.add('d-none');
+            monthInp.classList.remove('d-none');
+            lbl.innerHTML = '<i class="fas fa-calendar-alt me-1"></i>Select Month';
+        } else {
+            dateInp.classList.remove('d-none');
+            monthInp.classList.add('d-none');
+            lbl.innerHTML = p === 'week'
+                ? '<i class="fas fa-calendar-alt me-1"></i>Any Date in Week'
+                : '<i class="fas fa-calendar-alt me-1"></i>Select Date';
+        }
     }
 }
 
@@ -1018,8 +1042,11 @@ function _localDateStr(d) {
     const today = new Date();
     const ymd = _localDateStr(today);
     const ym  = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const customFrom = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
     document.getElementById('pvDateInput').value  = ymd;
     document.getElementById('pvMonthInput').value = ym;
+    if (document.getElementById('pvCustomFrom')) document.getElementById('pvCustomFrom').value = customFrom;
+    if (document.getElementById('pvCustomTo')) document.getElementById('pvCustomTo').value = ymd;
 })();
 
 // ── Generate ──────────────────────────────────────────────────────────────────
@@ -1028,7 +1055,15 @@ function generatePeriodView() {
     if (!empId) { alert('Please select an employee.'); return; }
     const period = pvCurrentPeriod;
     let refDate;
-    if (period === 'month') {
+    let refDateTo = '';
+    if (period === 'custom') {
+        const dFrom = document.getElementById('pvCustomFrom').value;
+        const dTo = document.getElementById('pvCustomTo').value;
+        if (!dFrom || !dTo) { alert('Please select both start and end dates.'); return; }
+        if (dFrom > dTo) { alert('Start date cannot be after end date.'); return; }
+        refDate = dFrom;
+        refDateTo = dTo;
+    } else if (period === 'month') {
         const mv = document.getElementById('pvMonthInput').value;
         refDate = mv ? mv + '-01' : _localDateStr(new Date());
     } else {
@@ -1036,7 +1071,11 @@ function generatePeriodView() {
     }
     document.getElementById('pvResults').style.display = 'none';
     document.getElementById('pvLoading').style.display  = 'block';
-    fetch(`${PV_API_URL}?employee_id=${encodeURIComponent(empId)}&period=${encodeURIComponent(period)}&ref_date=${encodeURIComponent(refDate)}`)
+    
+    let url = `${PV_API_URL}?employee_id=${encodeURIComponent(empId)}&period=${encodeURIComponent(period)}&ref_date=${encodeURIComponent(refDate)}`;
+    if (period === 'custom') url += `&ref_date_to=${encodeURIComponent(refDateTo)}`;
+
+    fetch(url)
         .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(data => {
             document.getElementById('pvLoading').style.display = 'none';
@@ -1073,6 +1112,7 @@ function renderPeriodView(data) {
     if (data.period === 'day')   html += renderDayView(data);
     if (data.period === 'week')  html += renderWeekView(data);
     if (data.period === 'month') html += renderMonthView(data);
+    if (data.period === 'custom') html += renderCustomView(data);
     const el = document.getElementById('pvResults');
     el.innerHTML = html;
     el.style.display = 'block';
@@ -1309,6 +1349,89 @@ function renderWeekView(data) {
         }
     }
     return `<div class="p-4"><div class="pv-week-grid">${cards}</div></div>`;
+}
+
+// ── Custom view ───────────────────────────────────────────────────────────────
+function renderCustomView(data) {
+    const byDate = {};
+    data.records.forEach(r => { byDate[r.date] = r; });
+    const [_fy, _fm, _fd] = data.date_from.split('-').map(Number);
+    const [_ty, _tm, _td] = data.date_to.split('-').map(Number);
+    const start = new Date(_fy, _fm - 1, _fd);
+    const end = new Date(_ty, _tm - 1, _td);
+    const totalDays = Math.round((end - start) / 86400000) + 1;
+    
+    const today = _localDateStr(new Date());
+    const weekendNums = data.weekend_nums || [5, 6];
+    const holidayDates = new Set(data.holiday_dates || []);
+    const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let cards = '';
+    
+    // limit custom view rendering if it's too large, e.g., > 100 days
+    const maxDays = Math.min(totalDays, 90); 
+    
+    for (let i = 0; i < maxDays; i++) {
+        const d = new Date(start); d.setDate(start.getDate() + i);
+        const iso = _localDateStr(d);
+        const rec = byDate[iso];
+        const isTd = iso === today;
+        const isPast = iso < today;
+        const jsDay = d.getDay();
+        const isWknd = jsWeekendDays.has(jsDay);
+        const isHol = holidayDates.has(iso);
+        let nepDate = "";
+        try { 
+            const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
+            nepDate = new ND(d).getDate(); 
+        } catch(e) { console.error('NepaliDate conversion error:', e); }
+        const dayNumHtml = (color) => `<div style="display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0;"><span style="font-size:1.4rem;font-weight:bold;color:${color};">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d.getDate()}</span></div>`;
+
+        if (rec) {
+            const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.bg};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${esc(rec.status_display)}</span>
+                <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
+                <div style="font-size:0.68rem;font-weight:700;color:${sc.color};margin-top:2px;">${rec.working_hours ? rec.working_hours + 'h' : ''}</div>
+            </div>`;
+        } else if (isWknd) {
+            const sc = STATUS_COLORS.weekend;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Weekend</span>
+            </div>`;
+        } else if (isHol) {
+            const sc = STATUS_COLORS.holiday;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Holiday</span>
+            </div>`;
+        } else if (isPast) {
+            const sc = STATUS_COLORS.absent;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Absent</span>
+            </div>`;
+        } else {
+            cards += `<div class="pv-week-day no-record${isTd ? ' today' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml('#1e293b')}
+                <span class="day-status" style="background:#f1f5f9;color:#94a3b8;">—</span>
+            </div>`;
+        }
+    }
+    
+    let html = `<div class="p-4"><div class="pv-week-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));">${cards}</div>`;
+    if (totalDays > maxDays) {
+        html += `<div class="text-center mt-3 text-muted" style="font-size:0.8rem;">Showing first ${maxDays} days. Please use a smaller date range or view summary report for the rest.</div>`;
+    }
+    html += `</div>`;
+    return html;
 }
 
 // ── Month view ────────────────────────────────────────────────────────────────

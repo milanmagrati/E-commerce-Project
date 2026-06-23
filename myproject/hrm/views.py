@@ -6239,10 +6239,16 @@ def attendance_report(request):
     ).order_by('-date', 'employee__full_name')
 
     if search:
-        qs = qs.filter(
-            Q(employee__full_name__icontains=search) |
-            Q(employee__employee_id__icontains=search)
-        )
+        import re
+        match = re.search(r'\(([^)]+)\)$', search)
+        if match:
+            extracted_id = match.group(1).strip()
+            qs = qs.filter(employee__employee_id__iexact=extracted_id)
+        else:
+            qs = qs.filter(
+                Q(employee__full_name__icontains=search) |
+                Q(employee__employee_id__icontains=search)
+            )
     if date_from:
         try:
             qs = qs.filter(date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
@@ -6696,6 +6702,13 @@ def employee_period_attendance(request):
         weekday = ref_date.weekday()
         date_from = ref_date - timedelta(days=weekday)
         date_to = date_from + timedelta(days=6)
+    elif period == 'custom':
+        ref_date_to_str = request.GET.get('ref_date_to', '')
+        date_from = ref_date
+        try:
+            date_to = date.fromisoformat(ref_date_to_str) if ref_date_to_str else date_from
+        except ValueError:
+            date_to = date_from
     else:
         date_from = ref_date.replace(day=1)
         _, last_day = calendar.monthrange(ref_date.year, ref_date.month)
