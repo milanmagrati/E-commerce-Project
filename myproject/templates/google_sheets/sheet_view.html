@@ -33,6 +33,9 @@
         <h5 class="text-muted">Loading sheet data...</h5>
       </div>
       <div id="spreadsheet-container" class="w-100"></div>
+      <div id="sheet-tabs" class="d-flex overflow-auto border-top bg-light" style="white-space: nowrap; padding: 5px;">
+        <!-- Sheet tabs will be rendered here -->
+      </div>
     </div>
   </div>
 </div>
@@ -48,14 +51,20 @@
   const connId = {{ conn.id }};
   const CSRF = "{{ csrf_token }}";
 
+  let currentSheetName = "";
+
   document.addEventListener('DOMContentLoaded', () => {
     loadSheetData();
   });
 
-  async function loadSheetData() {
+  async function loadSheetData(sheetName = null) {
     document.getElementById('loadingOverlay').classList.remove('d-none');
     try {
-      const response = await fetch(`/imports/connections/${connId}/data/?per_page=1000`);
+      let url = `/imports/connections/${connId}/data/?per_page=1000`;
+      if (sheetName) {
+        url += `&sheet=${encodeURIComponent(sheetName)}`;
+      }
+      const response = await fetch(url);
       const data = await response.json();
       
       if (!data.success) {
@@ -68,6 +77,10 @@
       const rows = data.rows || [];
       const colWidths = data.col_widths || [];
       const rowHeights = data.row_heights || [];
+      const sheetNames = data.sheet_names || [];
+      
+      currentSheetName = data.current_sheet || "";
+      renderSheetTabs(sheetNames, currentSheetName);
 
       let data2D = rows.map(row => headers.map(h => row[h] || ''));
       if (headers.length > 0) data2D.unshift(headers);
@@ -164,6 +177,21 @@
     }
   }
 
+  function renderSheetTabs(sheetNames, currentSheet) {
+    const tabsContainer = document.getElementById('sheet-tabs');
+    if (!sheetNames || sheetNames.length === 0) {
+      tabsContainer.innerHTML = '';
+      return;
+    }
+    
+    let tabsHtml = '';
+    sheetNames.forEach(name => {
+      const isActive = name === currentSheet ? 'btn-primary' : 'btn-outline-secondary';
+      tabsHtml += `<button class="btn btn-sm ${isActive} me-2" onclick="loadSheetData('${name}')">${name}</button>`;
+    });
+    tabsContainer.innerHTML = tabsHtml;
+  }
+
   function addRow() {
     if (sheetInstance && isEditable) {
       sheetInstance.insertRow();
@@ -182,7 +210,7 @@
       const resp = await fetch(`/imports/connections/${connId}/update-cell/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({ row, col, value })
+        body: JSON.stringify({ row, col, value, sheet: currentSheetName })
       });
       const data = await resp.json();
       if (data.success) {
@@ -202,7 +230,7 @@
       const resp = await fetch(`/imports/connections/${connId}/update-dimension/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({ dimension, index, size })
+        body: JSON.stringify({ dimension, index, size, sheet: currentSheetName })
       });
       const data = await resp.json();
       if (data.success) {
@@ -222,7 +250,7 @@
       const resp = await fetch(`/imports/connections/${connId}/update-structure/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({ action, index })
+        body: JSON.stringify({ action, index, sheet: currentSheetName })
       });
       const data = await resp.json();
       if (data.success) {

@@ -246,6 +246,8 @@ def get_sheet_data_table(request, connection_id):
             headers = apps_data['headers']
             col_widths = apps_data.get('col_widths', [])
             row_heights = apps_data.get('row_heights', [])
+            sheet_names = apps_data.get('sheet_names', [])
+            current_sheet = apps_data.get('current_sheet', '')
         else:
             return JsonResponse({'success': False, 'error': 'No URL configured for this connection.'}, status=400)
 
@@ -257,6 +259,8 @@ def get_sheet_data_table(request, connection_id):
             'rows': paginated,
             'col_widths': col_widths,
             'row_heights': row_heights,
+            'sheet_names': locals().get('sheet_names', []),
+            'current_sheet': locals().get('current_sheet', ''),
             'total': len(records),
             'page': page,
             'per_page': per_page,
@@ -345,8 +349,9 @@ def update_sheet_dimension(request, connection_id):
         dimension = data.get('dimension') # 'row' or 'column'
         index = data.get('index')
         size = data.get('size')
+        sheet_name = data.get('sheet')
 
-        services.apps_script_update_dimension(conn.apps_script_url, dimension, index, size)
+        services.apps_script_update_dimension(conn.apps_script_url, dimension, index, size, sheet_name)
         return JsonResponse({'success': True})
     except Exception as e:
         logger.error(f"update_sheet_dimension failed: {e}")
@@ -365,8 +370,9 @@ def update_sheet_structure(request, connection_id):
         data = json.loads(request.body)
         action = data.get('action') # 'insert_row', 'delete_row', 'insert_column', 'delete_column'
         index = data.get('index')
+        sheet_name = data.get('sheet')
 
-        services.apps_script_structure_action(conn.apps_script_url, action, index)
+        services.apps_script_structure_action(conn.apps_script_url, action, index, sheet_name)
         return JsonResponse({'success': True})
     except Exception as e:
         logger.error(f"update_sheet_structure failed: {e}")

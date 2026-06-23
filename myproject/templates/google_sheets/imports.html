@@ -839,13 +839,14 @@ function buildAutoMapping(headers, model) {
   const fields = MODEL_FIELDS[model] || [];
   const mapping = {};
   headers.forEach(header => {
-    const h = header.toLowerCase().replace(/[\s\-]/g, '_');
+    const headerStr = String(header || '');
+    const h = headerStr.toLowerCase().replace(/[\s\-]/g, '_');
     // Exact key match
     let match = fields.find(f => f.key === h);
     if (!match) match = fields.find(f => h.includes(f.key) || f.key.includes(h));
     if (!match) match = fields.find(f =>
-      header.toLowerCase().includes(f.label.toLowerCase()) ||
-      f.label.toLowerCase().includes(header.toLowerCase())
+      headerStr.toLowerCase().includes(f.label.toLowerCase()) ||
+      f.label.toLowerCase().includes(headerStr.toLowerCase())
     );
     if (match) mapping[header] = match.key;
   });
@@ -872,6 +873,7 @@ function renderMappingTable(headers, existingMapping = {}) {
 
   let html = '';
   headers.forEach((header, i) => {
+    const headerStr = String(header || '');
     const current = existingMapping[header] || '';
     let opts = '<option value="">— Skip this column</option>';
     fields.forEach(f => {
@@ -879,9 +881,9 @@ function renderMappingTable(headers, existingMapping = {}) {
     });
     html += `
       <div class="mapping-row">
-        <span class="mapping-col-name" title="${header}">${header}</span>
+        <span class="mapping-col-name" title="${headerStr.replace(/"/g,'&quot;')}">${headerStr}</span>
         <span class="mapping-arrow"><i class="fas fa-arrow-right"></i></span>
-        <select class="mapping-sel ${current ? 'mapped' : ''}" data-header="${header.replace(/"/g,'&quot;')}"
+        <select class="mapping-sel ${current ? 'mapped' : ''}" data-header="${headerStr.replace(/"/g,'&quot;')}"
           onchange="this.classList.toggle('mapped', !!this.value); updateMappingCount();">
           ${opts}
         </select>

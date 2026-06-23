@@ -122,6 +122,7 @@ function doGet(e) {
       spreadsheet_id: ss.getId(),
       spreadsheet_name: ss.getName(),
       sheet_name: sheet.getName(),
+      sheet_names: ss.getSheets().map(function(s) { return s.getName(); }),
       total_rows: Math.max(values.length - 1, 0),
       total_columns: headers.length,
       headers: headers,
@@ -171,6 +172,7 @@ function doPost(e) {
         spreadsheet_id: ss.getId(),
         spreadsheet_name: ss.getName(),
         sheet_name: sheet.getName(),
+        sheet_names: ss.getSheets().map(function(s) { return s.getName(); }),
         total_rows: Math.max(readValues.length - 1, 0),
         total_columns: readHeaders.length,
         headers: readHeaders,
@@ -468,7 +470,9 @@ def apps_script_read(web_app_url, sheet_name=None, timeout=30):
         'headers': data.get('headers', []), 
         'raw_data': data.get('raw_data'),
         'col_widths': data.get('col_widths', []),
-        'row_heights': data.get('row_heights', [])
+        'row_heights': data.get('row_heights', []),
+        'sheet_names': data.get('sheet_names', []),
+        'current_sheet': data.get('sheet_name', '')
     }
 
 
@@ -494,7 +498,7 @@ def apps_script_update_cell(web_app_url, row, col, value, timeout=10):
     return resp.json().get('success', False)
 
 
-def apps_script_update_dimension(web_app_url, dimension, index, size, timeout=10):
+def apps_script_update_dimension(web_app_url, dimension, index, size, sheet_name=None, timeout=10):
     """Resize a row or column via Apps Script."""
     action = 'resize_row' if dimension == 'row' else 'resize_column'
     payload = {'action': action}
@@ -504,14 +508,18 @@ def apps_script_update_dimension(web_app_url, dimension, index, size, timeout=10
     else:
         payload['col'] = index
         payload['width'] = size
+    if sheet_name:
+        payload['sheet'] = sheet_name
     
     resp = requests.post(web_app_url, json=payload, timeout=timeout)
     resp.raise_for_status()
     return resp.json().get('success', False)
 
-def apps_script_structure_action(web_app_url, action, index, timeout=10):
+def apps_script_structure_action(web_app_url, action, index, sheet_name=None, timeout=10):
     """Insert or delete a row or column."""
     payload = {'action': action, 'index': index}
+    if sheet_name:
+        payload['sheet'] = sheet_name
     resp = requests.post(web_app_url, json=payload, timeout=timeout)
     resp.raise_for_status()
     return resp.json().get('success', False)
