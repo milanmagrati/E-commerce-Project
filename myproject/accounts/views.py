@@ -245,229 +245,29 @@ def user_create(request):
                 user.is_staff = True
                 user.is_superuser = True
                 # Grant all permissions
-                user.can_view_orders = True
-                user.can_view_orders_list = True
-                user.can_access_offer_price = True
-                user.can_create_orders = True
-                user.can_edit_orders = True
-                user.can_delete_orders = True
-                user.can_cancel_orders = True
-                user.can_view_on_hold_orders = True
-                user.can_export_orders = True
-                
-                user.can_view_products = True
-                user.can_create_products = True
-                user.can_edit_products = True
-                user.can_delete_products = True
-                
-                user.can_view_customers = True
-                user.can_create_customers = True
-                user.can_edit_customers = True
-                user.can_delete_customers = True
-                
-                user.can_view_returns = True
-                user.can_create_returns = True
-                user.can_edit_returns = True
-                user.can_delete_returns = True
-                user.can_approve_returns = True
-                user.can_process_refunds = True
-
-                user.can_view_targets = True
-                user.can_set_targets = True
-                user.can_edit_targets = True
-                user.can_delete_targets = True
-                user.can_view_own_targets = True
-
-                user.can_view_dispatch = True
-                user.can_manage_dispatch = True
-                user.can_delete_dispatch = True
-                user.can_scan_barcodes = True
-
-                user.can_view_inventory = True
-                user.can_manage_inventory = True
-                user.can_adjust_stock = True
-                user.can_view_inventory_cost = True
-                user.can_toggle_product_price = True
-                user.can_view_selling_unit_price = True
-                user.can_view_cost_unit_price = True
-                user.can_view_valuation_selling = True
-                user.can_view_valuation_cost = True
-                user.can_toggle_stock_valuation = True
-
-                user.can_view_reports = True
-                user.can_view_sales_reports = True
-                user.can_view_financial_reports = True
-                user.can_export_data = True
-                
-                user.can_view_cost_price = True
-                user.can_edit_prices = True
-                user.can_give_discounts = True
+                for field in user._meta.fields:
+                    if field.name.startswith('can_') and field.get_internal_type() == 'BooleanField':
+                        setattr(user, field.name, True)
                 user.max_discount_percent = Decimal('100')
-
-                user.can_view_purchases = True
-                user.can_create_purchases = True
-                user.can_manage_suppliers = True
-                user.can_make_supplier_payments = True
-
-                user.can_view_staff_performance = True
-
-                # NCM LOGISTICS MODULE
-                user.can_view_ncm_orders = True
-                user.can_create_ncm_orders = True
-                user.can_edit_ncm_orders = True
-                user.can_delete_ncm_orders = True
-                user.can_view_ncm_bulk_logs = True
-                user.can_manage_ncm_bulk_logs = True
-                user.can_view_ncm_trash = True
-                user.can_sync_ncm_orders = True
-                user.can_view_ncm_branches = True
-                user.can_manage_ncm_branches = True
-
-                # HRM MODULE
-                user.can_view_hrm = True
-                user.can_view_hrm_hr_management = True
-                user.can_view_hrm_asset_management = True
-                user.can_view_hrm_attendance = True
-                user.can_view_hrm_payroll = True
-                
-                # Dashboard Module
-                user.can_view_dashboard = True
-                user.can_view_total_revenue = True
-                user.can_view_low_stock_alerts = True
-
-                # TODO / TICKETING MODULE
-                user.can_access_todo = True
-
-                # FOLLOW UP MODULE
-                user.can_access_follow_ups = True
-                user.can_setup_follow_up_status = True
             else:
-                # Apply custom permissions from checkboxes
-                # Dashboard Module
-                user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
-                user.can_view_total_revenue = request.POST.get('can_view_total_revenue') == 'on'
-                user.can_view_low_stock_alerts = request.POST.get('can_view_low_stock_alerts') == 'on'
-                
-                # Orders Module
-                user.can_view_orders = request.POST.get('can_view_orders') == 'on'
-                user.can_view_orders_list = request.POST.get('can_view_orders_list') == 'on'
-                user.can_access_offer_price = request.POST.get('can_access_offer_price') == 'on'
-                user.can_create_orders = request.POST.get('can_create_orders') == 'on'
-                user.can_edit_orders = request.POST.get('can_edit_orders') == 'on'
-                user.can_delete_orders = request.POST.get('can_delete_orders') == 'on'
-                user.can_cancel_orders = request.POST.get('can_cancel_orders') == 'on'
-                user.can_view_on_hold_orders = request.POST.get('can_view_on_hold_orders') == 'on'
-                user.can_export_orders = request.POST.get('can_export_orders') == 'on'
-                
-                # Products Module
-                user.can_view_products = request.POST.get('can_view_products') == 'on'
-                user.can_create_products = request.POST.get('can_create_products') == 'on'
-                user.can_edit_products = request.POST.get('can_edit_products') == 'on'
-                user.can_delete_products = request.POST.get('can_delete_products') == 'on'
-                
-                # Customers Module
-                user.can_view_customers = request.POST.get('can_view_customers') == 'on'
-                user.can_create_customers = request.POST.get('can_create_customers') == 'on'
-                user.can_edit_customers = request.POST.get('can_edit_customers') == 'on'
-                user.can_delete_customers = request.POST.get('can_delete_customers') == 'on'
-                
-                # Returns Module
-                user.can_view_returns = request.POST.get('can_view_returns') == 'on'
-                user.can_create_returns = request.POST.get('can_create_returns') == 'on'
-                user.can_edit_returns = request.POST.get('can_edit_returns') == 'on'
-                user.can_delete_returns = request.POST.get('can_delete_returns') == 'on'
-                user.can_approve_returns = request.POST.get('can_approve_returns') == 'on'
-                user.can_process_refunds = request.POST.get('can_process_refunds') == 'on'
-
-                # Staff Targets Module
-                user.can_view_targets = request.POST.get('can_view_targets') == 'on'
-                user.can_set_targets = request.POST.get('can_set_targets') == 'on'
-                user.can_edit_targets = request.POST.get('can_edit_targets') == 'on'
-                user.can_delete_targets = request.POST.get('can_delete_targets') == 'on'
-                user.can_view_own_targets = request.POST.get('can_view_own_targets') == 'on'
-
-                # Dispatch Module
-                user.can_view_dispatch = request.POST.get('can_view_dispatch') == 'on'
-                user.can_manage_dispatch = request.POST.get('can_manage_dispatch') == 'on'
-                user.can_delete_dispatch = request.POST.get('can_delete_dispatch') == 'on'
-                user.can_scan_barcodes = request.POST.get('can_scan_barcodes') == 'on'
-
-                # Inventory Module
-                user.can_view_inventory = request.POST.get('can_view_inventory') == 'on'
-                user.can_manage_inventory = request.POST.get('can_manage_inventory') == 'on'
-                user.can_adjust_stock = request.POST.get('can_adjust_stock') == 'on'
-                user.can_view_inventory_cost = request.POST.get('can_view_inventory_cost') == 'on'
-                user.can_toggle_product_price = request.POST.get('can_toggle_product_price') == 'on'
-                user.can_view_selling_unit_price = request.POST.get('can_view_selling_unit_price') == 'on'
-                user.can_view_cost_unit_price = request.POST.get('can_view_cost_unit_price') == 'on'
-                user.can_view_valuation_selling = request.POST.get('can_view_valuation_selling') == 'on'
-                user.can_view_valuation_cost = request.POST.get('can_view_valuation_cost') == 'on'
-                user.can_toggle_stock_valuation = request.POST.get('can_toggle_stock_valuation') == 'on'
-                
-                # Reports Module
-                user.can_view_reports = request.POST.get('can_view_reports') == 'on'
-                user.can_view_sales_reports = request.POST.get('can_view_sales_reports') == 'on'
-                user.can_view_financial_reports = request.POST.get('can_view_financial_reports') == 'on'
-                user.can_export_data = request.POST.get('can_export_data') == 'on'
-                
-                # Pricing Module
-                user.can_view_cost_price = request.POST.get('can_view_cost_price') == 'on'
-                user.can_edit_prices = request.POST.get('can_edit_prices') == 'on'
-                user.can_give_discounts = request.POST.get('can_give_discounts') == 'on'
+                # Apply custom permissions from checkboxes dynamically
+                for field in user._meta.fields:
+                    if field.name.startswith('can_') and field.get_internal_type() == 'BooleanField':
+                        setattr(user, field.name, request.POST.get(field.name) == 'on')
 
                 # Max Discount
                 max_discount = request.POST.get('max_discount_percent', '0')
                 try:
                     user.max_discount_percent = Decimal(max_discount)
-                except:
+                except (ValueError, InvalidOperation):
                     user.max_discount_percent = Decimal('0')
 
-                # Purchase Management Module
-                user.can_view_purchases = request.POST.get('can_view_purchases') == 'on'
-                user.can_create_purchases = request.POST.get('can_create_purchases') == 'on'
-                user.can_manage_suppliers = request.POST.get('can_manage_suppliers') == 'on'
-                user.can_make_supplier_payments = request.POST.get('can_make_supplier_payments') == 'on'
-
-                # Staff Performance Module
-                user.can_view_staff_performance = request.POST.get('can_view_staff_performance') == 'on'
-
-                # City Management Module
-                user.can_view_cities = request.POST.get('can_view_cities') == 'on'
-                user.can_add_cities = request.POST.get('can_add_cities') == 'on'
-                user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
-                user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
-
-                # NCM LOGISTICS MODULE
-                user.can_view_ncm_orders = request.POST.get('can_view_ncm_orders') == 'on'
-                user.can_create_ncm_orders = request.POST.get('can_create_ncm_orders') == 'on'
-                user.can_edit_ncm_orders = request.POST.get('can_edit_ncm_orders') == 'on'
-                user.can_delete_ncm_orders = request.POST.get('can_delete_ncm_orders') == 'on'
-                user.can_view_ncm_bulk_logs = request.POST.get('can_view_ncm_bulk_logs') == 'on'
-                user.can_manage_ncm_bulk_logs = request.POST.get('can_manage_ncm_bulk_logs') == 'on'
-                user.can_view_ncm_trash = request.POST.get('can_view_ncm_trash') == 'on'
-                user.can_sync_ncm_orders = request.POST.get('can_sync_ncm_orders') == 'on'
-                user.can_view_ncm_branches = request.POST.get('can_view_ncm_branches') == 'on'
-                user.can_manage_ncm_branches = request.POST.get('can_manage_ncm_branches') == 'on'
-
-                # HRM MODULE
-                user.can_view_hrm = request.POST.get('can_view_hrm') == 'on'
-                if user.can_view_hrm:
-                    user.can_view_hrm_hr_management = request.POST.get('can_view_hrm_hr_management') == 'on'
-                    user.can_view_hrm_asset_management = request.POST.get('can_view_hrm_asset_management') == 'on'
-                    user.can_view_hrm_attendance = request.POST.get('can_view_hrm_attendance') == 'on'
-                    user.can_view_hrm_payroll = request.POST.get('can_view_hrm_payroll') == 'on'
-                else:
+                # HRM MODULE special handling
+                if hasattr(user, 'can_view_hrm') and not user.can_view_hrm:
                     user.can_view_hrm_hr_management = False
                     user.can_view_hrm_asset_management = False
                     user.can_view_hrm_attendance = False
                     user.can_view_hrm_payroll = False
-
-                # TODO / TICKETING MODULE
-                user.can_access_todo = request.POST.get('can_access_todo') == 'on'
-
-                # FOLLOW UP MODULE
-                user.can_access_follow_ups = request.POST.get('can_access_follow_ups') == 'on'
-                user.can_setup_follow_up_status = request.POST.get('can_setup_follow_up_status') == 'on'
             
             user.save()
             if is_ajax:
@@ -500,9 +300,40 @@ def user_edit(request, user_id):
     edit_user = get_object_or_404(User, id=user_id, is_deleted=False)
     
     if request.method == 'POST':
+        new_username = request.POST.get('username')
+        new_email = request.POST.get('email')
+        
+        if not new_username or not new_email:
+            messages.error(request, 'Username and Email are required.')
+            roles = Role.objects.all()
+            return render(request, 'accounts/user_edit.html', {
+                'edit_user': edit_user,
+                'roles': roles,
+                'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
+            })
+        
+        # Validation for uniqueness
+        if User.objects.filter(username=new_username).exclude(id=user_id).exists():
+            messages.error(request, f'Username "{new_username}" is already taken by another user.')
+            roles = Role.objects.all()
+            return render(request, 'accounts/user_edit.html', {
+                'edit_user': edit_user,
+                'roles': roles,
+                'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
+            })
+            
+        if User.objects.filter(email=new_email).exclude(id=user_id).exists():
+            messages.error(request, f'Email "{new_email}" is already registered by another user.')
+            roles = Role.objects.all()
+            return render(request, 'accounts/user_edit.html', {
+                'edit_user': edit_user,
+                'roles': roles,
+                'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
+            })
+
         # Basic Information
-        edit_user.username = request.POST.get('username')
-        edit_user.email = request.POST.get('email')
+        edit_user.username = new_username
+        edit_user.email = new_email
         edit_user.first_name = request.POST.get('first_name', '')
         edit_user.last_name = request.POST.get('last_name', '')
         edit_user.role = request.POST.get('role')
@@ -520,111 +351,11 @@ def user_edit(request, user_id):
             # Administrator gets all permissions automatically
             edit_user.is_staff = True
             edit_user.is_superuser = True
-            
-            # Grant all permissions
-            edit_user.can_view_orders = True
-            edit_user.can_view_orders_list = True
-            edit_user.can_access_offer_price = True
-            edit_user.can_create_orders = True
-            edit_user.can_edit_orders = True
-            edit_user.can_delete_orders = True
-            edit_user.can_cancel_orders = True
-            edit_user.can_view_on_hold_orders = True
-            edit_user.can_export_orders = True
-            
-            edit_user.can_view_products = True
-            edit_user.can_create_products = True
-            edit_user.can_edit_products = True
-            edit_user.can_delete_products = True
-            
-            edit_user.can_view_customers = True
-            edit_user.can_create_customers = True
-            edit_user.can_edit_customers = True
-            edit_user.can_delete_customers = True
-            
-            edit_user.can_view_returns = True
-            edit_user.can_create_returns = True
-            edit_user.can_edit_returns = True
-            edit_user.can_delete_returns = True
-            edit_user.can_approve_returns = True
-            edit_user.can_process_refunds = True
-
-            edit_user.can_view_targets = True
-            edit_user.can_set_targets = True
-            edit_user.can_edit_targets = True
-            edit_user.can_delete_targets = True
-            edit_user.can_view_own_targets = True
-
-            edit_user.can_view_dispatch = True
-            edit_user.can_manage_dispatch = True
-            edit_user.can_delete_dispatch = True
-            edit_user.can_scan_barcodes = True
-
-            edit_user.can_view_inventory = True
-            edit_user.can_manage_inventory = True
-            edit_user.can_adjust_stock = True
-            edit_user.can_view_inventory_cost = True
-            edit_user.can_toggle_product_price = True
-            edit_user.can_view_selling_unit_price = True
-            edit_user.can_view_cost_unit_price = True
-            edit_user.can_view_valuation_selling = True
-            edit_user.can_view_valuation_cost = True
-            edit_user.can_toggle_stock_valuation = True
-            
-            edit_user.can_view_reports = True
-            edit_user.can_view_sales_reports = True
-            edit_user.can_view_daily_sales_reports = True
-            edit_user.can_view_product_sales_reports = True
-            edit_user.can_view_financial_reports = True
-            edit_user.can_export_data = True
-            
-            edit_user.can_view_cost_price = True
-            edit_user.can_edit_prices = True
-            edit_user.can_give_discounts = True
+               # Grant all permissions dynamically
+            for field in edit_user._meta.fields:
+                if field.name.startswith('can_') and field.get_internal_type() == 'BooleanField':
+                    setattr(edit_user, field.name, True)
             edit_user.max_discount_percent = Decimal('100')
-
-            edit_user.can_view_purchases = True
-            edit_user.can_create_purchases = True
-            edit_user.can_manage_suppliers = True
-            edit_user.can_make_supplier_payments = True
-
-            edit_user.can_view_staff_performance = True
-
-            edit_user.can_view_cities = True
-            edit_user.can_add_cities = True
-            edit_user.can_edit_cities = True
-            edit_user.can_delete_cities = True
-
-            # NCM LOGISTICS MODULE
-            edit_user.can_view_ncm_orders = True
-            edit_user.can_create_ncm_orders = True
-            edit_user.can_edit_ncm_orders = True
-            edit_user.can_delete_ncm_orders = True
-            edit_user.can_view_ncm_bulk_logs = True
-            edit_user.can_manage_ncm_bulk_logs = True
-            edit_user.can_view_ncm_trash = True
-            edit_user.can_sync_ncm_orders = True
-            edit_user.can_view_ncm_branches = True
-            edit_user.can_manage_ncm_branches = True
-
-            # HRM MODULE
-            edit_user.can_view_hrm = True
-            edit_user.can_view_hrm_hr_management = True
-            edit_user.can_view_hrm_asset_management = True
-            edit_user.can_view_hrm_attendance = True
-            edit_user.can_view_hrm_payroll = True
-
-            # Dashboard Module
-            edit_user.can_view_dashboard = True
-            edit_user.can_view_total_revenue = True
-            edit_user.can_view_low_stock_alerts = True
-
-            # TODO / TICKETING MODULE
-            edit_user.can_access_todo = True
-
-            # FOLLOW UP MODULE
-            edit_user.can_access_follow_ups = True
-            edit_user.can_setup_follow_up_status = True
 
             messages.info(request, '👑 Administrator role - All permissions granted automatically')
         else:
@@ -632,79 +363,10 @@ def user_edit(request, user_id):
             edit_user.is_staff = False
             edit_user.is_superuser = False
             
-            # Dashboard Module
-            edit_user.can_view_dashboard = request.POST.get('can_view_dashboard') == 'on'
-            edit_user.can_view_total_revenue = request.POST.get('can_view_total_revenue') == 'on'
-            edit_user.can_view_low_stock_alerts = request.POST.get('can_view_low_stock_alerts') == 'on'
-            
-            # Orders Module
-            edit_user.can_view_orders = request.POST.get('can_view_orders') == 'on'
-            edit_user.can_view_orders_list = request.POST.get('can_view_orders_list') == 'on'
-            edit_user.can_access_offer_price = request.POST.get('can_access_offer_price') == 'on'
-            edit_user.can_create_orders = request.POST.get('can_create_orders') == 'on'
-            edit_user.can_edit_orders = request.POST.get('can_edit_orders') == 'on'
-            edit_user.can_delete_orders = request.POST.get('can_delete_orders') == 'on'
-            edit_user.can_cancel_orders = request.POST.get('can_cancel_orders') == 'on'
-            edit_user.can_view_on_hold_orders = request.POST.get('can_view_on_hold_orders') == 'on'
-            edit_user.can_export_orders = request.POST.get('can_export_orders') == 'on'
-            
-            # Products Module
-            edit_user.can_view_products = request.POST.get('can_view_products') == 'on'
-            edit_user.can_create_products = request.POST.get('can_create_products') == 'on'
-            edit_user.can_edit_products = request.POST.get('can_edit_products') == 'on'
-            edit_user.can_delete_products = request.POST.get('can_delete_products') == 'on'
-            
-            # Customers Module
-            edit_user.can_view_customers = request.POST.get('can_view_customers') == 'on'
-            edit_user.can_create_customers = request.POST.get('can_create_customers') == 'on'
-            edit_user.can_edit_customers = request.POST.get('can_edit_customers') == 'on'
-            edit_user.can_delete_customers = request.POST.get('can_delete_customers') == 'on'
-            
-            # Returns Module
-            edit_user.can_view_returns = request.POST.get('can_view_returns') == 'on'
-            edit_user.can_create_returns = request.POST.get('can_create_returns') == 'on'
-            edit_user.can_edit_returns = request.POST.get('can_edit_returns') == 'on'
-            edit_user.can_delete_returns = request.POST.get('can_delete_returns') == 'on'
-            edit_user.can_approve_returns = request.POST.get('can_approve_returns') == 'on'
-            edit_user.can_process_refunds = request.POST.get('can_process_refunds') == 'on'
-
-            # Staff Targets Module
-            edit_user.can_view_targets = request.POST.get('can_view_targets') == 'on'
-            edit_user.can_set_targets = request.POST.get('can_set_targets') == 'on'
-            edit_user.can_edit_targets = request.POST.get('can_edit_targets') == 'on'
-            edit_user.can_delete_targets = request.POST.get('can_delete_targets') == 'on'
-            edit_user.can_view_own_targets = request.POST.get('can_view_own_targets') == 'on'
-
-            # Dispatch Module
-            edit_user.can_view_dispatch = request.POST.get('can_view_dispatch') == 'on'
-            edit_user.can_manage_dispatch = request.POST.get('can_manage_dispatch') == 'on'
-            edit_user.can_delete_dispatch = request.POST.get('can_delete_dispatch') == 'on'
-            edit_user.can_scan_barcodes = request.POST.get('can_scan_barcodes') == 'on'
-
-            # Inventory Module
-            edit_user.can_view_inventory = request.POST.get('can_view_inventory') == 'on'
-            edit_user.can_manage_inventory = request.POST.get('can_manage_inventory') == 'on'
-            edit_user.can_adjust_stock = request.POST.get('can_adjust_stock') == 'on'
-            edit_user.can_view_inventory_cost = request.POST.get('can_view_inventory_cost') == 'on'
-            edit_user.can_toggle_product_price = request.POST.get('can_toggle_product_price') == 'on'
-            edit_user.can_view_selling_unit_price = request.POST.get('can_view_selling_unit_price') == 'on'
-            edit_user.can_view_cost_unit_price = request.POST.get('can_view_cost_unit_price') == 'on'
-            edit_user.can_view_valuation_selling = request.POST.get('can_view_valuation_selling') == 'on'
-            edit_user.can_view_valuation_cost = request.POST.get('can_view_valuation_cost') == 'on'
-            edit_user.can_toggle_stock_valuation = request.POST.get('can_toggle_stock_valuation') == 'on'
-            
-            # Reports Module
-            edit_user.can_view_reports = request.POST.get('can_view_reports') == 'on'
-            edit_user.can_view_sales_reports = request.POST.get('can_view_sales_reports') == 'on'
-            edit_user.can_view_daily_sales_reports = request.POST.get('can_view_daily_sales_reports') == 'on'
-            edit_user.can_view_product_sales_reports = request.POST.get('can_view_product_sales_reports') == 'on'
-            edit_user.can_view_financial_reports = request.POST.get('can_view_financial_reports') == 'on'
-            edit_user.can_export_data = request.POST.get('can_export_data') == 'on'
-            
-            # Pricing & Discount Module
-            edit_user.can_view_cost_price = request.POST.get('can_view_cost_price') == 'on'
-            edit_user.can_edit_prices = request.POST.get('can_edit_prices') == 'on'
-            edit_user.can_give_discounts = request.POST.get('can_give_discounts') == 'on'
+            # Apply custom permissions from checkboxes dynamically
+            for field in edit_user._meta.fields:
+                if field.name.startswith('can_') and field.get_internal_type() == 'BooleanField':
+                    setattr(edit_user, field.name, request.POST.get(field.name) == 'on')
 
             # Max Discount Percentage
             max_discount = request.POST.get('max_discount_percent', '0')
@@ -713,52 +375,12 @@ def user_edit(request, user_id):
             except (ValueError, InvalidOperation):
                 edit_user.max_discount_percent = Decimal('0')
 
-            # Purchase Management Module
-            edit_user.can_view_purchases = request.POST.get('can_view_purchases') == 'on'
-            edit_user.can_create_purchases = request.POST.get('can_create_purchases') == 'on'
-            edit_user.can_manage_suppliers = request.POST.get('can_manage_suppliers') == 'on'
-            edit_user.can_make_supplier_payments = request.POST.get('can_make_supplier_payments') == 'on'
-
-            # Staff Performance Module
-            edit_user.can_view_staff_performance = request.POST.get('can_view_staff_performance') == 'on'
-
-            # City Management Module
-            edit_user.can_view_cities = request.POST.get('can_view_cities') == 'on'
-            edit_user.can_add_cities = request.POST.get('can_add_cities') == 'on'
-            edit_user.can_edit_cities = request.POST.get('can_edit_cities') == 'on'
-            edit_user.can_delete_cities = request.POST.get('can_delete_cities') == 'on'
-
-            # NCM LOGISTICS MODULE
-            edit_user.can_view_ncm_orders = request.POST.get('can_view_ncm_orders') == 'on'
-            edit_user.can_create_ncm_orders = request.POST.get('can_create_ncm_orders') == 'on'
-            edit_user.can_edit_ncm_orders = request.POST.get('can_edit_ncm_orders') == 'on'
-            edit_user.can_delete_ncm_orders = request.POST.get('can_delete_ncm_orders') == 'on'
-            edit_user.can_view_ncm_bulk_logs = request.POST.get('can_view_ncm_bulk_logs') == 'on'
-            edit_user.can_manage_ncm_bulk_logs = request.POST.get('can_manage_ncm_bulk_logs') == 'on'
-            edit_user.can_view_ncm_trash = request.POST.get('can_view_ncm_trash') == 'on'
-            edit_user.can_sync_ncm_orders = request.POST.get('can_sync_ncm_orders') == 'on'
-            edit_user.can_view_ncm_branches = request.POST.get('can_view_ncm_branches') == 'on'
-            edit_user.can_manage_ncm_branches = request.POST.get('can_manage_ncm_branches') == 'on'
-
-            # HRM MODULE
-            edit_user.can_view_hrm = request.POST.get('can_view_hrm') == 'on'
-            if edit_user.can_view_hrm:
-                edit_user.can_view_hrm_hr_management = request.POST.get('can_view_hrm_hr_management') == 'on'
-                edit_user.can_view_hrm_asset_management = request.POST.get('can_view_hrm_asset_management') == 'on'
-                edit_user.can_view_hrm_attendance = request.POST.get('can_view_hrm_attendance') == 'on'
-                edit_user.can_view_hrm_payroll = request.POST.get('can_view_hrm_payroll') == 'on'
-            else:
+            # HRM MODULE special handling
+            if hasattr(edit_user, 'can_view_hrm') and not edit_user.can_view_hrm:
                 edit_user.can_view_hrm_hr_management = False
                 edit_user.can_view_hrm_asset_management = False
                 edit_user.can_view_hrm_attendance = False
                 edit_user.can_view_hrm_payroll = False
-
-            # TODO / TICKETING MODULE
-            edit_user.can_access_todo = request.POST.get('can_access_todo') == 'on'
-
-            # FOLLOW UP MODULE
-            edit_user.can_access_follow_ups = request.POST.get('can_access_follow_ups') == 'on'
-            edit_user.can_setup_follow_up_status = request.POST.get('can_setup_follow_up_status') == 'on'
         
         try:
             edit_user.save()
@@ -1209,6 +831,17 @@ def role_permissions_edit(request, role_id):
             'max_discount_percent': max_discount_percent
         }
         role.save()
+        
+        # Sync all users with this role to the new defaults
+        users = User.objects.filter(role=role.name)
+        for user in users:
+            # First reset all custom permissions to False
+            for field in user._meta.fields:
+                if field.name.startswith('can_') and field.get_internal_type() == 'BooleanField':
+                    setattr(user, field.name, False)
+            # Then apply the new defaults
+            user.set_default_permissions_by_role()
+            user.save()
         
         messages.success(request, f'Permissions updated successfully for {role.display_name}.')
         return redirect('role_list')

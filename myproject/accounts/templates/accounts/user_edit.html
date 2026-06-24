@@ -824,6 +824,8 @@ function uncheckAll() {
         cb.checked = false;
     });
     document.getElementById('max_discount_percent').value = '0.00';
+    const hrmSub = document.getElementById('hrmSubPermissions');
+    if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
     updateDiscountInput();
 }
 
@@ -842,54 +844,88 @@ function toggleHrmSubPermissions(mainCheckbox) {
 
 // Hide/show permissions based on role
 const roleDefaults = {{ role_defaults_json|safe }};
-document.getElementById('roleSelect').addEventListener('change', function() {
-    const permSection = document.getElementById('permissionsSection');
-    const roleAlert = document.getElementById('roleAlert');
-    const selectedOption = this.options[this.selectedIndex];
-    const roleName = selectedOption.textContent;
 
-    if (this.value === 'administrator') {
-        if (permSection) permSection.style.display = 'none';
-        roleAlert.innerHTML = '<i class="fas fa-crown text-warning"></i> <strong>Administrator selected:</strong> Full access granted automatically.';
-        roleAlert.className = 'alert alert-warning mt-4';
-        document.getElementById('can_view_cost_price').checked = false;
-        document.getElementById('can_edit_prices').checked = false;
-        document.getElementById('can_give_discounts').checked = false;
-        document.getElementById('max_discount_percent').value = '0.00';
-        document.getElementById('max_discount_percent').disabled = true;
-        // Reset HRM checkboxes
-        const hrmMain = document.getElementById('can_view_hrm');
-        if (hrmMain) {
-            hrmMain.checked = false;
+// Helper to reliably check/uncheck
+function setCheckboxState(name, state) {
+    const cb = document.querySelector(`input[name="${name}"]`);
+    if (cb) cb.checked = state;
+}
+
+document.getElementById('roleSelect').addEventListener('change', function() {
+    try {
+        const permSection = document.getElementById('permissionsSection');
+        const roleAlert = document.getElementById('roleAlert');
+        const selectedOption = this.options[this.selectedIndex];
+        const roleName = selectedOption.textContent;
+        const role = this.value;
+
+        if (role === 'administrator') {
+            if (permSection) permSection.style.display = 'none';
+            if (roleAlert) {
+                roleAlert.innerHTML = '<i class="fas fa-crown text-warning"></i> <strong>Administrator selected:</strong> Full access granted automatically.';
+                roleAlert.className = 'alert alert-warning mt-4';
+            }
+            setCheckboxState('can_view_cost_price', false);
+            setCheckboxState('can_edit_prices', false);
+            setCheckboxState('can_give_discounts', false);
+            
+            const maxDisc = document.getElementById('max_discount_percent');
+            if (maxDisc) {
+                maxDisc.value = '0.00';
+                maxDisc.disabled = true;
+            }
+            
+            // Reset HRM checkboxes
+            setCheckboxState('can_view_hrm', false);
             const hrmSub = document.getElementById('hrmSubPermissions');
             if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
             document.querySelectorAll('.hrm-sub-perm').forEach(cb => cb.checked = false);
-        }
-    } else {
-        if (permSection) permSection.style.display = 'block';
-        roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleName} role selected:</strong> Customize permissions below.`;
-        roleAlert.className = 'alert alert-info mt-4';
-        
-        // Uncheck all first
-        uncheckAll();
-        
-        // Check default permissions if available for this role
-        const role = this.value;
-        if (roleDefaults[role]) {
-            let perms = roleDefaults[role].permissions || [];
-            perms.forEach(perm => {
-                const checkbox = document.getElementById(perm);
-                if (checkbox) checkbox.checked = true;
+            
+        } else if (role) {
+            if (permSection) permSection.style.display = 'block';
+            if (roleAlert) {
+                roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleName} role selected:</strong> Customize permissions below.`;
+                roleAlert.className = 'alert alert-info mt-4';
+            }
+            
+            // 1. First UNCHECK EVERYTHING
+            document.querySelectorAll('#permissionsSection input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
             });
-            let discount = roleDefaults[role].max_discount_percent || '0.00';
-            document.getElementById('max_discount_percent').value = discount;
-            if (parseFloat(discount) > 0) {
-                document.getElementById('max_discount_percent').disabled = false;
+            const maxDisc = document.getElementById('max_discount_percent');
+            if (maxDisc) maxDisc.value = '0.00';
+            const hrmSub = document.getElementById('hrmSubPermissions');
+            if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
+            
+            // 2. CHECK the defaults for THIS ROLE
+            if (roleDefaults[role]) {
+                let perms = roleDefaults[role].permissions || [];
+                perms.forEach(perm => {
+                    setCheckboxState(perm, true);
+                });
+                
+                let discount = roleDefaults[role].max_discount_percent || '0.00';
+                if (maxDisc) {
+                    maxDisc.value = discount;
+                    if (parseFloat(discount) > 0) {
+                        maxDisc.disabled = false;
+                    }
+                }
+            }
+            
+            // 3. Update inputs
+            if (typeof updateDiscountInput === 'function') updateDiscountInput();
+            
+            const hrmMain = document.querySelector('input[name="can_view_hrm"]');
+            if (hrmMain && typeof toggleHrmSubPermissions === 'function') {
+                toggleHrmSubPermissions(hrmMain);
             }
         }
-        updateDiscountInput();
+    } catch (e) {
+        console.error("Error in role selection change event:", e);
     }
 });
+
 // Enable/disable Max Discount % input based on Give Discounts checkbox
 function updateDiscountInput() {
     const giveDiscounts = document.getElementById('can_give_discounts');
@@ -909,6 +945,24 @@ document.getElementById('can_give_discounts').addEventListener('change', updateD
 
 window.addEventListener('DOMContentLoaded', function() {
     updateDiscountInput();
+    
+    // Hide permissions if administrator
+    const roleSelect = document.getElementById('roleSelect');
+    const permSection = document.getElementById('permissionsSection');
+    if (roleSelect && roleSelect.value === 'administrator') {
+        if (permSection) permSection.style.display = 'none';
+        const roleAlert = document.getElementById('roleAlert');
+        if(roleAlert) {
+            roleAlert.innerHTML = '<i class="fas fa-crown text-warning"></i> <strong>Administrator selected:</strong> Full access granted automatically.';
+            roleAlert.className = 'alert alert-warning mt-4';
+        }
+    }
+    
+    // Trigger HRM sub-permissions toggle if HRM is already checked
+    const hrmMain = document.getElementById('can_view_hrm');
+    if (hrmMain) {
+        toggleHrmSubPermissions(hrmMain);
+    }
 });
 
 // Form submission with confirmation
