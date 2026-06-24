@@ -326,6 +326,10 @@ def user_create(request):
 
                 # TODO / TICKETING MODULE
                 user.can_access_todo = True
+
+                # FOLLOW UP MODULE
+                user.can_access_follow_ups = True
+                user.can_setup_follow_up_status = True
             else:
                 # Apply custom permissions from checkboxes
                 # Dashboard Module
@@ -449,6 +453,10 @@ def user_create(request):
 
                 # TODO / TICKETING MODULE
                 user.can_access_todo = request.POST.get('can_access_todo') == 'on'
+
+                # FOLLOW UP MODULE
+                user.can_access_follow_ups = request.POST.get('can_access_follow_ups') == 'on'
+                user.can_setup_follow_up_status = request.POST.get('can_setup_follow_up_status') == 'on'
             
             user.save()
             if is_ajax:
@@ -597,6 +605,10 @@ def user_edit(request, user_id):
             # TODO / TICKETING MODULE
             edit_user.can_access_todo = True
 
+            # FOLLOW UP MODULE
+            edit_user.can_access_follow_ups = True
+            edit_user.can_setup_follow_up_status = True
+
             messages.info(request, '👑 Administrator role - All permissions granted automatically')
         else:
             # Remove admin privileges
@@ -726,6 +738,10 @@ def user_edit(request, user_id):
 
             # TODO / TICKETING MODULE
             edit_user.can_access_todo = request.POST.get('can_access_todo') == 'on'
+
+            # FOLLOW UP MODULE
+            edit_user.can_access_follow_ups = request.POST.get('can_access_follow_ups') == 'on'
+            edit_user.can_setup_follow_up_status = request.POST.get('can_setup_follow_up_status') == 'on'
         
         try:
             edit_user.save()

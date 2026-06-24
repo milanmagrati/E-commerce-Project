@@ -21313,6 +21313,28 @@ def woocommerce_orders_list(request):
     return render(request, 'woocommerce_orders.html', context)
 
 @login_required
+def follow_ups_list(request):
+    """View to display and manage follow-ups."""
+    # Check permissions
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'You do not have permission to access Follow-ups.')
+        return redirect('dashboard')
+    from .models import FollowUp, Product, Setup
+    
+    follow_ups = FollowUp.objects.prefetch_related('products').select_related('product').filter(is_deleted=False).order_by('-created_at')
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
+    
+    context = {
+        'follow_ups': follow_ups,
+        'products': products,
+        'statuses': statuses,
+    }
+    return render(request, 'dashboard/follow_ups.html', context)
+
+
+@login_required
 @require_POST
 def api_update_product_price(request, product_id):
     try:
@@ -21343,22 +21365,6 @@ def api_update_product_price(request, product_id):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
-
-@login_required
-def follow_ups_list(request):
-    """View to display and manage follow-ups."""
-    from .models import FollowUp, Product, Setup
-    
-    follow_ups = FollowUp.objects.prefetch_related('products').select_related('product').filter(is_deleted=False).order_by('-created_at')
-    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
-    statuses = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    
-    context = {
-        'follow_ups': follow_ups,
-        'products': products,
-        'statuses': statuses,
-    }
-    return render(request, 'dashboard/follow_ups.html', context)
 
 
 @login_required

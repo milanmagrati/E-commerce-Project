@@ -1,6 +1,7 @@
 
 from django.urls import path
 from . import views
+from . import followup_setup_views
 
 
 urlpatterns = [
@@ -124,6 +125,13 @@ urlpatterns = [
     path('orders/<int:order_id>/followup/add/', views.add_order_followup, name='add_order_followup'),
     path('orders/<int:order_id>/followups/', views.get_order_followups, name='get_order_followups'),
     path('orders/<int:order_id>/next-followup/', views.update_order_next_followup, name='update_order_next_followup'),
+
+    # Follow-up Status Setup
+    path('setup/followup-status/', followup_setup_views.followup_setup_management, name='followup_setup_management'),
+    path('setup/followup-status/add/', followup_setup_views.followup_setup_add, name='followup_setup_add'),
+    path('setup/followup-status/<int:setup_id>/edit/', followup_setup_views.followup_setup_edit, name='followup_setup_edit'),
+    path('setup/followup-status/<int:setup_id>/delete/', followup_setup_views.followup_setup_delete, name='followup_setup_delete'),
+    path('setup/followup-status/<int:setup_id>/toggle-default/', followup_setup_views.followup_setup_toggle_default, name='followup_setup_toggle_default'),
 
 
 

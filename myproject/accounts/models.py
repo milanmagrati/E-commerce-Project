@@ -164,6 +164,10 @@ class CustomUser(AbstractUser):
     # TODO / TICKETING PERMISSIONS
     can_access_todo = models.BooleanField(default=False, verbose_name="Access to Todo/Ticketing")
 
+    # FOLLOW UP PERMISSIONS
+    can_access_follow_ups = models.BooleanField(default=False, verbose_name="Can Access Follow Ups")
+    can_setup_follow_up_status = models.BooleanField(default=False, verbose_name="Can Setup Follow Up Status")
+
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
     
