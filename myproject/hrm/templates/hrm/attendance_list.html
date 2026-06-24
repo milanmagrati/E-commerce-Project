@@ -349,7 +349,7 @@
                             <span class="field-error-text" id="recordClockInErr" style="display:none;"></span>
                         </div>
                         <div class="col-6">
-                            <label class="pro-label">Clock Out Time <span class="text-danger">*</span></label>
+                            <label class="pro-label">Clock Out Time</label>
                             <div class="pro-input-wrap">
                                 <i class="fas fa-sign-out-alt pro-input-icon" style="color:#6366f1;"></i>
                                 <input type="time" class="form-control pro-field" id="recordClockOut">
@@ -891,6 +891,9 @@
             markField('recordDate', true, 'Date is required.'); hasError = true;
         }
         var clockIn = document.getElementById('recordClockIn').value;
+        if (!clockIn) {
+            markField('recordClockIn', true, 'Clock In Time is required.'); hasError = true;
+        }
         var clockOut = document.getElementById('recordClockOut').value;
 
         if (hasError) {

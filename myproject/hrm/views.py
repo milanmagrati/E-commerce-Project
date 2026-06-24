@@ -2816,43 +2816,41 @@ def _sync_biometric_to_attendance(recent_days=None):
         # Get employee's attendance policy for grace periods
         policy = employee.attendance_policy if employee.attendance_policy_id else None
 
-        if shift and clock_in_time and clock_out_time:
+        if shift and clock_in_time:
             from datetime import datetime, timedelta
-            # Subtract break duration to get effective working hours
-            break_hrs = (shift.break_duration or 0) / 60.0
-            if working_hours > break_hrs:
-                working_hours = round(working_hours - break_hrs, 2)
-            shift_hours = float(shift.working_hours)
-            if working_hours > shift_hours:
-                overtime_hours = round(working_hours - shift_hours, 2)
-
-            # Use AttendancePolicy grace values if available, else shift.grace_period
             late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
-            early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
-
-            # punch_date is guaranteed non-None here (checked above), but guard defensively
             shift_start = datetime.combine(punch_date, shift.start_time)
             cin_full = datetime.combine(punch_date, clock_in_time)
-            cout_full = datetime.combine(punch_date, clock_out_time)
-
-            if shift.end_time:
-                shift_end = datetime.combine(punch_date, shift.end_time)
-                # Handle night shifts spanning midnight
-                if shift_end <= shift_start:
-                    shift_end += timedelta(days=1)
-                    if cout_full < cin_full:
-                        cout_full += timedelta(days=1)
-                if cout_full < shift_end - timedelta(minutes=early_grace):
-                    is_early = True
 
             if cin_full > shift_start + timedelta(minutes=late_grace):
                 is_late = True
-
-            # Auto-set status based on calculations
-            if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
-                status = 'half_day'
-            elif is_late:
                 status = 'late'
+
+            if clock_out_time:
+                # Subtract break duration to get effective working hours
+                break_hrs = (shift.break_duration or 0) / 60.0
+                if working_hours > break_hrs:
+                    working_hours = round(working_hours - break_hrs, 2)
+                shift_hours = float(shift.working_hours)
+                if working_hours > shift_hours:
+                    overtime_hours = round(working_hours - shift_hours, 2)
+
+                early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
+                cout_full = datetime.combine(punch_date, clock_out_time)
+
+                if shift.end_time:
+                    shift_end = datetime.combine(punch_date, shift.end_time)
+                    # Handle night shifts spanning midnight
+                    if shift_end <= shift_start:
+                        shift_end += timedelta(days=1)
+                        if cout_full < cin_full:
+                            cout_full += timedelta(days=1)
+                    if cout_full < shift_end - timedelta(minutes=early_grace):
+                        is_early = True
+
+                # Auto-set status based on calculations
+                if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+                    status = 'half_day'
 
         # Create or update the AttendanceRecord
         record, created = AttendanceRecord.objects.update_or_create(
@@ -2960,50 +2958,54 @@ def attendance_create(request):
         is_late = False
         is_early = False
 
-        if clock_in and clock_out:
+        if clock_in:
             cin = datetime.strptime(clock_in[:5], '%H:%M')
-            cout = datetime.strptime(clock_out[:5], '%H:%M')
-            diff = (cout - cin).total_seconds() / 3600
-            if diff < 0:
-                diff += 24
-            working_hours = round(diff, 2)
-
+            
             if shift:
-                # Subtract break duration to get effective working hours
-                break_hrs = (shift.break_duration or 0) / 60.0
-                if working_hours > break_hrs:
-                    working_hours = round(working_hours - break_hrs, 2)
-                shift_hours = float(shift.working_hours)
-                if working_hours > shift_hours:
-                    overtime_hours = round(working_hours - shift_hours, 2)
-
-                shift_start = datetime.combine(datetime.today(), shift.start_time)
-                cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in[:5], '%H:%M').time())
-                cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out[:5], '%H:%M').time())
-
-                # Use AttendancePolicy grace values if available, else shift.grace_period
                 late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
-                early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
-
-                if shift.end_time:
-                    shift_end = datetime.combine(datetime.today(), shift.end_time)
-                    # Handle night shifts spanning midnight
-                    if shift_end <= shift_start:
-                        shift_end += timedelta(days=1)
-                        if cout_full < cin_full:
-                            cout_full += timedelta(days=1)
-                    if cout_full < shift_end - timedelta(minutes=early_grace):
-                        is_early = True
+                shift_start = datetime.combine(datetime.today(), shift.start_time)
+                cin_full = datetime.combine(datetime.today(), cin.time())
 
                 if cin_full > shift_start + timedelta(minutes=late_grace):
                     is_late = True
-
+                
                 # Auto-set status only if user left it as default 'present'
-                if status == 'present':
-                    if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
-                        status = 'half_day'
-                    elif is_late:
-                        status = 'late'
+                if status == 'present' and is_late:
+                    status = 'late'
+
+            if clock_out:
+                cout = datetime.strptime(clock_out[:5], '%H:%M')
+                diff = (cout - cin).total_seconds() / 3600
+                if diff < 0:
+                    diff += 24
+                working_hours = round(diff, 2)
+
+                if shift:
+                    # Subtract break duration to get effective working hours
+                    break_hrs = (shift.break_duration or 0) / 60.0
+                    if working_hours > break_hrs:
+                        working_hours = round(working_hours - break_hrs, 2)
+                    shift_hours = float(shift.working_hours)
+                    if working_hours > shift_hours:
+                        overtime_hours = round(working_hours - shift_hours, 2)
+
+                    cout_full = datetime.combine(datetime.today(), cout.time())
+                    early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
+
+                    if shift.end_time:
+                        shift_end = datetime.combine(datetime.today(), shift.end_time)
+                        # Handle night shifts spanning midnight
+                        if shift_end <= shift_start:
+                            shift_end += timedelta(days=1)
+                            if cout_full < cin_full:
+                                cout_full += timedelta(days=1)
+                        if cout_full < shift_end - timedelta(minutes=early_grace):
+                            is_early = True
+
+                    # Auto-set status only if user left it as default 'present' or it was set to 'late'
+                    if status in ['present', 'late']:
+                        if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+                            status = 'half_day'
 
         record = AttendanceRecord.objects.create(
             employee=employee,
@@ -3047,50 +3049,54 @@ def attendance_update(request, pk):
         is_late = False
         is_early = False
 
-        if clock_in and clock_out:
+        if clock_in:
             cin = datetime.strptime(clock_in[:5], '%H:%M')
-            cout = datetime.strptime(clock_out[:5], '%H:%M')
-            diff = (cout - cin).total_seconds() / 3600
-            if diff < 0:
-                diff += 24
-            working_hours = round(diff, 2)
-
+            
             if shift:
-                # Subtract break duration to get effective working hours
-                break_hrs = (shift.break_duration or 0) / 60.0
-                if working_hours > break_hrs:
-                    working_hours = round(working_hours - break_hrs, 2)
-                shift_hours = float(shift.working_hours)
-                if working_hours > shift_hours:
-                    overtime_hours = round(working_hours - shift_hours, 2)
-
-                shift_start = datetime.combine(datetime.today(), shift.start_time)
-                cin_full = datetime.combine(datetime.today(), datetime.strptime(clock_in[:5], '%H:%M').time())
-                cout_full = datetime.combine(datetime.today(), datetime.strptime(clock_out[:5], '%H:%M').time())
-
-                # Use AttendancePolicy grace values if available, else shift.grace_period
                 late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
-                early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
-
-                if shift.end_time:
-                    shift_end = datetime.combine(datetime.today(), shift.end_time)
-                    # Handle night shifts spanning midnight
-                    if shift_end <= shift_start:
-                        shift_end += timedelta(days=1)
-                        if cout_full < cin_full:
-                            cout_full += timedelta(days=1)
-                    if cout_full < shift_end - timedelta(minutes=early_grace):
-                        is_early = True
+                shift_start = datetime.combine(datetime.today(), shift.start_time)
+                cin_full = datetime.combine(datetime.today(), cin.time())
 
                 if cin_full > shift_start + timedelta(minutes=late_grace):
                     is_late = True
-
+                
                 # Auto-set status only if user left it as default 'present'
-                if status == 'present':
-                    if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
-                        status = 'half_day'
-                    elif is_late:
-                        status = 'late'
+                if status == 'present' and is_late:
+                    status = 'late'
+
+            if clock_out:
+                cout = datetime.strptime(clock_out[:5], '%H:%M')
+                diff = (cout - cin).total_seconds() / 3600
+                if diff < 0:
+                    diff += 24
+                working_hours = round(diff, 2)
+
+                if shift:
+                    # Subtract break duration to get effective working hours
+                    break_hrs = (shift.break_duration or 0) / 60.0
+                    if working_hours > break_hrs:
+                        working_hours = round(working_hours - break_hrs, 2)
+                    shift_hours = float(shift.working_hours)
+                    if working_hours > shift_hours:
+                        overtime_hours = round(working_hours - shift_hours, 2)
+
+                    cout_full = datetime.combine(datetime.today(), cout.time())
+                    early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
+
+                    if shift.end_time:
+                        shift_end = datetime.combine(datetime.today(), shift.end_time)
+                        # Handle night shifts spanning midnight
+                        if shift_end <= shift_start:
+                            shift_end += timedelta(days=1)
+                            if cout_full < cin_full:
+                                cout_full += timedelta(days=1)
+                        if cout_full < shift_end - timedelta(minutes=early_grace):
+                            is_early = True
+
+                    # Auto-set status only if user left it as default 'present' or it was set to 'late'
+                    if status in ['present', 'late']:
+                        if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+                            status = 'half_day'
 
         record.clock_in = clock_in if clock_in else None
         record.clock_out = clock_out if clock_out else None
