@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if page %}Edit{% else %}Create{% endif %} Page{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1 fw-bold text-gray-800">
+                <i class="fas {% if page %}fa-edit{% else %}fa-plus-circle{% endif %} text-primary me-2"></i>
+                {% if page %}Edit Page: {{ page.title }}{% else %}Create New Page{% endif %}
+            </h4>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb font-sm mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'page_list' %}" class="text-decoration-none text-primary">Pages</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{% if page %}Edit{% else %}Create{% endif %}</li>
+                </ol>
+            </nav>
+        </div>
+        <div>
+            <a href="{% url 'page_list' %}" class="btn btn-outline-secondary rounded-pill px-4 shadow-sm">
+                <i class="fas fa-arrow-left me-2"></i> Back to Pages
+            </a>
+        </div>
+    </div>
+
+    <!-- Alert Messages -->
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show border-0 shadow-sm" role="alert">
+                <i class="fas fa-info-circle me-2"></i>{{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Tabs Navigation -->
+    <ul class="nav nav-tabs mb-4" id="pageTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active fw-bold px-4" id="preview-tab" data-bs-toggle="tab" data-bs-target="#preview" type="button" role="tab" aria-controls="preview" aria-selected="true">
+                <i class="fas fa-eye me-2"></i> Preview (Read-Only)
+            </button>
+        </li>
+        <li class="nav-item ms-2" role="presentation">
+            <button class="nav-link fw-bold px-4" id="edit-tab" data-bs-toggle="tab" data-bs-target="#edit" type="button" role="tab" aria-controls="edit" aria-selected="false">
+                <i class="fas fa-edit me-2"></i> Edit Content
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="pageTabsContent">
+        <!-- Preview Tab -->
+        <div class="tab-pane fade show active" id="preview" role="tabpanel" aria-labelledby="preview-tab">
+            <div class="preview-wrapper rounded-4 shadow-sm overflow-hidden mb-4 border">
+                <!-- Copied styles from page_detail.html to ensure exact same look -->
+                <div class="dynamic-page-header">
+                    <div class="container-fluid py-5">
+                        <div class="row justify-content-center">
+                            <div class="col-lg-8">
+                                <h1 class="page-title text-center">{{ page.title|default:"New Page Title" }}</h1>
+                                <div class="page-divider mx-auto"></div>
+                                <p class="page-subtitle text-muted text-center">Last updated: {{ page.updated_at|date:"F d, Y"|default:"Just now" }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dynamic-page-content-wrapper">
+                    <div class="container-fluid pb-5 mb-5">
+                        <div class="row justify-content-center">
+                            <div class="col-lg-10 col-xl-8">
+                                <div class="page-content-card">
+                                    <div class="dynamic-content">
+                                        {{ page.content|safe|default:"<p class='text-muted text-center py-5'>No content yet. Switch to the Edit tab to add some!</p>" }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-end">
+                <button type="button" class="btn btn-primary px-4 rounded-pill shadow-sm" onclick="document.getElementById('edit-tab').click()">
+                    <i class="fas fa-edit me-2"></i> Switch to Edit Mode
+                </button>
+            </div>
+        </div>
+
+        <!-- Edit Tab -->
+        <div class="tab-pane fade" id="edit" role="tabpanel" aria-labelledby="edit-tab">
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-4 p-md-5">
+                    <form method="POST" action="">
+                        {% csrf_token %}
+                        
+                        <div class="alert alert-warning alert-permanent border-0 shadow-sm mb-4 rounded-3" role="alert" style="background-color: #fff8e1; color: #856404; border-left: 4px solid #ffc107 !important;">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-robot fs-4 me-2 text-warning"></i>
+                                <strong class="fs-6">Using ChatGPT or AI to write your page?</strong>
+                            </div>
+                            <p class="mb-0 font-sm">
+                                If you ask an AI to generate this code, prompt it exactly like this: <br>
+                                <em class="bg-white px-2 py-1 rounded mt-1 d-inline-block shadow-sm">"Provide ONLY the HTML body content. Do NOT include <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code>, or <code>&lt;body&gt;</code> tags."</em><br>
+                                <small class="text-muted mt-1 d-block">Pasting full-page structural tags will conflict with the store's layout and break the page.</small>
+                            </p>
+                        </div>
+                
+                <div class="row g-4">
+                    <!-- Title -->
+                    <div class="col-md-6">
+                        <label for="title" class="form-label fw-bold text-dark">Page Title <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-lg bg-light" id="title" name="title" value="{{ page.title }}" required placeholder="e.g., About Us">
+                    </div>
+                    
+                    <!-- Slug -->
+                    <div class="col-md-6">
+                        <label for="slug" class="form-label fw-bold text-dark">URL Slug <span class="text-danger">*</span></label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text bg-light border-end-0 text-muted">/p/</span>
+                            <input type="text" class="form-control bg-light border-start-0 ps-0" id="slug" name="slug" value="{{ page.slug }}" required placeholder="e.g., about-us">
+                        </div>
+                        <div class="form-text text-muted font-xs mt-1">Must be unique, lowercase, and use hyphens instead of spaces.</div>
+                    </div>
+
+                    <!-- Content -->
+                    <div class="col-12">
+                        <label for="content" class="form-label fw-bold text-dark">Page Content (HTML, CSS, JS, or Plain Text) <span class="text-danger">*</span></label>
+                        <textarea class="form-control bg-dark text-light border-0 rounded-3 p-4" id="content" name="content" rows="15" required style="font-family: monospace; font-size: 14px; line-height: 1.5;" placeholder="Enter raw HTML, <style>, <script>, or plain text here...">{{ page.content }}</textarea>
+                        <div class="form-text text-muted font-xs mt-2 mb-2">
+                            <i class="fas fa-info-circle me-1"></i> You have full control. You can write plain text, or inject full <code>&lt;style&gt;</code>, <code>&lt;script&gt;</code>, and <code>HTML</code> tags.
+                        </div>
+                    </div>
+
+                    <!-- Status -->
+                    <div class="col-12">
+                        <div class="form-check form-switch form-switch-lg mt-2">
+                            <input class="form-check-input" type="checkbox" id="is_published" name="is_published" {% if not page or page.is_published %}checked{% endif %}>
+                            <label class="form-check-label fw-bold text-dark ms-2 mt-1" for="is_published">Publish this page</label>
+                        </div>
+                        <div class="form-text text-muted font-xs ms-5 mt-0">If unchecked, the page will be saved as a draft and won't be accessible publicly.</div>
+                    </div>
+                </div>
+
+                <hr class="my-5 opacity-10">
+
+                <div class="d-flex justify-content-end gap-3">
+                    <a href="{% url 'page_list' %}" class="btn btn-light px-4 rounded-pill fw-bold text-muted">Cancel</a>
+                    <button type="submit" class="btn btn-primary px-5 rounded-pill shadow-sm fw-bold">
+                        <i class="fas fa-save me-2"></i> {% if page %}Update Page{% else %}Save Page{% endif %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+</div> <!-- End tab-pane edit -->
+</div> <!-- End tab-content -->
+
+<script>
+    // Auto-generate slug from title
+    document.addEventListener('DOMContentLoaded', function() {
+        const titleInput = document.getElementById('title');
+        const slugInput = document.getElementById('slug');
+        
+        // Only auto-generate if we're creating a new page
+        {% if not page %}
+        titleInput.addEventListener('input', function() {
+            let slug = this.value.toLowerCase()
+                .replace(/[^\w\s-]/g, '') // Remove non-word chars
+                .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+                .replace(/^-+|-+$/g, ''); // Trim hyphens
+            slugInput.value = slug;
+        });
+        {% endif %}
+    });
+</script>
+
+<style>
+    /* Admin Form Styles */
+    .form-switch-lg .form-check-input {
+        width: 3em;
+        height: 1.5em;
+    }
+    .preview-wrapper {
+        background-color: #f9fafb;
+    }
+    
+    /* Copied Public Page Styles for Preview Tab */
+    .dynamic-page-header {
+        padding: 5rem 0 3rem;
+        background-color: #ffffff;
+    }
+    .page-title {
+        font-size: 2.75rem;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 1.5rem;
+        letter-spacing: -0.03em;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        text-align: center;
+    }
+    .page-divider {
+        height: 4px;
+        width: 60px;
+        background: var(--primary-color, #F85606);
+        margin: 0 auto 1.5rem;
+        border-radius: 2px;
+    }
+    .page-subtitle {
+        font-size: 1rem;
+        color: #6b7280;
+        font-weight: 500;
+        text-align: center;
+    }
+
+    /* Content Wrapper */
+    .dynamic-page-content-wrapper {
+        background-color: #f9fafb;
+        padding-top: 3rem;
+        min-height: 50vh;
+    }
+
+    /* Card Styles */
+    .page-content-card {
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        padding: 4rem;
+        border: 1px solid rgba(229, 231, 235, 0.5);
+    }
+    
+    /* Typography & Content Formatting */
+    .dynamic-content {
+        line-height: 1.85;
+        font-size: 1.125rem;
+        color: #374151;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        white-space: pre-wrap; /* Supports plain text line breaks */
+    }
+    .dynamic-content h1, .dynamic-content h2, .dynamic-content h3, .dynamic-content h4 {
+        color: #111827;
+        margin-top: 3rem;
+        margin-bottom: 1.25rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+    .dynamic-content h1:first-child, .dynamic-content h2:first-child { margin-top: 0; }
+    .dynamic-content h2 { font-size: 1.875rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
+    .dynamic-content h3 { font-size: 1.5rem; }
+    .dynamic-content p { margin-bottom: 1.5rem; }
+    .dynamic-content ul, .dynamic-content ol { margin-bottom: 2rem; padding-left: 1.5rem; }
+    .dynamic-content li { margin-bottom: 0.75rem; padding-left: 0.5rem; }
+    .dynamic-content li::marker { color: var(--primary-color, #F85606); font-weight: 600; }
+    .dynamic-content a { color: var(--primary-color, #F85606); text-decoration: none; font-weight: 600; transition: all 0.2s ease; border-bottom: 2px solid transparent; }
+    .dynamic-content a:hover { color: #d94a05; border-bottom-color: currentColor; }
+    .dynamic-content strong, .dynamic-content b { color: #111827; font-weight: 700; }
+    .dynamic-content blockquote {
+        border-left: 4px solid var(--primary-color, #F85606);
+        padding: 1.5rem 1.5rem 1.5rem 2rem;
+        margin: 2.5rem 0;
+        color: #4b5563;
+        font-style: italic;
+        background: #f3f4f6;
+        border-radius: 0 8px 8px 0;
+        font-size: 1.25rem;
+    }
+</style>
+{% endblock %}

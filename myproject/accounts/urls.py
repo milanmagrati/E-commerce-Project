@@ -6,6 +6,7 @@ urlpatterns = [
     # Role Management URLs
     path('roles/', views.role_list, name='role_list'),
     path('roles/create/', views.role_create, name='role_create'),
+    path('roles/<int:role_id>/permissions/', views.role_permissions_edit, name='role_permissions'),
     path('roles/<int:role_id>/delete/', views.role_delete, name='role_delete'),
 
     # User Management URLs

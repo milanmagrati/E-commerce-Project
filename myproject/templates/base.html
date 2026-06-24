@@ -1661,6 +1661,15 @@
                     </a>
                 </li>
 
+                <!-- ==================== PAGE SETUP ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="{% if 'pages' in request.path %}active{% endif %}">
+                    <a href="{% url 'page_list' %}">
+                        <i class="fas fa-file-alt"></i> Page Setup
+                    </a>
+                </li>
+                {% endif %}
+
                 <!-- ==================== LOGOUT ==================== -->
                 <li>
                     <a href="{% url 'logout' %}" onclick="return confirm('Are you sure you want to logout?')">

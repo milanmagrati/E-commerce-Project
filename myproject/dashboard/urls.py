@@ -2,6 +2,7 @@
 from django.urls import path
 from . import views
 from . import followup_setup_views
+from . import page_views
 
 
 urlpatterns = [
@@ -366,4 +367,10 @@ urlpatterns = [
     path('api/update-notice/<int:notice_id>/', views.update_notice, name='update_notice'),
     path('api/notice-history/', views.get_notice_history, name='notice_history'),
     path('api/notice/<int:notice_id>/stop/', views.stop_notice, name='stop_notice'),
+
+    # ==================== PAGE SETUP ====================
+    path('pages/', page_views.page_list, name='page_list'),
+    path('pages/add/', page_views.page_create, name='page_create'),
+    path('pages/<int:pk>/edit/', page_views.page_edit, name='page_edit'),
+    path('pages/<int:pk>/delete/', page_views.page_delete, name='page_delete'),
 ]

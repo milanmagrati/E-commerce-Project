@@ -16,6 +16,7 @@ from django.core.files.storage import default_storage
 from io import BytesIO
 import logging
 import re
+import json
 
 from .models import Role
 
@@ -194,8 +195,10 @@ def user_create(request):
             if is_ajax:
                 return JsonResponse({'success': False, 'error': error_msg})
             messages.error(request, error_msg)
+            roles = Role.objects.all()
             return render(request, 'accounts/user_create.html', {
-                'roles': Role.objects.all(),
+                'roles': roles,
+                'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
             })
         
         if User.objects.filter(username=username).exists():
@@ -203,14 +206,22 @@ def user_create(request):
             if is_ajax:
                 return JsonResponse({'success': False, 'error': error_msg})
             messages.error(request, error_msg)
-            return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
+            roles = Role.objects.all()
+            return render(request, 'accounts/user_create.html', {
+                'roles': roles,
+                'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
+            })
 
         if User.objects.filter(email=email).exists():
             error_msg = f'❌ Email "{email}" is already registered!'
             if is_ajax:
                 return JsonResponse({'success': False, 'error': error_msg})
             messages.error(request, error_msg)
-            return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
+            roles = Role.objects.all()
+            return render(request, 'accounts/user_create.html', {
+                'roles': roles,
+                'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
+            })
         
         try:
             # Create user
@@ -469,11 +480,17 @@ def user_create(request):
             if is_ajax:
                 return JsonResponse({'success': False, 'error': error_msg})
             messages.error(request, error_msg)
-            return render(request, 'accounts/user_create.html', {'roles': Role.objects.all()})
+            roles = Role.objects.all()
+            return render(request, 'accounts/user_create.html', {
+                'roles': roles,
+                'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
+            })
 
     # GET request - show form
+    roles = Role.objects.all()
     return render(request, 'accounts/user_create.html', {
-        'roles': Role.objects.all(),
+        'roles': roles,
+        'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
     })
 
 @login_required
@@ -751,9 +768,11 @@ def user_edit(request, user_id):
             messages.error(request, f'❌ Error updating user: {str(e)}')
     
     # GET request - render form
+    roles = Role.objects.all()
     return render(request, 'accounts/user_edit.html', {
         'edit_user': edit_user,
-        'roles': Role.objects.all(),
+        'roles': roles,
+        'role_defaults_json': json.dumps({r.name: r.default_permissions for r in roles})
     })
 @login_required
 @administrator_required
@@ -1172,3 +1191,30 @@ def change_password(request):
                         messages.error(request, f'❌ {field_name}: {error}')
     
     return redirect('profile')
+@login_required
+@administrator_required
+def role_permissions_edit(request, role_id):
+    role = get_object_or_404(Role, id=role_id)
+    
+    if request.method == 'POST':
+        permissions = []
+        for key in request.POST:
+            if key.startswith('can_'):
+                permissions.append(key)
+        
+        max_discount_percent = request.POST.get('max_discount_percent', '0.00')
+        
+        role.default_permissions = {
+            'permissions': permissions,
+            'max_discount_percent': max_discount_percent
+        }
+        role.save()
+        
+        messages.success(request, f'Permissions updated successfully for {role.display_name}.')
+        return redirect('role_list')
+        
+    return render(request, 'accounts/role_permissions.html', {
+        'role': role,
+        'saved_permissions': role.default_permissions.get('permissions', []),
+        'saved_discount': role.default_permissions.get('max_discount_percent', '0.00'),
+    })

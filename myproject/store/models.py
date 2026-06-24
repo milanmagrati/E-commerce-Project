@@ -118,3 +118,15 @@ class Wishlist(models.Model):
 
     def __str__(self):
         return f'{self.user} - {self.product.name}'
+
+
+class Page(models.Model):
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(unique=True, help_text="URL-friendly name (e.g., 'about-us')")
+    content = models.TextField(help_text="HTML content of the page")
+    is_published = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title

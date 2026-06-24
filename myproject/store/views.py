@@ -11,7 +11,7 @@ from django.db.models import Q, Avg, Count
 from dashboard.models import Category, Product, ProductImage
 from dashboard.models import Order as DashOrder, OrderItem as DashOrderItem
 from dashboard.models import Customer as DashCustomer, Setup
-from .models import ProductReview, Cart, CartItem, Order, OrderItem, Wishlist
+from .models import ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, Page
 from .forms import LoginForm, RegisterForm, ReviewForm, CheckoutForm
 
 
@@ -841,3 +841,8 @@ def quick_order(request, product_id):
         'available_stock': available_stock,
         'selected_variant': selected_variant,
     })
+
+
+def dynamic_page(request, slug):
+    page = get_object_or_404(Page, slug=slug, is_published=True)
+    return render(request, 'store/page_detail.html', {'page': page})

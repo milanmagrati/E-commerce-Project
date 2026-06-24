@@ -1,5 +1,5 @@
 from dashboard.models import Category
-from store.models import Cart, Wishlist
+from store.models import Cart, Wishlist, Page
 
 
 def store_context(request):
@@ -26,9 +26,12 @@ def store_context(request):
                 cart_count = cart.total_items
                 cart_items = cart.items.select_related('product').all()[:5]
 
+    footer_pages = Page.objects.filter(is_published=True).order_by('created_at')
+
     return {
         'store_cart_count': cart_count,
         'store_wishlist_count': wishlist_count,
         'store_all_categories': all_categories,
         'store_cart_items': cart_items,
+        'footer_pages': footer_pages,
     }

@@ -26,4 +26,5 @@ urlpatterns = [
     path('review/add/<int:product_id>/', views.add_review, name='add_review'),
     path('quick-order/<int:product_id>/', views.quick_order, name='quick_order'),
     path('api/load-more/', views.load_more_products, name='load_more'),
+    path('p/<slug:slug>/', views.dynamic_page, name='dynamic_page'),
 ]

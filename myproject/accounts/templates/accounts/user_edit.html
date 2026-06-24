@@ -841,6 +841,7 @@ function toggleHrmSubPermissions(mainCheckbox) {
 }
 
 // Hide/show permissions based on role
+const roleDefaults = {{ role_defaults_json|safe }};
 document.getElementById('roleSelect').addEventListener('change', function() {
     const permSection = document.getElementById('permissionsSection');
     const roleAlert = document.getElementById('roleAlert');
@@ -868,6 +869,24 @@ document.getElementById('roleSelect').addEventListener('change', function() {
         if (permSection) permSection.style.display = 'block';
         roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleName} role selected:</strong> Customize permissions below.`;
         roleAlert.className = 'alert alert-info mt-4';
+        
+        // Uncheck all first
+        uncheckAll();
+        
+        // Check default permissions if available for this role
+        const role = this.value;
+        if (roleDefaults[role]) {
+            let perms = roleDefaults[role].permissions || [];
+            perms.forEach(perm => {
+                const checkbox = document.getElementById(perm);
+                if (checkbox) checkbox.checked = true;
+            });
+            let discount = roleDefaults[role].max_discount_percent || '0.00';
+            document.getElementById('max_discount_percent').value = discount;
+            if (parseFloat(discount) > 0) {
+                document.getElementById('max_discount_percent').disabled = false;
+            }
+        }
         updateDiscountInput();
     }
 });

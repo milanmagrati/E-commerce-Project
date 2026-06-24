@@ -1,0 +1,156 @@
+{% extends 'store/base.html' %}
+{% load static %}
+
+{% block title %}{{ page.title }} | {{ COMPANY_NAME }}{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="dynamic-page-header">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <h1 class="page-title text-center">{{ page.title }}</h1>
+                <div class="page-divider mx-auto"></div>
+                <p class="page-subtitle text-muted text-center">Last updated: {{ page.updated_at|date:"F d, Y" }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Page Content -->
+<div class="dynamic-page-content-wrapper">
+    <div class="container pb-5 mb-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10 col-xl-8">
+                <div class="page-content-card">
+                    <div class="dynamic-content">
+                        {{ page.content|safe }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Header Styles */
+    .dynamic-page-header {
+        padding: 5rem 0 3rem;
+        background-color: #ffffff;
+    }
+    .page-title {
+        font-size: 2.75rem;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 1.5rem;
+        letter-spacing: -0.03em;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        text-align: center;
+    }
+    .page-divider {
+        height: 4px;
+        width: 60px;
+        background: var(--primary-color, #F85606);
+        margin: 0 auto 1.5rem;
+        border-radius: 2px;
+    }
+    .page-subtitle {
+        font-size: 1rem;
+        color: #6b7280;
+        font-weight: 500;
+        text-align: center;
+    }
+
+    /* Content Wrapper */
+    .dynamic-page-content-wrapper {
+        background-color: #f9fafb;
+        padding-top: 3rem;
+        min-height: 50vh;
+    }
+
+    /* Card Styles */
+    .page-content-card {
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        padding: 4rem;
+        border: 1px solid rgba(229, 231, 235, 0.5);
+    }
+    
+    @media (max-width: 768px) {
+        .page-content-card {
+            padding: 2rem;
+            border-radius: 12px;
+        }
+        .page-title {
+            font-size: 2rem;
+        }
+    }
+
+    /* Typography & Content Formatting */
+    .dynamic-content {
+        line-height: 1.85;
+        font-size: 1.125rem;
+        color: #374151;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        white-space: pre-wrap;
+    }
+    .dynamic-content h1, .dynamic-content h2, .dynamic-content h3, .dynamic-content h4 {
+        color: #111827;
+        margin-top: 3rem;
+        margin-bottom: 1.25rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+    .dynamic-content h1:first-child, .dynamic-content h2:first-child {
+        margin-top: 0;
+    }
+    .dynamic-content h2 { font-size: 1.875rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
+    .dynamic-content h3 { font-size: 1.5rem; }
+    
+    .dynamic-content p {
+        margin-bottom: 1.5rem;
+    }
+    
+    .dynamic-content ul, .dynamic-content ol {
+        margin-bottom: 2rem;
+        padding-left: 1.5rem;
+    }
+    .dynamic-content li {
+        margin-bottom: 0.75rem;
+        padding-left: 0.5rem;
+    }
+    .dynamic-content li::marker {
+        color: var(--primary-color, #F85606);
+        font-weight: 600;
+    }
+    
+    .dynamic-content a {
+        color: var(--primary-color, #F85606);
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        border-bottom: 2px solid transparent;
+    }
+    .dynamic-content a:hover {
+        color: #d94a05;
+        border-bottom-color: currentColor;
+    }
+    
+    .dynamic-content strong, .dynamic-content b {
+        color: #111827;
+        font-weight: 700;
+    }
+    
+    .dynamic-content blockquote {
+        border-left: 4px solid var(--primary-color, #F85606);
+        padding: 1.5rem 1.5rem 1.5rem 2rem;
+        margin: 2.5rem 0;
+        color: #4b5563;
+        font-style: italic;
+        background: #f3f4f6;
+        border-radius: 0 8px 8px 0;
+        font-size: 1.25rem;
+    }
+</style>
+{% endblock %}

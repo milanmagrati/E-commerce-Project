@@ -8,6 +8,7 @@ class Role(models.Model):
     name = models.CharField(max_length=50, unique=True, help_text="Internal name used in code (e.g. administrator, sales, warehouse)")
     display_name = models.CharField(max_length=100, help_text="Human-readable name shown in UI")
     description = models.TextField(blank=True, default='')
+    default_permissions = models.JSONField(default=dict, blank=True)
     is_system = models.BooleanField(default=False, help_text="System roles cannot be deleted without extra confirmation")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -205,32 +206,56 @@ class CustomUser(AbstractUser):
     
     def set_default_permissions_by_role(self):
         """Auto-set permissions based on role"""
-        if self.role == 'warehouse':
-            self.can_view_dashboard = True
-            self.can_view_orders = True
-            self.can_edit_orders = True
-            self.can_view_on_hold_orders = True
-            self.can_view_dispatch = True
-            self.can_manage_dispatch = True
-            self.can_delete_dispatch = True
-            self.can_scan_barcodes = True
-            self.can_view_inventory = True
-            self.can_manage_inventory = True
-            self.can_adjust_stock = True
-            self.can_view_own_targets = True
+        if not self.role:
+            return
 
-        elif self.role == 'sales':
-            self.can_view_dashboard = True
-            self.can_view_orders = True
-            self.can_create_orders = True
-            self.can_edit_orders = True
-            self.can_view_products = True
-            self.can_view_customers = True
-            self.can_create_customers = True
-            self.can_edit_customers = True
-            self.can_give_discounts = True
-            self.max_discount_percent = Decimal('10.00')
-            self.can_view_own_targets = True
+        if self.role == 'administrator':
+            for perm in [
+                'can_view_dashboard', 'can_view_total_revenue', 'can_view_low_stock_alerts',
+                'can_view_orders', 'can_create_orders', 'can_edit_orders', 
+                'can_delete_orders', 'can_cancel_orders', 'can_view_on_hold_orders', 
+                'can_export_orders', 'can_view_orders_list', 'can_access_offer_price',
+                'can_view_products', 'can_create_products', 'can_edit_products', 'can_delete_products',
+                'can_view_customers', 'can_create_customers', 'can_edit_customers', 'can_delete_customers',
+                'can_view_returns', 'can_create_returns', 'can_edit_returns',
+                'can_delete_returns', 'can_approve_returns', 'can_process_refunds',
+                'can_view_targets', 'can_set_targets', 'can_edit_targets',
+                'can_delete_targets', 'can_view_own_targets',
+                'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
+                'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
+                'can_view_inventory_cost', 'can_toggle_product_price',
+                'can_view_selling_unit_price', 'can_view_cost_unit_price',
+                'can_view_valuation_selling', 'can_view_valuation_cost', 'can_toggle_stock_valuation',
+                'can_view_reports', 'can_view_sales_reports', 'can_view_financial_reports', 'can_export_data',
+                'can_view_purchases', 'can_create_purchases', 'can_manage_suppliers', 'can_make_supplier_payments',
+                'can_view_staff_performance',
+                'can_view_cities', 'can_add_cities', 'can_edit_cities', 'can_delete_cities',
+                'can_view_ncm_orders', 'can_create_ncm_orders', 'can_edit_ncm_orders',
+                'can_delete_ncm_orders', 'can_view_ncm_bulk_logs', 'can_manage_ncm_bulk_logs',
+                'can_view_ncm_trash', 'can_sync_ncm_orders', 'can_view_ncm_branches', 'can_manage_ncm_branches',
+                'can_view_hrm', 'can_view_hrm_hr_management', 'can_view_hrm_asset_management',
+                'can_view_hrm_attendance', 'can_view_hrm_payroll',
+                'can_access_todo', 'can_access_follow_ups', 'can_setup_follow_up_status',
+                'can_view_cost_price', 'can_edit_prices', 'can_give_discounts'
+            ]:
+                setattr(self, perm, True)
+            self.max_discount_percent = Decimal('100.00')
+            return
+
+        try:
+            role_obj = Role.objects.get(name=self.role)
+            default_perms = role_obj.default_permissions
+            
+            if 'permissions' in default_perms:
+                for perm in default_perms['permissions']:
+                    if hasattr(self, perm):
+                        setattr(self, perm, True)
+            
+            if 'max_discount_percent' in default_perms:
+                self.max_discount_percent = Decimal(str(default_perms['max_discount_percent']))
+                
+        except Role.DoesNotExist:
+            pass
     
     class Meta:
         verbose_name = 'User'
