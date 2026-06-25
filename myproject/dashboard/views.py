@@ -21401,6 +21401,18 @@ def add_follow_up(request):
         if product_ids:
             valid_products = Product.objects.filter(id__in=product_ids, is_deleted=False)
             new_follow_up.products.set(valid_products)
+            
+        from .models import FollowUpLog
+        if followup_1:
+            FollowUpLog.objects.create(
+                follow_up=new_follow_up, user=request.user, field_changed='Followup 1',
+                old_value='-', new_value=followup_1
+            )
+        if followup_2:
+            FollowUpLog.objects.create(
+                follow_up=new_follow_up, user=request.user, field_changed='Followup 2',
+                old_value='-', new_value=followup_2
+            )
         
         products_data = [
             {'id': p.id, 'name': p.name, 'price': float(p.price)}
@@ -21431,19 +21443,38 @@ def add_follow_up(request):
 @login_required
 @require_POST
 def edit_follow_up(request, pk):
-    from .models import FollowUp, Product
+    from .models import FollowUp, Product, FollowUpLog
     try:
         follow_up = get_object_or_404(FollowUp, pk=pk)
         data = json.loads(request.body)
         
+        old_f1 = follow_up.followup_1
+        old_f2 = follow_up.followup_2
+        
         follow_up.name = data.get('name', follow_up.name).strip()
         follow_up.phone = data.get('phone', follow_up.phone).strip()
         follow_up.lead_source = data.get('lead_source', follow_up.lead_source).strip()
-        follow_up.followup_1 = data.get('followup_1', follow_up.followup_1).strip()
-        follow_up.followup_2 = data.get('followup_2', follow_up.followup_2).strip()
+        
+        new_f1 = data.get('followup_1', follow_up.followup_1).strip()
+        new_f2 = data.get('followup_2', follow_up.followup_2).strip()
+        
+        follow_up.followup_1 = new_f1
+        follow_up.followup_2 = new_f2
         follow_up.status = data.get('status', follow_up.status).strip()
         follow_up.remarks = data.get('remarks', follow_up.remarks).strip()
         follow_up.save()
+        
+        if old_f1 != new_f1:
+            FollowUpLog.objects.create(
+                follow_up=follow_up, user=request.user, field_changed='Followup 1',
+                old_value=old_f1, new_value=new_f1
+            )
+            
+        if old_f2 != new_f2:
+            FollowUpLog.objects.create(
+                follow_up=follow_up, user=request.user, field_changed='Followup 2',
+                old_value=old_f2, new_value=new_f2
+            )
         
         # Handle multiple products (M2M)
         product_ids = data.get('product_ids')
@@ -21486,6 +21517,20 @@ def delete_follow_up(request, pk):
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def get_follow_up_logs(request, pk):
+    from .models import FollowUpLog
+    logs = FollowUpLog.objects.filter(follow_up_id=pk).select_related('user').order_by('-timestamp')
+    data = [{
+        'user': log.user.username if log.user else 'System',
+        'field_changed': log.field_changed,
+        'old_value': log.old_value,
+        'new_value': log.new_value,
+        'timestamp': log.timestamp.strftime('%Y-%m-%d %I:%M %p')
+    } for log in logs]
+    return JsonResponse({'success': True, 'data': data})
 
 
 @login_required
@@ -21541,13 +21586,37 @@ def content_accounts_list(request):
     from django.contrib.auth import get_user_model
     User = get_user_model()
     users = User.objects.all().order_by('username')
-    accounts = ContentAccount.objects.filter(is_deleted=False).order_by('-id')
+    accounts = ContentAccount.objects.filter(is_deleted=False).order_by('order', '-id')
     statuses = [{'name': s} for s in ['Active', 'new', 'inactive', 'deleted', 'Blocked']]
     return render(request, 'dashboard/content_accounts.html', {
         'accounts': accounts,
         'statuses': statuses,
         'users': users
     })
+
+@login_required
+def update_content_account_order(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            order_data = data.get('order_data', [])
+            
+            # Use bulk_update for better performance
+            accounts_to_update = []
+            for item in order_data:
+                account_id = item.get('id')
+                order = item.get('order')
+                if account_id is not None and order is not None:
+                    account = ContentAccount(id=account_id, order=order)
+                    accounts_to_update.append(account)
+                    
+            if accounts_to_update:
+                ContentAccount.objects.bulk_update(accounts_to_update, ['order'])
+                
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
 
 @login_required
 def add_content_account(request):

@@ -114,6 +114,9 @@
                                 <a href="{% url 'order_create' %}?followup_id={{ item.id }}" class="action-btn border text-success me-1" title="Create Order">
                                     <i class="fas fa-shopping-cart"></i>
                                 </a>
+                                <button class="action-btn border text-info me-1" onclick="viewLogs({{ item.id }})" title="View Logs">
+                                    <i class="fas fa-history"></i>
+                                </button>
                                 <button class="action-btn border text-primary me-1" onclick="openEditModal({{ item.id }})" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </button>
@@ -135,6 +138,60 @@
     </div>
 </div>
 {% csrf_token %}
+
+<!-- Logs Modal -->
+<div class="modal fade" id="logsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title"><i class="fas fa-history text-info me-2"></i> Activity Log</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="logsContainer" class="p-4">
+                    <!-- Logs will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.timeline-item {
+    position: relative;
+    padding-left: 30px;
+    margin-bottom: 20px;
+}
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: -20px;
+    width: 2px;
+    background: #e9ecef;
+}
+.timeline-item:last-child::before {
+    display: none;
+}
+.timeline-icon {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #0dcaf0;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 2px #0dcaf0;
+}
+.timeline-content {
+    background: #f8f9fa;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+</style>
 
 <!-- Edit Follow-Up Modal -->
 <div class="modal fade" id="editFollowUpModal" tabindex="-1" aria-hidden="true">
@@ -599,14 +656,14 @@
                 if (emptyRow) emptyRow.remove();
 
                 // Show success toast/alert
-                alert('Follow-up added successfully!');
+                alertify.success('Follow-up added successfully!');
             } else {
-                alert('Error: ' + result.error);
+                alertify.error('Error: ' + result.error);
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('An error occurred while saving.');
+            alertify.error('An error occurred while saving.');
         })
         .finally(() => {
             btn.innerHTML = originalHtml;
@@ -650,6 +707,9 @@
                 <a href="${orderCreateUrl}?followup_id=${data.id}" class="action-btn border text-success me-1" title="Create Order">
                     <i class="fas fa-shopping-cart"></i>
                 </a>
+                <button class="action-btn border text-info me-1" onclick="viewLogs(${data.id})" title="View Logs">
+                    <i class="fas fa-history"></i>
+                </button>
                 <button class="action-btn border text-primary me-1" onclick="openEditModal(${data.id})" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
@@ -785,13 +845,14 @@
                 }
                 
                 if (editModal) editModal.hide();
+                alertify.success('Updated successfully!');
             } else {
-                alert('Error: ' + result.error);
+                alertify.error('Error: ' + result.error);
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('An error occurred while saving.');
+            alertify.error('An error occurred while saving.');
         })
         .finally(() => {
             btn.innerHTML = originalHtml;
@@ -826,18 +887,65 @@
                     snCells.forEach((cell, index) => {
                         cell.textContent = index + 1;
                     });
+                    alertify.success('Deleted successfully!');
                 }
             } else {
-                alert('Error deleting: ' + result.error);
+                alertify.error('Error deleting: ' + result.error);
                 btn.innerHTML = originalHtml;
                 btn.disabled = false;
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('An error occurred while deleting.');
+            alertify.error('An error occurred while deleting.');
             btn.innerHTML = originalHtml;
             btn.disabled = false;
+        });
+    }
+
+    function viewLogs(id) {
+        const modalElement = document.getElementById('logsModal');
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+        const container = document.getElementById('logsContainer');
+        container.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2 text-muted">Loading logs...</p></div>';
+        modal.show();
+
+        fetch(`/api/orders/follow-ups/${id}/logs/`)
+        .then(res => res.json())
+        .then(result => {
+            if (result.success) {
+                if (result.data.length === 0) {
+                    container.innerHTML = '<div class="text-center text-muted py-4">No changes have been recorded yet.</div>';
+                    return;
+                }
+                
+                let html = '';
+                result.data.forEach(log => {
+                    html += `
+                    <div class="timeline-item">
+                        <div class="timeline-icon"></div>
+                        <div class="timeline-content shadow-sm">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong class="text-primary">${log.user}</strong>
+                                <span class="text-muted small">${log.timestamp}</span>
+                            </div>
+                            <div class="mb-1">
+                                <span class="badge bg-secondary">${log.field_changed}</span> updated
+                            </div>
+                            <div class="text-muted small">
+                                <del class="text-danger">${log.old_value || '-'}</del> <i class="fas fa-arrow-right mx-1 text-muted"></i> <ins class="text-success text-decoration-none fw-bold">${log.new_value || '-'}</ins>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = `<div class="text-danger py-3 text-center"><i class="fas fa-exclamation-triangle me-2"></i> ${result.error}</div>`;
+            }
+        })
+        .catch(error => {
+            console.error(error);
+            container.innerHTML = `<div class="text-danger py-3 text-center"><i class="fas fa-times me-2"></i> Failed to load logs.</div>`;
         });
     }
 
@@ -950,8 +1058,9 @@
                 } else {
                     cell.textContent = finalValue || '-';
                 }
+                alertify.success('Updated successfully!');
             } else {
-                alert('Error: ' + result.error);
+                alertify.error('Error: ' + result.error);
                 if (field === 'status') cancelInlineStatus(element, originalValue);
                 else cancelInline(element, field, originalValue);
             }
@@ -959,7 +1068,7 @@
         .catch(error => {
             console.error('Error:', error);
             cell.classList.remove('inline-editing');
-            alert('An error occurred while saving.');
+            alertify.error('An error occurred while saving.');
             if (field === 'status') cancelInlineStatus(element, originalValue);
             else cancelInline(element, field, originalValue);
         });

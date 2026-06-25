@@ -1871,6 +1871,7 @@ class ContentAccount(models.Model):
     managed_by = models.CharField(max_length=100, blank=True, null=True)
     status = models.CharField(max_length=50, blank=True, null=True)
     account_type = models.CharField(max_length=100, blank=True, null=True, verbose_name='Type')
+    order = models.IntegerField(default=0)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1880,7 +1881,7 @@ class ContentAccount(models.Model):
         return f"{self.account_id} - {self.user_name}"
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['order', '-created_at']
         verbose_name_plural = 'Content Accounts'
 class StaffReport(models.Model):
     staff_name = models.CharField(max_length=255)
@@ -1906,3 +1907,17 @@ class StaffReport(models.Model):
     class Meta:
         ordering = ['-created_at']
         verbose_name_plural = 'Staff Reports'
+
+class FollowUpLog(models.Model):
+    follow_up = models.ForeignKey(FollowUp, on_delete=models.CASCADE, related_name='logs')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    field_changed = models.CharField(max_length=50)
+    old_value = models.TextField(blank=True, null=True)
+    new_value = models.TextField(blank=True, null=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.follow_up.name} - {self.field_changed} updated"

@@ -71,8 +71,8 @@
                         </tr>
 
                         {% for account in accounts %}
-                        <tr id="account-row-{{ account.id }}">
-                            <td class="text-center sn-column">{{ forloop.counter }}</td>
+                        <tr id="account-row-{{ account.id }}" class="draggable-row">
+                            <td class="text-center sn-column" style="cursor: grab;"><i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>{{ forloop.counter }}</td>
                             <td>{{ account.account_id }}</td>
                             <td>{{ account.user_name }}</td>
                             <td>{{ account.gmail }}</td>
@@ -239,8 +239,14 @@
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
+    
+    .sortable-ghost {
+        opacity: 0.4;
+        background-color: #f8fafc;
+    }
 </style>
 
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 <script>
     function getCookie(name) {
         let cookieValue = null;
@@ -258,6 +264,21 @@
     }
     const csrftoken = getCookie('csrftoken');
 
+    function escapeJsString(str) {
+        if (!str) return '';
+        return str.toString().replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+    }
+
+    function escapeHTML(str) {
+        if (!str) return '';
+        return str.toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     function getStatusBadge(status) {
         let badgeClass = 'bg-secondary';
         if (status === 'Active') badgeClass = 'bg-success';
@@ -272,9 +293,64 @@
         rows.forEach((row, index) => {
             const snCell = row.querySelector('.sn-column');
             if (snCell) {
-                snCell.textContent = index + 1;
+                snCell.innerHTML = `<i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>${index + 1}`;
             }
         });
+    }
+
+    // Initialize SortableJS
+    document.addEventListener('DOMContentLoaded', function() {
+        const tbody = document.getElementById('accountsTableBody');
+        new Sortable(tbody, {
+            animation: 150,
+            handle: '.sn-column', // Use the S.N. column as the drag handle
+            filter: '.content-entry-bg',
+            preventOnFilter: false, // Don't prevent clicking/typing in inputs on the filtered row
+            ghostClass: 'sortable-ghost',
+            onMove: function (evt) {
+                // Prevent moving the entry row or moving items above the entry row
+                if (evt.related.classList.contains('content-entry-bg')) {
+                    return false;
+                }
+            },
+            onEnd: function (evt) {
+                updateSerialNumbers();
+                saveNewOrder();
+            }
+        });
+    });
+
+    async function saveNewOrder() {
+        const rows = document.querySelectorAll('#accountsTableBody tr:not(.content-entry-bg)');
+        const orderData = [];
+        rows.forEach((row, index) => {
+            const idStr = row.id.replace('account-row-', '');
+            if (idStr) {
+                orderData.push({
+                    id: parseInt(idStr),
+                    order: index
+                });
+            }
+        });
+
+        try {
+            const response = await fetch('{% url "update_content_account_order" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({ order_data: orderData })
+            });
+            const result = await response.json();
+            if (!result.success) {
+                console.error('Failed to update order:', result.error);
+                alertify.error('Failed to save new order. Please refresh the page.');
+            }
+        } catch (error) {
+            console.error('Error updating order:', error);
+            alertify.error('An error occurred while saving the new order.');
+        }
     }
 
     async function addAccount() {
@@ -290,7 +366,7 @@
         };
 
         if (!data.account_id || !data.user_name || !data.gmail || !data.phone || !data.password || !data.account_type) {
-            alert('Please fill in all the required fields before saving.');
+            alertify.error('Please fill in all the required fields before saving.');
             return;
         }
 
@@ -308,18 +384,18 @@
             if (result.success) {
                 // Insert directly after the entryRow
                 const newRow = `
-                    <tr id="account-row-${result.data.id}">
-                        <td class="text-center sn-column">1</td>
-                        <td>${result.data.account_id}</td>
-                        <td>${result.data.user_name}</td>
-                        <td>${result.data.gmail}</td>
-                        <td>${result.data.phone}</td>
-                        <td>${result.data.password}</td>
-                        <td>${result.data.managed_by}</td>
-                        <td>${result.data.account_type}</td>
+                    <tr id="account-row-${result.data.id}" class="draggable-row">
+                        <td class="text-center sn-column" style="cursor: grab;"><i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>1</td>
+                        <td>${escapeHTML(result.data.account_id)}</td>
+                        <td>${escapeHTML(result.data.user_name)}</td>
+                        <td>${escapeHTML(result.data.gmail)}</td>
+                        <td>${escapeHTML(result.data.phone)}</td>
+                        <td>${escapeHTML(result.data.password)}</td>
+                        <td>${escapeHTML(result.data.managed_by)}</td>
+                        <td>${escapeHTML(result.data.account_type)}</td>
                         <td>${getStatusBadge(result.data.status)}</td>
                         <td class="text-center" style="white-space: nowrap;">
-                            <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${result.data.account_id}', '${result.data.user_name}', '${result.data.gmail}', '${result.data.phone}', '${result.data.password}', '${result.data.managed_by}', '${result.data.account_type}', '${result.data.status}')" title="Edit">
+                            <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${escapeJsString(result.data.account_id)}', '${escapeJsString(result.data.user_name)}', '${escapeJsString(result.data.gmail)}', '${escapeJsString(result.data.phone)}', '${escapeJsString(result.data.password)}', '${escapeJsString(result.data.managed_by)}', '${escapeJsString(result.data.account_type)}', '${escapeJsString(result.data.status)}')" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
                             <button class="action-btn border text-danger" onclick="deleteAccount(${result.data.id})" title="Delete">
@@ -340,13 +416,12 @@
                 document.getElementById('newAccountType').value = '';
                 // managed_by and status keep defaults
                 
-                // Show simple alert instead of Swal
-                alert('Account added successfully');
+                alertify.success('Account added successfully');
             } else {
-                alert(result.error || 'Failed to add account');
+                alertify.error(result.error || 'Failed to add account');
             }
         } catch (error) {
-            alert(error.toString());
+            alertify.error(error.toString());
         }
     }
 
@@ -397,19 +472,19 @@
                 // Update row
                 const row = document.getElementById(`account-row-${id}`);
                 if (row) {
-                    const sn = row.querySelector('.sn-column').textContent; // Keep SN
+                    const sn = row.querySelector('.sn-column').innerHTML; // Keep SN
                     row.innerHTML = `
-                        <td class="text-center sn-column">${sn}</td>
-                        <td>${result.data.account_id}</td>
-                        <td>${result.data.user_name}</td>
-                        <td>${result.data.gmail}</td>
-                        <td>${result.data.phone}</td>
-                        <td>${result.data.password}</td>
-                        <td>${result.data.managed_by}</td>
-                        <td>${result.data.account_type}</td>
+                        <td class="text-center sn-column" style="cursor: grab;">${sn}</td>
+                        <td>${escapeHTML(result.data.account_id)}</td>
+                        <td>${escapeHTML(result.data.user_name)}</td>
+                        <td>${escapeHTML(result.data.gmail)}</td>
+                        <td>${escapeHTML(result.data.phone)}</td>
+                        <td>${escapeHTML(result.data.password)}</td>
+                        <td>${escapeHTML(result.data.managed_by)}</td>
+                        <td>${escapeHTML(result.data.account_type)}</td>
                         <td>${getStatusBadge(result.data.status)}</td>
                         <td class="text-center" style="white-space: nowrap;">
-                            <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${result.data.account_id}', '${result.data.user_name}', '${result.data.gmail}', '${result.data.phone}', '${result.data.password}', '${result.data.managed_by}', '${result.data.account_type}', '${result.data.status}')" title="Edit">
+                            <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${escapeJsString(result.data.account_id)}', '${escapeJsString(result.data.user_name)}', '${escapeJsString(result.data.gmail)}', '${escapeJsString(result.data.phone)}', '${escapeJsString(result.data.password)}', '${escapeJsString(result.data.managed_by)}', '${escapeJsString(result.data.account_type)}', '${escapeJsString(result.data.status)}')" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
                             <button class="action-btn border text-danger" onclick="deleteAccount(${result.data.id})" title="Delete">
@@ -419,12 +494,12 @@
                     `;
                 }
                 editModalInstance.hide();
-                alert('Account updated successfully');
+                alertify.success('Account updated successfully');
             } else {
-                alert(result.error || 'Failed to update account');
+                alertify.error(result.error || 'Failed to update account');
             }
         } catch (error) {
-            alert(error.toString());
+            alertify.error(error.toString());
         }
     }
 
@@ -446,11 +521,12 @@
             if (res.success) {
                 document.getElementById(`account-row-${id}`).remove();
                 updateSerialNumbers();
+                alertify.success('Account moved to trash successfully');
             } else {
-                alert(res.error || 'Failed to move account to trash');
+                alertify.error(res.error || 'Failed to move account to trash');
             }
         } catch (error) {
-            alert(error.toString());
+            alertify.error(error.toString());
         }
     }
 </script>
