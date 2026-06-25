@@ -94,6 +94,43 @@ function buildRowObjects_(headers, values) {
   return rows;
 }
 
+function extractStyles_(range) {
+  var weights = range.getFontWeights();
+  var styles = range.getFontStyles();
+  var lines = range.getFontLines();
+  var colors = range.getFontColors();
+  var backgrounds = range.getBackgrounds();
+  var aligns = range.getHorizontalAlignments();
+  
+  var styleObj = {};
+  var numRows = weights.length;
+  var numCols = numRows > 0 ? weights[0].length : 0;
+  
+  for (var r = 0; r < numRows; r++) {
+    for (var c = 0; c < numCols; c++) {
+      var css = [];
+      if (weights[r][c] === 'bold') css.push('font-weight: bold');
+      if (styles[r][c] === 'italic') css.push('font-style: italic');
+      if (lines[r][c] === 'underline') css.push('text-decoration: underline');
+      if (colors[r][c] && colors[r][c] !== '#000000') css.push('color: ' + colors[r][c]);
+      if (backgrounds[r][c] && backgrounds[r][c] !== '#ffffff') css.push('background-color: ' + backgrounds[r][c]);
+      if (aligns[r][c] && aligns[r][c] !== 'general') css.push('text-align: ' + aligns[r][c]);
+      
+      if (css.length > 0) {
+        var cellName = String.fromCharCode((c % 26) + 65);
+        var colTemp = Math.floor(c / 26) - 1;
+        while (colTemp >= 0) {
+          cellName = String.fromCharCode((colTemp % 26) + 65) + cellName;
+          colTemp = Math.floor(colTemp / 26) - 1;
+        }
+        cellName += (r + 1);
+        styleObj[cellName] = css.join(';');
+      }
+    }
+  }
+  return styleObj;
+}
+
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -116,6 +153,7 @@ function doGet(e) {
     var values = dataRange.getValues();
     var headers = values.length > 0 ? values[0] : [];
     var rows = buildRowObjects_(headers, values);
+    var styles = extractStyles_(dataRange);
 
     return jsonOutput({
       success: true,
@@ -126,7 +164,8 @@ function doGet(e) {
       total_rows: Math.max(values.length - 1, 0),
       total_columns: headers.length,
       headers: headers,
-      rows: rows
+      rows: rows,
+      styles: styles
     });
 
   } catch (err) {
@@ -163,9 +202,11 @@ function doPost(e) {
     }
 
     if (action === 'read_all') {
-      var readValues = sheet.getDataRange().getValues();
+      var dataRange = sheet.getDataRange();
+      var readValues = dataRange.getValues();
       var readHeaders = readValues.length > 0 ? readValues[0] : [];
       var readRows = buildRowObjects_(readHeaders, readValues);
+      var readStyles = extractStyles_(dataRange);
 
       return jsonOutput({
         success: true,
@@ -176,7 +217,8 @@ function doPost(e) {
         total_rows: Math.max(readValues.length - 1, 0),
         total_columns: readHeaders.length,
         headers: readHeaders,
-        rows: readRows
+        rows: readRows,
+        styles: readStyles
       });
     }
 
@@ -296,7 +338,14 @@ function doPost(e) {
         });
       }
 
-      sheet.insertRowBefore(insertRowIndex);
+      var maxRows = sheet.getMaxRows();
+      if (insertRowIndex > maxRows) {
+        sheet.insertRowsAfter(maxRows, 1);
+        insertRowIndex = maxRows + 1;
+      } else {
+        sheet.insertRowBefore(insertRowIndex);
+      }
+      sheet.getRange(insertRowIndex, 1).setValue(' ');
 
       return jsonOutput({
         success: true,
@@ -332,7 +381,14 @@ function doPost(e) {
         });
       }
 
-      sheet.insertColumnBefore(insertColIndex);
+      var maxCols = sheet.getMaxColumns();
+      if (insertColIndex > maxCols) {
+        sheet.insertColumnsAfter(maxCols, 1);
+        insertColIndex = maxCols + 1;
+      } else {
+        sheet.insertColumnBefore(insertColIndex);
+      }
+      sheet.getRange(1, insertColIndex).setValue(' ');
 
       return jsonOutput({
         success: true,
@@ -357,6 +413,39 @@ function doPost(e) {
         action: 'delete_column',
         index: deleteColIndex
       });
+    }
+
+    if (action === 'update_style') {
+      var cells = payload.cells || [];
+      var style = payload.style || {};
+      cells.forEach(function(c) {
+        var range = sheet.getRange(c.row, c.col);
+        if (style['font-weight'] === 'bold') range.setFontWeight('bold');
+        if (style['font-style'] === 'italic') range.setFontStyle('italic');
+        if (style['text-decoration'] === 'underline') range.setFontLine('underline');
+        if (style['color']) range.setFontColor(style['color']);
+        if (style['background-color']) range.setBackground(style['background-color']);
+        if (style['text-align']) range.setHorizontalAlignment(style['text-align']);
+      });
+      SpreadsheetApp.flush();
+      return jsonOutput({ success: true, action: 'update_style' });
+    }
+
+    if (action === 'create_sheet') {
+      var newSheet = ss.insertSheet(payload.newName);
+      return jsonOutput({ success: true, action: 'create_sheet', sheet_name: newSheet.getName() });
+    }
+
+    if (action === 'rename_sheet') {
+      var targetSheet = ss.getSheetByName(payload.oldName);
+      if (targetSheet) targetSheet.setName(payload.newName);
+      return jsonOutput({ success: true, action: 'rename_sheet' });
+    }
+
+    if (action === 'delete_sheet') {
+      var targetSheetToDelete = ss.getSheetByName(payload.sheetName);
+      if (targetSheetToDelete) ss.deleteSheet(targetSheetToDelete);
+      return jsonOutput({ success: true, action: 'delete_sheet' });
     }
 
     return jsonOutput({
@@ -472,7 +561,8 @@ def apps_script_read(web_app_url, sheet_name=None, timeout=30):
         'col_widths': data.get('col_widths', []),
         'row_heights': data.get('row_heights', []),
         'sheet_names': data.get('sheet_names', []),
-        'current_sheet': data.get('sheet_name', '')
+        'current_sheet': data.get('sheet_name', ''),
+        'styles': data.get('styles', {})
     }
 
 
@@ -515,11 +605,14 @@ def apps_script_update_dimension(web_app_url, dimension, index, size, sheet_name
     resp.raise_for_status()
     return resp.json().get('success', False)
 
-def apps_script_structure_action(web_app_url, action, index, sheet_name=None, timeout=10):
-    """Insert or delete a row or column."""
-    payload = {'action': action, 'index': index}
+def apps_script_structure_action(web_app_url, action, index=None, sheet_name=None, timeout=10, **kwargs):
+    """Insert or delete a row or column, or manage sheets."""
+    payload = {'action': action}
+    if index is not None:
+        payload['index'] = index
     if sheet_name:
         payload['sheet'] = sheet_name
+    payload.update(kwargs)
     resp = requests.post(web_app_url, json=payload, timeout=timeout)
     resp.raise_for_status()
     return resp.json().get('success', False)

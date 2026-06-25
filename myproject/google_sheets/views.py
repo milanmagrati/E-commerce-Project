@@ -239,6 +239,7 @@ def get_sheet_data_table(request, connection_id):
             headers = list(records[0].keys()) if records else []
             col_widths = []
             row_heights = []
+            styles = {}
         elif conn.connection_type == 'apps_script' and conn.apps_script_url:
             sheet_name = request.GET.get('sheet')
             apps_data = services.apps_script_read(conn.apps_script_url, sheet_name=sheet_name)
@@ -248,6 +249,7 @@ def get_sheet_data_table(request, connection_id):
             row_heights = apps_data.get('row_heights', [])
             sheet_names = apps_data.get('sheet_names', [])
             current_sheet = apps_data.get('current_sheet', '')
+            styles = apps_data.get('styles', {})
         else:
             return JsonResponse({'success': False, 'error': 'No URL configured for this connection.'}, status=400)
 
@@ -261,12 +263,14 @@ def get_sheet_data_table(request, connection_id):
             'row_heights': row_heights,
             'sheet_names': locals().get('sheet_names', []),
             'current_sheet': locals().get('current_sheet', ''),
+            'styles': locals().get('styles', {}),
             'total': len(records),
             'page': page,
             'per_page': per_page,
         })
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        logger.error(f"get_sheet_data_table failed: {e}")
+        return JsonResponse({'success': False, 'error': 'Failed to fetch data from Google Sheets.'}, status=500)
 
 
 # ─── Sync Logs ────────────────────────────────────────────────────────────────
@@ -313,6 +317,14 @@ def update_sheet_cell(request, connection_id):
     
     try:
         data = json.loads(request.body)
+        
+        # Intercept style updates
+        if data.get('action') == 'update_style':
+            import requests
+            resp = requests.post(conn.apps_script_url, json=data, timeout=10)
+            resp.raise_for_status()
+            return JsonResponse({'success': resp.json().get('success', False)})
+            
         row = data.get('row')
         col = data.get('col')
         val = data.get('value')
@@ -335,7 +347,7 @@ def update_sheet_cell(request, connection_id):
         return JsonResponse({'success': success})
     except Exception as e:
         logger.error(f"update_sheet_cell failed for connection {connection_id}: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': 'Failed to communicate with Google Sheets.'}, status=500)
 
 
 @login_required
@@ -357,7 +369,7 @@ def update_sheet_dimension(request, connection_id):
         return JsonResponse({'success': True})
     except Exception as e:
         logger.error(f"update_sheet_dimension failed: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': 'Failed to update sheet dimensions.'}, status=500)
 
 
 @login_required
@@ -370,12 +382,14 @@ def update_sheet_structure(request, connection_id):
     
     try:
         data = json.loads(request.body)
-        action = data.get('action') # 'insert_row', 'delete_row', 'insert_column', 'delete_column'
+        action = data.get('action') # 'insert_row', 'delete_row', 'create_sheet', 'rename_sheet', 'delete_sheet', etc.
         index = data.get('index')
         sheet_name = data.get('sheet')
+        
+        kwargs = {k: v for k, v in data.items() if k not in ['action', 'index', 'sheet']}
 
-        services.apps_script_structure_action(conn.apps_script_url, action, index, sheet_name)
+        services.apps_script_structure_action(conn.apps_script_url, action, index, sheet_name, **kwargs)
         return JsonResponse({'success': True})
     except Exception as e:
         logger.error(f"update_sheet_structure failed: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': 'Failed to update sheet structure.'}, status=500)
