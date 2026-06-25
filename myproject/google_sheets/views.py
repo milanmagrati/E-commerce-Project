@@ -297,8 +297,10 @@ def sync_logs(request, connection_id):
 def view_connection_sheet(request, connection_id):
     """Renders the full-page editable spreadsheet interface."""
     conn = get_object_or_404(GoogleSheetConnection, id=connection_id)
+    all_connections = GoogleSheetConnection.objects.all().order_by('-id')
     return render(request, 'google_sheets/sheet_view.html', {
-        'conn': conn
+        'conn': conn,
+        'all_connections': all_connections
     })
 
 @login_required

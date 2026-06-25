@@ -3,17 +3,41 @@
 
 {% block content %}
 <div class="container-fluid py-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4><i class="fas fa-table text-success me-2"></i> {{ conn.name }}</h4>
-    <div>
-      <button onclick="addColumn()" class="btn btn-outline-success me-2">
-        <i class="fas fa-plus me-1"></i> Add Column
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div class="dropdown">
+      <div class="d-inline-flex align-items-center bg-white border rounded px-3 py-2 shadow-sm dropdown-toggle" type="button" id="connectionDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer; transition: all 0.2s;">
+        <i class="fas fa-table text-success me-2 fs-5"></i> 
+        <h5 class="text-dark fw-bold mb-0 me-2">{{ conn.name }}</h5>
+        <span class="badge {% if conn.connection_type == 'apps_script' %}bg-success{% else %}bg-secondary{% endif %} bg-opacity-10 text-dark border ms-1">{{ conn.get_connection_type_display|default:conn.connection_type|upper }}</span>
+      </div>
+      <ul class="dropdown-menu shadow-lg border-0 mt-1" aria-labelledby="connectionDropdown" style="border-radius: 10px; min-width: 250px;">
+        <li class="dropdown-header text-uppercase fw-bold text-muted small px-3 py-2">Switch Connection</li>
+        {% for c in all_connections %}
+        <li>
+          <a class="dropdown-item d-flex align-items-center py-2 px-3 {% if c.id == conn.id %}bg-success bg-opacity-10 text-success fw-bold{% endif %}" href="{% url 'google_sheets:view_connection_sheet' c.id %}" style="transition: all 0.2s;">
+            <i class="fas fa-{% if c.connection_type == 'csv' %}file-csv{% else %}code{% endif %} me-3 fs-6 {% if c.id == conn.id %}text-success{% else %}text-muted{% endif %}"></i>
+            <span class="flex-grow-1">{{ c.name }}</span>
+            {% if c.id == conn.id %}<i class="fas fa-check text-success ms-2"></i>{% endif %}
+          </a>
+        </li>
+        {% endfor %}
+        <li><hr class="dropdown-divider my-1"></li>
+        <li>
+          <a class="dropdown-item py-2 px-3 text-primary" href="{% url 'google_sheets:google_imports_page' %}">
+            <i class="fas fa-cog me-3"></i> Manage Connections
+          </a>
+        </li>
+      </ul>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <button onclick="addColumn()" class="btn btn-outline-success">
+        <i class="fas fa-columns me-1"></i> Add Column
       </button>
-      <button onclick="addRow()" class="btn btn-outline-success me-2">
-        <i class="fas fa-plus me-1"></i> Add Row
+      <button onclick="addRow()" class="btn btn-outline-success">
+        <i class="fas fa-list me-1"></i> Add Row
       </button>
-      <button onclick="loadSheetData()" class="btn btn-outline-primary me-2">
-        <i class="fas fa-sync-alt me-1"></i> Reload Data
+      <button onclick="loadSheetData(currentSheetName)" class="btn btn-outline-primary">
+        <i class="fas fa-sync-alt me-1"></i> Reload
       </button>
       <a href="{% url 'google_sheets:google_imports_page' %}" class="btn btn-outline-secondary">
         <i class="fas fa-arrow-left me-1"></i> Back
@@ -33,12 +57,41 @@
         <h5 class="text-muted">Loading sheet data...</h5>
       </div>
       <div id="spreadsheet-container" class="w-100"></div>
-      <div id="sheet-tabs" class="d-flex overflow-auto border-top bg-light" style="white-space: nowrap; padding: 5px;">
+      <div id="sheet-tabs" class="d-flex overflow-auto border-top bg-white px-2 py-1 gap-1" style="white-space: nowrap; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
         <!-- Sheet tabs will be rendered here -->
       </div>
     </div>
   </div>
 </div>
+
+<style>
+  .sheet-tab {
+    border: 1px solid #dee2e6;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 6px 16px;
+    background: #f8f9fa;
+    color: #6c757d;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+    user-select: none;
+  }
+  .sheet-tab:hover {
+    background: #e9ecef;
+    color: #495057;
+  }
+  .sheet-tab.active {
+    background: #fff;
+    color: #198754;
+    border-color: #dee2e6;
+    border-top: 3px solid #198754;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 2px 0 #fff; /* Blend with content */
+  }
+</style>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4/dist/jsuites.css" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4/dist/jspreadsheet.css" />
@@ -186,8 +239,10 @@
     
     let tabsHtml = '';
     sheetNames.forEach(name => {
-      const isActive = name === currentSheet ? 'btn-primary' : 'btn-outline-secondary';
-      tabsHtml += `<button class="btn btn-sm ${isActive} me-2" onclick="loadSheetData('${name}')">${name}</button>`;
+      const isActive = name === currentSheet ? 'active' : '';
+      tabsHtml += `<div class="sheet-tab ${isActive}" onclick="loadSheetData('${name}')">
+        <i class="fas fa-layer-group me-1" style="font-size: 0.85em;"></i> ${name}
+      </div>`;
     });
     tabsContainer.innerHTML = tabsHtml;
   }
