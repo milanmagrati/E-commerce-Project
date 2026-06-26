@@ -139,6 +139,9 @@ class CustomUser(AbstractUser):
     can_edit_cities = models.BooleanField(default=False, verbose_name="Can Edit Cities")
     can_delete_cities = models.BooleanField(default=False, verbose_name="Can Delete Cities")
 
+    # CONTENT MANAGEMENT PERMISSIONS
+    can_view_content_management = models.BooleanField(default=False, verbose_name="Can View Content Management")
+
     # DASHBOARD PERMISSIONS
     can_view_dashboard = models.BooleanField(default=True, verbose_name="Can View Dashboard")
     can_view_low_stock_alerts = models.BooleanField(default=False, verbose_name="Can View Low Stock Alerts")
@@ -236,7 +239,8 @@ class CustomUser(AbstractUser):
                 'can_view_hrm', 'can_view_hrm_hr_management', 'can_view_hrm_asset_management',
                 'can_view_hrm_attendance', 'can_view_hrm_payroll',
                 'can_access_todo', 'can_access_follow_ups', 'can_setup_follow_up_status',
-                'can_view_cost_price', 'can_edit_prices', 'can_give_discounts'
+                'can_view_cost_price', 'can_edit_prices', 'can_give_discounts',
+                'can_view_content_management'
             ]:
                 setattr(self, perm, True)
             self.max_discount_percent = Decimal('100.00')

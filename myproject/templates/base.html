@@ -1264,7 +1264,7 @@
                 {% endif %}
 
                 <!-- ==================== CONTENT MANAGEMENT ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_content_management %}
                 <li class="{% if request.resolver_match.url_name == 'content_accounts_list' %}active{% endif %}">
                     <a href="{% url 'content_accounts_list' %}">
                         <i class="fas fa-file-alt"></i> Content Management

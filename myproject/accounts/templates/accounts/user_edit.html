@@ -301,6 +301,21 @@
                                     </div>
                                 </div>
 
+                                <!-- 🆕 CONTENT MANAGEMENT MODULE -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-secondary">
+                                            <i class="fas fa-file-alt"></i> Content Management Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_content_management" id="can_view_content_management" {% if edit_user.can_view_content_management %}checked{% endif %}>
+                                                <label for="can_view_content_management">View Content Management</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Dispatch Module -->
                                 <div class="col-lg-6 col-xl-4 mb-3">
                                     <div class="perm-card">

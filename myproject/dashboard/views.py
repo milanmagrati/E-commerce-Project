@@ -21582,6 +21582,7 @@ from django.http import JsonResponse
 from .models import ContentAccount
 
 @login_required
+@permission_required('can_view_content_management')
 def content_accounts_list(request):
     from django.contrib.auth import get_user_model
     User = get_user_model()
@@ -21595,6 +21596,7 @@ def content_accounts_list(request):
     })
 
 @login_required
+@permission_required('can_view_content_management')
 def update_content_account_order(request):
     if request.method == 'POST':
         try:
@@ -21619,6 +21621,7 @@ def update_content_account_order(request):
     return JsonResponse({'success': False, 'error': 'Invalid request'})
 
 @login_required
+@permission_required('can_view_content_management')
 def add_content_account(request):
     if request.method == 'POST':
         try:
@@ -21649,6 +21652,7 @@ def add_content_account(request):
     return JsonResponse({'success': False, 'error': 'Invalid request'})
 
 @login_required
+@permission_required('can_view_content_management')
 def edit_content_account(request, pk):
     if request.method == 'POST':
         try:
@@ -21679,6 +21683,7 @@ def edit_content_account(request, pk):
     return JsonResponse({'success': False, 'error': 'Invalid request'})
 
 @login_required
+@permission_required('can_view_content_management')
 def delete_content_account(request, pk):
     if request.method == 'POST':
         try:
@@ -21691,6 +21696,7 @@ def delete_content_account(request, pk):
     return JsonResponse({'success': False, 'error': 'Invalid request'})
 
 @login_required
+@permission_required('can_view_content_management')
 def content_accounts_trash(request):
     accounts = ContentAccount.objects.filter(is_deleted=True).order_by('-id')
     return render(request, 'dashboard/content_accounts_trash.html', {
@@ -21698,6 +21704,7 @@ def content_accounts_trash(request):
     })
 
 @login_required
+@permission_required('can_view_content_management')
 def restore_content_account(request, pk):
     if request.method == 'POST':
         try:
@@ -21710,6 +21717,7 @@ def restore_content_account(request, pk):
     return JsonResponse({'success': False, 'error': 'Invalid request'})
 
 @login_required
+@permission_required('can_view_content_management')
 def hard_delete_content_account(request, pk):
     if request.method == 'POST':
         try:
