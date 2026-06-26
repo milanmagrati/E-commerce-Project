@@ -1853,6 +1853,20 @@ class FollowUp(models.Model):
     def __str__(self):
         return f"{self.name} - {self.phone}"
 
+    @property
+    def latest_f1_log(self):
+        for log in self.logs.all():
+            if log.field_changed == 'Followup 1':
+                return log
+        return None
+
+    @property
+    def latest_f2_log(self):
+        for log in self.logs.all():
+            if log.field_changed == 'Followup 2':
+                return log
+        return None
+
     def get_all_products(self):
         """Return M2M products if any, else fall back to the legacy FK product."""
         m2m = list(self.products.all())

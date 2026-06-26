@@ -124,8 +124,40 @@
                                     <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
-                            <td class="text-break inline-editable position-relative" style="max-width: 200px;" onclick="makeInlineEditable(this, 'f1', {{ item.id }})">{{ item.followup_1|default:"-" }}</td>
-                            <td class="text-break inline-editable position-relative" style="max-width: 200px;" onclick="makeInlineEditable(this, 'f2', {{ item.id }})">{{ item.followup_2|default:"-" }}</td>
+                            <td class="inline-editable position-relative p-1" style="max-width: 140px; vertical-align: top; background-color: #f8f9fa;" onclick="makeInlineEditable(this, 'f1', {{ item.id }})">
+                                {% with log=item.latest_f1_log %}
+                                {% if log %}
+                                <div class="mb-2">
+                                    <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size: 0.65rem; width: 100%;">
+                                        <div class="text-muted" style="font-size: 0.6rem;">{{ log.timestamp|date:"M d, Y I:i p" }}</div>
+                                        <div class="text-muted" style="font-size: 0.6rem;">by {{ log.user.username|default:"System" }}</div>
+                                    </div>
+                                    <div class="text-dark text-break" style="font-size: 0.75rem;">{{ log.new_value }}</div>
+                                </div>
+                                {% elif item.followup_1 %}
+                                <div class="text-dark text-break" style="font-size: 0.75rem;">{{ item.followup_1 }}</div>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                                {% endwith %}
+                            </td>
+                            <td class="inline-editable position-relative p-1" style="max-width: 140px; vertical-align: top; background-color: #f8f9fa;" onclick="makeInlineEditable(this, 'f2', {{ item.id }})">
+                                {% with log=item.latest_f2_log %}
+                                {% if log %}
+                                <div class="mb-2">
+                                    <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size: 0.65rem; width: 100%;">
+                                        <div class="text-muted" style="font-size: 0.6rem;">{{ log.timestamp|date:"M d, Y I:i p" }}</div>
+                                        <div class="text-muted" style="font-size: 0.6rem;">by {{ log.user.username|default:"System" }}</div>
+                                    </div>
+                                    <div class="text-dark text-break" style="font-size: 0.75rem;">{{ log.new_value }}</div>
+                                </div>
+                                {% elif item.followup_2 %}
+                                <div class="text-dark text-break" style="font-size: 0.75rem;">{{ item.followup_2 }}</div>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                                {% endwith %}
+                            </td>
                             <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, {{ item.id }})">
                                 <span class="badge status-badge rounded-pill px-2 py-1" data-status-val="{{ item.status|default:''|lower }}">{{ item.status|title|default:"-" }}</span>
                             </td>
@@ -705,8 +737,8 @@
             <td>${escapeHtml(data.phone)}</td>
             <td>${escapeHtml(data.lead_source) || '-'}</td>
             <td>${productsHtml}</td>
-            <td class="text-break inline-editable position-relative" style="max-width: 200px;" onclick="makeInlineEditable(this, 'f1', ${data.id})">${escapeHtml(data.followup_1) || '-'}</td>
-            <td class="text-break inline-editable position-relative" style="max-width: 200px;" onclick="makeInlineEditable(this, 'f2', ${data.id})">${escapeHtml(data.followup_2) || '-'}</td>
+            <td class="inline-editable position-relative p-1" style="max-width: 140px; vertical-align: top; background-color: #f8f9fa;" onclick="makeInlineEditable(this, 'f1', ${data.id})">${buildLogsHtml(data.f1_logs, data.followup_1)}</td>
+            <td class="inline-editable position-relative p-1" style="max-width: 140px; vertical-align: top; background-color: #f8f9fa;" onclick="makeInlineEditable(this, 'f2', ${data.id})">${buildLogsHtml(data.f2_logs, data.followup_2)}</td>
             <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, ${data.id})"><span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(data.status)}" data-status-val="${(data.status || '').toLowerCase()}">${data.status || '-'}</span></td>
             <td class="text-break" style="max-width: 200px;">${escapeHtml(data.remarks) || '-'}</td>
             <td class="text-center" style="white-space: nowrap;">
@@ -845,8 +877,8 @@
                     cells[2].textContent = result.data.phone || '-';
                     cells[3].textContent = result.data.lead_source || '-';
                     cells[4].innerHTML = productsHtml;
-                    cells[5].textContent = result.data.followup_1 || '-';
-                    cells[6].textContent = result.data.followup_2 || '-';
+                    cells[5].innerHTML = buildLogsHtml(result.data.f1_logs, result.data.followup_1);
+                    cells[6].innerHTML = buildLogsHtml(result.data.f2_logs, result.data.followup_2);
                     cells[7].innerHTML = statusBadge;
                     cells[8].textContent = result.data.remarks || '-';
                 }
@@ -957,6 +989,21 @@
     }
 
     // --- INLINE EDITING LOGIC ---
+    function buildLogsHtml(logs, fallbackText) {
+        if (!logs || logs.length === 0) {
+            return escapeHtml(fallbackText) || '<span class="text-muted">-</span>';
+        }
+        const log = logs[0]; // Only show the latest log
+        return `
+            <div class="mb-2">
+                <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size: 0.65rem; width: 100%;">
+                    <div class="text-muted" style="font-size: 0.6rem;">${log.timestamp}</div>
+                    <div class="text-muted" style="font-size: 0.6rem;">by ${escapeHtml(log.user)}</div>
+                </div>
+                <div class="text-dark text-break" style="font-size: 0.75rem;">${escapeHtml(log.new_value)}</div>
+            </div>`;
+    }
+
     function makeInlineEditable(cell, field, id) {
         if (cell.classList.contains('inline-editing')) return;
         
@@ -965,6 +1012,9 @@
         
         cell.classList.add('inline-editing');
         const escValue = escapeHtml(currentValue).replace(/"/g, '&quot;');
+        
+        // Save original HTML content to restore if cancelled
+        cell.setAttribute('data-original-html', cell.innerHTML);
         
         cell.innerHTML = `<input type="text" class="form-control form-control-sm" value="${escValue}" onblur="saveInline(this, '${field}', ${id})" onkeydown="if(event.key === 'Enter') this.blur(); if(event.key === 'Escape') cancelInline(this, '${field}', '${escValue}')">`;
         
@@ -996,19 +1046,24 @@
         select.focus();
     }
 
-    function cancelInline(input, field, originalValue) {
-        const cell = input.closest('td');
-        cell.classList.remove('inline-editing');
-        cell.textContent = originalValue || '-';
+    function cancelInline(element, field, originalValue) {
+        if (element && element.disabled) return;
+        const cell = element ? element.closest('td') : null;
+        if (cell) {
+            cell.classList.remove('inline-editing');
+            cell.innerHTML = cell.getAttribute('data-original-html') || (originalValue || '-');
+        }
     }
 
     function cancelInlineStatus(select, originalValue) {
         // If we are already saving, don't trigger cancel
-        if (select.disabled) return;
+        if (select && select.disabled) return;
         
-        const cell = select.closest('td');
-        cell.classList.remove('inline-editing');
-        cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue || '').toLowerCase()}">${originalValue || '-'}</span>`;
+        const cell = select ? select.closest('td') : null;
+        if (cell) {
+            cell.classList.remove('inline-editing');
+            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue || '').toLowerCase()}">${originalValue || '-'}</span>`;
+        }
     }
 
     function saveInline(element, field, id) {
@@ -1019,6 +1074,7 @@
         const originalValue = field === 'status' ? row.getAttribute('data-status') : row.getAttribute(`data-${field}`);
         
         if (newValue === originalValue) {
+            element.disabled = false;
             if (field === 'status') cancelInlineStatus(element, originalValue);
             else cancelInline(element, field, originalValue);
             return;
@@ -1063,21 +1119,30 @@
                 if (field === 'status') {
                     cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalValue)}" data-status-val="${(finalValue || '').toLowerCase()}">${finalValue || '-'}</span>`;
                 } else {
-                    cell.textContent = finalValue || '-';
+                    const logs = field === 'f1' ? result.data.f1_logs : result.data.f2_logs;
+                    cell.innerHTML = buildLogsHtml(logs, finalValue);
                 }
                 alertify.success('Updated successfully!');
             } else {
                 alertify.error('Error: ' + result.error);
-                if (field === 'status') cancelInlineStatus(element, originalValue);
-                else cancelInline(element, field, originalValue);
+                if (field === 'status') {
+                    cell.classList.remove('inline-editing');
+                    cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue || '').toLowerCase()}">${originalValue || '-'}</span>`;
+                } else {
+                    cell.classList.remove('inline-editing');
+                    cell.innerHTML = cell.getAttribute('data-original-html') || (originalValue || '-');
+                }
             }
         })
         .catch(error => {
             console.error('Error:', error);
             cell.classList.remove('inline-editing');
             alertify.error('An error occurred while saving.');
-            if (field === 'status') cancelInlineStatus(element, originalValue);
-            else cancelInline(element, field, originalValue);
+            if (field === 'status') {
+                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue || '').toLowerCase()}">${originalValue || '-'}</span>`;
+            } else {
+                cell.innerHTML = cell.getAttribute('data-original-html') || (originalValue || '-');
+            }
         });
     }
 </script>

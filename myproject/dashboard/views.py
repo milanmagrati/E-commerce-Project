@@ -3308,7 +3308,7 @@ def order_create(request):
     follow_up_data = None
     if followup_id:
         try:
-            follow_up_data = FollowUp.objects.prefetch_related('products').select_related('product').get(id=followup_id, is_deleted=False)
+            follow_up_data = FollowUp.objects.prefetch_related('products', 'product_variations', 'product_variations__product').select_related('product').get(id=followup_id, is_deleted=False)
         except FollowUp.DoesNotExist:
             pass
 
@@ -21322,7 +21322,7 @@ def follow_ups_list(request):
         return redirect('dashboard')
     from .models import FollowUp, Product, Setup, ProductVariation
     
-    follow_ups = FollowUp.objects.prefetch_related('products').select_related('product').filter(is_deleted=False).order_by('-created_at')
+    follow_ups = FollowUp.objects.prefetch_related('products', 'product_variations', 'product_variations__product', 'logs', 'logs__user').select_related('product').filter(is_deleted=False).order_by('-created_at')
     products = Product.objects.filter(is_deleted=False, is_active=True).prefetch_related('variations').order_by('name')
     statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
     order_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
@@ -21440,6 +21440,17 @@ def add_follow_up(request):
             for v in new_follow_up.product_variations.all()
         ])
         
+        f1_logs = []
+        f2_logs = []
+        for log in new_follow_up.logs.all():
+            log_data = {
+                'timestamp': log.timestamp.strftime("%b %d, %Y %I:%M %p"),
+                'user': log.user.username if log.user else 'System',
+                'new_value': log.new_value
+            }
+            if log.field_changed == 'Followup 1': f1_logs.append(log_data)
+            elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
+            
         return JsonResponse({
             'success': True,
             'data': {
@@ -21453,6 +21464,8 @@ def add_follow_up(request):
                 'followup_2': new_follow_up.followup_2,
                 'status': new_follow_up.status,
                 'remarks': new_follow_up.remarks,
+                'f1_logs': f1_logs,
+                'f2_logs': f2_logs,
                 'created_at': new_follow_up.created_at.strftime('%Y-%m-%d %H:%M')
             }
         })
@@ -21478,9 +21491,10 @@ def edit_follow_up(request, pk):
         from django.utils import timezone
         from datetime import timedelta
         
-        time_threshold = timezone.now() - timedelta(hours=24)
-        if FollowUp.objects.filter(phone=phone, created_at__gte=time_threshold, is_deleted=False).exclude(id=follow_up.id).exists():
-            return JsonResponse({'success': False, 'error': 'This phone number is already present in another follow-up added within the last 24 hours.'})
+        if phone != follow_up.phone:
+            time_threshold = timezone.now() - timedelta(hours=24)
+            if FollowUp.objects.filter(phone=phone, created_at__gte=time_threshold, is_deleted=False).exists():
+                return JsonResponse({'success': False, 'error': 'This phone number is already present in another follow-up added within the last 24 hours.'})
             
         follow_up.phone = phone
         follow_up.lead_source = data.get('lead_source', follow_up.lead_source).strip()
@@ -21528,6 +21542,17 @@ def edit_follow_up(request, pk):
             for v in follow_up.product_variations.all()
         ])
         
+        f1_logs = []
+        f2_logs = []
+        for log in follow_up.logs.all():
+            log_data = {
+                'timestamp': log.timestamp.strftime("%b %d, %Y %I:%M %p"),
+                'user': log.user.username if log.user else 'System',
+                'new_value': log.new_value
+            }
+            if log.field_changed == 'Followup 1': f1_logs.append(log_data)
+            elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
+
         return JsonResponse({
             'success': True,
             'data': {
@@ -21541,6 +21566,8 @@ def edit_follow_up(request, pk):
                 'followup_2': follow_up.followup_2,
                 'status': follow_up.status,
                 'remarks': follow_up.remarks,
+                'f1_logs': f1_logs,
+                'f2_logs': f2_logs,
             }
         })
     except Exception as e:
