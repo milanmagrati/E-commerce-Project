@@ -1839,6 +1839,7 @@ class FollowUp(models.Model):
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name='follow_ups_single')
     # Multiple products (preferred)
     products = models.ManyToManyField(Product, blank=True, related_name='follow_ups_multi')
+    product_variations = models.ManyToManyField('ProductVariation', blank=True, related_name='follow_ups_multi')
     followup_1 = models.CharField(max_length=255, blank=True)
     followup_2 = models.CharField(max_length=255, blank=True)
     status = models.CharField(max_length=100, blank=True)
@@ -1860,6 +1861,29 @@ class FollowUp(models.Model):
         if self.product:
             return [self.product]
         return []
+
+    def get_formatted_products(self):
+        """Return formatted products and variations for frontend rendering."""
+        formatted = []
+        for p in self.products.all():
+            formatted.append({
+                'id': str(p.id),
+                'name': p.name,
+                'price': p.price
+            })
+        for v in self.product_variations.all():
+            formatted.append({
+                'id': f"v_{v.id}",
+                'name': f"{v.product.name} - {v.variation_name or v.sku}",
+                'price': v.price
+            })
+        if not formatted and self.product:
+            formatted.append({
+                'id': str(self.product.id),
+                'name': self.product.name,
+                'price': self.product.price
+            })
+        return formatted
 
 
 class ContentAccount(models.Model):

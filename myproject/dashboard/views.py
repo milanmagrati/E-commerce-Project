@@ -21320,16 +21320,18 @@ def follow_ups_list(request):
     if not has_access:
         messages.error(request, 'You do not have permission to access Follow-ups.')
         return redirect('dashboard')
-    from .models import FollowUp, Product, Setup
+    from .models import FollowUp, Product, Setup, ProductVariation
     
     follow_ups = FollowUp.objects.prefetch_related('products').select_related('product').filter(is_deleted=False).order_by('-created_at')
-    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    products = Product.objects.filter(is_deleted=False, is_active=True).prefetch_related('variations').order_by('name')
     statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
+    order_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
     
     context = {
         'follow_ups': follow_ups,
         'products': products,
         'statuses': statuses,
+        'order_sources': order_sources,
     }
     return render(request, 'dashboard/follow_ups.html', context)
 
@@ -21387,6 +21389,13 @@ def add_follow_up(request):
         if not phone:
             return JsonResponse({'success': False, 'error': 'Phone number is required.'})
             
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        time_threshold = timezone.now() - timedelta(hours=24)
+        if FollowUp.objects.filter(phone=phone, created_at__gte=time_threshold, is_deleted=False).exists():
+            return JsonResponse({'success': False, 'error': 'This phone number was already added in the last 24 hours.'})
+            
         new_follow_up = FollowUp.objects.create(
             name=name,
             phone=phone,
@@ -21397,10 +21406,18 @@ def add_follow_up(request):
             remarks=remarks
         )
         
-        # Set multiple products via M2M
+        # Set multiple products and variations via M2M
         if product_ids:
-            valid_products = Product.objects.filter(id__in=product_ids, is_deleted=False)
+            p_ids = [int(p) for p in product_ids if not str(p).startswith('v_')]
+            v_ids = [int(str(p)[2:]) for p in product_ids if str(p).startswith('v_')]
+            
+            valid_products = Product.objects.filter(id__in=p_ids, is_deleted=False)
             new_follow_up.products.set(valid_products)
+            
+            if v_ids:
+                from .models import ProductVariation
+                valid_variations = ProductVariation.objects.filter(id__in=v_ids)
+                new_follow_up.product_variations.set(valid_variations)
             
         from .models import FollowUpLog
         if followup_1:
@@ -21415,9 +21432,13 @@ def add_follow_up(request):
             )
         
         products_data = [
-            {'id': p.id, 'name': p.name, 'price': float(p.price)}
+            {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
             for p in new_follow_up.products.all()
         ]
+        products_data.extend([
+            {'id': f"v_{v.id}", 'name': f"{v.product.name} - {v.variation_name or v.sku}", 'price': float(v.price)}
+            for v in new_follow_up.product_variations.all()
+        ])
         
         return JsonResponse({
             'success': True,
@@ -21452,7 +21473,16 @@ def edit_follow_up(request, pk):
         old_f2 = follow_up.followup_2
         
         follow_up.name = data.get('name', follow_up.name).strip()
-        follow_up.phone = data.get('phone', follow_up.phone).strip()
+        phone = data.get('phone', follow_up.phone).strip()
+        
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        time_threshold = timezone.now() - timedelta(hours=24)
+        if FollowUp.objects.filter(phone=phone, created_at__gte=time_threshold, is_deleted=False).exclude(id=follow_up.id).exists():
+            return JsonResponse({'success': False, 'error': 'This phone number is already present in another follow-up added within the last 24 hours.'})
+            
+        follow_up.phone = phone
         follow_up.lead_source = data.get('lead_source', follow_up.lead_source).strip()
         
         new_f1 = data.get('followup_1', follow_up.followup_1).strip()
@@ -21476,16 +21506,27 @@ def edit_follow_up(request, pk):
                 old_value=old_f2, new_value=new_f2
             )
         
-        # Handle multiple products (M2M)
+        # Handle multiple products and variations (M2M)
         product_ids = data.get('product_ids')
         if product_ids is not None:  # explicit list sent (even if empty = clear all)
-            valid_products = Product.objects.filter(id__in=product_ids, is_deleted=False) if product_ids else []
+            p_ids = [int(p) for p in product_ids if not str(p).startswith('v_')]
+            v_ids = [int(str(p)[2:]) for p in product_ids if str(p).startswith('v_')]
+            
+            valid_products = Product.objects.filter(id__in=p_ids, is_deleted=False) if p_ids else []
             follow_up.products.set(valid_products)
+            
+            from .models import ProductVariation
+            valid_variations = ProductVariation.objects.filter(id__in=v_ids) if v_ids else []
+            follow_up.product_variations.set(valid_variations)
         
         products_data = [
-            {'id': p.id, 'name': p.name, 'price': float(p.price)}
+            {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
             for p in follow_up.products.all()
         ]
+        products_data.extend([
+            {'id': f"v_{v.id}", 'name': f"{v.product.name} - {v.variation_name or v.sku}", 'price': float(v.price)}
+            for v in follow_up.product_variations.all()
+        ])
         
         return JsonResponse({
             'success': True,

@@ -3,6 +3,14 @@
 {% block title %}Follow-ups{% endblock %}
 
 {% block content %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+.select2-container .select2-selection--multiple {
+    min-height: 31px;
+    border-color: #dee2e6;
+    border-radius: 6px;
+}
+</style>
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="mb-0"><i class="fas fa-list-alt text-primary me-2"></i> Follow-ups</h4>
@@ -53,13 +61,25 @@
                                     oninput="this.value=this.value.replace(/[^0-9]/g,''); validatePhone(this,'newPhoneErr')">
                                 <div id="newPhoneErr" style="color:#dc3545;font-size:0.72rem;display:none;">Must be exactly 10 digits</div>
                             </td>
-                            <td><input type="text" class="form-control form-control-sm" id="newLeadSource" placeholder="Lead Source"></td>
                             <td>
-                                <button type="button" class="btn btn-outline-primary btn-sm w-100 mb-1" onclick="openProductModal('new')">
-                                    <i class="fas fa-plus"></i> Add Product
-                                </button>
-                                <div id="newProductChips" class="d-flex flex-wrap gap-1"></div>
-                                <input type="hidden" id="newProductsData" value="[]">
+                                <select class="form-select form-select-sm" id="newLeadSource">
+                                    <option value="">Lead Source</option>
+                                    {% for source in order_sources %}
+                                    <option value="{{ source.name }}">{{ source.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-select select2-products" id="newProducts" multiple="multiple" style="width: 100%;">
+                                    {% for product in products %}
+                                    <option value="{{ product.id }}" data-type="{{ product.product_type }}">{{ product.name }}</option>
+                                    {% if product.product_type == 'variable' %}
+                                        {% for var in product.variations.all %}
+                                        <option value="v_{{ var.id }}" data-type="variant" data-product-name="{{ product.name }}">&nbsp;&nbsp;&nbsp;&nbsp;↳ {{ var.variation_name|default:var.sku }}</option>
+                                        {% endfor %}
+                                    {% endif %}
+                                    {% endfor %}
+                                </select>
                             </td>
                             <td><input type="text" class="form-control form-control-sm" id="newFollowup1" placeholder="Followup 1"></td>
                             <td><input type="text" class="form-control form-control-sm" id="newFollowup2" placeholder="Followup 2"></td>
@@ -80,12 +100,12 @@
 
                         <!-- Existing Records (Latest First) -->
                         {% for item in follow_ups %}
-                        {% with all_products=item.get_all_products %}
+                        {% with all_products=item.get_formatted_products %}
                         <tr data-id="{{ item.id }}" data-status="{{ item.status }}" 
                             data-name="{{ item.name|default:'' }}" 
                             data-phone="{{ item.phone }}" 
                             data-lead="{{ item.lead_source|default:'' }}" 
-                            data-products='[{% for p in all_products %}{"id":{{ p.id }},"name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                            data-products='[{% for p in all_products %}{"id":"{{ p.id }}","name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
                             data-f1="{{ item.followup_1|default:'' }}" 
                             data-f2="{{ item.followup_2|default:'' }}" 
                             data-remarks="{{ item.remarks|default:'' }}">
@@ -216,15 +236,25 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Lead Source</label>
-                        <input type="text" class="form-control" id="editLeadSource">
+                        <select class="form-select" id="editLeadSource">
+                            <option value="">Select Lead Source</option>
+                            {% for source in order_sources %}
+                            <option value="{{ source.name }}">{{ source.name }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="col-md-12">
                         <label class="form-label">Products</label>
-                        <button type="button" class="btn btn-outline-primary btn-sm mb-2" onclick="openProductModal('edit')">
-                            <i class="fas fa-plus"></i> Add Product
-                        </button>
-                        <div id="editProductChips" class="d-flex flex-wrap gap-2 mb-1"></div>
-                        <input type="hidden" id="editProductsData" value="[]">
+                        <select class="form-select select2-products" id="editProducts" multiple="multiple" style="width: 100%;">
+                            {% for product in products %}
+                            <option value="{{ product.id }}" data-type="{{ product.product_type }}">{{ product.name }}</option>
+                            {% if product.product_type == 'variable' %}
+                                {% for var in product.variations.all %}
+                                <option value="v_{{ var.id }}" data-type="variant" data-product-name="{{ product.name }}">&nbsp;&nbsp;&nbsp;&nbsp;↳ {{ var.variation_name|default:var.sku }}</option>
+                                {% endfor %}
+                            {% endif %}
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Followup 1</label>
@@ -251,24 +281,6 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" id="saveEditBtn" onclick="saveEditFollowUp()">Save Changes</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Product Modal -->
-<div class="modal fade" id="productModal" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
-                <h5 class="modal-title"><i class="fas fa-box"></i> Select Products</h5>
-                <div class="d-flex gap-2 align-items-center">
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-            </div>
-            <div class="modal-body">
-                <input type="text" id="searchProduct" class="form-control mb-3" placeholder="🔍 Search products...">
-                <div id="productGrid" class="row g-3" style="min-height: 200px;"></div>
             </div>
         </div>
     </div>
@@ -397,29 +409,116 @@
     .inline-editing:hover {
         background-color: transparent !important;
     }
+    
+    /* Make the Select2 dropdown popup wider */
+    .wide-dropdown {
+        min-width: 350px !important;
+    }
 </style>
 
 <script>
     // Modal state for editing
     let currentEditId = null;
     let editModal = null;
-    let productModalTarget = null;
-    let productModal = null;
-    let searchTimeout = null;
+    
+    // Auto-refresh logic (every 30 seconds)
+    let refreshTimeout;
+    function resetRefreshTimer() {
+        if (refreshTimeout) clearTimeout(refreshTimeout);
+        refreshTimeout = setTimeout(() => {
+            // Check if user is currently busy
+            const isEditingModal = document.getElementById('editFollowUpModal') && document.getElementById('editFollowUpModal').classList.contains('show');
+            const isTyping = document.activeElement && (
+                document.activeElement.tagName === 'INPUT' || 
+                document.activeElement.tagName === 'SELECT' || 
+                document.activeElement.tagName === 'TEXTAREA'
+            );
+            const isInlineEditing = document.querySelector('.inline-editing') !== null;
+            
+            // Check if user has entered any text in the entry row
+            let hasEntryData = false;
+            const entryRowInputs = document.querySelectorAll('#entryRow input[type="text"]');
+            entryRowInputs.forEach(input => {
+                if (input.value.trim() !== '') hasEntryData = true;
+            });
+            
+            // Check if an alertify dialog is open
+            const isAlertOpen = document.querySelector('.ajs-dialog, .alertify') !== null;
+            
+            if (!isEditingModal && !isTyping && !isInlineEditing && !hasEntryData && !isAlertOpen) {
+                window.location.reload();
+            } else {
+                // If busy, check again in 30 seconds
+                resetRefreshTimer();
+            }
+        }, 30000);
+    }
 
     document.addEventListener("DOMContentLoaded", function() {
+        resetRefreshTimer();
+        
         if (typeof bootstrap !== 'undefined') {
             editModal = new bootstrap.Modal(document.getElementById('editFollowUpModal'));
-            productModal = new bootstrap.Modal(document.getElementById('productModal'));
         }
 
-        const searchInput = document.getElementById('searchProduct');
-        if (searchInput) {
-            searchInput.addEventListener('input', (e) => {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(() => {
-                    loadProducts(e.target.value.trim());
-                }, 300);
+        // Initialize Select2
+        if (typeof jQuery !== 'undefined') {
+            function formatProductResult(product) {
+                if (!product.id) { return product.text; }
+                var $product = $('<span>' + escapeHtml(product.text) + '</span>');
+                var type = $(product.element).data('type');
+                
+                if (type === 'bundle' || type === 'combo') {
+                    $product.append(' <span class="badge bg-info text-dark" style="font-size:0.6rem; vertical-align:middle;">Combo</span>');
+                } else if (type === 'variable' || type === 'variant') {
+                    $product.append(' <span class="badge bg-secondary" style="font-size:0.6rem; vertical-align:middle;">Variant</span>');
+                }
+                return $product;
+            }
+
+            function formatProductSelection(product) {
+                if (!product.id) { return product.text; }
+                
+                var type = $(product.element).data('type');
+                var text = product.text.replace(/&nbsp;/g, '').replace('↳', '').trim();
+                
+                if (type === 'variant') {
+                    var productName = $(product.element).data('product-name');
+                    if (productName) {
+                        text = productName + ' - ' + text;
+                    }
+                }
+                
+                var $product = $('<span>' + escapeHtml(text) + '</span>');
+                
+                if (type === 'bundle' || type === 'combo') {
+                    $product.append(' <span class="badge bg-info text-dark" style="font-size:0.6rem; vertical-align:middle;">Combo</span>');
+                } else if (type === 'variable' || type === 'variant') {
+                    $product.append(' <span class="badge bg-secondary" style="font-size:0.6rem; vertical-align:middle;">Variant</span>');
+                }
+                return $product;
+            }
+
+            $('.select2-products').select2({
+                placeholder: "Select Products...",
+                allowClear: true,
+                dropdownCssClass: "wide-dropdown",
+                templateResult: formatProductResult,
+                templateSelection: formatProductSelection,
+                escapeMarkup: function(m) { return m; }
+            });
+        }
+        
+        // Allow saving entry by pressing Enter in any text input in the entry row
+        const entryRow = document.getElementById('entryRow');
+        if (entryRow) {
+            entryRow.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    if (e.target.tagName.toLowerCase() === 'input' && e.target.type === 'text') {
+                        e.preventDefault();
+                        saveFollowUp();
+                    }
+                }
             });
         }
         
@@ -463,99 +562,6 @@
         }
     }
 
-    function openProductModal(target) {
-        productModalTarget = target;
-        document.getElementById('searchProduct').value = '';
-        loadProducts('');
-        if (productModal) productModal.show();
-    }
-
-    function selectProduct(id, name, price) {
-        const targetInputId = productModalTarget === 'new' ? 'newProductsData' : 'editProductsData';
-        const input = document.getElementById(targetInputId);
-        let products = [];
-        try {
-            products = JSON.parse(input.value || '[]');
-        } catch (e) {}
-
-        // Check if already added
-        if (!products.some(p => p.id == id)) {
-            products.push({id: id, name: name, price: price});
-            input.value = JSON.stringify(products);
-            renderChips(productModalTarget);
-        }
-        
-        if (productModal) productModal.hide();
-    }
-
-    function removeProduct(target, id) {
-        const inputId = target === 'new' ? 'newProductsData' : 'editProductsData';
-        const input = document.getElementById(inputId);
-        let products = [];
-        try { products = JSON.parse(input.value || '[]'); } catch (e) {}
-        
-        products = products.filter(p => p.id != id);
-        input.value = JSON.stringify(products);
-        renderChips(target);
-    }
-
-    function renderChips(target) {
-        const inputId = target === 'new' ? 'newProductsData' : 'editProductsData';
-        const chipsContainerId = target === 'new' ? 'newProductChips' : 'editProductChips';
-        
-        const input = document.getElementById(inputId);
-        const container = document.getElementById(chipsContainerId);
-        let products = [];
-        try { products = JSON.parse(input.value || '[]'); } catch (e) {}
-
-        container.innerHTML = products.map(p => `
-            <span class="chip-badge">
-                ${escapeHtml(p.name)}
-                <i class="fas fa-times text-danger ms-1" style="cursor:pointer;" onclick="removeProduct('${target}', ${p.id})" title="Remove"></i>
-            </span>
-        `).join('');
-    }
-
-    function loadProducts(q) {
-        const grid = document.getElementById('productGrid');
-        grid.innerHTML = `<div class="col-12 text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">Loading products...</p></div>`;
-
-        fetch(`/api/search-products/?q=${encodeURIComponent(q || '')}`)
-            .then(r => r.json())
-            .then(data => {
-                const products = data.products || [];
-                if (!products.length) {
-                    grid.innerHTML = `<div class="col-12 text-center text-muted py-4"><i class="fas fa-box-open fa-3x mb-3" style="opacity: 0.3;"></i><p>No products found</p></div>`;
-                    return;
-                }
-                grid.innerHTML = products.map(p => renderProductCard(p)).join('');
-            })
-            .catch(err => {
-                console.error(err);
-                grid.innerHTML = `<div class="col-12 text-center py-4 text-danger">Failed to load products.</div>`;
-            });
-    }
-
-    function renderProductCard(p) {
-        window.getRandomProductSVG = function() {
-            const colors = ["#667eea", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#a855f7", "#f472b6", "#22d3ee"];
-            const color = colors[Math.floor(Math.random() * colors.length)];
-            return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' rx='16' fill='${color}'/%3E%3Cpath d='M30 40v20a10 10 0 0 0 10 10h20a10 10 0 0 0 10-10V40' fill='white'/%3E%3Crect x='35' y='40' width='30' height='30' rx='6' fill='white'/%3E%3Cpath d='M50 40v-8a8 8 0 0 1 16 0v8' stroke='${color}' stroke-width='2' fill='none'/%3E%3Ccircle cx='50' cy='40' r='3' fill='${color}'/%3E%3C/svg%3E`;
-        };
-        const img = p.image ? `<img src="${p.image}" class="product-img" onerror="this.src=window.getRandomProductSVG()">` : `<img src="${window.getRandomProductSVG()}" class="product-img">`;
-
-        return `
-        <div class="col-md-3 col-sm-4 product-item">
-          <div class="product-card" onclick="selectProduct(${p.id}, '${escapeHtml(p.name).replace(/'/g, "\\'")}', ${p.price})">
-            ${img}
-            <div class="product-card-body text-center">
-              <h6 class="mb-1 small fw-bold text-truncate">${escapeHtml(p.name)}</h6>
-              <p class="text-muted mb-0" style="font-size: 0.7rem;">${escapeHtml(p.sku || '')}</p>
-            </div>
-          </div>
-        </div>`;
-    }
-
     function filterTable() {
         const filterVal = document.getElementById('filterStatus').value.toLowerCase();
         const rows = document.querySelectorAll('#followUpsTbody tr[data-status]');
@@ -571,17 +577,13 @@
     }
 
     function saveFollowUp() {
-        const btn = event.currentTarget;
+        const btn = document.querySelector('#entryRow button[title="Save Entry"]');
         const originalHtml = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         btn.disabled = true;
 
-        const productInput = document.getElementById('newProductsData');
-        let productIds = [];
-        try { 
-            const products = JSON.parse(productInput.value || '[]');
-            productIds = products.map(p => p.id);
-        } catch(e) {}
+        const selectEl = document.getElementById('newProducts');
+        let productIds = Array.from(selectEl.selectedOptions).map(opt => opt.value);
 
         const data = {
             name: document.getElementById('newName').value.trim(),
@@ -640,13 +642,17 @@
                 document.getElementById('newFollowup1').value = '';
                 document.getElementById('newFollowup2').value = '';
                 document.getElementById('newRemarks').value = '';
-                // Reset product chips
-                document.getElementById('newProductsData').value = '[]';
-                renderChips('new');
+                // Reset product selection
+                if (typeof jQuery !== 'undefined') {
+                    $('#newProducts').val(null).trigger('change');
+                }
 
-                // Reset status to the first available option
+                // Reset status to the default available option
                 const newStatusEl = document.getElementById('newStatus');
-                if (newStatusEl && newStatusEl.options.length > 0) newStatusEl.selectedIndex = 0;
+                if (newStatusEl && newStatusEl.options.length > 0) {
+                    const defaultOpt = Array.from(newStatusEl.options).find(opt => opt.defaultSelected);
+                    newStatusEl.value = defaultOpt ? defaultOpt.value : newStatusEl.options[0].value;
+                }
 
                 // Add row below the entry row
                 appendNewRow(result.data);
@@ -741,8 +747,13 @@
         document.getElementById('editLeadSource').value = row.getAttribute('data-lead');
         
         const productsStr = row.getAttribute('data-products') || '[]';
-        document.getElementById('editProductsData').value = productsStr;
-        renderChips('edit');
+        try {
+            const products = JSON.parse(productsStr);
+            const productIds = products.map(p => p.id.toString());
+            if (typeof jQuery !== 'undefined') {
+                $('#editProducts').val(productIds).trigger('change');
+            }
+        } catch(e) {}
 
         document.getElementById('editFollowup1').value = row.getAttribute('data-f1');
         document.getElementById('editFollowup2').value = row.getAttribute('data-f2');
@@ -760,12 +771,8 @@
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
         btn.disabled = true;
 
-        const productInput = document.getElementById('editProductsData');
-        let productIds = [];
-        try { 
-            const products = JSON.parse(productInput.value || '[]');
-            productIds = products.map(p => p.id);
-        } catch(e) {}
+        const selectEl = document.getElementById('editProducts');
+        let productIds = Array.from(selectEl.selectedOptions).map(opt => opt.value);
 
         const data = {
             name: document.getElementById('editName').value.trim(),
@@ -1074,4 +1081,6 @@
         });
     }
 </script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 {% endblock %}

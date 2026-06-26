@@ -7208,6 +7208,27 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
                 {% endif %}
             {% endwith %}
 
+            {% with all_variants=follow_up_data.product_variations.all %}
+                {% if all_variants %}
+                    if (typeof addToCart === 'function') {
+                        {% for var in all_variants %}
+                            var varPrice_{{ forloop.counter }} = parseFloat("{{ var.price|default:'0' }}") || 0;
+                            addToCart(
+                                {{ var.product.id }},
+                                "{{ var.product.name|escapejs }}",
+                                varPrice_{{ forloop.counter }},
+                                {{ var.id }},   // varId
+                                "{{ var.sku|escapejs }}",     // sku
+                                1,      // qty
+                                false,  // isCustom
+                                "{{ var.variation_name|escapejs }}",     // variantName
+                                'variable'
+                            );
+                        {% endfor %}
+                    }
+                {% endif %}
+            {% endwith %}
+
         }, 900); // after loadFormData() finishes
     });
 </script>
