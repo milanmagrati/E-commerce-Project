@@ -24,6 +24,13 @@
                 <i class="fas fa-trash"></i> Trash
             </a>
             <!-- Optional Filters -->
+            <input type="text" class="form-control form-control-sm w-auto" id="filterSearch" placeholder="Search..." oninput="filterTable()" onkeydown="if(event.key === 'Enter') event.preventDefault();">
+            <select class="form-select form-select-sm w-auto" id="filterLeadSource" onchange="filterTable()">
+                <option value="">All Lead Sources</option>
+                {% for source in order_sources %}
+                <option value="{{ source.name }}">{{ source.name }}</option>
+                {% endfor %}
+            </select>
             <select class="form-select form-select-sm w-auto" id="filterStatus" onchange="filterTable()">
                 <option value="">All Statuses</option>
                 {% for status in statuses %}
@@ -595,13 +602,28 @@
     }
 
     function filterTable() {
+        const searchVal = document.getElementById('filterSearch').value.toLowerCase();
+        const leadSourceVal = document.getElementById('filterLeadSource').value.toLowerCase();
         const filterVal = document.getElementById('filterStatus').value.toLowerCase();
         const rows = document.querySelectorAll('#followUpsTbody tr[data-status]');
         
+        let visibleCount = 0;
         rows.forEach(row => {
             const rowStatus = (row.dataset.status || '').toLowerCase();
-            if (filterVal === '' || rowStatus === filterVal) {
+            const rowName = (row.dataset.name || '').toLowerCase();
+            const rowPhone = (row.dataset.phone || '').toLowerCase();
+            const rowLead = (row.dataset.lead || '').toLowerCase();
+            const rowRemarks = (row.dataset.remarks || '').toLowerCase();
+            
+            const matchesSearch = searchVal === '' || rowName.includes(searchVal) || rowPhone.includes(searchVal) || rowRemarks.includes(searchVal);
+            const matchesLead = leadSourceVal === '' || rowLead === leadSourceVal;
+            const matchesStatus = filterVal === '' || rowStatus === filterVal;
+            
+            if (matchesSearch && matchesLead && matchesStatus) {
                 row.style.display = '';
+                visibleCount++;
+                const snCell = row.querySelector('.sn-column');
+                if (snCell) snCell.textContent = visibleCount;
             } else {
                 row.style.display = 'none';
             }
@@ -760,11 +782,8 @@
         // Insert right after entry row
         entryRow.after(newTr);
         
-        // Update all serial numbers
-        const snCells = tbody.querySelectorAll('tr:not(#entryRow):not(#emptyRow) td.sn-column');
-        snCells.forEach((cell, index) => {
-            cell.textContent = index + 1;
-        });
+        // Update all serial numbers by applying filter
+        filterTable();
     }
 
 
@@ -885,6 +904,7 @@
                 
                 if (editModal) editModal.hide();
                 alertify.success('Updated successfully!');
+                filterTable();
             } else {
                 alertify.error('Error: ' + result.error);
             }
@@ -920,12 +940,7 @@
                 const row = document.querySelector(`tr[data-id="${id}"]`);
                 if (row) {
                     row.remove();
-                    // Update remaining SNs
-                    const tbody = document.getElementById('followUpsTbody');
-                    const snCells = tbody.querySelectorAll('tr:not(#entryRow):not(#emptyRow) td.sn-column');
-                    snCells.forEach((cell, index) => {
-                        cell.textContent = index + 1;
-                    });
+                    filterTable();
                     alertify.success('Deleted successfully!');
                 }
             } else {
@@ -1123,6 +1138,7 @@
                     cell.innerHTML = buildLogsHtml(logs, finalValue);
                 }
                 alertify.success('Updated successfully!');
+                filterTable();
             } else {
                 alertify.error('Error: ' + result.error);
                 if (field === 'status') {
