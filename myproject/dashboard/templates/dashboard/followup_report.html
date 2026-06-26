@@ -1,0 +1,573 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Follow-ups Report{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+<li class="breadcrumb-item">Reports</li>
+<li class="breadcrumb-item active">Follow-ups Report</li>
+{% endblock %}
+
+{% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --fur-bg: #f8fafc;
+  --fur-surface: #ffffff;
+  --fur-card: #ffffff;
+  --fur-card2: #f1f5f9;
+  --fur-border: rgba(0,0,0,0.08);
+  --fur-primary: #4f46e5;
+  --fur-primary-glow: rgba(79,70,229,0.2);
+  --fur-green: #10b981;
+  --fur-blue: #0ea5e9;
+  --fur-orange: #f97316;
+  --fur-pink: #ec4899;
+  --fur-yellow: #eab308;
+  --fur-red: #ef4444;
+  --fur-text: #1e293b;
+  --fur-muted: #64748b;
+  --fur-radius: 14px;
+}
+* { font-family: 'Inter', sans-serif; box-sizing: border-box; }
+.fur-page { background: var(--fur-bg); min-height: 100vh; padding: 24px; }
+
+.fur-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+.fur-title { font-size:1.65rem; font-weight:800; color:var(--fur-text); display:flex; align-items:center; gap:12px; }
+.fur-title-icon { width:46px; height:46px; border-radius:12px; background:linear-gradient(135deg,var(--fur-primary),#a78bfa); display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#fff; box-shadow:0 4px 20px var(--fur-primary-glow); }
+.fur-badge-live { display:inline-flex; align-items:center; gap:6px; background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); color:#4ade80; border-radius:20px; padding:4px 12px; font-size:.78rem; font-weight:600; }
+.fur-badge-live::before { content:''; width:7px; height:7px; border-radius:50%; background:#4ade80; animation:pulse-dot 1.6s ease-in-out infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
+
+.fur-filter-bar { background:var(--fur-surface); border:1px solid var(--fur-border); border-radius:var(--fur-radius); padding:16px 20px; margin-bottom:24px; }
+.fur-filter-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.period-pill { padding:6px 16px; border-radius:20px; font-size:.8rem; font-weight:600; border:1.5px solid var(--fur-border); background:var(--fur-card); color:var(--fur-muted); cursor:pointer; transition:all .2s; white-space:nowrap; }
+.period-pill:hover { border-color:var(--fur-primary); color:var(--fur-primary); }
+.period-pill.active { background:var(--fur-primary); border-color:var(--fur-primary); color:#fff; box-shadow:0 0 16px var(--fur-primary-glow); }
+.fur-divider { width:1px; height:30px; background:var(--fur-border); margin:0 4px; }
+.fur-select, .fur-date-input { background:var(--fur-card); border:1.5px solid var(--fur-border); color:var(--fur-text); border-radius:8px; padding:7px 12px; font-size:.83rem; outline:none; transition:border .2s; }
+.fur-select:focus, .fur-date-input:focus { border-color:var(--fur-primary); }
+.fur-select option { background:var(--fur-card2); }
+#customDateRange { display:flex; align-items:center; gap:8px; background:var(--fur-card2); border-radius:8px; padding:4px 12px; border:1.5px solid var(--fur-primary); }
+.fur-apply-btn { background:linear-gradient(135deg,var(--fur-primary),#a78bfa); color:#fff; border:none; border-radius:8px; padding:8px 18px; font-size:.83rem; font-weight:600; cursor:pointer; transition:all .2s; box-shadow:0 2px 12px var(--fur-primary-glow); }
+.fur-apply-btn:hover { transform:translateY(-1px); box-shadow:0 4px 20px var(--fur-primary-glow); }
+.fur-export-btn { background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); color:#4ade80; border-radius:8px; padding:8px 16px; font-size:.83rem; font-weight:600; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:6px; }
+.fur-export-btn:hover { background:rgba(34,197,94,.2); }
+
+.fur-kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px; margin-bottom:24px; }
+.fur-kpi-card { background:var(--fur-card); border:1px solid var(--fur-border); border-radius:var(--fur-radius); padding:20px 22px; position:relative; overflow:hidden; transition:transform .2s,box-shadow .2s; }
+.fur-kpi-card:hover { transform:translateY(-3px); box-shadow:0 8px 32px rgba(0,0,0,.4); }
+.fur-kpi-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--kpi-color,var(--fur-primary)); }
+.fur-kpi-icon { width:40px; height:40px; border-radius:10px; background:var(--kpi-bg,rgba(108,99,255,.15)); display:flex; align-items:center; justify-content:center; font-size:1rem; color:var(--kpi-color,var(--fur-primary)); margin-bottom:14px; }
+.fur-kpi-val { font-size:2rem; font-weight:800; color:var(--fur-text); line-height:1; }
+.fur-kpi-label { font-size:.78rem; color:var(--fur-muted); margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:.5px; }
+.fur-kpi-sub { font-size:.8rem; color:var(--kpi-color,var(--fur-primary)); margin-top:6px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.fur-charts-row { display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:24px; }
+@media(max-width:900px){ .fur-charts-row,.fur-analysis-grid { grid-template-columns:1fr; } }
+.fur-chart-card { background:var(--fur-card); border:1px solid var(--fur-border); border-radius:var(--fur-radius); padding:22px; }
+.fur-chart-title { font-size:.9rem; font-weight:700; color:var(--fur-text); margin-bottom:18px; display:flex; align-items:center; gap:8px; }
+.fur-chart-title i { color:var(--fur-primary); }
+
+.fur-section { margin-bottom:24px; }
+.fur-section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.fur-section-title { font-size:1rem; font-weight:700; color:var(--fur-text); display:flex; align-items:center; gap:8px; }
+.fur-section-title .dot { width:8px; height:8px; border-radius:50%; background:var(--fur-primary); }
+
+.fur-analysis-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
+
+.fur-table-card { background:var(--fur-card); border:1px solid var(--fur-border); border-radius:var(--fur-radius); overflow:hidden; }
+.fur-table { width:100%; border-collapse:collapse; }
+.fur-table th { background:var(--fur-card2); color:var(--fur-muted); font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.6px; padding:12px 16px; text-align:left; border-bottom:1px solid var(--fur-border); }
+.fur-table td { padding:12px 16px; border-bottom:1px solid var(--fur-border); color:var(--fur-text); font-size:.85rem; vertical-align:middle; }
+.fur-table tr:last-child td { border-bottom:none; }
+.fur-table tr:hover td { background:rgba(0,0,0,.03); }
+
+.rank-badge { width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:.75rem; font-weight:800; }
+.rank-1 { background:linear-gradient(135deg,#ffd700,#ff8c00); color:#fff; }
+.rank-2 { background:linear-gradient(135deg,#c0c0c0,#808080); color:#fff; }
+.rank-3 { background:linear-gradient(135deg,#cd7f32,#8b4513); color:#fff; }
+.rank-other { background:var(--fur-card2); color:var(--fur-muted); }
+.status-pill { display:inline-block; padding:3px 10px; border-radius:12px; font-size:.72rem; font-weight:600; white-space:nowrap; }
+.fur-progress-bar { height:8px; background:var(--fur-card2); border-radius:4px; overflow:hidden; }
+.fur-progress-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--fur-primary),#a78bfa); transition:width .8s ease; }
+
+.fur-action-btn { width:30px; height:30px; border-radius:7px; border:1px solid var(--fur-border); background:var(--fur-card2); color:var(--fur-primary); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:all .2s; font-size:.8rem; }
+.fur-action-btn:hover { background:var(--fur-primary); color:#fff; border-color:var(--fur-primary); }
+
+.fur-pagination { display:flex; gap:6px; align-items:center; justify-content:center; padding:16px; }
+.fur-page-btn { width:34px; height:34px; border-radius:8px; border:1px solid var(--fur-border); background:var(--fur-card2); color:var(--fur-muted); display:flex; align-items:center; justify-content:center; font-size:.83rem; cursor:pointer; text-decoration:none; transition:all .2s; }
+.fur-page-btn:hover, .fur-page-btn.active { background:var(--fur-primary); border-color:var(--fur-primary); color:#fff; }
+
+.fur-empty { text-align:center; padding:48px 24px; color:var(--fur-muted); }
+.fur-empty i { font-size:2.5rem; margin-bottom:12px; opacity:.4; display:block; }
+
+.fur-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:9998; display:none; align-items:center; justify-content:center; }
+.fur-modal-backdrop.show { display:flex; animation:fadein .2s ease; }
+@keyframes fadein { from{opacity:0}to{opacity:1} }
+.fur-modal { background:var(--fur-card); border:1px solid var(--fur-border); border-radius:16px; width:680px; max-width:96vw; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 24px 80px rgba(0,0,0,.6); animation:slideup .25s ease; }
+@keyframes slideup { from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1} }
+.fur-modal-header { padding:20px 24px; border-bottom:1px solid var(--fur-border); display:flex; align-items:center; justify-content:space-between; }
+.fur-modal-title { font-size:1rem; font-weight:700; color:var(--fur-text); }
+.fur-modal-close { width:32px; height:32px; border-radius:8px; border:1px solid var(--fur-border); background:var(--fur-card2); color:var(--fur-muted); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:1rem; transition:all .2s; }
+.fur-modal-close:hover { background:rgba(248,113,113,.15); color:var(--fur-red); border-color:var(--fur-red); }
+.fur-modal-body { padding:20px 24px; overflow-y:auto; flex:1; }
+
+.log-timeline { position:relative; padding-left:24px; }
+.log-timeline::before { content:''; position:absolute; left:8px; top:0; bottom:0; width:2px; background:var(--fur-border); }
+.log-item { position:relative; margin-bottom:18px; background:var(--fur-card2); border:1px solid var(--fur-border); border-radius:10px; padding:12px 16px; }
+.log-item::before { content:''; position:absolute; left:-20px; top:18px; width:10px; height:10px; border-radius:50%; background:var(--fur-primary); border:2px solid var(--fur-card); }
+.log-user { font-size:.8rem; font-weight:700; color:var(--fur-primary); }
+.log-field { font-size:.78rem; color:var(--fur-muted); margin-top:2px; }
+.log-change { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+.log-old { background:rgba(248,113,113,.1); color:var(--fur-red); border-radius:6px; padding:2px 8px; font-size:.78rem; text-decoration:line-through; }
+.log-arrow { color:var(--fur-muted); font-size:.75rem; }
+.log-new { background:rgba(34,197,94,.1); color:var(--fur-green); border-radius:6px; padding:2px 8px; font-size:.78rem; }
+.log-time { font-size:.72rem; color:var(--fur-muted); margin-top:6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fur-page">
+
+  <!-- HEADER -->
+  <div class="fur-header">
+    <div class="fur-title">
+      <div class="fur-title-icon"><i class="fas fa-phone-alt"></i></div>
+      Follow-ups Report
+      <span class="fur-badge-live">Live</span>
+    </div>
+    <button class="fur-export-btn" onclick="window.print()">
+      <i class="fas fa-print"></i> Print / Export
+    </button>
+  </div>
+
+  <!-- FILTER BAR -->
+  <form id="filterForm" method="get">
+    <div class="fur-filter-bar">
+      <div class="fur-filter-row">
+        <button type="button" class="period-pill {% if period == 'today' %}active{% endif %}" data-period="today" onclick="setPeriod('today')">Today</button>
+        <button type="button" class="period-pill {% if period == 'yesterday' %}active{% endif %}" data-period="yesterday" onclick="setPeriod('yesterday')">Yesterday</button>
+        <button type="button" class="period-pill {% if period == 'this_week' %}active{% endif %}" data-period="this_week" onclick="setPeriod('this_week')">This Week</button>
+        <button type="button" class="period-pill {% if period == 'last_7' %}active{% endif %}" data-period="last_7" onclick="setPeriod('last_7')">Last 7 Days</button>
+        <button type="button" class="period-pill {% if period == 'last_15' %}active{% endif %}" data-period="last_15" onclick="setPeriod('last_15')">Last 15 Days</button>
+        <button type="button" class="period-pill {% if period == 'this_month' %}active{% endif %}" data-period="this_month" onclick="setPeriod('this_month')">This Month</button>
+        <button type="button" class="period-pill {% if period == 'custom' %}active{% endif %}" data-period="custom" onclick="setPeriod('custom')">Custom</button>
+        <div class="fur-divider"></div>
+        <div id="customDateRange" {% if period != 'custom' %}style="display:none"{% endif %}>
+          <span style="color:var(--fur-muted);font-size:.78rem;">From</span>
+          <input type="date" name="start_date" class="fur-date-input" value="{{ start_date }}" style="border:none;background:transparent;padding:4px 6px;color:var(--fur-text)">
+          <span style="color:var(--fur-muted);font-size:.78rem;">To</span>
+          <input type="date" name="end_date" class="fur-date-input" value="{{ end_date }}" style="border:none;background:transparent;padding:4px 6px;color:var(--fur-text)">
+        </div>
+        <input type="hidden" name="period" id="periodInput" value="{{ period }}">
+      </div>
+      <div class="fur-filter-row" style="margin-top:10px">
+        <select name="staff_id" class="fur-select" onchange="this.form.submit()">
+          <option value="">All Staff</option>
+          {% for s in all_staff %}<option value="{{ s.id }}" {% if filter_staff_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.get_full_name|default:s.username }}</option>{% endfor %}
+        </select>
+        <select name="source" class="fur-select" onchange="this.form.submit()">
+          <option value="">All Sources</option>
+          {% for src in all_sources %}<option value="{{ src.name }}" {% if filter_source == src.name %}selected{% endif %}>{{ src.name }}</option>{% endfor %}
+        </select>
+        <select name="status" class="fur-select" onchange="this.form.submit()">
+          <option value="">All Statuses</option>
+          {% for st in all_statuses %}<option value="{{ st.name }}" {% if filter_status == st.name %}selected{% endif %}>{{ st.name }}</option>{% endfor %}
+        </select>
+        <select name="product_id" class="fur-select" onchange="this.form.submit()">
+          <option value="">All Products</option>
+          {% for pr in all_products %}<option value="{{ pr.id }}" {% if filter_product == pr.id|stringformat:"s" %}selected{% endif %}>{{ pr.name }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="fur-apply-btn"><i class="fas fa-sync-alt me-1"></i>Apply</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- KPI CARDS -->
+  <div class="fur-kpi-grid">
+    <div class="fur-kpi-card" style="--kpi-color:var(--fur-primary);--kpi-bg:rgba(108,99,255,.12)">
+      <div class="fur-kpi-icon"><i class="fas fa-phone-alt"></i></div>
+      <div class="fur-kpi-val">{{ total_count }}</div>
+      <div class="fur-kpi-label">Total Follow-ups</div>
+      <div class="fur-kpi-sub">{{ start_date }} → {{ end_date }}</div>
+    </div>
+    <div class="fur-kpi-card" style="--kpi-color:var(--fur-blue);--kpi-bg:rgba(56,189,248,.12)">
+      <div class="fur-kpi-icon"><i class="fas fa-calendar-day"></i></div>
+      <div class="fur-kpi-val">{{ today_count }}</div>
+      <div class="fur-kpi-label">Follow-ups Today</div>
+      <div class="fur-kpi-sub">As of today</div>
+    </div>
+    <div class="fur-kpi-card" style="--kpi-color:var(--fur-green);--kpi-bg:rgba(34,197,94,.12)">
+      <div class="fur-kpi-icon"><i class="fas fa-users"></i></div>
+      <div class="fur-kpi-val">{{ active_staff_count }}</div>
+      <div class="fur-kpi-label">Active Staff</div>
+      <div class="fur-kpi-sub">Made at least 1 follow-up</div>
+    </div>
+    <div class="fur-kpi-card" style="--kpi-color:var(--fur-yellow);--kpi-bg:rgba(250,204,21,.12)">
+      <div class="fur-kpi-icon"><i class="fas fa-crown"></i></div>
+      <div class="fur-kpi-val" style="font-size:1.05rem;line-height:1.3;margin-top:4px">{% if most_active_staff %}{{ most_active_staff.name }}{% else %}-{% endif %}</div>
+      <div class="fur-kpi-label">Most Active Staff</div>
+      <div class="fur-kpi-sub">{% if most_active_staff %}{{ most_active_staff.count }} follow-ups{% else %}No data{% endif %}</div>
+    </div>
+    <div class="fur-kpi-card" style="--kpi-color:var(--fur-orange);--kpi-bg:rgba(251,146,60,.12)">
+      <div class="fur-kpi-icon"><i class="fas fa-bullseye"></i></div>
+      <div class="fur-kpi-val" style="font-size:1.05rem;line-height:1.3;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ top_source }}</div>
+      <div class="fur-kpi-label">Top Lead Source</div>
+      <div class="fur-kpi-sub">Highest volume</div>
+    </div>
+    <div class="fur-kpi-card" style="--kpi-color:var(--fur-pink);--kpi-bg:rgba(244,114,182,.12)">
+      <div class="fur-kpi-icon"><i class="fas fa-box"></i></div>
+      <div class="fur-kpi-val" style="font-size:1.05rem;line-height:1.3;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ top_product }}</div>
+      <div class="fur-kpi-label">Top Product</div>
+      <div class="fur-kpi-sub">Most enquired</div>
+    </div>
+  </div>
+
+  <!-- CHARTS ROW -->
+  <div class="fur-charts-row">
+    <div class="fur-chart-card">
+      <div class="fur-chart-title"><i class="fas fa-chart-bar"></i> Follow-ups Trend</div>
+      <canvas id="trendChart" height="100"></canvas>
+    </div>
+    <div class="fur-chart-card">
+      <div class="fur-chart-title"><i class="fas fa-chart-pie"></i> Status Distribution</div>
+      {% if status_breakdown %}
+      <canvas id="statusChart" height="180"></canvas>
+      {% else %}
+      <div class="fur-empty"><i class="fas fa-chart-pie"></i><br>No data</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- STAFF + SOURCE -->
+  <div class="fur-analysis-grid">
+    <div class="fur-section">
+      <div class="fur-section-header">
+        <div class="fur-section-title"><span class="dot"></span>Staff Leaderboard</div>
+      </div>
+      <div class="fur-table-card">
+        {% if staff_leaderboard %}
+        <table class="fur-table">
+          <thead><tr><th>Rank</th><th>Staff Name</th><th>Follow-ups</th><th>Top Status</th></tr></thead>
+          <tbody>
+            {% for s in staff_leaderboard %}
+            <tr>
+              <td><span class="rank-badge {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}rank-other{% endif %}">{{ forloop.counter }}</span></td>
+              <td style="font-weight:600">{{ s.name }}</td>
+              <td>
+                <span style="font-size:1.1rem;font-weight:800;color:var(--fur-primary)">{{ s.count }}</span>
+                <div class="fur-progress-bar mt-1" style="max-width:80px">
+                  <div class="fur-progress-fill" style="width:{% if total_count %}{% widthratio s.count total_count 100 %}{% else %}0{% endif %}%"></div>
+                </div>
+              </td>
+              <td>{% for sn, sc in s.statuses.items %}{% if forloop.first %}<span class="status-pill" style="background:rgba(108,99,255,.15);color:var(--fur-primary)">{{ sn }}: {{ sc }}</span>{% endif %}{% endfor %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="fur-empty"><i class="fas fa-users"></i><br>No staff data</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fur-section">
+      <div class="fur-section-header">
+        <div class="fur-section-title"><span class="dot" style="background:var(--fur-orange)"></span>By Lead Source</div>
+      </div>
+      <div class="fur-table-card">
+        {% if source_breakdown %}
+        <table class="fur-table">
+          <thead><tr><th>Source</th><th>Count</th><th>Share</th></tr></thead>
+          <tbody>
+            {% for s in source_breakdown %}
+            <tr>
+              <td style="font-weight:600">{{ s.source }}</td>
+              <td><span style="font-weight:700;color:var(--fur-orange)">{{ s.count }}</span></td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div class="fur-progress-bar" style="flex:1;min-width:60px">
+                    <div class="fur-progress-fill" style="background:linear-gradient(90deg,var(--fur-orange),#fdba74);width:{% if total_count %}{% widthratio s.count total_count 100 %}{% else %}0{% endif %}%"></div>
+                  </div>
+                  <span style="font-size:.75rem;color:var(--fur-muted);white-space:nowrap">{% if total_count %}{% widthratio s.count total_count 100 %}{% else %}0{% endif %}%</span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="fur-empty"><i class="fas fa-bullseye"></i><br>No source data</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- PRODUCT BREAKDOWN -->
+  <div class="fur-section">
+    <div class="fur-section-header">
+      <div class="fur-section-title"><span class="dot" style="background:var(--fur-pink)"></span>Product Breakdown</div>
+    </div>
+    <div class="fur-table-card">
+      {% if product_breakdown %}
+      <table class="fur-table">
+        <thead><tr><th>#</th><th>Product</th><th>Follow-ups</th><th>Share</th><th>Top Status</th></tr></thead>
+        <tbody>
+          {% for p in product_breakdown %}
+          <tr>
+            <td style="color:var(--fur-muted)">{{ forloop.counter }}</td>
+            <td style="font-weight:600">{{ p.product }}</td>
+            <td><span style="font-weight:700;color:var(--fur-pink)">{{ p.count }}</span></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="fur-progress-bar" style="width:100px">
+                  <div class="fur-progress-fill" style="background:linear-gradient(90deg,var(--fur-pink),#f9a8d4);width:{% if total_count %}{% widthratio p.count total_count 100 %}{% else %}0{% endif %}%"></div>
+                </div>
+                <span style="font-size:.75rem;color:var(--fur-muted)">{% if total_count %}{% widthratio p.count total_count 100 %}{% else %}0{% endif %}%</span>
+              </div>
+            </td>
+            <td>{% for sn, sc in p.statuses.items %}{% if forloop.first %}<span class="status-pill" style="background:rgba(244,114,182,.12);color:var(--fur-pink)">{{ sn }}: {{ sc }}</span>{% endif %}{% endfor %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="fur-empty"><i class="fas fa-box"></i><br>No product data</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- STATUS BREAKDOWN -->
+  <div class="fur-section">
+    <div class="fur-section-header">
+      <div class="fur-section-title"><span class="dot" style="background:var(--fur-green)"></span>Status Breakdown</div>
+    </div>
+    <div class="fur-table-card">
+      {% if status_breakdown %}
+      <table class="fur-table">
+        <thead><tr><th>Status</th><th>Count</th><th>Distribution</th></tr></thead>
+        <tbody>
+          {% for st in status_breakdown %}
+          <tr>
+            <td><span class="status-pill" style="background:rgba(34,197,94,.12);color:var(--fur-green)">{{ st.status }}</span></td>
+            <td><span style="font-weight:700;color:var(--fur-green)">{{ st.count }}</span></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:10px;min-width:200px">
+                <div class="fur-progress-bar" style="flex:1">
+                  <div class="fur-progress-fill" style="background:linear-gradient(90deg,var(--fur-green),#86efac);width:{% if total_count %}{% widthratio st.count total_count 100 %}{% else %}0{% endif %}%"></div>
+                </div>
+                <span style="font-size:.78rem;color:var(--fur-muted);min-width:35px">{% if total_count %}{% widthratio st.count total_count 100 %}{% else %}0{% endif %}%</span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="fur-empty"><i class="fas fa-tags"></i><br>No status data</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- DETAILED TABLE -->
+  <div class="fur-section">
+    <div class="fur-section-header">
+      <div class="fur-section-title"><span class="dot" style="background:var(--fur-blue)"></span>Detailed Follow-ups List</div>
+      <span style="color:var(--fur-muted);font-size:.82rem">{{ total_count }} total &bull; Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    </div>
+    <div class="fur-table-card">
+      {% if detailed_rows %}
+      <div style="overflow-x:auto">
+        <table class="fur-table">
+          <thead>
+            <tr>
+              <th>S.N.</th>
+              <th>Name / Phone</th>
+              <th>Lead Source</th>
+              <th>Products</th>
+              <th>Staff</th>
+              <th>Status</th>
+              <th>Follow-up 1</th>
+              <th>Follow-up 2</th>
+              <th>Remarks</th>
+              <th>Created</th>
+              <th>Logs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in detailed_rows %}
+            <tr>
+              <td style="color:var(--fur-muted)">{{ page_obj.start_index|add:forloop.counter0 }}</td>
+              <td>
+                <div style="font-weight:600">{% if row.fu.name %}{{ row.fu.name }}{% else %}<span style="color:var(--fur-muted)">No name</span>{% endif %}</div>
+                <div style="font-size:.75rem;color:var(--fur-muted)">{{ row.fu.phone }}</div>
+              </td>
+              <td>{% if row.fu.lead_source %}<span class="status-pill" style="background:rgba(251,146,60,.12);color:var(--fur-orange)">{{ row.fu.lead_source }}</span>{% else %}<span style="color:var(--fur-muted)">-</span>{% endif %}</td>
+              <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ row.products_display }}">{{ row.products_display }}</td>
+              <td>
+                {% if row.creator %}
+                {% with full=row.creator.get_full_name %}
+                <div style="display:flex;align-items:center;gap:7px">
+                  <div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--fur-primary),#a78bfa);display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#fff;font-weight:700;flex-shrink:0">
+                    {% if full %}{{ full|slice:":1"|upper }}{% else %}{{ row.creator.username|slice:":1"|upper }}{% endif %}
+                  </div>
+                  <span style="font-size:.82rem">{% if full %}{{ full }}{% else %}{{ row.creator.username }}{% endif %}</span>
+                </div>
+                {% endwith %}
+                {% else %}<span style="color:var(--fur-muted);font-size:.78rem">Unknown</span>{% endif %}
+              </td>
+              <td>{% if row.fu.status %}<span class="status-pill" style="background:rgba(108,99,255,.12);color:var(--fur-primary)">{{ row.fu.status }}</span>{% else %}<span style="color:var(--fur-muted)">-</span>{% endif %}</td>
+              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fur-muted);font-size:.8rem" title="{{ row.fu.followup_1 }}">{% if row.fu.followup_1 %}{{ row.fu.followup_1|truncatechars:35 }}{% else %}<span style="color:var(--fur-border)">-</span>{% endif %}</td>
+              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fur-muted);font-size:.8rem" title="{{ row.fu.followup_2 }}">{% if row.fu.followup_2 %}{{ row.fu.followup_2|truncatechars:35 }}{% else %}<span style="color:var(--fur-border)">-</span>{% endif %}</td>
+              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fur-muted);font-size:.8rem" title="{{ row.fu.remarks }}">{% if row.fu.remarks %}{{ row.fu.remarks|truncatechars:35 }}{% else %}<span style="color:var(--fur-border)">-</span>{% endif %}</td>
+              <td style="color:var(--fur-muted);font-size:.78rem;white-space:nowrap">
+                {{ row.fu.created_at|date:"M d, Y" }}<br><span style="font-size:.7rem">{{ row.fu.created_at|date:"h:i A" }}</span>
+              </td>
+              <td>
+                <button class="fur-action-btn" title="View Activity Logs" onclick="viewLogs({{ row.fu.id }}, '{{ row.fu.name|default:row.fu.phone|escapejs }}')">
+                  <i class="fas fa-history"></i>
+                </button>
+                {% if row.log_count > 0 %}<span style="font-size:.65rem;color:var(--fur-muted);margin-left:2px">{{ row.log_count }}</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if page_obj.paginator.num_pages > 1 %}
+      <div class="fur-pagination">
+        {% if page_obj.has_previous %}<a href="?period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ page_obj.previous_page_number }}" class="fur-page-btn"><i class="fas fa-chevron-left"></i></a>{% endif %}
+        {% for num in page_obj.paginator.page_range %}
+          {% if num == page_obj.number %}<span class="fur-page-btn active">{{ num }}</span>
+          {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}<a href="?period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ num }}" class="fur-page-btn">{{ num }}</a>{% endif %}
+        {% endfor %}
+        {% if page_obj.has_next %}<a href="?period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ page_obj.next_page_number }}" class="fur-page-btn"><i class="fas fa-chevron-right"></i></a>{% endif %}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="fur-empty">
+        <i class="fas fa-phone-alt"></i>
+        <strong style="color:var(--fur-text);display:block;margin-bottom:4px">No follow-ups found</strong>
+        Try adjusting the date range or filters.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- LOGS MODAL -->
+<div class="fur-modal-backdrop" id="logsModal" onclick="closeLogsModal(event)">
+  <div class="fur-modal">
+    <div class="fur-modal-header">
+      <div>
+        <div class="fur-modal-title"><i class="fas fa-history me-2" style="color:var(--fur-primary)"></i>Activity Logs</div>
+        <div id="modalSubtitle" style="font-size:.78rem;color:var(--fur-muted);margin-top:2px"></div>
+      </div>
+      <button class="fur-modal-close" onclick="document.getElementById('logsModal').classList.remove('show')">&#x2715;</button>
+    </div>
+    <div class="fur-modal-body" id="logsContent">
+      <div style="text-align:center;padding:30px;color:var(--fur-muted)"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:8px;color:var(--fur-primary)"></i>Loading...</div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+Chart.defaults.color = '#64748b';
+Chart.defaults.borderColor = 'rgba(0,0,0,0.08)';
+Chart.defaults.font.family = 'Inter';
+
+// Trend Chart
+const trendLabels = {{ trend_labels|safe }};
+const trendData   = {{ trend_data|safe }};
+const displayLabels = trendLabels.map(d => {
+  const p = d.split('-');
+  return `${parseInt(p[2])} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(p[1])-1]}`;
+});
+const trendCtx = document.getElementById('trendChart').getContext('2d');
+const grad = trendCtx.createLinearGradient(0,0,0,220);
+grad.addColorStop(0,'rgba(108,99,255,0.55)');
+grad.addColorStop(1,'rgba(108,99,255,0.02)');
+new Chart(trendCtx, {
+  type: 'bar',
+  data: {
+    labels: displayLabels,
+    datasets: [{ label:'Follow-ups', data:trendData, backgroundColor:grad, borderColor:'#6c63ff', borderWidth:1.5, borderRadius:5, borderSkipped:false }]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:true,
+    plugins: {
+      legend:{display:false},
+      tooltip:{ backgroundColor:'#ffffff', titleColor:'#1e293b', bodyColor:'#64748b', borderColor:'rgba(0,0,0,0.1)', borderWidth:1,
+        callbacks:{ title:i=>`Date: ${trendLabels[i[0].dataIndex]}`, label:i=>` ${i.raw} follow-up${i.raw!==1?'s':''}` }
+      }
+    },
+    scales:{
+      x:{ grid:{display:false}, ticks:{font:{size:11},maxRotation:45} },
+      y:{ grid:{color:'rgba(0,0,0,0.04)'}, ticks:{stepSize:1}, beginAtZero:true }
+    }
+  }
+});
+
+// Status Donut
+{% if status_breakdown %}
+const sLabels = [{% for s in status_breakdown %}"{{ s.status }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+const sCounts = [{% for s in status_breakdown %}{{ s.count }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const sColors = ['#6c63ff','#22c55e','#38bdf8','#fb923c','#f472b6','#facc15','#f87171','#a78bfa','#34d399','#60a5fa'];
+new Chart(document.getElementById('statusChart').getContext('2d'), {
+  type:'doughnut',
+  data:{ labels:sLabels, datasets:[{ data:sCounts, backgroundColor:sColors.slice(0,sLabels.length), borderWidth:2, borderColor:'#ffffff', hoverOffset:6 }] },
+  options:{ responsive:true, cutout:'62%', plugins:{ legend:{position:'bottom',labels:{padding:12,font:{size:11},boxWidth:10}}, tooltip:{backgroundColor:'#ffffff', titleColor:'#1e293b', bodyColor:'#64748b', borderColor:'rgba(0,0,0,0.1)', borderWidth:1} } }
+});
+{% endif %}
+
+// Period Selector
+function setPeriod(val) {
+  document.getElementById('periodInput').value = val;
+  document.querySelectorAll('.period-pill').forEach(p => p.classList.toggle('active', p.dataset.period === val));
+  document.getElementById('customDateRange').style.display = val === 'custom' ? 'flex' : 'none';
+  if (val !== 'custom') document.getElementById('filterForm').submit();
+}
+
+// Logs Modal
+function viewLogs(fuId, name) {
+  const modal = document.getElementById('logsModal');
+  const content = document.getElementById('logsContent');
+  document.getElementById('modalSubtitle').textContent = name;
+  content.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:8px;color:#6c63ff"></i>Loading...</div>';
+  modal.classList.add('show');
+
+  fetch('/api/reports/followups/' + fuId + '/logs/')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { content.innerHTML = '<div class="fur-empty"><i class="fas fa-exclamation-circle"></i><br>' + (data.error||'Error') + '</div>'; return; }
+      if (!data.logs.length) { content.innerHTML = '<div class="fur-empty"><i class="fas fa-history"></i><br>No activity logs recorded for this follow-up.</div>'; return; }
+      let html = '<div class="log-timeline">';
+      data.logs.forEach(log => {
+        html += '<div class="log-item">';
+        html += '<div class="log-user"><i class="fas fa-user-circle me-1"></i>' + log.user + '</div>';
+        html += '<div class="log-field">Changed: <strong>' + log.field_changed + '</strong></div>';
+        html += '<div class="log-change">';
+        if (log.old_value) html += '<span class="log-old">' + log.old_value + '</span><span class="log-arrow">&#x2192;</span>';
+        html += '<span class="log-new">' + (log.new_value || '(empty)') + '</span>';
+        html += '</div>';
+        html += '<div class="log-time"><i class="fas fa-clock me-1"></i>' + log.timestamp + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      content.innerHTML = html;
+    })
+    .catch(() => { content.innerHTML = '<div class="fur-empty"><i class="fas fa-wifi"></i><br>Network error. Please try again.</div>'; });
+}
+
+function closeLogsModal(e) {
+  if (e.target === document.getElementById('logsModal')) document.getElementById('logsModal').classList.remove('show');
+}
+</script>
+{% endblock %}

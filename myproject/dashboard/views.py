@@ -21873,3 +21873,286 @@ def delete_staff_report(request, pk):
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
     return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+# ==================== FOLLOW-UPS REPORT ====================
+
+@login_required
+def follow_up_report(request):
+    """Professional Follow-ups Report page with full analytics."""
+    from .models import FollowUp, FollowUpLog, Setup, Product
+
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_access_follow_ups', False)
+        or getattr(request.user, 'can_view_reports', False)
+    )
+    if not has_access:
+        messages.error(request, 'You do not have permission to view the Follow-ups Report.')
+        return redirect('dashboard')
+
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    today_local = timezone.now().astimezone(nepal_tz).date()
+
+    # --- Period Calculation ---
+    period = request.GET.get('period', 'this_month')
+    start_date_str = request.GET.get('start_date', '')
+    end_date_str   = request.GET.get('end_date', '')
+
+    if period == 'today':
+        start_date = end_date = today_local
+    elif period == 'yesterday':
+        start_date = end_date = today_local - timedelta(days=1)
+    elif period == 'this_week':
+        start_date = today_local - timedelta(days=today_local.weekday())
+        end_date = today_local
+    elif period == 'last_7':
+        start_date = today_local - timedelta(days=6)
+        end_date = today_local
+    elif period == 'last_15':
+        start_date = today_local - timedelta(days=14)
+        end_date = today_local
+    elif period == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date   = datetime.strptime(end_date_str,   '%Y-%m-%d').date()
+        except ValueError:
+            start_date = today_local.replace(day=1)
+            end_date = today_local
+        period = 'custom'
+    else:  # this_month
+        start_date = today_local.replace(day=1)
+        end_date = today_local
+        period = 'this_month'
+
+    # Convert to aware datetimes for filter
+    start_dt = nepal_tz.localize(datetime.combine(start_date, datetime.min.time()))
+    end_dt   = nepal_tz.localize(datetime.combine(end_date,   datetime.max.time()))
+
+    # --- Base queryset ---
+    qs = FollowUp.objects.filter(
+        is_deleted=False,
+        created_at__range=(start_dt, end_dt)
+    ).prefetch_related('logs', 'logs__user', 'products').select_related('product')
+
+    # --- Filters ---
+    filter_staff_id = request.GET.get('staff_id', '')
+    filter_source   = request.GET.get('source', '')
+    filter_status   = request.GET.get('status', '')
+    filter_product  = request.GET.get('product_id', '')
+
+    if filter_source:
+        qs = qs.filter(lead_source=filter_source)
+    if filter_status:
+        qs = qs.filter(status=filter_status)
+
+    all_follow_ups = list(qs)
+
+    # Attach creator to each follow-up from earliest log
+    def get_creator(fu):
+        earliest = fu.logs.order_by('timestamp').first()
+        return earliest.user if earliest and earliest.user else None
+
+    # Apply staff filter after fetching (since creator is inferred from logs)
+    if filter_staff_id:
+        try:
+            filter_staff_id_int = int(filter_staff_id)
+            filtered_by_staff = []
+            for fu in all_follow_ups:
+                cr = get_creator(fu)
+                if cr and cr.id == filter_staff_id_int:
+                    filtered_by_staff.append(fu)
+            all_follow_ups = filtered_by_staff
+        except (ValueError, TypeError):
+            pass
+
+    # Apply product filter
+    if filter_product:
+        try:
+            pid = int(filter_product)
+            filtered = []
+            for fu in all_follow_ups:
+                product_ids = list(fu.products.values_list('id', flat=True))
+                if not product_ids and fu.product_id:
+                    product_ids = [fu.product_id]
+                if pid in product_ids:
+                    filtered.append(fu)
+            all_follow_ups = filtered
+        except (ValueError, TypeError):
+            pass
+
+    total_count = len(all_follow_ups)
+
+    # --- KPI: Today count ---
+    today_count = FollowUp.objects.filter(
+        is_deleted=False,
+        created_at__range=(
+            nepal_tz.localize(datetime.combine(today_local, datetime.min.time())),
+            nepal_tz.localize(datetime.combine(today_local, datetime.max.time()))
+        )
+    ).count()
+
+    # --- Staff breakdown ---
+    staff_counter = {}
+    staff_status_counter = {}
+    for fu in all_follow_ups:
+        creator = get_creator(fu)
+        key = (creator.id, creator.get_full_name() or creator.username) if creator else (0, 'Unknown')
+        staff_counter[key] = staff_counter.get(key, 0) + 1
+        if key not in staff_status_counter:
+            staff_status_counter[key] = {}
+        s = fu.status or 'Unknown'
+        staff_status_counter[key][s] = staff_status_counter[key].get(s, 0) + 1
+
+    staff_leaderboard = sorted(
+        [{'id': k[0], 'name': k[1], 'count': v, 'statuses': staff_status_counter[k]}
+         for k, v in staff_counter.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+    most_active_staff = staff_leaderboard[0] if staff_leaderboard else None
+    active_staff_count = len(staff_counter)
+
+    # --- Source breakdown ---
+    source_counter = {}
+    source_status = {}
+    for fu in all_follow_ups:
+        src = fu.lead_source or 'Unknown'
+        source_counter[src] = source_counter.get(src, 0) + 1
+        if src not in source_status:
+            source_status[src] = {}
+        s = fu.status or 'Unknown'
+        source_status[src][s] = source_status[src].get(s, 0) + 1
+
+    source_breakdown = sorted(
+        [{'source': k, 'count': v, 'statuses': source_status[k]} for k, v in source_counter.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+    top_source = source_breakdown[0]['source'] if source_breakdown else '-'
+
+    # --- Product breakdown ---
+    product_counter = {}
+    product_status_data = {}
+    for fu in all_follow_ups:
+        products_list = list(fu.products.all())
+        if not products_list and fu.product:
+            products_list = [fu.product]
+        products_list_names = [p.name for p in products_list] if products_list else ['No Product']
+        for pname in products_list_names:
+            product_counter[pname] = product_counter.get(pname, 0) + 1
+            if pname not in product_status_data:
+                product_status_data[pname] = {}
+            s = fu.status or 'Unknown'
+            product_status_data[pname][s] = product_status_data[pname].get(s, 0) + 1
+
+    product_breakdown = sorted(
+        [{'product': k, 'count': v, 'statuses': product_status_data[k]} for k, v in product_counter.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+    top_product = product_breakdown[0]['product'] if product_breakdown else '-'
+
+    # --- Status distribution ---
+    status_counter = {}
+    for fu in all_follow_ups:
+        s = fu.status or 'Unknown'
+        status_counter[s] = status_counter.get(s, 0) + 1
+
+    status_breakdown = sorted(
+        [{'status': k, 'count': v} for k, v in status_counter.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+
+    # --- Daily trend data (for chart) ---
+    from collections import defaultdict
+    daily_trend = defaultdict(int)
+    for fu in all_follow_ups:
+        day_str = fu.created_at.astimezone(nepal_tz).strftime('%Y-%m-%d')
+        daily_trend[day_str] += 1
+
+    num_days = (end_date - start_date).days + 1
+    trend_labels = []
+    trend_data = []
+    for i in range(num_days):
+        d = (start_date + timedelta(days=i)).strftime('%Y-%m-%d')
+        trend_labels.append(d)
+        trend_data.append(daily_trend.get(d, 0))
+
+    # --- Paginated detailed table ---
+    page_num = request.GET.get('page', 1)
+    paginator = Paginator(all_follow_ups, 25)
+    try:
+        page_obj = paginator.page(page_num)
+    except Exception:
+        page_obj = paginator.page(1)
+
+    # Annotate page items with creator info
+    detailed_rows = []
+    for fu in page_obj.object_list:
+        creator = get_creator(fu)
+        products_list = list(fu.products.all())
+        if not products_list and fu.product:
+            products_list = [fu.product]
+        detailed_rows.append({
+            'fu': fu,
+            'creator': creator,
+            'products_display': ', '.join(p.name for p in products_list) if products_list else '-',
+            'log_count': fu.logs.count(),
+        })
+
+    # --- Dropdowns for filters ---
+    all_staff = User.objects.filter(is_active=True).order_by('first_name', 'username')
+    all_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
+    all_statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
+    all_products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
+    context = {
+        'period': period,
+        'start_date': start_date.strftime('%Y-%m-%d'),
+        'end_date': end_date.strftime('%Y-%m-%d'),
+        'filter_staff_id': filter_staff_id,
+        'filter_source': filter_source,
+        'filter_status': filter_status,
+        'filter_product': filter_product,
+        'total_count': total_count,
+        'today_count': today_count,
+        'active_staff_count': active_staff_count,
+        'most_active_staff': most_active_staff,
+        'top_source': top_source,
+        'top_product': top_product,
+        'staff_leaderboard': staff_leaderboard,
+        'source_breakdown': source_breakdown,
+        'product_breakdown': product_breakdown,
+        'status_breakdown': status_breakdown,
+        'trend_labels': json.dumps(trend_labels),
+        'trend_data': json.dumps(trend_data),
+        'page_obj': page_obj,
+        'detailed_rows': detailed_rows,
+        'all_staff': all_staff,
+        'all_sources': all_sources,
+        'all_statuses': all_statuses,
+        'all_products': all_products,
+    }
+    return render(request, 'dashboard/followup_report.html', context)
+
+
+@login_required
+def follow_up_report_logs_api(request, pk):
+    """AJAX: return all FollowUpLog entries for a given FollowUp row."""
+    from .models import FollowUp
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    try:
+        fu = FollowUp.objects.prefetch_related('logs', 'logs__user').get(pk=pk, is_deleted=False)
+    except FollowUp.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found'}, status=404)
+
+    logs = fu.logs.select_related('user').order_by('timestamp')
+    data = []
+    for log in logs:
+        data.append({
+            'user': log.user.get_full_name() or log.user.username if log.user else 'System',
+            'field_changed': log.field_changed,
+            'old_value': log.old_value or '',
+            'new_value': log.new_value or '',
+            'timestamp': log.timestamp.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+        })
+    return JsonResponse({'success': True, 'logs': data, 'name': fu.name or fu.phone})

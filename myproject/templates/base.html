@@ -1560,6 +1560,11 @@
                             <a href="{% url 'financial_report' %}">Financial Report</a>
                         </li>
                         {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_reports %}
+                        <li class="{% if request.resolver_match.url_name == 'follow_up_report' %}active{% endif %}">
+                            <a href="{% url 'follow_up_report' %}"><i class="fas fa-phone-alt me-1"></i>Follow-ups Report</a>
+                        </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}
