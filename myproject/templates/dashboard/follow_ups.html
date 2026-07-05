@@ -450,6 +450,14 @@
 .timeline-item:last-child::before { display: none; }
 .timeline-icon { position: absolute; left: 0; top: 0; width: 14px; height: 14px; border-radius: 50%; background: #0dcaf0; border: 2px solid #fff; box-shadow: 0 0 0 2px #0dcaf0; }
 .timeline-content { background: #f8f9fa; padding: 10px 15px; border-radius: 6px; font-size: 0.9rem; }
+
+/* ===== Typing Indicator ===== */
+.typing-dots { display: inline-flex; align-items: center; gap: 3px; }
+.typing-dots span { width: 5px; height: 5px; background: currentColor; border-radius: 50%; animation: typingBlink 1.4s infinite both; }
+.typing-dots span:nth-child(1) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(2) { animation-delay: 0.4s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.6s; }
+@keyframes typingBlink { 0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.2); } }
 </style>
 
 <script>
@@ -460,23 +468,6 @@
     let currentNoteId = null;
     let currentNoteField = 'followup_1'; // 'followup_1' or 'followup_2'
 
-    // ===== Auto-refresh (30s, pauses if user is busy) =====
-    let refreshTimeout;
-    function resetRefreshTimer() {
-        if (refreshTimeout) clearTimeout(refreshTimeout);
-        refreshTimeout = setTimeout(() => {
-            const modalOpen = ['editFollowUpModal', 'addNoteModal', 'logsModal']
-                .some(id => document.getElementById(id)?.classList.contains('show'));
-            const isTyping = ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName);
-            const hasEntryData = [...document.querySelectorAll('#entryRow input[type="text"]')].some(i => i.value.trim());
-            if (!modalOpen && !isTyping && !hasEntryData) {
-                window.location.reload();
-            } else {
-                resetRefreshTimer();
-            }
-        }, 30000);
-    }
-
     function changePerPage(value) {
         let url = new URL(window.location.href);
         url.searchParams.set('per_page', value);
@@ -486,7 +477,6 @@
 
     // ===== Init =====
     document.addEventListener('DOMContentLoaded', function () {
-        resetRefreshTimer();
         editModal = new bootstrap.Modal(document.getElementById('editFollowUpModal'));
         addNoteModal = new bootstrap.Modal(document.getElementById('addNoteModal'));
 
@@ -1050,6 +1040,27 @@
                     row.style.backgroundColor = '#d4edda';
                     setTimeout(() => row.style.backgroundColor = '', 1500);
                 }
+            } else if (data.type === 'row_added') {
+                if (!document.querySelector(`tr[data-id="${data.data.id}"]`)) {
+                    appendNewRow(data.data);
+                    const row = document.querySelector(`tr[data-id="${data.data.id}"]`);
+                    if (row) {
+                        row.style.transition = 'background-color 0.5s';
+                        row.style.backgroundColor = '#d4edda';
+                        setTimeout(() => row.style.backgroundColor = '', 1500);
+                    }
+                }
+            } else if (data.type === 'row_deleted') {
+                const row = document.querySelector(`tr[data-id="${data.id}"]`);
+                if (row) {
+                    row.remove();
+                    // Update remaining SNs
+                    const tbody = document.getElementById('followUpsTbody');
+                    const snCells = tbody.querySelectorAll('tr:not(#entryRow):not(#emptyRow) td.sn-column');
+                    snCells.forEach((cell, index) => {
+                        cell.textContent = index + 1;
+                    });
+                }
             } else if (data.type === 'typing' || data.type === 'viewing') {
                 showPresence(data.id, data.user, data.type);
             } else if (data.type === 'stopped_typing') {
@@ -1075,12 +1086,22 @@
             let indicator = row.querySelector('.presence-indicator');
             if (!indicator) {
                 indicator = document.createElement('div');
-                indicator.className = 'presence-indicator text-primary small position-absolute top-0 end-0 p-1';
-                indicator.style.fontSize = '0.7rem';
-                row.querySelector('td:nth-child(2)').style.position = 'relative';
-                row.querySelector('td:nth-child(2)').appendChild(indicator);
+                indicator.className = 'presence-indicator text-primary position-absolute top-0 end-0 p-1 bg-white border rounded shadow-sm';
+                indicator.style.fontSize = '0.75rem';
+                indicator.style.zIndex = '10';
+                indicator.style.transform = 'translate(10%, -50%)';
+                
+                const nameCell = row.querySelector('td:nth-child(2)');
+                if(nameCell) {
+                    nameCell.style.position = 'relative';
+                    nameCell.appendChild(indicator);
+                }
             }
-            indicator.innerHTML = `<i class="fas ${action === 'typing' ? 'fa-keyboard' : 'fa-eye'}"></i> ${username} ${action}`;
+            if (action === 'typing') {
+                indicator.innerHTML = `<strong>${username}</strong> is typing <span class="typing-dots"><span></span><span></span><span></span></span>`;
+            } else {
+                indicator.innerHTML = `<i class="fas fa-eye"></i> <strong>${username}</strong> is viewing`;
+            }
         }
     }
 
@@ -1093,18 +1114,34 @@
     }
 
     // Attach listeners for Edit Modal presence
-    document.getElementById('editModal').addEventListener('shown.bs.modal', function () {
+    document.getElementById('editFollowUpModal').addEventListener('shown.bs.modal', function () {
         if (currentEditId) sendPresence('viewing', currentEditId);
     });
-    document.getElementById('editModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('editFollowUpModal').addEventListener('hidden.bs.modal', function () {
         if (currentEditId) sendPresence('stopped_typing', currentEditId);
     });
-    const editInputs = document.querySelectorAll('#editModal input, #editModal textarea');
+    const editInputs = document.querySelectorAll('#editFollowUpModal input, #editFollowUpModal textarea');
     editInputs.forEach(input => {
         input.addEventListener('input', () => {
             if (currentEditId) sendPresence('typing', currentEditId);
             clearTimeout(typingTimer);
             typingTimer = setTimeout(() => sendPresence('stopped_typing', currentEditId), 3000);
+        });
+    });
+
+    // Attach listeners for Add Note Modal presence
+    document.getElementById('addNoteModal').addEventListener('shown.bs.modal', function () {
+        if (currentNoteId) sendPresence('viewing', currentNoteId);
+    });
+    document.getElementById('addNoteModal').addEventListener('hidden.bs.modal', function () {
+        if (currentNoteId) sendPresence('stopped_typing', currentNoteId);
+    });
+    const noteInputs = document.querySelectorAll('#addNoteModal input, #addNoteModal textarea');
+    noteInputs.forEach(input => {
+        input.addEventListener('input', () => {
+            if (currentNoteId) sendPresence('typing', currentNoteId);
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => sendPresence('stopped_typing', currentNoteId), 3000);
         });
     });
 

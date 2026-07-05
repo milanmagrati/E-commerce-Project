@@ -51,3 +51,15 @@ class FollowUpConsumer(AsyncWebsocketConsumer):
             'id': event['id'],
             'data': event['data']
         }))
+
+    async def row_added(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'row_added',
+            'data': event['data']
+        }))
+
+    async def row_deleted(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'row_deleted',
+            'id': event['id']
+        }))

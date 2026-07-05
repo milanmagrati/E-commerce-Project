@@ -21516,25 +21516,40 @@ def add_follow_up(request):
         if not f1_logs and entry_logs:
             f1_logs = [entry_logs[0]]
             
+        response_data = {
+            'id': new_follow_up.id,
+            'name': new_follow_up.name,
+            'phone': new_follow_up.phone,
+            'lead_source': new_follow_up.lead_source,
+            'products': products_data,
+            'products_display': ', '.join(p['name'] for p in products_data) or '-',
+            'followup_1': new_follow_up.followup_1,
+            'followup_2': new_follow_up.followup_2,
+            'status': new_follow_up.status,
+            'remarks': new_follow_up.remarks,
+            'f1_logs': f1_logs,
+            'f2_logs': f2_logs,
+            'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+            'version': getattr(new_follow_up, 'version', 1)
+        }
+
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                'follow_ups_group',
+                {
+                    'type': 'row_added',
+                    'data': response_data
+                }
+            )
+        except Exception as e:
+            print("Channels error:", e)
+            
         return JsonResponse({
             'success': True,
-            'data': {
-                'id': new_follow_up.id,
-                'name': new_follow_up.name,
-                'phone': new_follow_up.phone,
-                'lead_source': new_follow_up.lead_source,
-                'products': products_data,
-                'products_display': ', '.join(p['name'] for p in products_data) or '-',
-                'followup_1': new_follow_up.followup_1,
-                'followup_2': new_follow_up.followup_2,
-                'status': new_follow_up.status,
-                'remarks': new_follow_up.remarks,
-                'f1_logs': f1_logs,
-                'f2_logs': f2_logs,
-                'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
-                'version': getattr(new_follow_up, 'version', 1)
-
-            }
+            'data': response_data
         })
         
     except Exception as e:
@@ -21690,6 +21705,21 @@ def delete_follow_up(request, pk):
         follow_up = get_object_or_404(FollowUp, pk=pk)
         follow_up.is_deleted = True
         follow_up.save()
+        
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                'follow_ups_group',
+                {
+                    'type': 'row_deleted',
+                    'id': pk
+                }
+            )
+        except Exception as e:
+            print("Channels error:", e)
+            
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
