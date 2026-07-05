@@ -55,8 +55,8 @@
                             <th>Phone Number</th>
                             <th>Lead Source</th>
                             <th>Product</th>
-                            <th style="min-width: 160px;">Followup 1</th>
-                            <th style="min-width: 160px;">Followup 2</th>
+                            <th style="min-width: 135px;">Followup 1</th>
+                            <th style="min-width: 135px;">Followup 2</th>
                             <th>Status</th>
                             <th style="max-width: 200px;">Remarks</th>
                             <th style="width: 110px;" class="text-center">Action</th>
@@ -136,13 +136,13 @@
                                 {% endif %}
                             </td>
                             <!-- Followup 1 cell: shows latest log + a + button to add new note -->
-                            <td class="fu-cell position-relative p-1" style="min-width:160px; vertical-align:top; background-color:#f8f9fa;">
+                            <td class="fu-cell position-relative p-1" style="min-width:135px; vertical-align:top; background-color:#f8f9fa;">
                                 <div class="fu-content">
                                     {% with log=item.latest_f1_log %}
                                     {% if log %}
                                     <div class="mb-1">
                                         <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
-                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y I:i p" }}</div>
+                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y h:i A" }}</div>
                                             <div class="text-muted" style="font-size:0.6rem;">by {{ log.user.username|default:"System" }}</div>
                                         </div>
                                         <div class="text-dark text-break" style="font-size:0.75rem;">{{ log.new_value }}</div>
@@ -159,13 +159,13 @@
                                 </button>
                             </td>
                             <!-- Followup 2 cell -->
-                            <td class="fu-cell position-relative p-1" style="min-width:160px; vertical-align:top; background-color:#f8f9fa;">
+                            <td class="fu-cell position-relative p-1" style="min-width:135px; vertical-align:top; background-color:#f8f9fa;">
                                 <div class="fu-content">
                                     {% with log=item.latest_f2_log %}
                                     {% if log %}
                                     <div class="mb-1">
                                         <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
-                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y I:i p" }}</div>
+                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y h:i A" }}</div>
                                             <div class="text-muted" style="font-size:0.6rem;">by {{ log.user.username|default:"System" }}</div>
                                         </div>
                                         <div class="text-dark text-break" style="font-size:0.75rem;">{{ log.new_value }}</div>
