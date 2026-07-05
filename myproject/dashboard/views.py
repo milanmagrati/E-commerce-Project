@@ -21335,16 +21335,53 @@ def follow_ups_list(request):
         return redirect('dashboard')
     from .models import FollowUp, Product, Setup, ProductVariation
     
-    follow_ups = FollowUp.objects.prefetch_related('products', 'product_variations', 'product_variations__product', 'logs', 'logs__user').select_related('product').filter(is_deleted=False).order_by('-created_at')
+    from django.core.paginator import Paginator
+    from django.db.models import Q
+
+    follow_ups = FollowUp.objects.prefetch_related('products', 'product_variations', 'product_variations__product', 'logs', 'logs__user').select_related('product').filter(is_deleted=False)
+
+    search_query = request.GET.get('q', '').strip()
+    lead_source = request.GET.get('lead_source', '').strip()
+    filter_status = request.GET.get('status', '').strip()
+
+    if search_query:
+        follow_ups = follow_ups.filter(
+            Q(name__icontains=search_query) |
+            Q(phone__icontains=search_query) |
+            Q(remarks__icontains=search_query)
+        )
+    if lead_source:
+        follow_ups = follow_ups.filter(lead_source__iexact=lead_source)
+    if filter_status:
+        follow_ups = follow_ups.filter(status__iexact=filter_status)
+
+    follow_ups = follow_ups.order_by('-created_at')
+    
+    # Pagination
+    per_page = request.GET.get('per_page', 200)
+    try:
+        per_page = int(per_page)
+    except ValueError:
+        per_page = 200
+        
+    paginator = Paginator(follow_ups, per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
     products = Product.objects.filter(is_deleted=False, is_active=True).prefetch_related('variations').order_by('name')
     statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
     order_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
     
     context = {
-        'follow_ups': follow_ups,
+        'follow_ups': page_obj,
+        'page_obj': page_obj,
         'products': products,
         'statuses': statuses,
         'order_sources': order_sources,
+        'per_page': per_page,
+        'search_query': search_query,
+        'lead_source': lead_source,
+        'filter_status': filter_status,
     }
     return render(request, 'dashboard/follow_ups.html', context)
 
@@ -21453,11 +21490,12 @@ def add_follow_up(request):
             for v in new_follow_up.product_variations.all()
         ])
         
+        from django.utils import timezone
         f1_logs = []
         f2_logs = []
         for log in new_follow_up.logs.all():
             log_data = {
-                'timestamp': log.timestamp.strftime("%b %d, %Y %I:%M %p"),
+                'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
                 'user': log.user.username if log.user else 'System',
                 'new_value': log.new_value
             }
@@ -21479,7 +21517,7 @@ def add_follow_up(request):
                 'remarks': new_follow_up.remarks,
                 'f1_logs': f1_logs,
                 'f2_logs': f2_logs,
-                'created_at': new_follow_up.created_at.strftime('%Y-%m-%d %H:%M')
+                'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p")
             }
         })
         
@@ -21555,11 +21593,12 @@ def edit_follow_up(request, pk):
             for v in follow_up.product_variations.all()
         ])
         
+        from django.utils import timezone
         f1_logs = []
         f2_logs = []
         for log in follow_up.logs.all():
             log_data = {
-                'timestamp': log.timestamp.strftime("%b %d, %Y %I:%M %p"),
+                'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
                 'user': log.user.username if log.user else 'System',
                 'new_value': log.new_value
             }
@@ -21603,13 +21642,14 @@ def delete_follow_up(request, pk):
 @login_required
 def get_follow_up_logs(request, pk):
     from .models import FollowUpLog
+    from django.utils import timezone
     logs = FollowUpLog.objects.filter(follow_up_id=pk).select_related('user').order_by('-timestamp')
     data = [{
         'user': log.user.username if log.user else 'System',
         'field_changed': log.field_changed,
         'old_value': log.old_value,
         'new_value': log.new_value,
-        'timestamp': log.timestamp.strftime('%Y-%m-%d %I:%M %p')
+        'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p")
     } for log in logs]
     return JsonResponse({'success': True, 'data': data})
 

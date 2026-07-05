@@ -19,19 +19,28 @@
             <a href="{% url 'follow_ups_trash' %}" class="btn btn-sm btn-outline-danger">
                 <i class="fas fa-trash"></i> Trash
             </a>
-            <input type="text" class="form-control form-control-sm w-auto" id="filterSearch" placeholder="Search..." oninput="filterTable()" onkeydown="if(event.key === 'Enter') event.preventDefault();">
-            <select class="form-select form-select-sm w-auto" id="filterLeadSource" onchange="filterTable()">
-                <option value="">All Lead Sources</option>
-                {% for source in order_sources %}
-                <option value="{{ source.name }}">{{ source.name }}</option>
-                {% endfor %}
-            </select>
-            <select class="form-select form-select-sm w-auto" id="filterStatus" onchange="filterTable()">
-                <option value="">All Statuses</option>
-                {% for status in statuses %}
-                <option value="{{ status.name }}">{{ status.name }}</option>
-                {% endfor %}
-            </select>
+            <form method="GET" class="d-flex gap-2 m-0" id="filterForm">
+                <select class="form-select form-select-sm w-auto" name="per_page" onchange="this.form.submit()">
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100 / page</option>
+                    <option value="200" {% if per_page == 200 %}selected{% endif %}>200 / page</option>
+                    <option value="500" {% if per_page == 500 %}selected{% endif %}>500 / page</option>
+                </select>
+                <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm w-auto" placeholder="Search..." onkeydown="if(event.key === 'Enter') this.form.submit();">
+                <select class="form-select form-select-sm w-auto" name="lead_source" onchange="this.form.submit()">
+                    <option value="">All Lead Sources</option>
+                    {% for source in order_sources %}
+                    <option value="{{ source.name }}" {% if lead_source == source.name %}selected{% endif %}>{{ source.name }}</option>
+                    {% endfor %}
+                </select>
+                <select class="form-select form-select-sm w-auto" name="status" onchange="this.form.submit()">
+                    <option value="">All Statuses</option>
+                    {% for status in statuses %}
+                    <option value="{{ status.name }}" {% if filter_status == status.name %}selected{% endif %}>{{ status.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary" title="Search"><i class="fas fa-search"></i></button>
+                <a href="{% url 'follow_ups_list' %}?per_page={{ per_page }}" class="btn btn-sm btn-secondary" title="Reset Filters"><i class="fas fa-undo"></i></a>
+            </form>
         </div>
     </div>
 
@@ -111,7 +120,7 @@
                             data-f1="{{ item.followup_1|default:'' }}"
                             data-f2="{{ item.followup_2|default:'' }}"
                             data-remarks="{{ item.remarks|default:'' }}">
-                            <td class="text-center sn-column">{{ forloop.counter }}</td>
+                            <td class="text-center sn-column">{{ page_obj.start_index|add:forloop.counter0 }}</td>
                             <td>{{ item.name|default:"-" }}</td>
                             <td>{{ item.phone }}</td>
                             <td>{{ item.lead_source|default:"-" }}</td>
@@ -203,6 +212,45 @@
             </div>
         </div>
     </div>
+    
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <nav aria-label="Page navigation" class="mt-4">
+        <ul class="pagination justify-content-center mb-0">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}&per_page={{ per_page }}&q={{ search_query|urlencode }}&lead_source={{ lead_source|urlencode }}&status={{ filter_status|urlencode }}" aria-label="Previous">
+                    <span aria-hidden="true">&laquo;</span>
+                </a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">&laquo;</span>
+            </li>
+            {% endif %}
+            
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <li class="page-item"><a class="page-link" href="?page={{ num }}&per_page={{ per_page }}&q={{ search_query|urlencode }}&lead_source={{ lead_source|urlencode }}&status={{ filter_status|urlencode }}">{{ num }}</a></li>
+                {% endif %}
+            {% endfor %}
+            
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}&per_page={{ per_page }}&q={{ search_query|urlencode }}&lead_source={{ lead_source|urlencode }}&status={{ filter_status|urlencode }}" aria-label="Next">
+                    <span aria-hidden="true">&raquo;</span>
+                </a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">&raquo;</span>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
 </div>
 {% csrf_token %}
 
@@ -428,6 +476,13 @@
         }, 30000);
     }
 
+    function changePerPage(value) {
+        let url = new URL(window.location.href);
+        url.searchParams.set('per_page', value);
+        url.searchParams.set('page', '1');
+        window.location.href = url.toString();
+    }
+
     // ===== Init =====
     document.addEventListener('DOMContentLoaded', function () {
         resetRefreshTimer();
@@ -512,22 +567,7 @@
         }
     }
 
-    // ===== Filter =====
-    function filterTable() {
-        const searchVal = document.getElementById('filterSearch').value.toLowerCase();
-        const leadSourceVal = document.getElementById('filterLeadSource').value.toLowerCase();
-        const filterVal = document.getElementById('filterStatus').value.toLowerCase();
-        const rows = document.querySelectorAll('#followUpsTbody tr[data-id]');
-        let n = 0;
-        rows.forEach(row => {
-            const match =
-                (searchVal === '' || (row.dataset.name||'').toLowerCase().includes(searchVal) || (row.dataset.phone||'').toLowerCase().includes(searchVal) || (row.dataset.remarks||'').toLowerCase().includes(searchVal)) &&
-                (leadSourceVal === '' || (row.dataset.lead||'').toLowerCase() === leadSourceVal) &&
-                (filterVal === '' || (row.dataset.status||'').toLowerCase() === filterVal);
-            row.style.display = match ? '' : 'none';
-            if (match) { n++; const sn = row.querySelector('.sn-column'); if (sn) sn.textContent = n; }
-        });
-    }
+
 
     // ===== Build followup cell HTML (for JS-added rows) =====
     function buildFuCellHtml(logs, fallbackText, fuId, field) {
@@ -664,7 +704,6 @@
                 </button>
             </td>`;
         entryRow.after(newTr);
-        filterTable();
     }
 
     // ===== Add Note Modal (opens for a specific field) =====
@@ -725,7 +764,6 @@
 
                 addNoteModal.hide();
                 alertify.success('Note added successfully!');
-                filterTable();
             } else {
                 alertify.error('Error: ' + result.error);
             }
