@@ -28,3 +28,7 @@ twilio>=9.0.0
 
 # For Atuha SMS (Nepal):
 # Use requests (already installed)
+
+daphne
+channels
+channels-redis

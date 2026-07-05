@@ -119,7 +119,8 @@
                             data-products='[{% for p in all_products %}{"id":"{{ p.id }}","name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
                             data-f1="{{ item.followup_1|default:'' }}"
                             data-f2="{{ item.followup_2|default:'' }}"
-                            data-remarks="{{ item.remarks|default:'' }}">
+                            data-remarks="{{ item.remarks|default:'' }}"
+                            data-version="{{ item.version|default:1 }}">
                             <td class="text-center sn-column">{{ page_obj.start_index|add:forloop.counter0 }}</td>
                             <td>{{ item.name|default:"-" }}</td>
                             <td>{{ item.phone }}</td>
@@ -672,6 +673,7 @@
         newTr.setAttribute('data-f1', data.followup_1 || '');
         newTr.setAttribute('data-f2', data.followup_2 || '');
         newTr.setAttribute('data-remarks', data.remarks || '');
+        newTr.setAttribute('data-version', data.version || 1);
 
         newTr.innerHTML = `
             <td class="text-center sn-column">1</td>
@@ -739,7 +741,8 @@
             followup_1: currentNoteField === 'followup_1' ? noteText : (row.getAttribute('data-f1') || ''),
             followup_2: currentNoteField === 'followup_2' ? noteText : (row.getAttribute('data-f2') || ''),
             status: statusVal || (row.getAttribute('data-status') || ''),
-            remarks: row.getAttribute('data-remarks') || ''
+            remarks: row.getAttribute('data-remarks') || '',
+            version: row.getAttribute('data-version') || 1
         };
 
         fetch(`/api/orders/follow-ups/${currentNoteId}/edit/`, {
@@ -755,6 +758,7 @@
                 row.setAttribute('data-f1', result.data.followup_1 || '');
                 row.setAttribute('data-f2', result.data.followup_2 || '');
                 row.setAttribute('data-remarks', result.data.remarks || '');
+                row.setAttribute('data-version', result.data.version || 1);
 
                 // Update the Followup cells (index 5 & 6) and Status cell (7)
                 const cells = row.querySelectorAll('td');
@@ -824,6 +828,7 @@
             followup_2: row.getAttribute('data-f2') || '',
             status: document.getElementById('editStatus').value,
             remarks: document.getElementById('editRemarks').value.trim(),
+            version: row.getAttribute('data-version') || 1
         };
 
         fetch(`/api/orders/follow-ups/${currentEditId}/edit/`, {
@@ -841,6 +846,7 @@
                 row.setAttribute('data-lead', d.lead_source || '');
                 row.setAttribute('data-products', JSON.stringify(d.products || []));
                 row.setAttribute('data-remarks', d.remarks || '');
+                row.setAttribute('data-version', d.version || 1);
 
                 let productsHtml = '<span class="text-muted">-</span>';
                 if (d.products?.length > 0) {
@@ -970,7 +976,8 @@
             followup_1: row.getAttribute('data-f1') || '',
             followup_2: row.getAttribute('data-f2') || '',
             status: newStatus,
-            remarks: row.getAttribute('data-remarks') || ''
+            remarks: row.getAttribute('data-remarks') || '',
+            version: row.getAttribute('data-version') || 1
         };
 
         fetch(`/api/orders/follow-ups/${id}/edit/`, {
@@ -984,6 +991,7 @@
             if (result.success) {
                 const finalStatus = result.data.status || '';
                 row.setAttribute('data-status', finalStatus);
+                row.setAttribute('data-version', result.data.version || 1);
                 cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
                 alertify.success('Status updated!');
                 filterTable();
@@ -998,6 +1006,109 @@
             cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
         });
     }
+
+    // WebSockets / Channels Real-Time Collaborative Setup
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = wsProtocol + '//' + window.location.host + '/ws/follow_ups/';
+    let ws = null;
+    let typingTimer = null;
+
+    function connectWebSocket() {
+        ws = new WebSocket(wsUrl);
+
+        ws.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            if (data.type === 'row_updated') {
+                const row = document.querySelector(`tr[data-id="${data.id}"]`);
+                if (row) {
+                    const d = data.data;
+                    row.setAttribute('data-version', d.version);
+                    row.setAttribute('data-status', d.status || '');
+                    row.setAttribute('data-name', d.name || '');
+                    row.setAttribute('data-phone', d.phone || '');
+                    row.setAttribute('data-lead', d.lead_source || '');
+                    row.setAttribute('data-products', JSON.stringify(d.products || []));
+                    row.setAttribute('data-f1', d.followup_1 || '');
+                    row.setAttribute('data-f2', d.followup_2 || '');
+                    row.setAttribute('data-remarks', d.remarks || '');
+
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length > 7) {
+                        cells[1].textContent = d.name || '-';
+                        cells[2].textContent = d.phone || '';
+                        cells[3].textContent = d.lead_source || '-';
+                        cells[4].innerHTML = d.products?.length > 0 ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>' : '<span class="text-muted">-</span>';
+                        cells[5].innerHTML = buildFuCellHtml(d.f1_logs, d.followup_1, d.id, 'followup_1');
+                        cells[6].innerHTML = buildFuCellHtml(d.f2_logs, d.followup_2, d.id, 'followup_2');
+                        cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}" onclick="enableInlineStatus(this, ${d.id})">${d.status || '-'}</span>`;
+                    }
+                    
+                    // Flash row to indicate update
+                    row.style.transition = 'background-color 0.5s';
+                    row.style.backgroundColor = '#d4edda';
+                    setTimeout(() => row.style.backgroundColor = '', 1500);
+                }
+            } else if (data.type === 'typing' || data.type === 'viewing') {
+                showPresence(data.id, data.user, data.type);
+            } else if (data.type === 'stopped_typing') {
+                hidePresence(data.id);
+            }
+        };
+
+        ws.onclose = function(e) {
+            console.log("WebSocket closed, retrying in 2 seconds...");
+            setTimeout(connectWebSocket, 2000);
+        };
+    }
+    
+    function sendPresence(type, id) {
+        if (ws && ws.readyState === WebSocket.OPEN && id) {
+            ws.send(JSON.stringify({type: type, id: id}));
+        }
+    }
+
+    function showPresence(id, username, action) {
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (row) {
+            let indicator = row.querySelector('.presence-indicator');
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.className = 'presence-indicator text-primary small position-absolute top-0 end-0 p-1';
+                indicator.style.fontSize = '0.7rem';
+                row.querySelector('td:nth-child(2)').style.position = 'relative';
+                row.querySelector('td:nth-child(2)').appendChild(indicator);
+            }
+            indicator.innerHTML = `<i class="fas ${action === 'typing' ? 'fa-keyboard' : 'fa-eye'}"></i> ${username} ${action}`;
+        }
+    }
+
+    function hidePresence(id) {
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (row) {
+            const indicator = row.querySelector('.presence-indicator');
+            if (indicator) indicator.remove();
+        }
+    }
+
+    // Attach listeners for Edit Modal presence
+    document.getElementById('editModal').addEventListener('shown.bs.modal', function () {
+        if (currentEditId) sendPresence('viewing', currentEditId);
+    });
+    document.getElementById('editModal').addEventListener('hidden.bs.modal', function () {
+        if (currentEditId) sendPresence('stopped_typing', currentEditId);
+    });
+    const editInputs = document.querySelectorAll('#editModal input, #editModal textarea');
+    editInputs.forEach(input => {
+        input.addEventListener('input', () => {
+            if (currentEditId) sendPresence('typing', currentEditId);
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => sendPresence('stopped_typing', currentEditId), 3000);
+        });
+    });
+
+    // Start WebSocket
+    connectWebSocket();
+
 </script>
 
 {% endblock %}

@@ -1846,6 +1846,8 @@ class FollowUp(models.Model):
     remarks = models.TextField(blank=True)
     is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    version = models.IntegerField(default=1)
 
     class Meta:
         ordering = ['-created_at']

@@ -21520,7 +21520,9 @@ def add_follow_up(request):
                 'remarks': new_follow_up.remarks,
                 'f1_logs': f1_logs,
                 'f2_logs': f2_logs,
-                'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p")
+                'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+                'version': new_follow_up.version
+
             }
         })
         
@@ -21538,6 +21540,15 @@ def edit_follow_up(request, pk):
     try:
         follow_up = get_object_or_404(FollowUp, pk=pk)
         data = json.loads(request.body)
+        
+        incoming_version = data.get('version')
+        if incoming_version is not None:
+            if follow_up.version != int(incoming_version):
+                return JsonResponse({
+                    'success': False, 
+                    'error': 'Order already updated by another user, please review.'
+                }, status=409)
+
         
         old_f1 = follow_up.followup_1
         old_f2 = follow_up.followup_2
@@ -21563,6 +21574,7 @@ def edit_follow_up(request, pk):
         follow_up.followup_2 = new_f2
         follow_up.status = data.get('status', follow_up.status).strip()
         follow_up.remarks = data.get('remarks', follow_up.remarks).strip()
+        follow_up.version += 1
         follow_up.save()
         
         if old_f1 != new_f1:
@@ -21610,23 +21622,42 @@ def edit_follow_up(request, pk):
             }
             if log.field_changed == 'Followup 1': f1_logs.append(log_data)
             elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
+            
+        response_data = {
+            'id': follow_up.id,
+            'name': follow_up.name,
+            'phone': follow_up.phone,
+            'lead_source': follow_up.lead_source,
+            'products': products_data,
+            'products_display': ', '.join(p['name'] for p in products_data) or '-',
+            'followup_1': follow_up.followup_1,
+            'followup_2': follow_up.followup_2,
+            'status': follow_up.status,
+            'remarks': follow_up.remarks,
+            'f1_logs': f1_logs,
+            'f2_logs': f2_logs,
+            'version': follow_up.version,
+        }
+        
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                'follow_ups_group',
+                {
+                    'type': 'row_updated',
+                    'id': follow_up.id,
+                    'data': response_data
+                }
+            )
+        except Exception as e:
+            # Fallback if redis/channels isn't working perfectly yet
+            print("Channels error:", e)
 
         return JsonResponse({
             'success': True,
-            'data': {
-                'id': follow_up.id,
-                'name': follow_up.name,
-                'phone': follow_up.phone,
-                'lead_source': follow_up.lead_source,
-                'products': products_data,
-                'products_display': ', '.join(p['name'] for p in products_data) or '-',
-                'followup_1': follow_up.followup_1,
-                'followup_2': follow_up.followup_2,
-                'status': follow_up.status,
-                'remarks': follow_up.remarks,
-                'f1_logs': f1_logs,
-                'f2_logs': f2_logs,
-            }
+            'data': response_data
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
