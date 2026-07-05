@@ -21943,11 +21943,12 @@ def follow_up_report(request):
     start_dt = nepal_tz.localize(datetime.combine(start_date, datetime.min.time()))
     end_dt   = nepal_tz.localize(datetime.combine(end_date,   datetime.max.time()))
 
+    from django.db.models import Q
     # --- Base queryset ---
     qs = FollowUp.objects.filter(
-        is_deleted=False,
-        created_at__range=(start_dt, end_dt)
-    ).prefetch_related('logs', 'logs__user', 'products').select_related('product')
+        Q(created_at__range=(start_dt, end_dt)) | Q(logs__timestamp__range=(start_dt, end_dt)),
+        is_deleted=False
+    ).prefetch_related('logs', 'logs__user', 'products').select_related('product').distinct()
 
     # --- Filters ---
     filter_staff_id = request.GET.get('staff_id', '')
@@ -21962,19 +21963,30 @@ def follow_up_report(request):
 
     all_follow_ups = list(qs)
 
+    def get_creator_actions(fu):
+        users = []
+        for log in fu.logs.all():
+            if log.timestamp and start_dt <= log.timestamp <= end_dt:
+                if log.user:
+                    users.append(log.user)
+        return users
+
     # Attach creator to each follow-up from earliest log
     def get_creator(fu):
-        earliest = fu.logs.order_by('timestamp').first()
-        return earliest.user if earliest and earliest.user else None
+        logs = list(fu.logs.all())
+        if logs:
+            logs.sort(key=lambda x: x.timestamp or timezone.now())
+            return logs[0].user
+        return None
 
-    # Apply staff filter after fetching (since creator is inferred from logs)
+    # Apply staff filter after fetching (since creator is inferred from logs in period)
     if filter_staff_id:
         try:
             filter_staff_id_int = int(filter_staff_id)
             filtered_by_staff = []
             for fu in all_follow_ups:
-                cr = get_creator(fu)
-                if cr and cr.id == filter_staff_id_int:
+                user_actions = get_creator_actions(fu)
+                if any(u.id == filter_staff_id_int for u in user_actions):
                     filtered_by_staff.append(fu)
             all_follow_ups = filtered_by_staff
         except (ValueError, TypeError):
@@ -21998,25 +22010,34 @@ def follow_up_report(request):
     total_count = len(all_follow_ups)
 
     # --- KPI: Today count ---
+    today_start = nepal_tz.localize(datetime.combine(today_local, datetime.min.time()))
+    today_end = nepal_tz.localize(datetime.combine(today_local, datetime.max.time()))
     today_count = FollowUp.objects.filter(
-        is_deleted=False,
-        created_at__range=(
-            nepal_tz.localize(datetime.combine(today_local, datetime.min.time())),
-            nepal_tz.localize(datetime.combine(today_local, datetime.max.time()))
-        )
-    ).count()
+        Q(created_at__range=(today_start, today_end)) | Q(logs__timestamp__range=(today_start, today_end)),
+        is_deleted=False
+    ).distinct().count()
 
     # --- Staff breakdown ---
     staff_counter = {}
     staff_status_counter = {}
     for fu in all_follow_ups:
-        creator = get_creator(fu)
-        key = (creator.id, creator.get_full_name() or creator.username) if creator else (0, 'Unknown')
-        staff_counter[key] = staff_counter.get(key, 0) + 1
-        if key not in staff_status_counter:
-            staff_status_counter[key] = {}
-        s = fu.status or 'Unknown'
-        staff_status_counter[key][s] = staff_status_counter[key].get(s, 0) + 1
+        user_actions = get_creator_actions(fu)
+        if not user_actions:
+            if start_dt <= fu.created_at <= end_dt:
+                key = (0, 'Unknown')
+                staff_counter[key] = staff_counter.get(key, 0) + 1
+                if key not in staff_status_counter:
+                    staff_status_counter[key] = {}
+                s = fu.status or 'Unknown'
+                staff_status_counter[key][s] = staff_status_counter[key].get(s, 0) + 1
+        else:
+            for user in user_actions:
+                key = (user.id, user.get_full_name() or user.username)
+                staff_counter[key] = staff_counter.get(key, 0) + 1
+                if key not in staff_status_counter:
+                    staff_status_counter[key] = {}
+                s = fu.status or 'Unknown'
+                staff_status_counter[key][s] = staff_status_counter[key].get(s, 0) + 1
 
     staff_leaderboard = sorted(
         [{'id': k[0], 'name': k[1], 'count': v, 'statuses': staff_status_counter[k]}
@@ -22079,8 +22100,15 @@ def follow_up_report(request):
     from collections import defaultdict
     daily_trend = defaultdict(int)
     for fu in all_follow_ups:
-        day_str = fu.created_at.astimezone(nepal_tz).strftime('%Y-%m-%d')
-        daily_trend[day_str] += 1
+        activity_dates = set()
+        if start_dt <= fu.created_at <= end_dt:
+            activity_dates.add(fu.created_at.astimezone(nepal_tz).strftime('%Y-%m-%d'))
+        for log in fu.logs.all():
+            if log.timestamp and start_dt <= log.timestamp <= end_dt:
+                activity_dates.add(log.timestamp.astimezone(nepal_tz).strftime('%Y-%m-%d'))
+                
+        for day_str in activity_dates:
+            daily_trend[day_str] += 1
 
     num_days = (end_date - start_date).days + 1
     trend_labels = []
@@ -22109,7 +22137,7 @@ def follow_up_report(request):
             'fu': fu,
             'creator': creator,
             'products_display': ', '.join(p.name for p in products_list) if products_list else '-',
-            'log_count': fu.logs.count(),
+            'log_count': len(fu.logs.all()),
         })
 
     # --- Dropdowns for filters ---

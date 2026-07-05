@@ -4,13 +4,9 @@
 
 {% block content %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<style>
-.select2-container .select2-selection--multiple {
-    min-height: 31px;
-    border-color: #dee2e6;
-    border-radius: 6px;
-}
-</style>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="mb-0"><i class="fas fa-list-alt text-primary me-2"></i> Follow-ups</h4>
@@ -23,7 +19,6 @@
             <a href="{% url 'follow_ups_trash' %}" class="btn btn-sm btn-outline-danger">
                 <i class="fas fa-trash"></i> Trash
             </a>
-            <!-- Optional Filters -->
             <input type="text" class="form-control form-control-sm w-auto" id="filterSearch" placeholder="Search..." oninput="filterTable()" onkeydown="if(event.key === 'Enter') event.preventDefault();">
             <select class="form-select form-select-sm w-auto" id="filterLeadSource" onchange="filterTable()">
                 <option value="">All Lead Sources</option>
@@ -46,20 +41,20 @@
                 <table class="table table-hover table-bordered mb-0 align-middle follow-ups-table" id="followUpsTable">
                     <thead>
                         <tr>
-                            <th style="width: 50px;">S.n.</th>
+                            <th style="width: 50px;">S.N.</th>
                             <th>Name</th>
                             <th>Phone Number</th>
                             <th>Lead Source</th>
                             <th>Product</th>
-                            <th style="max-width: 200px;">Followup 1</th>
-                            <th style="max-width: 200px;">Followup 2</th>
+                            <th style="min-width: 160px;">Followup 1</th>
+                            <th style="min-width: 160px;">Followup 2</th>
                             <th>Status</th>
                             <th style="max-width: 200px;">Remarks</th>
-                            <th style="width: 80px;" class="text-center">Action</th>
+                            <th style="width: 110px;" class="text-center">Action</th>
                         </tr>
                     </thead>
                     <tbody id="followUpsTbody">
-                        <!-- Data Entry Row (Always at the top) -->
+                        <!-- Data Entry Row -->
                         <tr class="entry-row-bg" id="entryRow">
                             <td class="text-center fw-bold text-success" style="font-size: 1.2rem;">+</td>
                             <td><input type="text" class="form-control form-control-sm" id="newName" placeholder="Name"></td>
@@ -105,16 +100,16 @@
                             </td>
                         </tr>
 
-                        <!-- Existing Records (Latest First) -->
+                        <!-- Existing Records -->
                         {% for item in follow_ups %}
                         {% with all_products=item.get_formatted_products %}
-                        <tr data-id="{{ item.id }}" data-status="{{ item.status }}" 
-                            data-name="{{ item.name|default:'' }}" 
-                            data-phone="{{ item.phone }}" 
-                            data-lead="{{ item.lead_source|default:'' }}" 
+                        <tr data-id="{{ item.id }}" data-status="{{ item.status }}"
+                            data-name="{{ item.name|default:'' }}"
+                            data-phone="{{ item.phone }}"
+                            data-lead="{{ item.lead_source|default:'' }}"
                             data-products='[{% for p in all_products %}{"id":"{{ p.id }}","name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
-                            data-f1="{{ item.followup_1|default:'' }}" 
-                            data-f2="{{ item.followup_2|default:'' }}" 
+                            data-f1="{{ item.followup_1|default:'' }}"
+                            data-f2="{{ item.followup_2|default:'' }}"
                             data-remarks="{{ item.remarks|default:'' }}">
                             <td class="text-center sn-column">{{ forloop.counter }}</td>
                             <td>{{ item.name|default:"-" }}</td>
@@ -131,45 +126,58 @@
                                     <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
-                            <td class="inline-editable position-relative p-1" style="max-width: 140px; vertical-align: top; background-color: #f8f9fa;" onclick="makeInlineEditable(this, 'f1', {{ item.id }})">
-                                {% with log=item.latest_f1_log %}
-                                {% if log %}
-                                <div class="mb-2">
-                                    <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size: 0.65rem; width: 100%;">
-                                        <div class="text-muted" style="font-size: 0.6rem;">{{ log.timestamp|date:"M d, Y I:i p" }}</div>
-                                        <div class="text-muted" style="font-size: 0.6rem;">by {{ log.user.username|default:"System" }}</div>
+                            <!-- Followup 1 cell: shows latest log + a + button to add new note -->
+                            <td class="fu-cell position-relative p-1" style="min-width:160px; vertical-align:top; background-color:#f8f9fa;">
+                                <div class="fu-content">
+                                    {% with log=item.latest_f1_log %}
+                                    {% if log %}
+                                    <div class="mb-1">
+                                        <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
+                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y I:i p" }}</div>
+                                            <div class="text-muted" style="font-size:0.6rem;">by {{ log.user.username|default:"System" }}</div>
+                                        </div>
+                                        <div class="text-dark text-break" style="font-size:0.75rem;">{{ log.new_value }}</div>
                                     </div>
-                                    <div class="text-dark text-break" style="font-size: 0.75rem;">{{ log.new_value }}</div>
+                                    {% elif item.followup_1 %}
+                                    <div class="text-dark text-break" style="font-size:0.75rem;">{{ item.followup_1 }}</div>
+                                    {% else %}
+                                    <span class="text-muted" style="font-size:0.75rem;">-</span>
+                                    {% endif %}
+                                    {% endwith %}
                                 </div>
-                                {% elif item.followup_1 %}
-                                <div class="text-dark text-break" style="font-size: 0.75rem;">{{ item.followup_1 }}</div>
-                                {% else %}
-                                <span class="text-muted">-</span>
-                                {% endif %}
-                                {% endwith %}
+                                <button class="fu-add-btn" onclick="openAddNoteModal({{ item.id }}, 'followup_1')" title="Add Followup 1 Note">
+                                    <i class="fas fa-plus"></i>
+                                </button>
                             </td>
-                            <td class="inline-editable position-relative p-1" style="max-width: 140px; vertical-align: top; background-color: #f8f9fa;" onclick="makeInlineEditable(this, 'f2', {{ item.id }})">
-                                {% with log=item.latest_f2_log %}
-                                {% if log %}
-                                <div class="mb-2">
-                                    <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size: 0.65rem; width: 100%;">
-                                        <div class="text-muted" style="font-size: 0.6rem;">{{ log.timestamp|date:"M d, Y I:i p" }}</div>
-                                        <div class="text-muted" style="font-size: 0.6rem;">by {{ log.user.username|default:"System" }}</div>
+                            <!-- Followup 2 cell -->
+                            <td class="fu-cell position-relative p-1" style="min-width:160px; vertical-align:top; background-color:#f8f9fa;">
+                                <div class="fu-content">
+                                    {% with log=item.latest_f2_log %}
+                                    {% if log %}
+                                    <div class="mb-1">
+                                        <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
+                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y I:i p" }}</div>
+                                            <div class="text-muted" style="font-size:0.6rem;">by {{ log.user.username|default:"System" }}</div>
+                                        </div>
+                                        <div class="text-dark text-break" style="font-size:0.75rem;">{{ log.new_value }}</div>
                                     </div>
-                                    <div class="text-dark text-break" style="font-size: 0.75rem;">{{ log.new_value }}</div>
+                                    {% elif item.followup_2 %}
+                                    <div class="text-dark text-break" style="font-size:0.75rem;">{{ item.followup_2 }}</div>
+                                    {% else %}
+                                    <span class="text-muted" style="font-size:0.75rem;">-</span>
+                                    {% endif %}
+                                    {% endwith %}
                                 </div>
-                                {% elif item.followup_2 %}
-                                <div class="text-dark text-break" style="font-size: 0.75rem;">{{ item.followup_2 }}</div>
-                                {% else %}
-                                <span class="text-muted">-</span>
-                                {% endif %}
-                                {% endwith %}
+                                <button class="fu-add-btn" onclick="openAddNoteModal({{ item.id }}, 'followup_2')" title="Add Followup 2 Note">
+                                    <i class="fas fa-plus"></i>
+                                </button>
                             </td>
+                            <!-- Status: click to inline-edit -->
                             <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, {{ item.id }})">
                                 <span class="badge status-badge rounded-pill px-2 py-1" data-status-val="{{ item.status|default:''|lower }}">{{ item.status|title|default:"-" }}</span>
                             </td>
-                            <td class="text-break" style="max-width: 200px;">{{ item.remarks|default:"-" }}</td>
-                            <td class="text-center" style="white-space: nowrap;">
+                            <td class="text-break" style="max-width:200px;">{{ item.remarks|default:"-" }}</td>
+                            <td class="text-center" style="white-space:nowrap;">
                                 <a href="{% url 'order_create' %}?followup_id={{ item.id }}" class="action-btn border text-success me-1" title="Create Order">
                                     <i class="fas fa-shopping-cart"></i>
                                 </a>
@@ -198,59 +206,41 @@
 </div>
 {% csrf_token %}
 
-<!-- Logs Modal -->
-<div class="modal fade" id="logsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+<!-- Add Follow-Up Note Modal -->
+<div class="modal fade" id="addNoteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-light">
-                <h5 class="modal-title"><i class="fas fa-history text-info me-2"></i> Activity Log</h5>
+                <h5 class="modal-title"><i class="fas fa-plus-circle text-success me-2"></i> Add Follow-up Note</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body p-0">
-                <div id="logsContainer" class="p-4">
-                    <!-- Logs will be loaded here -->
+            <div class="modal-body">
+                <div class="mb-1">
+                    <span class="badge bg-secondary" id="addNoteFieldLabel">Followup 1</span>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Note <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="addNoteText" rows="3" placeholder="Enter your follow-up note..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Update Status <span class="text-muted small">(optional)</span></label>
+                    <select class="form-select" id="addNoteStatus">
+                        <option value="">-- Keep current status --</option>
+                        {% for status in statuses %}
+                        <option value="{{ status.name }}">{{ status.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="saveNoteBtn" onclick="saveAddNote()">
+                    <i class="fas fa-save me-1"></i> Save Note
+                </button>
             </div>
         </div>
     </div>
 </div>
-
-<style>
-.timeline-item {
-    position: relative;
-    padding-left: 30px;
-    margin-bottom: 20px;
-}
-.timeline-item::before {
-    content: '';
-    position: absolute;
-    left: 6px;
-    top: 0;
-    bottom: -20px;
-    width: 2px;
-    background: #e9ecef;
-}
-.timeline-item:last-child::before {
-    display: none;
-}
-.timeline-icon {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #0dcaf0;
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 2px #0dcaf0;
-}
-.timeline-content {
-    background: #f8f9fa;
-    padding: 10px 15px;
-    border-radius: 6px;
-    font-size: 0.9rem;
-}
-</style>
 
 <!-- Edit Follow-Up Modal -->
 <div class="modal fade" id="editFollowUpModal" tabindex="-1" aria-hidden="true">
@@ -284,7 +274,7 @@
                     </div>
                     <div class="col-md-12">
                         <label class="form-label">Products</label>
-                        <select class="form-select select2-products" id="editProducts" multiple="multiple" style="width: 100%;">
+                        <select class="form-select select2-products" id="editProducts" multiple="multiple" style="width:100%;">
                             {% for product in products %}
                             <option value="{{ product.id }}" data-type="{{ product.product_type }}">{{ product.name }}</option>
                             {% if product.product_type == 'variable' %}
@@ -294,14 +284,6 @@
                             {% endif %}
                             {% endfor %}
                         </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Followup 1</label>
-                        <input type="text" class="form-control" id="editFollowup1">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Followup 2</label>
-                        <input type="text" class="form-control" id="editFollowup2">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Status</label>
@@ -325,252 +307,190 @@
     </div>
 </div>
 
+<!-- Logs Modal -->
+<div class="modal fade" id="logsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title"><i class="fas fa-history text-info me-2"></i> Activity Log</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="logsContainer" class="p-4"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
-    .product-card {
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        overflow: hidden;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        height: 100%;
-    }
-    .product-card:hover {
-        border-color: var(--primary);
-        transform: translateY(-5px);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-    }
-    .product-img {
-        height: 140px;
-        object-fit: cover;
-        width: 100%;
-    }
-    .product-card-body {
-        padding: 0.75rem;
-        background: white;
-    }
-    
-    /* Follow-ups Table Polish */
-    .follow-ups-table {
-        min-width: 1200px; /* Ensure no squishing on small screens */
-        font-size: 0.9rem;
-    }
-    .follow-ups-table th {
-        white-space: nowrap;
-        background-color: #f8fafc !important;
-        color: #475569;
-        font-weight: 600;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.5px;
-        padding: 1rem 0.75rem;
-        border-bottom: 2px solid #e2e8f0;
-    }
-    .follow-ups-table td {
-        vertical-align: middle;
-        padding: 0.75rem;
-    }
-    .entry-row-bg > td {
-        background-color: #f0fdf4 !important; /* very light green/blue for new entry */
-        border-bottom: 2px solid #bbf7d0;
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-    }
-    .chip-badge {
-        font-size: 0.75rem;
-        padding: 0.35rem 0.6rem;
-        border-radius: 6px;
-        background: white;
-        border: 1px solid #cbd5e1;
-        color: #334155;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        margin-bottom: 0.25rem;
-    }
-    .chip-badge i {
-        opacity: 0.5;
-        transition: opacity 0.2s;
-    }
-    .chip-badge i:hover {
-        opacity: 1;
-    }
-    .action-btn {
-        width: 32px;
-        height: 32px;
-        padding: 0;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 6px;
-        transition: all 0.2s ease;
-        background: white;
-    }
-    .action-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    .form-control-sm, .form-select-sm, .btn-sm {
-        border-radius: 6px;
-    }
-    
-    /* Inline Editing Styling */
-    .inline-editable {
-        cursor: pointer;
-        transition: background-color 0.2s;
-        padding-right: 20px !important; /* Space for the icon */
-    }
-    .inline-editable:hover {
-        background-color: #f1f5f9 !important;
-    }
-    .inline-editable::after {
-        content: '\f044'; /* fa-edit */
-        font-family: 'Font Awesome 5 Free';
-        font-weight: 900;
-        position: absolute;
-        right: 6px;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 0.75rem;
-        opacity: 0;
-        color: #94a3b8;
-        transition: opacity 0.2s;
-    }
-    .inline-editable:hover::after {
-        opacity: 1;
-    }
-    .inline-editing {
-        padding: 0.25rem !important;
-    }
-    .inline-editing::after {
-        display: none !important;
-    }
-    .inline-editing:hover {
-        background-color: transparent !important;
-    }
-    
-    /* Make the Select2 dropdown popup wider */
-    .wide-dropdown {
-        min-width: 350px !important;
-    }
+/* ===== Table ===== */
+.follow-ups-table { min-width: 1200px; font-size: 0.9rem; }
+.follow-ups-table th {
+    white-space: nowrap;
+    background-color: #f8fafc !important;
+    color: #475569;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+    padding: 1rem 0.75rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+.follow-ups-table td { vertical-align: middle; padding: 0.75rem; }
+.entry-row-bg > td {
+    background-color: #f0fdf4 !important;
+    border-bottom: 2px solid #bbf7d0;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+/* ===== Followup cell with + button ===== */
+.fu-cell { position: relative; }
+.fu-cell .fu-add-btn {
+    display: none;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: #22c55e;
+    color: #fff;
+    font-size: 0.6rem;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    transition: transform 0.15s, box-shadow 0.15s;
+    z-index: 2;
+    padding: 0;
+}
+.fu-cell:hover .fu-add-btn { display: flex; }
+.fu-add-btn:hover { transform: scale(1.15); box-shadow: 0 4px 8px rgba(34,197,94,0.4); }
+
+/* ===== Status inline edit ===== */
+.inline-editable { cursor: pointer; transition: background-color 0.2s; }
+.inline-editable:hover { background-color: #f1f5f9 !important; }
+.inline-editing { padding: 0.25rem !important; }
+.inline-editing:hover { background-color: transparent !important; }
+
+/* ===== Action buttons ===== */
+.action-btn {
+    width: 32px; height: 32px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 6px; transition: all 0.2s ease; background: white;
+}
+.action-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+
+/* ===== Product chips ===== */
+.chip-badge {
+    font-size: 0.75rem; padding: 0.35rem 0.6rem; border-radius: 6px;
+    background: white; border: 1px solid #cbd5e1; color: #334155;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    display: inline-flex; align-items: center; gap: 0.35rem; margin-bottom: 0.25rem;
+}
+
+/* ===== Select2 ===== */
+.select2-container .select2-selection--multiple { min-height: 31px; border-color: #dee2e6; border-radius: 6px; }
+.wide-dropdown { min-width: 350px !important; }
+
+/* ===== Timeline ===== */
+.timeline-item { position: relative; padding-left: 30px; margin-bottom: 20px; }
+.timeline-item::before { content: ''; position: absolute; left: 6px; top: 0; bottom: -20px; width: 2px; background: #e9ecef; }
+.timeline-item:last-child::before { display: none; }
+.timeline-icon { position: absolute; left: 0; top: 0; width: 14px; height: 14px; border-radius: 50%; background: #0dcaf0; border: 2px solid #fff; box-shadow: 0 0 0 2px #0dcaf0; }
+.timeline-content { background: #f8f9fa; padding: 10px 15px; border-radius: 6px; font-size: 0.9rem; }
 </style>
 
 <script>
-    // Modal state for editing
+    // ===== State =====
     let currentEditId = null;
     let editModal = null;
-    
-    // Auto-refresh logic (every 30 seconds)
+    let addNoteModal = null;
+    let currentNoteId = null;
+    let currentNoteField = 'followup_1'; // 'followup_1' or 'followup_2'
+
+    // ===== Auto-refresh (30s, pauses if user is busy) =====
     let refreshTimeout;
     function resetRefreshTimer() {
         if (refreshTimeout) clearTimeout(refreshTimeout);
         refreshTimeout = setTimeout(() => {
-            // Check if user is currently busy
-            const isEditingModal = document.getElementById('editFollowUpModal') && document.getElementById('editFollowUpModal').classList.contains('show');
-            const isTyping = document.activeElement && (
-                document.activeElement.tagName === 'INPUT' || 
-                document.activeElement.tagName === 'SELECT' || 
-                document.activeElement.tagName === 'TEXTAREA'
-            );
-            const isInlineEditing = document.querySelector('.inline-editing') !== null;
-            
-            // Check if user has entered any text in the entry row
-            let hasEntryData = false;
-            const entryRowInputs = document.querySelectorAll('#entryRow input[type="text"]');
-            entryRowInputs.forEach(input => {
-                if (input.value.trim() !== '') hasEntryData = true;
-            });
-            
-            // Check if an alertify dialog is open
-            const isAlertOpen = document.querySelector('.ajs-dialog, .alertify') !== null;
-            
-            if (!isEditingModal && !isTyping && !isInlineEditing && !hasEntryData && !isAlertOpen) {
+            const modalOpen = ['editFollowUpModal', 'addNoteModal', 'logsModal']
+                .some(id => document.getElementById(id)?.classList.contains('show'));
+            const isTyping = ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName);
+            const hasEntryData = [...document.querySelectorAll('#entryRow input[type="text"]')].some(i => i.value.trim());
+            if (!modalOpen && !isTyping && !hasEntryData) {
                 window.location.reload();
             } else {
-                // If busy, check again in 30 seconds
                 resetRefreshTimer();
             }
         }, 30000);
     }
 
-    document.addEventListener("DOMContentLoaded", function() {
+    // ===== Init =====
+    document.addEventListener('DOMContentLoaded', function () {
         resetRefreshTimer();
-        
-        if (typeof bootstrap !== 'undefined') {
-            editModal = new bootstrap.Modal(document.getElementById('editFollowUpModal'));
-        }
+        editModal = new bootstrap.Modal(document.getElementById('editFollowUpModal'));
+        addNoteModal = new bootstrap.Modal(document.getElementById('addNoteModal'));
 
-        // Initialize Select2
-        if (typeof jQuery !== 'undefined') {
-            function formatProductResult(product) {
-                if (!product.id) { return product.text; }
-                var $product = $('<span>' + escapeHtml(product.text) + '</span>');
-                var type = $(product.element).data('type');
-                
-                if (type === 'bundle' || type === 'combo') {
-                    $product.append(' <span class="badge bg-info text-dark" style="font-size:0.6rem; vertical-align:middle;">Combo</span>');
-                } else if (type === 'variable' || type === 'variant') {
-                    $product.append(' <span class="badge bg-secondary" style="font-size:0.6rem; vertical-align:middle;">Variant</span>');
-                }
-                return $product;
+        // Select2
+        function formatProductResult(product) {
+            if (!product.id) return product.text;
+            const type = $(product.element).data('type');
+            let html = '<span>' + escapeHtml(product.text) + '</span>';
+            if (type === 'bundle' || type === 'combo') html += ' <span class="badge bg-info text-dark" style="font-size:0.6rem">Combo</span>';
+            else if (type === 'variable' || type === 'variant') html += ' <span class="badge bg-secondary" style="font-size:0.6rem">Variant</span>';
+            return $(html);
+        }
+        function formatProductSelection(product) {
+            if (!product.id) return product.text;
+            const type = $(product.element).data('type');
+            let text = product.text.replace(/&nbsp;/g, '').replace('↳', '').trim();
+            if (type === 'variant') {
+                const pName = $(product.element).data('product-name');
+                if (pName) text = pName + ' - ' + text;
             }
+            let html = '<span>' + escapeHtml(text) + '</span>';
+            if (type === 'bundle' || type === 'combo') html += ' <span class="badge bg-info text-dark" style="font-size:0.6rem">Combo</span>';
+            else if (type === 'variable' || type === 'variant') html += ' <span class="badge bg-secondary" style="font-size:0.6rem">Variant</span>';
+            return $(html);
+        }
+        $('.select2-products').select2({
+            placeholder: 'Select Products...',
+            allowClear: true,
+            dropdownCssClass: 'wide-dropdown',
+            templateResult: formatProductResult,
+            templateSelection: formatProductSelection,
+            escapeMarkup: m => m
+        });
 
-            function formatProductSelection(product) {
-                if (!product.id) { return product.text; }
-                
-                var type = $(product.element).data('type');
-                var text = product.text.replace(/&nbsp;/g, '').replace('↳', '').trim();
-                
-                if (type === 'variant') {
-                    var productName = $(product.element).data('product-name');
-                    if (productName) {
-                        text = productName + ' - ' + text;
-                    }
-                }
-                
-                var $product = $('<span>' + escapeHtml(text) + '</span>');
-                
-                if (type === 'bundle' || type === 'combo') {
-                    $product.append(' <span class="badge bg-info text-dark" style="font-size:0.6rem; vertical-align:middle;">Combo</span>');
-                } else if (type === 'variable' || type === 'variant') {
-                    $product.append(' <span class="badge bg-secondary" style="font-size:0.6rem; vertical-align:middle;">Variant</span>');
-                }
-                return $product;
+        // Enter to save in entry row
+        document.getElementById('entryRow').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type === 'text') {
+                e.preventDefault();
+                saveFollowUp();
             }
+        });
 
-            $('.select2-products').select2({
-                placeholder: "Select Products...",
-                allowClear: true,
-                dropdownCssClass: "wide-dropdown",
-                templateResult: formatProductResult,
-                templateSelection: formatProductSelection,
-                escapeMarkup: function(m) { return m; }
-            });
-        }
-        
-        // Allow saving entry by pressing Enter in any text input in the entry row
-        const entryRow = document.getElementById('entryRow');
-        if (entryRow) {
-            entryRow.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    if (e.target.tagName.toLowerCase() === 'input' && e.target.type === 'text') {
-                        e.preventDefault();
-                        saveFollowUp();
-                    }
-                }
-            });
-        }
-        
         applyStatusBadgeColors();
     });
+
+    // ===== Utilities =====
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.toString()
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
 
     function getStatusBadgeClass(status) {
         if (!status) return 'bg-secondary';
         const s = status.toLowerCase();
-        if (['pending', 'processing', 'on hold', 'waiting'].some(k => s.includes(k))) return 'bg-warning text-dark';
-        if (['success', 'delivered', 'completed', 'paid', 'confirmed', 'approved'].some(k => s.includes(k))) return 'bg-success';
-        if (['cancelled', 'returned', 'failed', 'trash', 'rejected'].some(k => s.includes(k))) return 'bg-danger';
-        if (['shipped', 'dispatched', 'in transit'].some(k => s.includes(k))) return 'bg-info text-dark';
+        if (['pending','processing','on hold','waiting'].some(k => s.includes(k))) return 'bg-warning text-dark';
+        if (['success','delivered','completed','paid','confirmed','approved'].some(k => s.includes(k))) return 'bg-success';
+        if (['cancelled','returned','failed','trash','rejected'].some(k => s.includes(k))) return 'bg-danger';
+        if (['shipped','dispatched','in transit'].some(k => s.includes(k))) return 'bg-info text-dark';
         return 'bg-secondary';
     }
 
@@ -581,64 +501,66 @@
         });
     }
 
-    function escapeHtml(unsafe) {
-        if (!unsafe) return '';
-        return unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    }
-
     function validatePhone(input, errId) {
-        const digits = input.value.replace(/[^0-9]/g, '');
         const errEl = document.getElementById(errId);
-        if (input.value.length > 0 && digits.length !== 10) {
+        if (input.value.length > 0 && input.value.replace(/[^0-9]/g,'').length !== 10) {
             input.style.borderColor = '#dc3545';
-            if (errEl) {
-                errEl.textContent = 'Must be exactly 10 digits';
-                errEl.style.display = 'block';
-            }
+            if (errEl) { errEl.textContent = 'Must be exactly 10 digits'; errEl.style.display = 'block'; }
         } else {
             input.style.borderColor = '';
             if (errEl) errEl.style.display = 'none';
         }
     }
 
+    // ===== Filter =====
     function filterTable() {
         const searchVal = document.getElementById('filterSearch').value.toLowerCase();
         const leadSourceVal = document.getElementById('filterLeadSource').value.toLowerCase();
         const filterVal = document.getElementById('filterStatus').value.toLowerCase();
-        const rows = document.querySelectorAll('#followUpsTbody tr[data-status]');
-        
-        let visibleCount = 0;
+        const rows = document.querySelectorAll('#followUpsTbody tr[data-id]');
+        let n = 0;
         rows.forEach(row => {
-            const rowStatus = (row.dataset.status || '').toLowerCase();
-            const rowName = (row.dataset.name || '').toLowerCase();
-            const rowPhone = (row.dataset.phone || '').toLowerCase();
-            const rowLead = (row.dataset.lead || '').toLowerCase();
-            const rowRemarks = (row.dataset.remarks || '').toLowerCase();
-            
-            const matchesSearch = searchVal === '' || rowName.includes(searchVal) || rowPhone.includes(searchVal) || rowRemarks.includes(searchVal);
-            const matchesLead = leadSourceVal === '' || rowLead === leadSourceVal;
-            const matchesStatus = filterVal === '' || rowStatus === filterVal;
-            
-            if (matchesSearch && matchesLead && matchesStatus) {
-                row.style.display = '';
-                visibleCount++;
-                const snCell = row.querySelector('.sn-column');
-                if (snCell) snCell.textContent = visibleCount;
-            } else {
-                row.style.display = 'none';
-            }
+            const match =
+                (searchVal === '' || (row.dataset.name||'').toLowerCase().includes(searchVal) || (row.dataset.phone||'').toLowerCase().includes(searchVal) || (row.dataset.remarks||'').toLowerCase().includes(searchVal)) &&
+                (leadSourceVal === '' || (row.dataset.lead||'').toLowerCase() === leadSourceVal) &&
+                (filterVal === '' || (row.dataset.status||'').toLowerCase() === filterVal);
+            row.style.display = match ? '' : 'none';
+            if (match) { n++; const sn = row.querySelector('.sn-column'); if (sn) sn.textContent = n; }
         });
     }
 
+    // ===== Build followup cell HTML (for JS-added rows) =====
+    function buildFuCellHtml(logs, fallbackText, fuId, field) {
+        let contentHtml;
+        if (logs && logs.length > 0) {
+            const log = logs[0];
+            contentHtml = `
+                <div class="mb-1">
+                    <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
+                        <div class="text-muted" style="font-size:0.6rem;">${log.timestamp}</div>
+                        <div class="text-muted" style="font-size:0.6rem;">by ${escapeHtml(log.user)}</div>
+                    </div>
+                    <div class="text-dark text-break" style="font-size:0.75rem;">${escapeHtml(log.new_value)}</div>
+                </div>`;
+        } else if (fallbackText) {
+            contentHtml = `<div class="text-dark text-break" style="font-size:0.75rem;">${escapeHtml(fallbackText)}</div>`;
+        } else {
+            contentHtml = `<span class="text-muted" style="font-size:0.75rem;">-</span>`;
+        }
+        return `<div class="fu-content">${contentHtml}</div>
+                <button class="fu-add-btn" onclick="openAddNoteModal(${fuId}, '${field}')" title="Add ${field === 'followup_1' ? 'Followup 1' : 'Followup 2'} Note">
+                    <i class="fas fa-plus"></i>
+                </button>`;
+    }
+
+    // ===== Save new follow-up (entry row) =====
     function saveFollowUp() {
         const btn = document.querySelector('#entryRow button[title="Save Entry"]');
-        const originalHtml = btn.innerHTML;
+        const origHtml = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         btn.disabled = true;
 
-        const selectEl = document.getElementById('newProducts');
-        let productIds = Array.from(selectEl.selectedOptions).map(opt => opt.value);
-
+        const productIds = Array.from(document.getElementById('newProducts').selectedOptions).map(o => o.value);
         const data = {
             name: document.getElementById('newName').value.trim(),
             phone: document.getElementById('newPhone').value.trim(),
@@ -650,92 +572,55 @@
             remarks: document.getElementById('newRemarks').value.trim(),
         };
 
+        const phoneErrEl = document.getElementById('newPhoneErr');
+        const phoneInput = document.getElementById('newPhone');
         if (!data.phone) {
-            const phoneInput = document.getElementById('newPhone');
-            const errEl = document.getElementById('newPhoneErr');
-            phoneInput.focus();
             phoneInput.style.borderColor = '#dc3545';
-            errEl.textContent = 'Phone number is required';
-            errEl.style.display = 'block';
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
-            return;
+            phoneErrEl.textContent = 'Phone number is required';
+            phoneErrEl.style.display = 'block';
+            btn.innerHTML = origHtml; btn.disabled = false; return;
         }
-
-        const phoneDigits = data.phone.replace(/\D/g, '');
-        if (phoneDigits.length !== 10) {
-            const phoneInput = document.getElementById('newPhone');
-            const errEl = document.getElementById('newPhoneErr');
-            phoneInput.focus();
+        if (data.phone.replace(/\D/g,'').length !== 10) {
             phoneInput.style.borderColor = '#dc3545';
-            errEl.textContent = 'Must be exactly 10 digits';
-            errEl.style.display = 'block';
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
-            return;
+            phoneErrEl.textContent = 'Must be exactly 10 digits';
+            phoneErrEl.style.display = 'block';
+            btn.innerHTML = origHtml; btn.disabled = false; return;
         }
-
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
         fetch("{% url 'add_follow_up' %}", {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
             body: JSON.stringify(data)
         })
-        .then(response => response.json())
+        .then(r => r.json())
         .then(result => {
             if (result.success) {
-                // Clear inputs
-                document.getElementById('newName').value = '';
-                document.getElementById('newPhone').value = '';
+                ['newName','newPhone','newFollowup1','newFollowup2','newRemarks'].forEach(id => document.getElementById(id).value = '');
                 document.getElementById('newLeadSource').value = '';
-                
-                document.getElementById('newFollowup1').value = '';
-                document.getElementById('newFollowup2').value = '';
-                document.getElementById('newRemarks').value = '';
-                // Reset product selection
-                if (typeof jQuery !== 'undefined') {
-                    $('#newProducts').val(null).trigger('change');
-                }
-
-                // Reset status to the default available option
+                if (typeof jQuery !== 'undefined') $('#newProducts').val(null).trigger('change');
                 const newStatusEl = document.getElementById('newStatus');
-                if (newStatusEl && newStatusEl.options.length > 0) {
-                    const defaultOpt = Array.from(newStatusEl.options).find(opt => opt.defaultSelected);
-                    newStatusEl.value = defaultOpt ? defaultOpt.value : newStatusEl.options[0].value;
-                }
+                const defOpt = [...newStatusEl.options].find(o => o.defaultSelected);
+                newStatusEl.value = defOpt ? defOpt.value : newStatusEl.options[0]?.value;
 
-                // Add row below the entry row
                 appendNewRow(result.data);
-                
-                // Remove empty message if exists
-                const emptyRow = document.getElementById('emptyRow');
-                if (emptyRow) emptyRow.remove();
-
-                // Show success toast/alert
+                document.getElementById('emptyRow')?.remove();
                 alertify.success('Follow-up added successfully!');
             } else {
                 alertify.error('Error: ' + result.error);
             }
         })
-        .catch(error => {
-            console.error('Error:', error);
-            alertify.error('An error occurred while saving.');
-        })
-        .finally(() => {
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
-        });
+        .catch(() => alertify.error('An error occurred while saving.'))
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; });
     }
 
     function appendNewRow(data) {
-        const tbody = document.getElementById('followUpsTbody');
         const entryRow = document.getElementById('entryRow');
-
         const orderCreateUrl = "{% url 'order_create' %}";
+
+        let productsHtml = '<span class="text-muted">-</span>';
+        if (data.products?.length > 0) {
+            productsHtml = '<div class="d-flex flex-wrap">' + data.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>';
+        }
 
         const newTr = document.createElement('tr');
         newTr.setAttribute('data-id', data.id);
@@ -747,11 +632,6 @@
         newTr.setAttribute('data-f1', data.followup_1 || '');
         newTr.setAttribute('data-f2', data.followup_2 || '');
         newTr.setAttribute('data-remarks', data.remarks || '');
-        
-        let productsHtml = '<span class="text-muted">-</span>';
-        if (data.products && data.products.length > 0) {
-            productsHtml = '<div class="d-flex flex-wrap">' + data.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>';
-        }
 
         newTr.innerHTML = `
             <td class="text-center sn-column">1</td>
@@ -759,11 +639,17 @@
             <td>${escapeHtml(data.phone)}</td>
             <td>${escapeHtml(data.lead_source) || '-'}</td>
             <td>${productsHtml}</td>
-            <td class="inline-editable position-relative p-1" style="max-width: 140px; vertical-align: top; background-color: #f8f9fa;" onclick="makeInlineEditable(this, 'f1', ${data.id})">${buildLogsHtml(data.f1_logs, data.followup_1)}</td>
-            <td class="inline-editable position-relative p-1" style="max-width: 140px; vertical-align: top; background-color: #f8f9fa;" onclick="makeInlineEditable(this, 'f2', ${data.id})">${buildLogsHtml(data.f2_logs, data.followup_2)}</td>
-            <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, ${data.id})"><span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(data.status)}" data-status-val="${(data.status || '').toLowerCase()}">${data.status || '-'}</span></td>
-            <td class="text-break" style="max-width: 200px;">${escapeHtml(data.remarks) || '-'}</td>
-            <td class="text-center" style="white-space: nowrap;">
+            <td class="fu-cell position-relative p-1" style="min-width:160px;vertical-align:top;background-color:#f8f9fa;">
+                ${buildFuCellHtml(data.f1_logs, data.followup_1, data.id, 'followup_1')}
+            </td>
+            <td class="fu-cell position-relative p-1" style="min-width:160px;vertical-align:top;background-color:#f8f9fa;">
+                ${buildFuCellHtml(data.f2_logs, data.followup_2, data.id, 'followup_2')}
+            </td>
+            <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, ${data.id})">
+                <span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(data.status)}" data-status-val="${(data.status||'').toLowerCase()}">${data.status || '-'}</span>
+            </td>
+            <td class="text-break" style="max-width:200px;">${escapeHtml(data.remarks) || '-'}</td>
+            <td class="text-center" style="white-space:nowrap;">
                 <a href="${orderCreateUrl}?followup_id=${data.id}" class="action-btn border text-success me-1" title="Create Order">
                     <i class="fas fa-shopping-cart"></i>
                 </a>
@@ -776,392 +662,304 @@
                 <button class="action-btn border text-danger" onclick="deleteFollowUp(${data.id}, this)" title="Delete">
                     <i class="fas fa-trash-alt"></i>
                 </button>
-            </td>
-        `;
-        
-        // Insert right after entry row
+            </td>`;
         entryRow.after(newTr);
-        
-        // Update all serial numbers by applying filter
         filterTable();
     }
 
-
-
-    function openEditModal(id) {
-        currentEditId = id;
-        const row = document.querySelector(`tr[data-id="${id}"]`);
-        if (!row) return;
-
-        document.getElementById('editName').value = row.getAttribute('data-name');
-        document.getElementById('editPhone').value = row.getAttribute('data-phone');
-        document.getElementById('editLeadSource').value = row.getAttribute('data-lead');
-        
-        const productsStr = row.getAttribute('data-products') || '[]';
-        try {
-            const products = JSON.parse(productsStr);
-            const productIds = products.map(p => p.id.toString());
-            if (typeof jQuery !== 'undefined') {
-                $('#editProducts').val(productIds).trigger('change');
-            }
-        } catch(e) {}
-
-        document.getElementById('editFollowup1').value = row.getAttribute('data-f1');
-        document.getElementById('editFollowup2').value = row.getAttribute('data-f2');
-        document.getElementById('editStatus').value = row.getAttribute('data-status');
-        document.getElementById('editRemarks').value = row.getAttribute('data-remarks');
-
-        if (editModal) editModal.show();
+    // ===== Add Note Modal (opens for a specific field) =====
+    function openAddNoteModal(id, field) {
+        currentNoteId = id;
+        currentNoteField = field; // 'followup_1' or 'followup_2'
+        document.getElementById('addNoteText').value = '';
+        document.getElementById('addNoteStatus').value = '';
+        document.getElementById('addNoteFieldLabel').textContent = field === 'followup_1' ? 'Followup 1' : 'Followup 2';
+        addNoteModal.show();
     }
 
-    function saveEditFollowUp() {
-        if (!currentEditId) return;
-        
-        const btn = document.getElementById('saveEditBtn');
-        const originalHtml = btn.innerHTML;
+    function saveAddNote() {
+        if (!currentNoteId) return;
+        const noteText = document.getElementById('addNoteText').value.trim();
+        if (!noteText) { alertify.error('Note text cannot be empty'); return; }
+
+        const statusVal = document.getElementById('addNoteStatus').value;
+        const btn = document.getElementById('saveNoteBtn');
+        const origHtml = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
         btn.disabled = true;
 
-        const selectEl = document.getElementById('editProducts');
-        let productIds = Array.from(selectEl.selectedOptions).map(opt => opt.value);
-
-        const data = {
-            name: document.getElementById('editName').value.trim(),
-            phone: document.getElementById('editPhone').value.trim(),
-            lead_source: document.getElementById('editLeadSource').value.trim(),
-            product_ids: productIds,
-            followup_1: document.getElementById('editFollowup1').value.trim(),
-            followup_2: document.getElementById('editFollowup2').value.trim(),
-            status: document.getElementById('editStatus').value,
-            remarks: document.getElementById('editRemarks').value.trim(),
-        };
-
-        if (!data.phone) {
-            const phoneInput = document.getElementById('editPhone');
-            const errEl = phoneInput.nextElementSibling;
-            errEl.textContent = 'Phone number is required';
-            phoneInput.focus();
-            phoneInput.classList.add('is-invalid');
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
-            return;
-        }
-
-        const editPhoneDigits = data.phone.replace(/\D/g, '');
-        if (editPhoneDigits.length !== 10) {
-            const phoneInput = document.getElementById('editPhone');
-            const errEl = phoneInput.nextElementSibling;
-            errEl.textContent = 'Must be exactly 10 digits';
-            phoneInput.focus();
-            phoneInput.classList.add('is-invalid');
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
-            return;
-        }
-
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-        fetch(`/api/orders/follow-ups/${currentEditId}/edit/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
-            body: JSON.stringify(data)
-        })
-        .then(response => response.json())
-        .then(result => {
-            if (result.success) {
-                // Update row in DOM
-                const row = document.querySelector(`tr[data-id="${currentEditId}"]`);
-                if (row) {
-                    row.setAttribute('data-status', result.data.status);
-                    row.setAttribute('data-name', result.data.name || '');
-                    row.setAttribute('data-phone', result.data.phone || '');
-                    row.setAttribute('data-lead', result.data.lead_source || '');
-                    row.setAttribute('data-products', JSON.stringify(result.data.products || []));
-                    row.setAttribute('data-f1', result.data.followup_1 || '');
-                    row.setAttribute('data-f2', result.data.followup_2 || '');
-                    row.setAttribute('data-remarks', result.data.remarks || '');
-
-                    let statusBadge = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(result.data.status)}" data-status-val="${(result.data.status || '').toLowerCase()}">${result.data.status || '-'}</span>`;
-                    
-                    let productsHtml = '<span class="text-muted">-</span>';
-                    if (result.data.products && result.data.products.length > 0) {
-                        productsHtml = '<div class="d-flex flex-wrap">' + result.data.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>';
-                    }
-
-                    const cells = row.querySelectorAll('td');
-                    cells[1].textContent = result.data.name || '-';
-                    cells[2].textContent = result.data.phone || '-';
-                    cells[3].textContent = result.data.lead_source || '-';
-                    cells[4].innerHTML = productsHtml;
-                    cells[5].innerHTML = buildLogsHtml(result.data.f1_logs, result.data.followup_1);
-                    cells[6].innerHTML = buildLogsHtml(result.data.f2_logs, result.data.followup_2);
-                    cells[7].innerHTML = statusBadge;
-                    cells[8].textContent = result.data.remarks || '-';
-                }
-                
-                if (editModal) editModal.hide();
-                alertify.success('Updated successfully!');
-                filterTable();
-            } else {
-                alertify.error('Error: ' + result.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alertify.error('An error occurred while saving.');
-        })
-        .finally(() => {
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
-        });
-    }
-
-    function deleteFollowUp(id, btn) {
-        if (!confirm('Are you sure you want to delete this follow-up?')) return;
-        
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        btn.disabled = true;
-
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-        fetch(`/api/orders/follow-ups/${id}/delete/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': csrfToken
-            }
-        })
-        .then(response => response.json())
-        .then(result => {
-            if (result.success) {
-                const row = document.querySelector(`tr[data-id="${id}"]`);
-                if (row) {
-                    row.remove();
-                    filterTable();
-                    alertify.success('Deleted successfully!');
-                }
-            } else {
-                alertify.error('Error deleting: ' + result.error);
-                btn.innerHTML = originalHtml;
-                btn.disabled = false;
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alertify.error('An error occurred while deleting.');
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
-        });
-    }
-
-    function viewLogs(id) {
-        const modalElement = document.getElementById('logsModal');
-        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-        const container = document.getElementById('logsContainer');
-        container.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2 text-muted">Loading logs...</p></div>';
-        modal.show();
-
-        fetch(`/api/orders/follow-ups/${id}/logs/`)
-        .then(res => res.json())
-        .then(result => {
-            if (result.success) {
-                if (result.data.length === 0) {
-                    container.innerHTML = '<div class="text-center text-muted py-4">No changes have been recorded yet.</div>';
-                    return;
-                }
-                
-                let html = '';
-                result.data.forEach(log => {
-                    html += `
-                    <div class="timeline-item">
-                        <div class="timeline-icon"></div>
-                        <div class="timeline-content shadow-sm">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <strong class="text-primary">${log.user}</strong>
-                                <span class="text-muted small">${log.timestamp}</span>
-                            </div>
-                            <div class="mb-1">
-                                <span class="badge bg-secondary">${log.field_changed}</span> updated
-                            </div>
-                            <div class="text-muted small">
-                                <del class="text-danger">${log.old_value || '-'}</del> <i class="fas fa-arrow-right mx-1 text-muted"></i> <ins class="text-success text-decoration-none fw-bold">${log.new_value || '-'}</ins>
-                            </div>
-                        </div>
-                    </div>`;
-                });
-                container.innerHTML = html;
-            } else {
-                container.innerHTML = `<div class="text-danger py-3 text-center"><i class="fas fa-exclamation-triangle me-2"></i> ${result.error}</div>`;
-            }
-        })
-        .catch(error => {
-            console.error(error);
-            container.innerHTML = `<div class="text-danger py-3 text-center"><i class="fas fa-times me-2"></i> Failed to load logs.</div>`;
-        });
-    }
-
-    // --- INLINE EDITING LOGIC ---
-    function buildLogsHtml(logs, fallbackText) {
-        if (!logs || logs.length === 0) {
-            return escapeHtml(fallbackText) || '<span class="text-muted">-</span>';
-        }
-        const log = logs[0]; // Only show the latest log
-        return `
-            <div class="mb-2">
-                <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size: 0.65rem; width: 100%;">
-                    <div class="text-muted" style="font-size: 0.6rem;">${log.timestamp}</div>
-                    <div class="text-muted" style="font-size: 0.6rem;">by ${escapeHtml(log.user)}</div>
-                </div>
-                <div class="text-dark text-break" style="font-size: 0.75rem;">${escapeHtml(log.new_value)}</div>
-            </div>`;
-    }
-
-    function makeInlineEditable(cell, field, id) {
-        if (cell.classList.contains('inline-editing')) return;
-        
-        const row = cell.closest('tr');
-        const currentValue = row.getAttribute(`data-${field}`) || '';
-        
-        cell.classList.add('inline-editing');
-        const escValue = escapeHtml(currentValue).replace(/"/g, '&quot;');
-        
-        // Save original HTML content to restore if cancelled
-        cell.setAttribute('data-original-html', cell.innerHTML);
-        
-        cell.innerHTML = `<input type="text" class="form-control form-control-sm" value="${escValue}" onblur="saveInline(this, '${field}', ${id})" onkeydown="if(event.key === 'Enter') this.blur(); if(event.key === 'Escape') cancelInline(this, '${field}', '${escValue}')">`;
-        
-        const input = cell.querySelector('input');
-        input.focus();
-        
-        // Put cursor at end
-        const val = input.value;
-        input.value = '';
-        input.value = val;
-    }
-
-    function makeInlineStatusEditable(cell, id) {
-        if (cell.classList.contains('inline-editing')) return;
-        
-        const row = cell.closest('tr');
-        const currentStatus = row.getAttribute('data-status') || '';
-        
-        cell.classList.add('inline-editing');
-        
-        // Grab options from the new status select
-        const optionsHtml = document.getElementById('newStatus').innerHTML;
-        const escValue = escapeHtml(currentStatus).replace(/"/g, '&quot;');
-        
-        cell.innerHTML = `<select class="form-select form-select-sm" onchange="saveInline(this, 'status', ${id})" onblur="cancelInlineStatus(this, '${escValue}')" onkeydown="if(event.key === 'Escape') cancelInlineStatus(this, '${escValue}')">${optionsHtml}</select>`;
-        
-        const select = cell.querySelector('select');
-        select.value = currentStatus;
-        select.focus();
-    }
-
-    function cancelInline(element, field, originalValue) {
-        if (element && element.disabled) return;
-        const cell = element ? element.closest('td') : null;
-        if (cell) {
-            cell.classList.remove('inline-editing');
-            cell.innerHTML = cell.getAttribute('data-original-html') || (originalValue || '-');
-        }
-    }
-
-    function cancelInlineStatus(select, originalValue) {
-        // If we are already saving, don't trigger cancel
-        if (select && select.disabled) return;
-        
-        const cell = select ? select.closest('td') : null;
-        if (cell) {
-            cell.classList.remove('inline-editing');
-            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue || '').toLowerCase()}">${originalValue || '-'}</span>`;
-        }
-    }
-
-    function saveInline(element, field, id) {
-        element.disabled = true; // Prevent blur handler from firing while saving
-        const newValue = element.value.trim();
-        const cell = element.closest('td');
-        const row = element.closest('tr');
-        const originalValue = field === 'status' ? row.getAttribute('data-status') : row.getAttribute(`data-${field}`);
-        
-        if (newValue === originalValue) {
-            element.disabled = false;
-            if (field === 'status') cancelInlineStatus(element, originalValue);
-            else cancelInline(element, field, originalValue);
-            return;
-        }
-
-        cell.innerHTML = '<div class="d-flex justify-content-center"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></div>';
-        
-        // Build payload
-        const productStr = row.getAttribute('data-products') || '[]';
+        const row = document.querySelector(`tr[data-id="${currentNoteId}"]`);
         let productIds = [];
-        try { productIds = JSON.parse(productStr).map(p => p.id); } catch(e) {}
+        try { productIds = JSON.parse(row.getAttribute('data-products') || '[]').map(p => p.id); } catch(e) {}
 
         const data = {
             name: row.getAttribute('data-name') || '',
             phone: row.getAttribute('data-phone') || '',
             lead_source: row.getAttribute('data-lead') || '',
             product_ids: productIds,
-            followup_1: field === 'f1' ? newValue : (row.getAttribute('data-f1') || ''),
-            followup_2: field === 'f2' ? newValue : (row.getAttribute('data-f2') || ''),
-            status: field === 'status' ? newValue : (row.getAttribute('data-status') || ''),
+            followup_1: currentNoteField === 'followup_1' ? noteText : (row.getAttribute('data-f1') || ''),
+            followup_2: currentNoteField === 'followup_2' ? noteText : (row.getAttribute('data-f2') || ''),
+            status: statusVal || (row.getAttribute('data-status') || ''),
             remarks: row.getAttribute('data-remarks') || ''
         };
 
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-        fetch(`/api/orders/follow-ups/${id}/edit/`, {
+        fetch(`/api/orders/follow-ups/${currentNoteId}/edit/`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
             body: JSON.stringify(data)
         })
-        .then(response => response.json())
+        .then(r => r.json())
         .then(result => {
-            cell.classList.remove('inline-editing');
             if (result.success) {
-                // Update row attributes with the server returned value in case it was sanitized
-                const finalValue = result.data[field === 'f1' ? 'followup_1' : (field === 'f2' ? 'followup_2' : 'status')];
-                row.setAttribute(field === 'status' ? 'data-status' : `data-${field}`, finalValue || '');
-                
-                if (field === 'status') {
-                    cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalValue)}" data-status-val="${(finalValue || '').toLowerCase()}">${finalValue || '-'}</span>`;
-                } else {
-                    const logs = field === 'f1' ? result.data.f1_logs : result.data.f2_logs;
-                    cell.innerHTML = buildLogsHtml(logs, finalValue);
+                // Update row data attributes
+                row.setAttribute('data-status', result.data.status || '');
+                row.setAttribute('data-f1', result.data.followup_1 || '');
+                row.setAttribute('data-f2', result.data.followup_2 || '');
+                row.setAttribute('data-remarks', result.data.remarks || '');
+
+                // Update the Followup cells (index 5 & 6) and Status cell (7)
+                const cells = row.querySelectorAll('td');
+                cells[5].innerHTML = buildFuCellHtml(result.data.f1_logs, result.data.followup_1, currentNoteId, 'followup_1');
+                cells[6].innerHTML = buildFuCellHtml(result.data.f2_logs, result.data.followup_2, currentNoteId, 'followup_2');
+                cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(result.data.status)}" data-status-val="${(result.data.status||'').toLowerCase()}">${result.data.status || '-'}</span>`;
+
+                addNoteModal.hide();
+                alertify.success('Note added successfully!');
+                filterTable();
+            } else {
+                alertify.error('Error: ' + result.error);
+            }
+        })
+        .catch(() => alertify.error('An error occurred while saving.'))
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; });
+    }
+
+    // ===== Edit Modal (full edit of name/phone/lead/products/status/remarks) =====
+    function openEditModal(id) {
+        currentEditId = id;
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (!row) return;
+
+        document.getElementById('editName').value = row.getAttribute('data-name') || '';
+        document.getElementById('editPhone').value = row.getAttribute('data-phone') || '';
+        document.getElementById('editLeadSource').value = row.getAttribute('data-lead') || '';
+        document.getElementById('editStatus').value = row.getAttribute('data-status') || '';
+        document.getElementById('editRemarks').value = row.getAttribute('data-remarks') || '';
+
+        try {
+            const products = JSON.parse(row.getAttribute('data-products') || '[]');
+            if (typeof jQuery !== 'undefined') $('#editProducts').val(products.map(p => p.id.toString())).trigger('change');
+        } catch(e) {}
+
+        editModal.show();
+    }
+
+    function saveEditFollowUp() {
+        if (!currentEditId) return;
+        const btn = document.getElementById('saveEditBtn');
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+
+        const phone = document.getElementById('editPhone').value.trim();
+        const phoneInput = document.getElementById('editPhone');
+        if (!phone) {
+            phoneInput.classList.add('is-invalid');
+            phoneInput.nextElementSibling.textContent = 'Phone number is required';
+            btn.innerHTML = origHtml; btn.disabled = false; return;
+        }
+        if (phone.replace(/\D/g,'').length !== 10) {
+            phoneInput.classList.add('is-invalid');
+            phoneInput.nextElementSibling.textContent = 'Must be exactly 10 digits';
+            btn.innerHTML = origHtml; btn.disabled = false; return;
+        }
+
+        const row = document.querySelector(`tr[data-id="${currentEditId}"]`);
+        const productIds = Array.from(document.getElementById('editProducts').selectedOptions).map(o => o.value);
+
+        const data = {
+            name: document.getElementById('editName').value.trim(),
+            phone,
+            lead_source: document.getElementById('editLeadSource').value.trim(),
+            product_ids: productIds,
+            followup_1: row.getAttribute('data-f1') || '',
+            followup_2: row.getAttribute('data-f2') || '',
+            status: document.getElementById('editStatus').value,
+            remarks: document.getElementById('editRemarks').value.trim(),
+        };
+
+        fetch(`/api/orders/follow-ups/${currentEditId}/edit/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify(data)
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                const d = result.data;
+                row.setAttribute('data-status', d.status || '');
+                row.setAttribute('data-name', d.name || '');
+                row.setAttribute('data-phone', d.phone || '');
+                row.setAttribute('data-lead', d.lead_source || '');
+                row.setAttribute('data-products', JSON.stringify(d.products || []));
+                row.setAttribute('data-remarks', d.remarks || '');
+
+                let productsHtml = '<span class="text-muted">-</span>';
+                if (d.products?.length > 0) {
+                    productsHtml = '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>';
                 }
+                const cells = row.querySelectorAll('td');
+                cells[1].textContent = d.name || '-';
+                cells[2].textContent = d.phone || '-';
+                cells[3].textContent = d.lead_source || '-';
+                cells[4].innerHTML = productsHtml;
+                cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
+                cells[8].textContent = d.remarks || '-';
+
+                editModal.hide();
                 alertify.success('Updated successfully!');
                 filterTable();
             } else {
                 alertify.error('Error: ' + result.error);
-                if (field === 'status') {
-                    cell.classList.remove('inline-editing');
-                    cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue || '').toLowerCase()}">${originalValue || '-'}</span>`;
-                } else {
-                    cell.classList.remove('inline-editing');
-                    cell.innerHTML = cell.getAttribute('data-original-html') || (originalValue || '-');
-                }
             }
         })
-        .catch(error => {
-            console.error('Error:', error);
-            cell.classList.remove('inline-editing');
-            alertify.error('An error occurred while saving.');
-            if (field === 'status') {
-                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue || '').toLowerCase()}">${originalValue || '-'}</span>`;
+        .catch(() => alertify.error('An error occurred while saving.'))
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; });
+    }
+
+    // ===== Delete =====
+    function deleteFollowUp(id, btn) {
+        if (!confirm('Are you sure you want to delete this follow-up?')) return;
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+
+        fetch(`/api/orders/follow-ups/${id}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value }
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                document.querySelector(`tr[data-id="${id}"]`)?.remove();
+                filterTable();
+                alertify.success('Deleted successfully!');
             } else {
-                cell.innerHTML = cell.getAttribute('data-original-html') || (originalValue || '-');
+                alertify.error('Error deleting: ' + result.error);
+                btn.innerHTML = origHtml; btn.disabled = false;
             }
+        })
+        .catch(() => { alertify.error('An error occurred.'); btn.innerHTML = origHtml; btn.disabled = false; });
+    }
+
+    // ===== View Logs =====
+    function viewLogs(id) {
+        const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('logsModal'));
+        const container = document.getElementById('logsContainer');
+        container.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2 text-muted">Loading logs...</p></div>';
+        modal.show();
+
+        fetch(`/api/orders/follow-ups/${id}/logs/`)
+        .then(r => r.json())
+        .then(result => {
+            if (!result.success) { container.innerHTML = `<div class="text-danger py-3 text-center">${result.error}</div>`; return; }
+            if (result.data.length === 0) { container.innerHTML = '<div class="text-center text-muted py-4">No changes have been recorded yet.</div>'; return; }
+            container.innerHTML = result.data.map(log => `
+                <div class="timeline-item">
+                    <div class="timeline-icon"></div>
+                    <div class="timeline-content shadow-sm">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong class="text-primary">${log.user}</strong>
+                            <span class="text-muted small">${log.timestamp}</span>
+                        </div>
+                        <div class="mb-1"><span class="badge bg-secondary">${log.field_changed}</span> updated</div>
+                        <div class="text-muted small">
+                            <del class="text-danger">${log.old_value || '-'}</del>
+                            <i class="fas fa-arrow-right mx-1 text-muted"></i>
+                            <ins class="text-success text-decoration-none fw-bold">${log.new_value || '-'}</ins>
+                        </div>
+                    </div>
+                </div>`).join('');
+        })
+        .catch(() => { container.innerHTML = '<div class="text-danger py-3 text-center">Failed to load logs.</div>'; });
+    }
+
+    // ===== Inline Status Editing =====
+    function makeInlineStatusEditable(cell, id) {
+        if (cell.classList.contains('inline-editing')) return;
+        const row = cell.closest('tr');
+        const currentStatus = row.getAttribute('data-status') || '';
+        cell.classList.add('inline-editing');
+        const optionsHtml = document.getElementById('newStatus').innerHTML;
+        cell.innerHTML = `<select class="form-select form-select-sm" onchange="saveInlineStatus(this, ${id})" onblur="cancelInlineStatus(this, '${escapeHtml(currentStatus)}')" onkeydown="if(event.key==='Escape') cancelInlineStatus(this, '${escapeHtml(currentStatus)}')">${optionsHtml}</select>`;
+        const select = cell.querySelector('select');
+        select.value = currentStatus;
+        select.focus();
+    }
+
+    function cancelInlineStatus(select, originalValue) {
+        if (select?.disabled) return;
+        const cell = select?.closest('td');
+        if (cell) {
+            cell.classList.remove('inline-editing');
+            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue||'').toLowerCase()}">${originalValue || '-'}</span>`;
+        }
+    }
+
+    function saveInlineStatus(select, id) {
+        select.disabled = true;
+        const newStatus = select.value;
+        const cell = select.closest('td');
+        const row = select.closest('tr');
+        const originalStatus = row.getAttribute('data-status') || '';
+
+        if (newStatus === originalStatus) {
+            select.disabled = false;
+            cancelInlineStatus(select, originalStatus);
+            return;
+        }
+
+        cell.innerHTML = '<div class="d-flex justify-content-center"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></div>';
+
+        let productIds = [];
+        try { productIds = JSON.parse(row.getAttribute('data-products') || '[]').map(p => p.id); } catch(e) {}
+
+        const data = {
+            name: row.getAttribute('data-name') || '',
+            phone: row.getAttribute('data-phone') || '',
+            lead_source: row.getAttribute('data-lead') || '',
+            product_ids: productIds,
+            followup_1: row.getAttribute('data-f1') || '',
+            followup_2: row.getAttribute('data-f2') || '',
+            status: newStatus,
+            remarks: row.getAttribute('data-remarks') || ''
+        };
+
+        fetch(`/api/orders/follow-ups/${id}/edit/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify(data)
+        })
+        .then(r => r.json())
+        .then(result => {
+            cell.classList.remove('inline-editing');
+            if (result.success) {
+                const finalStatus = result.data.status || '';
+                row.setAttribute('data-status', finalStatus);
+                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
+                alertify.success('Status updated!');
+                filterTable();
+            } else {
+                alertify.error('Error: ' + result.error);
+                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
+            }
+        })
+        .catch(() => {
+            cell.classList.remove('inline-editing');
+            alertify.error('An error occurred.');
+            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
         });
     }
 </script>
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
 {% endblock %}
