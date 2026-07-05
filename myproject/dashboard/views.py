@@ -21423,6 +21423,9 @@ def api_update_product_price(request, product_id):
 @require_POST
 def add_follow_up(request):
     """AJAX endpoint to add a new follow-up entry."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
     from .models import FollowUp, Product
     try:
         data = json.loads(request.body)
@@ -21528,6 +21531,9 @@ def add_follow_up(request):
 @login_required
 @require_POST
 def edit_follow_up(request, pk):
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
     from .models import FollowUp, Product, FollowUpLog
     try:
         follow_up = get_object_or_404(FollowUp, pk=pk)
@@ -21629,6 +21635,9 @@ def edit_follow_up(request, pk):
 @login_required
 @require_POST
 def delete_follow_up(request, pk):
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
     from .models import FollowUp
     try:
         follow_up = get_object_or_404(FollowUp, pk=pk)
@@ -21641,6 +21650,9 @@ def delete_follow_up(request, pk):
 
 @login_required
 def get_follow_up_logs(request, pk):
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
     from .models import FollowUpLog
     from django.utils import timezone
     logs = FollowUpLog.objects.filter(follow_up_id=pk).select_related('user').order_by('-timestamp')
@@ -21657,6 +21669,10 @@ def get_follow_up_logs(request, pk):
 @login_required
 def follow_ups_trash(request):
     """View to display soft-deleted follow-ups."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'You do not have permission to access Follow-ups Trash.')
+        return redirect('dashboard')
     from .models import FollowUp
     
     deleted_follow_ups = FollowUp.objects.prefetch_related('products').select_related('product').filter(is_deleted=True).order_by('-created_at')
@@ -21671,6 +21687,10 @@ def follow_ups_trash(request):
 @require_POST
 def restore_follow_up(request, pk):
     """Restore a soft-deleted follow-up."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
     from .models import FollowUp
     try:
         follow_up = get_object_or_404(FollowUp, pk=pk, is_deleted=True)
@@ -21687,6 +21707,10 @@ def restore_follow_up(request, pk):
 @require_POST
 def hard_delete_follow_up(request, pk):
     """Permanently delete a follow-up."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
     from .models import FollowUp
     try:
         follow_up = get_object_or_404(FollowUp, pk=pk, is_deleted=True)
@@ -21938,8 +21962,7 @@ def follow_up_report(request):
     has_access = (
         request.user.is_superuser
         or getattr(request.user, 'role', '') == 'administrator'
-        or getattr(request.user, 'can_access_follow_ups', False)
-        or getattr(request.user, 'can_view_reports', False)
+        or getattr(request.user, 'can_view_follow_up_report', False)
     )
     if not has_access:
         messages.error(request, 'You do not have permission to view the Follow-ups Report.')
@@ -22219,6 +22242,13 @@ def follow_up_report(request):
 @login_required
 def follow_up_report_logs_api(request, pk):
     """AJAX: return all FollowUpLog entries for a given FollowUp row."""
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_follow_up_report', False)
+    )
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
     from .models import FollowUp
     nepal_tz = pytz.timezone('Asia/Kathmandu')
     try:

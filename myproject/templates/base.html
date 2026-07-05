@@ -1039,9 +1039,11 @@
                             <a href="{% url 'orders_list' %}">All Orders</a>
                         </li>
                         {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_access_follow_ups %}
                         <li class="{% if request.resolver_match.url_name == 'follow_ups_list' %}active{% endif %}">
                             <a href="{% url 'follow_ups_list' %}">Follow-ups</a>
                         </li>
+                        {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_on_hold_orders %}
                         <li class="{% if request.resolver_match.url_name == 'on_hold_orders_list' %}active{% endif %}">
                             <a href="{% url 'on_hold_orders_list' %}">On Hold Orders</a>
@@ -1562,7 +1564,7 @@
                             <a href="{% url 'financial_report' %}">Financial Report</a>
                         </li>
                         {% endif %}
-                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_reports %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_follow_up_report %}
                         <li class="{% if request.resolver_match.url_name == 'follow_up_report' %}active{% endif %}">
                             <a href="{% url 'follow_up_report' %}"><i class="fas fa-phone-alt me-1"></i>Follow-ups Report</a>
                         </li>

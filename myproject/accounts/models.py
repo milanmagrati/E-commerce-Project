@@ -170,6 +170,7 @@ class CustomUser(AbstractUser):
 
     # FOLLOW UP PERMISSIONS
     can_access_follow_ups = models.BooleanField(default=False, verbose_name="Can Access Follow Ups")
+    can_view_follow_up_report = models.BooleanField(default=False, verbose_name="Can View Follow Up Report")
     can_setup_follow_up_status = models.BooleanField(default=False, verbose_name="Can Setup Follow Up Status")
 
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
@@ -238,7 +239,7 @@ class CustomUser(AbstractUser):
                 'can_view_ncm_trash', 'can_sync_ncm_orders', 'can_view_ncm_branches', 'can_manage_ncm_branches',
                 'can_view_hrm', 'can_view_hrm_hr_management', 'can_view_hrm_asset_management',
                 'can_view_hrm_attendance', 'can_view_hrm_payroll',
-                'can_access_todo', 'can_access_follow_ups', 'can_setup_follow_up_status',
+                'can_access_todo', 'can_access_follow_ups', 'can_view_follow_up_report', 'can_setup_follow_up_status',
                 'can_view_cost_price', 'can_edit_prices', 'can_give_discounts',
                 'can_view_content_management'
             ]:
