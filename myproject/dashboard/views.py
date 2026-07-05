@@ -21532,7 +21532,7 @@ def add_follow_up(request):
                 'f1_logs': f1_logs,
                 'f2_logs': f2_logs,
                 'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
-                'version': new_follow_up.version
+                'version': getattr(new_follow_up, 'version', 1)
 
             }
         })
@@ -21554,7 +21554,7 @@ def edit_follow_up(request, pk):
         
         incoming_version = data.get('version')
         if incoming_version is not None:
-            if follow_up.version != int(incoming_version):
+            if getattr(follow_up, 'version', 1) != int(incoming_version):
                 return JsonResponse({
                     'success': False, 
                     'error': 'Order already updated by another user, please review.'
@@ -21585,7 +21585,8 @@ def edit_follow_up(request, pk):
         follow_up.followup_2 = new_f2
         follow_up.status = data.get('status', follow_up.status).strip()
         follow_up.remarks = data.get('remarks', follow_up.remarks).strip()
-        follow_up.version += 1
+        if hasattr(follow_up, 'version'):
+            follow_up.version += 1
         follow_up.save()
         
         if old_f1 != new_f1:
@@ -21651,7 +21652,7 @@ def edit_follow_up(request, pk):
             'remarks': follow_up.remarks,
             'f1_logs': f1_logs,
             'f2_logs': f2_logs,
-            'version': follow_up.version,
+            'version': getattr(follow_up, 'version', 1),
         }
         
         from channels.layers import get_channel_layer
