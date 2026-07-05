@@ -916,11 +916,13 @@
                             <strong class="text-primary">${log.user}</strong>
                             <span class="text-muted small">${log.timestamp}</span>
                         </div>
-                        <div class="mb-1"><span class="badge bg-secondary">${log.field_changed}</span> updated</div>
+                        <div class="mb-1"><span class="badge bg-secondary">${log.field_changed}</span> ${log.field_changed === 'Entry Created' ? '' : 'updated'}</div>
                         <div class="text-muted small">
-                            <del class="text-danger">${log.old_value || '-'}</del>
-                            <i class="fas fa-arrow-right mx-1 text-muted"></i>
-                            <ins class="text-success text-decoration-none fw-bold">${log.new_value || '-'}</ins>
+                            ${log.field_changed === 'Entry Created' 
+                                ? `<span class="text-success fw-bold">${log.new_value || '-'}</span>`
+                                : `<del class="text-danger">${log.old_value || '-'}</del>
+                                   <i class="fas fa-arrow-right mx-1 text-muted"></i>
+                                   <ins class="text-success text-decoration-none fw-bold">${log.new_value || '-'}</ins>`}
                         </div>
                     </div>
                 </div>`).join('');

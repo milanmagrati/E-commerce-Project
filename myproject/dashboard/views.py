@@ -21473,6 +21473,12 @@ def add_follow_up(request):
                 new_follow_up.product_variations.set(valid_variations)
             
         from .models import FollowUpLog
+        
+        FollowUpLog.objects.create(
+            follow_up=new_follow_up, user=request.user, field_changed='Entry Created',
+            old_value='-', new_value='Entry Created'
+        )
+        
         if followup_1:
             FollowUpLog.objects.create(
                 follow_up=new_follow_up, user=request.user, field_changed='Followup 1',
@@ -21496,6 +21502,7 @@ def add_follow_up(request):
         from django.utils import timezone
         f1_logs = []
         f2_logs = []
+        entry_logs = []
         for log in new_follow_up.logs.all():
             log_data = {
                 'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
@@ -21504,6 +21511,10 @@ def add_follow_up(request):
             }
             if log.field_changed == 'Followup 1': f1_logs.append(log_data)
             elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
+            elif log.field_changed == 'Entry Created': entry_logs.append(log_data)
+            
+        if not f1_logs and entry_logs:
+            f1_logs = [entry_logs[0]]
             
         return JsonResponse({
             'success': True,
@@ -21614,6 +21625,7 @@ def edit_follow_up(request, pk):
         from django.utils import timezone
         f1_logs = []
         f2_logs = []
+        entry_logs = []
         for log in follow_up.logs.all():
             log_data = {
                 'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
@@ -21622,7 +21634,10 @@ def edit_follow_up(request, pk):
             }
             if log.field_changed == 'Followup 1': f1_logs.append(log_data)
             elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
+            elif log.field_changed == 'Entry Created': entry_logs.append(log_data)
             
+        if not f1_logs and entry_logs:
+            f1_logs = [entry_logs[0]]
         response_data = {
             'id': follow_up.id,
             'name': follow_up.name,

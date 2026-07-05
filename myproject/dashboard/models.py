@@ -1857,10 +1857,14 @@ class FollowUp(models.Model):
 
     @property
     def latest_f1_log(self):
+        f1_log = None
+        entry_log = None
         for log in self.logs.all():
-            if log.field_changed == 'Followup 1':
-                return log
-        return None
+            if log.field_changed == 'Followup 1' and f1_log is None:
+                f1_log = log
+            if log.field_changed == 'Entry Created' and entry_log is None:
+                entry_log = log
+        return f1_log or entry_log
 
     @property
     def latest_f2_log(self):
