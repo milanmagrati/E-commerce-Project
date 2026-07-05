@@ -199,7 +199,11 @@ def _get_next_order_number():
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        # Redirect based on dashboard access
+        if request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_dashboard:
+            return redirect('dashboard')
+        else:
+            return redirect('profile')
 
     if request.method == 'POST':
         username = request.POST.get('username')
@@ -209,7 +213,11 @@ def login_view(request):
         if user is not None:
             login(request, user)
             request.session.set_expiry(43200)  # 12-hour session per user
-            return redirect('dashboard')
+            # Redirect based on dashboard access permission
+            if user.is_superuser or user.role == 'administrator' or user.can_view_dashboard:
+                return redirect('dashboard')
+            else:
+                return redirect('profile')
         else:
             messages.error(request, 'Invalid username or password')
 
@@ -223,6 +231,11 @@ def logout_view(request):
 
 @login_required
 def dashboard_view(request):
+    # Role-based access: only admins/superusers or users with can_view_dashboard can access
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_dashboard):
+        messages.warning(request, '⚠️ You do not have access to the Dashboard. Redirecting to your profile.')
+        return redirect('profile')
+
     # System-wide product and order data (show counts to staff like warehouse)
     products = Product.objects.filter(is_deleted=False)
     orders = Order.objects.all()

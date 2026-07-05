@@ -980,12 +980,14 @@
             <!-- Scrollable Menu Area -->
             <ul class="list-unstyled components">
 
-                <!-- ==================== DASHBOARD (Everyone) ==================== -->
+                <!-- ==================== DASHBOARD (Permission-based) ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_dashboard %}
                 <li class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
                     <a href="{% url 'dashboard' %}">
                         <i class="fas fa-tachometer-alt"></i> Dashboard
                     </a>
                 </li>
+                {% endif %}
 
                 <!-- ==================== PRODUCTS ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_products %}
@@ -1710,10 +1712,12 @@
                     <!-- Quick Access Shortcuts (Left Side - Desktop) -->
                     <div class="nav-quick-access d-none d-xl-flex align-items-center ms-3">
                         <!-- Dashboard Home -->
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_dashboard %}
                         <a href="{% url 'dashboard' %}" class="nav-box nav-box-indigo" title="Dashboard">
                             <div class="nav-box-icon"><i class="fas fa-tachometer-alt"></i></div>
                             <span>Dashboard</span>
                         </a>
+                        {% endif %}
 
                         <div class="nav-shortcut-divider"></div>
 

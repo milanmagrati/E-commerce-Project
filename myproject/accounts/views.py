@@ -602,6 +602,7 @@ def profile_view(request):
     
     # Count all permission fields
     permission_fields = [
+        'can_view_dashboard',
         'can_view_orders', 'can_create_orders', 'can_edit_orders', 'can_delete_orders', 'can_cancel_orders', 'can_view_on_hold_orders', 'can_export_orders',
         'can_view_products', 'can_create_products', 'can_edit_products', 'can_delete_products',
         'can_view_customers', 'can_create_customers', 'can_edit_customers', 'can_delete_customers',
