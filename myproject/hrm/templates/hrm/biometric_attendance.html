@@ -186,7 +186,7 @@
           <button type="submit" class="bio-search-btn"><i class="fas fa-search"></i> Search</button>
         </div>
         <button type="button" class="bio-filter-btn" onclick="toggleFilters()">
-          <i class="fas fa-filter"></i> Filters{% if date_from or date_to %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}
+          <i class="fas fa-filter"></i> Filters{% if (date_from or date_to) and not default_today %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}
         </button>
         <div class="ms-auto d-flex align-items-center gap-2">
           <span class="text-muted" style="font-size:.88rem; white-space:nowrap;">Per Page:</span>
@@ -222,8 +222,19 @@
 <div class="card bio-card">
   <div class="card-header">
     <div class="bio-device-icon"><i class="fas fa-clock"></i></div>
-    <span>Aggregated attendance from raw device punches</span>
-    <span class="ms-auto text-muted" style="font-size:.82rem;">{{ total_records }} total record{{ total_records|pluralize }}</span>
+    {% if default_today %}
+      <span>Today's attendance &ndash; <strong>{{ today_str }}</strong></span>
+    {% elif date_from and date_to and date_from == date_to %}
+      <span>Attendance for <strong>{{ date_from }}</strong></span>
+    {% elif date_from or date_to %}
+      <span>Attendance from raw device punches</span>
+    {% else %}
+      <span>All attendance records</span>
+    {% endif %}
+    {% if default_today %}
+      <a href="{% url 'hrm:biometric_attendance' %}?date_from=&date_to=" class="ms-2 btn btn-sm btn-outline-secondary" style="font-size:.75rem; padding:.2rem .6rem; border-radius:6px;">View All Dates</a>
+    {% endif %}
+    <span class="ms-auto text-muted" style="font-size:.82rem;">{{ total_records }} record{{ total_records|pluralize }}</span>
   </div>
 
   <div class="table-responsive">
@@ -396,11 +407,12 @@ document.addEventListener('DOMContentLoaded', function () {
   var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
   // URL templates — rendered by Django, placeholders replaced in JS
-  var _viewUrlTpl   = "{% url 'hrm:biometric_attendance_view'  pin='__P__' date_str='__D__' %}";
-  var _syncUrlTpl   = "{% url 'hrm:biometric_sync_single'       pin='__P__' date_str='__D__' %}";
-  var _deleteUrlTpl = "{% url 'hrm:biometric_attendance_delete' pin='__P__' date_str='__D__' %}";
+  // NOTE: Do NOT use encodeURIComponent on path segments — it double-encodes and breaks routing.
+  var _viewUrlTpl   = "{% url 'hrm:biometric_attendance_view'  pin='__PIN__' date_str='__DATE__' %}";
+  var _syncUrlTpl   = "{% url 'hrm:biometric_sync_single'       pin='__PIN__' date_str='__DATE__' %}";
+  var _deleteUrlTpl = "{% url 'hrm:biometric_attendance_delete' pin='__PIN__' date_str='__DATE__' %}";
   function bioUrl(tpl, pin, dateStr) {
-    return tpl.replace('__P__', encodeURIComponent(pin)).replace('__D__', encodeURIComponent(dateStr));
+    return tpl.replace('__PIN__', pin).replace('__DATE__', dateStr);
   }
 
   function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -446,10 +458,18 @@ document.addEventListener('DOMContentLoaded', function () {
     fetch(bioUrl(_viewUrlTpl, pin, dateStr), {
       headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        // Server returned non-2xx (e.g. 500, 403, 404)
+        return r.text().then(function(txt) {
+          throw new Error('Server returned ' + r.status + '. ' + (txt.length < 200 ? txt : ''));
+        });
+      }
+      return r.json();
+    })
     .then(function (data) {
       if (!data.success) {
-        document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center"></p>';
+        document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center py-3"><i class="fas fa-exclamation-triangle me-2"></i></p>';
         document.getElementById('bioViewBody').querySelector('p').textContent = data.error || 'Failed to load.';
         return;
       }
@@ -482,8 +502,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
       document.getElementById('bioViewBody').innerHTML = html;
     })
-    .catch(function () {
-      document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center">Failed to load.</p>';
+    .catch(function (err) {
+      document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center py-3"><i class="fas fa-exclamation-triangle me-2"></i><span></span></p>';
+      document.getElementById('bioViewBody').querySelector('span').textContent = err.message || 'Failed to load punch data.';
     });
   };
 
@@ -496,7 +517,12 @@ document.addEventListener('DOMContentLoaded', function () {
       method: 'POST',
       headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
     })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        return r.text().then(function(txt) { throw new Error('Server ' + r.status); });
+      }
+      return r.json();
+    })
     .then(function (data) {
       btn.disabled = false;
       btn.querySelector('i').classList.remove('fa-spin');
@@ -506,10 +532,10 @@ document.addEventListener('DOMContentLoaded', function () {
         showInlineToast(data.error || 'Sync failed.', 'error');
       }
     })
-    .catch(function () {
+    .catch(function (err) {
       btn.disabled = false;
       btn.querySelector('i').classList.remove('fa-spin');
-      showInlineToast('Network error during sync.', 'error');
+      showInlineToast(err.message || 'Network error during sync.', 'error');
     });
   };
 
@@ -563,7 +589,12 @@ document.addEventListener('DOMContentLoaded', function () {
       method: 'POST',
       headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
     })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        return r.text().then(function(txt) { throw new Error('Server ' + r.status); });
+      }
+      return r.json();
+    })
     .then(function (data) {
       bsModal('bioDeleteModal').hide();
       if (data.success) {
@@ -573,9 +604,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       window.location.reload();
     })
-    .catch(function () {
+    .catch(function (err) {
       bsModal('bioDeleteModal').hide();
-      showToast('Network error.', 'error');
+      showToast(err.message || 'Network error.', 'error');
       window.location.reload();
     });
   });

@@ -3861,19 +3861,32 @@ def iclock_devicecmd(request):
 
 @login_required
 def biometric_attendance(request):
-    """Aggregated attendance view: groups raw punches by (pin, date)."""
+    """Per-date attendance view: groups raw punches by (pin, date), defaults to today."""
     from .models import BiometricAttendance, Employee
-    from django.db.models import Min, Max, Count, Subquery, OuterRef
-    from django.db.models.functions import TruncDate
     from django.utils import timezone as tz
     import pytz
 
     local_tz = pytz.timezone('Asia/Kathmandu')
+    today_local = tz.now().astimezone(local_tz).date()
 
     # Parse query params early
     search_q = request.GET.get('q', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
+
+    # Default to today if no date filter is provided
+    # Use a sentinel: if user explicitly set date_from/date_to (even blank), respect that.
+    # We detect "no filter applied" by checking if both params are absent from GET.
+    date_from_raw = request.GET.get('date_from', None)
+    date_to_raw   = request.GET.get('date_to', None)
+
+    # If this is a fresh page load with no date params at all, default to today
+    if date_from_raw is None and date_to_raw is None and not search_q:
+        date_from = today_local.strftime('%Y-%m-%d')
+        date_to   = today_local.strftime('%Y-%m-%d')
+        default_today = True
+    else:
+        date_from = (date_from_raw or '').strip()
+        date_to   = (date_to_raw or '').strip()
+        default_today = False
 
     # Build employee name lookup
     emp_name_map = {}
@@ -3899,7 +3912,6 @@ def biometric_attendance(request):
 
     # PIN search at ORM level
     if search_q:
-        # Find employee codes that match by PIN or name
         matching_pins = set()
         sq_lower = search_q.lower()
         for code, name in emp_name_map.items():
@@ -3908,37 +3920,40 @@ def biometric_attendance(request):
         if matching_pins:
             base_qs = base_qs.filter(pin__in=matching_pins)
         else:
-            # Fallback: search by PIN directly (for PINs not in employee table)
             base_qs = base_qs.filter(pin__icontains=search_q)
 
-    # Subquery: get the device serial_number from the earliest punch per (pin, date) group
-    # Uses timestamp__date= directly to avoid ORM ambiguity with the outer 'punch_date' annotation
-    first_device_sq = BiometricAttendance.objects.filter(
-        pin=OuterRef('pin'),
-        device__isnull=False,
-        timestamp__date=OuterRef('punch_date'),
-    ).order_by('timestamp').values('device__serial_number')[:1]
 
-    qs = base_qs.annotate(
-        punch_date=TruncDate('timestamp')
-    ).values('pin', 'punch_date').annotate(
-        clock_in=Min('timestamp'),
-        clock_out=Max('timestamp'),
-        total_entries=Count('id'),
-        device_sn=Subquery(first_device_sq),
-    ).order_by('-punch_date', 'pin')
 
-    # Build records list
+    # BUG FIX: TruncDate() uses the DATABASE timezone (UTC), not Nepal time.
+    # For punches near midnight NPT, this gives the wrong date.
+    # We fetch raw timestamps and group by Nepal-timezone date in Python,
+    # exactly like _sync_biometric_to_attendance() does — keeping them in sync.
+    raw_qs = base_qs.select_related('device').values(
+        'id', 'pin', 'timestamp', 'device__serial_number'
+    ).order_by('pin', 'timestamp')
+
+    from collections import defaultdict
+    # grouped[(pin, nepal_date)] = {'punches': [ts,...], 'device_sn': str}
+    grouped = defaultdict(lambda: {'punches': [], 'device_sn': None})
+    for row in raw_qs:
+        ts = row['timestamp']
+        if ts is None:
+            continue
+        nepal_date = ts.astimezone(local_tz).date()
+        key = (row['pin'], nepal_date)
+        grouped[key]['punches'].append(ts)
+        if grouped[key]['device_sn'] is None and row['device__serial_number']:
+            grouped[key]['device_sn'] = row['device__serial_number']
+
+    # Build records list sorted by date desc, pin asc
     records = []
-    for row in qs:
-        pin = row['pin']
-        punch_date = row['punch_date']
-        clock_in_dt = row['clock_in']
-        clock_out_dt = row['clock_out']
-        total = row['total_entries']
+    for (pin, punch_date), info in grouped.items():
+        punches = info['punches']
+        clock_in_dt  = min(punches)
+        clock_out_dt = max(punches)
+        total = len(punches)
 
-        # Convert UTC timestamps to Nepal time before extracting .time()
-        clock_in_local = clock_in_dt.astimezone(local_tz).time() if clock_in_dt else None
+        clock_in_local  = clock_in_dt.astimezone(local_tz).time()  if clock_in_dt else None
         clock_out_local = clock_out_dt.astimezone(local_tz).time() if clock_out_dt and total > 1 else None
 
         records.append({
@@ -3948,8 +3963,11 @@ def biometric_attendance(request):
             'clock_in': clock_in_local,
             'clock_out': clock_out_local,
             'total_entries': total,
-            'device_sn': row['device_sn'] or '—',
+            'device_sn': info['device_sn'] or '—',
         })
+
+    # Sort: newest date first, then by pin
+    records.sort(key=lambda r: (-r['date'].toordinal(), r['pin']))
 
     total_records = len(records)
 
@@ -3973,6 +3991,8 @@ def biometric_attendance(request):
         'search_q': search_q,
         'date_from': date_from,
         'date_to': date_to,
+        'default_today': default_today,
+        'today_str': today_local.strftime('%Y-%m-%d'),
         'per_page': per_page,
         'per_page_options': [10, 20, 50, 100],
     }
@@ -3981,53 +4001,61 @@ def biometric_attendance(request):
 
 @login_required
 def biometric_attendance_view(request, pin, date_str):
-    """Return all raw punches for a given employee PIN on a specific date."""
+    """Return all raw punches for a given employee PIN on a specific date (JSON)."""
     from .models import BiometricAttendance, Employee
     from django.utils import timezone as tz
     import pytz
+    import traceback
 
-    local_tz = pytz.timezone('Asia/Kathmandu')
-
+    # Always return JSON — never let an exception propagate to an HTML 500 page
     try:
-        punch_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
-        return JsonResponse({'success': False, 'error': 'Invalid date format.'})
+        local_tz = pytz.timezone('Asia/Kathmandu')
 
-    punches = BiometricAttendance.objects.filter(
-        pin=pin,
-        timestamp__date=punch_date,
-    ).select_related('device').order_by('timestamp')
+        try:
+            punch_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse({'success': False, 'error': 'Invalid date format.'})
 
-    emp = Employee.objects.filter(employee_code=pin).first()
-    emp_name = emp.full_name if emp else f'Employee {pin}'
+        punches = BiometricAttendance.objects.filter(
+            pin=pin,
+            timestamp__date=punch_date,
+        ).select_related('device').order_by('timestamp')
 
-    punch_list = []
-    for p in punches:
-        local_ts = p.timestamp.astimezone(local_tz)
-        punch_list.append({
-            'time': local_ts.strftime('%I:%M %p'),
-            'status': p.get_status_display(),
-            'verify_mode': p.verify_mode,
-            'device': p.device.serial_number if p.device else '—',
-            'raw_log': p.raw_log,
+        emp = Employee.objects.filter(employee_code=pin).first()
+        emp_name = emp.full_name if emp else f'Employee {pin}'
+
+        punch_list = []
+        for p in punches:
+            try:
+                local_ts = p.timestamp.astimezone(local_tz)
+                punch_list.append({
+                    'time': local_ts.strftime('%I:%M %p'),
+                    'status': p.get_status_display() if hasattr(p, 'get_status_display') else str(p.status),
+                    'verify_mode': p.verify_mode,
+                    'device': p.device.serial_number if p.device else '—',
+                    'raw_log': p.raw_log or '',
+                })
+            except Exception:
+                continue
+
+        punch_count = len(punch_list)
+        clock_in  = punch_list[0]['time']  if punch_count > 0 else ''
+        clock_out = punch_list[-1]['time'] if punch_count > 1 else ''
+
+        return JsonResponse({
+            'success': True,
+            'record': {
+                'pin': pin,
+                'employee_name': emp_name,
+                'date': date_str,
+                'clock_in': clock_in,
+                'clock_out': clock_out,
+                'total_entries': punch_count,
+            },
+            'punches': punch_list,
         })
-
-    punch_count = len(punch_list)
-    clock_in = punch_list[0]['time'] if punch_count > 0 else ''
-    clock_out = punch_list[-1]['time'] if punch_count > 1 else ''
-
-    return JsonResponse({
-        'success': True,
-        'record': {
-            'pin': pin,
-            'employee_name': emp_name,
-            'date': date_str,
-            'clock_in': clock_in,
-            'clock_out': clock_out,
-            'total_entries': punch_count,
-        },
-        'punches': punch_list,
-    })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Server error: {str(e)}'})
 
 
 @login_required
@@ -4036,16 +4064,16 @@ def biometric_sync_all(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
-    from .models import BiometricAttendance
-    count = BiometricAttendance.objects.count()
-
-    # Sync biometric punches into AttendanceRecord
-    _sync_biometric_to_attendance()
-
-    return JsonResponse({
-        'success': True,
-        'message': f'Re-aggregated from {count} raw punch records and synced to attendance. Table refreshed.',
-    })
+    try:
+        from .models import BiometricAttendance
+        count = BiometricAttendance.objects.count()
+        _sync_biometric_to_attendance()
+        return JsonResponse({
+            'success': True,
+            'message': f'Re-aggregated from {count} raw punch records and synced to attendance. Table refreshed.',
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Sync failed: {str(e)}'})
 
 
 
@@ -4056,36 +4084,43 @@ def biometric_sync_single(request, pin, date_str):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
-    from .models import BiometricAttendance
-
     try:
-        punch_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
-        return JsonResponse({'success': False, 'error': 'Invalid date format.'})
+        from .models import BiometricAttendance
 
-    count = BiometricAttendance.objects.filter(pin=pin, timestamp__date=punch_date).count()
-    _sync_biometric_to_attendance()
-    return JsonResponse({
-        'success': True,
-        'message': f'Found {count} raw punches for PIN {pin} on {date_str}. Data synced.',
-    })
+        try:
+            punch_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse({'success': False, 'error': 'Invalid date format.'})
+
+        count = BiometricAttendance.objects.filter(pin=pin, timestamp__date=punch_date).count()
+        # Only sync recent 7 days to avoid scanning the entire table on every single-record sync
+        _sync_biometric_to_attendance(recent_days=7)
+        return JsonResponse({
+            'success': True,
+            'message': f'Found {count} raw punches for PIN {pin} on {date_str}. Synced successfully.',
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Sync failed: {str(e)}'})
 
 
 @login_required
 def biometric_attendance_delete(request, pin, date_str):
     """Delete all raw punches for a PIN on a specific date."""
-    from .models import BiometricAttendance
-
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
     try:
-        punch_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
-        return JsonResponse({'success': False, 'error': 'Invalid date format.'})
+        from .models import BiometricAttendance
 
-    deleted, _ = BiometricAttendance.objects.filter(pin=pin, timestamp__date=punch_date).delete()
-    return JsonResponse({'success': True, 'message': f'Deleted {deleted} records for PIN {pin} on {date_str}.'})
+        try:
+            punch_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse({'success': False, 'error': 'Invalid date format.'})
+
+        deleted, _ = BiometricAttendance.objects.filter(pin=pin, timestamp__date=punch_date).delete()
+        return JsonResponse({'success': True, 'message': f'Deleted {deleted} records for PIN {pin} on {date_str}.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Delete failed: {str(e)}'})
 
 
 # ==================== ZKTeco Device Settings Page ====================
