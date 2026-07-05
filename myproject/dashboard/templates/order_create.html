@@ -3458,14 +3458,19 @@
                             </div>
                         </td>
                         <td style="vertical-align: middle; text-align: left;">
-                            <textarea class="form-control form-control-sm times-input" placeholder="Write here..." style="width: 100%; min-height: 50px; resize: vertical;" onclick="event.stopPropagation()"></textarea>
+                            <div class="times-input-wrapper" style="position: relative; width: 100%;">
+                                <textarea class="form-control form-control-sm times-input" placeholder="Write here..." style="width: 100%; min-height: 50px; resize: vertical; padding-right: 32px; border: 1px solid #e2e8f0; border-radius: 6px; transition: border-color 0.2s;" onclick="event.stopPropagation()"></textarea>
+                                <button type="button" class="btn save-times-btn" title="Save Text" style="position: absolute; bottom: 6px; right: 6px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 4px; width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; box-shadow: 0 2px 5px rgba(16, 185, 129, 0.3); transition: all 0.2s ease; z-index: 2;" onclick="event.stopPropagation()">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </div>
                         </td>
                         <td style="vertical-align: middle; text-align: right; font-weight: 600; color: #475569; font-size: 0.95rem;">
                             रू ${parseFloat(p.price).toFixed(2)}
                         </td>
                         <td style="vertical-align: middle; text-align: right;">
                             <div class="d-flex align-items-center justify-content-end gap-1" onclick="event.stopPropagation()">
-                                <input type="number" class="form-control form-control-sm offer-price-input" value="${parseFloat(p.price).toFixed(2)}" min="0" step="0.01" style="width: 80px; text-align: right; font-weight: 600; color: #10b981;" ${canEditPrice ? '' : 'readonly'}>
+                                <input type="number" class="form-control form-control-sm offer-price-input" value="${parseFloat(p.price).toFixed(2)}" min="0" step="0.01" style="width: 110px; text-align: right; font-weight: 600; color: #10b981;" ${canEditPrice ? '' : 'readonly'}>
                                 ${canEditPrice ? `<button type="button" class="btn btn-success btn-sm save-offer-price-btn" title="Save price" data-product-id="${p.id}" style="padding: 2px 7px; font-size: 0.7rem; white-space: nowrap;">
                                     <i class="fas fa-save"></i>
                                 </button>` : ''}
@@ -3496,6 +3501,53 @@
                     };
 
                     tr.addEventListener('click', addAction);
+
+                    // Save times input to localStorage
+                    const timesInput = tr.querySelector('.times-input');
+                    const saveTimesBtn = tr.querySelector('.save-times-btn');
+                    
+                    if (timesInput) {
+                        const savedValue = localStorage.getItem('pos_times_' + p.id);
+                        if (savedValue) {
+                            timesInput.value = savedValue;
+                        }
+                        
+                        // Reset button visual state on input (no auto-save)
+                        timesInput.addEventListener('input', (e) => {
+                            if (saveTimesBtn) {
+                                saveTimesBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                saveTimesBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                            }
+                        });
+                        
+                        // Button click save animation
+                        if (saveTimesBtn) {
+                            saveTimesBtn.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                localStorage.setItem('pos_times_' + p.id, timesInput.value);
+                                
+                                // Success animation
+                                saveTimesBtn.innerHTML = '<i class="fas fa-check"></i>';
+                                saveTimesBtn.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
+                                saveTimesBtn.style.transform = 'scale(1.1)';
+                                
+                                setTimeout(() => {
+                                    saveTimesBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                    saveTimesBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                                    saveTimesBtn.style.transform = 'scale(1)';
+                                }, 1500);
+                            });
+                            
+                            // Hover effects
+                            saveTimesBtn.addEventListener('mouseenter', () => {
+                                saveTimesBtn.style.transform = 'scale(1.1)';
+                            });
+                            saveTimesBtn.addEventListener('mouseleave', () => {
+                                saveTimesBtn.style.transform = 'scale(1)';
+                            });
+                        }
+                    }
 
                     // Save offer price button
                     const saveBtn = tr.querySelector('.save-offer-price-btn');
