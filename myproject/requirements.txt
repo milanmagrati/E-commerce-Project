@@ -18,17 +18,9 @@ gspread>=6.0
 google-auth>=2.0
 google-auth-httplib2
 google-api-python-client
-
-# Optional: SMS Service Providers (install as needed)
-# For Twilio SMS:
 twilio>=9.0.0
 
-# For Sparrow SMS (Nepal):
-# Use requests (already installed)
-
-# For Atuha SMS (Nepal):
-# Use requests (already installed)
-
-daphne
-channels
-channels-redis
+# WebSocket / ASGI support (required for real-time follow-ups)
+daphne>=4.0.0
+channels>=4.0.0
+channels-redis>=4.0.0

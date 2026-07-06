@@ -1,17 +1,31 @@
 """
 WSGI config for myproject project.
 
-It exposes the WSGI callable as a module-level variable named ``application``.
+NOTE: This app uses Django Channels (WebSockets) for real-time follow-up collaboration.
+WebSockets ONLY work with the ASGI server (Daphne).
 
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/wsgi/
+In production, always start with:
+    daphne -b 0.0.0.0 -p 8000 myproject.asgi:application
+
+NOT:
+    gunicorn myproject.wsgi:application  ← WebSockets will NOT work
+    python manage.py runserver            ← OK for local dev only
 """
 
 import os
+import warnings
 
 from django.core.wsgi import get_wsgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'myproject.settings')
+
+warnings.warn(
+    "\n\n⚠️  WSGI mode detected — WebSockets (real-time features) will NOT work.\n"
+    "   Start the server with Daphne instead:\n"
+    "   daphne -b 0.0.0.0 -p 8000 myproject.asgi:application\n",
+    RuntimeWarning,
+    stacklevel=2
+)
 
 application = get_wsgi_application()
 
