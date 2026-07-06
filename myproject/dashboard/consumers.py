@@ -3,6 +3,11 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 
 class FollowUpConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        # Reject unauthenticated connections
+        if not self.scope["user"].is_authenticated:
+            await self.close()
+            return
+
         # We'll use a single group for all follow-up page viewers
         self.group_name = 'follow_ups_group'
         
@@ -13,10 +18,11 @@ class FollowUpConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.group_name,
-            self.channel_name
-        )
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(
+                self.group_name,
+                self.channel_name
+            )
 
     async def receive(self, text_data):
         data = json.loads(text_data)
