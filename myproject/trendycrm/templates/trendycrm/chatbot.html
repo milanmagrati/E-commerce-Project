@@ -1,0 +1,317 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Chatbot — Trendy CRM{% endblock %}
+{% block topbar_title %}Chatbot (AI){% endblock %}
+
+{% block extra_style %}
+.chatbot-toggle-wrap {
+    background: linear-gradient(135deg, #fdf4ff 0%, #f3e8ff 100%);
+    border: 1px solid rgba(124,58,237,0.15);
+    border-radius: 12px;
+    padding: 1.1rem 1.4rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+    flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; inset: 0;
+    background: #d1d5db;
+    border-radius: 26px;
+    cursor: pointer;
+    transition: 0.3s;
+}
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 20px; height: 20px;
+    left: 3px; bottom: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.3s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+input:checked + .toggle-slider { background: var(--crm-primary); }
+input:checked + .toggle-slider::before { transform: translateX(24px); }
+
+.section-card {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid rgba(124,58,237,0.08);
+    box-shadow: var(--crm-card-shadow);
+    margin-bottom: 1.25rem;
+    overflow: hidden;
+}
+.section-card-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--crm-border);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--crm-text);
+}
+.section-card-body { padding: 1.25rem; }
+
+.knowledge-item {
+    border: 1px solid var(--crm-border);
+    border-radius: 10px;
+    padding: 0.9rem 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 0.75rem;
+}
+.knowledge-item:hover { border-color: var(--crm-accent); background: var(--crm-hover); }
+.knowledge-item:last-child { margin-bottom: 0; }
+
+.k-icon {
+    width: 36px; height: 36px;
+    background: var(--crm-active-bg);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--crm-primary);
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+.k-title { font-weight: 600; font-size: 0.84rem; color: var(--crm-text); }
+.k-meta { font-size: 0.73rem; color: var(--crm-text-muted); margin-top: 1px; }
+.ai-badge {
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+}
+.custom-tools-badge {
+    color: var(--crm-primary);
+    font-size: 0.72rem;
+    font-weight: 500;
+    border: 1px solid var(--crm-accent);
+    padding: 1px 6px;
+    border-radius: 6px;
+}
+
+.credit-bar {
+    background: white;
+    border: 1px solid rgba(124,58,237,0.08);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    box-shadow: var(--crm-card-shadow);
+}
+
+.auto-reply-channels-card {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid rgba(124,58,237,0.08);
+    box-shadow: var(--crm-card-shadow);
+    padding: 1.25rem;
+}
+
+.channel-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid rgba(124,58,237,0.05);
+}
+.channel-item:last-child { border-bottom: none; }
+.channel-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; flex-shrink: 0; }
+.channel-name { font-size: 0.83rem; font-weight: 500; color: var(--crm-text); flex: 1; }
+.channel-status { font-size: 0.73rem; color: var(--crm-text-muted); }
+
+.main-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 1.25rem;
+}
+@media(max-width:900px){ .main-grid{ grid-template-columns: 1fr; } }
+{% endblock %}
+
+{% block crm_content %}
+<!-- Master AI Toggle -->
+<div class="chatbot-toggle-wrap">
+    <i class="fas fa-power-off mt-1" style="color:{% if chatbot.is_active %}var(--crm-primary){% else %}#d1d5db{% endif %};font-size:1.1rem;"></i>
+    <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
+            <strong style="font-size:0.9rem;">Master AI toggle</strong>
+            <span style="font-size:0.72rem;font-weight:600;padding:1px 7px;border-radius:8px;background:{% if chatbot.is_active %}#d1fae5;color:#059669{% else %}#fee2e2;color:#dc2626{% endif %};">
+                {% if chatbot.is_active %}Active{% else %}Paused{% endif %}
+            </span>
+        </div>
+        <div style="font-size:0.8rem;color:var(--crm-text-muted);line-height:1.4;">
+            {% if not chatbot.is_active %}
+            All AI is paused — customer auto-replies, home digest, suggested-reply drafts, and other AI tools won't run.
+            {% else %}
+            AI is active and auto-replying on all connected channels.
+            {% endif %}
+        </div>
+        {% if not chatbot.is_active %}
+        <div style="font-size:0.75rem;color:var(--crm-text-muted);margin-top:0.3rem;">
+            To stop only customer auto-replies but keep the digest, suggested replies, and other AI tools running, leave this on and turn off the channels under <strong>Auto-reply channels</strong> below.
+        </div>
+        {% endif %}
+    </div>
+    <form method="post" action="{% url 'trendycrm:chatbot_toggle' %}">
+        {% csrf_token %}
+        <button type="submit" class="toggle-switch" title="Toggle AI">
+            <input type="checkbox" {% if chatbot.is_active %}checked{% endif %} onclick="this.closest('form').submit()">
+            <span class="toggle-slider"></span>
+        </button>
+    </form>
+</div>
+
+<div class="main-grid">
+    <!-- Left Column -->
+    <div>
+        <!-- Credits -->
+        <div class="credit-bar">
+            <div>
+                <div style="font-size:0.72rem;color:var(--crm-text-muted);margin-bottom:0.2rem;">Available credit</div>
+                <div style="font-size:1.5rem;font-weight:800;color:var(--crm-text);">{{ chatbot.ai_credits }} <span style="font-size:0.85rem;font-weight:400;color:var(--crm-text-muted);">credits</span></div>
+            </div>
+            <div style="display:flex;gap:0.6rem;">
+                <a href="#" class="btn-crm-outline" style="font-size:0.78rem;"><i class="fas fa-history"></i> History</a>
+                <a href="#" class="btn-crm-primary" style="font-size:0.78rem;"><i class="fas fa-plus"></i> Top up</a>
+            </div>
+        </div>
+
+        <!-- Business Knowledge -->
+        <div class="section-card">
+            <div class="section-card-header">
+                <i class="fas fa-brain" style="color:var(--crm-primary);"></i>
+                Business knowledge
+            </div>
+            <div class="section-card-body">
+                <p style="font-size:0.82rem;color:var(--crm-text-muted);margin-bottom:1rem;">Teach the AI about your business — identity, tone of voice, offerings, FAQs, and how to handle tricky situations.</p>
+
+                <div class="knowledge-item">
+                    <div class="k-icon"><i class="fas fa-file-alt"></i></div>
+                    <div style="flex:1;">
+                        <div class="k-title">Business Knowledge Base</div>
+                        <div class="k-meta">Identity, voice, offerings, FAQs and playbook — everything the AI needs to sound like your team.</div>
+                        <div style="display:flex;align-items:center;gap:0.4rem;margin-top:0.35rem;">
+                            <span class="custom-tools-badge">5 sections</span>
+                            <span class="ai-badge">AI assisted</span>
+                        </div>
+                    </div>
+                    <div>
+                        <form method="post">
+                            {% csrf_token %}
+                            <button type="button" onclick="document.getElementById('knowledgeModal').style.display='flex'" style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;padding:0 0.3rem;">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button type="button" style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;padding:0 0.3rem;">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="knowledge-item">
+                    <div class="k-icon"><i class="fas fa-tools"></i></div>
+                    <div style="flex:1;">
+                        <div class="k-title">Custom tools</div>
+                        <div class="k-meta">Extend the AI with merchant-defined tools — static replies or HTTP calls to your own services. Perfect for order-status lookups, warranty checks, or custom Q&A.</div>
+                        <div style="display:flex;align-items:center;gap:0.4rem;margin-top:0.35rem;">
+                            <span class="custom-tools-badge">Up to 5 tools</span>
+                            <span class="custom-tools-badge">1 credit per call</span>
+                        </div>
+                    </div>
+                    <button style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;"><i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Environment -->
+        <div class="section-card">
+            <div class="section-card-header">
+                <i class="fas fa-flask" style="color:var(--crm-primary);"></i>
+                AI environment
+            </div>
+            <div class="section-card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label style="font-size:0.78rem;font-weight:600;color:var(--crm-text-muted);display:block;margin-bottom:0.3rem;">Business Name</label>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="text" name="business_name" value="{{ chatbot.business_name|default:'' }}" placeholder="e.g. Trendy Shop" style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.5rem 0.75rem;font-size:0.83rem;font-family:inherit;color:var(--crm-text);outline:none;" onfocus="this.style.borderColor='var(--crm-primary)'" onblur="this.style.borderColor='var(--crm-border)'">
+                        </form>
+                    </div>
+                    <div class="col-md-6">
+                        <label style="font-size:0.78rem;font-weight:600;color:var(--crm-text-muted);display:block;margin-bottom:0.3rem;">Support Email</label>
+                        <input type="email" placeholder="support@trendy.com" style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.5rem 0.75rem;font-size:0.83rem;font-family:inherit;color:var(--crm-text);outline:none;" onfocus="this.style.borderColor='var(--crm-primary)'" onblur="this.style.borderColor='var(--crm-border)'" value="{{ chatbot.business_email|default:'' }}">
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <form method="post" style="margin-top:0;">
+                        {% csrf_token %}
+                        <label style="font-size:0.78rem;font-weight:600;color:var(--crm-text-muted);display:block;margin-bottom:0.3rem;">About Blurb</label>
+                        <textarea name="about_blurb" placeholder="Describe your business for the AI…" rows="3" style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.5rem 0.75rem;font-size:0.83rem;font-family:inherit;color:var(--crm-text);outline:none;resize:none;" onfocus="this.style.borderColor='var(--crm-primary)'" onblur="this.style.borderColor='var(--crm-border)'">{{ chatbot.about_blurb|default:'' }}</textarea>
+                        <button type="submit" class="btn-crm-primary mt-2" style="font-size:0.78rem;"><i class="fas fa-save"></i> Save Settings</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column -->
+    <div>
+        <!-- Auto-reply Channels -->
+        <div class="auto-reply-channels-card mb-3">
+            <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.3rem;color:var(--crm-text);">Auto-reply channels</div>
+            <p style="font-size:0.76rem;color:var(--crm-text-muted);margin-bottom:1rem;line-height:1.4;">Pick the channels where Trendy AI should auto-reply to customers. Turning a channel off here pauses customer auto-replies on that platform only.</p>
+
+            {% for integ in integrations %}
+            <div class="channel-item">
+                <div class="channel-icon" style="background:{% if integ.channel_type == 'whatsapp' %}#d1fae5{% elif integ.channel_type == 'instagram' %}#fce7f3{% elif integ.channel_type == 'facebook' %}#dbeafe{% elif integ.channel_type == 'gmail' %}#fee2e2{% else %}#f3f4f6{% endif %};">
+                    <i class="fab fa-{{ integ.channel_type }}" style="color:{% if integ.channel_type == 'whatsapp' %}#059669{% elif integ.channel_type == 'instagram' %}#be185d{% elif integ.channel_type == 'facebook' %}#1d4ed8{% elif integ.channel_type == 'gmail' %}#dc2626{% else %}#6b7280{% endif %};"></i>
+                </div>
+                <div class="channel-name">{{ integ.get_channel_type_display }}</div>
+                <div class="channel-status">{{ integ.get_status_display }}</div>
+            </div>
+            {% empty %}
+            <div style="text-align:center;padding:1.5rem 0;font-size:0.8rem;color:var(--crm-text-muted);">
+                <i class="fas fa-plug" style="font-size:1.4rem;color:var(--crm-accent);display:block;margin-bottom:0.5rem;"></i>
+                No integrations yet.<br>
+                <a href="{% url 'trendycrm:integrations' %}" style="color:var(--crm-primary);font-weight:600;">Connect a channel →</a>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Agent configuration -->
+        <div class="auto-reply-channels-card">
+            <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.75rem;color:var(--crm-text);">Agent configuration</div>
+            <div style="font-size:0.78rem;color:var(--crm-text-muted);margin-bottom:0.5rem;">AI Model</div>
+            <select style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.45rem 0.75rem;font-size:0.82rem;font-family:inherit;color:var(--crm-text);outline:none;margin-bottom:0.75rem;">
+                <option>GPT-4o (Recommended)</option>
+                <option>GPT-3.5 Turbo</option>
+                <option>Claude Sonnet</option>
+            </select>
+            <div style="font-size:0.78rem;color:var(--crm-text-muted);margin-bottom:0.5rem;">Response Tone</div>
+            <select style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.45rem 0.75rem;font-size:0.82rem;font-family:inherit;color:var(--crm-text);outline:none;">
+                <option>Professional & Friendly</option>
+                <option>Formal</option>
+                <option>Casual</option>
+            </select>
+        </div>
+    </div>
+</div>
+{% endblock %}

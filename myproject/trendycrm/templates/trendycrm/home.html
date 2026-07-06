@@ -1,0 +1,199 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Home — Trendy CRM{% endblock %}
+{% block topbar_title %}Home{% endblock %}
+
+{% block extra_style %}
+.setup-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: default;
+}
+.setup-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(124,58,237,0.12);
+}
+.setup-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--crm-border);
+    transition: background 0.15s;
+}
+.setup-step:last-child { border-bottom: none; }
+.setup-step:hover { background: var(--crm-hover); }
+.step-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--crm-active-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--crm-primary);
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.step-icon.done { background: #d1fae5; color: #059669; }
+.step-body { flex: 1; min-width: 0; }
+.step-title { font-weight: 600; font-size: 0.88rem; color: var(--crm-text); margin: 0 0 0.2rem; }
+.step-desc { font-size: 0.80rem; color: var(--crm-text-muted); line-height: 1.4; margin: 0; }
+.step-action { flex-shrink: 0; }
+.step-action a {
+    color: var(--crm-primary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1.5px solid var(--crm-accent);
+    border-radius: 6px;
+    padding: 0.3rem 0.75rem;
+    transition: all 0.2s;
+}
+.step-action a:hover {
+    background: var(--crm-active-bg);
+}
+.progress-ring-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.stat-mini-card {
+    background: white;
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    border: 1px solid rgba(124,58,237,0.08);
+    box-shadow: var(--crm-card-shadow);
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+.stat-mini-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.hero-section {
+    text-align: center;
+    padding: 2rem 1rem 1.5rem;
+}
+.hero-logo {
+    width: 68px;
+    height: 68px;
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    color: white;
+    font-size: 1.75rem;
+    box-shadow: 0 8px 24px rgba(124,58,237,0.25);
+}
+{% endblock %}
+
+{% block crm_content %}
+<div class="hero-section">
+    <div class="hero-logo">
+        <i class="fas fa-bolt"></i>
+    </div>
+    <h2 style="font-size:1.6rem;font-weight:800;color:var(--crm-text);margin-bottom:0.4rem;">
+        Hi {{ request.user.first_name|default:request.user.username }}, let's set up Trendy CRM
+    </h2>
+    <p style="color:var(--crm-text-muted);font-size:0.9rem;margin-bottom:1.5rem;">
+        A few quick steps and Trendy CRM starts handling <strong>{{ request.user.username }}</strong>'s conversations.
+    </p>
+</div>
+
+<!-- Stats Row -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="stat-mini-card">
+            <div class="stat-mini-icon" style="background:#ede9fe;color:#7c3aed;"><i class="fas fa-users"></i></div>
+            <div>
+                <div style="font-size:1.3rem;font-weight:800;color:var(--crm-text);">{{ total_contacts }}</div>
+                <div style="font-size:0.73rem;color:var(--crm-text-muted);">Contacts</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-mini-card">
+            <div class="stat-mini-icon" style="background:#d1fae5;color:#059669;"><i class="fas fa-comment-dots"></i></div>
+            <div>
+                <div style="font-size:1.3rem;font-weight:800;color:var(--crm-text);">{{ total_conversations }}</div>
+                <div style="font-size:0.73rem;color:var(--crm-text-muted);">Conversations</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-mini-card">
+            <div class="stat-mini-icon" style="background:#fee2e2;color:#dc2626;"><i class="fas fa-ticket-alt"></i></div>
+            <div>
+                <div style="font-size:1.3rem;font-weight:800;color:var(--crm-text);">{{ open_tickets }}</div>
+                <div style="font-size:0.73rem;color:var(--crm-text-muted);">Open Tickets</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-mini-card">
+            <div class="stat-mini-icon" style="background:#fef3c7;color:#d97706;"><i class="fas fa-plug"></i></div>
+            <div>
+                <div style="font-size:1.3rem;font-weight:800;color:var(--crm-text);">{{ connected_channels }}</div>
+                <div style="font-size:0.73rem;color:var(--crm-text-muted);">Channels</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Setup Steps Card -->
+<div class="crm-card">
+    <div class="crm-card-header">
+        <div class="d-flex align-items-center gap-2">
+            <i class="fas fa-magic" style="color:var(--crm-primary);"></i>
+            <span style="font-weight:700;font-size:0.95rem;">Set up Trendy CRM</span>
+        </div>
+        <span style="font-size:0.8rem;color:var(--crm-text-muted);">{{ done_count }} / {{ total_steps }} done</span>
+    </div>
+
+    <!-- Progress bar -->
+    <div style="height:4px;background:#f3f0ff;">
+        <div style="height:100%;width:{% widthratio done_count total_steps 100 %}%;background:linear-gradient(90deg,var(--crm-primary),var(--crm-accent));transition:width 0.6s ease;border-radius:0 2px 2px 0;"></div>
+    </div>
+
+    <p style="padding:0.75rem 1.25rem;font-size:0.82rem;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);margin:0;">
+        Finish the required steps below. Once Trendy CRM is on, this page becomes a daily brief.
+    </p>
+
+    {% for step in setup_steps %}
+    <div class="setup-step">
+        <div class="step-icon {% if step.done %}done{% endif %}">
+            {% if step.done %}
+                <i class="fas fa-check"></i>
+            {% else %}
+                <i class="fas {{ step.icon }}"></i>
+            {% endif %}
+        </div>
+        <div class="step-body">
+            <p class="step-title">{{ step.title }}
+                {% if step.done %}<span style="color:#059669;font-size:0.7rem;font-weight:600;margin-left:6px;">✓ Done</span>{% endif %}
+            </p>
+            <p class="step-desc">{{ step.desc }}</p>
+        </div>
+        <div class="step-action">
+            <a href="{% url step.action_url %}">
+                {{ step.action_label }} <i class="fas fa-arrow-right" style="font-size:0.7rem;"></i>
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

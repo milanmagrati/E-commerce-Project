@@ -1592,7 +1592,17 @@
                 </li>
                 {% endif %}
 
-                <!-- ==================== TEAM MEMBERS (Admin Only) ==================== -->
+                <!-- ==================== TRENDY CRM ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="{% if '/trendy-crm/' in request.path %}active{% endif %}" style="position:relative;">
+                    <a href="{% url 'trendycrm:home' %}" style="{% if '/trendy-crm/' in request.path %}background:linear-gradient(135deg,rgba(124,58,237,0.15),rgba(139,92,246,0.15));border-left:3px solid #7c3aed;{% endif %}">
+                        <i class="fas fa-bolt" style="color:#7c3aed;"></i> Trendy CRM
+                        <span style="background:linear-gradient(135deg,#7c3aed,#a78bfa);color:white;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:5px;">CRM</span>
+                    </a>
+                </li>
+                {% endif %}
+
+
                 {% if user.is_superuser or user.role == 'administrator' %}
                 <li
                     class="{% if 'user' in request.resolver_match.url_name or 'role' in request.resolver_match.url_name %}active{% endif %}">

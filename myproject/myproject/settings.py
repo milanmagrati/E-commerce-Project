@@ -60,6 +60,7 @@ EXTERNAL_APPS = [
     "bill_rewards",
     "google_sheets",
     "channels",
+    "trendycrm",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 
@@ -229,6 +230,8 @@ NCM_API_BASE_URL_V2 = config('NCM_API_BASE_URL_V2')
 # Webhook Security: Set this in your .env file
 NCM_WEBHOOK_SECRET = config('NCM_WEBHOOK_SECRET', default=None)
 WOOCOMMERCE_WEBHOOK_SECRET = config('WOOCOMMERCE_WEBHOOK_SECRET', default='')
+META_PAGE_ACCESS_TOKEN = config('META_PAGE_ACCESS_TOKEN', default='')
+FACEBOOK_CLIENT_ID = config('FACEBOOK_CLIENT_ID', default='3765824723663820')  # Default to the previous client id for testing
 
 # ===================== Pick and Drop API Configuration =====================
 PND_API_KEY = config('PND_API_KEY', default='adfe61efa5c52c6')
@@ -380,3 +383,5 @@ CELERY_TASK_ALWAYS_EAGER = config('CELERY_TASK_ALWAYS_EAGER', default=True, cast
 
 # ===================== Google Sheets Integration =====================
 GOOGLE_SHEETS_CREDENTIALS_PATH = BASE_DIR / 'google_service_account.json'
+
+# Trigger reload

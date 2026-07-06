@@ -1,0 +1,371 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Conversations — Trendy CRM{% endblock %}
+{% block topbar_title %}Conversations{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn-crm-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newConvModal">
+    <i class="fas fa-plus"></i> New Conversation
+</button>
+{% endblock %}
+
+{% block extra_style %}
+.conv-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    height: calc(100vh - 60px - 3rem);
+    background: white;
+    border-radius: 12px;
+    border: 1px solid rgba(124,58,237,0.08);
+    overflow: hidden;
+    box-shadow: var(--crm-card-shadow);
+}
+
+.conv-panel-left {
+    border-right: 1px solid var(--crm-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.conv-panel-header {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--crm-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.conv-panel-header-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--crm-text);
+}
+
+.conv-filter-tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--crm-border);
+    flex-shrink: 0;
+}
+
+.conv-filter-tab {
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--crm-text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    background: none;
+    border: none;
+}
+
+.conv-filter-tab.active {
+    background: var(--crm-active-bg);
+    color: var(--crm-primary);
+}
+
+.conv-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.conv-list::-webkit-scrollbar { width: 4px; }
+.conv-list::-webkit-scrollbar-thumb { background: var(--crm-accent); border-radius: 2px; }
+
+.conv-item {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid rgba(124,58,237,0.05);
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    text-decoration: none;
+    color: inherit;
+}
+
+.conv-item:hover { background: var(--crm-hover); }
+.conv-item.active { background: var(--crm-active-bg); }
+
+.conv-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.conv-meta { flex: 1; min-width: 0; }
+.conv-name { font-size: 0.83rem; font-weight: 600; color: var(--crm-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-preview { font-size: 0.75rem; color: var(--crm-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.conv-time { font-size: 0.68rem; color: var(--crm-text-muted); flex-shrink: 0; }
+
+/* Right chat panel */
+.conv-panel-right {
+    display: flex;
+    flex-direction: column;
+    background: #fafafa;
+}
+
+.conv-chat-header {
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid var(--crm-border);
+    background: white;
+    flex-shrink: 0;
+}
+
+.conv-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.conv-messages::-webkit-scrollbar { width: 4px; }
+.conv-messages::-webkit-scrollbar-thumb { background: var(--crm-accent); border-radius: 2px; }
+
+.msg-bubble {
+    max-width: 65%;
+    padding: 0.6rem 0.9rem;
+    border-radius: 12px;
+    font-size: 0.83rem;
+    line-height: 1.45;
+}
+
+.msg-inbound {
+    background: white;
+    color: var(--crm-text);
+    border: 1px solid var(--crm-border);
+    border-bottom-left-radius: 3px;
+    align-self: flex-start;
+}
+
+.msg-outbound {
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-primary-light));
+    color: white;
+    border-bottom-right-radius: 3px;
+    align-self: flex-end;
+}
+
+.msg-time {
+    font-size: 0.68rem;
+    color: var(--crm-text-muted);
+    margin-top: 2px;
+}
+
+.conv-input-bar {
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid var(--crm-border);
+    background: white;
+    flex-shrink: 0;
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.conv-input {
+    flex: 1;
+    border: 1.5px solid var(--crm-border);
+    border-radius: 8px;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.83rem;
+    outline: none;
+    font-family: 'Inter', sans-serif;
+    color: var(--crm-text);
+    resize: none;
+    height: 40px;
+    transition: border-color 0.2s;
+}
+
+.conv-input:focus { border-color: var(--crm-primary); }
+
+.empty-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, #f3e8ff 0%, #ede9fe 50%, #e0e7ff 100%);
+}
+{% endblock %}
+
+{% block crm_content %}
+<div class="conv-layout">
+    <!-- Left Panel -->
+    <div class="conv-panel-left">
+        <div class="conv-panel-header">
+            <div>
+                <div class="conv-panel-header-title">Inbox</div>
+                <div style="font-size:0.73rem;color:var(--crm-text-muted);">{{ request.user.get_full_name|default:request.user.username }}</div>
+            </div>
+            <button style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;font-size:0.85rem;">
+                <i class="fas fa-search"></i>
+            </button>
+        </div>
+
+        <div class="conv-filter-tabs">
+            <button class="conv-filter-tab active">A</button>
+            <button class="conv-filter-tab">L</button>
+            <button class="conv-filter-tab">H</button>
+            <button class="conv-filter-tab ms-auto" style="color:var(--crm-primary);">
+                <i class="fas fa-tag"></i>
+            </button>
+        </div>
+
+        <div style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--crm-border);">
+            <span style="font-size:0.72rem;font-weight:700;color:var(--crm-primary);text-transform:uppercase;letter-spacing:0.06em;">Conversations</span>
+        </div>
+
+        <div class="conv-list">
+            {% if conversations %}
+                {% for conv in conversations %}
+                <a href="?id={{ conv.pk }}" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
+                    <div class="conv-avatar">
+                        {{ conv.contact.name|first|upper|default:"?" }}
+                    </div>
+                    <div class="conv-meta">
+                        <div class="conv-name">{{ conv.contact.name|default:"Unknown" }}</div>
+                        <div class="conv-preview">{{ conv.last_message|default:"No messages yet"|truncatechars:40 }}</div>
+                    </div>
+                    <div class="conv-time">{{ conv.updated_at|timesince|truncatewords:2 }}</div>
+                </a>
+                {% endfor %}
+            {% else %}
+                <div class="crm-empty-state">
+                    <div class="crm-empty-icon" style="width:64px;height:64px;font-size:1.4rem;">
+                        <i class="fas fa-comment-slash"></i>
+                    </div>
+                    <div class="crm-empty-title" style="font-size:0.9rem;">No conversations found</div>
+                    <div class="crm-empty-desc" style="font-size:0.78rem;">Your inbox looks empty. You will get notifications here when you have new messages.</div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Right Panel -->
+    {% if active_conv %}
+    <div class="conv-panel-right">
+        <div class="conv-chat-header">
+            <div class="d-flex align-items-center gap-2">
+                <div class="conv-avatar" style="width:32px;height:32px;font-size:0.75rem;">
+                    {{ active_conv.contact.name|first|upper|default:"?" }}
+                </div>
+                <div>
+                    <div style="font-weight:600;font-size:0.88rem;">{{ active_conv.contact.name|default:"Unknown" }}</div>
+                    <span class="status-badge {{ active_conv.status }}" style="font-size:0.65rem;">{{ active_conv.get_status_display }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="conv-messages" id="msgArea">
+            {% for msg in messages %}
+            <div style="display:flex;flex-direction:column;align-items:{% if msg.is_outbound %}flex-end{% else %}flex-start{% endif %};">
+                <div class="msg-bubble {% if msg.is_outbound %}msg-outbound{% else %}msg-inbound{% endif %}">
+                    {{ msg.body }}
+                </div>
+                <div class="msg-time" style="text-align:{% if msg.is_outbound %}right{% else %}left{% endif %};">
+                    {{ msg.created_at|date:"H:i" }} · {{ msg.sender }}
+                </div>
+            </div>
+            {% empty %}
+            <div class="text-center text-muted py-4" style="font-size:0.83rem;">No messages yet. Start the conversation!</div>
+            {% endfor %}
+        </div>
+
+        <form class="conv-input-bar" method="post" action="{% url 'trendycrm:send_message' active_conv.pk %}">
+            {% csrf_token %}
+            <textarea name="body" class="conv-input" placeholder="Type a message…" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.closest('form').submit();}"></textarea>
+            <button type="submit" class="btn-crm-primary" style="padding:0.5rem 0.85rem;">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </form>
+    </div>
+    {% else %}
+    <div class="empty-right">
+        <div style="text-align:center;">
+            <div class="crm-empty-icon" style="margin:0 auto 1.25rem;background:rgba(255,255,255,0.9);width:80px;height:80px;font-size:1.8rem;box-shadow:0 8px 24px rgba(124,58,237,0.15);">
+                <i class="fas fa-bolt" style="color:var(--crm-primary);"></i>
+            </div>
+            <h5 style="font-weight:700;color:var(--crm-text);margin-bottom:0.4rem;">Welcome back, {{ request.user.first_name|default:request.user.username }}</h5>
+            <p style="font-size:0.83rem;color:var(--crm-text-muted);max-width:300px;margin:0 auto 1.25rem;">Pick a conversation from your inbox to jump in — your messages, notes, and AI assists all live there.</p>
+            {% if conversations %}
+            <a href="?id={{ conversations.first.pk }}" class="btn-crm-outline">
+                <i class="fas fa-arrow-left"></i> Open the inbox on the left
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- New Conversation Modal -->
+<div class="modal fade" id="newConvModal" tabindex="-1" aria-labelledby="newConvModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius:12px;border:none;">
+            <div class="modal-header" style="border-bottom:1px solid var(--crm-border);">
+                <h5 class="modal-title" id="newConvModalLabel" style="font-weight:700;font-size:1.1rem;color:var(--crm-text);">New Conversation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'trendycrm:create_conversation' %}">
+                {% csrf_token %}
+                <div class="modal-body" style="padding:1.5rem;">
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">Contact</label>
+                        <select class="form-select" name="contact_id" style="border-radius:8px;font-size:0.9rem;" onchange="document.getElementById('newContactInput').style.display = this.value ? 'none' : 'block';">
+                            <option value="">-- Create New Contact --</option>
+                            {% for c in contacts %}
+                            <option value="{{ c.pk }}">{{ c.name }} {% if c.email %}({{ c.email }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3" id="newContactInput">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">New Contact Name</label>
+                        <input type="text" name="contact_name" class="form-control" style="border-radius:8px;font-size:0.9rem;" placeholder="e.g. John Doe">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">Channel</label>
+                        <select class="form-select" name="channel" style="border-radius:8px;font-size:0.9rem;" required>
+                            <option value="web">Web Chat</option>
+                            <option value="facebook">Facebook</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="email">Email</option>
+                            <option value="sms">SMS</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">First Message (optional)</label>
+                        <textarea name="first_message" class="form-control" rows="3" style="border-radius:8px;font-size:0.9rem;" placeholder="Type your initial message..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top:1px solid var(--crm-border);">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" style="border-radius:8px;font-weight:600;">Cancel</button>
+                    <button type="submit" class="btn-crm-primary">Start Conversation</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Scroll to bottom of messages
+const msgArea = document.getElementById('msgArea');
+if (msgArea) msgArea.scrollTop = msgArea.scrollHeight;
+</script>
+{% endblock %}

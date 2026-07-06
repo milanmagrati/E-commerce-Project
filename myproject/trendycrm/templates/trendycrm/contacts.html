@@ -1,0 +1,76 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Contacts — Trendy CRM{% endblock %}
+{% block topbar_title %}Contacts{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn-crm-primary" data-bs-toggle="modal" data-bs-target="#newContactModal">
+    <i class="fas fa-user-plus"></i> Add Contact
+</button>
+{% endblock %}
+
+{% block crm_content %}
+<div class="crm-card">
+    {% if contacts %}
+    <table style="width:100%;border-collapse:collapse;">
+        <thead>
+            <tr style="background:#f9f7ff;">
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Name</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Email</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Phone</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Company</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for contact in contacts %}
+            <tr style="border-bottom:1px solid rgba(124,58,237,0.04);transition:background 0.15s;" onmouseover="this.style.background='var(--crm-hover)'" onmouseout="this.style.background=''">
+                <td style="padding:0.85rem 1.2rem;font-size:0.83rem;">
+                    <div style="display:flex;align-items:center;gap:0.65rem;">
+                        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--crm-primary),var(--crm-accent));color:white;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;flex-shrink:0;">{{ contact.name|first|upper }}</div>
+                        <strong style="color:var(--crm-text);">{{ contact.name }}</strong>
+                    </div>
+                </td>
+                <td style="padding:0.85rem 1.2rem;font-size:0.83rem;color:var(--crm-text-muted);">{{ contact.email|default:"—" }}</td>
+                <td style="padding:0.85rem 1.2rem;font-size:0.83rem;color:var(--crm-text-muted);">{{ contact.phone|default:"—" }}</td>
+                <td style="padding:0.85rem 1.2rem;font-size:0.83rem;color:var(--crm-text-muted);">{{ contact.company|default:"—" }}</td>
+                <td style="padding:0.85rem 1.2rem;">
+                    <span class="status-badge {{ contact.status }}">{{ contact.get_status_display }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="crm-empty-state">
+        <div class="crm-empty-icon">
+            <i class="fas fa-address-book"></i>
+        </div>
+        <div class="crm-empty-title">No contacts yet</div>
+        <div class="crm-empty-desc mb-3">Add contacts to manage your leads and customers in one place.</div>
+        <button class="btn-crm-primary" data-bs-toggle="modal" data-bs-target="#newContactModal">
+            <i class="fas fa-user-plus"></i> Add your first contact
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- New Contact Modal -->
+<div class="modal fade" id="newContactModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:14px;border:none;box-shadow:0 20px 60px rgba(124,58,237,0.18);">
+            <div class="modal-header" style="border-bottom:1px solid var(--crm-border);padding:1rem 1.4rem;">
+                <h6 class="modal-title" style="font-weight:700;color:var(--crm-text);"><i class="fas fa-user-plus me-2" style="color:var(--crm-primary);"></i>New Contact</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="padding:1.4rem;">
+                <p style="font-size:0.83rem;color:var(--crm-text-muted);">Contact management coming soon. You'll be able to add, edit, and import contacts here.</p>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid var(--crm-border);">
+                <button type="button" class="btn-crm-outline" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

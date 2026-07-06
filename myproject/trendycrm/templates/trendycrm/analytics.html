@@ -1,0 +1,167 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Analytics — Trendy CRM{% endblock %}
+{% block topbar_title %}Analytics{% endblock %}
+
+{% block extra_style %}
+.analytics-stat-card {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid rgba(124,58,237,0.08);
+    box-shadow: var(--crm-card-shadow);
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.analytics-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(124,58,237,0.12);
+}
+.a-icon {
+    width: 50px; height: 50px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+.a-num { font-size: 1.6rem; font-weight: 800; color: var(--crm-text); }
+.a-label { font-size: 0.78rem; color: var(--crm-text-muted); font-weight: 500; }
+.chart-card {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid rgba(124,58,237,0.08);
+    box-shadow: var(--crm-card-shadow);
+    padding: 1.25rem;
+}
+.chart-card-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--crm-text);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.bar-chart { display: flex; align-items: flex-end; gap: 0.5rem; height: 120px; }
+.bar-item { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; flex: 1; }
+.bar { border-radius: 4px 4px 0 0; width: 100%; min-height: 4px; transition: opacity 0.2s; }
+.bar:hover { opacity: 0.8; }
+.bar-label { font-size: 0.65rem; color: var(--crm-text-muted); }
+{% endblock %}
+
+{% block crm_content %}
+<!-- Stats Row -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="analytics-stat-card">
+            <div class="a-icon" style="background:#ede9fe;"><i class="fas fa-users" style="color:#7c3aed;"></i></div>
+            <div>
+                <div class="a-num">{{ total_contacts }}</div>
+                <div class="a-label">Total Contacts</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="analytics-stat-card">
+            <div class="a-icon" style="background:#d1fae5;"><i class="fas fa-comment-dots" style="color:#059669;"></i></div>
+            <div>
+                <div class="a-num">{{ total_conversations }}</div>
+                <div class="a-label">Conversations</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="analytics-stat-card">
+            <div class="a-icon" style="background:#fee2e2;"><i class="fas fa-ticket-alt" style="color:#dc2626;"></i></div>
+            <div>
+                <div class="a-num">{{ open_tickets }}</div>
+                <div class="a-label">Open Tickets</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="analytics-stat-card">
+            <div class="a-icon" style="background:#d1fae5;"><i class="fas fa-check-double" style="color:#059669;"></i></div>
+            <div>
+                <div class="a-num">{{ resolved_tickets }}</div>
+                <div class="a-label">Resolved Tickets</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <!-- Conversations Chart -->
+    <div class="col-md-8">
+        <div class="chart-card">
+            <div class="chart-card-title">
+                <i class="fas fa-chart-bar" style="color:var(--crm-primary);"></i>
+                Conversation Volume (Last 7 Days)
+            </div>
+            <div class="bar-chart" id="convBarChart">
+                <div class="bar-item"><div class="bar" style="height:30%;background:linear-gradient(180deg,var(--crm-primary),var(--crm-accent));"></div></div>
+                <div class="bar-item"><div class="bar" style="height:60%;background:linear-gradient(180deg,var(--crm-primary),var(--crm-accent));"></div></div>
+                <div class="bar-item"><div class="bar" style="height:45%;background:linear-gradient(180deg,var(--crm-primary),var(--crm-accent));"></div></div>
+                <div class="bar-item"><div class="bar" style="height:80%;background:linear-gradient(180deg,var(--crm-primary),var(--crm-accent));"></div></div>
+                <div class="bar-item"><div class="bar" style="height:55%;background:linear-gradient(180deg,var(--crm-primary),var(--crm-accent));"></div></div>
+                <div class="bar-item"><div class="bar" style="height:70%;background:linear-gradient(180deg,var(--crm-primary),var(--crm-accent));"></div></div>
+                <div class="bar-item"><div class="bar" style="height:40%;background:linear-gradient(180deg,var(--crm-primary),var(--crm-accent));"></div></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:0.5rem;">
+                <div style="font-size:0.68rem;color:var(--crm-text-muted);flex:1;text-align:center;">Mon</div>
+                <div style="font-size:0.68rem;color:var(--crm-text-muted);flex:1;text-align:center;">Tue</div>
+                <div style="font-size:0.68rem;color:var(--crm-text-muted);flex:1;text-align:center;">Wed</div>
+                <div style="font-size:0.68rem;color:var(--crm-text-muted);flex:1;text-align:center;">Thu</div>
+                <div style="font-size:0.68rem;color:var(--crm-text-muted);flex:1;text-align:center;">Fri</div>
+                <div style="font-size:0.68rem;color:var(--crm-text-muted);flex:1;text-align:center;">Sat</div>
+                <div style="font-size:0.68rem;color:var(--crm-text-muted);flex:1;text-align:center;">Sun</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Reply Usage -->
+    <div class="col-md-4">
+        <div class="chart-card" style="height:100%;">
+            <div class="chart-card-title">
+                <i class="fas fa-bolt" style="color:var(--crm-primary);"></i>
+                Quick Replies
+            </div>
+            <div style="text-align:center;padding:1.5rem 0;">
+                <div style="font-size:2.5rem;font-weight:800;color:var(--crm-primary);">{{ quick_replies }}</div>
+                <div style="font-size:0.82rem;color:var(--crm-text-muted);">Saved templates</div>
+            </div>
+            <div style="text-align:center;">
+                <a href="{% url 'trendycrm:quick_replies' %}" class="btn-crm-outline" style="font-size:0.78rem;">
+                    Manage <i class="fas fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="chart-card">
+    <div class="chart-card-title">
+        <i class="fas fa-info-circle" style="color:var(--crm-primary);"></i>
+        Advanced Analytics Coming Soon
+    </div>
+    <div style="text-align:center;padding:3rem 2rem;background:radial-gradient(ellipse at center,#f3e8ff 0%,#ede9fe 60%,#e0e7ff 100%);border-radius:10px;">
+        <div style="width:60px;height:60px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.5rem;color:var(--crm-primary);box-shadow:0 4px 16px rgba(124,58,237,0.15);">
+            <i class="fas fa-chart-line"></i>
+        </div>
+        <div style="font-weight:700;font-size:0.95rem;color:var(--crm-text);margin-bottom:0.4rem;">Detailed Analytics Dashboard</div>
+        <div style="font-size:0.82rem;color:var(--crm-text-muted);">Track response times, resolution rates, agent performance and customer satisfaction metrics. Coming in the next release.</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+// Simple bar chart using inline heights
+const bars = document.querySelectorAll('.bar');
+const heights = [30, 60, 45, 80, 55, 70, 40];
+bars.forEach((bar, i) => {
+    bar.style.height = (heights[i] || 20) + '%';
+});
+{% endblock %}
