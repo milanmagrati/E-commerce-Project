@@ -5,6 +5,11 @@
 
 {% block content %}
 <style>
+    /* ========== OVERRIDE BASE LAYOUT ========== */
+    /* Hide the main dashboard sidebar to give CRM full width */
+    .sidebar { display: none !important; }
+    #content { margin-left: 0 !important; width: 100% !important; }
+    
     /* ========== CRM CSS VARIABLES ========== */
     :root {
         --crm-primary: #7c3aed;
@@ -26,12 +31,18 @@
     /* ========== CRM OUTER SHELL ========== */
     .crm-shell {
         display: flex;
-        /* Subtract the approximate height of the main top navbar (approx 65px) */
-        height: calc(100vh - 65px); 
+        /* Calculate height to fit between main navbar and footer, with some padding */
+        height: calc(100vh - 120px); 
+        min-height: 500px;
+        max-width: 1400px;
+        margin: 0 auto;
         overflow: hidden;
         background: var(--crm-bg);
         color: var(--crm-text);
         font-family: 'Inter', sans-serif;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        border: 1px solid var(--crm-border);
     }
 
     /* ========== CRM LEFT SIDEBAR ========== */
@@ -159,8 +170,7 @@
     /* ========== CRM MAIN CONTENT ========== */
     .crm-main {
         flex: 1;
-        overflow-y: auto;
-        overflow-x: hidden;
+        overflow: hidden; /* Let child views handle scrolling */
         display: flex;
         flex-direction: column;
         min-width: 0;
@@ -178,6 +188,99 @@
         top: 0;
         z-index: 100;
     }
+
+    /* ========== PREMIUM TOAST NOTIFICATIONS ========== */
+    .trendy-toast-container {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        pointer-events: none;
+    }
+    
+    .trendy-toast {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        padding: 1rem 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        min-width: 280px;
+        max-width: 380px;
+        transform: translateX(120%);
+        opacity: 0;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        pointer-events: auto;
+    }
+    
+    .trendy-toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    .trendy-toast-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+    
+    .trendy-toast-success .trendy-toast-icon { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+    .trendy-toast-error .trendy-toast-icon { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .trendy-toast-info .trendy-toast-icon { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+    
+    .trendy-toast-content {
+        flex: 1;
+    }
+    
+    .trendy-toast-title {
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: var(--crm-text);
+        margin-bottom: 0.15rem;
+    }
+    
+    .trendy-toast-message {
+        font-size: 0.78rem;
+        color: var(--crm-text-muted);
+        line-height: 1.3;
+    }
+
+    .trendy-toast-close {
+        background: none;
+        border: none;
+        color: var(--crm-text-muted);
+        cursor: pointer;
+        padding: 0.25rem;
+        font-size: 0.85rem;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+    }
+    .trendy-toast-close:hover { opacity: 1; }
+
+    @media (max-width: 768px) {
+        .trendy-toast-container {
+            bottom: 1rem;
+            right: 1rem;
+            left: 1rem;
+        }
+        .trendy-toast {
+            min-width: 0;
+            width: 100%;
+        }
+    }
+
 
     .crm-topbar-title {
         font-size: 1rem;
@@ -318,7 +421,19 @@
         line-height: 1.5;
     }
 
-    /* ========== RESPONSIVE ========== */
+    .crm-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+    
+    /* Prevent children from squishing when container is smaller than content */
+    .crm-content > * {
+        flex-shrink: 0;
+    }
+
     @media (max-width: 768px) {
         .crm-sidebar {
             position: fixed;
@@ -329,13 +444,13 @@
             transition: left 0.3s;
         }
         .crm-sidebar.open { left: 0; }
-        .crm-shell { flex-direction: column; }
+        /* Keep flex direction row on mobile so sidebar is absolute, main is full */
     }
     
     {% block extra_style %}{% endblock %}
 </style>
 
-<div class="crm-shell">
+<div class="crm-shell mt-2 mb-2">
     <!-- ===== CRM Sidebar ===== -->
     <nav class="crm-sidebar" id="crmSidebar">
         <div class="crm-brand">
@@ -407,7 +522,11 @@
             </li>
         </ul>
         
-        <!-- We can remove the 'Back to Main Dashboard' button now since the main sidebar is visible -->
+        <div style="padding: 1rem; border-top: 1px solid var(--crm-border); margin-top: auto;">
+            <a href="{% url 'dashboard' %}" class="btn w-100" style="background: rgba(255,255,255,0.05); color: var(--crm-text-muted); border: 1px solid var(--crm-border); font-size: 0.8rem; font-weight: 600; text-align: left; display: flex; align-items: center; justify-content: space-between; border-radius: 8px; transition: all 0.2s;">
+                <span><i class="fas fa-arrow-left me-2"></i> Exit CRM</span>
+            </a>
+        </div>
     </nav>
 
     <!-- ===== CRM Main Content ===== -->
@@ -428,7 +547,60 @@
             {% block crm_content %}{% endblock %}
         </div>
     </div>
-</div>
 
-{% block extra_js %}{% endblock %}
+    <!-- Premium Toast Container -->
+    <div class="trendy-toast-container" id="trendyToastContainer"></div>
+
+    <!-- Scripts -->
+    <script>
+        function showTrendyToast(message, type = 'info', title = null) {
+            const container = document.getElementById('trendyToastContainer');
+            const toast = document.createElement('div');
+            toast.className = `trendy-toast trendy-toast-${type}`;
+            
+            let iconClass = 'fas fa-info';
+            let defaultTitle = 'Notification';
+            
+            if (type === 'success') { iconClass = 'fas fa-check'; defaultTitle = 'Success'; }
+            if (type === 'error') { iconClass = 'fas fa-exclamation'; defaultTitle = 'Error'; }
+            
+            toast.innerHTML = `
+                <div class="trendy-toast-icon">
+                    <i class="${iconClass}"></i>
+                </div>
+                <div class="trendy-toast-content">
+                    <div class="trendy-toast-title">${title || defaultTitle}</div>
+                    <div class="trendy-toast-message">${message}</div>
+                </div>
+                <button class="trendy-toast-close" onclick="this.parentElement.remove()">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => { toast.classList.add('show'); }, 10);
+            
+            // Auto remove after 4 seconds
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => { toast.remove(); }, 400); // Wait for transition
+            }, 4000);
+        }
+
+        // Override Alertify for Django messages if any exist
+        document.addEventListener('DOMContentLoaded', function() {
+            {% for message in messages %}
+                {% if message.tags == 'error' %}
+                    showTrendyToast("{{ message|escapejs }}", "error", "Error");
+                {% elif message.tags == 'success' %}
+                    showTrendyToast("{{ message|escapejs }}", "success", "Success");
+                {% else %}
+                    showTrendyToast("{{ message|escapejs }}", "info", "Notice");
+                {% endif %}
+            {% endfor %}
+        });
+    </script>
+    {% block extra_script %}{% endblock %}
 {% endblock %}

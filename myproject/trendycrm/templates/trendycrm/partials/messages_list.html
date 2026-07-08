@@ -1,0 +1,12 @@
+{% for msg in chat_messages %}
+<div style="display:flex;flex-direction:column;align-items:{% if msg.is_outbound %}flex-end{% else %}flex-start{% endif %};">
+    <div class="msg-bubble {% if msg.is_outbound %}msg-outbound{% else %}msg-inbound{% endif %}">
+        {{ msg.body }}
+    </div>
+    <div class="msg-time" style="text-align:{% if msg.is_outbound %}right{% else %}left{% endif %};">
+        {{ msg.created_at|date:"h:i A" }}
+    </div>
+</div>
+{% empty %}
+<div class="text-center text-muted py-4" style="font-size:0.83rem;">No messages yet. Start the conversation!</div>
+{% endfor %}

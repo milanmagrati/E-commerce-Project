@@ -12,6 +12,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def build_absolute_callback(path_name):
+    return f"{settings.SITE_URL}{reverse(path_name)}"
+from django.utils.timezone import now
+import json
+import requests
+from django.views.decorators.csrf import csrf_exempt
+from urllib.parse import urlencode
+
+from .meta_sync import sync_meta_conversations, _process_meta_conversation
 from .models import (
     CRMContact, CRMConversation, CRMMessage,
     CRMQuickReply, CRMChatbotConfig, CRMIntegration, CRMTicket
@@ -89,7 +98,22 @@ def crm_home(request):
 # ─── Conversations ────────────────────────────────────────────────────────────
 @login_required
 def crm_conversations(request):
-    conversations = CRMConversation.objects.select_related('contact', 'assigned_to').all()
+    # Try to auto-sync connected meta channels when opening the inbox
+    try:
+        active_integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
+        for integ in active_integrations:
+            sync_meta_conversations(integ)
+    except Exception as e:
+        logger.exception("Failed auto-sync on inbox load")
+
+    conversations = CRMConversation.objects.select_related('contact', 'assigned_to', 'integration').all().order_by('-updated_at')
+    
+    page_filter = request.GET.get('page_filter')
+    if page_filter:
+        conversations = conversations.filter(integration_id=page_filter)
+        
+    connected_integrations = CRMIntegration.objects.filter(status='connected')
+
     active_conv = None
     conv_id = request.GET.get('id')
     messages = []
@@ -102,11 +126,31 @@ def crm_conversations(request):
     context = {
         'conversations': conversations,
         'active_conv': active_conv,
-        'messages': messages,
+        'chat_messages': messages,
         'contacts': contacts,
+        'connected_integrations': connected_integrations,
+        'page_filter': int(page_filter) if page_filter and page_filter.isdigit() else None,
         'crm_section': 'conversations',
     }
     return render(request, 'trendycrm/conversations.html', context)
+
+@login_required
+def crm_conversations_ajax(request):
+    """
+    Returns only the HTML fragment for the active conversation's messages,
+    used for the real-time auto-fetch polling.
+    """
+    conv_id = request.GET.get('id')
+    if not conv_id:
+        return HttpResponse("")
+        
+    active_conv = get_object_or_404(CRMConversation, pk=conv_id)
+    messages = active_conv.messages.all()
+    
+    context = {
+        'chat_messages': messages,
+    }
+    return render(request, 'trendycrm/partials/messages_list.html', context)
 
 
 @login_required
@@ -123,7 +167,21 @@ def crm_send_message(request, conv_id):
         )
         conv.last_message = body
         conv.save(update_fields=['last_message', 'updated_at'])
-    return redirect(f"{request.path}?id={conv_id}")
+        
+        # Send to Meta if applicable
+        if conv.channel in ['facebook', 'instagram'] and conv.contact and conv.contact.meta_id:
+            from .models import CRMIntegration
+            from .meta_sync import send_meta_message
+            if conv.integration:
+                send_meta_message(conv.integration, conv.contact.meta_id, body)
+            else:
+                integrations = CRMIntegration.objects.filter(channel_type=conv.channel, status='connected')
+                for integration in integrations:
+                    if send_meta_message(integration, conv.contact.meta_id, body):
+                        break
+                
+    from django.urls import reverse
+    return redirect(f"{reverse('trendycrm:conversations')}?id={conv_id}")
 
 
 @login_required
@@ -133,6 +191,7 @@ def crm_create_conversation(request):
     contact_id = request.POST.get('contact_id')
     contact_name = request.POST.get('contact_name', '').strip()
     channel = request.POST.get('channel', 'web')
+    integration_id = request.POST.get('integration_id')
     first_message = request.POST.get('first_message', '').strip()
     
     contact = None
@@ -144,10 +203,15 @@ def crm_create_conversation(request):
             defaults={'created_by': request.user}
         )
         
+    integration = None
+    if integration_id:
+        integration = CRMIntegration.objects.filter(pk=integration_id).first()
+        
     if contact:
         conv = CRMConversation.objects.create(
             contact=contact,
             channel=channel,
+            integration=integration,
             assigned_to=request.user,
             last_message=first_message
         )
@@ -248,22 +312,28 @@ INTEGRATION_META = {
 
 @login_required
 def crm_integrations(request):
-    # Ensure all integration records exist
+    # Ensure at least one integration record exists per channel for UI
     for key in INTEGRATION_META:
-        CRMIntegration.objects.get_or_create(channel_type=key)
+        if not CRMIntegration.objects.filter(channel_type=key).exists():
+            CRMIntegration.objects.create(channel_type=key)
 
     integrations = CRMIntegration.objects.all()
     active_key = request.GET.get('channel', 'instagram')
-    active_integration = integrations.filter(channel_type=active_key).first()
+    active_integrations = integrations.filter(channel_type=active_key)
+    connected_integrations = active_integrations.filter(status='connected')
     active_meta = INTEGRATION_META.get(active_key, {})
 
     channels_with_meta = []
-    for integ in integrations:
-        meta = INTEGRATION_META.get(integ.channel_type, {})
+    
+    # We want one sidebar item per channel type
+    for key, meta in INTEGRATION_META.items():
+        # check if this channel has any connected integrations
+        is_connected = integrations.filter(channel_type=key, status='connected').exists()
         channels_with_meta.append({
-            'obj': integ,
+            'channel_type': key,
             'meta': meta,
-            'is_active': integ.channel_type == active_key,
+            'is_active': key == active_key,
+            'is_connected': is_connected,
         })
 
     # Get permissions for active channel
@@ -288,14 +358,19 @@ def crm_integrations(request):
             ('Manage page posts', 'Moderate comments on page posts.'),
         ]
 
-    fb_redirect_uri = request.build_absolute_uri(reverse('trendycrm:integration_oauth_callback', args=['facebook']))
-    
-    fb_client_id = getattr(settings, 'FACEBOOK_CLIENT_ID', '3765824723663820')
-    fb_oauth_url = f"https://www.facebook.com/v24.0/dialog/oauth?client_id={fb_client_id}&redirect_uri={fb_redirect_uri}&scope=pages_manage_metadata,pages_read_engagement,pages_messaging,instagram_basic,instagram_manage_messages"
+    if active_key == 'facebook':
+        fb_oauth_url = reverse('trendycrm:facebook_connect')
+    elif active_key == 'instagram':
+        fb_oauth_url = reverse('trendycrm:instagram_connect')
+    elif active_key == 'tiktok':
+        fb_oauth_url = reverse('trendycrm:tiktok_connect')
+    else:
+        fb_oauth_url = ''
 
     context = {
         'channels_with_meta': channels_with_meta,
-        'active_integration': active_integration,
+        'active_integrations': active_integrations,
+        'connected_integrations': connected_integrations,
         'active_meta': active_meta,
         'active_key': active_key,
         'active_perms': active_perms,
@@ -308,55 +383,146 @@ def crm_integrations(request):
 @login_required
 @require_POST
 def crm_integration_connect(request, channel_key):
-    integ = get_object_or_404(CRMIntegration, channel_type=channel_key)
-    if 'disconnect' in request.POST:
+    # This handles the manual connect form submission
+    account_name = request.POST.get('account_name', '').strip()
+    access_token = request.POST.get('access_token', '').strip()
+    verify_token = request.POST.get('verify_token', '').strip()
+
+    if account_name and access_token:
+        # Create a new integration or use an empty one
+        integ = CRMIntegration.objects.filter(channel_type=channel_key, status='not_connected').first()
+        if not integ:
+            integ = CRMIntegration(channel_type=channel_key)
+            
+        integ.status = 'connected'
+        integ.account_name = account_name
+        integ.access_token = access_token
+        if verify_token:
+            integ.meta['verify_token'] = verify_token
+        integ.connected_at = timezone.now()
+        integ.save()
+
+    return redirect(reverse('trendycrm:integrations') + f"?channel={channel_key}")
+
+@login_required
+@require_POST
+def crm_integration_disconnect(request, pk):
+    integ = get_object_or_404(CRMIntegration, pk=pk)
+    channel_key = integ.channel_type
+    
+    # Check if there are other integrations for this channel
+    other_exists = CRMIntegration.objects.filter(channel_type=channel_key).exclude(pk=pk).exists()
+    
+    if other_exists:
+        integ.delete()
+    else:
+        # Keep at least one empty record for the UI
         integ.status = 'not_connected'
         integ.account_name = None
         integ.access_token = None
         integ.meta = {}
         integ.connected_at = None
-    else:
-        account_name = request.POST.get('account_name', '').strip()
-        access_token = request.POST.get('access_token', '').strip()
-        verify_token = request.POST.get('verify_token', '').strip()
-
-        if account_name and access_token:
-            integ.status = 'connected'
-            integ.account_name = account_name
-            integ.access_token = access_token
-            if verify_token:
-                integ.meta['verify_token'] = verify_token
-            integ.connected_at = timezone.now()
-            
-    integ.save()
+        integ.save()
+        
     return redirect(reverse('trendycrm:integrations') + f"?channel={channel_key}")
 
 
-@login_required
-def crm_integration_oauth_callback(request, channel_key):
-    if channel_key in ['facebook', 'instagram']:
-        # If user denied access, Facebook redirects with error=access_denied
-        if 'error' in request.GET:
-            logger.warning(f"OAuth error for {channel_key}: {request.GET.get('error_description', request.GET.get('error'))}")
-        elif 'code' in request.GET:
-            # We have an authorization code. For a real app, exchange this code for an access token.
-            # Here we use the environment token as a fallback/mock for the demo.
-            env_token = getattr(settings, 'META_PAGE_ACCESS_TOKEN', '')
-            if env_token:
-                integ = get_object_or_404(CRMIntegration, channel_type=channel_key)
-                resp = requests.get(f"https://graph.facebook.com/v20.0/me?access_token={env_token}")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    integ.status = 'connected'
-                    page_name = data.get('name', 'Meta Page')
-                    page_id = data.get('id', '')
-                    integ.account_name = f"{page_name} ({page_id})" if page_id else page_name
-                    integ.access_token = env_token
-                    integ.connected_at = timezone.now()
-                    integ.save()
-                else:
-                    logger.error("Failed to fetch Facebook page in oauth callback: %s", resp.text)
+def connect_facebook(request):
+    redirect_uri = build_absolute_callback('trendycrm:facebook_callback')
+    params = {
+        "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
+        "redirect_uri": redirect_uri,
+        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,instagram_basic,instagram_manage_messages",
+        "response_type": "code",
+    }
+    from urllib.parse import urlencode
+    auth_url = "https://www.facebook.com/v25.0/dialog/oauth?" + urlencode(params)
+    return redirect(auth_url)
+
+def connect_instagram(request):
+    redirect_uri = build_absolute_callback('trendycrm:instagram_callback')
+    params = {
+        "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
+        "redirect_uri": redirect_uri,
+        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,instagram_basic,instagram_manage_messages",
+        "response_type": "code",
+    }
+    from urllib.parse import urlencode
+    auth_url = "https://www.facebook.com/v25.0/dialog/oauth?" + urlencode(params)
+    return redirect(auth_url)
+
+def connect_tiktok(request):
+    # Dummy TikTok connect logic to bypass query string issue
+    redirect_uri = build_absolute_callback('trendycrm:tiktok_callback')
+    # If there was a real TikTok APP ID:
+    # client_key = getattr(settings, 'TIKTOK_APP_ID', 'YOUR_TIKTOK_KEY')
+    # auth_url = f"https://www.tiktok.com/v2/auth/authorize/?client_key={client_key}&response_type=code&scope=user.info.basic&redirect_uri={redirect_uri}"
+    # But for now we just redirect immediately to callback for testing the flow
+    return redirect(f"{redirect_uri}?code=dummy_tiktok_code")
+
+def _handle_oauth_callback(request, channel_key):
+    # If user denied access, Facebook redirects with error=access_denied
+    if 'error' in request.GET:
+        logger.warning(f"OAuth error for {channel_key}: {request.GET.get('error_description', request.GET.get('error'))}")
+    elif 'code' in request.GET:
+        code = request.GET['code']
+        fb_client_id = getattr(settings, 'FACEBOOK_APP_ID', getattr(settings, 'FACEBOOK_CLIENT_ID', '873948152450056'))
+        fb_app_secret = getattr(settings, 'FACEBOOK_APP_SECRET', '')
+        route_name = f'trendycrm:{channel_key}_callback'
+        fb_redirect_uri = build_absolute_callback(route_name)
+        
+        graph_api_version = 'v25.0'
+        token_exchange_url = f"https://graph.facebook.com/{graph_api_version}/oauth/access_token?client_id={fb_client_id}&redirect_uri={fb_redirect_uri}&client_secret={fb_app_secret}&code={code}"
+        
+        try:
+            # 1. Exchange code for user access token
+            token_resp = requests.get(token_exchange_url)
+            if token_resp.status_code == 200:
+                token_data = token_resp.json()
+                user_access_token = token_data.get('access_token')
                 
+                if user_access_token:
+                    # 2. Fetch pages the user has access to
+                    accounts_url = f"https://graph.facebook.com/{graph_api_version}/me/accounts?access_token={user_access_token}"
+                    accounts_resp = requests.get(accounts_url)
+                    
+                    if accounts_resp.status_code == 200:
+                        pages = accounts_resp.json().get('data', [])
+                        
+                        if pages:
+                            primary_page = pages[0]
+                            integ = CRMIntegration.objects.filter(channel_type=channel_key, status='not_connected').first()
+                            if not integ:
+                                integ = CRMIntegration(channel_type=channel_key)
+                            integ.status = 'connected'
+                            page_name = primary_page.get('name', 'Meta Page')
+                            page_id = primary_page.get('id', '')
+                            integ.account_name = f"{page_name} ({page_id})" if page_id else page_name
+                            integ.access_token = primary_page.get('access_token', user_access_token)
+                            integ.connected_at = timezone.now()
+                            integ.save()
+                            logger.info(f"Successfully connected {channel_key} page: {page_name}")
+                            
+                            # Trigger initial sync of conversations
+                            try:
+                                sync_meta_conversations(integ)
+                            except Exception as e:
+                                logger.exception("Failed to run initial sync for meta messages.")
+                                
+                            messages.success(request, f"{channel_key.title()} connected successfully")
+                        else:
+                            logger.warning("No professional pages found during Facebook OAuth.")
+                            messages.error(request, "No professional pages found.")
+                    else:
+                        logger.error(f"Failed to fetch accounts: {accounts_resp.text}")
+                        messages.error(request, "Failed to fetch accounts from Meta.")
+            else:
+                logger.error(f"Failed to exchange token: {token_resp.text}")
+                messages.error(request, "Failed to exchange token with Meta.")
+        except Exception as e:
+            logger.exception("Error during Facebook OAuth token exchange")
+            messages.error(request, "An unexpected error occurred during connection.")
+            
     redirect_url = reverse('trendycrm:integrations') + f"?channel={channel_key}"
     return HttpResponse(f"""
     <html><body>
@@ -371,6 +537,71 @@ def crm_integration_oauth_callback(request, channel_key):
     <p>Authentication complete. You can close this window.</p>
     </body></html>
     """)
+
+def facebook_callback(request):
+    return _handle_oauth_callback(request, 'facebook')
+
+def instagram_callback(request):
+    return _handle_oauth_callback(request, 'instagram')
+
+def tiktok_callback(request):
+    # Temporary mock connection for TikTok since we just need the explicit route to work
+    integ = CRMIntegration.objects.filter(channel_type='tiktok', status='not_connected').first()
+    if not integ:
+        integ = CRMIntegration(channel_type='tiktok')
+    
+    if integ:
+        integ.status = 'connected'
+        integ.account_name = 'TikTok Page'
+        integ.connected_at = timezone.now()
+        integ.save()
+    
+    redirect_url = reverse('trendycrm:integrations') + "?channel=tiktok"
+    return HttpResponse(f"""
+    <html><body>
+    <script>
+        if (window.opener && !window.opener.closed) {{
+            window.opener.location.href = "{redirect_url}";
+            window.close();
+        }} else {{
+            window.location.href = "{redirect_url}";
+        }}
+    </script>
+    <p>Authentication complete. You can close this window.</p>
+    </body></html>
+    """)
+
+
+# ─── Webhooks ─────────────────────────────────────────────────────────────────
+@csrf_exempt
+def meta_webhook(request):
+    """
+    Webhook endpoint to receive real-time messages from Meta (Facebook/Instagram).
+    """
+    if request.method == 'GET':
+        # Verification request from Meta
+        mode = request.GET.get('hub.mode')
+        token = request.GET.get('hub.verify_token')
+        challenge = request.GET.get('hub.challenge')
+        
+        # In a real app, verify_token should match a secret in settings
+        if mode == 'subscribe' and token:
+            return HttpResponse(challenge, status=200)
+        return HttpResponse('Verification failed', status=403)
+        
+    elif request.method == 'POST':
+        try:
+            payload = json.loads(request.body)
+            # Trigger a sync for all connected facebook/instagram integrations
+            integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
+            for integ in integrations:
+                sync_meta_conversations(integ)
+            return HttpResponse('EVENT_RECEIVED', status=200)
+        except Exception as e:
+            logger.exception("Error processing Meta webhook")
+            return HttpResponse('ERROR', status=500)
+    
+    return HttpResponse('Method Not Allowed', status=405)
 
 
 # ─── Contacts ─────────────────────────────────────────────────────────────────

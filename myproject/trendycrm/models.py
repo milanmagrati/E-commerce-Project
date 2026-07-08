@@ -14,6 +14,7 @@ class CRMContact(models.Model):
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=30, blank=True, null=True)
     company = models.CharField(max_length=200, blank=True, null=True)
+    meta_id = models.CharField(max_length=255, blank=True, null=True)
     status = models.CharField(max_length=20, choices=LEAD_STATUS_CHOICES, default='new')
     notes = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
@@ -42,6 +43,7 @@ class CRMConversation(models.Model):
         ('pending', 'Pending'),
     ]
     contact = models.ForeignKey(CRMContact, on_delete=models.SET_NULL, null=True, blank=True, related_name='conversations')
+    integration = models.ForeignKey('CRMIntegration', on_delete=models.SET_NULL, null=True, blank=True, related_name='conversations')
     channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default='web')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
     subject = models.CharField(max_length=300, blank=True, null=True)
@@ -117,7 +119,7 @@ class CRMIntegration(models.Model):
         ('not_connected', 'Not Connected'),
         ('error', 'Error'),
     ]
-    channel_type = models.CharField(max_length=30, choices=CHANNEL_TYPE_CHOICES, unique=True)
+    channel_type = models.CharField(max_length=30, choices=CHANNEL_TYPE_CHOICES)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_connected')
     account_name = models.CharField(max_length=200, blank=True, null=True)
     access_token = models.TextField(blank=True, null=True)

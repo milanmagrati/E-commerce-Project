@@ -158,10 +158,12 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
 // Simple bar chart using inline heights
 const bars = document.querySelectorAll('.bar');
 const heights = [30, 60, 45, 80, 55, 70, 40];
 bars.forEach((bar, i) => {
     bar.style.height = (heights[i] || 20) + '%';
 });
+</script>
 {% endblock %}

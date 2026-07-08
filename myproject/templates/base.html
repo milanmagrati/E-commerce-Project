@@ -2467,9 +2467,25 @@
     <script src="https://cdn.jsdelivr.net/npm/alertifyjs@1.13.1/build/alertify.min.js"></script>
     <script>
         // Configure alertify notifications
-        alertify.set('notifier', 'position', 'top-right');
+        alertify.set('notifier', 'position', 'bottom-right');
         alertify.set('notifier', 'closeButton', true);
     </script>
+    
+    {% if messages %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            {% for message in messages %}
+                {% if message.tags == 'error' %}
+                    alertify.error("{{ message|escapejs }}");
+                {% elif message.tags == 'success' %}
+                    alertify.success("{{ message|escapejs }}");
+                {% else %}
+                    alertify.message("{{ message|escapejs }}");
+                {% endif %}
+            {% endfor %}
+        });
+    </script>
+    {% endif %}
 
     {% block extra_js %}{% endblock %}
 

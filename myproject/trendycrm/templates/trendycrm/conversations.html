@@ -11,15 +11,20 @@
 {% endblock %}
 
 {% block extra_style %}
+/* ========== CRM CONTENT OVERRIDES FOR APP LAYOUT ========== */
+.crm-content {
+    overflow: hidden !important; /* Disable outer scrollbar for this specific page */
+}
+.crm-content > * {
+    flex-shrink: 1 !important; /* Allow the layout to shrink back to container size so inner scrollbars work */
+}
+
 .conv-layout {
     display: grid;
-    grid-template-columns: 280px 1fr;
-    height: calc(100vh - 60px - 3rem);
+    grid-template-columns: 280px 1fr 280px;
+    height: 100%;
     background: white;
-    border-radius: 12px;
-    border: 1px solid rgba(124,58,237,0.08);
     overflow: hidden;
-    box-shadow: var(--crm-card-shadow);
 }
 
 .conv-panel-left {
@@ -27,6 +32,14 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+.conv-panel-info {
+    border-left: 1px solid var(--crm-border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    background: #fff;
 }
 
 .conv-panel-header {
@@ -104,6 +117,19 @@
     font-size: 0.85rem;
     font-weight: 700;
     flex-shrink: 0;
+    position: relative;
+}
+
+.channel-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background-size: cover;
+    background-position: center;
 }
 
 .conv-meta { flex: 1; min-width: 0; }
@@ -111,11 +137,18 @@
 .conv-preview { font-size: 0.75rem; color: var(--crm-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 .conv-time { font-size: 0.68rem; color: var(--crm-text-muted); flex-shrink: 0; }
 
+/* Hide caret on custom dropdowns */
+.no-caret::after {
+    display: none !important;
+}
+
 /* Right chat panel */
 .conv-panel-right {
     display: flex;
     flex-direction: column;
     background: #fafafa;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .conv-chat-header {
@@ -200,6 +233,44 @@
     justify-content: center;
     background: radial-gradient(ellipse at center, #f3e8ff 0%, #ede9fe 50%, #e0e7ff 100%);
 }
+
+/* ========== MOBILE RESPONSIVENESS ========== */
+@media (max-width: 991px) {
+    .conv-layout {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .conv-panel-left {
+        display: {% if active_conv %}none{% else %}flex{% endif %};
+        flex: 1;
+        border-right: none;
+    }
+    
+    .conv-panel-right {
+        display: {% if active_conv %}flex{% else %}none{% endif %};
+        flex: 1;
+    }
+    
+    .conv-panel-info {
+        display: none; /* Hide info panel on mobile to save space */
+    }
+    
+    .mobile-back-btn {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #f1f5f9;
+        color: #475569;
+        text-decoration: none;
+        transition: background 0.2s;
+    }
+    .mobile-back-btn:hover { background: #e2e8f0; color: var(--crm-primary); }
+}
+.mobile-back-btn { display: none; } /* Hidden on desktop */
 {% endblock %}
 
 {% block crm_content %}
@@ -211,19 +282,56 @@
                 <div class="conv-panel-header-title">Inbox</div>
                 <div style="font-size:0.73rem;color:var(--crm-text-muted);">{{ request.user.get_full_name|default:request.user.username }}</div>
             </div>
-            <button style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;font-size:0.85rem;">
-                <i class="fas fa-search"></i>
-            </button>
+            <div style="display:flex; gap: 0.75rem; align-items:center;">
+                <button style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;font-size:0.85rem;" title="Search Conversations">
+                    <i class="fas fa-search"></i>
+                </button>
+                <div class="dropdown">
+                    <button type="button" class="dropdown-toggle no-caret" data-bs-toggle="dropdown" aria-expanded="false" style="background:{% if page_filter %}rgba(37,99,235,0.1){% else %}rgba(124,58,237,0.1){% endif %};border:none;color:var(--crm-primary);cursor:pointer;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;transition:all 0.2s;" title="Filter Inbox">
+                        {% if not page_filter %}
+                            <i class="fas fa-filter" style="font-size:0.75rem;"></i>
+                        {% else %}
+                            {% for integ in connected_integrations %}
+                                {% if page_filter == integ.pk %}
+                                    {% if integ.channel_type == 'facebook' %}
+                                        <i class="fab fa-facebook-messenger" style="color:#2563eb;font-size:1.05rem;"></i>
+                                    {% elif integ.channel_type == 'instagram' %}
+                                        <i class="fab fa-instagram" style="color:#db2777;font-size:1.05rem;"></i>
+                                    {% else %}
+                                        <i class="fas fa-filter" style="font-size:0.75rem;"></i>
+                                    {% endif %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" style="border:none;border-radius:12px;padding:0.5rem;min-width:240px;font-size:0.85rem;margin-top:0.5rem;">
+                        <li><h6 class="dropdown-header" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--crm-text-muted);margin-bottom:0.25rem;">Filter by account</h6></li>
+                        <li>
+                            <a class="dropdown-item d-flex align-items-center gap-2 {% if not page_filter %}active{% endif %}" href="?{% if active_conv %}id={{ active_conv.pk }}{% endif %}" style="border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.2rem;">
+                                <div style="width:20px;display:flex;justify-content:center;"><img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;filter:grayscale(100%);opacity:0.6;"></div>
+                                <span style="font-weight:600;font-size:0.85rem;">All Accounts</span>
+                            </a>
+                        </li>
+                        {% for integ in connected_integrations %}
+                        <li>
+                            <a class="dropdown-item d-flex align-items-center gap-2 {% if page_filter == integ.pk %}active{% endif %}" href="?page_filter={{ integ.pk }}{% if active_conv %}&id={{ active_conv.pk }}{% endif %}" style="border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.2rem;">
+                                <div style="width:20px;display:flex;justify-content:center;">
+                                    {% if integ.channel_type == 'facebook' %}
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;">
+                                    {% elif integ.channel_type == 'instagram' %}
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:16px;height:16px;">
+                                    {% endif %}
+                                </div>
+                                <span style="font-weight:500;white-space:normal;line-height:1.2;font-size:0.85rem;">{{ integ.account_name }}</span>
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
         </div>
 
-        <div class="conv-filter-tabs">
-            <button class="conv-filter-tab active">A</button>
-            <button class="conv-filter-tab">L</button>
-            <button class="conv-filter-tab">H</button>
-            <button class="conv-filter-tab ms-auto" style="color:var(--crm-primary);">
-                <i class="fas fa-tag"></i>
-            </button>
-        </div>
+        <!-- Removed old filter bar -->
 
         <div style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--crm-border);">
             <span style="font-size:0.72rem;font-weight:700;color:var(--crm-primary);text-transform:uppercase;letter-spacing:0.06em;">Conversations</span>
@@ -232,15 +340,29 @@
         <div class="conv-list">
             {% if conversations %}
                 {% for conv in conversations %}
-                <a href="?id={{ conv.pk }}" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
+                <a href="?id={{ conv.pk }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
                     <div class="conv-avatar">
                         {{ conv.contact.name|first|upper|default:"?" }}
                     </div>
-                    <div class="conv-meta">
-                        <div class="conv-name">{{ conv.contact.name|default:"Unknown" }}</div>
-                        <div class="conv-preview">{{ conv.last_message|default:"No messages yet"|truncatechars:40 }}</div>
+                    <div class="conv-meta" style="display:flex; flex-direction:column; justify-content:space-between; flex: 1;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div class="conv-name" style="font-size:0.85rem;">{{ conv.contact.name|default:"Unknown" }}</div>
+                            <div class="conv-time" style="font-size:0.7rem; color:var(--crm-text-muted);">{{ conv.updated_at|date:"h:i A" }}</div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-top:0.25rem;">
+                            <div style="display:flex; flex-direction:column;">
+                                <div class="conv-preview" style="font-size:0.8rem; color:var(--crm-text-muted); margin-bottom:0.25rem;">{{ conv.last_message|default:"No messages yet"|truncatechars:40 }}</div>
+                                {% if conv.channel == 'facebook' %}
+                                    <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:14px;height:14px;" title="Facebook Messenger">
+                                {% elif conv.channel == 'instagram' %}
+                                    <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:14px;height:14px;" title="Instagram">
+                                {% endif %}
+                            </div>
+                            <div style="margin-top:0.25rem;">
+                                <i class="far fa-circle text-danger" style="font-size:0.6rem;opacity:0.6;"></i>
+                            </div>
+                        </div>
                     </div>
-                    <div class="conv-time">{{ conv.updated_at|timesince|truncatewords:2 }}</div>
                 </a>
                 {% endfor %}
             {% else %}
@@ -260,29 +382,29 @@
     <div class="conv-panel-right">
         <div class="conv-chat-header">
             <div class="d-flex align-items-center gap-2">
+                <a href="{% url 'trendycrm:conversations' %}" class="mobile-back-btn me-1">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
                 <div class="conv-avatar" style="width:32px;height:32px;font-size:0.75rem;">
                     {{ active_conv.contact.name|first|upper|default:"?" }}
+                    {% if active_conv.channel == 'facebook' %}
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" class="channel-badge" style="width:12px;height:12px;">
+                    {% elif active_conv.channel == 'instagram' %}
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" class="channel-badge" style="width:12px;height:12px;">
+                    {% endif %}
                 </div>
                 <div>
                     <div style="font-weight:600;font-size:0.88rem;">{{ active_conv.contact.name|default:"Unknown" }}</div>
                     <span class="status-badge {{ active_conv.status }}" style="font-size:0.65rem;">{{ active_conv.get_status_display }}</span>
+                    {% if active_conv.integration %}
+                        <span style="font-size:0.65rem; color:var(--crm-text-muted); margin-left: 0.5rem;"><i class="fas fa-link"></i> {{ active_conv.integration.account_name|truncatechars:20 }}</span>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
         <div class="conv-messages" id="msgArea">
-            {% for msg in messages %}
-            <div style="display:flex;flex-direction:column;align-items:{% if msg.is_outbound %}flex-end{% else %}flex-start{% endif %};">
-                <div class="msg-bubble {% if msg.is_outbound %}msg-outbound{% else %}msg-inbound{% endif %}">
-                    {{ msg.body }}
-                </div>
-                <div class="msg-time" style="text-align:{% if msg.is_outbound %}right{% else %}left{% endif %};">
-                    {{ msg.created_at|date:"H:i" }} · {{ msg.sender }}
-                </div>
-            </div>
-            {% empty %}
-            <div class="text-center text-muted py-4" style="font-size:0.83rem;">No messages yet. Start the conversation!</div>
-            {% endfor %}
+            {% include 'trendycrm/partials/messages_list.html' %}
         </div>
 
         <form class="conv-input-bar" method="post" action="{% url 'trendycrm:send_message' active_conv.pk %}">
@@ -292,6 +414,48 @@
                 <i class="fas fa-paper-plane"></i>
             </button>
         </form>
+    </div>
+    
+    <!-- Info Panel (3rd Pane) -->
+    <div class="conv-panel-info">
+        <div style="padding: 2rem 1.5rem; text-align: center; border-bottom: 1px solid var(--crm-border);">
+            <div class="conv-avatar" style="width:64px;height:64px;font-size:1.5rem;margin: 0 auto 0.75rem;">
+                {{ active_conv.contact.name|first|upper|default:"?" }}
+            </div>
+            <div style="font-weight:700;font-size:1.1rem;color:var(--crm-text);">{{ active_conv.contact.name|default:"Unknown" }}</div>
+            {% if active_conv.channel == 'facebook' %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:14px;height:14px;"> @{{ active_conv.contact.name|slugify|default:"Unknown" }}
+                </div>
+            {% elif active_conv.channel == 'instagram' %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:14px;height:14px;"> @{{ active_conv.contact.name|slugify|default:"Unknown" }}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="padding: 1.25rem;">
+            <div style="font-size:0.8rem;font-weight:600;color:var(--crm-text);margin-bottom:0.75rem;">Contact information <i class="fas fa-user-plus" style="float:right;color:var(--crm-text-muted);cursor:pointer;"></i></div>
+            <div style="border:1px dashed var(--crm-border);border-radius:8px;padding:1rem;text-align:center;background:var(--crm-bg);">
+                <div style="width:32px;height:32px;border-radius:50%;background:rgba(124,58,237,0.1);color:var(--crm-primary);display:flex;align-items:center;justify-content:center;margin:0 auto 0.5rem;"><i class="fas fa-user-plus"></i></div>
+                <div style="font-size:0.75rem;font-weight:600;color:var(--crm-text);">No contact linked yet</div>
+                <div style="font-size:0.7rem;color:var(--crm-text-muted);">Link or create a contact to keep history.</div>
+            </div>
+            
+            <div style="margin-top:1.5rem;">
+                <div style="font-size:0.8rem;font-weight:600;color:var(--crm-text);margin-bottom:0.5rem;display:flex;justify-content:space-between;">Labels <i class="fas fa-tags" style="color:var(--crm-text-muted);"></i></div>
+                <button style="background:transparent;border:1px solid var(--crm-border);border-radius:12px;font-size:0.7rem;padding:0.25rem 0.5rem;color:var(--crm-text-muted);"><i class="fas fa-plus"></i> Add label</button>
+            </div>
+            
+            <div style="margin-top:1.5rem;">
+                <div style="font-size:0.8rem;font-weight:600;color:var(--crm-text);margin-bottom:0.25rem;display:flex;justify-content:space-between;">Internal notes (0) <i class="fas fa-plus" style="color:var(--crm-text-muted);"></i></div>
+                <div style="font-size:0.75rem;color:var(--crm-text-muted);font-style:italic;">No notes yet.</div>
+            </div>
+            
+            <div style="margin-top:1.5rem;">
+                <div style="font-size:0.8rem;font-weight:600;color:var(--crm-text);margin-bottom:0.25rem;display:flex;justify-content:space-between;">Tickets (0) <i class="fas fa-plus" style="color:var(--crm-text-muted);"></i></div>
+            </div>
+        </div>
     </div>
     {% else %}
     <div class="empty-right">
@@ -310,6 +474,64 @@
     </div>
     {% endif %}
 </div>
+
+{% block extra_script %}
+<script>
+    {% if active_conv %}
+    // Auto-fetcher for Real-Time UI updates
+    setInterval(function() {
+        fetch("{% url 'trendycrm:conversations_ajax' %}?id={{ active_conv.pk }}")
+        .then(response => response.text())
+        .then(html => {
+            const msgArea = document.getElementById('msgArea');
+            if(html.trim() !== "" && msgArea.innerHTML !== html) {
+                const isFirstLoad = (msgArea.innerHTML.trim() === "");
+                const oldLength = msgArea.innerHTML.length;
+                msgArea.innerHTML = html;
+                
+                // Show a toast if new messages arrived (not first load)
+                if (!isFirstLoad && html.length > oldLength && typeof showTrendyToast === 'function') {
+                    showTrendyToast("New message received in this conversation", "info", "New Message");
+                }
+                
+                // Optional: Scroll to bottom if new messages arrived
+                // msgArea.scrollTop = msgArea.scrollHeight;
+            }
+        })
+        .catch(err => console.error('Failed to fetch new messages:', err));
+    }, 3000); // Check every 3 seconds
+    {% endif %}
+
+    // Scroll to bottom of messages initially
+    const msgArea = document.getElementById('msgArea');
+    if (msgArea) {
+        msgArea.scrollTop = msgArea.scrollHeight;
+    }
+
+    function toggleIntegrationSelect() {
+        var channel = document.getElementById('newConvChannel').value;
+        var group = document.getElementById('integrationSelectGroup');
+        var select = document.getElementById('newConvIntegration');
+        
+        if (['facebook', 'instagram'].includes(channel)) {
+            group.style.display = 'block';
+            for (var i = 0; i < select.options.length; i++) {
+                var opt = select.options[i];
+                if (opt.value === "") continue;
+                if (opt.getAttribute('data-channel') === channel) {
+                    opt.style.display = '';
+                } else {
+                    opt.style.display = 'none';
+                }
+            }
+            select.value = "";
+        } else {
+            group.style.display = 'none';
+            select.value = "";
+        }
+    }
+</script>
+{% endblock %}
 
 <!-- New Conversation Modal -->
 <div class="modal fade" id="newConvModal" tabindex="-1" aria-labelledby="newConvModalLabel" aria-hidden="true">
@@ -339,13 +561,23 @@
                     
                     <div class="mb-3">
                         <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">Channel</label>
-                        <select class="form-select" name="channel" style="border-radius:8px;font-size:0.9rem;" required>
+                        <select class="form-select" name="channel" id="newConvChannel" style="border-radius:8px;font-size:0.9rem;" required onchange="toggleIntegrationSelect()">
                             <option value="web">Web Chat</option>
                             <option value="facebook">Facebook</option>
                             <option value="instagram">Instagram</option>
                             <option value="whatsapp">WhatsApp</option>
                             <option value="email">Email</option>
                             <option value="sms">SMS</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3" id="integrationSelectGroup" style="display:none;">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">Select Account (Optional)</label>
+                        <select class="form-select" name="integration_id" id="newConvIntegration" style="border-radius:8px;font-size:0.9rem;">
+                            <option value="">-- Let system choose --</option>
+                            {% for integ in connected_integrations %}
+                                <option value="{{ integ.pk }}" data-channel="{{ integ.channel_type }}">{{ integ.account_name }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                     
@@ -358,14 +590,8 @@
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal" style="border-radius:8px;font-weight:600;">Cancel</button>
                     <button type="submit" class="btn-crm-primary">Start Conversation</button>
                 </div>
-            </form>
+</form>
         </div>
     </div>
 </div>
-
-<script>
-// Scroll to bottom of messages
-const msgArea = document.getElementById('msgArea');
-if (msgArea) msgArea.scrollTop = msgArea.scrollHeight;
-</script>
 {% endblock %}

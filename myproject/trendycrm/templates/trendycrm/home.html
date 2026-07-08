@@ -64,22 +64,27 @@
 }
 .stat-mini-card {
     background: white;
-    border-radius: 10px;
-    padding: 1rem 1.2rem;
+    border-radius: 14px;
+    padding: 1.25rem 1.4rem;
     border: 1px solid rgba(124,58,237,0.08);
-    box-shadow: var(--crm-card-shadow);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.03);
     display: flex;
     align-items: center;
-    gap: 0.8rem;
+    gap: 1.1rem;
+    transition: transform 0.25s, box-shadow 0.25s;
+}
+.stat-mini-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 25px rgba(124,58,237,0.12);
 }
 .stat-mini-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
+    font-size: 1.2rem;
     flex-shrink: 0;
 }
 .hero-section {
@@ -102,17 +107,18 @@
 {% endblock %}
 
 {% block crm_content %}
-<div class="hero-section">
-    <div class="hero-logo">
-        <i class="fas fa-bolt"></i>
+<div class="mx-auto" style="max-width: 950px; padding: 2rem 1.5rem; width: 100%;">
+    <div class="hero-section">
+        <div class="hero-logo">
+            <i class="fas fa-bolt"></i>
+        </div>
+        <h2 style="font-size:1.75rem;font-weight:800;color:var(--crm-text);margin-bottom:0.5rem;letter-spacing:-0.5px;">
+            Hi {{ request.user.first_name|default:request.user.username }}, let's set up Trendy CRM
+        </h2>
+        <p style="color:var(--crm-text-muted);font-size:0.95rem;margin-bottom:2rem;">
+            A few quick steps and Trendy CRM starts handling <strong>{{ request.user.username }}</strong>'s conversations.
+        </p>
     </div>
-    <h2 style="font-size:1.6rem;font-weight:800;color:var(--crm-text);margin-bottom:0.4rem;">
-        Hi {{ request.user.first_name|default:request.user.username }}, let's set up Trendy CRM
-    </h2>
-    <p style="color:var(--crm-text-muted);font-size:0.9rem;margin-bottom:1.5rem;">
-        A few quick steps and Trendy CRM starts handling <strong>{{ request.user.username }}</strong>'s conversations.
-    </p>
-</div>
 
 <!-- Stats Row -->
 <div class="row g-3 mb-3">
@@ -120,8 +126,8 @@
         <div class="stat-mini-card">
             <div class="stat-mini-icon" style="background:#ede9fe;color:#7c3aed;"><i class="fas fa-users"></i></div>
             <div>
-                <div style="font-size:1.3rem;font-weight:800;color:var(--crm-text);">{{ total_contacts }}</div>
-                <div style="font-size:0.73rem;color:var(--crm-text-muted);">Contacts</div>
+                <div style="font-size:1.4rem;font-weight:800;color:var(--crm-text);line-height:1.2;">{{ total_contacts }}</div>
+                <div style="font-size:0.78rem;color:var(--crm-text-muted);font-weight:500;">Contacts</div>
             </div>
         </div>
     </div>
@@ -129,8 +135,8 @@
         <div class="stat-mini-card">
             <div class="stat-mini-icon" style="background:#d1fae5;color:#059669;"><i class="fas fa-comment-dots"></i></div>
             <div>
-                <div style="font-size:1.3rem;font-weight:800;color:var(--crm-text);">{{ total_conversations }}</div>
-                <div style="font-size:0.73rem;color:var(--crm-text-muted);">Conversations</div>
+                <div style="font-size:1.4rem;font-weight:800;color:var(--crm-text);line-height:1.2;">{{ total_conversations }}</div>
+                <div style="font-size:0.78rem;color:var(--crm-text-muted);font-weight:500;">Conversations</div>
             </div>
         </div>
     </div>
@@ -138,8 +144,8 @@
         <div class="stat-mini-card">
             <div class="stat-mini-icon" style="background:#fee2e2;color:#dc2626;"><i class="fas fa-ticket-alt"></i></div>
             <div>
-                <div style="font-size:1.3rem;font-weight:800;color:var(--crm-text);">{{ open_tickets }}</div>
-                <div style="font-size:0.73rem;color:var(--crm-text-muted);">Open Tickets</div>
+                <div style="font-size:1.4rem;font-weight:800;color:var(--crm-text);line-height:1.2;">{{ open_tickets }}</div>
+                <div style="font-size:0.78rem;color:var(--crm-text-muted);font-weight:500;">Open Tickets</div>
             </div>
         </div>
     </div>
@@ -147,12 +153,14 @@
         <div class="stat-mini-card">
             <div class="stat-mini-icon" style="background:#fef3c7;color:#d97706;"><i class="fas fa-plug"></i></div>
             <div>
-                <div style="font-size:1.3rem;font-weight:800;color:var(--crm-text);">{{ connected_channels }}</div>
-                <div style="font-size:0.73rem;color:var(--crm-text-muted);">Channels</div>
+                <div style="font-size:1.4rem;font-weight:800;color:var(--crm-text);line-height:1.2;">{{ connected_channels }}</div>
+                <div style="font-size:0.78rem;color:var(--crm-text-muted);font-weight:500;">Channels</div>
             </div>
         </div>
     </div>
 </div>
+
+<div class="mt-4"></div>
 
 <!-- Setup Steps Card -->
 <div class="crm-card">
@@ -195,5 +203,6 @@
         </div>
     </div>
     {% endfor %}
+</div>
 </div>
 {% endblock %}

@@ -213,8 +213,8 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USE_TLS = True
 EMAIL_PORT = 587
-EMAIL_HOST_USER = "ermilan30@gmail.com"
-EMAIL_HOST_PASSWORD = 'uuqw cnwz ybnt wvut'
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='ermilan30@gmail.com')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = 'System Admin <ermilan30@gmail.com>'
 # Password Reset Settings
 PASSWORD_RESET_TIMEOUT = 3600  # 1 hour
@@ -230,12 +230,22 @@ NCM_API_BASE_URL_V2 = config('NCM_API_BASE_URL_V2')
 # Webhook Security: Set this in your .env file
 NCM_WEBHOOK_SECRET = config('NCM_WEBHOOK_SECRET', default=None)
 WOOCOMMERCE_WEBHOOK_SECRET = config('WOOCOMMERCE_WEBHOOK_SECRET', default='')
-META_PAGE_ACCESS_TOKEN = config('META_PAGE_ACCESS_TOKEN', default='')
-FACEBOOK_CLIENT_ID = config('FACEBOOK_CLIENT_ID', default='3765824723663820')  # Default to the previous client id for testing
+SITE_URL = config('SITE_URL', default='https://office.orajil.com.np').rstrip('/')
 
+# Meta / Instagram Configuration
+META_PAGE_ACCESS_TOKEN = config('META_PAGE_ACCESS_TOKEN', default='')
+FACEBOOK_APP_ID = config('FACEBOOK_APP_ID', default='')
+FACEBOOK_APP_SECRET = config('FACEBOOK_APP_SECRET', default='')
+INSTAGRAM_APP_ID = config('INSTAGRAM_APP_ID', default='')
+INSTAGRAM_APP_SECRET = config('INSTAGRAM_APP_SECRET', default='')
+
+# Kept for backward compatibility
+FACEBOOK_CLIENT_ID = config('FACEBOOK_CLIENT_ID', default=FACEBOOK_APP_ID)
+FACEBOOK_CLIENT_SECRET = config('FACEBOOK_CLIENT_SECRET', default=FACEBOOK_APP_SECRET)
+FACEBOOK_CONFIG_ID = config('FACEBOOK_CONFIG_ID', default='')
 # ===================== Pick and Drop API Configuration =====================
-PND_API_KEY = config('PND_API_KEY', default='adfe61efa5c52c6')
-PND_API_SECRET = config('PND_API_SECRET', default='228689edbe6b937')
+PND_API_KEY = config('PND_API_KEY', default='')
+PND_API_SECRET = config('PND_API_SECRET', default='')
 PND_API_BASE_URL = config('PND_API_BASE_URL', default='https://pickndropnepal.com')
 
 # ===================== SMS Configuration =====================
