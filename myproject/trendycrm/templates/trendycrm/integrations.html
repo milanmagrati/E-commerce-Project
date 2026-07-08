@@ -257,22 +257,44 @@
             {% if connected_integrations %}
                 {% for integ in connected_integrations %}
                 <!-- Connected State -->
-                <div style="background:#d1fae5;border:1px solid #a7f3d0;border-radius:10px;padding:1.1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;gap:0.75rem;">
-                    <i class="fas fa-check-circle" style="color:#059669;font-size:1.2rem;"></i>
-                    <div>
-                        <div style="font-weight:600;font-size:0.88rem;color:#065f46;">Account Connected</div>
-                        <div style="font-size:0.78rem;color:#047857;">{{ integ.account_name }}</div>
+                <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:1.1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:0.75rem;">
+                        <div style="position:relative;">
+                            <div style="width: 40px; height: 40px; border-radius: 50%; background-color: #f3f4f6; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                               <i class="fab {{ active_meta.icon }}" style="color:var(--crm-primary); font-size: 1.2rem;"></i>
+                            </div>
+                            <!-- Green checkmark badge -->
+                            <div style="position:absolute; bottom:-2px; right:-2px; background:white; border-radius:50%; padding:2px; display:flex; align-items:center; justify-content:center;">
+                                 <i class="fas fa-check-circle" style="color:#10b981; font-size:14px; background:white; border-radius:50%;"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-weight:600;font-size:0.9rem;color:#111827;">{{ integ.parsed_name }}</div>
+                            <div style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#6b7280; margin-top:0.2rem;">
+                                <span style="width:6px; height:6px; border-radius:50%; background-color:#10b981;"></span>
+                                <span style="color:#10b981;">Active</span>
+                                {% if integ.parsed_id %}
+                                <span style="color:#9ca3af;">&middot;</span>
+                                <span>{{ integ.parsed_id }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
                     </div>
-                    <div style="display:flex; gap:0.5rem;" class="ms-auto">
-                        <button type="button" class="btn-crm-outline" style="font-size:0.78rem;" onclick="openSettingsModal('{{ integ.account_name }}', '{{ integ.access_token }}')">
-                            <i class="fas fa-cog"></i> Settings
+                    <div style="position: relative;" class="dropdown">
+                        <button type="button" class="btn-crm-outline" style="border:none; background:transparent; padding:0.5rem; color:#6b7280; cursor:pointer; font-size:1.2rem;" onclick="const menu = this.nextElementSibling; menu.style.display = menu.style.display === 'block' ? 'none' : 'block';">
+                            <i class="fas fa-ellipsis-h"></i>
                         </button>
-                        <form method="post" action="{% url 'trendycrm:integration_disconnect' integ.pk %}">
-                            {% csrf_token %}
-                            <button type="submit" class="btn-crm-outline" style="color:#dc2626;border-color:#fecaca;font-size:0.78rem;" onclick="return confirm('Disconnect this channel?')">
-                                <i class="fas fa-unlink"></i> Disconnect
-                            </button>
-                        </form>
+                        <div style="display:none; position:absolute; right:0; top:100%; background:white; border:1px solid #e5e7eb; border-radius:0.5rem; box-shadow:0 4px 6px -1px rgba(0, 0, 0, 0.1); z-index:10; min-width: 140px; overflow:hidden; padding:0.5rem 0; margin-top:0.25rem;">
+                             <button type="button" style="width:100%; text-align:left; padding:0.5rem 1rem; border:none; background:transparent; cursor:pointer; font-size:0.8rem; color:#374151; display:flex; align-items:center; gap:0.5rem;" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'" onclick="openSettingsModal('{{ integ.account_name }}', '{{ integ.access_token }}')">
+                                 <i class="fas fa-cog" style="color:#6b7280; width:14px;"></i> Settings
+                             </button>
+                             <form method="post" action="{% url 'trendycrm:integration_disconnect' integ.pk %}" style="margin:0;">
+                                {% csrf_token %}
+                                <button type="submit" style="width:100%; text-align:left; padding:0.5rem 1rem; border:none; background:transparent; cursor:pointer; font-size:0.8rem; color:#ef4444; display:flex; align-items:center; gap:0.5rem;" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'" onclick="return confirm('Disconnect this channel?')">
+                                    <i class="fas fa-unlink" style="color:#ef4444; width:14px;"></i> Disconnect
+                                </button>
+                             </form>
+                        </div>
                     </div>
                 </div>
                 {% endfor %}

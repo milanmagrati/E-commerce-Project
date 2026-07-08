@@ -135,6 +135,24 @@ class CRMIntegration(models.Model):
     connected_at = models.DateTimeField(null=True, blank=True)
     meta = models.JSONField(default=dict)
 
+    @property
+    def parsed_name(self):
+        import re
+        if self.account_name:
+            match = re.match(r'^(.*?) \((\d+)\)$', self.account_name.strip())
+            if match:
+                return match.group(1).strip()
+        return self.account_name
+
+    @property
+    def parsed_id(self):
+        import re
+        if self.account_name:
+            match = re.match(r'^(.*?) \((\d+)\)$', self.account_name.strip())
+            if match:
+                return match.group(2)
+        return ''
+
     def __str__(self):
         return f"{self.get_channel_type_display()} - {self.status}"
 
