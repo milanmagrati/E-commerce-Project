@@ -80,16 +80,26 @@ def _process_meta_conversation(integration, conv_data):
         contact.meta_id = contact_meta_id
         contact.save(update_fields=['meta_id'])
     
+    # For Facebook Pages, the token is a Page Access Token.
+    page_id = integration.account_name.split('(')[-1].strip(')') if '(' in integration.account_name else None
+    
     # Create or get Conversation
     conversation, conv_created = CRMConversation.objects.get_or_create(
         contact=contact,
         channel=integration.channel_type,
-        integration=integration,
+        account_id=page_id,
         defaults={
+            'integration': integration,
             'status': 'open',
             'subject': f"{integration.get_channel_type_display()} Chat"
         }
     )
+    
+    # If this is an existing conversation but the integration was reconnected (meaning the old integration was deleted),
+    # we want to update the integration pointer to the active one so replies keep working.
+    if conversation.integration != integration:
+        conversation.integration = integration
+        conversation.save(update_fields=['integration'])
     
     # Process Messages (they come ordered newest to oldest, so we reverse to save them oldest to newest)
     messages.reverse()

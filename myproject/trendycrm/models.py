@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class CRMContact(models.Model):
@@ -44,6 +45,7 @@ class CRMConversation(models.Model):
     ]
     contact = models.ForeignKey(CRMContact, on_delete=models.SET_NULL, null=True, blank=True, related_name='conversations')
     integration = models.ForeignKey('CRMIntegration', on_delete=models.SET_NULL, null=True, blank=True, related_name='conversations')
+    account_id = models.CharField(max_length=255, blank=True, null=True)
     channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default='web')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
     subject = models.CharField(max_length=300, blank=True, null=True)
@@ -60,11 +62,18 @@ class CRMConversation(models.Model):
 
 
 class CRMMessage(models.Model):
+    STATUS_CHOICES = [
+        ('sent', 'Sent'),
+        ('delivered', 'Delivered'),
+        ('read', 'Read'),
+        ('failed', 'Failed'),
+    ]
     conversation = models.ForeignKey(CRMConversation, on_delete=models.CASCADE, related_name='messages')
     sender = models.CharField(max_length=100)
     body = models.TextField()
     is_outbound = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='sent')
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ['created_at']

@@ -737,7 +737,13 @@
                 <small class="msg-timestamp">
                     {{ msg.created_at|date:"M d, Y h:i A" }}
                     {% if msg.is_edited and not msg.is_deleted %}<span class="msg-edited-label">(edited)</span>{% endif %}
-                    {% if msg.sender == request.user %}<i class="fas fa-check-double msg-check"></i>{% endif %}
+                    {% if msg.sender == request.user %}
+                        {% if msg.is_read %}
+                            <i class="fas fa-check-double msg-check" style="color: #93c5fd;" title="Read"></i>
+                        {% else %}
+                            <i class="fas fa-check msg-check" title="Sent"></i>
+                        {% endif %}
+                    {% endif %}
                 </small>
             </div>
             <!-- Message hover actions -->

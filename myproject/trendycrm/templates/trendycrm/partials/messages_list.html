@@ -5,6 +5,19 @@
     </div>
     <div class="msg-time" style="text-align:{% if msg.is_outbound %}right{% else %}left{% endif %};">
         {{ msg.created_at|date:"h:i A" }}
+        {% if msg.is_outbound %}
+            <span style="margin-left: 0.25rem;">
+                {% if msg.status == 'sent' %}
+                    <i class="fas fa-check" style="font-size: 0.65rem; color: var(--crm-text-muted);" title="Sent"></i>
+                {% elif msg.status == 'delivered' %}
+                    <i class="fas fa-check-double" style="font-size: 0.65rem; color: var(--crm-text-muted);" title="Delivered"></i>
+                {% elif msg.status == 'read' %}
+                    <i class="fas fa-check-double" style="font-size: 0.65rem; color: #3b82f6;" title="Read"></i>
+                {% elif msg.status == 'failed' %}
+                    <i class="fas fa-exclamation-circle" style="font-size: 0.65rem; color: #ef4444;" title="Failed"></i>
+                {% endif %}
+            </span>
+        {% endif %}
     </div>
 </div>
 {% empty %}

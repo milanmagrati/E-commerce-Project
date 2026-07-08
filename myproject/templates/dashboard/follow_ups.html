@@ -655,7 +655,7 @@
                 alertify.error('Error: ' + result.error);
             }
         })
-        .catch(() => alertify.error('An error occurred while saving.'))
+        .catch((err) => { console.error(err); alertify.error('An error occurred while saving.'); })
         .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; });
     }
 
@@ -681,7 +681,7 @@
         newTr.setAttribute('data-version', data.version || 1);
 
         newTr.innerHTML = `
-            <td class="text-center sn-column">1</td>
+            <td class="text-center sn-column"></td>
             <td>${escapeHtml(data.name) || '-'}</td>
             <td>${escapeHtml(data.phone)}</td>
             <td>${escapeHtml(data.lead_source) || '-'}</td>
@@ -711,6 +711,17 @@
                 </button>
             </td>`;
         entryRow.after(newTr);
+        updateSerialNumbers();
+    }
+
+    function updateSerialNumbers() {
+        let currentIndex = {{ page_obj.start_index|default:1 }};
+        document.querySelectorAll('#followUpsTbody tr:not(#entryRow):not(#emptyRow)').forEach(row => {
+            let snCell = row.querySelector('.sn-column');
+            if (snCell) {
+                snCell.textContent = currentIndex++;
+            }
+        });
     }
 
     // ===== Add Note Modal (opens for a specific field) =====
@@ -867,7 +878,6 @@
 
                 editModal.hide();
                 alertify.success('Updated successfully!');
-                filterTable();
             } else {
                 alertify.error('Error: ' + result.error);
             }
@@ -891,14 +901,14 @@
         .then(result => {
             if (result.success) {
                 document.querySelector(`tr[data-id="${id}"]`)?.remove();
-                filterTable();
+                updateSerialNumbers();
                 alertify.success('Deleted successfully!');
             } else {
                 alertify.error('Error deleting: ' + result.error);
                 btn.innerHTML = origHtml; btn.disabled = false;
             }
         })
-        .catch(() => { alertify.error('An error occurred.'); btn.innerHTML = origHtml; btn.disabled = false; });
+        .catch((err) => { console.error(err); alertify.error('An error occurred.'); btn.innerHTML = origHtml; btn.disabled = false; });
     }
 
     // ===== View Logs =====
@@ -932,7 +942,7 @@
                     </div>
                 </div>`).join('');
         })
-        .catch(() => { container.innerHTML = '<div class="text-danger py-3 text-center">Failed to load logs.</div>'; });
+        .catch((err) => { console.error(err); container.innerHTML = '<div class="text-danger py-3 text-center">Failed to load logs.</div>'; });
     }
 
     // ===== Inline Status Editing =====
@@ -1001,13 +1011,13 @@
                 row.setAttribute('data-version', result.data.version || 1);
                 cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
                 alertify.success('Status updated!');
-                filterTable();
             } else {
                 alertify.error('Error: ' + result.error);
                 cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
             }
         })
-        .catch(() => {
+        .catch((err) => {
+            console.error(err);
             cell.classList.remove('inline-editing');
             alertify.error('An error occurred.');
             cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
@@ -1031,12 +1041,7 @@
                         const row = document.querySelector(`tr[data-id="${id}"]`);
                         if (row) {
                             row.remove();
-                            // Update remaining SNs
-                            const tbody = document.getElementById('followUpsTbody');
-                            const snCells = tbody.querySelectorAll('tr:not(#entryRow):not(#emptyRow) td.sn-column');
-                            snCells.forEach((cell, index) => {
-                                cell.textContent = index + 1;
-                            });
+                            updateSerialNumbers();
                         }
                     });
 
@@ -1065,7 +1070,7 @@
                                 cells[4].innerHTML = d.products?.length > 0 ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>' : '<span class="text-muted">-</span>';
                                 cells[5].innerHTML = buildFuCellHtml(d.f1_logs, d.followup_1, d.id, 'followup_1');
                                 cells[6].innerHTML = buildFuCellHtml(d.f2_logs, d.followup_2, d.id, 'followup_2');
-                                cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}" onclick="enableInlineStatus(this, ${d.id})">${d.status || '-'}</span>`;
+                                cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
                             }
                         }
                         

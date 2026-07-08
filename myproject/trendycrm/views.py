@@ -118,8 +118,12 @@ def crm_conversations(request):
     conv_id = request.GET.get('id')
     messages = []
     if conv_id:
-        active_conv = get_object_or_404(CRMConversation, pk=conv_id)
-        messages = active_conv.messages.all()
+        active_conv = CRMConversation.objects.filter(pk=conv_id).first()
+        if active_conv:
+            messages = active_conv.messages.all()
+        else:
+            from django.shortcuts import redirect
+            return redirect('trendycrm:conversations')
 
     contacts = CRMContact.objects.all()
 
@@ -159,7 +163,7 @@ def crm_send_message(request, conv_id):
     conv = get_object_or_404(CRMConversation, pk=conv_id)
     body = request.POST.get('body', '').strip()
     if body:
-        CRMMessage.objects.create(
+        msg = CRMMessage.objects.create(
             conversation=conv,
             sender=request.user.get_full_name() or request.user.username,
             body=body,
@@ -172,13 +176,20 @@ def crm_send_message(request, conv_id):
         if conv.channel in ['facebook', 'instagram'] and conv.contact and conv.contact.meta_id:
             from .models import CRMIntegration
             from .meta_sync import send_meta_message
+            success = False
             if conv.integration:
-                send_meta_message(conv.integration, conv.contact.meta_id, body)
+                success = send_meta_message(conv.integration, conv.contact.meta_id, body)
             else:
                 integrations = CRMIntegration.objects.filter(channel_type=conv.channel, status='connected')
                 for integration in integrations:
                     if send_meta_message(integration, conv.contact.meta_id, body):
+                        success = True
                         break
+            
+            if not success:
+                msg.status = 'failed'
+                msg.save(update_fields=['status'])
+                messages.error(request, "Failed to send message to Meta. Please check your page connection and permissions.")
                 
     from django.urls import reverse
     return redirect(f"{reverse('trendycrm:conversations')}?id={conv_id}")
@@ -208,13 +219,23 @@ def crm_create_conversation(request):
         integration = CRMIntegration.objects.filter(pk=integration_id).first()
         
     if contact:
-        conv = CRMConversation.objects.create(
-            contact=contact,
-            channel=channel,
-            integration=integration,
-            assigned_to=request.user,
-            last_message=first_message
-        )
+        # Check if conversation already exists to prevent duplication
+        conv = CRMConversation.objects.filter(contact=contact, channel=channel).first()
+        if conv:
+            # Update the integration/assigned user if necessary
+            if integration and conv.integration != integration:
+                conv.integration = integration
+            conv.assigned_to = request.user
+            conv.last_message = first_message
+            conv.save()
+        else:
+            conv = CRMConversation.objects.create(
+                contact=contact,
+                channel=channel,
+                integration=integration,
+                assigned_to=request.user,
+                last_message=first_message
+            )
         
         if first_message:
             CRMMessage.objects.create(
@@ -490,26 +511,42 @@ def _handle_oauth_callback(request, channel_key):
                         pages = accounts_resp.json().get('data', [])
                         
                         if pages:
-                            primary_page = pages[0]
-                            integ = CRMIntegration.objects.filter(channel_type=channel_key, status='not_connected').first()
-                            if not integ:
-                                integ = CRMIntegration(channel_type=channel_key)
-                            integ.status = 'connected'
-                            page_name = primary_page.get('name', 'Meta Page')
-                            page_id = primary_page.get('id', '')
-                            integ.account_name = f"{page_name} ({page_id})" if page_id else page_name
-                            integ.access_token = primary_page.get('access_token', user_access_token)
-                            integ.connected_at = timezone.now()
-                            integ.save()
-                            logger.info(f"Successfully connected {channel_key} page: {page_name}")
-                            
-                            # Trigger initial sync of conversations
-                            try:
-                                sync_meta_conversations(integ)
-                            except Exception as e:
-                                logger.exception("Failed to run initial sync for meta messages.")
+                            connected_count = 0
+                            for page in pages:
+                                page_access_token = page.get('access_token')
+                                if not page_access_token:
+                                    continue
+                                    
+                                page_name = page.get('name', 'Meta Page')
+                                page_id = page.get('id', '')
+                                account_name = f"{page_name} ({page_id})" if page_id else page_name
                                 
-                            messages.success(request, f"{channel_key.title()} connected successfully")
+                                # Check if already connected
+                                integ = CRMIntegration.objects.filter(channel_type=channel_key, account_name=account_name).first()
+                                if not integ:
+                                    # Use a not_connected one or create new
+                                    integ = CRMIntegration.objects.filter(channel_type=channel_key, status='not_connected').first()
+                                    if not integ:
+                                        integ = CRMIntegration(channel_type=channel_key)
+                                        
+                                integ.status = 'connected'
+                                integ.account_name = account_name
+                                integ.access_token = page_access_token
+                                integ.connected_at = timezone.now()
+                                integ.save()
+                                logger.info(f"Successfully connected {channel_key} page: {page_name}")
+                                connected_count += 1
+                                
+                                # Trigger initial sync of conversations
+                                try:
+                                    sync_meta_conversations(integ)
+                                except Exception as e:
+                                    logger.exception("Failed to run initial sync for meta messages.")
+                            
+                            if connected_count > 0:
+                                messages.success(request, f"Successfully connected {connected_count} {channel_key.title()} page(s)")
+                            else:
+                                messages.error(request, "No pages with valid permissions were found. Please ensure you grant messaging permissions.")
                         else:
                             logger.warning("No professional pages found during Facebook OAuth.")
                             messages.error(request, "No professional pages found.")
@@ -580,6 +617,7 @@ def meta_webhook(request):
     """
     if request.method == 'GET':
         # Verification request from Meta
+        # Verification request from Meta
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
@@ -590,8 +628,60 @@ def meta_webhook(request):
         return HttpResponse('Verification failed', status=403)
         
     elif request.method == 'POST':
+        # Verify Meta Signature for security
+        signature = request.headers.get('X-Hub-Signature-256', '')
+        if not signature.startswith('sha256='):
+            return HttpResponse('Invalid signature', status=403)
+            
+        import hmac
+        import hashlib
+        
+        expected_signature = 'sha256=' + hmac.new(
+            settings.FACEBOOK_APP_SECRET.encode('utf-8'),
+            request.body,
+            hashlib.sha256
+        ).hexdigest()
+        
+        if not hmac.compare_digest(signature, expected_signature):
+            return HttpResponse('Signature mismatch', status=403)
+            
         try:
             payload = json.loads(request.body)
+            
+            # Process webhook events for read/delivery receipts
+            if 'entry' in payload:
+                for entry in payload['entry']:
+                    if 'messaging' in entry:
+                        for event in entry['messaging']:
+                            sender_id = event.get('sender', {}).get('id')
+                            if not sender_id:
+                                continue
+                                
+                            import datetime
+                            
+                            # Handle read receipts
+                            if 'read' in event:
+                                watermark = event['read'].get('watermark')
+                                if watermark:
+                                    watermark_dt = datetime.datetime.fromtimestamp(watermark / 1000.0, tz=timezone.utc)
+                                    CRMMessage.objects.filter(
+                                        conversation__contact__meta_id=sender_id,
+                                        is_outbound=True,
+                                        created_at__lte=watermark_dt
+                                    ).exclude(status='read').update(status='read')
+                            
+                            # Handle delivery receipts
+                            if 'delivery' in event:
+                                watermark = event['delivery'].get('watermark')
+                                if watermark:
+                                    watermark_dt = datetime.datetime.fromtimestamp(watermark / 1000.0, tz=timezone.utc)
+                                    CRMMessage.objects.filter(
+                                        conversation__contact__meta_id=sender_id,
+                                        is_outbound=True,
+                                        created_at__lte=watermark_dt,
+                                        status='sent'
+                                    ).update(status='delivered')
+
             # Trigger a sync for all connected facebook/instagram integrations
             integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
             for integ in integrations:
