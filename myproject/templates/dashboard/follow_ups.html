@@ -1134,35 +1134,55 @@
         }
     }
 
+    let heartbeatTimer = null;
+    let currentPresenceAction = 'viewing';
+
+    function startHeartbeat(id) {
+        stopHeartbeat();
+        currentPresenceAction = 'viewing';
+        sendPresence(currentPresenceAction, id);
+        heartbeatTimer = setInterval(() => {
+            sendPresence(currentPresenceAction, id);
+        }, 5000);
+    }
+
+    function stopHeartbeat(id) {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+        if (id) sendPresence('closed_modal', id);
+    }
+
     // Attach listeners for Edit Modal presence
     document.getElementById('editFollowUpModal').addEventListener('shown.bs.modal', function () {
-        if (currentEditId) sendPresence('viewing', currentEditId);
+        if (currentEditId) startHeartbeat(currentEditId);
     });
     document.getElementById('editFollowUpModal').addEventListener('hidden.bs.modal', function () {
-        if (currentEditId) sendPresence('stopped_typing', currentEditId);
+        if (currentEditId) stopHeartbeat(currentEditId);
     });
     const editInputs = document.querySelectorAll('#editFollowUpModal input, #editFollowUpModal textarea');
     editInputs.forEach(input => {
         input.addEventListener('input', () => {
-            if (currentEditId) sendPresence('typing', currentEditId);
-            clearTimeout(typingTimer);
-            typingTimer = setTimeout(() => sendPresence('stopped_typing', currentEditId), 3000);
+            if (currentEditId && currentPresenceAction !== 'typing') {
+                currentPresenceAction = 'typing';
+                sendPresence('typing', currentEditId);
+            }
         });
     });
 
     // Attach listeners for Add Note Modal presence
     document.getElementById('addNoteModal').addEventListener('shown.bs.modal', function () {
-        if (currentNoteId) sendPresence('viewing', currentNoteId);
+        if (currentNoteId) startHeartbeat(currentNoteId);
     });
     document.getElementById('addNoteModal').addEventListener('hidden.bs.modal', function () {
-        if (currentNoteId) sendPresence('stopped_typing', currentNoteId);
+        if (currentNoteId) stopHeartbeat(currentNoteId);
     });
     const noteInputs = document.querySelectorAll('#addNoteModal input, #addNoteModal textarea');
     noteInputs.forEach(input => {
         input.addEventListener('input', () => {
-            if (currentNoteId) sendPresence('typing', currentNoteId);
-            clearTimeout(typingTimer);
-            typingTimer = setTimeout(() => sendPresence('stopped_typing', currentNoteId), 3000);
+            if (currentNoteId && currentPresenceAction !== 'typing') {
+                currentPresenceAction = 'typing';
+                sendPresence('typing', currentNoteId);
+            }
         });
     });
 

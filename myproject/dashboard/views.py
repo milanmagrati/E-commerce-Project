@@ -22318,11 +22318,17 @@ def update_presence(request):
         followup_id = data.get('id')
         action = data.get('type')  # 'viewing', 'typing', 'stopped_typing'
 
-        if not followup_id or action not in ['viewing', 'typing', 'stopped_typing']:
+        if not followup_id or action not in ['viewing', 'typing', 'stopped_typing', 'closed_modal']:
             return JsonResponse({'success': False, 'error': 'Invalid parameters'})
 
-        if action == 'stopped_typing':
+        if action == 'closed_modal':
             FollowUpPresence.objects.filter(followup_id=followup_id, user=request.user).delete()
+        elif action == 'stopped_typing':
+            FollowUpPresence.objects.update_or_create(
+                followup_id=followup_id,
+                user=request.user,
+                defaults={'action': 'viewing'}
+            )
         else:
             FollowUpPresence.objects.update_or_create(
                 followup_id=followup_id,
