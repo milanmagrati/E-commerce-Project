@@ -21533,19 +21533,7 @@ def add_follow_up(request):
             'version': getattr(new_follow_up, 'version', 1)
         }
 
-        from channels.layers import get_channel_layer
-        from asgiref.sync import async_to_sync
-        try:
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                'follow_ups_group',
-                {
-                    'type': 'row_added',
-                    'data': response_data
-                }
-            )
-        except Exception as e:
-            print("Channels error:", e)
+        # Removed Channels WebSocket broadcast for cPanel compatibility
             
         return JsonResponse({
             'success': True,
@@ -21670,21 +21658,7 @@ def edit_follow_up(request, pk):
             'version': getattr(follow_up, 'version', 1),
         }
         
-        from channels.layers import get_channel_layer
-        from asgiref.sync import async_to_sync
-        try:
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                'follow_ups_group',
-                {
-                    'type': 'row_updated',
-                    'id': follow_up.id,
-                    'data': response_data
-                }
-            )
-        except Exception as e:
-            # Fallback if redis/channels isn't working perfectly yet
-            print("Channels error:", e)
+        # Removed Channels WebSocket broadcast for cPanel compatibility
 
         return JsonResponse({
             'success': True,
@@ -21706,19 +21680,7 @@ def delete_follow_up(request, pk):
         follow_up.is_deleted = True
         follow_up.save()
         
-        from channels.layers import get_channel_layer
-        from asgiref.sync import async_to_sync
-        try:
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                'follow_ups_group',
-                {
-                    'type': 'row_deleted',
-                    'id': pk
-                }
-            )
-        except Exception as e:
-            print("Channels error:", e)
+        # Removed Channels WebSocket broadcast for cPanel compatibility
             
         return JsonResponse({'success': True})
     except Exception as e:
@@ -22344,3 +22306,116 @@ def follow_up_report_logs_api(request, pk):
             'timestamp': log.timestamp.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
         })
     return JsonResponse({'success': True, 'logs': data, 'name': fu.name or fu.phone})
+
+
+@login_required
+@require_POST
+def update_presence(request):
+    """AJAX endpoint to update user presence (typing/viewing) on a follow-up."""
+    from .models import FollowUp, FollowUpPresence
+    try:
+        data = json.loads(request.body)
+        followup_id = data.get('id')
+        action = data.get('type')  # 'viewing', 'typing', 'stopped_typing'
+
+        if not followup_id or action not in ['viewing', 'typing', 'stopped_typing']:
+            return JsonResponse({'success': False, 'error': 'Invalid parameters'})
+
+        if action == 'stopped_typing':
+            FollowUpPresence.objects.filter(followup_id=followup_id, user=request.user).delete()
+        else:
+            FollowUpPresence.objects.update_or_create(
+                followup_id=followup_id,
+                user=request.user,
+                defaults={'action': action}
+            )
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def sync_follow_ups(request):
+    """AJAX endpoint to silently fetch updated rows and active presences."""
+    from .models import FollowUp, FollowUpPresence
+    from django.utils import timezone
+    import dateutil.parser
+    from datetime import timedelta
+
+    try:
+        last_sync_str = request.GET.get('last_sync')
+        updates = []
+        deleted_ids = []
+
+        # Cleanup stale presences (older than 10 seconds)
+        stale_threshold = timezone.now() - timedelta(seconds=10)
+        FollowUpPresence.objects.filter(last_seen__lt=stale_threshold).delete()
+
+        # Fetch active presences
+        active_presences = list(FollowUpPresence.objects.all().select_related('user').values(
+            'followup_id', 'user__username', 'action'
+        ))
+
+        if last_sync_str:
+            last_sync = dateutil.parser.parse(last_sync_str)
+            
+            # Find recently updated rows
+            updated_rows = FollowUp.objects.filter(updated_at__gt=last_sync, is_deleted=False).prefetch_related('products', 'product_variations', 'logs')
+            for follow_up in updated_rows:
+                products_data = [
+                    {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
+                    for p in follow_up.products.all()
+                ]
+                products_data.extend([
+                    {'id': f"v_{v.id}", 'name': f"{v.product.name} - {v.variation_name or v.sku}", 'price': float(v.price)}
+                    for v in follow_up.product_variations.all()
+                ])
+                
+                f1_logs = []
+                f2_logs = []
+                entry_logs = []
+                for log in follow_up.logs.all():
+                    log_data = {
+                        'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
+                        'user': log.user.username if log.user else 'System',
+                        'new_value': log.new_value
+                    }
+                    if log.field_changed == 'Followup 1': f1_logs.append(log_data)
+                    elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
+                    elif log.field_changed == 'Entry Created': entry_logs.append(log_data)
+                    
+                if not f1_logs and entry_logs:
+                    f1_logs = [entry_logs[0]]
+
+                updates.append({
+                    'id': follow_up.id,
+                    'name': follow_up.name,
+                    'phone': follow_up.phone,
+                    'lead_source': follow_up.lead_source,
+                    'products': products_data,
+                    'products_display': ', '.join(p['name'] for p in products_data) or '-',
+                    'followup_1': follow_up.followup_1,
+                    'followup_2': follow_up.followup_2,
+                    'status': follow_up.status,
+                    'remarks': follow_up.remarks,
+                    'f1_logs': f1_logs,
+                    'f2_logs': f2_logs,
+                    'version': getattr(follow_up, 'version', 1),
+                })
+            
+            # Find recently deleted rows
+            deleted_rows = FollowUp.objects.filter(updated_at__gt=last_sync, is_deleted=True).values_list('id', flat=True)
+            deleted_ids = list(deleted_rows)
+
+        current_time = timezone.now().isoformat()
+        
+        return JsonResponse({
+            'success': True,
+            'timestamp': current_time,
+            'updates': updates,
+            'deleted_ids': deleted_ids,
+            'presences': active_presences
+        })
+    except Exception as e:
+        logger.error(f"Error in sync_follow_ups: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

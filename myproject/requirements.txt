@@ -20,7 +20,3 @@ google-auth-httplib2
 google-api-python-client
 twilio>=9.0.0
 
-# WebSocket / ASGI support (required for real-time follow-ups)
-daphne>=4.0.0
-channels>=4.0.0
-channels-redis>=4.0.0

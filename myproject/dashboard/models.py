@@ -1965,3 +1965,20 @@ class FollowUpLog(models.Model):
 
     def __str__(self):
         return f"{self.follow_up.name} - {self.field_changed} updated"
+
+
+class FollowUpPresence(models.Model):
+    """Temporary storage for presence indicators (typing/viewing) on Follow-ups"""
+    followup = models.ForeignKey(FollowUp, on_delete=models.CASCADE, related_name='presences')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    action = models.CharField(max_length=20, choices=[('viewing', 'Viewing'), ('typing', 'Typing')])
+    last_seen = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('followup', 'user')
+        indexes = [
+            models.Index(fields=['last_seen']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.action} on {self.followup.id}"

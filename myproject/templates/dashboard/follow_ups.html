@@ -523,6 +523,21 @@
     });
 
     // ===== Utilities =====
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
     function escapeHtml(str) {
         if (!str) return '';
         return str.toString()
@@ -999,85 +1014,94 @@
         });
     }
 
-    // WebSockets / Channels Real-Time Collaborative Setup
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = wsProtocol + '//' + window.location.host + '/ws/follow_ups/';
-    let ws = null;
+    // Real-Time AJAX Polling Setup (cPanel / WSGI Compatible)
     let typingTimer = null;
+    let lastSyncTimestamp = new Date().toISOString();
 
-    function connectWebSocket() {
-        ws = new WebSocket(wsUrl);
-
-        ws.onmessage = function(e) {
-            const data = JSON.parse(e.data);
-            if (data.type === 'row_updated') {
-                const row = document.querySelector(`tr[data-id="${data.id}"]`);
-                if (row) {
-                    const d = data.data;
-                    row.setAttribute('data-version', d.version);
-                    row.setAttribute('data-status', d.status || '');
-                    row.setAttribute('data-name', d.name || '');
-                    row.setAttribute('data-phone', d.phone || '');
-                    row.setAttribute('data-lead', d.lead_source || '');
-                    row.setAttribute('data-products', JSON.stringify(d.products || []));
-                    row.setAttribute('data-f1', d.followup_1 || '');
-                    row.setAttribute('data-f2', d.followup_2 || '');
-                    row.setAttribute('data-remarks', d.remarks || '');
-
-                    const cells = row.querySelectorAll('td');
-                    if (cells.length > 7) {
-                        cells[1].textContent = d.name || '-';
-                        cells[2].textContent = d.phone || '';
-                        cells[3].textContent = d.lead_source || '-';
-                        cells[4].innerHTML = d.products?.length > 0 ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>' : '<span class="text-muted">-</span>';
-                        cells[5].innerHTML = buildFuCellHtml(d.f1_logs, d.followup_1, d.id, 'followup_1');
-                        cells[6].innerHTML = buildFuCellHtml(d.f2_logs, d.followup_2, d.id, 'followup_2');
-                        cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}" onclick="enableInlineStatus(this, ${d.id})">${d.status || '-'}</span>`;
-                    }
+    function startSyncLoop() {
+        setInterval(() => {
+            fetch(`/api/orders/follow-ups/sync/?last_sync=${encodeURIComponent(lastSyncTimestamp)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    lastSyncTimestamp = data.timestamp;
                     
-                    // Flash row to indicate update
-                    row.style.transition = 'background-color 0.5s';
-                    row.style.backgroundColor = '#d4edda';
-                    setTimeout(() => row.style.backgroundColor = '', 1500);
-                }
-            } else if (data.type === 'row_added') {
-                if (!document.querySelector(`tr[data-id="${data.data.id}"]`)) {
-                    appendNewRow(data.data);
-                    const row = document.querySelector(`tr[data-id="${data.data.id}"]`);
-                    if (row) {
-                        row.style.transition = 'background-color 0.5s';
-                        row.style.backgroundColor = '#d4edda';
-                        setTimeout(() => row.style.backgroundColor = '', 1500);
-                    }
-                }
-            } else if (data.type === 'row_deleted') {
-                const row = document.querySelector(`tr[data-id="${data.id}"]`);
-                if (row) {
-                    row.remove();
-                    // Update remaining SNs
-                    const tbody = document.getElementById('followUpsTbody');
-                    const snCells = tbody.querySelectorAll('tr:not(#entryRow):not(#emptyRow) td.sn-column');
-                    snCells.forEach((cell, index) => {
-                        cell.textContent = index + 1;
+                    // Handle deleted rows
+                    data.deleted_ids.forEach(id => {
+                        const row = document.querySelector(`tr[data-id="${id}"]`);
+                        if (row) {
+                            row.remove();
+                            // Update remaining SNs
+                            const tbody = document.getElementById('followUpsTbody');
+                            const snCells = tbody.querySelectorAll('tr:not(#entryRow):not(#emptyRow) td.sn-column');
+                            snCells.forEach((cell, index) => {
+                                cell.textContent = index + 1;
+                            });
+                        }
+                    });
+
+                    // Handle added/updated rows
+                    data.updates.forEach(d => {
+                        let row = document.querySelector(`tr[data-id="${d.id}"]`);
+                        if (!row) {
+                            appendNewRow(d);
+                            row = document.querySelector(`tr[data-id="${d.id}"]`);
+                        } else {
+                            row.setAttribute('data-version', d.version);
+                            row.setAttribute('data-status', d.status || '');
+                            row.setAttribute('data-name', d.name || '');
+                            row.setAttribute('data-phone', d.phone || '');
+                            row.setAttribute('data-lead', d.lead_source || '');
+                            row.setAttribute('data-products', JSON.stringify(d.products || []));
+                            row.setAttribute('data-f1', d.followup_1 || '');
+                            row.setAttribute('data-f2', d.followup_2 || '');
+                            row.setAttribute('data-remarks', d.remarks || '');
+
+                            const cells = row.querySelectorAll('td');
+                            if (cells.length > 7) {
+                                cells[1].textContent = d.name || '-';
+                                cells[2].textContent = d.phone || '';
+                                cells[3].textContent = d.lead_source || '-';
+                                cells[4].innerHTML = d.products?.length > 0 ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>' : '<span class="text-muted">-</span>';
+                                cells[5].innerHTML = buildFuCellHtml(d.f1_logs, d.followup_1, d.id, 'followup_1');
+                                cells[6].innerHTML = buildFuCellHtml(d.f2_logs, d.followup_2, d.id, 'followup_2');
+                                cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}" onclick="enableInlineStatus(this, ${d.id})">${d.status || '-'}</span>`;
+                            }
+                        }
+                        
+                        if (row) {
+                            row.style.transition = 'background-color 0.5s';
+                            row.style.backgroundColor = '#d4edda';
+                            setTimeout(() => row.style.backgroundColor = '', 1500);
+                        }
+                    });
+
+                    // Handle presence indicators
+                    document.querySelectorAll('.presence-indicator').forEach(el => el.remove()); // clear all
+                    data.presences.forEach(p => {
+                        // Only show presence for OTHER users
+                        // We check if username matches the current user's name (basic check)
+                        const currentUser = "{{ request.user.username }}";
+                        if (p.user__username !== currentUser) {
+                            showPresence(p.followup_id, p.user__username, p.action);
+                        }
                     });
                 }
-            } else if (data.type === 'typing' || data.type === 'viewing') {
-                showPresence(data.id, data.user, data.type);
-            } else if (data.type === 'stopped_typing') {
-                hidePresence(data.id);
-            }
-        };
-
-        ws.onclose = function(e) {
-            console.log("WebSocket closed, retrying in 2 seconds...");
-            setTimeout(connectWebSocket, 2000);
-        };
+            })
+            .catch(err => console.error("Sync error:", err));
+        }, 4000); // Check every 4 seconds
     }
     
     function sendPresence(type, id) {
-        if (ws && ws.readyState === WebSocket.OPEN && id) {
-            ws.send(JSON.stringify({type: type, id: id}));
-        }
+        if (!id) return;
+        fetch('/api/orders/follow-ups/presence/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ type: type, id: id })
+        }).catch(err => console.error("Presence update error:", err));
     }
 
     function showPresence(id, username, action) {
@@ -1102,14 +1126,6 @@
             } else {
                 indicator.innerHTML = `<i class="fas fa-eye"></i> <strong>${username}</strong> is viewing`;
             }
-        }
-    }
-
-    function hidePresence(id) {
-        const row = document.querySelector(`tr[data-id="${id}"]`);
-        if (row) {
-            const indicator = row.querySelector('.presence-indicator');
-            if (indicator) indicator.remove();
         }
     }
 
@@ -1145,8 +1161,8 @@
         });
     });
 
-    // Start WebSocket
-    connectWebSocket();
+    // Start AJAX Polling Sync
+    startSyncLoop();
 
 </script>
 
