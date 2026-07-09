@@ -133,6 +133,7 @@
                                     {% if setup.is_default %}Default{% else %}Make Default{% endif %}
                                 </button>
                             </form>
+                            {% if setup.name|lower != 'converted' %}
                             <button class="btn-icon btn-edit" data-bs-toggle="modal" data-bs-target="#editStatusModal{{ setup.id }}" title="Edit">
                                 <i class="fas fa-edit"></i>
                                 Edit
@@ -144,6 +145,7 @@
                                     Delete
                                 </button>
                             </form>
+                            {% endif %}
                         </div>
                     </div>
 

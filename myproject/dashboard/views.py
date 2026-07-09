@@ -3254,10 +3254,16 @@ def order_create(request):
 
                 if followup_id_post:
                     try:
-                        from .models import FollowUp
+                        from .models import FollowUp, FollowUpLog
                         follow_up = FollowUp.objects.get(id=followup_id_post)
-                        follow_up.status = 'Converted'
-                        follow_up.save()
+                        old_status = follow_up.status
+                        if old_status.lower() != 'converted':
+                            follow_up.status = 'Converted'
+                            follow_up.save()
+                            FollowUpLog.objects.create(
+                                follow_up=follow_up, user=created_by, field_changed='Status',
+                                old_value=old_status or '-', new_value='Converted'
+                            )
                     except Exception as e:
                         import logging
                         logger = logging.getLogger(__name__)
@@ -21370,6 +21376,7 @@ def follow_ups_list(request):
     
     products = Product.objects.filter(is_deleted=False, is_active=True).prefetch_related('variations').order_by('name')
     statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
+    action_statuses = statuses.exclude(name__iexact='Converted')
     order_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
     
     context = {
@@ -21377,6 +21384,7 @@ def follow_ups_list(request):
         'page_obj': page_obj,
         'products': products,
         'statuses': statuses,
+        'action_statuses': action_statuses,
         'order_sources': order_sources,
         'per_page': per_page,
         'search_query': search_query,

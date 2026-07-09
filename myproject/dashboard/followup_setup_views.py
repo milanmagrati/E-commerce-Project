@@ -62,6 +62,10 @@ def followup_setup_edit(request, setup_id):
         return redirect('dashboard')
 
     setup = get_object_or_404(Setup, id=setup_id, setup_type='followup_status')
+    
+    if setup.name.lower() == 'converted':
+        messages.error(request, '❌ The "Converted" status is a system status and cannot be edited!')
+        return redirect('followup_setup_management')
 
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
@@ -100,6 +104,9 @@ def followup_setup_delete(request, setup_id):
 
     if request.method == 'POST':
         setup = get_object_or_404(Setup, id=setup_id, setup_type='followup_status')
+        if setup.name.lower() == 'converted':
+            messages.error(request, '❌ The "Converted" status is a system status and cannot be deleted!')
+            return redirect('followup_setup_management')
         name = setup.name
         setup.delete()
         messages.success(request, f'✅ {name} deleted successfully!')

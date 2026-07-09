@@ -94,7 +94,7 @@
                             <td><input type="text" class="form-control form-control-sm" id="newFollowupNote" placeholder="Follow up note"></td>
                             <td>
                                 <select class="form-select form-select-sm" id="newStatus">
-                                    {% for status in statuses %}
+                                    {% for status in action_statuses %}
                                     <option value="{{ status.name }}" {% if status.is_default %}selected{% endif %}>{{ status.name }}</option>
                                     {% endfor %}
                                 </select>
@@ -246,7 +246,7 @@
                     <label class="form-label fw-semibold">Update Status <span class="text-muted small">(optional)</span></label>
                     <select class="form-select" id="addNoteStatus">
                         <option value="">-- Keep current status --</option>
-                        {% for status in statuses %}
+                        {% for status in action_statuses %}
                         <option value="{{ status.name }}">{{ status.name }}</option>
                         {% endfor %}
                     </select>
@@ -308,7 +308,7 @@
                     <div class="col-md-6">
                         <label class="form-label">Status</label>
                         <select class="form-select" id="editStatus">
-                            {% for status in statuses %}
+                            {% for status in action_statuses %}
                             <option value="{{ status.name }}">{{ status.name }}</option>
                             {% endfor %}
                         </select>
@@ -776,8 +776,29 @@
         document.getElementById('editName').value = row.getAttribute('data-name') || '';
         document.getElementById('editPhone').value = row.getAttribute('data-phone') || '';
         document.getElementById('editLeadSource').value = row.getAttribute('data-lead') || '';
-        document.getElementById('editStatus').value = row.getAttribute('data-status') || '';
         document.getElementById('editRemarks').value = row.getAttribute('data-remarks') || '';
+
+        const statusSelect = document.getElementById('editStatus');
+        const currentStatus = row.getAttribute('data-status') || '';
+        
+        // Ensure current status exists in options so it doesn't default to wrong value
+        let found = false;
+        for (let i = 0; i < statusSelect.options.length; i++) {
+            if (statusSelect.options[i].value === currentStatus) found = true;
+        }
+        if (!found && currentStatus) {
+            const opt = document.createElement('option');
+            opt.value = currentStatus;
+            opt.text = currentStatus;
+            statusSelect.appendChild(opt);
+        }
+        statusSelect.value = currentStatus;
+        
+        if (currentStatus.toLowerCase() === 'converted') {
+            statusSelect.disabled = true;
+        } else {
+            statusSelect.disabled = false;
+        }
 
         try {
             const products = JSON.parse(row.getAttribute('data-products') || '[]');
@@ -952,6 +973,11 @@
         if (cell.classList.contains('inline-editing')) return;
         const row = cell.closest('tr');
         const currentStatus = row.getAttribute('data-status') || '';
+        
+        if (currentStatus.toLowerCase() === 'converted') {
+            if (typeof alertify !== 'undefined') alertify.warning('This follow-up is already converted and cannot be changed.');
+            return;
+        }
         cell.classList.add('inline-editing');
         const optionsHtml = document.getElementById('newStatus').innerHTML;
         cell.innerHTML = `<select class="form-select form-select-sm" onchange="saveInlineStatus(this, ${id})" onblur="cancelInlineStatus(this, '${escapeHtml(currentStatus)}')" onkeydown="if(event.key==='Escape') cancelInlineStatus(this, '${escapeHtml(currentStatus)}')">${optionsHtml}</select>`;
