@@ -27,6 +27,7 @@ def followup_setup_add(request):
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
+        color = request.POST.get('color', '').strip()
         is_active = request.POST.get('is_active') == 'on'
 
         if not name:
@@ -36,12 +37,17 @@ def followup_setup_add(request):
         if Setup.objects.filter(setup_type='followup_status', name=name).exists():
             messages.error(request, f'❌ {name} already exists!')
             return redirect('followup_setup_management')
+            
+        if color and Setup.objects.filter(setup_type='followup_status', color=color).exists():
+            messages.error(request, f'❌ The selected color ({color}) is already in use by another status. Please choose a unique color.')
+            return redirect('followup_setup_management')
 
         try:
             Setup.objects.create(
                 setup_type='followup_status',
                 name=name,
                 description=description,
+                color=color,
                 is_active=is_active
             )
             messages.success(request, f'✅ {name} setup created successfully!')
@@ -60,6 +66,7 @@ def followup_setup_edit(request, setup_id):
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
+        color = request.POST.get('color', '').strip()
         is_active = request.POST.get('is_active') == 'on'
 
         if not name:
@@ -69,10 +76,15 @@ def followup_setup_edit(request, setup_id):
         if Setup.objects.filter(setup_type='followup_status', name=name).exclude(id=setup_id).exists():
             messages.error(request, f'❌ {name} already exists!')
             return redirect('followup_setup_management')
+            
+        if color and Setup.objects.filter(setup_type='followup_status', color=color).exclude(id=setup_id).exists():
+            messages.error(request, f'❌ The selected color ({color}) is already in use. Please choose a unique color.')
+            return redirect('followup_setup_management')
 
         try:
             setup.name = name
             setup.description = description
+            setup.color = color
             setup.is_active = is_active
             setup.save()
             messages.success(request, f'✅ {name} updated successfully!')
@@ -111,4 +123,22 @@ def followup_setup_toggle_default(request, setup_id):
         messages.success(request, f'✅ {setup.name} is no longer the default status.')
         
     setup.save()
+    return redirect('followup_setup_management')
+
+@login_required
+def followup_setup_update_color(request, setup_id):
+    if not user_can_setup_followup(request.user):
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        setup = get_object_or_404(Setup, id=setup_id, setup_type='followup_status')
+        color = request.POST.get('color', '').strip()
+        
+        if color and Setup.objects.filter(setup_type='followup_status', color=color).exclude(id=setup_id).exists():
+            messages.error(request, f'❌ The selected color ({color}) is already in use. Please choose a unique color.')
+        else:
+            setup.color = color
+            setup.save()
+            messages.success(request, f'✅ Color for {setup.name} updated successfully!')
+            
     return redirect('followup_setup_management')

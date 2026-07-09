@@ -21488,12 +21488,12 @@ def add_follow_up(request):
         from django.utils import timezone
         all_logs = []
         for log in new_follow_up.logs.all():
-            all_logs.append({
-                'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
-                'user': log.user.username if log.user else 'System',
-                'field_changed': log.field_changed,
-                'new_value': log.new_value
-            })
+            if log.field_changed == 'Entry Created' or log.field_changed.startswith('Followup'):
+                all_logs.append({
+                    'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
+                    'user': log.user.username if log.user else 'System',
+                    'new_value': log.new_value
+                })
             
         response_data = {
             'id': new_follow_up.id,
@@ -21542,6 +21542,12 @@ def edit_follow_up(request, pk):
         
         new_followup_note = data.get('new_followup_note', '').strip()
         
+        old_status = follow_up.status
+        old_name = follow_up.name
+        old_phone = follow_up.phone
+        old_lead_source = follow_up.lead_source
+        old_remarks = follow_up.remarks
+
         follow_up.name = data.get('name', follow_up.name).strip()
         phone = data.get('phone', follow_up.phone).strip()
         
@@ -21560,6 +21566,21 @@ def edit_follow_up(request, pk):
         if hasattr(follow_up, 'version'):
             follow_up.version += 1
         follow_up.save()
+
+        # Log changes
+        changes = [
+            ('Status', old_status, follow_up.status),
+            ('Name', old_name, follow_up.name),
+            ('Phone', old_phone, follow_up.phone),
+            ('Lead Source', old_lead_source, follow_up.lead_source),
+            ('Remarks', old_remarks, follow_up.remarks)
+        ]
+        for field, old_val, new_val in changes:
+            if old_val != new_val:
+                FollowUpLog.objects.create(
+                    follow_up=follow_up, user=request.user, field_changed=field,
+                    old_value=old_val or '-', new_value=new_val or '-'
+                )
         
         if new_followup_note:
             count = follow_up.logs.filter(field_changed__startswith='Followup').count()
@@ -21594,12 +21615,12 @@ def edit_follow_up(request, pk):
         from django.utils import timezone
         all_logs = []
         for log in follow_up.logs.all():
-            all_logs.append({
-                'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
-                'user': log.user.username if log.user else 'System',
-                'field_changed': log.field_changed,
-                'new_value': log.new_value
-            })
+            if log.field_changed == 'Entry Created' or log.field_changed.startswith('Followup'):
+                all_logs.append({
+                    'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
+                    'user': log.user.username if log.user else 'System',
+                    'new_value': log.new_value
+                })
             
         response_data = {
             'id': follow_up.id,
@@ -22333,21 +22354,14 @@ def sync_follow_ups(request):
                     for v in follow_up.product_variations.all()
                 ])
                 
-                f1_logs = []
-                f2_logs = []
-                entry_logs = []
+                all_logs = []
                 for log in follow_up.logs.all():
-                    log_data = {
-                        'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
-                        'user': log.user.username if log.user else 'System',
-                        'new_value': log.new_value
-                    }
-                    if log.field_changed == 'Followup 1': f1_logs.append(log_data)
-                    elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
-                    elif log.field_changed == 'Entry Created': entry_logs.append(log_data)
-                    
-                if not f1_logs and entry_logs:
-                    f1_logs = [entry_logs[0]]
+                    if log.field_changed == 'Entry Created' or log.field_changed.startswith('Followup'):
+                        all_logs.append({
+                            'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
+                            'user': log.user.username if log.user else 'System',
+                            'new_value': log.new_value
+                        })
 
                 updates.append({
                     'id': follow_up.id,
@@ -22356,12 +22370,9 @@ def sync_follow_ups(request):
                     'lead_source': follow_up.lead_source,
                     'products': products_data,
                     'products_display': ', '.join(p['name'] for p in products_data) or '-',
-                    'followup_1': follow_up.followup_1,
-                    'followup_2': follow_up.followup_2,
                     'status': follow_up.status,
                     'remarks': follow_up.remarks,
-                    'f1_logs': f1_logs,
-                    'f2_logs': f2_logs,
+                    'all_logs': all_logs,
                     'version': getattr(follow_up, 'version', 1),
                 })
             

@@ -20,10 +20,14 @@ import requests
 from django.views.decorators.csrf import csrf_exempt
 from urllib.parse import urlencode
 
-from .meta_sync import sync_meta_conversations, _process_meta_conversation
+from .meta_sync import (
+    sync_meta_conversations, _process_meta_conversation,
+    sync_meta_posts, sync_meta_comments, reply_to_meta_comment, hide_meta_comment, delete_meta_comment
+)
 from .models import (
     CRMContact, CRMConversation, CRMMessage,
-    CRMQuickReply, CRMChatbotConfig, CRMIntegration, CRMTicket
+    CRMQuickReply, CRMChatbotConfig, CRMIntegration, CRMTicket,
+    CRMSocialPost, CRMSocialComment
 )
 
 
@@ -477,8 +481,9 @@ def connect_facebook(request):
     params = {
         "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
         "redirect_uri": redirect_uri,
-        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,instagram_basic,instagram_manage_messages",
+        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_basic,instagram_manage_messages",
         "response_type": "code",
+        "auth_type": "rerequest",
     }
     from urllib.parse import urlencode
     auth_url = "https://www.facebook.com/v25.0/dialog/oauth?" + urlencode(params)
@@ -489,8 +494,9 @@ def connect_instagram(request):
     params = {
         "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
         "redirect_uri": redirect_uri,
-        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,instagram_basic,instagram_manage_messages",
+        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_basic,instagram_manage_messages",
         "response_type": "code",
+        "auth_type": "rerequest",
     }
     from urllib.parse import urlencode
     auth_url = "https://www.facebook.com/v25.0/dialog/oauth?" + urlencode(params)
@@ -752,3 +758,90 @@ def crm_tickets(request):
         'crm_section': 'tickets',
     }
     return render(request, 'trendycrm/tickets.html', context)
+# ─── Social Posts & Comments ──────────────────────────────────────────────────
+@login_required
+def crm_social_posts(request):
+    integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
+    for integration in integrations:
+        sync_meta_posts(integration)
+        
+    posts = CRMSocialPost.objects.all()
+    selected_post_id = request.GET.get('post_id')
+    active_post = None
+    comments = []
+    
+    if selected_post_id:
+        active_post = get_object_or_404(CRMSocialPost, pk=selected_post_id)
+        sync_meta_comments(active_post)
+        
+        # Simple sorting and filtering
+        filter_status = request.GET.get('filter', 'all')
+        sort_by = request.GET.get('sort', '-created_time')
+        
+        qs = active_post.comments.filter(parent_comment__isnull=True)
+        if filter_status == 'hidden':
+            qs = qs.filter(visibility_status='hidden')
+        elif filter_status == 'spam':
+            qs = qs.filter(visibility_status='spam')
+        elif filter_status == 'unread':
+            qs = qs.filter(workflow_status='open')
+        else:
+            qs = qs.exclude(visibility_status='spam')
+            
+        comments = qs.order_by(sort_by)
+        
+    context = {
+        'crm_section': 'social_posts',
+        'posts': posts,
+        'active_post': active_post,
+        'comments': comments,
+    }
+    return render(request, 'trendycrm/social_posts.html', context)
+
+@login_required
+@require_POST
+def crm_social_action(request, comment_id):
+    comment = get_object_or_404(CRMSocialComment, pk=comment_id)
+    action = request.POST.get('action')
+    
+    if action == 'reply':
+        msg_text = request.POST.get('message')
+        if msg_text and reply_to_meta_comment(comment.post.integration, comment.meta_comment_id, msg_text):
+            CRMSocialComment.objects.create(
+                post=comment.post,
+                parent_comment=comment,
+                sender_name='Trendy CRM',
+                message=msg_text,
+                created_time=timezone.now()
+            )
+            messages.success(request, "Reply posted successfully.")
+        else:
+            messages.error(request, "Failed to post reply.")
+            
+    elif action == 'hide':
+        if hide_meta_comment(comment.post.integration, comment.meta_comment_id, True):
+            comment.visibility_status = 'hidden'
+            comment.save(update_fields=['visibility_status'])
+            messages.success(request, "Comment hidden.")
+            
+    elif action == 'unhide':
+        if hide_meta_comment(comment.post.integration, comment.meta_comment_id, False):
+            comment.visibility_status = 'visible'
+            comment.save(update_fields=['visibility_status'])
+            messages.success(request, "Comment unhidden.")
+            
+    elif action == 'delete':
+        if delete_meta_comment(comment.post.integration, comment.meta_comment_id):
+            comment.delete()
+            messages.success(request, "Comment deleted.")
+            return redirect(f"{reverse('trendycrm:social_posts')}?post_id={comment.post.pk}")
+            
+    elif action == 'mark_done':
+        comment.workflow_status = 'done'
+        comment.save(update_fields=['workflow_status'])
+        
+    elif action == 'mark_spam':
+        comment.visibility_status = 'spam'
+        comment.save(update_fields=['visibility_status'])
+        
+    return redirect(f"{reverse('trendycrm:social_posts')}?post_id={comment.post.pk}")

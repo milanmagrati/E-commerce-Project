@@ -1275,6 +1275,7 @@ class Setup(models.Model):
     setup_type = models.CharField(max_length=50, choices=SETUP_TYPES)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
+    color = models.CharField(max_length=50, blank=True, null=True, help_text="Hex color code for badges")
     is_active = models.BooleanField(default=True)
     is_default = models.BooleanField(default=False, help_text="Default selection for this setup type in order forms")
     created_at = models.DateTimeField(auto_now_add=True)

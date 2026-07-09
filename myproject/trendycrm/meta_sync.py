@@ -2,7 +2,7 @@ import requests
 import logging
 from django.utils import timezone
 from dateutil.parser import parse
-from .models import CRMIntegration, CRMContact, CRMConversation, CRMMessage
+from .models import CRMIntegration, CRMContact, CRMConversation, CRMMessage, CRMSocialPost, CRMSocialComment
 
 logger = logging.getLogger(__name__)
 
@@ -178,4 +178,132 @@ def send_meta_message(integration, recipient_id, message_text):
         return True
     except Exception as e:
         logger.error(f"Failed to send Meta message: {e} - Response: {getattr(e.response, 'text', '')}")
+        return False
+
+def sync_meta_posts(integration):
+    if not integration.access_token:
+        return
+        
+    page_id = integration.parsed_id
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/posts" if page_id else f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/posts"
+    params = {
+        'access_token': integration.access_token,
+        'fields': 'id,message,created_time,full_picture,likes.summary(true),comments.summary(true)',
+        'limit': 25
+    }
+    
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            posts = response.json().get('data', [])
+            for p in posts:
+                created_time_str = p.get('created_time')
+                created_at = parse(created_time_str) if created_time_str else timezone.now()
+                
+                likes_count = p.get('likes', {}).get('summary', {}).get('total_count', 0)
+                comments_count = p.get('comments', {}).get('summary', {}).get('total_count', 0)
+                
+                CRMSocialPost.objects.update_or_create(
+                    meta_post_id=p.get('id'),
+                    defaults={
+                        'integration': integration,
+                        'message': p.get('message', ''),
+                        'picture_url': p.get('full_picture', ''),
+                        'created_time': created_at,
+                        'likes_count': likes_count,
+                        'comments_count': comments_count
+                    }
+                )
+    except Exception as e:
+        logger.exception("Failed to sync meta posts")
+
+def sync_meta_comments(post):
+    if not post.integration.access_token:
+        return
+        
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{post.meta_post_id}/comments"
+    params = {
+        'access_token': post.integration.access_token,
+        'fields': 'id,from,message,created_time,like_count,comments{id,from,message,created_time,like_count}',
+        'limit': 100
+    }
+    
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            comments = response.json().get('data', [])
+            for c in comments:
+                _process_comment(post, c, None)
+                replies = c.get('comments', {}).get('data', [])
+                for r in replies:
+                    _process_comment(post, r, c.get('id'))
+    except Exception as e:
+        logger.exception("Failed to sync meta comments")
+
+def _process_comment(post, comment_data, parent_id):
+    from_data = comment_data.get('from', {})
+    sender_name = from_data.get('name', 'Unknown')
+    sender_id = from_data.get('id', '')
+    
+    created_time_str = comment_data.get('created_time')
+    created_at = parse(created_time_str) if created_time_str else timezone.now()
+    
+    parent_comment = None
+    if parent_id:
+        parent_comment = CRMSocialComment.objects.filter(meta_comment_id=parent_id).first()
+        
+    CRMSocialComment.objects.update_or_create(
+        meta_comment_id=comment_data.get('id'),
+        defaults={
+            'post': post,
+            'parent_comment': parent_comment,
+            'sender_name': sender_name,
+            'sender_id': sender_id,
+            'message': comment_data.get('message', ''),
+            'created_time': created_at,
+            'like_count': comment_data.get('like_count', 0),
+        }
+    )
+
+def reply_to_meta_comment(integration, comment_id, message_text):
+    if not integration.access_token:
+        return False
+        
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{comment_id}/comments"
+    params = {'access_token': integration.access_token}
+    payload = {'message': message_text}
+    
+    try:
+        response = requests.post(url, params=params, json=payload)
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send comment reply: {e}")
+        return False
+        
+def hide_meta_comment(integration, comment_id, is_hidden=True):
+    if not integration.access_token:
+        return False
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{comment_id}"
+    params = {'access_token': integration.access_token}
+    payload = {'is_hidden': is_hidden}
+    try:
+        response = requests.post(url, params=params, json=payload)
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to hide comment: {e}")
+        return False
+        
+def delete_meta_comment(integration, comment_id):
+    if not integration.access_token:
+        return False
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{comment_id}"
+    params = {'access_token': integration.access_token}
+    try:
+        response = requests.delete(url, params=params)
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to delete comment: {e}")
         return False

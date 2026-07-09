@@ -115,8 +115,6 @@
                             data-phone="{{ item.phone }}"
                             data-lead="{{ item.lead_source|default:'' }}"
                             data-products='[{% for p in all_products %}{"id":"{{ p.id }}","name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
-                            data-f1="{{ item.followup_1|default:'' }}"
-                            data-f2="{{ item.followup_2|default:'' }}"
                             data-remarks="{{ item.remarks|default:'' }}"
                             data-version="{{ item.version|default:1 }}">
                             <td class="text-center sn-column">{{ page_obj.start_index|add:forloop.counter0 }}</td>
@@ -517,9 +515,18 @@
             .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
+    const CUSTOM_STATUS_COLORS = {
+        {% for status in statuses %}
+        {% if status.color %}
+        "{{ status.name|escapejs|lower }}": "{{ status.color|escapejs }}",
+        {% endif %}
+        {% endfor %}
+    };
+
     function getStatusBadgeClass(status) {
         if (!status) return 'bg-secondary';
         const s = status.toLowerCase();
+        if (CUSTOM_STATUS_COLORS[s]) return '';
         if (['pending','processing','on hold','waiting'].some(k => s.includes(k))) return 'bg-warning text-dark';
         if (['success','delivered','completed','paid','confirmed','approved'].some(k => s.includes(k))) return 'bg-success';
         if (['cancelled','returned','failed','trash','rejected'].some(k => s.includes(k))) return 'bg-danger';
@@ -527,12 +534,27 @@
         return 'bg-secondary';
     }
 
+    function getStatusBadgeStyle(status) {
+        if (!status) return '';
+        const s = status.toLowerCase();
+        const hex = CUSTOM_STATUS_COLORS[s];
+        if (hex) return `background-color: ${hex} !important; color: white !important; border-color: ${hex} !important;`;
+        return '';
+    }
+
     function applyStatusBadgeColors() {
         document.querySelectorAll('.status-badge').forEach(badge => {
             const status = badge.getAttribute('data-status-val') || badge.textContent;
             badge.className = `badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(status)}`;
+            const customStyle = getStatusBadgeStyle(status);
+            if (customStyle) {
+                badge.style.cssText = customStyle;
+            } else {
+                badge.style.cssText = '';
+            }
         });
     }
+
 
     function validatePhone(input, errId) {
         const errEl = document.getElementById(errId);
@@ -644,8 +666,6 @@
         newTr.setAttribute('data-phone', data.phone || '');
         newTr.setAttribute('data-lead', data.lead_source || '');
         newTr.setAttribute('data-products', JSON.stringify(data.products || []));
-        newTr.setAttribute('data-f1', data.followup_1 || '');
-        newTr.setAttribute('data-f2', data.followup_2 || '');
         newTr.setAttribute('data-remarks', data.remarks || '');
         newTr.setAttribute('data-version', data.version || 1);
 
@@ -655,14 +675,11 @@
             <td>${escapeHtml(data.phone)}</td>
             <td>${escapeHtml(data.lead_source) || '-'}</td>
             <td>${productsHtml}</td>
-            <td class="fu-cell position-relative p-1" style="min-width:160px;vertical-align:top;background-color:#f8f9fa;">
-                ${buildFuCellHtml(data.f1_logs, data.followup_1, data.id, 'followup_1')}
-            </td>
-            <td class="fu-cell position-relative p-1" style="min-width:160px;vertical-align:top;background-color:#f8f9fa;">
-                ${buildFuCellHtml(data.f2_logs, data.followup_2, data.id, 'followup_2')}
+            <td class="fu-cell position-relative p-1" style="min-width:135px;vertical-align:top;background-color:#f8f9fa;">
+                ${buildFuCellHtml(data.all_logs, data.id)}
             </td>
             <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, ${data.id})">
-                <span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(data.status)}" data-status-val="${(data.status||'').toLowerCase()}">${data.status || '-'}</span>
+                <span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(data.status)}" style="${getStatusBadgeStyle(data.status)}" data-status-val="${(data.status||'').toLowerCase()}">${data.status || '-'}</span>
             </td>
             <td class="text-break" style="max-width:200px;">${escapeHtml(data.remarks) || '-'}</td>
             <td class="text-center" style="white-space:nowrap;">
@@ -724,7 +741,7 @@
                 name: row.getAttribute('data-name') || '',
                 phone: row.getAttribute('data-phone') || '',
                 lead_source: row.getAttribute('data-lead') || '',
-                status: row.getAttribute('data-status') || '',
+                status: statusVal ? statusVal : (row.getAttribute('data-status') || ''),
                 remarks: row.getAttribute('data-remarks') || '',
                 version: row.getAttribute('data-version') || 1
             })
@@ -740,10 +757,8 @@
                 // Update the Followup cell and Status cell
                 const cells = row.querySelectorAll('td');
                 cells[5].innerHTML = buildFuCellHtml(result.data.all_logs, currentNoteId);
-                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(result.data.status)}" data-status-val="${(result.data.status||'').toLowerCase()}">${result.data.status || '-'}</span>`;
+                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(result.data.status)}" style="${getStatusBadgeStyle(result.data.status)}" data-status-val="${(result.data.status||'').toLowerCase()}">${result.data.status || '-'}</span>`;
 
-                addNoteModal.hide();
-                alertify.success('Note added successfully!');
             } else {
                 alertify.error('Error: ' + result.error);
             }
@@ -800,8 +815,6 @@
             phone,
             lead_source: document.getElementById('editLeadSource').value.trim(),
             product_ids: productIds,
-            followup_1: row.getAttribute('data-f1') || '',
-            followup_2: row.getAttribute('data-f2') || '',
             status: document.getElementById('editStatus').value,
             remarks: document.getElementById('editRemarks').value.trim(),
             version: row.getAttribute('data-version') || 1
@@ -833,7 +846,7 @@
                 cells[2].textContent = d.phone || '-';
                 cells[3].textContent = d.lead_source || '-';
                 cells[4].innerHTML = productsHtml;
-                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
+                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
                 cells[7].textContent = d.remarks || '-';
 
                 editModal.hide();
@@ -883,24 +896,53 @@
         .then(result => {
             if (!result.success) { container.innerHTML = `<div class="text-danger py-3 text-center">${result.error}</div>`; return; }
             if (result.data.length === 0) { container.innerHTML = '<div class="text-center text-muted py-4">No changes have been recorded yet.</div>'; return; }
-            container.innerHTML = result.data.map(log => `
+            container.innerHTML = result.data.map(log => {
+                let bodyHtml = '';
+                if (log.field_changed === 'Entry Created') {
+                    bodyHtml = `
+                        <div class="mb-1"><span class="badge bg-secondary">Entry Created</span></div>
+                        <div class="text-success fw-bold small">${log.new_value || '-'}</div>
+                    `;
+                } else if (log.field_changed === 'Status') {
+                    bodyHtml = `
+                        <div class="mb-1">
+                            <span class="badge bg-info text-dark border border-info px-2 py-0 shadow-sm" style="font-size: 0.7rem;"><i class="fas fa-sync-alt me-1"></i> Status Updated</span>
+                        </div>
+                        <div class="d-inline-flex align-items-center bg-light p-1 px-2 rounded border border-info" style="border-style: dashed !important;">
+                            <span class="badge rounded-pill ${getStatusBadgeClass(log.old_value)} px-2 py-1 shadow-sm" style="font-size: 0.75rem; ${getStatusBadgeStyle(log.old_value)}">${log.old_value || 'None'}</span>
+                            <i class="fas fa-arrow-right mx-2 text-secondary" style="font-size: 0.8rem;"></i>
+                            <span class="badge rounded-pill ${getStatusBadgeClass(log.new_value)} px-2 py-1 shadow-sm" style="font-size: 0.75rem; ${getStatusBadgeStyle(log.new_value)}">${log.new_value || 'None'}</span>
+                        </div>
+                    `;
+                } else {
+                    let isFollowup = (log.field_changed || '').startsWith('Followup');
+                    let badgeStyle = isFollowup ? 'background-color: #6f42c1; color: white;' : '';
+                    let badgeClass = isFollowup ? '' : 'bg-secondary';
+                    
+                    bodyHtml = `
+                        <div class="mb-1"><span class="badge ${badgeClass}" style="${badgeStyle}">${log.field_changed}</span> updated</div>
+                        <div class="text-muted small bg-light p-2 rounded border">
+                            <del class="text-danger me-2">${log.old_value || '-'}</del>
+                            <i class="fas fa-arrow-right mx-1 text-muted"></i>
+                            <ins class="text-success text-decoration-none fw-bold ms-2">${log.new_value || '-'}</ins>
+                        </div>
+                    `;
+                }
+
+                return `
                 <div class="timeline-item">
-                    <div class="timeline-icon"></div>
-                    <div class="timeline-content shadow-sm">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <strong class="text-primary">${log.user}</strong>
-                            <span class="text-muted small">${log.timestamp}</span>
-                        </div>
-                        <div class="mb-1"><span class="badge bg-secondary">${log.field_changed}</span> ${log.field_changed === 'Entry Created' ? '' : 'updated'}</div>
-                        <div class="text-muted small">
-                            ${log.field_changed === 'Entry Created' 
-                                ? `<span class="text-success fw-bold">${log.new_value || '-'}</span>`
-                                : `<del class="text-danger">${log.old_value || '-'}</del>
-                                   <i class="fas fa-arrow-right mx-1 text-muted"></i>
-                                   <ins class="text-success text-decoration-none fw-bold">${log.new_value || '-'}</ins>`}
-                        </div>
+                    <div class="timeline-icon ${log.field_changed === 'Status' ? 'bg-info' : ''}">
+                        ${log.field_changed === 'Status' ? '<i class="fas fa-exchange-alt text-white" style="font-size: 10px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);"></i>' : ''}
                     </div>
-                </div>`).join('');
+                    <div class="timeline-content shadow-sm ${log.field_changed === 'Status' ? 'border-start border-4 border-info' : ''}">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong class="text-primary"><i class="far fa-user me-1"></i>${log.user}</strong>
+                            <span class="text-muted small"><i class="far fa-clock me-1"></i>${log.timestamp}</span>
+                        </div>
+                        ${bodyHtml}
+                    </div>
+                </div>`;
+            }).join('');
         })
         .catch((err) => { console.error(err); container.innerHTML = '<div class="text-danger py-3 text-center">Failed to load logs.</div>'; });
     }
@@ -923,7 +965,7 @@
         const cell = select?.closest('td');
         if (cell) {
             cell.classList.remove('inline-editing');
-            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" data-status-val="${(originalValue||'').toLowerCase()}">${originalValue || '-'}</span>`;
+            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" style="${getStatusBadgeStyle(originalValue)}" data-status-val="${(originalValue||'').toLowerCase()}">${originalValue || '-'}</span>`;
         }
     }
 
@@ -950,8 +992,6 @@
             phone: row.getAttribute('data-phone') || '',
             lead_source: row.getAttribute('data-lead') || '',
             product_ids: productIds,
-            followup_1: row.getAttribute('data-f1') || '',
-            followup_2: row.getAttribute('data-f2') || '',
             status: newStatus,
             remarks: row.getAttribute('data-remarks') || '',
             version: row.getAttribute('data-version') || 1
@@ -969,18 +1009,18 @@
                 const finalStatus = result.data.status || '';
                 row.setAttribute('data-status', finalStatus);
                 row.setAttribute('data-version', result.data.version || 1);
-                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
+                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" style="${getStatusBadgeStyle(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
                 alertify.success('Status updated!');
             } else {
                 alertify.error('Error: ' + result.error);
-                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
+                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" style="${getStatusBadgeStyle(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
             }
         })
         .catch((err) => {
             console.error(err);
             cell.classList.remove('inline-editing');
             alertify.error('An error occurred.');
-            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
+            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" style="${getStatusBadgeStyle(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
         });
     }
 
@@ -1027,7 +1067,7 @@
                                 cells[3].textContent = d.lead_source || '-';
                                 cells[4].innerHTML = d.products?.length > 0 ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>' : '<span class="text-muted">-</span>';
                                 cells[5].innerHTML = buildFuCellHtml(d.all_logs, d.id);
-                                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
+                                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
                             }
                         }
                         

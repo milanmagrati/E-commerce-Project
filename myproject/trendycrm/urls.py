@@ -10,6 +10,10 @@ urlpatterns = [
     path('conversations/create/', views.crm_create_conversation, name='create_conversation'),
     path('conversations/<int:conv_id>/delete/', views.crm_delete_conversation, name='delete_conversation'),
     path('conversations/<int:conv_id>/send/', views.crm_send_message, name='send_message'),
+    
+    path('social/', views.crm_social_posts, name='social_posts'),
+    path('social/action/<int:comment_id>/', views.crm_social_action, name='social_action'),
+    
     path('chatbot/', views.crm_chatbot, name='chatbot'),
     path('chatbot/toggle/', views.crm_chatbot_toggle, name='chatbot_toggle'),
     path('quick-replies/', views.crm_quick_replies, name='quick_replies'),

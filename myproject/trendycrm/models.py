@@ -204,3 +204,52 @@ class CRMTicket(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class CRMSocialPost(models.Model):
+    integration = models.ForeignKey(CRMIntegration, on_delete=models.CASCADE, related_name='social_posts')
+    meta_post_id = models.CharField(max_length=255, unique=True)
+    message = models.TextField(blank=True, null=True)
+    picture_url = models.URLField(max_length=1000, blank=True, null=True)
+    created_time = models.DateTimeField(null=True, blank=True)
+    likes_count = models.IntegerField(default=0)
+    comments_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Post {self.meta_post_id}"
+
+    class Meta:
+        ordering = ['-created_time']
+
+
+class CRMSocialComment(models.Model):
+    VISIBILITY_CHOICES = [
+        ('visible', 'Visible'),
+        ('hidden', 'Hidden'),
+        ('spam', 'Spam'),
+    ]
+    WORKFLOW_CHOICES = [
+        ('open', 'Open'),
+        ('done', 'Done'),
+    ]
+    post = models.ForeignKey(CRMSocialPost, on_delete=models.CASCADE, related_name='comments')
+    meta_comment_id = models.CharField(max_length=255, unique=True)
+    parent_comment = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
+    sender_name = models.CharField(max_length=200)
+    sender_id = models.CharField(max_length=255, blank=True, null=True)
+    message = models.TextField()
+    created_time = models.DateTimeField(null=True, blank=True)
+    like_count = models.IntegerField(default=0)
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    workflow_status = models.CharField(max_length=20, choices=WORKFLOW_CHOICES, default='open')
+    visibility_status = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default='visible')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Comment by {self.sender_name}"
+
+    class Meta:
+        ordering = ['-created_time']
