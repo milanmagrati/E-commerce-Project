@@ -21434,8 +21434,7 @@ def add_follow_up(request):
         phone = data.get('phone', '').strip()
         lead_source = data.get('lead_source', '').strip()
         product_ids = data.get('product_ids', [])  # list of IDs (new M2M)
-        followup_1 = data.get('followup_1', '').strip()
-        followup_2 = data.get('followup_2', '').strip()
+        followup_note = data.get('followup_note', '').strip()
         status = data.get('status', '').strip()
         remarks = data.get('remarks', '').strip()
         
@@ -21453,8 +21452,6 @@ def add_follow_up(request):
             name=name,
             phone=phone,
             lead_source=lead_source,
-            followup_1=followup_1,
-            followup_2=followup_2,
             status=status,
             remarks=remarks
         )
@@ -21476,19 +21473,8 @@ def add_follow_up(request):
         
         FollowUpLog.objects.create(
             follow_up=new_follow_up, user=request.user, field_changed='Entry Created',
-            old_value='-', new_value='Entry Created'
+            old_value='-', new_value=followup_note if followup_note else 'Entry Created'
         )
-        
-        if followup_1:
-            FollowUpLog.objects.create(
-                follow_up=new_follow_up, user=request.user, field_changed='Followup 1',
-                old_value='-', new_value=followup_1
-            )
-        if followup_2:
-            FollowUpLog.objects.create(
-                follow_up=new_follow_up, user=request.user, field_changed='Followup 2',
-                old_value='-', new_value=followup_2
-            )
         
         products_data = [
             {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
@@ -21500,21 +21486,14 @@ def add_follow_up(request):
         ])
         
         from django.utils import timezone
-        f1_logs = []
-        f2_logs = []
-        entry_logs = []
+        all_logs = []
         for log in new_follow_up.logs.all():
-            log_data = {
+            all_logs.append({
                 'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
                 'user': log.user.username if log.user else 'System',
+                'field_changed': log.field_changed,
                 'new_value': log.new_value
-            }
-            if log.field_changed == 'Followup 1': f1_logs.append(log_data)
-            elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
-            elif log.field_changed == 'Entry Created': entry_logs.append(log_data)
-            
-        if not f1_logs and entry_logs:
-            f1_logs = [entry_logs[0]]
+            })
             
         response_data = {
             'id': new_follow_up.id,
@@ -21523,12 +21502,9 @@ def add_follow_up(request):
             'lead_source': new_follow_up.lead_source,
             'products': products_data,
             'products_display': ', '.join(p['name'] for p in products_data) or '-',
-            'followup_1': new_follow_up.followup_1,
-            'followup_2': new_follow_up.followup_2,
             'status': new_follow_up.status,
             'remarks': new_follow_up.remarks,
-            'f1_logs': f1_logs,
-            'f2_logs': f2_logs,
+            'all_logs': all_logs,
             'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
             'version': getattr(new_follow_up, 'version', 1)
         }
@@ -21564,8 +21540,7 @@ def edit_follow_up(request, pk):
                 }, status=409)
 
         
-        old_f1 = follow_up.followup_1
-        old_f2 = follow_up.followup_2
+        new_followup_note = data.get('new_followup_note', '').strip()
         
         follow_up.name = data.get('name', follow_up.name).strip()
         phone = data.get('phone', follow_up.phone).strip()
@@ -21580,28 +21555,18 @@ def edit_follow_up(request, pk):
             
         follow_up.phone = phone
         follow_up.lead_source = data.get('lead_source', follow_up.lead_source).strip()
-        
-        new_f1 = data.get('followup_1', follow_up.followup_1).strip()
-        new_f2 = data.get('followup_2', follow_up.followup_2).strip()
-        
-        follow_up.followup_1 = new_f1
-        follow_up.followup_2 = new_f2
         follow_up.status = data.get('status', follow_up.status).strip()
         follow_up.remarks = data.get('remarks', follow_up.remarks).strip()
         if hasattr(follow_up, 'version'):
             follow_up.version += 1
         follow_up.save()
         
-        if old_f1 != new_f1:
+        if new_followup_note:
+            count = follow_up.logs.filter(field_changed__startswith='Followup').count()
+            next_num = count + 1
             FollowUpLog.objects.create(
-                follow_up=follow_up, user=request.user, field_changed='Followup 1',
-                old_value=old_f1, new_value=new_f1
-            )
-            
-        if old_f2 != new_f2:
-            FollowUpLog.objects.create(
-                follow_up=follow_up, user=request.user, field_changed='Followup 2',
-                old_value=old_f2, new_value=new_f2
+                follow_up=follow_up, user=request.user, field_changed=f'Followup {next_num}',
+                old_value='-', new_value=new_followup_note
             )
         
         # Handle multiple products and variations (M2M)
@@ -21627,21 +21592,15 @@ def edit_follow_up(request, pk):
         ])
         
         from django.utils import timezone
-        f1_logs = []
-        f2_logs = []
-        entry_logs = []
+        all_logs = []
         for log in follow_up.logs.all():
-            log_data = {
+            all_logs.append({
                 'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
                 'user': log.user.username if log.user else 'System',
+                'field_changed': log.field_changed,
                 'new_value': log.new_value
-            }
-            if log.field_changed == 'Followup 1': f1_logs.append(log_data)
-            elif log.field_changed == 'Followup 2': f2_logs.append(log_data)
-            elif log.field_changed == 'Entry Created': entry_logs.append(log_data)
+            })
             
-        if not f1_logs and entry_logs:
-            f1_logs = [entry_logs[0]]
         response_data = {
             'id': follow_up.id,
             'name': follow_up.name,
@@ -21649,15 +21608,12 @@ def edit_follow_up(request, pk):
             'lead_source': follow_up.lead_source,
             'products': products_data,
             'products_display': ', '.join(p['name'] for p in products_data) or '-',
-            'followup_1': follow_up.followup_1,
-            'followup_2': follow_up.followup_2,
             'status': follow_up.status,
             'remarks': follow_up.remarks,
-            'f1_logs': f1_logs,
-            'f2_logs': f2_logs,
-            'version': getattr(follow_up, 'version', 1),
+            'all_logs': all_logs,
+            'created_at': timezone.localtime(follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+            'version': getattr(follow_up, 'version', 1)
         }
-        
         # Removed Channels WebSocket broadcast for cPanel compatibility
 
         return JsonResponse({

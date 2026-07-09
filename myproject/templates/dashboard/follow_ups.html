@@ -55,8 +55,7 @@
                             <th>Phone Number</th>
                             <th>Lead Source</th>
                             <th>Product</th>
-                            <th style="min-width: 135px;">Followup 1</th>
-                            <th style="min-width: 135px;">Followup 2</th>
+                            <th style="min-width: 135px;">Follow up</th>
                             <th>Status</th>
                             <th style="max-width: 200px;">Remarks</th>
                             <th style="width: 110px;" class="text-center">Action</th>
@@ -92,8 +91,7 @@
                                     {% endfor %}
                                 </select>
                             </td>
-                            <td><input type="text" class="form-control form-control-sm" id="newFollowup1" placeholder="Followup 1"></td>
-                            <td><input type="text" class="form-control form-control-sm" id="newFollowup2" placeholder="Followup 2"></td>
+                            <td><input type="text" class="form-control form-control-sm" id="newFollowupNote" placeholder="Follow up note"></td>
                             <td>
                                 <select class="form-select form-select-sm" id="newStatus">
                                     {% for status in statuses %}
@@ -136,10 +134,10 @@
                                     <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
-                            <!-- Followup 1 cell: shows latest log + a + button to add new note -->
+                            <!-- Follow up cell -->
                             <td class="fu-cell position-relative p-1" style="min-width:135px; vertical-align:top; background-color:#f8f9fa;">
                                 <div class="fu-content">
-                                    {% with log=item.latest_f1_log %}
+                                    {% with log=item.latest_followup_log %}
                                     {% if log %}
                                     <div class="mb-1">
                                         <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
@@ -148,37 +146,12 @@
                                         </div>
                                         <div class="text-dark text-break" style="font-size:0.75rem;">{{ log.new_value }}</div>
                                     </div>
-                                    {% elif item.followup_1 %}
-                                    <div class="text-dark text-break" style="font-size:0.75rem;">{{ item.followup_1 }}</div>
                                     {% else %}
                                     <span class="text-muted" style="font-size:0.75rem;">-</span>
                                     {% endif %}
                                     {% endwith %}
                                 </div>
-                                <button class="fu-add-btn" onclick="openAddNoteModal({{ item.id }}, 'followup_1')" title="Add Followup 1 Note">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                            </td>
-                            <!-- Followup 2 cell -->
-                            <td class="fu-cell position-relative p-1" style="min-width:135px; vertical-align:top; background-color:#f8f9fa;">
-                                <div class="fu-content">
-                                    {% with log=item.latest_f2_log %}
-                                    {% if log %}
-                                    <div class="mb-1">
-                                        <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
-                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y h:i A" }}</div>
-                                            <div class="text-muted" style="font-size:0.6rem;">by {{ log.user.username|default:"System" }}</div>
-                                        </div>
-                                        <div class="text-dark text-break" style="font-size:0.75rem;">{{ log.new_value }}</div>
-                                    </div>
-                                    {% elif item.followup_2 %}
-                                    <div class="text-dark text-break" style="font-size:0.75rem;">{{ item.followup_2 }}</div>
-                                    {% else %}
-                                    <span class="text-muted" style="font-size:0.75rem;">-</span>
-                                    {% endif %}
-                                    {% endwith %}
-                                </div>
-                                <button class="fu-add-btn" onclick="openAddNoteModal({{ item.id }}, 'followup_2')" title="Add Followup 2 Note">
+                                <button class="fu-add-btn" onclick="openAddNoteModal({{ item.id }})" title="Add Follow up Note">
                                     <i class="fas fa-plus"></i>
                                 </button>
                             </td>
@@ -265,7 +238,7 @@
             </div>
             <div class="modal-body">
                 <div class="mb-1">
-                    <span class="badge bg-secondary" id="addNoteFieldLabel">Followup 1</span>
+                    <span class="badge bg-secondary" id="addNoteFieldLabel">Follow up</span>
                 </div>
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Note <span class="text-danger">*</span></label>
@@ -466,8 +439,7 @@
     let editModal = null;
     let addNoteModal = null;
     let currentNoteId = null;
-    let currentNoteField = 'followup_1'; // 'followup_1' or 'followup_2'
-
+    
     function changePerPage(value) {
         let url = new URL(window.location.href);
         url.searchParams.set('per_page', value);
@@ -576,7 +548,7 @@
 
 
     // ===== Build followup cell HTML (for JS-added rows) =====
-    function buildFuCellHtml(logs, fallbackText, fuId, field) {
+    function buildFuCellHtml(logs, fuId) {
         let contentHtml;
         if (logs && logs.length > 0) {
             const log = logs[0];
@@ -588,13 +560,11 @@
                     </div>
                     <div class="text-dark text-break" style="font-size:0.75rem;">${escapeHtml(log.new_value)}</div>
                 </div>`;
-        } else if (fallbackText) {
-            contentHtml = `<div class="text-dark text-break" style="font-size:0.75rem;">${escapeHtml(fallbackText)}</div>`;
         } else {
             contentHtml = `<span class="text-muted" style="font-size:0.75rem;">-</span>`;
         }
         return `<div class="fu-content">${contentHtml}</div>
-                <button class="fu-add-btn" onclick="openAddNoteModal(${fuId}, '${field}')" title="Add ${field === 'followup_1' ? 'Followup 1' : 'Followup 2'} Note">
+                <button class="fu-add-btn" onclick="openAddNoteModal(${fuId})" title="Add Follow up Note">
                     <i class="fas fa-plus"></i>
                 </button>`;
     }
@@ -612,8 +582,7 @@
             phone: document.getElementById('newPhone').value.trim(),
             lead_source: document.getElementById('newLeadSource').value.trim(),
             product_ids: productIds,
-            followup_1: document.getElementById('newFollowup1').value.trim(),
-            followup_2: document.getElementById('newFollowup2').value.trim(),
+            new_followup_note: document.getElementById('newFollowupNote').value.trim(),
             status: document.getElementById('newStatus').value,
             remarks: document.getElementById('newRemarks').value.trim(),
         };
@@ -641,7 +610,7 @@
         .then(r => r.json())
         .then(result => {
             if (result.success) {
-                ['newName','newPhone','newFollowup1','newFollowup2','newRemarks'].forEach(id => document.getElementById(id).value = '');
+                ['newName','newPhone','newFollowupNote','newRemarks'].forEach(id => document.getElementById(id).value = '');
                 document.getElementById('newLeadSource').value = '';
                 if (typeof jQuery !== 'undefined') $('#newProducts').val(null).trigger('change');
                 const newStatusEl = document.getElementById('newStatus');
@@ -746,41 +715,32 @@
         btn.disabled = true;
 
         const row = document.querySelector(`tr[data-id="${currentNoteId}"]`);
-        let productIds = [];
-        try { productIds = JSON.parse(row.getAttribute('data-products') || '[]').map(p => p.id); } catch(e) {}
-
-        const data = {
-            name: row.getAttribute('data-name') || '',
-            phone: row.getAttribute('data-phone') || '',
-            lead_source: row.getAttribute('data-lead') || '',
-            product_ids: productIds,
-            followup_1: currentNoteField === 'followup_1' ? noteText : (row.getAttribute('data-f1') || ''),
-            followup_2: currentNoteField === 'followup_2' ? noteText : (row.getAttribute('data-f2') || ''),
-            status: statusVal || (row.getAttribute('data-status') || ''),
-            remarks: row.getAttribute('data-remarks') || '',
-            version: row.getAttribute('data-version') || 1
-        };
-
+        
         fetch(`/api/orders/follow-ups/${currentNoteId}/edit/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
-            body: JSON.stringify(data)
+            body: JSON.stringify({
+                new_followup_note: noteText,
+                name: row.getAttribute('data-name') || '',
+                phone: row.getAttribute('data-phone') || '',
+                lead_source: row.getAttribute('data-lead') || '',
+                status: row.getAttribute('data-status') || '',
+                remarks: row.getAttribute('data-remarks') || '',
+                version: row.getAttribute('data-version') || 1
+            })
         })
         .then(r => r.json())
         .then(result => {
             if (result.success) {
-                // Update row data attributes
-                row.setAttribute('data-status', result.data.status || '');
-                row.setAttribute('data-f1', result.data.followup_1 || '');
-                row.setAttribute('data-f2', result.data.followup_2 || '');
-                row.setAttribute('data-remarks', result.data.remarks || '');
+                addNoteModal.hide();
+                alertify.success('Note added successfully!');
+                
                 row.setAttribute('data-version', result.data.version || 1);
 
-                // Update the Followup cells (index 5 & 6) and Status cell (7)
+                // Update the Followup cell and Status cell
                 const cells = row.querySelectorAll('td');
-                cells[5].innerHTML = buildFuCellHtml(result.data.f1_logs, result.data.followup_1, currentNoteId, 'followup_1');
-                cells[6].innerHTML = buildFuCellHtml(result.data.f2_logs, result.data.followup_2, currentNoteId, 'followup_2');
-                cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(result.data.status)}" data-status-val="${(result.data.status||'').toLowerCase()}">${result.data.status || '-'}</span>`;
+                cells[5].innerHTML = buildFuCellHtml(result.data.all_logs, currentNoteId);
+                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(result.data.status)}" data-status-val="${(result.data.status||'').toLowerCase()}">${result.data.status || '-'}</span>`;
 
                 addNoteModal.hide();
                 alertify.success('Note added successfully!');
@@ -873,8 +833,8 @@
                 cells[2].textContent = d.phone || '-';
                 cells[3].textContent = d.lead_source || '-';
                 cells[4].innerHTML = productsHtml;
-                cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
-                cells[8].textContent = d.remarks || '-';
+                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
+                cells[7].textContent = d.remarks || '-';
 
                 editModal.hide();
                 alertify.success('Updated successfully!');
@@ -1058,19 +1018,16 @@
                             row.setAttribute('data-phone', d.phone || '');
                             row.setAttribute('data-lead', d.lead_source || '');
                             row.setAttribute('data-products', JSON.stringify(d.products || []));
-                            row.setAttribute('data-f1', d.followup_1 || '');
-                            row.setAttribute('data-f2', d.followup_2 || '');
                             row.setAttribute('data-remarks', d.remarks || '');
 
                             const cells = row.querySelectorAll('td');
-                            if (cells.length > 7) {
+                            if (cells.length > 6) {
                                 cells[1].textContent = d.name || '-';
                                 cells[2].textContent = d.phone || '';
                                 cells[3].textContent = d.lead_source || '-';
                                 cells[4].innerHTML = d.products?.length > 0 ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>' : '<span class="text-muted">-</span>';
-                                cells[5].innerHTML = buildFuCellHtml(d.f1_logs, d.followup_1, d.id, 'followup_1');
-                                cells[6].innerHTML = buildFuCellHtml(d.f2_logs, d.followup_2, d.id, 'followup_2');
-                                cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
+                                cells[5].innerHTML = buildFuCellHtml(d.all_logs, d.id);
+                                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
                             }
                         }
                         

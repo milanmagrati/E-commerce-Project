@@ -1856,22 +1856,13 @@ class FollowUp(models.Model):
         return f"{self.name} - {self.phone}"
 
     @property
-    def latest_f1_log(self):
-        f1_log = None
-        entry_log = None
-        for log in self.logs.all():
-            if log.field_changed == 'Followup 1' and f1_log is None:
-                f1_log = log
-            if log.field_changed == 'Entry Created' and entry_log is None:
-                entry_log = log
-        return f1_log or entry_log
+    def latest_followup_log(self):
+        # Returns the latest log overall that is a followup note or entry created
+        return self.logs.first()
 
     @property
-    def latest_f2_log(self):
-        for log in self.logs.all():
-            if log.field_changed == 'Followup 2':
-                return log
-        return None
+    def all_followup_logs(self):
+        return self.logs.all()
 
     def get_all_products(self):
         """Return M2M products if any, else fall back to the legacy FK product."""
