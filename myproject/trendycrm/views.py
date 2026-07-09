@@ -149,6 +149,19 @@ def crm_conversations_ajax(request):
         return HttpResponse("")
         
     active_conv = get_object_or_404(CRMConversation, pk=conv_id)
+    
+    # Throttle sync to every 15 seconds to allow local testing without webhooks
+    import time
+    if active_conv.integration:
+        last_sync = request.session.get(f'last_sync_{active_conv.integration.pk}', 0)
+        if time.time() - last_sync > 15:
+            from .meta_sync import sync_meta_conversations
+            try:
+                sync_meta_conversations(active_conv.integration)
+                request.session[f'last_sync_{active_conv.integration.pk}'] = time.time()
+            except Exception as e:
+                logger.error(f"Ajax auto-sync failed: {e}")
+
     messages = active_conv.messages.all()
     
     context = {
@@ -170,6 +183,7 @@ def crm_send_message(request, conv_id):
             is_outbound=True,
         )
         conv.last_message = body
+        conv.updated_at = msg.created_at
         conv.save(update_fields=['last_message', 'updated_at'])
         
         # Send to Meta if applicable
@@ -238,15 +252,25 @@ def crm_create_conversation(request):
             )
         
         if first_message:
-            CRMMessage.objects.create(
+            msg = CRMMessage.objects.create(
                 conversation=conv,
                 sender=request.user.get_full_name() or request.user.username,
                 body=first_message,
                 is_outbound=True
             )
+            conv.updated_at = msg.created_at
+            conv.save(update_fields=['updated_at'])
             
         return redirect(f"{reverse('trendycrm:conversations')}?id={conv.pk}")
     
+    return redirect('trendycrm:conversations')
+    
+@login_required
+@require_POST
+def crm_delete_conversation(request, conv_id):
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    conv.delete()
+    messages.success(request, "Conversation deleted successfully.")
     return redirect('trendycrm:conversations')
 
 
@@ -453,7 +477,7 @@ def connect_facebook(request):
     params = {
         "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
         "redirect_uri": redirect_uri,
-        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,instagram_basic,instagram_manage_messages",
+        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,instagram_basic,instagram_manage_messages",
         "response_type": "code",
     }
     from urllib.parse import urlencode
@@ -465,7 +489,7 @@ def connect_instagram(request):
     params = {
         "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
         "redirect_uri": redirect_uri,
-        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,instagram_basic,instagram_manage_messages",
+        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,instagram_basic,instagram_manage_messages",
         "response_type": "code",
     }
     from urllib.parse import urlencode

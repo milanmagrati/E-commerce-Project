@@ -51,7 +51,7 @@ class CRMConversation(models.Model):
     subject = models.CharField(max_length=300, blank=True, null=True)
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(default=timezone.now)
     last_message = models.TextField(blank=True, null=True)
 
     def __str__(self):
@@ -74,6 +74,22 @@ class CRMMessage(models.Model):
     is_outbound = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='sent')
     created_at = models.DateTimeField(default=timezone.now)
+
+    @property
+    def display_date(self):
+        now = timezone.now().date()
+        if timezone.is_aware(self.created_at):
+            msg_date = timezone.localtime(self.created_at).date()
+        else:
+            msg_date = self.created_at.date()
+            
+        delta = now - msg_date
+        if delta.days == 0:
+            return "Today"
+        elif delta.days == 1:
+            return "Yesterday"
+        else:
+            return msg_date.strftime("%b %d, %Y")
 
     class Meta:
         ordering = ['created_at']

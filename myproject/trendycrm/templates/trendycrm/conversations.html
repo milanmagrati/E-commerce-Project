@@ -340,7 +340,7 @@
         <div class="conv-list">
             {% if conversations %}
                 {% for conv in conversations %}
-                <a href="?id={{ conv.pk }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
+                <div onclick="if(!event.target.closest('.dropdown')){ window.location.href='?id={{ conv.pk }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}'; }" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
                     <div class="conv-avatar">
                         {{ conv.contact.name|first|upper|default:"?" }}
                     </div>
@@ -350,20 +350,37 @@
                             <div class="conv-time" style="font-size:0.7rem; color:var(--crm-text-muted);">{{ conv.updated_at|date:"h:i A" }}</div>
                         </div>
                         <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-top:0.25rem;">
-                            <div style="display:flex; flex-direction:column;">
+                            <div style="display:flex; flex-direction:column; padding-right: 0.5rem; overflow: hidden;">
                                 <div class="conv-preview" style="font-size:0.8rem; color:var(--crm-text-muted); margin-bottom:0.25rem;">{{ conv.last_message|default:"No messages yet"|truncatechars:40 }}</div>
-                                {% if conv.channel == 'facebook' %}
-                                    <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:14px;height:14px;" title="Facebook Messenger">
-                                {% elif conv.channel == 'instagram' %}
-                                    <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:14px;height:14px;" title="Instagram">
-                                {% endif %}
+                                <div>
+                                    {% if conv.channel == 'facebook' %}
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:14px;height:14px;" title="Facebook Messenger">
+                                    {% elif conv.channel == 'instagram' %}
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:14px;height:14px;" title="Instagram">
+                                    {% endif %}
+                                </div>
                             </div>
-                            <div style="margin-top:0.25rem;">
+                            <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.1rem; flex-shrink: 0;">
                                 <i class="far fa-circle text-danger" style="font-size:0.6rem;opacity:0.6;"></i>
+                                <div class="dropdown">
+                                    <button class="btn btn-sm no-caret" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="padding: 0; background: none; border: none; color: var(--crm-text-muted);">
+                                        <i class="fas fa-ellipsis-v" style="padding: 0.3rem 0.5rem; cursor: pointer;"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow" style="border: none; border-radius: 8px; font-size: 0.85rem; z-index: 1050;">
+                                        <li>
+                                            <form action="{% url 'trendycrm:delete_conversation' conv.pk %}" method="post" onsubmit="return confirm('Are you sure you want to delete this entire conversation? This action cannot be undone.');" style="margin: 0;">
+                                                {% csrf_token %}
+                                                <button type="submit" class="dropdown-item text-danger d-flex align-items-center gap-2">
+                                                    <i class="fas fa-trash-alt"></i> Delete
+                                                </button>
+                                            </form>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </a>
+                </div>
                 {% endfor %}
             {% else %}
                 <div class="crm-empty-state">
@@ -380,7 +397,7 @@
     <!-- Right Panel -->
     {% if active_conv %}
     <div class="conv-panel-right">
-        <div class="conv-chat-header">
+        <div class="conv-chat-header d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center gap-2">
                 <a href="{% url 'trendycrm:conversations' %}" class="mobile-back-btn me-1">
                     <i class="fas fa-chevron-left"></i>
@@ -400,6 +417,14 @@
                         <span style="font-size:0.65rem; color:var(--crm-text-muted); margin-left: 0.5rem;"><i class="fas fa-link"></i> {{ active_conv.integration.account_name|truncatechars:20 }}</span>
                     {% endif %}
                 </div>
+            </div>
+            <div>
+                <form action="{% url 'trendycrm:delete_conversation' active_conv.pk %}" method="post" onsubmit="return confirm('Are you sure you want to delete this entire conversation? This action cannot be undone.');" style="margin: 0;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm" style="color: #dc3545; background: none; border: none; padding: 0.25rem 0.5rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'" title="Delete Conversation">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </form>
             </div>
         </div>
 

@@ -1,4 +1,11 @@
 {% for msg in chat_messages %}
+    {% ifchanged msg.created_at|date:"Y-m-d" %}
+        <div style="display:flex; justify-content:center; margin: 1.25rem 0 0.75rem 0;">
+            <div style="background: rgba(0,0,0,0.04); padding: 0.35rem 0.85rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; color: var(--crm-text-muted);">
+                {{ msg.display_date }}
+            </div>
+        </div>
+    {% endifchanged %}
 <div style="display:flex;flex-direction:column;align-items:{% if msg.is_outbound %}flex-end{% else %}flex-start{% endif %};">
     <div class="msg-bubble {% if msg.is_outbound %}msg-outbound{% else %}msg-inbound{% endif %}">
         {{ msg.body }}

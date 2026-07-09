@@ -20,8 +20,8 @@ def sync_meta_conversations(integration):
     # For Facebook Pages, the token is a Page Access Token.
     page_id = integration.account_name.split('(')[-1].strip(')') if '(' in integration.account_name else None
     
-    # Alternatively we can just fetch /me/conversations if we use the Page token
-    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/conversations"
+    # Use the explicit page_id if available, otherwise fallback to /me
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/conversations" if page_id else f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/conversations"
     params = {
         'access_token': integration.access_token,
         'fields': 'id,updated_time,participants,messages.limit(20){id,message,created_time,from,to}',
@@ -118,9 +118,29 @@ def _process_meta_conversation(integration, conv_data):
         except:
             created_at = timezone.now()
             
-        # Create message (we don't have a unique msg_id field on CRMMessage, so we might get duplicates if we sync multiple times,
-        # but for this MVP sync we'll check if a message with exact body and time exists)
-        if not CRMMessage.objects.filter(conversation=conversation, body=body, sender=sender_name).exists():
+        from datetime import timedelta
+        # Check if message already exists to avoid duplicates.
+        # For outbound messages, the local sender name is the CRM user, but Facebook returns the Page name.
+        time_threshold_start = created_at - timedelta(minutes=1)
+        time_threshold_end = created_at + timedelta(minutes=1)
+        
+        if is_outbound:
+            exists = CRMMessage.objects.filter(
+                conversation=conversation, 
+                body=body, 
+                is_outbound=True,
+                created_at__range=(time_threshold_start, time_threshold_end)
+            ).exists()
+        else:
+            exists = CRMMessage.objects.filter(
+                conversation=conversation, 
+                body=body, 
+                sender=sender_name,
+                is_outbound=False,
+                created_at__range=(time_threshold_start, time_threshold_end)
+            ).exists()
+            
+        if not exists:
             CRMMessage.objects.create(
                 conversation=conversation,
                 sender=sender_name,
@@ -131,7 +151,9 @@ def _process_meta_conversation(integration, conv_data):
             
             # Update last_message
             conversation.last_message = body
-            conversation.updated_at = created_at
+            # Only update updated_at if the new message is newer than current updated_at or if it doesn't exist
+            if not conversation.updated_at or created_at > conversation.updated_at:
+                conversation.updated_at = created_at
             conversation.save(update_fields=['last_message', 'updated_at'])
 
 def send_meta_message(integration, recipient_id, message_text):
