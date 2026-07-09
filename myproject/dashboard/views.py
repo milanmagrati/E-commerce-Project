@@ -22098,33 +22098,39 @@ def follow_up_report(request):
 
     # --- Staff breakdown ---
     staff_counter = {}
+    staff_entries_created_counter = {}
     staff_status_counter = {}
+    
     for fu in all_follow_ups:
-        user_actions = get_creator_actions(fu)
-        if not user_actions:
-            if start_dt <= fu.created_at <= end_dt:
-                key = (0, 'Unknown')
-                staff_counter[key] = staff_counter.get(key, 0) + 1
+        for log in fu.logs.all():
+            if log.timestamp and start_dt <= log.timestamp <= end_dt:
+                user = log.user
+                if user:
+                    key = (user.id, user.get_full_name() or user.username)
+                else:
+                    key = (0, 'Unknown')
+                
+                if key not in staff_counter:
+                    staff_counter[key] = 0
+                if key not in staff_entries_created_counter:
+                    staff_entries_created_counter[key] = 0
                 if key not in staff_status_counter:
                     staff_status_counter[key] = {}
-                s = fu.status or 'Unknown'
-                staff_status_counter[key][s] = staff_status_counter[key].get(s, 0) + 1
-        else:
-            for user in user_actions:
-                key = (user.id, user.get_full_name() or user.username)
-                staff_counter[key] = staff_counter.get(key, 0) + 1
-                if key not in staff_status_counter:
-                    staff_status_counter[key] = {}
-                s = fu.status or 'Unknown'
-                staff_status_counter[key][s] = staff_status_counter[key].get(s, 0) + 1
+                    
+                if log.field_changed == 'Entry Created':
+                    staff_entries_created_counter[key] += 1
+                elif log.field_changed.startswith('Followup') or log.field_changed == 'Follow-up Note Added':
+                    staff_counter[key] += 1
+                elif log.field_changed == 'Status':
+                    staff_status_counter[key][log.new_value] = staff_status_counter[key].get(log.new_value, 0) + 1
 
     staff_leaderboard = sorted(
-        [{'id': k[0], 'name': k[1], 'count': v, 'statuses': staff_status_counter[k]}
-         for k, v in staff_counter.items()],
-        key=lambda x: x['count'], reverse=True
+        [{'id': k[0], 'name': k[1], 'count': staff_counter[k], 'entries_created': staff_entries_created_counter[k], 'statuses': dict(sorted(staff_status_counter[k].items(), key=lambda item: item[1], reverse=True)[:3])}
+         for k in staff_counter.keys() if staff_counter[k] > 0 or staff_entries_created_counter[k] > 0],
+        key=lambda x: (x['count'] + x['entries_created']), reverse=True
     )
     most_active_staff = staff_leaderboard[0] if staff_leaderboard else None
-    active_staff_count = len(staff_counter)
+    active_staff_count = len(staff_leaderboard)
 
     # --- Source breakdown ---
     source_counter = {}
@@ -22212,11 +22218,25 @@ def follow_up_report(request):
         products_list = list(fu.products.all())
         if not products_list and fu.product:
             products_list = [fu.product]
+            
+        latest_note = None
+        entry_created_log = None
+        for log in fu.logs.all():
+            if log.field_changed.startswith('Followup') or log.field_changed == 'Follow-up Note Added':
+                latest_note = log
+                break
+            elif log.field_changed == 'Entry Created' and not entry_created_log:
+                entry_created_log = log
+                
+        if not latest_note and entry_created_log:
+            latest_note = entry_created_log
+                
         detailed_rows.append({
             'fu': fu,
             'creator': creator,
             'products_display': ', '.join(p.name for p in products_list) if products_list else '-',
             'log_count': len(fu.logs.all()),
+            'latest_note': latest_note,
         })
 
     # --- Dropdowns for filters ---
@@ -22272,7 +22292,7 @@ def follow_up_report_logs_api(request, pk):
     except FollowUp.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Not found'}, status=404)
 
-    logs = fu.logs.select_related('user').order_by('timestamp')
+    logs = fu.logs.select_related('user').order_by('-timestamp')
     data = []
     for log in logs:
         data.append({
@@ -22283,6 +22303,205 @@ def follow_up_report_logs_api(request, pk):
             'timestamp': log.timestamp.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
         })
     return JsonResponse({'success': True, 'logs': data, 'name': fu.name or fu.phone})
+
+
+@login_required
+def staff_follow_up_logs_api(request, staff_id):
+    """AJAX: return all FollowUpLog entries for a given staff member within a specific period."""
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_follow_up_report', False)
+    )
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+        
+    from .models import FollowUpLog
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    
+    staff = None
+    if staff_id == 0:
+        pass # staff remains None for Unknown
+    else:
+        try:
+            staff = User.objects.get(pk=staff_id)
+        except User.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Staff member not found.'}, status=404)
+
+    period = request.GET.get('period', 'today')
+    start_date_str = request.GET.get('start_date')
+    end_date_str = request.GET.get('end_date')
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    today_local = timezone.now().astimezone(nepal_tz).date()
+
+    if period == 'today':
+        start_date = today_local
+        end_date = today_local
+    elif period == 'yesterday':
+        start_date = today_local - timedelta(days=1)
+        end_date = today_local - timedelta(days=1)
+    elif period == 'this_week':
+        start_date = today_local - timedelta(days=today_local.weekday())
+        end_date = today_local
+    elif period == 'last_7':
+        start_date = today_local - timedelta(days=6)
+        end_date = today_local
+    elif period == 'last_15':
+        start_date = today_local - timedelta(days=14)
+        end_date = today_local
+    elif period == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date   = datetime.strptime(end_date_str,   '%Y-%m-%d').date()
+        except ValueError:
+            start_date = today_local.replace(day=1)
+            end_date = today_local
+    else:  # this_month
+        start_date = today_local.replace(day=1)
+        end_date = today_local
+
+    start_dt = nepal_tz.localize(datetime.combine(start_date, datetime.min.time()))
+    end_dt   = nepal_tz.localize(datetime.combine(end_date,   datetime.max.time()))
+
+    logs = FollowUpLog.objects.filter(
+        user=staff,
+        timestamp__range=(start_dt, end_dt),
+        follow_up__is_deleted=False
+    ).select_related('follow_up').order_by('-timestamp')
+
+    data = []
+    for log in logs:
+        fu = log.follow_up
+        customer_name = fu.name or fu.phone or 'Unknown'
+        data.append({
+            'customer_id': fu.id,
+            'customer_name': customer_name,
+            'field_changed': log.field_changed,
+            'old_value': log.old_value or '',
+            'new_value': log.new_value or '',
+            'timestamp': log.timestamp.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+        })
+
+    staff_name_display = staff.get_full_name() or staff.username if staff else 'Unknown System'
+    
+    return JsonResponse({
+        'success': True, 
+        'logs': data, 
+        'staff_name': staff_name_display,
+        'period_display': f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}" if start_date != end_date else start_date.strftime('%b %d, %Y')
+    })
+
+
+@login_required
+def status_follow_up_logs_api(request):
+    """AJAX: return FollowUpLog entries where status changed to a specific status within a specific period."""
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_follow_up_report', False)
+    )
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+        
+    from .models import FollowUp, FollowUpLog
+    from django.db.models import Q
+    
+    status_name = request.GET.get('status_name')
+    if not status_name:
+        return JsonResponse({'success': False, 'error': 'Status name is required.'}, status=400)
+
+    period = request.GET.get('period', 'today')
+    start_date_str = request.GET.get('start_date')
+    end_date_str = request.GET.get('end_date')
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    today_local = timezone.now().astimezone(nepal_tz).date()
+
+    if period == 'today':
+        start_date = today_local
+        end_date = today_local
+    elif period == 'yesterday':
+        start_date = today_local - timedelta(days=1)
+        end_date = today_local - timedelta(days=1)
+    elif period == 'this_week':
+        start_date = today_local - timedelta(days=today_local.weekday())
+        end_date = today_local
+    elif period == 'last_7':
+        start_date = today_local - timedelta(days=6)
+        end_date = today_local
+    elif period == 'last_15':
+        start_date = today_local - timedelta(days=14)
+        end_date = today_local
+    elif period == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date   = datetime.strptime(end_date_str,   '%Y-%m-%d').date()
+        except ValueError:
+            start_date = today_local.replace(day=1)
+            end_date = today_local
+    else:  # this_month
+        start_date = today_local.replace(day=1)
+        end_date = today_local
+
+    start_dt = nepal_tz.localize(datetime.combine(start_date, datetime.min.time()))
+    end_dt   = nepal_tz.localize(datetime.combine(end_date,   datetime.max.time()))
+
+    fu_qs = FollowUp.objects.filter(is_deleted=False)
+    if status_name == 'Unknown':
+        fu_qs = fu_qs.filter(Q(status__isnull=True) | Q(status=''))
+    else:
+        fu_qs = fu_qs.filter(status=status_name)
+    
+    fu_qs = fu_qs.filter(
+        Q(created_at__range=(start_dt, end_dt)) | 
+        Q(logs__timestamp__range=(start_dt, end_dt))
+    ).distinct()
+
+    data = []
+    # Pre-fetch logs to avoid N+1 inside the loop
+    fu_list = list(fu_qs.prefetch_related('logs__user'))
+    
+    for fu in fu_list:
+        logs_in_period = [log for log in fu.logs.all() if log.timestamp and start_dt <= log.timestamp <= end_dt]
+        logs_in_period.sort(key=lambda x: x.timestamp, reverse=True)
+        
+        customer_name = fu.name or fu.phone or 'Unknown'
+        
+        if logs_in_period:
+            latest_log = logs_in_period[0]
+            user_display = latest_log.user.get_full_name() or latest_log.user.username if latest_log.user else 'Unknown System'
+            dt = latest_log.timestamp.astimezone(nepal_tz)
+            if latest_log.field_changed == 'Entry Created':
+                action_desc = "Entry Created"
+            elif latest_log.field_changed == 'Status':
+                action_desc = f"Status updated to {latest_log.new_value}"
+            elif latest_log.field_changed == 'Followup':
+                action_desc = "Follow-up added"
+            else:
+                action_desc = f"{latest_log.field_changed} updated"
+        else:
+            user_display = 'System'
+            dt = fu.created_at.astimezone(nepal_tz)
+            action_desc = "Created in period"
+            
+        data.append({
+            'customer_id': fu.id,
+            'customer_name': customer_name,
+            'action_desc': action_desc,
+            'timestamp': dt.strftime('%b %d, %Y %I:%M %p'),
+            'timestamp_raw': dt.isoformat(),
+            'user': user_display
+        })
+
+    # Sort data by descending timestamp_raw
+    data.sort(key=lambda x: x['timestamp_raw'], reverse=True)
+
+    return JsonResponse({
+        'success': True, 
+        'logs': data, 
+        'status_name': status_name,
+        'period_display': f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}" if start_date != end_date else start_date.strftime('%b %d, %Y')
+    })
 
 
 @login_required

@@ -273,6 +273,8 @@ urlpatterns = [
     path('reports/purchase/', views.purchase_report, name='purchase_report'),
     path('reports/followups/', views.follow_up_report, name='follow_up_report'),
     path('api/reports/followups/<int:pk>/logs/', views.follow_up_report_logs_api, name='follow_up_report_logs_api'),
+    path('api/reports/followups/staff/<int:staff_id>/logs/', views.staff_follow_up_logs_api, name='staff_follow_up_logs_api'),
+    path('api/reports/followups/status/logs/', views.status_follow_up_logs_api, name='status_follow_up_logs_api'),
 
       # ✅ NCM ORDERS MANAGEMENT
     # ncm_orders_list removed - use logistics/orders/?provider=ncm instead

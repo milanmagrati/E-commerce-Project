@@ -124,6 +124,10 @@
 .log-old { background:rgba(248,113,113,.1); color:var(--fur-red); border-radius:6px; padding:2px 8px; font-size:.78rem; text-decoration:line-through; }
 .log-arrow { color:var(--fur-muted); font-size:.75rem; }
 .log-new { background:rgba(34,197,94,.1); color:var(--fur-green); border-radius:6px; padding:2px 8px; font-size:.78rem; }
+.log-new-status { background:rgba(108,99,255,.1); color:var(--fur-primary); font-weight: 600; }
+.log-new-note { background:transparent; color:#000000; padding:0; font-size:.82rem; font-weight:500; white-space:pre-wrap; }
+.log-item-status { background:rgba(108,99,255,.03); border:1px dashed var(--fur-primary); }
+.log-item-status::before { background:var(--fur-primary); }
 .log-time { font-size:.72rem; color:var(--fur-muted); margin-top:6px; }
 </style>
 {% endblock %}
@@ -250,12 +254,15 @@
       <div class="fur-table-card">
         {% if staff_leaderboard %}
         <table class="fur-table">
-          <thead><tr><th>Rank</th><th>Staff Name</th><th>Follow-ups</th><th>Top Status</th></tr></thead>
+          <thead><tr><th>Rank</th><th>Staff Name</th><th>Entries Created</th><th>Follow-ups</th><th>Top Status</th></tr></thead>
           <tbody>
             {% for s in staff_leaderboard %}
-            <tr>
+            <tr class="staff-row" onclick="viewStaffLogs({{ s.id }}, '{{ s.name|escapejs }}')" style="cursor:pointer; transition:background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
               <td><span class="rank-badge {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}rank-other{% endif %}">{{ forloop.counter }}</span></td>
               <td style="font-weight:600">{{ s.name }}</td>
+              <td>
+                <span style="font-size:1.1rem;font-weight:800;color:var(--fur-green)">{{ s.entries_created }}</span>
+              </td>
               <td>
                 <span style="font-size:1.1rem;font-weight:800;color:var(--fur-primary)">{{ s.count }}</span>
                 <div class="fur-progress-bar mt-1" style="max-width:80px">
@@ -350,7 +357,7 @@
         <thead><tr><th>Status</th><th>Count</th><th>Distribution</th></tr></thead>
         <tbody>
           {% for st in status_breakdown %}
-          <tr>
+          <tr class="staff-row" onclick="viewStatusLogs('{{ st.status|escapejs }}')" style="cursor:pointer; transition:background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
             <td><span class="status-pill" style="background:rgba(34,197,94,.12);color:var(--fur-green)">{{ st.status }}</span></td>
             <td><span style="font-weight:700;color:var(--fur-green)">{{ st.count }}</span></td>
             <td>
@@ -389,8 +396,7 @@
               <th>Products</th>
               <th>Staff</th>
               <th>Status</th>
-              <th>Follow-up 1</th>
-              <th>Follow-up 2</th>
+              <th>Follow-ups</th>
               <th>Remarks</th>
               <th>Created</th>
               <th>Logs</th>
@@ -419,8 +425,22 @@
                 {% else %}<span style="color:var(--fur-muted);font-size:.78rem">Unknown</span>{% endif %}
               </td>
               <td>{% if row.fu.status %}<span class="status-pill" style="background:rgba(108,99,255,.12);color:var(--fur-primary)">{{ row.fu.status }}</span>{% else %}<span style="color:var(--fur-muted)">-</span>{% endif %}</td>
-              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fur-muted);font-size:.8rem" title="{{ row.fu.followup_1 }}">{% if row.fu.followup_1 %}{{ row.fu.followup_1|truncatechars:35 }}{% else %}<span style="color:var(--fur-border)">-</span>{% endif %}</td>
-              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fur-muted);font-size:.8rem" title="{{ row.fu.followup_2 }}">{% if row.fu.followup_2 %}{{ row.fu.followup_2|truncatechars:35 }}{% else %}<span style="color:var(--fur-border)">-</span>{% endif %}</td>
+              <td style="max-width:240px;color:var(--fur-muted);font-size:.8rem">
+                {% if row.latest_note %}
+                    <div style="font-size:.75rem;color:var(--fur-text);font-weight:500;white-space:normal;line-height:1.2;margin-bottom:4px" title="{{ row.latest_note.new_value|default:'Entry Created' }}">
+                        {% if row.latest_note.field_changed == 'Entry Created' %}
+                            <span style="color:var(--fur-green);font-weight:600"><i class="fas fa-plus-circle me-1"></i>Entry Created</span>
+                        {% else %}
+                            {{ row.latest_note.new_value|truncatechars:80 }}
+                        {% endif %}
+                    </div>
+                    <div style="font-size:.65rem;color:var(--fur-muted);display:flex;align-items:center;gap:4px">
+                       <i class="fas fa-clock"></i> By {% if row.latest_note.user.get_full_name %}{{ row.latest_note.user.get_full_name }}{% else %}{{ row.latest_note.user.username|default:"System" }}{% endif %} on {{ row.latest_note.timestamp|date:"M d, Y h:i A" }}
+                    </div>
+                {% else %}
+                    <span style="color:var(--fur-border)">-</span>
+                {% endif %}
+              </td>
               <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fur-muted);font-size:.8rem" title="{{ row.fu.remarks }}">{% if row.fu.remarks %}{{ row.fu.remarks|truncatechars:35 }}{% else %}<span style="color:var(--fur-border)">-</span>{% endif %}</td>
               <td style="color:var(--fur-muted);font-size:.78rem;white-space:nowrap">
                 {{ row.fu.created_at|date:"M d, Y" }}<br><span style="font-size:.7rem">{{ row.fu.created_at|date:"h:i A" }}</span>
@@ -429,7 +449,7 @@
                 <button class="fur-action-btn" title="View Activity Logs" onclick="viewLogs({{ row.fu.id }}, '{{ row.fu.name|default:row.fu.phone|escapejs }}')">
                   <i class="fas fa-history"></i>
                 </button>
-                {% if row.log_count > 0 %}<span style="font-size:.65rem;color:var(--fur-muted);margin-left:2px">{{ row.log_count }}</span>{% endif %}
+                {% if row.log_count > 0 %}<span style="font-size:.7rem;font-weight:700;color:var(--fur-primary);background:rgba(108,99,255,.12);padding:2px 6px;border-radius:10px;margin-left:4px">{{ row.log_count }}</span>{% endif %}
               </td>
             </tr>
             {% endfor %}
@@ -469,6 +489,38 @@
       <button class="fur-modal-close" onclick="document.getElementById('logsModal').classList.remove('show')">&#x2715;</button>
     </div>
     <div class="fur-modal-body" id="logsContent">
+      <div style="text-align:center;padding:30px;color:var(--fur-muted)"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:8px;color:var(--fur-primary)"></i>Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- STAFF LOGS MODAL -->
+<div class="fur-modal-backdrop" id="staffLogsModal" onclick="closeStaffLogsModal(event)">
+  <div class="fur-modal" style="max-width: 550px;">
+    <div class="fur-modal-header">
+      <div>
+        <div class="fur-modal-title"><i class="fas fa-user-clock me-2" style="color:var(--fur-green)"></i>Staff Activity</div>
+        <div id="staffModalSubtitle" style="font-size:.78rem;color:var(--fur-muted);margin-top:2px"></div>
+      </div>
+      <button class="fur-modal-close" onclick="document.getElementById('staffLogsModal').classList.remove('show')">&#x2715;</button>
+    </div>
+    <div class="fur-modal-body" id="staffLogsContent" style="padding: 16px;">
+      <div style="text-align:center;padding:30px;color:var(--fur-muted)"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:8px;color:var(--fur-primary)"></i>Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- STATUS LOGS MODAL -->
+<div class="fur-modal-backdrop" id="statusLogsModal" onclick="closeStatusLogsModal(event)">
+  <div class="fur-modal" style="max-width: 550px;">
+    <div class="fur-modal-header">
+      <div>
+        <div class="fur-modal-title"><i class="fas fa-tags me-2" style="color:var(--fur-primary)"></i>Status Activity</div>
+        <div id="statusModalSubtitle" style="font-size:.78rem;color:var(--fur-muted);margin-top:2px"></div>
+      </div>
+      <button class="fur-modal-close" onclick="document.getElementById('statusLogsModal').classList.remove('show')">&#x2715;</button>
+    </div>
+    <div class="fur-modal-body" id="statusLogsContent" style="padding: 16px;">
       <div style="text-align:center;padding:30px;color:var(--fur-muted)"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:8px;color:var(--fur-primary)"></i>Loading...</div>
     </div>
   </div>
@@ -535,6 +587,16 @@ function setPeriod(val) {
   if (val !== 'custom') document.getElementById('filterForm').submit();
 }
 
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 // Logs Modal
 function viewLogs(fuId, name) {
   const modal = document.getElementById('logsModal');
@@ -550,12 +612,32 @@ function viewLogs(fuId, name) {
       if (!data.logs.length) { content.innerHTML = '<div class="fur-empty"><i class="fas fa-history"></i><br>No activity logs recorded for this follow-up.</div>'; return; }
       let html = '<div class="log-timeline">';
       data.logs.forEach(log => {
-        html += '<div class="log-item">';
-        html += '<div class="log-user"><i class="fas fa-user-circle me-1"></i>' + log.user + '</div>';
-        html += '<div class="log-field">Changed: <strong>' + log.field_changed + '</strong></div>';
-        html += '<div class="log-change">';
-        if (log.old_value) html += '<span class="log-old">' + log.old_value + '</span><span class="log-arrow">&#x2192;</span>';
-        html += '<span class="log-new">' + (log.new_value || '(empty)') + '</span>';
+        let isStatus = log.field_changed === 'Status';
+        let isFollowup = log.field_changed.startsWith('Followup');
+        let itemClass = isStatus ? 'log-item log-item-status' : 'log-item';
+        let iconHtml = isStatus ? '<i class="fas fa-tags me-1" style="color:var(--fur-primary)"></i>' : '<i class="fas fa-user-circle me-1"></i>';
+        
+        let fieldColor = isStatus ? 'var(--fur-primary)' : '#ea580c';
+
+        html += '<div class="' + itemClass + '">';
+        html += '<div class="log-user">' + iconHtml + log.user + '</div>';
+        
+        if (isFollowup) {
+            html += '<div class="log-field" style="margin-top:6px;"><span style="background:#6c63ff; color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;">' + log.field_changed + '</span> <span style="color:var(--fur-muted)">updated</span></div>';
+        } else if (isStatus) {
+            html += '<div class="log-field" style="margin-top:6px;"><span style="background:#0ea5e9; color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;"><i class="fas fa-sync-alt me-1"></i>Status Updated</span></div>';
+        } else {
+            html += '<div class="log-field" style="margin-top:6px;"><span style="color:var(--fur-muted)">Changed:</span> <strong style="color:var(--fur-text)">' + log.field_changed + '</strong></div>';
+        }
+        
+        html += '<div class="log-change" style="' + (isFollowup ? 'margin-top:4px;' : '') + '">';
+        if (log.old_value && log.old_value !== '-') html += '<span class="log-old">' + log.old_value + '</span><span class="log-arrow">&#x2192;</span>';
+        
+        let newValClass = 'log-new';
+        if (isStatus) newValClass = 'log-new log-new-status';
+        else if (isFollowup) newValClass = 'log-new log-new-note';
+        
+        html += '<span class="' + newValClass + '">' + (log.new_value || '(empty)') + '</span>';
         html += '</div>';
         html += '<div class="log-time"><i class="fas fa-clock me-1"></i>' + log.timestamp + '</div>';
         html += '</div>';
@@ -568,6 +650,144 @@ function viewLogs(fuId, name) {
 
 function closeLogsModal(e) {
   if (e.target === document.getElementById('logsModal')) document.getElementById('logsModal').classList.remove('show');
+}
+
+function viewStaffLogs(staffId, staffName) {
+  const modal = document.getElementById('staffLogsModal');
+  const content = document.getElementById('staffLogsContent');
+  const subtitle = document.getElementById('staffModalSubtitle');
+  
+  // Use existing query params to filter correctly
+  const urlParams = new URLSearchParams(window.location.search);
+  const period = urlParams.get('period') || 'this_month';
+  const startDate = urlParams.get('start_date') || '';
+  const endDate = urlParams.get('end_date') || '';
+  
+  subtitle.innerHTML = '<strong>' + staffName + '</strong>';
+  content.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:8px;color:var(--fur-green)"></i>Loading...</div>';
+  modal.classList.add('show');
+
+  let apiUrl = `/api/reports/followups/staff/${staffId}/logs/?period=${period}&start_date=${startDate}&end_date=${endDate}`;
+
+  fetch(apiUrl)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { content.innerHTML = '<div class="fur-empty"><i class="fas fa-exclamation-circle"></i><br>' + (data.error||'Error') + '</div>'; return; }
+      subtitle.innerHTML = '<strong>' + data.staff_name + '</strong> &nbsp;&bull;&nbsp; ' + data.period_display;
+      if (!data.logs.length) { content.innerHTML = '<div class="fur-empty"><i class="fas fa-user-clock"></i><br>No activity recorded in this period.</div>'; return; }
+      
+      let html = '<div class="log-timeline">';
+      data.logs.forEach(log => {
+        let isStatus = log.field_changed === 'Status';
+        let isFollowup = log.field_changed.startsWith('Followup') || log.field_changed === 'Follow-up Note Added';
+        let isEntry = log.field_changed === 'Entry Created';
+        
+        let itemClass = isStatus ? 'log-item log-item-status' : 'log-item';
+        let iconHtml = isStatus ? '<i class="fas fa-tags me-1" style="color:var(--fur-primary)"></i>' : (isEntry ? '<i class="fas fa-plus-circle me-1" style="color:var(--fur-green)"></i>' : '<i class="fas fa-comment-dots me-1" style="color:var(--fur-purple)"></i>');
+        
+        let safeCustomerName = escapeHTML(log.customer_name);
+        
+        html += '<div class="' + itemClass + '">';
+        
+        // Customer name header
+        html += '<div class="log-user" style="font-size:.8rem; margin-bottom:4px; border-bottom: 1px dashed rgba(0,0,0,0.05); padding-bottom: 4px;">';
+        html += '<a href="/orders/follow-ups/?search=' + encodeURIComponent(log.customer_name) + '" target="_blank" style="color:var(--fur-text); text-decoration:none;" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">';
+        html += '<i class="fas fa-user me-1" style="color:var(--fur-muted)"></i>' + safeCustomerName;
+        html += '</a></div>';
+        
+        // Action badge
+        html += '<div class="log-field" style="margin-top:6px;">' + iconHtml;
+        if (isFollowup) {
+            html += '<span style="background:#6c63ff; color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;">' + log.field_changed + '</span> <span style="color:var(--fur-muted)">updated</span>';
+        } else if (isStatus) {
+            html += '<span style="background:#0ea5e9; color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;">Status Updated</span>';
+        } else if (isEntry) {
+            html += '<span style="background:var(--fur-green); color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;">Entry Created</span>';
+        } else {
+            html += '<span style="color:var(--fur-muted)">Changed:</span> <strong style="color:var(--fur-text)">' + log.field_changed + '</strong>';
+        }
+        html += '</div>';
+        
+        html += '<div class="log-change" style="margin-top:4px;">';
+        if (log.old_value && log.old_value !== '-') html += '<span class="log-old">' + log.old_value + '</span><span class="log-arrow">&#x2192;</span>';
+        
+        let newValClass = 'log-new';
+        if (isStatus) newValClass = 'log-new log-new-status';
+        else if (isFollowup) newValClass = 'log-new log-new-note';
+        else if (isEntry) newValClass = 'log-new';
+        
+        html += '<span class="' + newValClass + '">' + (log.new_value || '(empty)') + '</span>';
+        html += '</div>';
+        html += '<div class="log-time" style="margin-top: 4px;"><i class="fas fa-clock me-1"></i>' + log.timestamp + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      content.innerHTML = html;
+    })
+    .catch(() => { content.innerHTML = '<div class="fur-empty"><i class="fas fa-wifi"></i><br>Network error. Please try again.</div>'; });
+}
+
+function closeStaffLogsModal(e) {
+  if (e.target === document.getElementById('staffLogsModal')) document.getElementById('staffLogsModal').classList.remove('show');
+}
+
+function viewStatusLogs(statusName) {
+  const modal = document.getElementById('statusLogsModal');
+  const content = document.getElementById('statusLogsContent');
+  const subtitle = document.getElementById('statusModalSubtitle');
+  
+  // Use existing query params to filter correctly
+  const urlParams = new URLSearchParams(window.location.search);
+  const period = urlParams.get('period') || 'this_month';
+  const startDate = urlParams.get('start_date') || '';
+  const endDate = urlParams.get('end_date') || '';
+  
+  subtitle.innerHTML = '<strong>' + statusName + '</strong>';
+  content.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:8px;color:var(--fur-primary)"></i>Loading...</div>';
+  modal.classList.add('show');
+
+  let apiUrl = `/api/reports/followups/status/logs/?status_name=${encodeURIComponent(statusName)}&period=${period}&start_date=${startDate}&end_date=${endDate}`;
+
+  fetch(apiUrl)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { content.innerHTML = '<div class="fur-empty"><i class="fas fa-exclamation-circle"></i><br>' + (data.error||'Error') + '</div>'; return; }
+      subtitle.innerHTML = '<span class="status-pill" style="background:rgba(108,99,255,.15);color:var(--fur-primary)">' + data.status_name + '</span> &nbsp;&bull;&nbsp; ' + data.period_display;
+      if (!data.logs.length) { content.innerHTML = '<div class="fur-empty"><i class="fas fa-tags"></i><br>No items moved to this status in this period.</div>'; return; }
+      
+      let html = '<div class="log-timeline">';
+      data.logs.forEach(log => {
+        let itemClass = 'log-item log-item-status';
+        let iconHtml = '<i class="fas fa-tags me-1" style="color:var(--fur-primary)"></i>';
+        
+        html += '<div class="' + itemClass + '">';
+        
+        let safeCustomerName = escapeHTML(log.customer_name);
+        // Customer name header
+        html += '<div class="log-user" style="font-size:.8rem; margin-bottom:4px; border-bottom: 1px dashed rgba(0,0,0,0.05); padding-bottom: 4px;">';
+        html += '<a href="/orders/follow-ups/?search=' + encodeURIComponent(log.customer_name) + '" target="_blank" style="color:var(--fur-text); text-decoration:none;" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">';
+        html += '<i class="fas fa-user me-1" style="color:var(--fur-muted)"></i>' + safeCustomerName;
+        html += '</a></div>';
+        
+        // Action badge and user
+        html += '<div class="log-field" style="margin-top:6px; display:flex; justify-content:space-between; align-items:center;">';
+        html += '<div>' + iconHtml;
+        html += '<span style="background:#0ea5e9; color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;">' + escapeHTML(log.action_desc || 'Status Check') + '</span>';
+        html += '</div>';
+        html += '<div style="font-size:0.75rem; color:var(--fur-muted);"><i class="fas fa-user-circle me-1"></i>' + escapeHTML(log.user) + '</div>';
+        html += '</div>';
+        
+        html += '<div class="log-time" style="margin-top: 6px;"><i class="fas fa-clock me-1"></i>' + escapeHTML(log.timestamp) + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      content.innerHTML = html;
+    })
+    .catch(() => { content.innerHTML = '<div class="fur-empty"><i class="fas fa-wifi"></i><br>Network error. Please try again.</div>'; });
+}
+
+function closeStatusLogsModal(e) {
+  if (e.target === document.getElementById('statusLogsModal')) document.getElementById('statusLogsModal').classList.remove('show');
 }
 </script>
 {% endblock %}
