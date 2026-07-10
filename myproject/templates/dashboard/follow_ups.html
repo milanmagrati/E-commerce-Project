@@ -146,8 +146,7 @@
                                                     <span class="badge bg-secondary" style="font-size: 0.55rem; padding: 0.2rem 0.4rem;">{{ log.field_changed }}</span>
                                                 {% endif %}
                                             </div>
-                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y h:i A" }}</div>
-                                            <div class="text-muted" style="font-size:0.6rem;">by {{ log.user.username|default:"System" }}</div>
+                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y h:i A" }} by {{ log.user.username|default:"System" }}</div>
                                         </div>
                                         <div class="text-dark text-break" style="font-size:0.75rem;">{{ log.new_value }}</div>
                                     </div>
@@ -594,8 +593,7 @@
                 <div class="mb-1">
                     <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
                         ${badgeHtml}
-                        <div class="text-muted" style="font-size:0.6rem;">${log.timestamp}</div>
-                        <div class="text-muted" style="font-size:0.6rem;">by ${escapeHtml(log.user)}</div>
+                        <div class="text-muted" style="font-size:0.6rem;">${log.timestamp} by ${escapeHtml(log.user)}</div>
                     </div>
                     <div class="text-dark text-break" style="font-size:0.75rem;">${escapeHtml(log.new_value)}</div>
                 </div>`;
