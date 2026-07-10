@@ -1267,12 +1267,21 @@
                 </li>
                 {% endif %}
 
-                <!-- ==================== CONTENT MANAGEMENT ==================== -->
+                <!-- ==================== CONTENT HUB ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_content_management %}
-                <li class="{% if request.resolver_match.url_name == 'content_accounts_list' %}active{% endif %}">
-                    <a href="{% url 'content_accounts_list' %}">
-                        <i class="fas fa-file-alt"></i> Content Management
+                <li class="content-menu {% if request.resolver_match.url_name == 'content_accounts_list' or request.resolver_match.url_name == 'staff_reports_list' or request.resolver_match.url_name == 'content_accounts_trash' %}active{% endif %}">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#contentMenu" aria-expanded="false">
+                        <i class="fas fa-file-alt"></i> Content Hub
+                        <i class="fas fa-chevron-down float-end mt-1"></i>
                     </a>
+                    <ul class="collapse list-unstyled {% if request.resolver_match.url_name == 'content_accounts_list' or request.resolver_match.url_name == 'staff_reports_list' or request.resolver_match.url_name == 'content_accounts_trash' %}show{% endif %}" id="contentMenu">
+                        <li class="{% if request.resolver_match.url_name == 'content_accounts_list' or request.resolver_match.url_name == 'content_accounts_trash' %}active{% endif %}">
+                            <a href="{% url 'content_accounts_list' %}">Content Management</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'staff_reports_list' %}active{% endif %}">
+                            <a href="{% url 'staff_reports_list' %}">Staff Report</a>
+                        </li>
+                    </ul>
                 </li>
                 {% endif %}
 

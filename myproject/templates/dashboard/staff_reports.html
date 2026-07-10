@@ -45,7 +45,7 @@
 
                         {% for report in reports %}
                         <!-- Staff Name Header Row -->
-                        <tr>
+                        <tr style="border-top: 4px solid #adb5bd;">
                             <td class="text-center text-muted row-num"></td>
                             <td class="fw-bold text-danger fs-6">{{ report.staff_name }}'s Report</td>
                             <td class="text-end">
@@ -69,7 +69,10 @@
                         <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Notes/Remarks</td><td>{{ report.notes_remarks }}</td></tr>
                         
                         <!-- Empty spacer row like excel -->
-                        <tr><td class="text-center text-muted row-num"></td><td></td><td></td></tr>
+                        <tr>
+                            <td class="text-center text-muted row-num" style="background-color: #e9ecef;"></td>
+                            <td colspan="2" style="background-color: #e9ecef; border-bottom: 2px solid #adb5bd !important;"></td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -91,7 +94,12 @@
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label fw-bold text-secondary small text-uppercase"><i class="fas fa-user text-primary me-1"></i> Staff Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control form-control-sm" id="staffName" placeholder="e.g. Garima">
+                        <select class="form-select form-select-sm" id="staffName">
+                            <option value="">Select Employee...</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.full_name }}" {% if request.user == emp.user %}selected{% endif %}>{{ emp.full_name }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-bold text-secondary small text-uppercase"><i class="fas fa-calendar-alt text-primary me-1"></i> Date <span class="text-danger">*</span></label>

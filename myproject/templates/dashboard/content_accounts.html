@@ -8,9 +8,6 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="mb-0"><i class="fas fa-file-alt text-primary me-2"></i> Content Management</h4>
         <div class="d-flex gap-2">
-            <a href="{% url 'staff_reports_list' %}" class="btn btn-sm btn-outline-primary">
-                <i class="fas fa-file-excel"></i> Staff Report
-            </a>
             <a href="{% url 'content_accounts_trash' %}" class="btn btn-sm btn-outline-danger">
                 <i class="fas fa-trash"></i> Trash
             </a>
@@ -47,9 +44,9 @@
                             <td><input type="text" class="form-control form-control-sm" id="newPassword" placeholder="Password"></td>
                             <td>
                                 <select class="form-select form-select-sm" id="newManagedBy">
-                                    <option value="">Select User...</option>
-                                    {% for u in users %}
-                                    <option value="{{ u.get_full_name|default:u.username }}" {% if request.user == u %}selected{% endif %}>{{ u.get_full_name|default:u.username }}</option>
+                                    <option value="">Select Employee...</option>
+                                    {% for emp in employees %}
+                                    <option value="{{ emp.full_name }}" {% if request.user == emp.user %}selected{% endif %}>{{ emp.full_name }}</option>
                                     {% endfor %}
                                 </select>
                             </td>
@@ -136,9 +133,9 @@
                     <div class="col-md-6">
                         <label class="form-label">Managed By</label>
                         <select class="form-select" id="editManagedBy">
-                            <option value="">Select User...</option>
-                            {% for u in users %}
-                            <option value="{{ u.get_full_name|default:u.username }}">{{ u.get_full_name|default:u.username }}</option>
+                            <option value="">Select Employee...</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.full_name }}">{{ emp.full_name }}</option>
                             {% endfor %}
                         </select>
                     </div>

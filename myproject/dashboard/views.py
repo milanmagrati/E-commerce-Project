@@ -21755,15 +21755,14 @@ from .models import ContentAccount
 @login_required
 @permission_required('can_view_content_management')
 def content_accounts_list(request):
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    users = User.objects.all().order_by('username')
+    from hrm.models import Employee
+    employees = Employee.objects.all().order_by('full_name')
     accounts = ContentAccount.objects.filter(is_deleted=False).order_by('order', '-id')
     statuses = [{'name': s} for s in ['Active', 'new', 'inactive', 'deleted', 'Blocked']]
     return render(request, 'dashboard/content_accounts.html', {
         'accounts': accounts,
         'statuses': statuses,
-        'users': users
+        'employees': employees
     })
 
 @login_required
@@ -21904,9 +21903,12 @@ from .models import StaffReport
 
 @login_required
 def staff_reports_list(request):
+    from hrm.models import Employee
     reports = StaffReport.objects.filter(is_deleted=False).order_by('-id')
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
     return render(request, 'dashboard/staff_reports.html', {
         'reports': reports,
+        'employees': employees,
     })
 
 @login_required
