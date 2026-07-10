@@ -167,24 +167,24 @@
         </div>
         <input type="hidden" name="period" id="periodInput" value="{{ period }}">
       </div>
-      <div class="fur-filter-row" style="margin-top:10px">
-        <select name="staff_id" class="fur-select" onchange="this.form.submit()">
+      <div class="fur-filter-row" style="margin-top:10px; flex-wrap:wrap; gap:10px;">
+        <select name="staff_id" class="fur-select" onchange="submitFilters()">
           <option value="">All Staff</option>
           {% for s in all_staff %}<option value="{{ s.id }}" {% if filter_staff_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.get_full_name|default:s.username }}</option>{% endfor %}
         </select>
-        <select name="source" class="fur-select" onchange="this.form.submit()">
+        <select name="source" class="fur-select" onchange="submitFilters()">
           <option value="">All Sources</option>
           {% for src in all_sources %}<option value="{{ src.name }}" {% if filter_source == src.name %}selected{% endif %}>{{ src.name }}</option>{% endfor %}
         </select>
-        <select name="status" class="fur-select" onchange="this.form.submit()">
+        <select name="status" class="fur-select" onchange="submitFilters()">
           <option value="">All Statuses</option>
           {% for st in all_statuses %}<option value="{{ st.name }}" {% if filter_status == st.name %}selected{% endif %}>{{ st.name }}</option>{% endfor %}
         </select>
-        <select name="product_id" class="fur-select" onchange="this.form.submit()">
+        <select name="product_id" class="fur-select" onchange="submitFilters()">
           <option value="">All Products</option>
           {% for pr in all_products %}<option value="{{ pr.id }}" {% if filter_product == pr.id|stringformat:"s" %}selected{% endif %}>{{ pr.name }}</option>{% endfor %}
         </select>
-        <button type="submit" class="fur-apply-btn"><i class="fas fa-sync-alt me-1"></i>Apply</button>
+        <button type="button" onclick="submitFilters()" class="fur-apply-btn"><i class="fas fa-sync-alt me-1"></i>Apply</button>
       </div>
     </div>
   </form>
@@ -378,11 +378,116 @@
     </div>
   </div>
 
+  <!-- ENTRY CREATION SUMMARY -->
+  <div class="fur-section">
+    <div class="fur-section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div style="display:flex; align-items:center; gap:15px;">
+          <div class="fur-section-title" style="margin-bottom:0;"><span class="dot" style="background:var(--fur-primary)"></span>Entry Creation Summary</div>
+          <span style="color:var(--fur-muted);font-size:.82rem">{{ summary_total_count }} total &bull; Page {{ summary_page_obj.number }} of {{ summary_page_obj.paginator.num_pages }}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px;">
+          <select id="summaryPageSizeSelect" name="summary_page_size" class="fur-select" style="height:34px;font-size:.85rem;padding:0 24px 0 10px;" onchange="submitFilters()">
+              <option value="10" {% if summary_page_size == '10' %}selected{% endif %}>10 rows</option>
+              <option value="50" {% if summary_page_size == '50' %}selected{% endif %}>50 rows</option>
+              <option value="100" {% if summary_page_size == '100' %}selected{% endif %}>100 rows</option>
+              <option value="200" {% if summary_page_size == '200' %}selected{% endif %}>200 rows</option>
+              <option value="500" {% if summary_page_size == '500' %}selected{% endif %}>500 rows</option>
+          </select>
+      </div>
+    </div>
+    <div class="fur-table-card">
+      {% if summary_page_obj.object_list %}
+      <div style="overflow-y:auto; max-height:400px; overflow-x:auto;">
+        <table class="fur-table">
+          <thead style="position: sticky; top: 0; z-index: 10;">
+            <tr>
+              <th>Staff</th>
+              <th>Total Created</th>
+              <th>Top Products Created</th>
+              <th>Top Lead Sources</th>
+              <th>Logs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for staff_data in summary_page_obj.object_list %}
+            <tr style="cursor:pointer" onclick='if(!event.target.closest("button")){ viewStaffCreationLogs("{{ staff_data.name|escapejs }}", {{ staff_data.logs_json|safe }}); }'>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--fur-primary),#a78bfa);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.75rem">
+                    {{ staff_data.name|slice:":1"|upper }}
+                  </div>
+                  <span style="font-weight:500">{{ staff_data.name }}</span>
+                </div>
+              </td>
+              <td><span style="font-weight:600;color:var(--fur-primary)">{{ staff_data.count }}</span></td>
+              <td>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  {% for p, count in staff_data.top_products.items %}
+                    <div class="status-pill" style="background:rgba(251,146,60,.12);color:var(--fur-orange)">
+                      {{ p }} <span style="opacity:0.6;font-size:0.7rem;margin-left:2px">{{ count }}</span>
+                    </div>
+                  {% endfor %}
+                </div>
+              </td>
+              <td>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  {% for s, count in staff_data.top_sources.items %}
+                    <div class="status-pill" style="background:rgba(108,99,255,.12);color:var(--fur-primary)">
+                      {{ s }} <span style="opacity:0.6;font-size:0.7rem;margin-left:2px">{{ count }}</span>
+                    </div>
+                  {% endfor %}
+                </div>
+              </td>
+              <td>
+                <button class="fur-action-btn" title="View Creation Logs" onclick='viewStaffCreationLogs("{{ staff_data.name|escapejs }}", {{ staff_data.logs_json|safe }})'>
+                  <i class="fas fa-history"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if summary_page_obj.paginator.num_pages > 1 %}
+      <div class="fur-pagination">
+        {% if summary_page_obj.has_previous %}<a href="?q={{ search_query|urlencode }}&page_size={{ page_size }}&summary_page_size={{ summary_page_size }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ page_obj.number }}&summary_page={{ summary_page_obj.previous_page_number }}" class="fur-page-btn" onclick="saveScroll()"><i class="fas fa-chevron-left"></i></a>{% endif %}
+        {% for num in summary_page_obj.paginator.page_range %}
+          {% if num == summary_page_obj.number %}<span class="fur-page-btn active">{{ num }}</span>
+          {% elif num >= summary_page_obj.number|add:"-2" and num <= summary_page_obj.number|add:"2" %}<a href="?q={{ search_query|urlencode }}&page_size={{ page_size }}&summary_page_size={{ summary_page_size }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ page_obj.number }}&summary_page={{ num }}" class="fur-page-btn" onclick="saveScroll()">{{ num }}</a>{% endif %}
+        {% endfor %}
+        {% if summary_page_obj.has_next %}<a href="?q={{ search_query|urlencode }}&page_size={{ page_size }}&summary_page_size={{ summary_page_size }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ page_obj.number }}&summary_page={{ summary_page_obj.next_page_number }}" class="fur-page-btn" onclick="saveScroll()"><i class="fas fa-chevron-right"></i></a>{% endif %}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="fur-empty">
+        <i class="fas fa-user-plus"></i><br>
+        <strong style="color:var(--fur-text);display:block;margin-bottom:4px">No entries created</strong>
+        No new entries were created in this period.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
   <!-- DETAILED TABLE -->
   <div class="fur-section">
-    <div class="fur-section-header">
-      <div class="fur-section-title"><span class="dot" style="background:var(--fur-blue)"></span>Detailed Follow-ups List</div>
-      <span style="color:var(--fur-muted);font-size:.82rem">{{ total_count }} total &bull; Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    <div class="fur-section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div style="display:flex; align-items:center; gap:15px;">
+          <div class="fur-section-title" style="margin-bottom:0;"><span class="dot" style="background:var(--fur-blue)"></span>Detailed Follow-ups List</div>
+          <span style="color:var(--fur-muted);font-size:.82rem">{{ total_count }} total &bull; Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px;">
+          <div style="position:relative; width:220px;">
+            <i class="fas fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--fur-muted);font-size:.85rem"></i>
+            <input type="text" id="searchInputBox" name="q" placeholder="Search name, phone, remarks..." value="{{ search_query }}" class="fur-select" style="width:100%;padding-left:30px;height:34px;font-size:.85rem;" onkeypress="if(event.keyCode==13){event.preventDefault();submitFilters();}">
+          </div>
+          <select id="pageSizeSelect" name="page_size" class="fur-select" style="height:34px;font-size:.85rem;padding:0 24px 0 10px;" onchange="submitFilters()">
+              <option value="10" {% if page_size == '10' %}selected{% endif %}>10 rows</option>
+              <option value="50" {% if page_size == '50' %}selected{% endif %}>50 rows</option>
+              <option value="100" {% if page_size == '100' %}selected{% endif %}>100 rows</option>
+              <option value="200" {% if page_size == '200' %}selected{% endif %}>200 rows</option>
+              <option value="500" {% if page_size == '500' %}selected{% endif %}>500 rows</option>
+          </select>
+      </div>
     </div>
     <div class="fur-table-card">
       {% if detailed_rows %}
@@ -446,7 +551,7 @@
                 {{ row.fu.created_at|date:"M d, Y" }}<br><span style="font-size:.7rem">{{ row.fu.created_at|date:"h:i A" }}</span>
               </td>
               <td>
-                <button class="fur-action-btn" title="View Activity Logs" onclick="viewLogs({{ row.fu.id }}, '{{ row.fu.name|default:row.fu.phone|escapejs }}')">
+                <button class="fur-action-btn" title="View Activity Logs" onclick="viewLogs({{ row.fu.id }}, '{{ row.fu.name|default:row.fu.phone|escapejs }}', {% if row.creator %}{{ row.creator.id }}{% else %}null{% endif %})">
                   <i class="fas fa-history"></i>
                 </button>
                 {% if row.log_count > 0 %}<span style="font-size:.7rem;font-weight:700;color:var(--fur-primary);background:rgba(108,99,255,.12);padding:2px 6px;border-radius:10px;margin-left:4px">{{ row.log_count }}</span>{% endif %}
@@ -458,12 +563,12 @@
       </div>
       {% if page_obj.paginator.num_pages > 1 %}
       <div class="fur-pagination">
-        {% if page_obj.has_previous %}<a href="?period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ page_obj.previous_page_number }}" class="fur-page-btn"><i class="fas fa-chevron-left"></i></a>{% endif %}
+        {% if page_obj.has_previous %}<a href="?q={{ search_query|urlencode }}&page_size={{ page_size }}&summary_page_size={{ summary_page_size }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&summary_page={{ summary_page_obj.number }}&page={{ page_obj.previous_page_number }}" class="fur-page-btn" onclick="saveScroll()"><i class="fas fa-chevron-left"></i></a>{% endif %}
         {% for num in page_obj.paginator.page_range %}
           {% if num == page_obj.number %}<span class="fur-page-btn active">{{ num }}</span>
-          {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}<a href="?period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ num }}" class="fur-page-btn">{{ num }}</a>{% endif %}
+          {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}<a href="?q={{ search_query|urlencode }}&page_size={{ page_size }}&summary_page_size={{ summary_page_size }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&summary_page={{ summary_page_obj.number }}&page={{ num }}" class="fur-page-btn" onclick="saveScroll()">{{ num }}</a>{% endif %}
         {% endfor %}
-        {% if page_obj.has_next %}<a href="?period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&page={{ page_obj.next_page_number }}" class="fur-page-btn"><i class="fas fa-chevron-right"></i></a>{% endif %}
+        {% if page_obj.has_next %}<a href="?q={{ search_query|urlencode }}&page_size={{ page_size }}&summary_page_size={{ summary_page_size }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&staff_id={{ filter_staff_id }}&source={{ filter_source }}&status={{ filter_status }}&product_id={{ filter_product }}&summary_page={{ summary_page_obj.number }}&page={{ page_obj.next_page_number }}" class="fur-page-btn" onclick="saveScroll()"><i class="fas fa-chevron-right"></i></a>{% endif %}
       </div>
       {% endif %}
       {% else %}
@@ -476,6 +581,21 @@
     </div>
   </div>
 
+</div>
+
+<!-- STAFF CREATION LOGS MODAL -->
+<div class="fur-modal-backdrop" id="staffCreationLogsModal" onclick="closeStaffCreationLogsModal(event)">
+  <div class="fur-modal" style="max-width: 550px;">
+    <div class="fur-modal-header">
+      <div>
+        <div class="fur-modal-title"><i class="fas fa-history me-2" style="color:var(--fur-primary)"></i>Creation Logs</div>
+        <div id="staffCreationModalSubtitle" style="font-size:.78rem;color:var(--fur-muted);margin-top:2px"></div>
+      </div>
+      <button class="fur-modal-close" onclick="document.getElementById('staffCreationLogsModal').classList.remove('show')">&#x2715;</button>
+    </div>
+    <div class="fur-modal-body" id="staffCreationLogsContent" style="padding: 16px;">
+    </div>
+  </div>
 </div>
 
 <!-- LOGS MODAL -->
@@ -584,8 +704,58 @@ function setPeriod(val) {
   document.getElementById('periodInput').value = val;
   document.querySelectorAll('.period-pill').forEach(p => p.classList.toggle('active', p.dataset.period === val));
   document.getElementById('customDateRange').style.display = val === 'custom' ? 'flex' : 'none';
-  if (val !== 'custom') document.getElementById('filterForm').submit();
+  if (val !== 'custom') submitFilters();
 }
+
+// Unified Submit & Scroll Restore
+function saveScroll() {
+  sessionStorage.setItem('furScrollPos', window.scrollY);
+}
+
+function submitFilters() {
+  saveScroll();
+  const form = document.getElementById('filterForm');
+  const url = new URL(window.location.origin + window.location.pathname);
+  
+  // Serialize main form
+  const formData = new FormData(form);
+  for (let [k, v] of formData.entries()) {
+    if (v) url.searchParams.set(k, v);
+  }
+  
+  // Grab extra fields from Detailed section
+  const q = document.getElementById('searchInputBox');
+  if (q && q.value) url.searchParams.set('q', q.value);
+  
+  const ps = document.getElementById('pageSizeSelect');
+  if (ps && ps.value) url.searchParams.set('page_size', ps.value);
+  
+  const sps = document.getElementById('summaryPageSizeSelect');
+  if (sps && sps.value) url.searchParams.set('summary_page_size', sps.value);
+  
+  window.location.href = url.toString();
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  const scrollPos = sessionStorage.getItem('furScrollPos');
+  if (scrollPos) {
+    window.scrollTo(0, parseInt(scrollPos));
+    sessionStorage.removeItem('furScrollPos');
+  }
+  
+  if (sessionStorage.getItem('furSearchFocus') === 'true') {
+    sessionStorage.removeItem('furSearchFocus');
+    const searchBox = document.getElementById('searchInputBox');
+    if (searchBox) {
+      searchBox.focus();
+      // Move cursor to the end
+      const val = searchBox.value;
+      searchBox.value = '';
+      searchBox.value = val;
+    }
+  }
+});
+
 
 function escapeHTML(str) {
   if (!str) return '';
@@ -598,14 +768,19 @@ function escapeHTML(str) {
 }
 
 // Logs Modal
-function viewLogs(fuId, name) {
+function viewLogs(fuId, name, staffId) {
   const modal = document.getElementById('logsModal');
   const content = document.getElementById('logsContent');
   document.getElementById('modalSubtitle').textContent = name;
   content.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:8px;color:#6c63ff"></i>Loading...</div>';
   modal.classList.add('show');
 
-  fetch('/api/reports/followups/' + fuId + '/logs/')
+  let url = '/api/reports/followups/' + fuId + '/logs/';
+  if (staffId !== undefined) {
+      url += '?staff_id=' + (staffId === null ? 'null' : staffId);
+  }
+
+  fetch(url)
     .then(r => r.json())
     .then(data => {
       if (!data.success) { content.innerHTML = '<div class="fur-empty"><i class="fas fa-exclamation-circle"></i><br>' + (data.error||'Error') + '</div>'; return; }
@@ -788,6 +963,45 @@ function viewStatusLogs(statusName) {
 
 function closeStatusLogsModal(e) {
   if (e.target === document.getElementById('statusLogsModal')) document.getElementById('statusLogsModal').classList.remove('show');
+}
+
+function viewStaffCreationLogs(staffName, logs) {
+    document.getElementById('staffCreationModalSubtitle').innerText = staffName;
+    const content = document.getElementById('staffCreationLogsContent');
+    
+    if (logs.length === 0) {
+        content.innerHTML = '<div style="text-align:center;padding:20px;color:var(--fur-muted)">No creation logs found.</div>';
+    } else {
+        let html = '<div style="display:flex;flex-direction:column;gap:10px">';
+        logs.forEach(log => {
+            html += `
+                <div style="background:#f8fafc;border:1px solid var(--fur-border);border-radius:8px;padding:12px;font-size:0.85rem">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                        <strong style="color:var(--fur-text)">
+                          Entry Created: 
+                          <a href="/orders/follow-ups/?search=${encodeURIComponent(log.name)}" target="_blank" style="color:var(--fur-text); text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+                            ${escapeHTML(log.name)}
+                          </a>
+                        </strong>
+                        <span style="color:var(--fur-muted);font-size:0.75rem"><i class="fas fa-clock me-1"></i>${escapeHTML(log.timestamp)}</span>
+                    </div>
+                    <div style="color:var(--fur-green);font-size:0.75rem;font-weight:600">
+                        <i class="fas fa-plus-circle me-1"></i>Created by ${escapeHTML(staffName)}
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        content.innerHTML = html;
+    }
+    
+    document.getElementById('staffCreationLogsModal').classList.add('show');
+}
+
+function closeStaffCreationLogsModal(e) {
+    if (e.target.id === 'staffCreationLogsModal') {
+        document.getElementById('staffCreationLogsModal').classList.remove('show');
+    }
 }
 </script>
 {% endblock %}

@@ -22044,7 +22044,24 @@ def follow_up_report(request):
     filter_source   = request.GET.get('source', '')
     filter_status   = request.GET.get('status', '')
     filter_product  = request.GET.get('product_id', '')
+    search_query    = request.GET.get('q', '').strip()
 
+    if search_query:
+        terms = search_query.split()
+        staff_q = Q()
+        for term in terms:
+            staff_q &= (Q(logs__user__first_name__icontains=term) | 
+                        Q(logs__user__last_name__icontains=term) | 
+                        Q(logs__user__username__icontains=term))
+
+        qs = qs.filter(
+            Q(name__icontains=search_query) |
+            Q(phone__icontains=search_query) |
+            Q(remarks__icontains=search_query) |
+            Q(logs__new_value__icontains=search_query) |
+            Q(logs__field_changed__icontains=search_query) |
+            staff_q
+        ).distinct()
     if filter_source:
         qs = qs.filter(lead_source=filter_source)
     if filter_status:
@@ -22110,6 +22127,8 @@ def follow_up_report(request):
     staff_counter = {}
     staff_entries_created_counter = {}
     staff_status_counter = {}
+    entries_created_details = {}
+
     
     for fu in all_follow_ups:
         for log in fu.logs.all():
@@ -22126,9 +22145,22 @@ def follow_up_report(request):
                     staff_entries_created_counter[key] = 0
                 if key not in staff_status_counter:
                     staff_status_counter[key] = {}
+                if key not in entries_created_details:
+                    entries_created_details[key] = {'products': {}, 'sources': {}}
                     
                 if log.field_changed == 'Entry Created':
                     staff_entries_created_counter[key] += 1
+                    
+                    products_list = list(fu.products.all())
+                    if not products_list and fu.product:
+                        products_list = [fu.product]
+                    products_list_names = [p.name for p in products_list] if products_list else ['No Product']
+                    for pname in products_list_names:
+                        entries_created_details[key]['products'][pname] = entries_created_details[key]['products'].get(pname, 0) + 1
+                        
+                    src = fu.lead_source or 'Unknown'
+                    entries_created_details[key]['sources'][src] = entries_created_details[key]['sources'].get(src, 0) + 1
+                    
                 elif log.field_changed.startswith('Followup') or log.field_changed == 'Follow-up Note Added':
                     staff_counter[key] += 1
                 elif log.field_changed == 'Status':
@@ -22141,6 +22173,18 @@ def follow_up_report(request):
     )
     most_active_staff = staff_leaderboard[0] if staff_leaderboard else None
     active_staff_count = len(staff_leaderboard)
+
+    # Build the entry creation summary
+    entry_creation_summary = sorted(
+        [{
+            'name': k[1],
+            'count': staff_entries_created_counter[k],
+            'top_products': dict(sorted(entries_created_details[k]['products'].items(), key=lambda item: item[1], reverse=True)[:3]),
+            'top_sources': dict(sorted(entries_created_details[k]['sources'].items(), key=lambda item: item[1], reverse=True)[:3])
+         }
+         for k in staff_entries_created_counter.keys() if staff_entries_created_counter[k] > 0],
+        key=lambda x: x['count'], reverse=True
+    )
 
     # --- Source breakdown ---
     source_counter = {}
@@ -22213,9 +22257,98 @@ def follow_up_report(request):
         trend_labels.append(d)
         trend_data.append(daily_trend.get(d, 0))
 
+    # --- Entry Creation Summary ---
+    entries_created_data = {}
+    for fu in all_follow_ups:
+        if start_dt <= fu.created_at <= end_dt:
+            creator = get_creator(fu)
+            if creator:
+                c_name = creator.get_full_name() or creator.username
+                if c_name not in entries_created_data:
+                    entries_created_data[c_name] = {
+                        'count': 0,
+                        'products': {},
+                        'sources': {},
+                        'logs': []
+                    }
+                entries_created_data[c_name]['count'] += 1
+                
+                entry_created_log = None
+                for log in fu.logs.all():
+                    if log.field_changed == 'Entry Created':
+                        entry_created_log = log
+                        break
+                        
+                if entry_created_log:
+                    entries_created_data[c_name]['logs'].append({
+                        'timestamp': entry_created_log.timestamp,
+                        'name': fu.name or fu.phone,
+                        'fu_id': fu.id
+                    })
+
+                products_list = list(fu.products.all())
+                if not products_list and fu.product:
+                    products_list = [fu.product]
+                products_list_names = [p.name for p in products_list] if products_list else ['No Product']
+                for pname in products_list_names:
+                    entries_created_data[c_name]['products'][pname] = entries_created_data[c_name]['products'].get(pname, 0) + 1
+                
+                s_name = fu.lead_source.name if fu.lead_source else 'Unknown'
+                entries_created_data[c_name]['sources'][s_name] = entries_created_data[c_name]['sources'].get(s_name, 0) + 1
+
+    entry_creation_summary = []
+    for c_name, data in entries_created_data.items():
+        sorted_prods = dict(sorted(data['products'].items(), key=lambda x: x[1], reverse=True)[:3])
+        sorted_srcs = dict(sorted(data['sources'].items(), key=lambda x: x[1], reverse=True)[:3])
+        sorted_logs = sorted(data['logs'], key=lambda x: x['timestamp'], reverse=True) if data['logs'] else []
+        
+        formatted_logs = [{
+            'timestamp': log['timestamp'].astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if log['timestamp'] else '',
+            'name': log['name'],
+            'fu_id': log['fu_id']
+        } for log in sorted_logs]
+        
+        entry_creation_summary.append({
+            'name': c_name,
+            'count': data['count'],
+            'top_products': sorted_prods,
+            'top_sources': sorted_srcs,
+            'logs_json': json.dumps(formatted_logs)
+        })
+    entry_creation_summary.sort(key=lambda x: x['count'], reverse=True)
+
+    summary_page_num = request.GET.get('summary_page', 1)
+    summary_page_size_str = request.GET.get('summary_page_size', '10')
+    try:
+        summary_page_size = int(summary_page_size_str)
+    except ValueError:
+        summary_page_size = 10
+        
+    summary_paginator = Paginator(entry_creation_summary, summary_page_size)
+    try:
+        summary_page_obj = summary_paginator.page(summary_page_num)
+    except Exception:
+        summary_page_obj = summary_paginator.page(1)
+        
+    summary_total_count = len(entry_creation_summary)
+
+    # Pre-fetch the filtered user if applicable
+    filtered_user = None
+    if filter_staff_id:
+        try:
+            filtered_user = User.objects.get(id=int(filter_staff_id))
+        except (ValueError, TypeError, User.DoesNotExist):
+            pass
+
     # --- Paginated detailed table ---
     page_num = request.GET.get('page', 1)
-    paginator = Paginator(all_follow_ups, 25)
+    
+    try:
+        page_size = int(request.GET.get('page_size', 25))
+    except ValueError:
+        page_size = 25
+        
+    paginator = Paginator(all_follow_ups, page_size)
     try:
         page_obj = paginator.page(page_num)
     except Exception:
@@ -22224,7 +22357,11 @@ def follow_up_report(request):
     # Annotate page items with creator info
     detailed_rows = []
     for fu in page_obj.object_list:
-        creator = get_creator(fu)
+        if filtered_user:
+            creator = filtered_user
+        else:
+            creator = get_creator(fu)
+            
         products_list = list(fu.products.all())
         if not products_list and fu.product:
             products_list = [fu.product]
@@ -22232,20 +22369,26 @@ def follow_up_report(request):
         latest_note = None
         entry_created_log = None
         for log in fu.logs.all():
-            if log.field_changed.startswith('Followup') or log.field_changed == 'Follow-up Note Added':
-                latest_note = log
-                break
-            elif log.field_changed == 'Entry Created' and not entry_created_log:
-                entry_created_log = log
+            if log.user == creator:
+                if (log.field_changed.startswith('Followup') or log.field_changed == 'Follow-up Note Added') and not latest_note:
+                    latest_note = log
+                elif log.field_changed == 'Entry Created' and not entry_created_log:
+                    entry_created_log = log
                 
         if not latest_note and entry_created_log:
             latest_note = entry_created_log
                 
+        if creator:
+            creator_logs = [log for log in fu.logs.all() if log.user == creator]
+        else:
+            creator_logs = [log for log in fu.logs.all() if log.user is None]
+        log_count = len([log for log in creator_logs if log.field_changed != 'Entry Created'])
+
         detailed_rows.append({
             'fu': fu,
             'creator': creator,
             'products_display': ', '.join(p.name for p in products_list) if products_list else '-',
-            'log_count': len(fu.logs.all()),
+            'log_count': log_count,
             'latest_note': latest_note,
         })
 
@@ -22263,6 +22406,8 @@ def follow_up_report(request):
         'filter_source': filter_source,
         'filter_status': filter_status,
         'filter_product': filter_product,
+        'search_query': search_query,
+        'page_size': str(page_size),
         'total_count': total_count,
         'today_count': today_count,
         'active_staff_count': active_staff_count,
@@ -22273,10 +22418,15 @@ def follow_up_report(request):
         'source_breakdown': source_breakdown,
         'product_breakdown': product_breakdown,
         'status_breakdown': status_breakdown,
+        'entry_creation_summary': entry_creation_summary,
         'trend_labels': json.dumps(trend_labels),
         'trend_data': json.dumps(trend_data),
         'page_obj': page_obj,
         'detailed_rows': detailed_rows,
+        'entry_creation_summary': entry_creation_summary,
+        'summary_page_obj': summary_page_obj,
+        'summary_total_count': summary_total_count,
+        'summary_page_size': str(summary_page_size),
         'all_staff': all_staff,
         'all_sources': all_sources,
         'all_statuses': all_statuses,
@@ -22303,6 +22453,14 @@ def follow_up_report_logs_api(request, pk):
         return JsonResponse({'success': False, 'error': 'Not found'}, status=404)
 
     logs = fu.logs.select_related('user').order_by('-timestamp')
+    
+    staff_id = request.GET.get('staff_id')
+    if staff_id:
+        if staff_id == 'null' or staff_id == 'None':
+            logs = logs.filter(user__isnull=True)
+        else:
+            logs = logs.filter(user_id=staff_id)
+
     data = []
     for log in logs:
         data.append({
