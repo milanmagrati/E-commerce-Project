@@ -21500,7 +21500,8 @@ def add_follow_up(request):
                 all_logs.append({
                     'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
                     'user': log.user.username if log.user else 'System',
-                    'new_value': log.new_value
+                    'new_value': log.new_value,
+                    'field_changed': log.field_changed
                 })
             
         response_data = {
@@ -21627,7 +21628,8 @@ def edit_follow_up(request, pk):
                 all_logs.append({
                     'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
                     'user': log.user.username if log.user else 'System',
-                    'new_value': log.new_value
+                    'new_value': log.new_value,
+                    'field_changed': log.field_changed
                 })
             
         response_data = {
@@ -22587,7 +22589,8 @@ def sync_follow_ups(request):
                         all_logs.append({
                             'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
                             'user': log.user.username if log.user else 'System',
-                            'new_value': log.new_value
+                            'new_value': log.new_value,
+                            'field_changed': log.field_changed
                         })
 
                 updates.append({

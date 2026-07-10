@@ -139,6 +139,13 @@
                                     {% if log %}
                                     <div class="mb-1">
                                         <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
+                                            <div class="mb-1">
+                                                {% if 'Followup' in log.field_changed %}
+                                                    <span class="badge" style="background-color: #6f42c1; color: white; font-size: 0.55rem; padding: 0.2rem 0.4rem;">{{ log.field_changed }}</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary" style="font-size: 0.55rem; padding: 0.2rem 0.4rem;">{{ log.field_changed }}</span>
+                                                {% endif %}
+                                            </div>
                                             <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y h:i A" }}</div>
                                             <div class="text-muted" style="font-size:0.6rem;">by {{ log.user.username|default:"System" }}</div>
                                         </div>
@@ -574,9 +581,19 @@
         let contentHtml;
         if (logs && logs.length > 0) {
             const log = logs[0];
+            let badgeHtml = '';
+            if (log.field_changed) {
+                let isFollowup = log.field_changed.startsWith('Followup');
+                let badgeStyle = isFollowup ? 'background-color: #6f42c1; color: white;' : '';
+                let badgeClass = isFollowup ? '' : 'bg-secondary';
+                badgeHtml = `<div class="mb-1">
+                                <span class="badge ${badgeClass}" style="${badgeStyle} font-size: 0.55rem; padding: 0.2rem 0.4rem;">${escapeHtml(log.field_changed)}</span>
+                             </div>`;
+            }
             contentHtml = `
                 <div class="mb-1">
                     <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
+                        ${badgeHtml}
                         <div class="text-muted" style="font-size:0.6rem;">${log.timestamp}</div>
                         <div class="text-muted" style="font-size:0.6rem;">by ${escapeHtml(log.user)}</div>
                     </div>

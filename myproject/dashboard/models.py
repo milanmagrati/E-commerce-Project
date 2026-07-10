@@ -1859,7 +1859,10 @@ class FollowUp(models.Model):
     @property
     def latest_followup_log(self):
         # Returns the latest log overall that is a followup note or entry created
-        return self.logs.first()
+        for log in self.logs.all():
+            if log.field_changed == 'Entry Created' or log.field_changed.startswith('Followup'):
+                return log
+        return None
 
     @property
     def all_followup_logs(self):
