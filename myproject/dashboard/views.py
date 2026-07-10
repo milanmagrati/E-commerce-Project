@@ -22291,11 +22291,11 @@ def follow_up_report(request):
                 products_list = list(fu.products.all())
                 if not products_list and fu.product:
                     products_list = [fu.product]
-                products_list_names = [p.name if hasattr(p, 'name') else p for p in products_list] if products_list else ['No Product']
+                products_list_names = [getattr(p, 'name', str(p)) for p in products_list] if products_list else ['No Product']
                 for pname in products_list_names:
                     entries_created_data[c_name]['products'][pname] = entries_created_data[c_name]['products'].get(pname, 0) + 1
                 
-                s_name = (fu.lead_source.name if hasattr(fu.lead_source, 'name') else fu.lead_source) if fu.lead_source else 'Unknown'
+                s_name = fu.lead_source if fu.lead_source else 'Unknown'
                 entries_created_data[c_name]['sources'][s_name] = entries_created_data[c_name]['sources'].get(s_name, 0) + 1
 
     entry_creation_summary = []
