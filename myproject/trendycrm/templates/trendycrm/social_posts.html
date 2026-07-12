@@ -600,6 +600,11 @@
 
                 <div class="fb-post-item-body">
                     <div class="fb-post-item-title">{{ post.message|truncatechars:55|default:"(No text)" }}</div>
+                    {% if post.latest_comment_snippet %}
+                    <div class="fb-post-item-sub" style="font-weight: 500; color: #1c1e21; margin-bottom: 3px;">
+                        {{ post.latest_comment_snippet }}
+                    </div>
+                    {% endif %}
                     <div class="fb-post-item-sub">
                         <i class="fas fa-heart" style="color:#ef4444;font-size:.65rem"></i> {{ post.likes_count }}
                         &nbsp;<i class="fas fa-comment" style="color:#1877f2;font-size:.65rem"></i> {{ post.comments_count }}

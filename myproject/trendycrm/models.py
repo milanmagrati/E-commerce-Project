@@ -219,6 +219,14 @@ class CRMSocialPost(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @property
+    def latest_comment_snippet(self):
+        latest = self.comments.exclude(sender_name__isnull=True).exclude(sender_name='').order_by('-created_time').first()
+        if latest:
+            msg = latest.message or ""
+            return f"{latest.sender_name} - {msg}"
+        return ""
+
     def __str__(self):
         return f"Post {self.meta_post_id}"
 
