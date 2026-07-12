@@ -13,7 +13,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 def build_absolute_callback(request, path_name):
-    url = request.build_absolute_uri(reverse(path_name))
+    site_url = getattr(settings, 'SITE_URL', None)
+    if site_url:
+        site_url = site_url.rstrip('/')
+        url = f"{site_url}{reverse(path_name)}"
+    else:
+        url = request.build_absolute_uri(reverse(path_name))
+        
     # Facebook strictly requires localhost (or https), it blocks 127.0.0.1
     if '127.0.0.1' in url:
         url = url.replace('127.0.0.1', 'localhost')
@@ -507,13 +513,14 @@ def connect_instagram(request):
     return redirect(auth_url)
 
 def connect_tiktok(request):
-    # Dummy TikTok connect logic to bypass query string issue
     redirect_uri = build_absolute_callback(request, 'trendycrm:tiktok_callback')
-    # If there was a real TikTok APP ID:
-    # client_key = getattr(settings, 'TIKTOK_APP_ID', 'YOUR_TIKTOK_KEY')
-    # auth_url = f"https://www.tiktok.com/v2/auth/authorize/?client_key={client_key}&response_type=code&scope=user.info.basic&redirect_uri={redirect_uri}"
-    # But for now we just redirect immediately to callback for testing the flow
-    return redirect(f"{redirect_uri}?code=dummy_tiktok_code")
+    tiktok_app_id = getattr(settings, 'TIKTOK_APP_ID', '')
+    if not tiktok_app_id:
+        messages.error(request, 'TikTok App ID is not configured in settings.')
+        return redirect(reverse('trendycrm:integrations') + "?channel=tiktok")
+        
+    auth_url = f"https://business-api.tiktok.com/portal/auth?app_id={tiktok_app_id}&state=tiktok_auth&redirect_uri={redirect_uri}"
+    return redirect(auth_url)
 
 def _handle_oauth_callback(request, channel_key):
     # If user denied access, Facebook redirects with error=access_denied
@@ -604,17 +611,43 @@ def instagram_callback(request):
     return _handle_oauth_callback(request, 'instagram')
 
 def tiktok_callback(request):
-    # Temporary mock connection for TikTok since we just need the explicit route to work
-    integ = CRMIntegration.objects.filter(channel_type='tiktok', status='not_connected').first()
-    if not integ:
-        integ = CRMIntegration(channel_type='tiktok')
+    auth_code = request.GET.get('auth_code')
+    if not auth_code:
+        messages.error(request, 'TikTok authorization failed.')
+        return redirect(reverse('trendycrm:integrations') + "?channel=tiktok")
+        
+    tiktok_app_id = getattr(settings, 'TIKTOK_APP_ID', '')
+    tiktok_app_secret = getattr(settings, 'TIKTOK_APP_SECRET', '')
     
-    if integ:
-        integ.status = 'connected'
-        integ.account_name = 'TikTok Page'
-        integ.connected_at = timezone.now()
-        integ.save()
-    
+    # Exchange auth_code for access token
+    url = "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/"
+    payload = {
+        "app_id": tiktok_app_id,
+        "secret": tiktok_app_secret,
+        "auth_code": auth_code
+    }
+    try:
+        resp = requests.post(url, json=payload)
+        data = resp.json()
+        if data.get('code') == 0:
+            access_token = data['data']['access_token']
+            advertiser_id = data['data'].get('advertiser_ids', [''])[0]
+            
+            integ = CRMIntegration.objects.filter(channel_type='tiktok', status='not_connected').first()
+            if not integ:
+                integ = CRMIntegration(channel_type='tiktok')
+            
+            integ.status = 'connected'
+            integ.account_name = f'TikTok Account ({advertiser_id})'
+            integ.access_token = access_token
+            integ.connected_at = timezone.now()
+            integ.save()
+            messages.success(request, 'TikTok connected successfully.')
+        else:
+            messages.error(request, f"TikTok error: {data.get('message', 'Unknown error')}")
+    except Exception as e:
+        messages.error(request, f"Error connecting to TikTok: {str(e)}")
+        
     redirect_url = reverse('trendycrm:integrations') + "?channel=tiktok"
     return redirect(redirect_url)
 

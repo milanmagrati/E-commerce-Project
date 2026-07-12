@@ -216,6 +216,8 @@ FACEBOOK_APP_ID = config('FACEBOOK_APP_ID', default='')
 FACEBOOK_APP_SECRET = config('FACEBOOK_APP_SECRET', default='')
 INSTAGRAM_APP_ID = config('INSTAGRAM_APP_ID', default='')
 INSTAGRAM_APP_SECRET = config('INSTAGRAM_APP_SECRET', default='')
+TIKTOK_APP_ID = config('TIKTOK_APP_ID', default='')
+TIKTOK_APP_SECRET = config('TIKTOK_APP_SECRET', default='')
 
 # Kept for backward compatibility
 FACEBOOK_CLIENT_ID = config('FACEBOOK_CLIENT_ID', default=FACEBOOK_APP_ID)
