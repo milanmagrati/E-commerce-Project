@@ -29,7 +29,7 @@ def sync_meta_conversations(integration):
     }
     
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=10)
         if response.status_code != 200:
             logger.error(f"Failed to fetch conversations from Meta: {response.text}")
             return
@@ -173,7 +173,7 @@ def send_meta_message(integration, recipient_id, message_text):
     }
     
     try:
-        response = requests.post(url, params=params, json=payload)
+        response = requests.post(url, params=params, json=payload, timeout=10)
         response.raise_for_status()
         return True
     except Exception as e:
@@ -193,7 +193,7 @@ def sync_meta_posts(integration):
     }
     
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=10)
         if response.status_code == 200:
             posts = response.json().get('data', [])
             for p in posts:
@@ -220,50 +220,70 @@ def sync_meta_posts(integration):
 def sync_meta_comments(post):
     if not post.integration.access_token:
         return
-        
+
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{post.meta_post_id}/comments"
     params = {
         'access_token': post.integration.access_token,
-        'fields': 'id,from,message,created_time,like_count,comments{id,from,message,created_time,like_count}',
-        'limit': 100
+        'fields': 'id,from,message,created_time,like_count,user_likes,can_hide,comments{id,from,message,created_time,like_count}',
+        'limit': 100,
+        'filter': 'stream',
     }
-    
+
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=10)
         if response.status_code == 200:
-            comments = response.json().get('data', [])
+            data = response.json()
+            comments = data.get('data', [])
             for c in comments:
                 _process_comment(post, c, None)
                 replies = c.get('comments', {}).get('data', [])
                 for r in replies:
                     _process_comment(post, r, c.get('id'))
+        else:
+            logger.warning(f"sync_meta_comments got {response.status_code}: {response.text[:300]}")
     except Exception as e:
         logger.exception("Failed to sync meta comments")
 
 def _process_comment(post, comment_data, parent_id):
-    from_data = comment_data.get('from', {})
-    sender_name = from_data.get('name', 'Unknown')
-    sender_id = from_data.get('id', '')
-    
+    from_data = comment_data.get('from') or {}
+    sender_name = (from_data.get('name') or '').strip()
+    sender_id = (from_data.get('id') or '').strip()
+
+    # Build a display name — never show raw 'Unknown'
+    if not sender_name:
+        if sender_id:
+            # Use a friendly short ID e.g. "FB User ·7893"
+            sender_name = f"Facebook User"
+        else:
+            sender_name = "Facebook User"
+
     created_time_str = comment_data.get('created_time')
     created_at = parse(created_time_str) if created_time_str else timezone.now()
-    
+
     parent_comment = None
     if parent_id:
         parent_comment = CRMSocialComment.objects.filter(meta_comment_id=parent_id).first()
-        
-    CRMSocialComment.objects.update_or_create(
+
+    defaults = {
+        'post': post,
+        'parent_comment': parent_comment,
+        'sender_id': sender_id,
+        'message': comment_data.get('message', ''),
+        'created_time': created_at,
+        'like_count': comment_data.get('like_count', 0),
+    }
+
+    obj, created = CRMSocialComment.objects.get_or_create(
         meta_comment_id=comment_data.get('id'),
-        defaults={
-            'post': post,
-            'parent_comment': parent_comment,
-            'sender_name': sender_name,
-            'sender_id': sender_id,
-            'message': comment_data.get('message', ''),
-            'created_time': created_at,
-            'like_count': comment_data.get('like_count', 0),
-        }
+        defaults={**defaults, 'sender_name': sender_name}
     )
+
+    if not created:
+        for k, v in defaults.items():
+            setattr(obj, k, v)
+        if sender_name != 'Facebook User' or obj.sender_name in ('Unknown', 'Facebook User', ''):
+            obj.sender_name = sender_name
+        obj.save()
 
 def reply_to_meta_comment(integration, comment_id, message_text):
     if not integration.access_token:
@@ -274,7 +294,7 @@ def reply_to_meta_comment(integration, comment_id, message_text):
     payload = {'message': message_text}
     
     try:
-        response = requests.post(url, params=params, json=payload)
+        response = requests.post(url, params=params, json=payload, timeout=10)
         response.raise_for_status()
         return True
     except Exception as e:
@@ -288,7 +308,7 @@ def hide_meta_comment(integration, comment_id, is_hidden=True):
     params = {'access_token': integration.access_token}
     payload = {'is_hidden': is_hidden}
     try:
-        response = requests.post(url, params=params, json=payload)
+        response = requests.post(url, params=params, json=payload, timeout=10)
         response.raise_for_status()
         return True
     except Exception as e:
@@ -301,7 +321,7 @@ def delete_meta_comment(integration, comment_id):
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{comment_id}"
     params = {'access_token': integration.access_token}
     try:
-        response = requests.delete(url, params=params)
+        response = requests.delete(url, params=params, timeout=10)
         response.raise_for_status()
         return True
     except Exception as e:

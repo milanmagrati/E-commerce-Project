@@ -240,7 +240,7 @@
             <div>
                 {% if active_key == 'facebook' or active_key == 'instagram' or active_key == 'tiktok' %}
                 <button type="button"
-                   onclick="window.open('{{ fb_oauth_url }}', '_blank');"
+                   onclick="window.location.href='{{ fb_oauth_url }}';"
                    class="btn-crm-primary" style="display:inline-flex; align-items:center; gap:0.5rem; border:none; cursor:pointer;">
                     <i class="fas fa-plus"></i> Connect another
                 </button>
@@ -310,7 +310,7 @@
                 </div>
                 {% if active_key == 'facebook' or active_key == 'instagram' or active_key == 'tiktok' %}
                 <button type="button"
-                   onclick="window.open('{{ fb_oauth_url }}', '_blank');"
+                   onclick="window.location.href='{{ fb_oauth_url }}';"
                    class="btn-crm-primary" style="display:inline-flex; align-items:center; gap:0.5rem; border:none; cursor:pointer;">
                     <i class="fab {{ active_meta.icon }}"></i> Connect {{ active_meta.label }}
                 </button>

@@ -12,8 +12,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def build_absolute_callback(path_name):
-    return f"{settings.SITE_URL}{reverse(path_name)}"
+def build_absolute_callback(request, path_name):
+    url = request.build_absolute_uri(reverse(path_name))
+    # Facebook strictly requires localhost (or https), it blocks 127.0.0.1
+    if '127.0.0.1' in url:
+        url = url.replace('127.0.0.1', 'localhost')
+    return url
 from django.utils.timezone import now
 import json
 import requests
@@ -477,7 +481,7 @@ def crm_integration_disconnect(request, pk):
 
 
 def connect_facebook(request):
-    redirect_uri = build_absolute_callback('trendycrm:facebook_callback')
+    redirect_uri = build_absolute_callback(request, 'trendycrm:facebook_callback')
     params = {
         "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
         "redirect_uri": redirect_uri,
@@ -490,7 +494,7 @@ def connect_facebook(request):
     return redirect(auth_url)
 
 def connect_instagram(request):
-    redirect_uri = build_absolute_callback('trendycrm:instagram_callback')
+    redirect_uri = build_absolute_callback(request, 'trendycrm:instagram_callback')
     params = {
         "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
         "redirect_uri": redirect_uri,
@@ -504,7 +508,7 @@ def connect_instagram(request):
 
 def connect_tiktok(request):
     # Dummy TikTok connect logic to bypass query string issue
-    redirect_uri = build_absolute_callback('trendycrm:tiktok_callback')
+    redirect_uri = build_absolute_callback(request, 'trendycrm:tiktok_callback')
     # If there was a real TikTok APP ID:
     # client_key = getattr(settings, 'TIKTOK_APP_ID', 'YOUR_TIKTOK_KEY')
     # auth_url = f"https://www.tiktok.com/v2/auth/authorize/?client_key={client_key}&response_type=code&scope=user.info.basic&redirect_uri={redirect_uri}"
@@ -520,7 +524,7 @@ def _handle_oauth_callback(request, channel_key):
         fb_client_id = getattr(settings, 'FACEBOOK_APP_ID', getattr(settings, 'FACEBOOK_CLIENT_ID', '873948152450056'))
         fb_app_secret = getattr(settings, 'FACEBOOK_APP_SECRET', '')
         route_name = f'trendycrm:{channel_key}_callback'
-        fb_redirect_uri = build_absolute_callback(route_name)
+        fb_redirect_uri = build_absolute_callback(request, route_name)
         
         graph_api_version = 'v25.0'
         token_exchange_url = f"https://graph.facebook.com/{graph_api_version}/oauth/access_token?client_id={fb_client_id}&redirect_uri={fb_redirect_uri}&client_secret={fb_app_secret}&code={code}"
@@ -591,19 +595,7 @@ def _handle_oauth_callback(request, channel_key):
             messages.error(request, "An unexpected error occurred during connection.")
             
     redirect_url = reverse('trendycrm:integrations') + f"?channel={channel_key}"
-    return HttpResponse(f"""
-    <html><body>
-    <script>
-        if (window.opener && !window.opener.closed) {{
-            window.opener.location.href = "{redirect_url}";
-            window.close();
-        }} else {{
-            window.location.href = "{redirect_url}";
-        }}
-    </script>
-    <p>Authentication complete. You can close this window.</p>
-    </body></html>
-    """)
+    return redirect(redirect_url)
 
 def facebook_callback(request):
     return _handle_oauth_callback(request, 'facebook')
@@ -624,19 +616,7 @@ def tiktok_callback(request):
         integ.save()
     
     redirect_url = reverse('trendycrm:integrations') + "?channel=tiktok"
-    return HttpResponse(f"""
-    <html><body>
-    <script>
-        if (window.opener && !window.opener.closed) {{
-            window.opener.location.href = "{redirect_url}";
-            window.close();
-        }} else {{
-            window.location.href = "{redirect_url}";
-        }}
-    </script>
-    <p>Authentication complete. You can close this window.</p>
-    </body></html>
-    """)
+    return redirect(redirect_url)
 
 
 # ─── Webhooks ─────────────────────────────────────────────────────────────────
@@ -758,6 +738,8 @@ def crm_tickets(request):
         'crm_section': 'tickets',
     }
     return render(request, 'trendycrm/tickets.html', context)
+from django.http import JsonResponse
+
 # ─── Social Posts & Comments ──────────────────────────────────────────────────
 @login_required
 def crm_social_posts(request):
@@ -765,7 +747,12 @@ def crm_social_posts(request):
     for integration in integrations:
         sync_meta_posts(integration)
         
-    posts = CRMSocialPost.objects.all()
+    post_filter = request.GET.get('post_filter', 'all')
+    if post_filter == 'follow_up':
+        posts = CRMSocialPost.objects.filter(is_starred=True)
+    else:
+        posts = CRMSocialPost.objects.all()
+    
     selected_post_id = request.GET.get('post_id')
     active_post = None
     comments = []
@@ -790,13 +777,35 @@ def crm_social_posts(request):
             
         comments = qs.order_by(sort_by)
         
+    page_name = ''
+    if active_post:
+        page_name = active_post.integration.parsed_name or ''
+
     context = {
         'crm_section': 'social_posts',
         'posts': posts,
         'active_post': active_post,
         'comments': comments,
+        'page_name': page_name,
+        'current_filter': request.GET.get('filter', 'all'),
+        'current_sort': request.GET.get('sort', '-created_time'),
+        'current_post_filter': post_filter,
     }
     return render(request, 'trendycrm/social_posts.html', context)
+
+@login_required
+@require_POST
+def crm_social_post_action(request, post_id):
+    post = get_object_or_404(CRMSocialPost, pk=post_id)
+    action = request.POST.get('action')
+    
+    if action == 'toggle_star':
+        post.is_starred = not post.is_starred
+        post.save(update_fields=['is_starred'])
+        return JsonResponse({'status': 'ok', 'is_starred': post.is_starred})
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid action'}, status=400)
+
 
 @login_required
 @require_POST

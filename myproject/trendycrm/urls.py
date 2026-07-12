@@ -13,7 +13,7 @@ urlpatterns = [
     
     path('social/', views.crm_social_posts, name='social_posts'),
     path('social/action/<int:comment_id>/', views.crm_social_action, name='social_action'),
-    
+    path('social/post-action/<int:post_id>/', views.crm_social_post_action, name='social_post_action'),
     path('chatbot/', views.crm_chatbot, name='chatbot'),
     path('chatbot/toggle/', views.crm_chatbot_toggle, name='chatbot_toggle'),
     path('quick-replies/', views.crm_quick_replies, name='quick_replies'),
