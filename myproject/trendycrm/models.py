@@ -215,6 +215,7 @@ class CRMSocialPost(models.Model):
     likes_count = models.IntegerField(default=0)
     comments_count = models.IntegerField(default=0)
     is_starred = models.BooleanField(default=False)
+    is_reviewed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

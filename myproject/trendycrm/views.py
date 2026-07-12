@@ -804,6 +804,23 @@ def crm_social_post_action(request, post_id):
         post.save(update_fields=['is_starred'])
         return JsonResponse({'status': 'ok', 'is_starred': post.is_starred})
     
+    elif action == 'toggle_review':
+        post.is_reviewed = not post.is_reviewed
+        post.save(update_fields=['is_reviewed'])
+        return JsonResponse({'status': 'ok', 'is_reviewed': post.is_reviewed})
+        
+    elif action == 'post_comment':
+        msg_text = request.POST.get('message')
+        if not msg_text:
+            return JsonResponse({'status': 'error', 'message': 'Message cannot be empty'}, status=400)
+            
+        from trendycrm.meta_sync import reply_to_meta_comment
+        # Graph API uses the same endpoint for comments on a post and replies to a comment
+        if reply_to_meta_comment(post.integration, post.meta_post_id, msg_text):
+            return JsonResponse({'status': 'ok'})
+        else:
+            return JsonResponse({'status': 'error', 'message': 'Failed to post comment to Facebook'}, status=500)
+    
     return JsonResponse({'status': 'error', 'message': 'Invalid action'}, status=400)
 
 

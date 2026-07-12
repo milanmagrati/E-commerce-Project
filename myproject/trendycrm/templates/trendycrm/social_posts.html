@@ -497,6 +497,25 @@
 .fb-star-btn:hover { color: #f59e0b; }
 .fb-star-btn.on { color: #f59e0b; }
 
+/* Heart button on post item */
+.fb-heart-btn {
+    background: none;
+    border: none;
+    color: #c4c9d0;
+    cursor: pointer;
+    font-size: .9rem;
+    padding: 0;
+    margin-top: .4rem;
+    margin-right: .3rem;
+    transition: color .2s;
+    opacity: 0; /* hidden by default, shown on hover */
+}
+.fb-post-item:hover .fb-heart-btn, .fb-heart-btn.on {
+    opacity: 1;
+}
+.fb-heart-btn:hover { color: #ef4444; }
+.fb-heart-btn.on { color: #ef4444; }
+
 /* ── Bottom composer ── */
 .fb-composer {
     border-top: 1px solid #e4e6ea;
@@ -590,11 +609,18 @@
                 <div class="fb-post-item-meta" style="display:flex; flex-direction:column; align-items:flex-end;">
                     <div style="white-space:nowrap;">{{ post.created_time|date:"M j, H:i" }}</div>
                     
-                    <button class="fb-star-btn {% if post.is_starred %}on{% endif %}" 
-                            onclick="event.preventDefault(); fbToggleStar({{ post.pk }}, this)"
-                            title="Follow up">
-                        <i class="{% if post.is_starred %}fas{% else %}far{% endif %} fa-star"></i>
-                    </button>
+                    <div style="display:flex; align-items:center; margin-top:.2rem;">
+                        <button class="fb-heart-btn {% if post.is_reviewed %}on{% endif %}" 
+                                onclick="event.preventDefault(); fbToggleReview({{ post.pk }}, this)"
+                                title="Reviewed">
+                            <i class="{% if post.is_reviewed %}fas{% else %}far{% endif %} fa-heart"></i>
+                        </button>
+                        <button class="fb-star-btn {% if post.is_starred %}on{% endif %}" 
+                                onclick="event.preventDefault(); fbToggleStar({{ post.pk }}, this)"
+                                title="Follow up" style="margin-top:0;">
+                            <i class="{% if post.is_starred %}fas{% else %}far{% endif %} fa-star"></i>
+                        </button>
+                    </div>
                     
                     {% if post.comments_count > 0 %}
                     <div class="fb-unread-dot"></div>
@@ -812,8 +838,8 @@
             <div class="fb-composer-wrap">
                 <input type="text" id="fbComposerInput" class="fb-composer-input"
                        placeholder="Comment as {{ page_name|default:'your page' }}…"
-                       onkeydown="fbComposerKey(event)">
-                <button class="fb-composer-send" onclick="fbComposerSubmit()" title="Post">
+                       onkeydown="fbComposerKey(event, {{ active_post.pk }})">
+                <button class="fb-composer-send" onclick="fbComposerSubmit({{ active_post.pk }})" title="Post">
                     <i class="fas fa-paper-plane"></i>
                 </button>
             </div>
@@ -864,16 +890,88 @@ function fbToggleReply(pk) {
 }
 
 // ── Composer: post top-level comment ─────────────
-function fbComposerSubmit() {
+function fbComposerSubmit(postId) {
     var input = document.getElementById('fbComposerInput');
-    if (!input || !input.value.trim()) return;
-    // For top-level comment we'd need a different endpoint.
-    // For now, show a notice.
-    alert('Top-level comments require a Facebook API endpoint. Use the Reply buttons on existing comments to respond.');
-    input.value = '';
+    if (!input || !input.value.trim() || !postId) return;
+    
+    var btn = document.querySelector('.fb-composer-send');
+    if (btn) btn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('action', 'post_comment');
+    formData.append('message', input.value.trim());
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    fetch('/trendy-crm/social/post-action/' + postId + '/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (btn) btn.disabled = false;
+        if (data.status === 'ok') {
+            input.value = '';
+            location.reload(); // Reload to show the new comment
+        } else {
+            alert(data.message || 'Error posting comment.');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if (btn) btn.disabled = false;
+        alert('Network error posting comment.');
+    });
 }
-function fbComposerKey(e) {
-    if (e.key === 'Enter') fbComposerSubmit();
+function fbComposerKey(e, postId) {
+    if (e.key === 'Enter') fbComposerSubmit(postId);
+}
+
+// ── Toggle Reviewed Heart ─────────────────────────
+function fbToggleReview(postId, btn) {
+    const isReviewed = btn.classList.contains('on');
+    const icon = btn.querySelector('i');
+    
+    // Optimistic UI update
+    btn.classList.toggle('on');
+    if (isReviewed) {
+        icon.classList.remove('fas');
+        icon.classList.add('far');
+    } else {
+        icon.classList.remove('far');
+        icon.classList.add('fas');
+    }
+
+    // Send API request
+    const formData = new FormData();
+    formData.append('action', 'toggle_review');
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    fetch('/trendy-crm/social/post-action/' + postId + '/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status !== 'ok') {
+            // Revert on error
+            btn.classList.toggle('on');
+            if (isReviewed) {
+                icon.classList.remove('far');
+                icon.classList.add('fas');
+            } else {
+                icon.classList.remove('fas');
+                icon.classList.add('far');
+            }
+            alert('Error updating reviewed status.');
+        }
+    })
+    .catch(err => console.error(err));
 }
 
 // ── Toggle Follow-up Star ─────────────────────────
