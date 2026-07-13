@@ -1,0 +1,679 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Page Profiles — Trendy CRM{% endblock %}
+{% block topbar_title %}Page Profiles — Centralized Knowledge Core{% endblock %}
+
+{% block extra_style %}
+.profiles-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+
+/* ── Header ────────────────────────────────────────────── */
+.page-header {
+    margin-bottom: 2rem;
+}
+.page-header h2 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--crm-text);
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.5px;
+}
+.page-header p {
+    font-size: 0.95rem;
+    color: var(--crm-text-muted);
+    line-height: 1.5;
+    max-width: 800px;
+}
+
+/* ── AI Test Console ────────────────────────────────────── */
+.ai-test-card {
+    background: linear-gradient(to right, #ffffff, #faf5ff);
+    border: 1px solid rgba(124,58,237,0.15);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 2.5rem;
+    box-shadow: 0 4px 20px rgba(124,58,237,0.06);
+    position: relative;
+    overflow: hidden;
+}
+.ai-test-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 4px; height: 100%;
+    background: linear-gradient(180deg, var(--crm-primary), var(--crm-accent));
+}
+.ai-test-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+.ai-test-header i {
+    font-size: 1.25rem;
+    color: var(--crm-primary);
+}
+.ai-test-header h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--crm-text);
+    margin: 0;
+}
+.ai-test-desc {
+    font-size: 0.85rem;
+    color: var(--crm-text-muted);
+    margin-bottom: 1.25rem;
+}
+.ai-test-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.test-input-wrap {
+    flex: 2;
+    min-width: 250px;
+    position: relative;
+}
+.test-input-wrap i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+}
+.test-input-wrap input {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    border: 1px solid var(--crm-border);
+    border-radius: 10px;
+    font-size: 0.9rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    transition: all 0.2s;
+}
+.test-input-wrap input:focus {
+    outline: none;
+    border-color: var(--crm-primary);
+    box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+}
+.test-select-wrap {
+    flex: 1;
+    min-width: 180px;
+}
+.test-select-wrap select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--crm-border);
+    border-radius: 10px;
+    font-size: 0.9rem;
+    background: #fff;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+.btn-test {
+    background: var(--crm-text);
+    color: #fff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.btn-test:hover {
+    background: #000;
+    transform: translateY(-1px);
+}
+.ai-test-result {
+    margin-top: 1.25rem;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1.25rem;
+    font-size: 0.9rem;
+    display: none;
+    line-height: 1.5;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+}
+.ai-test-result.success {
+    border-left: 4px solid #10b981;
+}
+.ai-test-result.error {
+    border-left: 4px solid #ef4444;
+    background: #fef2f2;
+}
+.result-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f3f4f6;
+}
+.result-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.badge-intent { background: #ede9fe; color: #5b21b6; }
+.badge-model { background: #e0f2fe; color: #0369a1; }
+.badge-ticket { background: #fef2f2; color: #991b1b; }
+
+/* ── Profile Cards ──────────────────────────────────────── */
+.profile-card {
+    background: #fff;
+    border: 1px solid var(--crm-border);
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+    overflow: hidden;
+    transition: box-shadow 0.3s;
+}
+.profile-card:hover {
+    box-shadow: 0 8px 30px rgba(124,58,237,0.08);
+}
+.card-header-bar {
+    background: #f9fafb;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--crm-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.page-identity {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+.platform-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+.platform-icon.facebook { background: linear-gradient(135deg, #1877f2, #0c56b3); }
+.platform-icon.instagram { background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); }
+.page-name {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--crm-text);
+    margin: 0 0 0.15rem;
+}
+.page-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #059669;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.page-status i { font-size: 0.6rem; }
+.page-status.inactive { color: #dc2626; }
+
+/* ── Form Sections ──────────────────────────────────────── */
+.card-body {
+    padding: 0;
+}
+.form-section {
+    padding: 1.5rem;
+    border-bottom: 1px solid #f3f4f6;
+}
+.form-section:last-child {
+    border-bottom: none;
+}
+.section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--crm-text);
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.section-title i {
+    color: var(--crm-primary);
+}
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+}
+.form-group.full {
+    grid-column: 1 / -1;
+}
+.form-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 0.4rem;
+}
+.form-label .hint {
+    font-weight: 400;
+    color: #9ca3af;
+    font-size: 0.75rem;
+    margin-left: 0.25rem;
+}
+.form-control {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: #1f2937;
+    background: #fff;
+    transition: all 0.2s;
+}
+.form-control:focus {
+    outline: none;
+    border-color: var(--crm-primary);
+    box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+}
+textarea.form-control {
+    min-height: 80px;
+    resize: vertical;
+}
+
+/* ── ManyChat Toggle Style ──────────────────────────────── */
+.automation-box {
+    background: #fdf4ff;
+    border: 1px solid rgba(124,58,237,0.2);
+    border-radius: 12px;
+    padding: 1.25rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+.auto-icon {
+    width: 36px; height: 36px;
+    background: #fff;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--crm-primary);
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.auto-text h4 {
+    font-size: 0.95rem; font-weight: 700; color: #1e1b4b; margin: 0 0 0.2rem;
+}
+.auto-text p {
+    font-size: 0.8rem; color: #6b7280; margin: 0; line-height: 1.4;
+}
+
+/* ── Toggles ────────────────────────────────────────────── */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 46px;
+    height: 26px;
+    flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; inset: 0;
+    background: #d1d5db;
+    border-radius: 26px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    left: 3px; top: 3px;
+    width: 20px; height: 20px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--crm-primary); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+/* ── Card Footer ────────────────────────────────────────── */
+.card-footer-bar {
+    padding: 1rem 1.5rem;
+    background: #f9fafb;
+    border-top: 1px solid var(--crm-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.save-status {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.btn-save {
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
+    color: #fff;
+    border: none;
+    padding: 0.6rem 1.5rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(124,58,237,0.2);
+}
+.btn-save:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(124,58,237,0.3);
+}
+
+.no-pages {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: #fff;
+    border: 1px dashed #d1d5db;
+    border-radius: 16px;
+}
+.no-pages i {
+    font-size: 2.5rem;
+    color: #9ca3af;
+    margin-bottom: 1rem;
+}
+.no-pages h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 0.5rem;
+}
+.no-pages p {
+    color: #6b7280;
+    font-size: 0.95rem;
+}
+{% endblock %}
+
+{% block crm_content %}
+<div class="profiles-container">
+    
+    <div class="page-header">
+        <h2>Page Profiles</h2>
+        <p>Manage the unified knowledge and automated behaviors for each connected social page. Instruct the AI on exactly what to sell, how much it costs, and what tone to use per channel.</p>
+    </div>
+
+    {# ── AI Router Test Box ──────────────────────────────────────────────── #}
+    <div class="ai-test-card">
+        <div class="ai-test-header">
+            <i class="fas fa-flask"></i>
+            <h3>AI Router Test Console</h3>
+        </div>
+        <p class="ai-test-desc">Send a mock customer message through the routing engine. See how the AI classifies intent and formulates a response based on your configured page knowledge.</p>
+        
+        <div class="ai-test-row">
+            <div class="test-input-wrap">
+                <i class="fas fa-comment-dots"></i>
+                <input type="text" id="testMessage" placeholder='e.g. "How much is the serum and do you deliver?"'>
+            </div>
+            <div class="test-select-wrap">
+                <select id="testIntegration">
+                    <option value="">Global Context (No specific page)</option>
+                    {% for item in pages_with_profiles %}
+                    <option value="{{ item.integration.pk }}">{{ item.integration.parsed_name|default:item.integration }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button class="btn-test" onclick="runAiTest()" id="btnTestRouter">
+                <i class="fas fa-paper-plane"></i> Test Route
+            </button>
+        </div>
+        
+        <div class="ai-test-result" id="aiTestResult"></div>
+    </div>
+
+    {# ── Page Profile Cards ───────────────────────────────────────────────── #}
+    {% if pages_with_profiles %}
+        {% for item in pages_with_profiles %}
+        {% with integ=item.integration profile=item.profile %}
+        <div class="profile-card" id="profile-card-{{ integ.pk }}">
+            <div class="card-header-bar">
+                <div class="page-identity">
+                    <div class="platform-icon {{ integ.channel_type }}">
+                        <i class="fab fa-{{ integ.channel_type }}"></i>
+                    </div>
+                    <div>
+                        <h3 class="page-name">{{ integ.parsed_name|default:integ }}</h3>
+                        <div class="page-status {% if not profile.is_active %}inactive{% endif %}" id="status-badge-{{ integ.pk }}">
+                            <i class="fas fa-circle"></i> <span>{% if profile.is_active %}Active & Routing{% else %}Disabled{% endif %}</span>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="toggle-switch" title="Toggle Profile Active/Inactive">
+                        <input type="checkbox" name="is_active_top" form="form-{{ integ.pk }}" {% if profile.is_active %}checked{% endif %} onchange="document.getElementById('is_active_{{ integ.pk }}').checked = this.checked; document.getElementById('form-{{ integ.pk }}').dispatchEvent(new Event('submit'));">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <form method="post" action="{% url 'trendycrm:page_profile_save' integ.pk %}" class="profile-form" id="form-{{ integ.pk }}" data-card-id="{{ integ.pk }}">
+                {% csrf_token %}
+                <input type="checkbox" name="is_active" id="is_active_{{ integ.pk }}" style="display:none;" {% if profile.is_active %}checked{% endif %}>
+                
+                <div class="card-body">
+                    
+                    <!-- Section 1: Sales Config -->
+                    <div class="form-section">
+                        <div class="section-title"><i class="fas fa-tag"></i> Sales Configuration</div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Product Name <span class="hint">— sold on this page</span></label>
+                                <input type="text" name="product_name" class="form-control" value="{{ profile.product_name|default:'' }}" placeholder="e.g. Trendy Glow Serum">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Price <span class="hint">— shown in DMs</span></label>
+                                <input type="text" name="price" class="form-control" value="{{ profile.price|default:'' }}" placeholder="e.g. NPR 1,200">
+                            </div>
+                            <div class="form-group full">
+                                <label class="form-label">Checkout Link <span class="hint">— automatically appended to sales pitches</span></label>
+                                <input type="url" name="checkout_link" class="form-control" value="{{ profile.checkout_link|default:'' }}" placeholder="https://your-store.com/checkout/...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: AI Knowledge -->
+                    <div class="form-section">
+                        <div class="section-title"><i class="fas fa-brain"></i> AI Behavior & Knowledge</div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Brand Tone</label>
+                                <select name="brand_tone" class="form-control">
+                                    {% for val, label in profile.TONE_CHOICES %}
+                                    <option value="{{ val }}" {% if profile.brand_tone == val %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group full">
+                                <label class="form-label">Custom FAQ Context <span class="hint">— invisible to user, injects facts into the AI</span></label>
+                                <textarea name="custom_faq" class="form-control" placeholder="e.g. Ships same day inside Ring Road. Standard delivery is Rs 100. Product contains Hyaluronic Acid.">{{ profile.custom_faq|default:'' }}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: ManyChat Auto-DM -->
+                    <div class="form-section">
+                        <div class="section-title"><i class="fas fa-robot"></i> Comment Automation</div>
+                        <div class="automation-box">
+                            <div class="auto-icon"><i class="fas fa-comment-medical"></i></div>
+                            <div class="auto-text">
+                                <h4>Comment-to-DM Engine</h4>
+                                <p>When a user comments on a post, automatically send a public reply hook and follow up with a personalized AI sales pitch in their DMs.</p>
+                            </div>
+                            <div style="margin-left: auto;">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" name="comment_auto_reply_enabled" {% if profile.comment_auto_reply_enabled %}checked{% endif %}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group full">
+                            <label class="form-label">Public Reply Template <span class="hint">— The Hook</span></label>
+                            <input type="text" name="public_reply_template" class="form-control" value="{{ profile.public_reply_template|default:'Just sent the link to your DMs! 💌' }}" placeholder="Just sent the link to your DMs! 💌">
+                        </div>
+                    </div>
+
+                </div>
+                
+                <div class="card-footer-bar">
+                    <div class="save-status" id="save-status-{{ integ.pk }}">
+                        <i class="fas fa-history"></i> Last saved: {{ profile.updated_at|date:"M d, g:i A" }}
+                    </div>
+                    <button type="submit" class="btn-save" id="btn-save-{{ integ.pk }}">
+                        <i class="fas fa-check"></i> Save Profile
+                    </button>
+                </div>
+            </form>
+        </div>
+        {% endwith %}
+        {% endfor %}
+    {% else %}
+        <div class="no-pages">
+            <i class="fas fa-plug"></i>
+            <h3>No connected pages</h3>
+            <p>Connect a Facebook or Instagram account in the Integrations tab to configure page profiles.</p>
+            <a href="{% url 'trendycrm:integrations' %}" class="btn-save" style="display:inline-block; text-decoration:none; margin-top:1rem;">Go to Integrations</a>
+        </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── AJAX form save ──────────────────────────────────────────────────────────
+document.querySelectorAll('.profile-form').forEach(form => {
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const cardId = this.dataset.cardId;
+        const statusEl = document.getElementById('save-status-' + cardId);
+        const btn = document.getElementById('btn-save-' + cardId);
+        const originalBtnHtml = btn.innerHTML;
+        
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+        
+        try {
+            const resp = await fetch(this.action, {
+                method: 'POST',
+                body: new FormData(this),
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const data = await resp.json();
+            
+            if (data.status === 'ok') {
+                statusEl.innerHTML = '<i class="fas fa-check-circle" style="color:#10b981;"></i> Saved at ' + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                
+                // Update active badge sync
+                const isActive = form.querySelector('[name="is_active"]').checked;
+                const badge = document.getElementById('status-badge-' + cardId);
+                if (badge) {
+                    if (isActive) {
+                        badge.className = 'page-status';
+                        badge.innerHTML = '<i class="fas fa-circle"></i> <span>Active & Routing</span>';
+                    } else {
+                        badge.className = 'page-status inactive';
+                        badge.innerHTML = '<i class="fas fa-circle"></i> <span>Disabled</span>';
+                    }
+                }
+            } else {
+                statusEl.innerHTML = '<i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i> Error saving';
+            }
+        } catch(err) {
+            statusEl.innerHTML = '<i class="fas fa-wifi" style="color:#ef4444;"></i> Network error';
+        } finally {
+            btn.innerHTML = originalBtnHtml;
+            btn.disabled = false;
+        }
+    });
+});
+
+// ── AI Router Test Console ───────────────────────────────────────────────────
+async function runAiTest() {
+    const msgInput = document.getElementById('testMessage');
+    const msg = msgInput.value.trim();
+    const integId = document.getElementById('testIntegration').value;
+    const resultEl = document.getElementById('aiTestResult');
+    const btnTest = document.getElementById('btnTestRouter');
+
+    if (!msg) {
+        msgInput.focus();
+        return;
+    }
+
+    resultEl.style.display = 'none';
+    btnTest.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+    btnTest.disabled = true;
+
+    const formData = new FormData();
+    formData.append('message', msg);
+    if (integId) formData.append('integration_id', integId);
+    formData.append('csrfmiddlewaretoken', getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value);
+
+    try {
+        const resp = await fetch('{% url "trendycrm:ai_test" %}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await resp.json();
+        
+        resultEl.style.display = 'block';
+        if (data.error) {
+            resultEl.className = 'ai-test-result error';
+            resultEl.innerHTML = '<strong><i class="fas fa-exclamation-circle"></i> Error:</strong> ' + data.error;
+        } else {
+            resultEl.className = 'ai-test-result success';
+            const ticketHtml = data.open_ticket ? '<span class="result-badge badge-ticket"><i class="fas fa-ticket-alt"></i> Ticket Auto-Created</span>' : '';
+            const checkoutHtml = data.checkout_link ? '<div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid #e5e7eb; font-size:0.85rem;"><i class="fas fa-link" style="color:var(--crm-primary);"></i> <strong>Checkout Link Appended:</strong> <a href="' + data.checkout_link + '" target="_blank" style="color:var(--crm-primary); text-decoration:none;">' + data.checkout_link + '</a></div>' : '';
+            
+            resultEl.innerHTML = '<div class="result-meta">' +
+                '<span class="result-badge badge-intent"><i class="fas fa-bullseye"></i> Intent: ' + data.intent + '</span>' +
+                '<span class="result-badge badge-model"><i class="fas fa-microchip"></i> Model: ' + data.model_used + '</span>' +
+                ticketHtml +
+                '</div>' +
+                '<div style="color:#1f2937; margin-bottom:0.5rem;"><strong>AI Reply:</strong></div>' +
+                '<div style="color:#4b5563; white-space:pre-wrap;">' + (data.reply || '—') + '</div>' + checkoutHtml;
+        }
+    } catch(err) {
+        resultEl.style.display = 'block';
+        resultEl.className = 'ai-test-result error';
+        resultEl.innerHTML = '<strong><i class="fas fa-wifi"></i> Network Error:</strong> ' + err.message;
+    } finally {
+        btnTest.innerHTML = '<i class="fas fa-paper-plane"></i> Test Route';
+        btnTest.disabled = false;
+    }
+}
+
+function getCookie(name) {
+    const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return v ? v[2] : null;
+}
+
+// Allow Enter key in test input
+document.getElementById('testMessage')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') runAiTest();
+});
+</script>
+{% endblock %}

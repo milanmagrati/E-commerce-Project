@@ -16,9 +16,16 @@ urlpatterns = [
     path('social/post-action/<int:post_id>/', views.crm_social_post_action, name='social_post_action'),
     path('chatbot/', views.crm_chatbot, name='chatbot'),
     path('chatbot/toggle/', views.crm_chatbot_toggle, name='chatbot_toggle'),
+    path('chatbot/save-knowledge/', views.crm_chatbot_save_knowledge, name='chatbot_save_knowledge'),
+    path('chatbot/save-agent/', views.crm_chatbot_save_agent, name='chatbot_save_agent'),
+    path('chatbot/toggle-channel/', views.crm_chatbot_toggle_channel, name='chatbot_toggle_channel'),
+    path('chatbot/credit-history/', views.crm_credit_history, name='credit_history'),
     path('quick-replies/', views.crm_quick_replies, name='quick_replies'),
     path('quick-replies/create/', views.crm_quick_reply_create, name='quick_reply_create'),
+    path('quick-replies/search/', views.crm_quick_replies_search, name='quick_replies_search'),
+    path('quick-replies/<int:pk>/edit/', views.crm_quick_reply_edit, name='quick_reply_edit'),
     path('quick-replies/<int:pk>/delete/', views.crm_quick_reply_delete, name='quick_reply_delete'),
+
     path('integrations/', views.crm_integrations, name='integrations'),
     path('integrations/facebook/connect/', views.connect_facebook, name='facebook_connect'),
     path('integrations/facebook/callback/', views.facebook_callback, name='facebook_callback'),
@@ -32,4 +39,12 @@ urlpatterns = [
     path('contacts/', views.crm_contacts, name='contacts'),
     path('analytics/', views.crm_analytics, name='analytics'),
     path('tickets/', views.crm_tickets, name='tickets'),
+
+    # Page Profiles — Centralized Knowledge Core
+    path('page-profiles/', views.crm_page_profiles, name='page_profiles'),
+    path('page-profiles/<int:integration_id>/save/', views.crm_page_profile_save, name='page_profile_save'),
+
+    # AI Test endpoint (Dashboard use only)
+    path('ai/test/', views.crm_ai_test, name='ai_test'),
 ]
+

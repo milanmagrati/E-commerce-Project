@@ -111,15 +111,41 @@ class CRMQuickReply(models.Model):
 
 
 class CRMChatbotConfig(models.Model):
+    AI_MODEL_CHOICES = [
+        ('multi_auto', 'Multi-Model Auto (Recommended)'),
+        ('gpt-4o', 'GPT-4o (Premium)'),
+        ('gpt-3.5-turbo', 'GPT-3.5 Turbo (Fast)'),
+        ('gemini-1.5-flash', 'Gemini 1.5 Flash (Cheapest)'),
+        ('gemini-1.5-pro', 'Gemini 1.5 Pro'),
+    ]
+    TONE_CHOICES = [
+        ('professional_friendly', 'Professional & Friendly'),
+        ('formal', 'Formal'),
+        ('casual', 'Casual'),
+        ('energetic', 'Energetic & Hype'),
+        ('empathetic', 'Empathetic & Supportive'),
+    ]
     name = models.CharField(max_length=200, default='Trendy AI')
     is_active = models.BooleanField(default=False)
+    # Business Identity
     business_name = models.CharField(max_length=200, blank=True, null=True)
     business_email = models.EmailField(blank=True, null=True)
     business_phone = models.CharField(max_length=30, blank=True, null=True)
-    about_blurb = models.TextField(blank=True, null=True)
+    about_blurb = models.TextField(blank=True, null=True, help_text='About your business for the AI')
     welcome_message = models.TextField(blank=True, null=True)
+    # Business Knowledge Sections
+    tone_voice = models.TextField(blank=True, null=True, help_text='How should the AI speak? Describe tone, style, brand voice.')
+    offerings = models.TextField(blank=True, null=True, help_text='Products and services you sell.')
+    faq_text = models.TextField(blank=True, null=True, help_text='Common FAQs and their answers.')
+    playbook = models.TextField(blank=True, null=True, help_text='How to handle tricky situations, complaints, refunds.')
+    # Agent Configuration
+    ai_model = models.CharField(max_length=50, choices=AI_MODEL_CHOICES, default='multi_auto')
+    response_tone = models.CharField(max_length=30, choices=TONE_CHOICES, default='professional_friendly')
     auto_reply_channels = models.JSONField(default=dict)
     ai_credits = models.IntegerField(default=100)
+    # Multi-Model Routing Engine API Keys
+    openai_api_key = models.CharField(max_length=500, blank=True, null=True, help_text='OpenAI API key for ChatGPT Premium (complex text, images)')
+    gemini_api_key = models.CharField(max_length=500, blank=True, null=True, help_text='Google Gemini API key (audio, simple FAQ via Flash)')
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -127,6 +153,70 @@ class CRMChatbotConfig(models.Model):
 
     class Meta:
         verbose_name = 'Chatbot Configuration'
+
+
+class CRMCreditLog(models.Model):
+    """Tracks AI credit usage for the credit history modal."""
+    ACTION_CHOICES = [
+        ('auto_reply', 'Auto Reply'),
+        ('intent_classify', 'Intent Classification'),
+        ('comment_dm', 'Comment-to-DM'),
+        ('manual_test', 'Manual Test'),
+        ('top_up', 'Top Up'),
+    ]
+    action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    credits_used = models.IntegerField(default=1)  # positive = top-up, negative = usage
+    model_used = models.CharField(max_length=50, blank=True, null=True)
+    description = models.CharField(max_length=300, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Credit Log'
+
+
+
+class CRMPageProfile(models.Model):
+    """
+    Centralized Knowledge Core for each social page/channel.
+    Maps each CRMIntegration (page) to its unique product, price, tone, and checkout link.
+    This drives the Dynamic Prompt Assembly — when a webhook arrives from a page, the AI
+    automatically fetches the correct profile and builds a tailored response.
+    """
+    TONE_CHOICES = [
+        ('friendly', 'Friendly & Casual'),
+        ('professional', 'Professional & Formal'),
+        ('energetic', 'Energetic & Hype'),
+        ('empathetic', 'Empathetic & Supportive'),
+        ('luxury', 'Luxury & Exclusive'),
+    ]
+    integration = models.OneToOneField(
+        'CRMIntegration', on_delete=models.CASCADE,
+        related_name='page_profile',
+        help_text='The connected social channel this profile belongs to'
+    )
+    product_name = models.CharField(max_length=300, blank=True, null=True, help_text='Main product name sold on this page')
+    price = models.CharField(max_length=100, blank=True, null=True, help_text='Product price (e.g. NPR 1,200)')
+    brand_tone = models.CharField(max_length=20, choices=TONE_CHOICES, default='friendly')
+    checkout_link = models.URLField(max_length=1000, blank=True, null=True, help_text='Direct checkout / buy link sent in DMs')
+    custom_faq = models.TextField(blank=True, null=True, help_text='Custom FAQs or product description for the AI knowledge base')
+    # Comment-to-DM automation settings
+    comment_auto_reply_enabled = models.BooleanField(default=False, help_text='Auto-reply publicly to comments and DM the sender')
+    public_reply_template = models.TextField(
+        blank=True, null=True,
+        default='Just sent the link to your DMs! 💌',
+        help_text='The public comment reply text (The Hook)'
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Profile: {self.integration}"
+
+    class Meta:
+        verbose_name = 'Page Profile'
+        ordering = ['integration__channel_type']
 
 
 class CRMIntegration(models.Model):

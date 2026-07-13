@@ -6,6 +6,7 @@ from .models import CRMIntegration, CRMContact, CRMConversation, CRMMessage, CRM
 
 logger = logging.getLogger(__name__)
 
+
 GRAPH_API_VERSION = "v25.0"
 
 def sync_meta_conversations(integration):
@@ -284,6 +285,15 @@ def _process_comment(post, comment_data, parent_id):
         if sender_name != 'Facebook User' or obj.sender_name in ('Unknown', 'Facebook User', ''):
             obj.sender_name = sender_name
         obj.save()
+    else:
+        # NEW top-level comment → trigger the Comment-to-DM sales funnel
+        # (Only for root comments, not replies to our own page comments)
+        if not parent_id:
+            try:
+                trigger_comment_to_dm(obj, post.integration)
+            except Exception as e:
+                logger.error(f"trigger_comment_to_dm raised an exception: {e}")
+
 
 def reply_to_meta_comment(integration, comment_id, message_text):
     if not integration.access_token:
@@ -327,3 +337,119 @@ def delete_meta_comment(integration, comment_id):
     except Exception as e:
         logger.error(f"Failed to delete comment: {e}")
         return False
+
+
+# ─── AI Router Integration ─────────────────────────────────────────────────────
+def process_incoming_webhook_message(integration, contact, conversation, message_text, is_outbound=False):
+    """
+    Called when a new INBOUND message arrives via webhook.
+    If the chatbot is active and the message is inbound (from customer),
+    routes the message through the Multi-Model AI Engine and sends an auto-reply.
+
+    Args:
+        integration: CRMIntegration instance (the page that received the message)
+        contact: CRMContact instance
+        conversation: CRMConversation instance
+        message_text: str — the customer's raw message text
+        is_outbound: bool — only process inbound (customer) messages
+    """
+    if is_outbound:
+        return  # Never auto-reply to our own outbound messages
+
+    try:
+        from .models import CRMChatbotConfig, CRMMessage
+        chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+
+        if not chatbot.is_active:
+            logger.info("Chatbot is inactive — skipping AI auto-reply")
+            return
+
+        # Check that this channel is enabled for auto-reply
+        enabled_channels = chatbot.auto_reply_channels or {}
+        channel_key = integration.channel_type
+        if not enabled_channels.get(channel_key, False):
+            logger.info(f"Auto-reply disabled for channel: {channel_key}")
+            return
+
+        from .ai_router import route_message
+        result = route_message(
+            message_text=message_text,
+            integration=integration,
+            chatbot_config=chatbot,
+            input_type='text',
+        )
+
+        if result.get('success') and result.get('reply'):
+            reply_text = result['reply']
+            # Append checkout link if it was a purchase intent and not already in reply
+            checkout = result.get('checkout_link', '')
+            if checkout and result.get('intent') == 'purchase_intent' and checkout not in reply_text:
+                reply_text += f"\n\n👉 Order here: {checkout}"
+
+            # Send the AI reply via Meta API
+            if contact and contact.meta_id:
+                send_meta_message(integration, contact.meta_id, reply_text)
+
+            # Save the AI reply as an outbound message in the conversation
+            CRMMessage.objects.create(
+                conversation=conversation,
+                sender=f"Trendy AI ({result.get('model_used', 'ai')})",
+                body=reply_text,
+                is_outbound=True,
+            )
+            conversation.last_message = reply_text
+            conversation.updated_at = timezone.now()
+            conversation.save(update_fields=['last_message', 'updated_at'])
+
+            logger.info(
+                f"AI auto-reply sent | intent={result.get('intent')} | "
+                f"model={result.get('model_used')} | channel={channel_key}"
+            )
+
+        # If the AI flagged a product issue, auto-create a support ticket
+        if result.get('open_ticket'):
+            try:
+                from .models import CRMTicket
+                CRMTicket.objects.create(
+                    title=f"Product Issue from {contact.name if contact else 'Customer'}",
+                    description=f"Message: {message_text}",
+                    contact=contact,
+                    priority='medium',
+                    status='open',
+                )
+                logger.info("Auto-created support ticket for product issue")
+            except Exception as e:
+                logger.error(f"Failed to auto-create ticket: {e}")
+
+    except Exception as e:
+        logger.exception(f"process_incoming_webhook_message failed: {e}")
+
+
+def trigger_comment_to_dm(comment, integration):
+    """
+    Entry point for the Comment-to-DM sales funnel.
+    Called whenever a NEW comment is saved from a webhook.
+    Checks if automation is enabled for this page, then fires the full 3-step funnel.
+
+    Args:
+        comment: CRMSocialComment instance
+        integration: CRMIntegration instance
+    """
+    try:
+        from .ai_router import process_comment_to_dm
+        from .models import CRMChatbotConfig
+        chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+
+        if not chatbot.is_active:
+            logger.info("Chatbot is inactive — skipping Comment-to-DM funnel")
+            return
+
+        result = process_comment_to_dm(comment, integration, chatbot_config=chatbot)
+        logger.info(
+            f"Comment-to-DM funnel result | comment={comment.meta_comment_id} | "
+            f"public_reply={result.get('public_reply_sent')} | dm={result.get('dm_sent')} | "
+            f"intent={result.get('intent')} | model={result.get('model_used')}"
+        )
+    except Exception as e:
+        logger.exception(f"trigger_comment_to_dm failed: {e}")
+

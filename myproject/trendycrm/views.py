@@ -37,7 +37,7 @@ from .meta_sync import (
 from .models import (
     CRMContact, CRMConversation, CRMMessage,
     CRMQuickReply, CRMChatbotConfig, CRMIntegration, CRMTicket,
-    CRMSocialPost, CRMSocialComment
+    CRMSocialPost, CRMSocialComment, CRMPageProfile, CRMCreditLog
 )
 
 
@@ -75,6 +75,14 @@ def crm_home(request):
             'action_label': 'Open conversations',
             'action_url': 'trendycrm:conversations',
             'done': total_conversations > 0,
+        },
+        {
+            'icon': 'fa-tools',
+            'title': 'Configure page profiles',
+            'desc': 'Customize the tone, FAQ, and specific auto-replies for each connected social page.',
+            'action_label': 'Manage profiles',
+            'action_url': 'trendycrm:page_profiles',
+            'done': CRMPageProfile.objects.filter(is_active=True).exists(),
         },
         {
             'icon': 'fa-user-plus',
@@ -291,22 +299,15 @@ def crm_delete_conversation(request, conv_id):
 # ─── Chatbot ─────────────────────────────────────────────────────────────────
 @login_required
 def crm_chatbot(request):
+
     chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
     integrations = CRMIntegration.objects.all()
-
-    if request.method == 'POST':
-        chatbot.is_active = 'is_active' in request.POST
-        chatbot.business_name = request.POST.get('business_name', chatbot.business_name)
-        chatbot.business_email = request.POST.get('business_email', chatbot.business_email)
-        chatbot.business_phone = request.POST.get('business_phone', chatbot.business_phone)
-        chatbot.about_blurb = request.POST.get('about_blurb', chatbot.about_blurb)
-        chatbot.welcome_message = request.POST.get('welcome_message', chatbot.welcome_message)
-        chatbot.save()
-        return redirect('trendycrm:chatbot')
+    recent_logs = CRMCreditLog.objects.all()[:20]
 
     context = {
         'chatbot': chatbot,
         'integrations': integrations,
+        'recent_logs': recent_logs,
         'crm_section': 'chatbot',
     }
     return render(request, 'trendycrm/chatbot.html', context)
@@ -315,46 +316,228 @@ def crm_chatbot(request):
 @login_required
 @require_POST
 def crm_chatbot_toggle(request):
+    """AJAX: Toggle the global AI on/off switch."""
     chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
     chatbot.is_active = not chatbot.is_active
     chatbot.save(update_fields=['is_active', 'updated_at'])
     return JsonResponse({'is_active': chatbot.is_active})
 
 
-# ─── Quick Replies ────────────────────────────────────────────────────────────
+@login_required
+@require_POST
+def crm_chatbot_save_knowledge(request):
+    """
+    AJAX: Save the 5-section Business Knowledge Base.
+    Saves: about_blurb (identity), tone_voice, offerings, faq_text, playbook,
+           business_name, business_email, business_phone, welcome_message.
+    """
+    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+
+    chatbot.business_name = request.POST.get('business_name', '').strip() or chatbot.business_name
+    chatbot.business_email = request.POST.get('business_email', '').strip() or chatbot.business_email
+    chatbot.business_phone = request.POST.get('business_phone', '').strip() or chatbot.business_phone
+    chatbot.about_blurb = request.POST.get('about_blurb', '').strip() or None
+    chatbot.welcome_message = request.POST.get('welcome_message', '').strip() or None
+    chatbot.tone_voice = request.POST.get('tone_voice', '').strip() or None
+    chatbot.offerings = request.POST.get('offerings', '').strip() or None
+    chatbot.faq_text = request.POST.get('faq_text', '').strip() or None
+    chatbot.playbook = request.POST.get('playbook', '').strip() or None
+    chatbot.save()
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'ok', 'message': 'Business knowledge saved successfully!'})
+    messages.success(request, 'Business knowledge saved!')
+    return redirect('trendycrm:chatbot')
+
+
+@login_required
+@require_POST
+def crm_chatbot_save_agent(request):
+    """
+    AJAX: Save agent configuration (AI model, tone, API keys).
+    """
+    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+
+    chatbot.ai_model = request.POST.get('ai_model', chatbot.ai_model)
+    chatbot.response_tone = request.POST.get('response_tone', chatbot.response_tone)
+
+    # Only update API keys if a non-empty value is provided (don't overwrite with blank)
+    openai_key = request.POST.get('openai_api_key', '').strip()
+    gemini_key = request.POST.get('gemini_api_key', '').strip()
+    if openai_key:
+        chatbot.openai_api_key = openai_key
+    if gemini_key:
+        chatbot.gemini_api_key = gemini_key
+
+    chatbot.save()
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'ok', 'message': 'Agent configuration saved!'})
+    messages.success(request, 'Agent configuration saved!')
+    return redirect('trendycrm:chatbot')
+
+
+@login_required
+@require_POST
+def crm_chatbot_toggle_channel(request):
+    """
+    AJAX: Toggle auto-reply for a specific channel on/off.
+    POST body: { channel_type: 'facebook', enabled: 'true'/'false' }
+    """
+    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+    channel_type = request.POST.get('channel_type', '')
+    enabled = request.POST.get('enabled', 'false') == 'true'
+
+    if channel_type:
+        channels = chatbot.auto_reply_channels or {}
+        channels[channel_type] = enabled
+        chatbot.auto_reply_channels = channels
+        chatbot.save(update_fields=['auto_reply_channels', 'updated_at'])
+        return JsonResponse({'status': 'ok', 'channel': channel_type, 'enabled': enabled})
+
+    return JsonResponse({'status': 'error', 'message': 'channel_type required'}, status=400)
+
+
+@login_required
+def crm_credit_history(request):
+    """AJAX: Returns JSON list of recent credit log entries."""
+    logs = CRMCreditLog.objects.all()[:50]
+    data = [
+        {
+            'id': l.pk,
+            'action': l.get_action_display(),
+            'credits_used': l.credits_used,
+            'model_used': l.model_used or '—',
+            'description': l.description or '',
+            'created_at': l.created_at.strftime('%b %d, %Y %H:%M'),
+            'is_topup': l.credits_used > 0,
+        }
+        for l in logs
+    ]
+    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+    return JsonResponse({'logs': data, 'balance': chatbot.ai_credits})
+
+
+# ─── Quick Replies ────────────────────────────────────────────────
 @login_required
 def crm_quick_replies(request):
+    q = request.GET.get('q', '').strip()
+    category = request.GET.get('category', '').strip()
     replies = CRMQuickReply.objects.all()
+    if q:
+        replies = replies.filter(name__icontains=q) | replies.filter(shortcut__icontains=q) | replies.filter(content__icontains=q)
+    if category:
+        replies = replies.filter(category__iexact=category)
+    categories = CRMQuickReply.objects.exclude(category__isnull=True).exclude(category='').values_list('category', flat=True).distinct()
     context = {
         'replies': replies,
+        'categories': list(categories),
+        'search_q': q,
+        'active_category': category,
         'crm_section': 'quick_replies',
     }
     return render(request, 'trendycrm/quick_replies.html', context)
 
 
 @login_required
+@require_POST
 def crm_quick_reply_create(request):
-    if request.method == 'POST':
-        name = request.POST.get('name', '').strip()
-        shortcut = request.POST.get('shortcut', '').strip()
-        content = request.POST.get('content', '').strip()
-        category = request.POST.get('category', '').strip()
-        if name and shortcut and content:
-            CRMQuickReply.objects.create(
-                name=name,
-                shortcut=shortcut,
-                content=content,
-                category=category or None,
-                created_by=request.user,
-            )
+    name = request.POST.get('name', '').strip()
+    shortcut = request.POST.get('shortcut', '').strip().lstrip('/')
+    content = request.POST.get('content', '').strip()
+    category = request.POST.get('category', '').strip()
+
+    if not (name and shortcut and content):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'status': 'error', 'message': 'Name, shortcut, and content are required.'}, status=400)
+        messages.error(request, 'Name, shortcut, and content are required.')
+        return redirect('trendycrm:quick_replies')
+
+    if CRMQuickReply.objects.filter(shortcut=shortcut).exists():
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'status': 'error', 'message': f'Shortcut "/{shortcut}" already exists.'}, status=400)
+        messages.error(request, f'Shortcut "/{shortcut}" already exists. Please use a different one.')
+        return redirect('trendycrm:quick_replies')
+
+    new_reply = CRMQuickReply.objects.create(
+        name=name,
+        shortcut=shortcut,
+        content=content,
+        category=category or None,
+        created_by=request.user,
+    )
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'status': 'ok',
+            'reply': {
+                'pk': new_reply.pk,
+                'name': new_reply.name,
+                'shortcut': new_reply.shortcut,
+                'content': new_reply.content,
+                'category': new_reply.category or '',
+            }
+        })
+
+    messages.success(request, f'Quick reply "{name}" created successfully!')
     return redirect('trendycrm:quick_replies')
+
+
+@login_required
+@require_POST
+def crm_quick_reply_edit(request, pk):
+    """AJAX: Edit an existing quick reply."""
+    reply = get_object_or_404(CRMQuickReply, pk=pk)
+    name = request.POST.get('name', '').strip()
+    shortcut = request.POST.get('shortcut', '').strip().lstrip('/')
+    content = request.POST.get('content', '').strip()
+    category = request.POST.get('category', '').strip()
+
+    if not (name and shortcut and content):
+        return JsonResponse({'status': 'error', 'message': 'Name, shortcut and content are required.'}, status=400)
+
+    if CRMQuickReply.objects.filter(shortcut=shortcut).exclude(pk=pk).exists():
+        return JsonResponse({'status': 'error', 'message': f'Shortcut "/{shortcut}" already in use.'}, status=400)
+
+    reply.name = name
+    reply.shortcut = shortcut
+    reply.content = content
+    reply.category = category or None
+    reply.save()
+
+    return JsonResponse({
+        'status': 'ok',
+        'reply': {
+            'pk': reply.pk,
+            'name': reply.name,
+            'shortcut': reply.shortcut,
+            'content': reply.content,
+            'category': reply.category or '',
+        }
+    })
 
 
 @login_required
 def crm_quick_reply_delete(request, pk):
     reply = get_object_or_404(CRMQuickReply, pk=pk)
+    name = reply.name
     reply.delete()
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'ok'})
+    messages.success(request, f'Quick reply "{name}" deleted.')
     return redirect('trendycrm:quick_replies')
+
+
+@login_required
+def crm_quick_replies_search(request):
+    """AJAX: Search quick replies by shortcut prefix for autocomplete in conversations."""
+    q = request.GET.get('q', '').strip().lstrip('/')
+    if not q:
+        return JsonResponse({'results': []})
+    replies = CRMQuickReply.objects.filter(
+        shortcut__istartswith=q
+    ).values('pk', 'name', 'shortcut', 'content', 'category')[:10]
+    return JsonResponse({'results': list(replies)})
 
 
 # ─── Integrations ─────────────────────────────────────────────────────────────
@@ -904,3 +1087,90 @@ def crm_social_action(request, comment_id):
         comment.save(update_fields=['visibility_status'])
         
     return redirect(f"{reverse('trendycrm:social_posts')}?post_id={comment.post.pk}")
+
+
+# ─── Page Profiles (Centralized Knowledge Core) ────────────────────────────────
+@login_required
+def crm_page_profiles(request):
+    """
+    Dashboard view to manage Page Profiles for the Centralized Knowledge Core.
+    One profile per connected integration (social page).
+    """
+    integrations = CRMIntegration.objects.filter(status='connected')
+    profiles = {p.integration_id: p for p in CRMPageProfile.objects.all()}
+
+    # Auto-create missing profiles for connected pages
+    for integ in integrations:
+        if integ.pk not in profiles:
+            profile = CRMPageProfile.objects.create(integration=integ)
+            profiles[integ.pk] = profile
+
+    pages_with_profiles = [
+        {'integration': integ, 'profile': profiles.get(integ.pk)}
+        for integ in integrations
+    ]
+
+    context = {
+        'crm_section': 'chatbot',
+        'pages_with_profiles': pages_with_profiles,
+    }
+    return render(request, 'trendycrm/page_profiles.html', context)
+
+
+@login_required
+@require_POST
+def crm_page_profile_save(request, integration_id):
+    """
+    AJAX / form POST to save a Page Profile for a specific integration.
+    """
+    integration = get_object_or_404(CRMIntegration, pk=integration_id)
+    profile, _ = CRMPageProfile.objects.get_or_create(integration=integration)
+
+    profile.product_name = request.POST.get('product_name', '').strip() or None
+    profile.price = request.POST.get('price', '').strip() or None
+    profile.brand_tone = request.POST.get('brand_tone', 'friendly')
+    profile.checkout_link = request.POST.get('checkout_link', '').strip() or None
+    profile.custom_faq = request.POST.get('custom_faq', '').strip() or None
+    profile.comment_auto_reply_enabled = request.POST.get('comment_auto_reply_enabled') == 'on'
+    profile.public_reply_template = request.POST.get('public_reply_template', '').strip() or 'Just sent the link to your DMs! \U0001f48c'
+    profile.is_active = request.POST.get('is_active') == 'on'
+    profile.save()
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'ok', 'message': 'Profile saved successfully'})
+
+    messages.success(request, f'Page profile for {integration.parsed_name or integration} saved successfully!')
+    return redirect('trendycrm:page_profiles')
+
+
+@login_required
+@require_POST
+def crm_ai_test(request):
+    """
+    Quick test endpoint to run a message through the AI router from the dashboard.
+    Returns JSON with intent, model used, and the AI-generated reply.
+    """
+    message_text = request.POST.get('message', '').strip()
+    integration_id = request.POST.get('integration_id')
+
+    if not message_text:
+        return JsonResponse({'error': 'Message is required'}, status=400)
+
+    integration = None
+    if integration_id:
+        integration = CRMIntegration.objects.filter(pk=integration_id).first()
+
+    try:
+        from .ai_router import route_message
+        chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+        result = route_message(
+            message_text=message_text,
+            integration=integration,
+            chatbot_config=chatbot,
+            input_type='text',
+        )
+        return JsonResponse(result)
+    except Exception as e:
+        logger.exception("AI test failed")
+        return JsonResponse({'error': str(e)}, status=500)
+

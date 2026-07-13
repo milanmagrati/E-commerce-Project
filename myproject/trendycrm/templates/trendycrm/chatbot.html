@@ -1,317 +1,653 @@
 {% extends "trendycrm/base_crm.html" %}
 {% load static %}
 
-{% block title %}Chatbot — Trendy CRM{% endblock %}
+{% block title %}Chatbot (AI) — Trendy CRM{% endblock %}
 {% block topbar_title %}Chatbot (AI){% endblock %}
 
 {% block extra_style %}
-.chatbot-toggle-wrap {
-    background: linear-gradient(135deg, #fdf4ff 0%, #f3e8ff 100%);
-    border: 1px solid rgba(124,58,237,0.15);
-    border-radius: 12px;
+:root {
+    --crm-primary: #7c3aed;
+    --crm-accent: #a78bfa;
+}
+/* ── Layout ────────────────────────────────── */
+.cb-grid { display: grid; grid-template-columns: 1fr 300px; gap: 1.25rem; }
+@media(max-width:900px){ .cb-grid{ grid-template-columns:1fr; } }
+
+/* ── Toggle Bar ─────────────────────────────── */
+.toggle-bar {
+    background: linear-gradient(135deg,#fdf4ff,#f3e8ff);
+    border: 1px solid rgba(124,58,237,.18);
+    border-radius: 14px;
     padding: 1.1rem 1.4rem;
     margin-bottom: 1.25rem;
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
+    display: flex; align-items: flex-start; gap: 1rem;
+    transition: background .3s;
 }
-.toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 50px;
-    height: 26px;
-    flex-shrink: 0;
-}
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider {
-    position: absolute; inset: 0;
-    background: #d1d5db;
-    border-radius: 26px;
-    cursor: pointer;
-    transition: 0.3s;
-}
-.toggle-slider::before {
-    content: '';
-    position: absolute;
-    width: 20px; height: 20px;
-    left: 3px; bottom: 3px;
-    background: white;
-    border-radius: 50%;
-    transition: 0.3s;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-}
-input:checked + .toggle-slider { background: var(--crm-primary); }
-input:checked + .toggle-slider::before { transform: translateX(24px); }
+.toggle-bar.active-state { background: linear-gradient(135deg,#ecfdf5,#d1fae5); border-color: rgba(5,150,105,.2); }
 
-.section-card {
-    background: white;
-    border-radius: 12px;
-    border: 1px solid rgba(124,58,237,0.08);
-    box-shadow: var(--crm-card-shadow);
-    margin-bottom: 1.25rem;
-    overflow: hidden;
+/* ── Toggle Switch ──────────────────────────── */
+.ai-toggle-wrap { position: relative; display: inline-block; width: 52px; height: 28px; flex-shrink:0; }
+.ai-toggle-wrap input { opacity:0; width:0; height:0; }
+.ai-toggle-slider {
+    position: absolute; inset:0;
+    background: #d1d5db; border-radius: 28px; cursor: pointer;
+    transition: background .25s;
 }
-.section-card-header {
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--crm-border);
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-weight: 700;
-    font-size: 0.9rem;
-    color: var(--crm-text);
+.ai-toggle-slider::before {
+    content:''; position:absolute;
+    width:22px; height:22px; left:3px; top:3px;
+    background:#fff; border-radius:50%;
+    transition: transform .25s; box-shadow: 0 1px 4px rgba(0,0,0,.2);
 }
-.section-card-body { padding: 1.25rem; }
+.ai-toggle-wrap input:checked + .ai-toggle-slider { background: #7c3aed; }
+.ai-toggle-wrap input:checked + .ai-toggle-slider::before { transform: translateX(24px); }
 
-.knowledge-item {
-    border: 1px solid var(--crm-border);
-    border-radius: 10px;
-    padding: 0.9rem 1.1rem;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    cursor: pointer;
-    transition: all 0.15s;
-    margin-bottom: 0.75rem;
+/* ── Status Badge ───────────────────────────── */
+.status-badge {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .72rem; font-weight: 700; padding: 2px 9px; border-radius: 30px;
 }
-.knowledge-item:hover { border-color: var(--crm-accent); background: var(--crm-hover); }
-.knowledge-item:last-child { margin-bottom: 0; }
+.status-badge.active { background:#d1fae5; color:#059669; }
+.status-badge.paused { background:#fee2e2; color:#dc2626; }
 
-.k-icon {
-    width: 36px; height: 36px;
-    background: var(--crm-active-bg);
-    border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--crm-primary);
-    font-size: 0.9rem;
-    flex-shrink: 0;
-}
-.k-title { font-weight: 600; font-size: 0.84rem; color: var(--crm-text); }
-.k-meta { font-size: 0.73rem; color: var(--crm-text-muted); margin-top: 1px; }
-.ai-badge {
-    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
-    color: white;
-    font-size: 0.65rem;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 10px;
-}
-.custom-tools-badge {
-    color: var(--crm-primary);
-    font-size: 0.72rem;
-    font-weight: 500;
-    border: 1px solid var(--crm-accent);
-    padding: 1px 6px;
-    border-radius: 6px;
-}
+/* ── Section Card ───────────────────────────── */
+.sec-card { background:#fff; border-radius:14px; border:1px solid rgba(124,58,237,.08); box-shadow:0 2px 12px rgba(0,0,0,.04); margin-bottom:1.25rem; overflow:hidden; }
+.sec-card-header { padding:.85rem 1.25rem; border-bottom:1px solid #f3f4f6; display:flex; align-items:center; justify-content:space-between; }
+.sec-card-title { font-weight:700; font-size:.9rem; color:#1e1b4b; display:flex; align-items:center; gap:.5rem; }
+.sec-card-body { padding:1.25rem; }
 
+/* ── Knowledge Tabs ─────────────────────────── */
+.kb-tabs { display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom:1.1rem; }
+.kb-tab {
+    padding:.35rem .85rem; font-size:.78rem; font-weight:600; border-radius:20px; cursor:pointer; border:1.5px solid #e5e7eb; background:#fff; color:#6b7280; transition:all .15s;
+}
+.kb-tab.active, .kb-tab:hover { background:#7c3aed; color:#fff; border-color:#7c3aed; }
+.kb-panel { display:none; }
+.kb-panel.active { display:block; }
+
+/* ── Input Styles ───────────────────────────── */
+.cb-input, .cb-textarea, .cb-select {
+    width:100%; border:1.5px solid #e5e7eb; border-radius:9px; padding:.55rem .85rem;
+    font-size:.84rem; font-family:inherit; color:#1f2937; background:#fff; outline:none; transition:border-color .15s, box-shadow .15s;
+    box-sizing: border-box;
+}
+.cb-input:focus, .cb-textarea:focus, .cb-select:focus {
+    border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.1);
+}
+.cb-textarea { resize:vertical; min-height:90px; }
+.cb-select { cursor:pointer; }
+.form-label { display:block; font-size:.77rem; font-weight:600; color:#374151; margin-bottom:.3rem; }
+.form-label .hint { font-weight:400; color:#9ca3af; font-size:.73rem; }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:.85rem; }
+.form-grid .full { grid-column:1/-1; }
+
+/* ── Credit Bar ─────────────────────────────── */
 .credit-bar {
-    background: white;
-    border: 1px solid rgba(124,58,237,0.08);
-    border-radius: 10px;
-    padding: 1rem 1.2rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
-    box-shadow: var(--crm-card-shadow);
+    background:#fff; border:1px solid rgba(124,58,237,.08); border-radius:12px; padding:1rem 1.2rem;
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem;
+    box-shadow:0 2px 8px rgba(0,0,0,.04);
 }
+.credit-amount { font-size:1.6rem; font-weight:800; color:#1e1b4b; line-height:1.1; }
+.credit-label { font-size:.72rem; color:#6b7280; margin-bottom:.15rem; }
 
-.auto-reply-channels-card {
-    background: white;
-    border-radius: 12px;
-    border: 1px solid rgba(124,58,237,0.08);
-    box-shadow: var(--crm-card-shadow);
-    padding: 1.25rem;
-}
+/* ── Channel Item ───────────────────────────── */
+.ch-item { display:flex; align-items:center; gap:.75rem; padding:.65rem 0; border-bottom:1px solid rgba(124,58,237,.05); }
+.ch-item:last-child { border-bottom:none; }
+.ch-icon { width:30px; height:30px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:.85rem; flex-shrink:0; }
+.ch-name { font-size:.84rem; font-weight:500; color:#1f2937; flex:1; }
+.ch-status { font-size:.72rem; color:#6b7280; }
 
-.channel-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.65rem 0;
-    border-bottom: 1px solid rgba(124,58,237,0.05);
-}
-.channel-item:last-child { border-bottom: none; }
-.channel-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; flex-shrink: 0; }
-.channel-name { font-size: 0.83rem; font-weight: 500; color: var(--crm-text); flex: 1; }
-.channel-status { font-size: 0.73rem; color: var(--crm-text-muted); }
+/* ── Btn Styles ─────────────────────────────── */
+.btn-save { background:linear-gradient(135deg,#7c3aed,#6d28d9); color:#fff; border:none; padding:.5rem 1.25rem; border-radius:9px; font-size:.84rem; font-weight:600; cursor:pointer; transition:opacity .15s,transform .1s; display:inline-flex; align-items:center; gap:.4rem; }
+.btn-save:hover { opacity:.9; transform:translateY(-1px); }
+.btn-save:disabled { opacity:.6; cursor:not-allowed; transform:none; }
+.btn-outline { background:#fff; color:#7c3aed; border:1.5px solid #7c3aed; padding:.45rem 1rem; border-radius:9px; font-size:.82rem; font-weight:600; cursor:pointer; transition:all .15s; display:inline-flex; align-items:center; gap:.4rem; }
+.btn-outline:hover { background:#f5f3ff; }
 
-.main-grid {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: 1.25rem;
+/* ── API Key Field ──────────────────────────── */
+.api-key-wrap { position:relative; }
+.api-key-wrap .cb-input { padding-right:2.5rem; font-family:monospace; letter-spacing:.05em; }
+.api-key-toggle { position:absolute; right:.75rem; top:50%; transform:translateY(-50%); background:none; border:none; color:#9ca3af; cursor:pointer; padding:0; font-size:.85rem; }
+.api-status { display:inline-flex; align-items:center; gap:.3rem; font-size:.72rem; font-weight:600; padding:2px 7px; border-radius:6px; }
+.api-status.set { background:#d1fae5; color:#059669; }
+.api-status.unset { background:#fef3c7; color:#92400e; }
+
+/* ── Save Toast ─────────────────────────────── */
+#saveToast {
+    position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999;
+    background:#1e1b4b; color:#fff; border-radius:10px; padding:.75rem 1.25rem;
+    display:flex; align-items:center; gap:.5rem; font-size:.84rem; font-weight:600;
+    box-shadow:0 8px 24px rgba(0,0,0,.15); transform:translateY(80px); opacity:0;
+    transition:all .3s; pointer-events:none;
 }
-@media(max-width:900px){ .main-grid{ grid-template-columns: 1fr; } }
+#saveToast.show { transform:translateY(0); opacity:1; }
+#saveToast.error { background:#dc2626; }
+
+/* ── Modal ──────────────────────────────────── */
+.cb-modal { position:fixed; inset:0; z-index:9998; background:rgba(15,10,40,.5); display:none; align-items:center; justify-content:center; padding:1rem; }
+.cb-modal.open { display:flex; }
+.cb-modal-box { background:#fff; border-radius:16px; width:100%; max-width:640px; box-shadow:0 20px 60px rgba(0,0,0,.2); animation:slideUp .25s ease; }
+@keyframes slideUp { from{transform:translateY(30px);opacity:0} to{transform:none;opacity:1} }
+.cb-modal-header { padding:1rem 1.4rem; border-bottom:1px solid #f3f4f6; display:flex; align-items:center; justify-content:space-between; }
+.cb-modal-header h5 { margin:0; font-weight:700; font-size:.95rem; color:#1e1b4b; }
+.cb-modal-close { background:none; border:none; font-size:1.2rem; color:#6b7280; cursor:pointer; padding:0 .25rem; }
+.cb-modal-body { padding:1.25rem 1.4rem; max-height:72vh; overflow-y:auto; }
+.cb-modal-footer { padding:.85rem 1.4rem; border-top:1px solid #f3f4f6; display:flex; justify-content:flex-end; gap:.5rem; }
+
+/* ── Credit History Table ───────────────────── */
+.hist-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+.hist-table th { background:#f9f7ff; padding:.6rem 1rem; text-align:left; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; border-bottom:1px solid #f3f4f6; }
+.hist-table td { padding:.65rem 1rem; border-bottom:1px solid #f9f9f9; color:#374151; vertical-align:middle; }
+.hist-table tr:last-child td { border-bottom:none; }
+.credit-badge { font-size:.72rem; font-weight:700; padding:2px 7px; border-radius:6px; }
+.credit-badge.usage { background:#fee2e2; color:#dc2626; }
+.credit-badge.topup { background:#d1fae5; color:#059669; }
+
+/* ── Unsaved Indicator ──────────────────────── */
+.unsaved-dot { width:7px; height:7px; border-radius:50%; background:#f59e0b; display:none; }
+.unsaved-dot.show { display:inline-block; }
 {% endblock %}
 
 {% block crm_content %}
-<!-- Master AI Toggle -->
-<div class="chatbot-toggle-wrap">
-    <i class="fas fa-power-off mt-1" style="color:{% if chatbot.is_active %}var(--crm-primary){% else %}#d1d5db{% endif %};font-size:1.1rem;"></i>
+<!-- Toast notification -->
+<div id="saveToast"><i class="fas fa-check-circle"></i> <span id="saveToastMsg">Saved successfully!</span></div>
+
+<!-- ── Master AI Toggle ───────────────────────────────────── -->
+<div class="toggle-bar {% if chatbot.is_active %}active-state{% endif %}" id="toggleBar">
+    <i class="fas fa-power-off mt-1" style="color:{% if chatbot.is_active %}#059669{% else %}#d1d5db{% endif %};font-size:1.1rem;" id="toggleIcon"></i>
     <div style="flex:1;">
-        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
-            <strong style="font-size:0.9rem;">Master AI toggle</strong>
-            <span style="font-size:0.72rem;font-weight:600;padding:1px 7px;border-radius:8px;background:{% if chatbot.is_active %}#d1fae5;color:#059669{% else %}#fee2e2;color:#dc2626{% endif %};">
-                {% if chatbot.is_active %}Active{% else %}Paused{% endif %}
+        <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.25rem;">
+            <strong style="font-size:.9rem;color:#1e1b4b;">Master AI toggle</strong>
+            <span class="status-badge {% if chatbot.is_active %}active{% else %}paused{% endif %}" id="statusBadge">
+                <span id="statusDot" style="width:6px;height:6px;border-radius:50%;background:{% if chatbot.is_active %}#059669{% else %}#dc2626{% endif %};display:inline-block;"></span>
+                <span id="statusText">{% if chatbot.is_active %}Active{% else %}Paused{% endif %}</span>
             </span>
         </div>
-        <div style="font-size:0.8rem;color:var(--crm-text-muted);line-height:1.4;">
-            {% if not chatbot.is_active %}
-            All AI is paused — customer auto-replies, home digest, suggested-reply drafts, and other AI tools won't run.
-            {% else %}
-            AI is active and auto-replying on all connected channels.
-            {% endif %}
-        </div>
-        {% if not chatbot.is_active %}
-        <div style="font-size:0.75rem;color:var(--crm-text-muted);margin-top:0.3rem;">
-            To stop only customer auto-replies but keep the digest, suggested replies, and other AI tools running, leave this on and turn off the channels under <strong>Auto-reply channels</strong> below.
-        </div>
-        {% endif %}
+        <p style="font-size:.8rem;color:#6b7280;margin:0;line-height:1.5;" id="toggleDesc">
+            {% if chatbot.is_active %}AI is active and auto-replying on all connected channels.{% else %}All AI is paused — customer auto-replies, digest, and other tools won't run.{% endif %}
+        </p>
     </div>
-    <form method="post" action="{% url 'trendycrm:chatbot_toggle' %}">
-        {% csrf_token %}
-        <button type="submit" class="toggle-switch" title="Toggle AI">
-            <input type="checkbox" {% if chatbot.is_active %}checked{% endif %} onclick="this.closest('form').submit()">
-            <span class="toggle-slider"></span>
-        </button>
-    </form>
+    <label class="ai-toggle-wrap" title="Toggle AI Master Switch">
+        <input type="checkbox" id="masterToggle" {% if chatbot.is_active %}checked{% endif %}>
+        <span class="ai-toggle-slider"></span>
+    </label>
 </div>
 
-<div class="main-grid">
-    <!-- Left Column -->
+<div class="cb-grid">
+    <!-- ═══ LEFT COLUMN ═══════════════════════════════════════ -->
     <div>
         <!-- Credits -->
         <div class="credit-bar">
             <div>
-                <div style="font-size:0.72rem;color:var(--crm-text-muted);margin-bottom:0.2rem;">Available credit</div>
-                <div style="font-size:1.5rem;font-weight:800;color:var(--crm-text);">{{ chatbot.ai_credits }} <span style="font-size:0.85rem;font-weight:400;color:var(--crm-text-muted);">credits</span></div>
+                <div class="credit-label">Available credit</div>
+                <div class="credit-amount" id="creditDisplay">{{ chatbot.ai_credits }} <span style="font-size:.85rem;font-weight:400;color:#6b7280;">credits</span></div>
             </div>
-            <div style="display:flex;gap:0.6rem;">
-                <a href="#" class="btn-crm-outline" style="font-size:0.78rem;"><i class="fas fa-history"></i> History</a>
-                <a href="#" class="btn-crm-primary" style="font-size:0.78rem;"><i class="fas fa-plus"></i> Top up</a>
-            </div>
-        </div>
-
-        <!-- Business Knowledge -->
-        <div class="section-card">
-            <div class="section-card-header">
-                <i class="fas fa-brain" style="color:var(--crm-primary);"></i>
-                Business knowledge
-            </div>
-            <div class="section-card-body">
-                <p style="font-size:0.82rem;color:var(--crm-text-muted);margin-bottom:1rem;">Teach the AI about your business — identity, tone of voice, offerings, FAQs, and how to handle tricky situations.</p>
-
-                <div class="knowledge-item">
-                    <div class="k-icon"><i class="fas fa-file-alt"></i></div>
-                    <div style="flex:1;">
-                        <div class="k-title">Business Knowledge Base</div>
-                        <div class="k-meta">Identity, voice, offerings, FAQs and playbook — everything the AI needs to sound like your team.</div>
-                        <div style="display:flex;align-items:center;gap:0.4rem;margin-top:0.35rem;">
-                            <span class="custom-tools-badge">5 sections</span>
-                            <span class="ai-badge">AI assisted</span>
-                        </div>
-                    </div>
-                    <div>
-                        <form method="post">
-                            {% csrf_token %}
-                            <button type="button" onclick="document.getElementById('knowledgeModal').style.display='flex'" style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;padding:0 0.3rem;">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button type="button" style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;padding:0 0.3rem;">
-                                <i class="fas fa-chevron-right"></i>
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="knowledge-item">
-                    <div class="k-icon"><i class="fas fa-tools"></i></div>
-                    <div style="flex:1;">
-                        <div class="k-title">Custom tools</div>
-                        <div class="k-meta">Extend the AI with merchant-defined tools — static replies or HTTP calls to your own services. Perfect for order-status lookups, warranty checks, or custom Q&A.</div>
-                        <div style="display:flex;align-items:center;gap:0.4rem;margin-top:0.35rem;">
-                            <span class="custom-tools-badge">Up to 5 tools</span>
-                            <span class="custom-tools-badge">1 credit per call</span>
-                        </div>
-                    </div>
-                    <button style="background:none;border:none;color:var(--crm-text-muted);cursor:pointer;"><i class="fas fa-chevron-right"></i></button>
-                </div>
+            <div style="display:flex;gap:.5rem;">
+                <button class="btn-outline" id="histBtn" onclick="openCreditHistory()">
+                    <i class="fas fa-history"></i> History
+                </button>
+                <button class="btn-save" onclick="openTopUpModal()">
+                    <i class="fas fa-plus"></i> Top up
+                </button>
             </div>
         </div>
 
-        <!-- AI Environment -->
-        <div class="section-card">
-            <div class="section-card-header">
-                <i class="fas fa-flask" style="color:var(--crm-primary);"></i>
-                AI environment
+        <!-- ── Business Knowledge Base ─────────────────────── -->
+        <div class="sec-card">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-brain" style="color:#7c3aed;"></i> Business Knowledge Base</div>
+                <span class="unsaved-dot" id="knowledgeUnsaved" title="Unsaved changes"></span>
             </div>
-            <div class="section-card-body">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label style="font-size:0.78rem;font-weight:600;color:var(--crm-text-muted);display:block;margin-bottom:0.3rem;">Business Name</label>
-                        <form method="post">
-                            {% csrf_token %}
-                            <input type="text" name="business_name" value="{{ chatbot.business_name|default:'' }}" placeholder="e.g. Trendy Shop" style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.5rem 0.75rem;font-size:0.83rem;font-family:inherit;color:var(--crm-text);outline:none;" onfocus="this.style.borderColor='var(--crm-primary)'" onblur="this.style.borderColor='var(--crm-border)'">
-                        </form>
-                    </div>
-                    <div class="col-md-6">
-                        <label style="font-size:0.78rem;font-weight:600;color:var(--crm-text-muted);display:block;margin-bottom:0.3rem;">Support Email</label>
-                        <input type="email" placeholder="support@trendy.com" style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.5rem 0.75rem;font-size:0.83rem;font-family:inherit;color:var(--crm-text);outline:none;" onfocus="this.style.borderColor='var(--crm-primary)'" onblur="this.style.borderColor='var(--crm-border)'" value="{{ chatbot.business_email|default:'' }}">
-                    </div>
+            <div class="sec-card-body">
+                <p style="font-size:.82rem;color:#6b7280;margin-bottom:1rem;">Teach the AI about your business — identity, tone, offerings, FAQs, and playbook.</p>
+
+                <!-- Knowledge Tabs -->
+                <div class="kb-tabs">
+                    <div class="kb-tab active" onclick="switchTab('identity', this)">🏢 Identity</div>
+                    <div class="kb-tab" onclick="switchTab('tone', this)">🗣 Tone of Voice</div>
+                    <div class="kb-tab" onclick="switchTab('offerings', this)">🛍 Offerings</div>
+                    <div class="kb-tab" onclick="switchTab('faqs', this)">❓ FAQs</div>
+                    <div class="kb-tab" onclick="switchTab('playbook', this)">📋 Playbook</div>
                 </div>
-                <div class="mt-3">
-                    <form method="post" style="margin-top:0;">
-                        {% csrf_token %}
-                        <label style="font-size:0.78rem;font-weight:600;color:var(--crm-text-muted);display:block;margin-bottom:0.3rem;">About Blurb</label>
-                        <textarea name="about_blurb" placeholder="Describe your business for the AI…" rows="3" style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.5rem 0.75rem;font-size:0.83rem;font-family:inherit;color:var(--crm-text);outline:none;resize:none;" onfocus="this.style.borderColor='var(--crm-primary)'" onblur="this.style.borderColor='var(--crm-border)'">{{ chatbot.about_blurb|default:'' }}</textarea>
-                        <button type="submit" class="btn-crm-primary mt-2" style="font-size:0.78rem;"><i class="fas fa-save"></i> Save Settings</button>
-                    </form>
-                </div>
+
+                <form id="knowledgeForm" action="{% url 'trendycrm:chatbot_save_knowledge' %}" method="post">
+                    {% csrf_token %}
+
+                    <!-- Identity -->
+                    <div class="kb-panel active" id="panel-identity">
+                        <div class="form-grid">
+                            <div>
+                                <label class="form-label">Business Name <span class="hint">*</span></label>
+                                <input name="business_name" type="text" class="cb-input" value="{{ chatbot.business_name|default:'' }}" placeholder="e.g. Trendy Shop">
+                            </div>
+                            <div>
+                                <label class="form-label">Support Email</label>
+                                <input name="business_email" type="email" class="cb-input" value="{{ chatbot.business_email|default:'' }}" placeholder="support@trendy.com">
+                            </div>
+                            <div>
+                                <label class="form-label">Support Phone</label>
+                                <input name="business_phone" type="text" class="cb-input" value="{{ chatbot.business_phone|default:'' }}" placeholder="+977 98XXXXXXXX">
+                            </div>
+                            <div class="full">
+                                <label class="form-label">About Your Business <span class="hint">— The AI's "about us" paragraph</span></label>
+                                <textarea name="about_blurb" class="cb-textarea" rows="3" placeholder="We are Trendy Shop, Nepal's fastest growing online store for skincare and wellness products…">{{ chatbot.about_blurb|default:'' }}</textarea>
+                            </div>
+                            <div class="full">
+                                <label class="form-label">Welcome Message <span class="hint">— First message the AI sends</span></label>
+                                <textarea name="welcome_message" class="cb-textarea" rows="2" placeholder="Hi! 👋 Welcome to Trendy Shop. How can I help you today?">{{ chatbot.welcome_message|default:'' }}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tone of Voice -->
+                    <div class="kb-panel" id="panel-tone">
+                        <label class="form-label">How should the AI sound? <span class="hint">— Describe writing style, brand voice, words to avoid</span></label>
+                        <textarea name="tone_voice" class="cb-textarea" rows="7" placeholder="Be warm, friendly, and conversational. Always use the customer's name when possible. Avoid corporate jargon. Use emojis sparingly (max 2 per message). Never sound robotic or scripted.">{{ chatbot.tone_voice|default:'' }}</textarea>
+                    </div>
+
+                    <!-- Offerings -->
+                    <div class="kb-panel" id="panel-offerings">
+                        <label class="form-label">Your Products & Services <span class="hint">— List what you sell so the AI can recommend them</span></label>
+                        <textarea name="offerings" class="cb-textarea" rows="9" placeholder="1. Trendy Face Serum (NPR 1,200) — Vitamin C + Niacinamide. Best seller.&#10;2. Trendy Sunscreen SPF50 (NPR 850) — Lightweight, no white cast.&#10;3. Trendy Body Lotion (NPR 650) — Moisturizing, all skin types.&#10;&#10;Delivery: 2 days Kathmandu, 3-5 days nationwide.">{{ chatbot.offerings|default:'' }}</textarea>
+                    </div>
+
+                    <!-- FAQs -->
+                    <div class="kb-panel" id="panel-faqs">
+                        <label class="form-label">Common FAQs <span class="hint">— The AI will use these to answer customer questions accurately</span></label>
+                        <textarea name="faq_text" class="cb-textarea" rows="9" placeholder="Q: Do you deliver outside Kathmandu?&#10;A: Yes! We deliver nationwide via Dhadkan Courier. 3-5 business days.&#10;&#10;Q: How do I return a product?&#10;A: Contact us within 7 days. Send photos of the defective item to support@trendy.com.&#10;&#10;Q: Do you accept COD?&#10;A: Yes, cash on delivery is available for orders above NPR 500.">{{ chatbot.faq_text|default:'' }}</textarea>
+                    </div>
+
+                    <!-- Playbook -->
+                    <div class="kb-panel" id="panel-playbook">
+                        <label class="form-label">Sales & Support Playbook <span class="hint">— How to handle tricky situations, complaints, refunds</span></label>
+                        <textarea name="playbook" class="cb-textarea" rows="9" placeholder="ANGRY CUSTOMER: Always apologize first, never argue. Say 'I completely understand your frustration' and escalate to a human if needed.&#10;&#10;REFUND REQUEST: Check if it's within 7 days. If yes, process the refund within 3 days. Log in CRM as a ticket.&#10;&#10;SALE PUSH: If customer hesitates on price, offer 5% discount code: TRENDY5.">{{ chatbot.playbook|default:'' }}</textarea>
+                    </div>
+
+                    <div style="margin-top:1rem; display:flex; align-items:center; justify-content:space-between;">
+                        <span style="font-size:.75rem;color:#9ca3af;" id="knowledgeSaveStatus">Last saved: {{ chatbot.updated_at|date:"M d, H:i" }}</span>
+                        <button type="submit" class="btn-save" id="knowledgeSaveBtn">
+                            <i class="fas fa-save"></i> Save Knowledge Base
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ── Custom Tools ────────────────────────────────── -->
+        <div class="sec-card">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-tools" style="color:#7c3aed;"></i> Custom Tools</div>
+                <span style="font-size:.72rem;color:#6b7280;">Up to 5 tools • 1 credit per call</span>
+            </div>
+            <div class="sec-card-body" style="padding:1rem 1.25rem;">
+                <p style="font-size:.82rem;color:#6b7280;margin-bottom:1rem;">
+                    Extend the AI with static replies or HTTP calls to your services — order lookups, warranty checks, custom Q&A.
+                </p>
+                <a href="{% url 'trendycrm:page_profiles' %}" class="btn-outline" style="text-decoration:none;">
+                    <i class="fas fa-arrow-right"></i> Manage Page Profiles & Tools →
+                </a>
             </div>
         </div>
     </div>
 
-    <!-- Right Column -->
+    <!-- ═══ RIGHT COLUMN ═══════════════════════════════════════ -->
     <div>
-        <!-- Auto-reply Channels -->
-        <div class="auto-reply-channels-card mb-3">
-            <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.3rem;color:var(--crm-text);">Auto-reply channels</div>
-            <p style="font-size:0.76rem;color:var(--crm-text-muted);margin-bottom:1rem;line-height:1.4;">Pick the channels where Trendy AI should auto-reply to customers. Turning a channel off here pauses customer auto-replies on that platform only.</p>
-
-            {% for integ in integrations %}
-            <div class="channel-item">
-                <div class="channel-icon" style="background:{% if integ.channel_type == 'whatsapp' %}#d1fae5{% elif integ.channel_type == 'instagram' %}#fce7f3{% elif integ.channel_type == 'facebook' %}#dbeafe{% elif integ.channel_type == 'gmail' %}#fee2e2{% else %}#f3f4f6{% endif %};">
-                    <i class="fab fa-{{ integ.channel_type }}" style="color:{% if integ.channel_type == 'whatsapp' %}#059669{% elif integ.channel_type == 'instagram' %}#be185d{% elif integ.channel_type == 'facebook' %}#1d4ed8{% elif integ.channel_type == 'gmail' %}#dc2626{% else %}#6b7280{% endif %};"></i>
+        <!-- ── Auto-Reply Channels ─────────────────────────── -->
+        <div class="sec-card" style="margin-bottom:1rem;">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-broadcast-tower" style="color:#7c3aed;"></i> Auto-reply channels</div>
+            </div>
+            <div class="sec-card-body" style="padding:.85rem 1.1rem;">
+                <p style="font-size:.76rem;color:#6b7280;margin-bottom:.85rem;line-height:1.4;">
+                    Pick the channels where Trendy AI should auto-reply. Turn a channel off to pause only that platform.
+                </p>
+                {% for integ in integrations %}
+                <div class="ch-item">
+                    <div class="ch-icon" style="background:{% if integ.channel_type == 'whatsapp' %}#d1fae5{% elif integ.channel_type == 'instagram' %}#fce7f3{% elif integ.channel_type == 'facebook' %}#dbeafe{% elif integ.channel_type == 'gmail' %}#fee2e2{% elif integ.channel_type == 'tiktok' %}#f3f4f6{% else %}#f3f4f6{% endif %};">
+                        <i class="fab fa-{{ integ.channel_type }}" style="color:{% if integ.channel_type == 'whatsapp' %}#059669{% elif integ.channel_type == 'instagram' %}#be185d{% elif integ.channel_type == 'facebook' %}#1d4ed8{% elif integ.channel_type == 'gmail' %}#dc2626{% else %}#6b7280{% endif %};"></i>
+                    </div>
+                    <div class="ch-name">{{ integ.get_channel_type_display }}</div>
+                    <div>
+                        {% if integ.status == 'connected' %}
+                        <label class="ai-toggle-wrap" title="Toggle auto-reply for {{ integ.get_channel_type_display }}" style="width:38px;height:20px;">
+                            <input type="checkbox" class="channel-toggle" data-channel="{{ integ.channel_type }}"
+                                {% if chatbot.auto_reply_channels|default_if_none:'{}'  %}
+                                    {% with enabled=chatbot.auto_reply_channels %}
+                                        {% if enabled and integ.channel_type in enabled %}checked{% endif %}
+                                    {% endwith %}
+                                {% endif %}>
+                            <span class="ai-toggle-slider" style="border-radius:20px;"></span>
+                        </label>
+                        {% else %}
+                        <span class="ch-status">Not connected</span>
+                        {% endif %}
+                    </div>
                 </div>
-                <div class="channel-name">{{ integ.get_channel_type_display }}</div>
-                <div class="channel-status">{{ integ.get_status_display }}</div>
+                {% empty %}
+                <div style="text-align:center;padding:1.5rem 0;font-size:.82rem;color:#6b7280;">
+                    <i class="fas fa-plug" style="font-size:1.5rem;color:#d1d5db;display:block;margin-bottom:.5rem;"></i>
+                    No integrations.<br>
+                    <a href="{% url 'trendycrm:integrations' %}" style="color:#7c3aed;font-weight:600;">Connect a channel →</a>
+                </div>
+                {% endfor %}
             </div>
-            {% empty %}
-            <div style="text-align:center;padding:1.5rem 0;font-size:0.8rem;color:var(--crm-text-muted);">
-                <i class="fas fa-plug" style="font-size:1.4rem;color:var(--crm-accent);display:block;margin-bottom:0.5rem;"></i>
-                No integrations yet.<br>
-                <a href="{% url 'trendycrm:integrations' %}" style="color:var(--crm-primary);font-weight:600;">Connect a channel →</a>
-            </div>
-            {% endfor %}
         </div>
 
-        <!-- Agent configuration -->
-        <div class="auto-reply-channels-card">
-            <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.75rem;color:var(--crm-text);">Agent configuration</div>
-            <div style="font-size:0.78rem;color:var(--crm-text-muted);margin-bottom:0.5rem;">AI Model</div>
-            <select style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.45rem 0.75rem;font-size:0.82rem;font-family:inherit;color:var(--crm-text);outline:none;margin-bottom:0.75rem;">
-                <option>GPT-4o (Recommended)</option>
-                <option>GPT-3.5 Turbo</option>
-                <option>Claude Sonnet</option>
-            </select>
-            <div style="font-size:0.78rem;color:var(--crm-text-muted);margin-bottom:0.5rem;">Response Tone</div>
-            <select style="width:100%;border:1.5px solid var(--crm-border);border-radius:7px;padding:0.45rem 0.75rem;font-size:0.82rem;font-family:inherit;color:var(--crm-text);outline:none;">
-                <option>Professional & Friendly</option>
-                <option>Formal</option>
-                <option>Casual</option>
-            </select>
+        <!-- ── Agent Configuration ─────────────────────────── -->
+        <div class="sec-card">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-robot" style="color:#7c3aed;"></i> Agent configuration</div>
+            </div>
+            <div class="sec-card-body">
+                <form id="agentForm" action="{% url 'trendycrm:chatbot_save_agent' %}" method="post">
+                    {% csrf_token %}
+                    <div style="margin-bottom:.85rem;">
+                        <label class="form-label">AI Model</label>
+                        <select name="ai_model" class="cb-select">
+                            {% for val, label in chatbot.AI_MODEL_CHOICES %}
+                            <option value="{{ val }}" {% if chatbot.ai_model == val %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div style="margin-bottom:.85rem;">
+                        <label class="form-label">Response Tone</label>
+                        <select name="response_tone" class="cb-select">
+                            {% for val, label in chatbot.TONE_CHOICES %}
+                            <option value="{{ val }}" {% if chatbot.response_tone == val %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div style="border-top:1px solid #f3f4f6;padding-top:.85rem;margin-top:.85rem;">
+                        <div style="font-size:.78rem;font-weight:700;color:#374151;margin-bottom:.65rem;">🔑 API Keys</div>
+                        <div style="margin-bottom:.6rem;">
+                            <label class="form-label">OpenAI API Key
+                                {% if chatbot.openai_api_key %}<span class="api-status set">✓ Set</span>{% else %}<span class="api-status unset">⚠ Not set</span>{% endif %}
+                            </label>
+                            <div class="api-key-wrap">
+                                <input type="password" name="openai_api_key" class="cb-input" id="openaiKeyInput" placeholder="sk-…" autocomplete="off">
+                                <button type="button" class="api-key-toggle" onclick="toggleKeyVis('openaiKeyInput', this)"><i class="fas fa-eye"></i></button>
+                            </div>
+                            <div style="font-size:.71rem;color:#9ca3af;margin-top:.2rem;">Leave blank to keep existing key.</div>
+                        </div>
+                        <div>
+                            <label class="form-label">Google Gemini API Key
+                                {% if chatbot.gemini_api_key %}<span class="api-status set">✓ Set</span>{% else %}<span class="api-status unset">⚠ Not set</span>{% endif %}
+                            </label>
+                            <div class="api-key-wrap">
+                                <input type="password" name="gemini_api_key" class="cb-input" id="geminiKeyInput" placeholder="AIzaSy…" autocomplete="off">
+                                <button type="button" class="api-key-toggle" onclick="toggleKeyVis('geminiKeyInput', this)"><i class="fas fa-eye"></i></button>
+                            </div>
+                            <div style="font-size:.71rem;color:#9ca3af;margin-top:.2rem;">Leave blank to keep existing key.</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:1rem; text-align:right;">
+                        <button type="submit" class="btn-save" id="agentSaveBtn" style="width:100%;">
+                            <i class="fas fa-save"></i> Save Configuration
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 </div>
+
+<!-- ═══ CREDIT HISTORY MODAL ═══════════════════════════════════ -->
+<div class="cb-modal" id="creditModal">
+    <div class="cb-modal-box">
+        <div class="cb-modal-header">
+            <h5><i class="fas fa-history" style="color:#7c3aed;margin-right:.5rem;"></i>Credit History</h5>
+            <button class="cb-modal-close" onclick="closeModal('creditModal')">✕</button>
+        </div>
+        <div class="cb-modal-body" id="creditModalBody">
+            <div style="text-align:center;padding:2rem;color:#6b7280;"><i class="fas fa-spinner fa-spin"></i> Loading…</div>
+        </div>
+        <div class="cb-modal-footer">
+            <button class="btn-save" onclick="openTopUpModal()"><i class="fas fa-plus"></i> Top up credits</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ TOP-UP MODAL ════════════════════════════════════════════ -->
+<div class="cb-modal" id="topUpModal">
+    <div class="cb-modal-box" style="max-width:440px;">
+        <div class="cb-modal-header">
+            <h5><i class="fas fa-bolt" style="color:#7c3aed;margin-right:.5rem;"></i>Top Up Credits</h5>
+            <button class="cb-modal-close" onclick="closeModal('topUpModal')">✕</button>
+        </div>
+        <div class="cb-modal-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
+            <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;text-align:center;cursor:pointer;transition:all .15s;" onclick="selectTopUp(this, 100)">
+                <div style="font-size:1.2rem;font-weight:800;color:#1e1b4b;">100</div>
+                <div style="font-size:.75rem;color:#6b7280;">credits</div>
+            </div>
+            <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;text-align:center;cursor:pointer;transition:all .15s;" onclick="selectTopUp(this, 250)">
+                <div style="font-size:1.2rem;font-weight:800;color:#1e1b4b;">250</div>
+                <div style="font-size:.75rem;color:#6b7280;">credits</div>
+            </div>
+            <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;text-align:center;cursor:pointer;transition:all .15s;" onclick="selectTopUp(this, 500)">
+                <div style="font-size:1.2rem;font-weight:800;color:#1e1b4b;">500</div>
+                <div style="font-size:.75rem;color:#6b7280;">credits</div>
+            </div>
+            <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;text-align:center;cursor:pointer;transition:all .15s;" onclick="selectTopUp(this, 1000)">
+                <div style="font-size:1.2rem;font-weight:800;color:#1e1b4b;">1,000</div>
+                <div style="font-size:.75rem;color:#6b7280;">credits</div>
+            </div>
+        </div>
+
+            <p style="font-size:.8rem;color:#6b7280;text-align:center;">Top-up functionality will be configured with your payment provider.</p>
+        </div>
+        <div class="cb-modal-footer">
+            <button class="btn-outline" onclick="closeModal('topUpModal')">Cancel</button>
+            <button class="btn-save" onclick="closeModal('topUpModal')"><i class="fas fa-check"></i> Coming Soon</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || getCookie('csrftoken');
+
+// ── Master Toggle ────────────────────────────────────────────────────────────
+document.getElementById('masterToggle').addEventListener('change', async function() {
+    const enabled = this.checked;
+    try {
+        const resp = await fetch('{% url "trendycrm:chatbot_toggle" %}', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await resp.json();
+        const active = data.is_active;
+
+        // Update UI
+        const bar = document.getElementById('toggleBar');
+        const icon = document.getElementById('toggleIcon');
+        const badge = document.getElementById('statusBadge');
+        const dot = document.getElementById('statusDot');
+        const text = document.getElementById('statusText');
+        const desc = document.getElementById('toggleDesc');
+
+        if (active) {
+            bar.classList.add('active-state'); bar.classList.remove('toggle-bar');
+            icon.style.color = '#059669';
+            badge.className = 'status-badge active';
+            dot.style.background = '#059669';
+            text.textContent = 'Active';
+            desc.textContent = 'AI is active and auto-replying on all connected channels.';
+        } else {
+            bar.classList.remove('active-state');
+            icon.style.color = '#d1d5db';
+            badge.className = 'status-badge paused';
+            dot.style.background = '#dc2626';
+            text.textContent = 'Paused';
+            desc.textContent = 'All AI is paused — customer auto-replies, digest, and other tools won\'t run.';
+        }
+        showToast(active ? '⚡ AI is now Active' : '⏸ AI Paused', false);
+    } catch(e) {
+        this.checked = !this.checked; // revert
+        showToast('Failed to toggle AI', true);
+    }
+});
+
+// ── Knowledge Base Form ──────────────────────────────────────────────────────
+const knowledgeForm = document.getElementById('knowledgeForm');
+const knowledgeInputs = knowledgeForm.querySelectorAll('input,textarea');
+knowledgeInputs.forEach(el => el.addEventListener('input', () => {
+    document.getElementById('knowledgeUnsaved').classList.add('show');
+}));
+
+knowledgeForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('knowledgeSaveBtn');
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+    try {
+        const resp = await fetch(this.action, {
+            method: 'POST',
+            body: new FormData(this),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            showToast('✓ ' + data.message);
+            document.getElementById('knowledgeSaveStatus').textContent = 'Saved just now';
+            document.getElementById('knowledgeUnsaved').classList.remove('show');
+        } else { showToast('Error saving', true); }
+    } catch(e) { showToast('Network error', true); }
+    finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save Knowledge Base'; }
+});
+
+// ── Agent Config Form ────────────────────────────────────────────────────────
+document.getElementById('agentForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('agentSaveBtn');
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+    try {
+        const resp = await fetch(this.action, {
+            method: 'POST',
+            body: new FormData(this),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            showToast('✓ ' + data.message);
+            // Reload page to reflect new API key status badges
+            setTimeout(() => location.reload(), 1200);
+        } else { showToast('Error saving', true); }
+    } catch(e) { showToast('Network error', true); }
+    finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save Configuration'; }
+});
+
+// ── Channel Toggles ──────────────────────────────────────────────────────────
+document.querySelectorAll('.channel-toggle').forEach(toggle => {
+    toggle.addEventListener('change', async function() {
+        const channel = this.dataset.channel;
+        const enabled = this.checked;
+        const fd = new FormData();
+        fd.append('channel_type', channel);
+        fd.append('enabled', enabled ? 'true' : 'false');
+        try {
+            const resp = await fetch('{% url "trendycrm:chatbot_toggle_channel" %}', {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const data = await resp.json();
+            if (data.status === 'ok') {
+                showToast((enabled ? '✓ Auto-reply enabled' : '⏸ Auto-reply paused') + ' for ' + channel);
+            }
+        } catch(e) {
+            this.checked = !this.checked; // revert
+            showToast('Failed to update channel', true);
+        }
+    });
+});
+
+// ── Knowledge Tabs ───────────────────────────────────────────────────────────
+function switchTab(id, el) {
+    document.querySelectorAll('.kb-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.kb-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('panel-' + id)?.classList.add('active');
+    el.classList.add('active');
+}
+
+// ── API Key Visibility Toggle ─────────────────────────────────────────────────
+function toggleKeyVis(inputId, btn) {
+    const inp = document.getElementById(inputId);
+    if (inp.type === 'password') {
+        inp.type = 'text';
+        btn.innerHTML = '<i class="fas fa-eye-slash"></i>';
+    } else {
+        inp.type = 'password';
+        btn.innerHTML = '<i class="fas fa-eye"></i>';
+    }
+}
+
+// ── Credit History Modal ──────────────────────────────────────────────────────
+async function openCreditHistory() {
+    openModal('creditModal');
+    const body = document.getElementById('creditModalBody');
+    body.innerHTML = '<div style="text-align:center;padding:2rem;color:#6b7280;"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
+    try {
+        const resp = await fetch('{% url "trendycrm:credit_history" %}');
+        const data = await resp.json();
+        if (!data.logs.length) {
+            body.innerHTML = '<div style="text-align:center;padding:2rem;color:#6b7280;">No credit activity yet.</div>';
+            return;
+        }
+        body.innerHTML = `
+            <div style="margin-bottom:.75rem;font-size:.82rem;color:#6b7280;">
+                Current balance: <strong style="color:#1e1b4b;">${data.balance} credits</strong>
+            </div>
+            <table class="hist-table">
+                <thead><tr><th>Date</th><th>Action</th><th>Model</th><th>Credits</th></tr></thead>
+                <tbody>
+                    ${data.logs.map(l => `
+                    <tr>
+                        <td style="white-space:nowrap;">${l.created_at}</td>
+                        <td>${l.action}${l.description ? '<br><span style="font-size:.71rem;color:#6b7280;">' + l.description + '</span>' : ''}</td>
+                        <td><span style="font-size:.72rem;background:#f3f4f6;padding:1px 6px;border-radius:4px;">${l.model_used}</span></td>
+                        <td><span class="credit-badge ${l.is_topup ? 'topup' : 'usage'}">${l.is_topup ? '+' : ''}${l.credits_used}</span></td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>`;
+    } catch(e) {
+        body.innerHTML = '<div style="text-align:center;padding:2rem;color:#dc2626;">Failed to load history.</div>';
+    }
+}
+
+function openTopUpModal() {
+    closeModal('creditModal');
+    openModal('topUpModal');
+}
+
+function selectTopUp(el, amount) {
+    document.querySelectorAll('#topUpModal .cb-modal-body > div > div').forEach(d => {
+        d.style.borderColor = '#e5e7eb'; d.style.background = '#fff';
+    });
+    el.style.borderColor = '#7c3aed'; el.style.background = '#fdf4ff';
+}
+
+// ── Modal Helpers ─────────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.cb-modal').forEach(m => {
+    m.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, isError = false) {
+    const t = document.getElementById('saveToast');
+    const tm = document.getElementById('saveToastMsg');
+    tm.textContent = msg;
+    t.classList.toggle('error', isError);
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function getCookie(name) {
+    const m = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return m ? m[2] : null;
+}
+</script>
 {% endblock %}
