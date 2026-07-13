@@ -37,7 +37,8 @@ from .meta_sync import (
 from .models import (
     CRMContact, CRMConversation, CRMMessage,
     CRMQuickReply, CRMChatbotConfig, CRMIntegration, CRMTicket,
-    CRMSocialPost, CRMSocialComment, CRMPageProfile, CRMCreditLog
+    CRMSocialPost, CRMSocialComment, CRMPageProfile, CRMCreditLog,
+    CRMLabel, CRMNote
 )
 
 
@@ -294,6 +295,101 @@ def crm_delete_conversation(request, conv_id):
     conv.delete()
     messages.success(request, "Conversation deleted successfully.")
     return redirect('trendycrm:conversations')
+
+
+# ─── Conversation Sidebar Endpoints ──────────────────────────────────────────
+
+@login_required
+@require_POST
+def crm_link_contact(request, conv_id):
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    contact_id = request.POST.get('contact_id')
+    new_contact_name = request.POST.get('contact_name', '').strip()
+    
+    if contact_id:
+        contact = get_object_or_404(CRMContact, pk=contact_id)
+    elif new_contact_name:
+        contact = CRMContact.objects.create(name=new_contact_name, created_by=request.user)
+    else:
+        return JsonResponse({'status': 'error', 'message': 'Must provide contact ID or new name'}, status=400)
+        
+    conv.contact = contact
+    conv.save()
+    
+    return JsonResponse({
+        'status': 'ok',
+        'contact': {
+            'id': contact.pk,
+            'name': contact.name,
+            'email': contact.email or '',
+            'phone': contact.phone or '',
+            'company': contact.company or '',
+        }
+    })
+
+@login_required
+@require_POST
+def crm_add_label(request, conv_id):
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    label_name = request.POST.get('name', '').strip()
+    color_hex = request.POST.get('color_hex', '#7c3aed').strip()
+    
+    if not label_name:
+        return JsonResponse({'status': 'error', 'message': 'Label name required'}, status=400)
+        
+    label, _ = CRMLabel.objects.get_or_create(
+        name=label_name,
+        defaults={'color_hex': color_hex}
+    )
+    conv.labels.add(label)
+    
+    return JsonResponse({
+        'status': 'ok',
+        'label': {
+            'id': label.pk,
+            'name': label.name,
+            'color_hex': label.color_hex
+        }
+    })
+
+@login_required
+@require_POST
+def crm_remove_label(request, conv_id):
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    label_id = request.POST.get('label_id')
+    
+    if not label_id:
+        return JsonResponse({'status': 'error', 'message': 'Label ID required'}, status=400)
+        
+    label = get_object_or_404(CRMLabel, pk=label_id)
+    conv.labels.remove(label)
+    
+    return JsonResponse({'status': 'ok'})
+
+@login_required
+@require_POST
+def crm_add_note(request, conv_id):
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    text = request.POST.get('text', '').strip()
+    
+    if not text:
+        return JsonResponse({'status': 'error', 'message': 'Note text required'}, status=400)
+        
+    note = CRMNote.objects.create(
+        conversation=conv,
+        author=request.user,
+        text=text
+    )
+    
+    return JsonResponse({
+        'status': 'ok',
+        'note': {
+            'id': note.pk,
+            'text': note.text,
+            'author_name': note.author.first_name or note.author.username,
+            'created_at': note.created_at.strftime("%b %d, %Y, %I:%M %p")
+        }
+    })
 
 
 # ─── Chatbot ─────────────────────────────────────────────────────────────────

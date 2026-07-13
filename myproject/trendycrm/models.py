@@ -28,6 +28,16 @@ class CRMContact(models.Model):
     class Meta:
         ordering = ['-created_at']
 
+class CRMLabel(models.Model):
+    name = models.CharField(max_length=50)
+    color_hex = models.CharField(max_length=7, default='#7c3aed')
+    
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+
 
 class CRMConversation(models.Model):
     CHANNEL_CHOICES = [
@@ -50,6 +60,7 @@ class CRMConversation(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
     subject = models.CharField(max_length=300, blank=True, null=True)
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    labels = models.ManyToManyField(CRMLabel, blank=True, related_name='conversations')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(default=timezone.now)
     last_message = models.TextField(blank=True, null=True)
@@ -59,6 +70,19 @@ class CRMConversation(models.Model):
 
     class Meta:
         ordering = ['-updated_at']
+
+
+class CRMNote(models.Model):
+    conversation = models.ForeignKey(CRMConversation, on_delete=models.CASCADE, related_name='notes')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Note on {self.conversation} by {self.author}"
+
+    class Meta:
+        ordering = ['-created_at']
 
 
 class CRMMessage(models.Model):

@@ -11,6 +11,13 @@ urlpatterns = [
     path('conversations/<int:conv_id>/delete/', views.crm_delete_conversation, name='delete_conversation'),
     path('conversations/<int:conv_id>/send/', views.crm_send_message, name='send_message'),
     
+    # Conversation Sidebar Endpoints
+    path('conversations/<int:conv_id>/link-contact/', views.crm_link_contact, name='link_contact'),
+    path('conversations/<int:conv_id>/add-label/', views.crm_add_label, name='add_label'),
+    path('conversations/<int:conv_id>/remove-label/', views.crm_remove_label, name='remove_label'),
+    path('conversations/<int:conv_id>/add-note/', views.crm_add_note, name='add_note'),
+
+    
     path('social/', views.crm_social_posts, name='social_posts'),
     path('social/action/<int:comment_id>/', views.crm_social_action, name='social_action'),
     path('social/post-action/<int:post_id>/', views.crm_social_post_action, name='social_post_action'),
